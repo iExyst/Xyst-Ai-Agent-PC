@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { Cron } from "croner";
 import Database from "better-sqlite3";
 import { ConfigStore, inspectDatabaseIntegrity, XystStore, SessionStore, MemoryStore, JobStore } from "./storage.js";
-import { createText, patchText, readText, searchFiles } from "./tools/files.js";
+import { createText, movePath, patchText, readText, searchFiles } from "./tools/files.js";
 import { normalizeUserPath, runProcess } from "./platform.js";
 import { AccessController } from "./access.js";
 import { credentialStoreError, redactSecrets } from "./credentials.js";
@@ -59,6 +59,21 @@ async function withTemp<T>(run: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), "xyst-test-"));
   try { return await run(root); } finally { await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 }
+
+test("file_move refuses existing file and directory destinations without changing either path", async () => withTemp(async (root) => {
+  const sourceFile = join(root, "source.txt"); const destinationFile = join(root, "destination.txt");
+  await writeFile(sourceFile, "source contents"); await writeFile(destinationFile, "keep destination");
+  await assert.rejects(movePath(sourceFile, destinationFile), /Destination already exists/);
+  assert.equal(await readFileAsync(sourceFile, "utf8"), "source contents");
+  assert.equal(await readFileAsync(destinationFile, "utf8"), "keep destination");
+
+  const sourceDirectory = join(root, "source-dir"); const destinationDirectory = join(root, "destination-dir");
+  await mkdir(sourceDirectory); await writeFile(join(sourceDirectory, "source.txt"), "source directory");
+  await mkdir(destinationDirectory); await writeFile(join(destinationDirectory, "keep.txt"), "keep directory");
+  await assert.rejects(movePath(sourceDirectory, destinationDirectory), /Destination already exists/);
+  assert.equal(await readFileAsync(join(sourceDirectory, "source.txt"), "utf8"), "source directory");
+  assert.equal(await readFileAsync(join(destinationDirectory, "keep.txt"), "utf8"), "keep directory");
+}));
 
 test("database integrity inspection is read-only and distinguishes healthy, corrupt, and missing files", async () => withTemp(async (root) => {
   const healthyPath = join(root, "healthy.sqlite"); const store = new XystStore(healthyPath); store.close();

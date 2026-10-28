@@ -123,6 +123,18 @@ export async function patchText(path: string, expectedSha256: string, oldText: s
   });
 }
 
-export async function movePath(from: string, to: string): Promise<string> { const source = normalizeUserPath(from); const target = normalizeUserPath(to); await mkdir(dirname(target), { recursive: true }); await rename(source, target); return target; }
+export async function movePath(from: string, to: string): Promise<string> {
+  const source = normalizeUserPath(from); const target = normalizeUserPath(to);
+  await mkdir(dirname(target), { recursive: true });
+  return withPathLock(target, async () => {
+    const destinationExists = await lstat(target).then(() => true, (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    });
+    if (destinationExists) throw new Error(`Destination already exists: ${target}`);
+    await rename(source, target);
+    return target;
+  });
+}
 export async function deletePath(path: string): Promise<void> { await rm(normalizeUserPath(path), { recursive: true, force: false }); }
 export function relativePath(root: string, path: string): string { return relative(resolve(root), resolve(path)); }
