@@ -98,6 +98,9 @@ async function pressKey(page, key, virtualKeyCode, id) {
 }
 
 async function verifyKeyboardSkipLink(page) {
+  await cdpCommand(page, "Page.bringToFront", {}, 27);
+  const pageHasFocus = await evaluate(page, "document.hasFocus()", 28);
+  assert.equal(pageHasFocus, true, "The packaged renderer must be the active window for keyboard visibility checks");
   await evaluate(page, "if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) document.activeElement.blur()", 29);
   await pressKey(page, "Tab", 9, 30);
   const focusedLink = JSON.parse(await evaluate(page, "JSON.stringify({ text: document.activeElement?.textContent?.trim(), top: document.activeElement?.getBoundingClientRect().top })", 32));
