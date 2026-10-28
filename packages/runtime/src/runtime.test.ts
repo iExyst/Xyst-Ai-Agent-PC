@@ -607,7 +607,7 @@ test("SQLite migrations persist sessions and resolve config from most specific s
   reopened.close();
 }));
 
-test("version-one database upgrades through every migration without losing saved sessions", async () => withTemp(async (root) => {
+test("version-one database with a large history upgrades through every migration intact", async () => withTemp(async (root) => {
   const path = join(root, "version-one.sqlite"); const legacy = new Database(path);
   legacy.pragma("foreign_keys = ON");
   legacy.exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
@@ -623,16 +623,36 @@ test("version-one database upgrades through every migration without losing saved
     CREATE INDEX messages_session_created ON messages(session_id, created_at);
     CREATE INDEX tool_calls_session_created ON tool_calls(session_id, created_at);
     INSERT INTO schema_migrations(version, applied_at) VALUES (1, '2024-01-01T00:00:00.000Z');`);
-  legacy.prepare("INSERT INTO sessions(id,title,status,created_at,updated_at) VALUES(?,?,'active',?,?)").run("legacy-session", "Saved before migrations", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");
-  legacy.prepare("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,'user',?,?)").run("legacy-message", "legacy-session", "Keep this historic request", "2024-01-01T00:01:00.000Z");
+  const insertSession = legacy.prepare("INSERT INTO sessions(id,title,status,created_at,updated_at) VALUES(?,?,'active',?,?)");
+  const insertMessage = legacy.prepare("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,?, ?,?)");
+  const insertToolCall = legacy.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,finished_at) VALUES(?,?,?,?,?,'completed',?,?)");
+  legacy.transaction(() => {
+    for (let sessionIndex = 0; sessionIndex < 1_000; sessionIndex++) {
+      const id = sessionIndex === 0 ? "legacy-session" : `legacy-session-${String(sessionIndex).padStart(4, "0")}`;
+      const timestamp = "2024-01-01T00:00:00.000Z";
+      insertSession.run(id, `Saved before migrations ${sessionIndex}`, timestamp, timestamp);
+      if (sessionIndex === 0) insertMessage.run("legacy-message", id, "user", "Keep this historic request", "2024-01-01T00:00:01.000Z");
+      const generatedMessages = sessionIndex === 0 ? 19 : 20;
+      for (let messageIndex = 0; messageIndex < generatedMessages; messageIndex++) {
+        insertMessage.run(`legacy-message-${sessionIndex}-${messageIndex}`, id, messageIndex % 2 === 0 ? "user" : "assistant", `Historical message ${sessionIndex}-${messageIndex}`, timestamp);
+      }
+      insertToolCall.run(`legacy-tool-${sessionIndex}`, id, "file_create", "{}", "{}", timestamp, timestamp);
+    }
+  })();
   legacy.close();
 
   const upgraded = new XystStore(path);
   try {
     const version = upgraded.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number };
     assert.equal(version.version, 15);
+    assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as { count: number }).count, 1_000);
+    assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM messages").get() as { count: number }).count, 20_000);
+    assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE effect='external' AND execution_scope IS NOT NULL").get() as { count: number }).count, 1_000);
     const savedMessages = new SessionStore(upgraded).messages("legacy-session") as Array<{ content: unknown }>;
-    assert.deepEqual(savedMessages.map((message) => message.content), ["Keep this historic request"]);
+    assert.equal(savedMessages.length, 20);
+    assert.ok(savedMessages.some((message) => message.content === "Keep this historic request"));
+    const lastSession = new SessionStore(upgraded).messages("legacy-session-0999") as Array<{ content: unknown }>;
+    assert.equal(lastSession.length, 20);
     assert.equal((upgraded.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   } finally { upgraded.close(); }
 }));
@@ -662,6 +682,69 @@ test("failed multi-statement migration rolls back cleanly and can be retried", a
     assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 15);
     assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
     assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message during recovery");
+    assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
+  } finally { recovered.close(); }
+}));
+
+test("killing a process mid-migration rolls back SQLite DDL and allows recovery", async () => withTemp(async (root) => {
+  const path = join(root, "migration-process-kill.sqlite"); const markerPath = join(root, "migration-paused.marker");
+  const initial = new XystStore(path); const sessions = new SessionStore(initial);
+  const sessionId = sessions.create("Preserve across process-killed migration");
+  sessions.addMessage(sessionId, "user", "Keep this message across process termination");
+  initial.db.exec("DROP TABLE session_compactions; DELETE FROM schema_migrations WHERE version>=15"); initial.close();
+
+  const storageUrl = new URL("./storage.ts", import.meta.url).href;
+  const source = `
+    import Database from "better-sqlite3";
+    import { writeFileSync } from "node:fs";
+    const originalExec = Database.prototype.exec;
+    Database.prototype.exec = function(sql) {
+      const result = originalExec.call(this, sql);
+      if (sql.includes("CREATE TABLE session_compactions")) {
+        writeFileSync(process.argv[2], "migration DDL executed; transaction not committed", "utf8");
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30000);
+      }
+      return result;
+    };
+    const { XystStore } = await import(${JSON.stringify(storageUrl)});
+    const store = new XystStore(process.argv[1]);
+    store.close();
+  `;
+  const child = spawn(process.execPath, ["--import", "tsx/esm", "--input-type=module", "-e", source, path, markerPath], {
+    cwd: process.cwd(), env: process.env, stdio: ["ignore", "ignore", "pipe"]
+  });
+  let stderr = ""; child.stderr.setEncoding("utf8"); child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    child.once("error", reject); child.once("close", (code, signal) => resolve({ code, signal }));
+  });
+  let marker: string | undefined;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try { marker = await readFileAsync(markerPath, "utf8"); break; }
+    catch { await new Promise((resolve) => setTimeout(resolve, 20)); }
+  }
+  if (!marker) {
+    child.kill("SIGKILL"); await closed;
+    assert.fail(`migration worker did not reach its in-transaction crash point: ${stderr}`);
+  }
+  assert.equal(child.kill("SIGKILL"), true, "migration worker must be forcibly terminated while the transaction is open");
+  const termination = await closed;
+  assert.equal(marker, "migration DDL executed; transaction not committed");
+  assert.ok(termination.signal === "SIGKILL" || termination.code !== 0, `worker unexpectedly completed: ${JSON.stringify(termination)} ${stderr}`);
+
+  const afterCrash = new Database(path);
+  try {
+    assert.equal((afterCrash.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 14);
+    assert.equal(afterCrash.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined, "uncommitted DDL must roll back on process death");
+    assert.equal((afterCrash.prepare("SELECT content FROM messages WHERE session_id=?").get(sessionId) as { content: string }).content, "Keep this message across process termination");
+    assert.equal((afterCrash.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
+  } finally { afterCrash.close(); }
+
+  const recovered = new XystStore(path);
+  try {
+    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 15);
+    assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
+    assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message across process termination");
     assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   } finally { recovered.close(); }
 }));
