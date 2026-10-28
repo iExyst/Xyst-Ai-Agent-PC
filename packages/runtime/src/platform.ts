@@ -34,7 +34,7 @@ export class ProcessStartError extends Error {
   }
 }
 
-async function killTree(child: ChildProcess): Promise<void> {
+async function killTree(child: ChildProcess): Promise<NodeJS.Timeout | undefined> {
   if (!child.pid) return;
   if (process.platform === "win32") {
     await new Promise<void>((resolveDone) => {
@@ -42,7 +42,13 @@ async function killTree(child: ChildProcess): Promise<void> {
       killer.once("close", () => resolveDone()); killer.once("error", () => resolveDone());
     });
   } else {
-    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
+    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); return; }
+    const escalation = setTimeout(() => {
+      try { process.kill(-child.pid!, 0); process.kill(-child.pid!, "SIGKILL"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill("SIGKILL"); }
+    }, 1_000);
+    escalation.unref();
+    return escalation;
   }
 }
 
@@ -58,18 +64,27 @@ export async function runProcess(command: string, args: string[], options: Proce
   child.once("spawn", () => { spawned = true; });
   if (options.stdin && child.stdin) options.onStdinWriter?.((value) => { if (child.stdin && !child.stdin.destroyed) child.stdin.write(value); }, () => child.stdin?.end());
   let stdout = ""; let stderr = ""; let timedOut = false;
+  let escalationTimer: NodeJS.Timeout | undefined;
   const maxOutputChars = options.maxOutputChars ?? 200_000;
   child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { if (stdout.length < maxOutputChars) stdout += chunk.slice(0, maxOutputChars - stdout.length); options.onStdout?.(chunk); });
   child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (stderr.length < maxOutputChars) stderr += chunk.slice(0, maxOutputChars - stderr.length); options.onStderr?.(chunk); });
   let timer: NodeJS.Timeout | undefined;
-  const cancel = () => { void killTree(child); };
+  const cancel = () => {
+    void killTree(child).then((timer) => {
+      escalationTimer = timer;
+      if (timer && (child.exitCode !== null || child.signalCode !== null)) clearTimeout(timer);
+    });
+  };
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   if (options.timeoutMs && options.timeoutMs > 0) timer = setTimeout(() => { timedOut = true; cancel(); }, options.timeoutMs);
   try {
     const result = await new Promise<ProcessResult>((resolveDone, reject) => {
       child.once("error", (error) => reject(!spawned && child.pid === undefined ? new ProcessStartError(error) : error));
-      child.once("close", (code, signal) => resolveDone({ code, signal, stdout, stderr, durationMs: Date.now() - started }));
+      child.once("close", (code, signal) => {
+        if (escalationTimer) clearTimeout(escalationTimer);
+        resolveDone({ code, signal, stdout, stderr, durationMs: Date.now() - started });
+      });
     });
     if (timedOut) throw new Error(`Process timed out after ${options.timeoutMs} ms`);
     if (options.signal?.aborted) throw new Error("Process cancelled");

@@ -2090,6 +2090,20 @@ test("aborting a process execution terminates it and returns a cancellation erro
   await assert.rejects(running, /Process cancelled/);
 });
 
+test("aborting a process execution force-kills a grandchild that ignores SIGTERM", async () => withTemp(async (root) => {
+  const marker = join(root, "surviving-grandchild.txt");
+  const controller = new AbortController();
+  const grandchild = `process.on("SIGTERM", () => {}); process.stdout.write("READY\\n"); setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"); }, 3000);`;
+  const parent = `const { spawn } = require("node:child_process"); const child = spawn(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { stdio: ["ignore", "pipe", "ignore"] }); child.stdout.on("data", chunk => process.stdout.write(chunk)); setInterval(() => {}, 1000);`;
+  const running = runProcess(process.execPath, ["-e", parent], {
+    signal: controller.signal,
+    onStdout: (chunk) => { if (chunk.includes("READY")) controller.abort(); }
+  });
+  await assert.rejects(running, /Process cancelled/);
+  await new Promise((resolve) => setTimeout(resolve, 3_300));
+  assert.equal(existsSync(marker), false, "a descendant that ignores SIGTERM must not survive cancellation");
+}));
+
 test("restricted profiles block paths and executables outside explicit allowlists", async () => withTemp(async (root) => {
   const allowed = join(root, "allowed"); const denied = join(root, "denied"); await mkdir(allowed); await mkdir(denied);
   const access = new AccessController({ mode: "restricted", readRoots: [allowed], writeRoots: [allowed], allowedExecutables: ["node"] });
