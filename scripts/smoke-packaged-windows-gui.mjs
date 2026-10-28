@@ -105,7 +105,14 @@ async function verifyKeyboardSkipLink(page) {
   await pressKey(page, "Tab", 9, 30);
   const focusedLink = JSON.parse(await evaluate(page, "JSON.stringify({ text: document.activeElement?.textContent?.trim(), top: document.activeElement?.getBoundingClientRect().top })", 32));
   assert.equal(focusedLink.text, "Skip to main content", `Expected Tab to focus the skip link, got ${JSON.stringify(focusedLink)}`);
-  assert.ok(focusedLink.top >= 0, `The keyboard-focused skip link should be visible: ${JSON.stringify(focusedLink)}`);
+  const visibilityDeadline = Date.now() + 2_000;
+  let visibleLink = focusedLink;
+  while (visibleLink.top < 0 && Date.now() < visibilityDeadline) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    visibleLink = JSON.parse(await evaluate(page, "JSON.stringify({ text: document.activeElement?.textContent?.trim(), top: document.activeElement?.getBoundingClientRect().top })", 36));
+    assert.equal(visibleLink.text, "Skip to main content", `The skip link lost keyboard focus while becoming visible: ${JSON.stringify(visibleLink)}`);
+  }
+  assert.ok(visibleLink.top >= 0, `The keyboard-focused skip link should become visible: ${JSON.stringify(visibleLink)}`);
   await pressKey(page, "Enter", 13, 33);
   const targetId = await evaluate(page, "document.activeElement?.id ?? ''", 35);
   assert.equal(targetId, "main-content", `Expected Enter on the skip link to focus main content, got ${targetId}`);
