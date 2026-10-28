@@ -34,29 +34,40 @@ export class ProcessStartError extends Error {
   }
 }
 
-async function killTree(child: ChildProcess): Promise<void> {
-  if (!child.pid) return;
+export async function killProcessTree(pid: number): Promise<void> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return;
   if (process.platform === "win32") {
     await new Promise<void>((resolveDone) => {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+      const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
       killer.once("close", () => resolveDone()); killer.once("error", () => resolveDone());
     });
   } else {
-    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
+    let target = -pid;
+    try { process.kill(target, "SIGTERM"); }
+    catch {
+      target = pid;
+      try { process.kill(target, "SIGTERM"); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return; }
+    }
     const deadline = Date.now() + 500;
-    let groupExited = false;
+    let targetExited = false;
     while (Date.now() < deadline) {
-      try { process.kill(-child.pid, 0); }
+      try { process.kill(target, 0); }
       catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ESRCH") { groupExited = true; break; }
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") { targetExited = true; break; }
       }
       await new Promise((resolveDone) => setTimeout(resolveDone, Math.min(50, Math.max(1, deadline - Date.now()))));
     }
-    if (!groupExited) {
-      try { process.kill(-child.pid, "SIGKILL"); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill("SIGKILL"); }
+    if (!targetExited) {
+      try { process.kill(target, "SIGKILL"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
     }
   }
+}
+
+async function killTree(child: ChildProcess): Promise<void> {
+  if (!child.pid) return;
+  try { await killProcessTree(child.pid); }
+  catch { child.kill("SIGKILL"); }
 }
 
 export async function runProcess(command: string, args: string[], options: ProcessOptions = {}): Promise<ProcessResult> {
