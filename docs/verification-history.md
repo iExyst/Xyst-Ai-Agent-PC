@@ -1790,3 +1790,8 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 - Memory edits now update content and remove that memory's cached semantic embeddings in a single SQLite transaction, so interruption cannot leave an old vector attached to new text.
 - The focused memory regression passes 1/1 and verifies edited content is absent from semantic retrieval until re-indexed, deleting the final memory cascades to its embedding, and semantic search no longer returns the deleted entry. Full `npm test` passed (runtime 183 passed / 2 host-specific skips, CLI 26/26, release checks 5/5), `npm run typecheck` passed, and `git diff --check` passed. Hosted checks have not yet run for this change.
 - This closes deterministic edit/delete propagation for the tested profile. Broader retrieval quality and larger-profile deletion behavior remain open; E8 stays partial.
+
+## Version-one SQLite profile upgrade · 2026-10-28
+
+- Built a clean legacy v1 SQLite profile with the original session/message/tool, mission, agent, job, artifact, usage, and settings schema plus a saved user message. Opening it with the current runtime applied migrations 2 through 15, preserved the exact historical message, and returned `PRAGMA integrity_check = ok`.
+- Focused migration regression passed 1/1. Full `npm test` passed (runtime 185 passed / 2 host-specific skips, CLI 26/26, release checks 5/5), workspace `npm run typecheck` passed, and `git diff --check` passed. This verifies a clean version-one upgrade path only; other starting versions, large production-sized databases, and crash interruption remain open under E7.
