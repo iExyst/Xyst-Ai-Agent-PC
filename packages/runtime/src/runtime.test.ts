@@ -1776,7 +1776,7 @@ test("agent nudges a narrated pseudo-tool call without executing it and recovers
   } finally { store.close(); }
 }));
 
-test("completion feedback identifies the exact successful read index omitted from the selected evidence", async () => withTemp(async (root) => {
+test("completion feedback identifies omitted read evidence and maps an unordered candidate set safely", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "completion-read-index.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model"); let turn = 0; let correction = "";
   const provider = {
@@ -1790,16 +1790,16 @@ test("completion feedback identifies the exact successful read index omitted fro
       ] } }] };
       if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `wrong-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [2, 3] }) } }] } }] };
       correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
-      assert.match(JSON.stringify(request.messages), /Matching successful file_read evidence indexes: 1/);
-      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `correct-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [2, 3, 1] }) } }] } }] };
+      assert.match(JSON.stringify(request.messages), /Matching successful readback evidence indexes: 1/);
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `correct-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1, 3, 2] }) } }] } }] };
     }
   };
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
       .run("Create marker.txt with exactly READY and verify it by reading it back.", { workspace: root, model: "test-model", maxTurns: 4, completionCriteria: ["Create marker.txt with exactly READY.", "The requested command verification was completed."], expectedOutputPaths: ["marker.txt"] });
-    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId))); assert.equal(correction.includes("Matching successful file_read evidence indexes: 1"), true);
+    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId))); assert.equal(correction.includes("Matching successful readback evidence indexes: 1"), true);
     const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string | null }>;
-    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /Matching successful file_read evidence indexes: 1/);
+    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /Matching successful readback evidence indexes: 1/);
     assert.equal(completions[1]?.status, "completed"); assert.equal(JSON.parse(completions[1]!.output_json!).verified, true);
   } finally { store.close(); }
 }));

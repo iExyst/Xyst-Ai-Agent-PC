@@ -663,14 +663,14 @@ export class AgentRunner {
       return `${index + 1}: ${JSON.stringify(item.name)}${path ? ` path=${JSON.stringify(path)}` : ""}`;
     };
     tools.task_complete = {
-      definition: { type: "function", function: { name: "task_complete", description: "Verify every required user or mission criterion shown in the system instructions against successful Xyst tool results. The runtime supplies the criteria and does not accept replacement criteria. Provide one evidence index for each required criterion in displayed order, one index if the same result supports every criterion, or a shorter list of distinct evidence indexes that collectively covers the request. For a shorter list, the runtime matches required tool, URL, and output-path criteria to the corresponding results. Indexes are one-based in the current system message's available evidence list. A declared text file output is verified only by a successful file_read of that exact path; supported office documents may be verified by a successful office_read of that exact path. Creating or patching a file is not sufficient. This tool does not itself create evidence.", parameters: { type: "object", properties: { evidence_tool_call_indexes: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 1, maxItems: 50 } }, required: ["evidence_tool_call_indexes"], additionalProperties: false } } },
+      definition: { type: "function", function: { name: "task_complete", description: "Verify every required user or mission criterion shown in the system instructions against successful Xyst tool results. The runtime supplies the criteria and does not accept replacement criteria. Provide one evidence index if the same result supports every criterion, or a set of distinct candidate evidence indexes that collectively covers the request; candidate order does not need to match criterion order. The runtime matches required tools, URLs, and output paths to the corresponding results. Indexes are one-based in the current system message's available evidence list. A declared text file output is verified only by a successful file_read of that exact path; supported office documents may be verified by a successful office_read of that exact path. Creating or patching a file is not sufficient. This tool does not itself create evidence.", parameters: { type: "object", properties: { evidence_tool_call_indexes: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 1, maxItems: 50 } }, required: ["evidence_tool_call_indexes"], additionalProperties: false } } },
       execute: async (input) => {
         const args = asRecord(input);
         const suppliedIndexes = args.evidence_tool_call_indexes;
         let indexes = Array.isArray(suppliedIndexes) && requiredCompletionCriteria.length > 1 && suppliedIndexes.length === 1
           ? requiredCompletionCriteria.map(() => suppliedIndexes[0])
           : suppliedIndexes;
-        if (Array.isArray(suppliedIndexes) && suppliedIndexes.length > 1 && suppliedIndexes.length < requiredCompletionCriteria.length && suppliedIndexes.every((item) => Number.isSafeInteger(item) && (item as number) >= 1 && (item as number) <= currentEvidence.length)) {
+        if (Array.isArray(suppliedIndexes) && suppliedIndexes.length > 1 && suppliedIndexes.length <= requiredCompletionCriteria.length && suppliedIndexes.every((item) => Number.isSafeInteger(item) && (item as number) >= 1 && (item as number) <= currentEvidence.length)) {
           const candidates = [...new Set(suppliedIndexes as number[])];
           const candidateRows = candidates.map((index) => ({ index, evidence: currentEvidence[index - 1]! }));
           const parseOutput = (value: string): Record<string, unknown> => { try { return asRecord(JSON.parse(value) as unknown); } catch { return {}; } };
@@ -703,11 +703,17 @@ export class AgentRunner {
             }
             const expectedOutputPath = inferredOutputPaths.find((path) => normalizedOutputPath(path) === normalizedOutputPath(criterion));
             if (expectedOutputPath) {
-              const match = candidateRows.find(({ evidence }) => evidence.name === "file_read" && evidencePath(evidence) !== undefined && normalizedOutputPath(evidencePath(evidence)!) === normalizedOutputPath(expectedOutputPath));
+              const isReadbackForPath = (evidence: { name: string; input_json: string; output_json: string }) => {
+                if (!["file_read", "office_read"].includes(evidence.name)) return false;
+                const inputPath = parseOutput(evidence.input_json).path;
+                const resultPath = parseOutput(evidence.output_json).path;
+                return [inputPath, resultPath].some((path) => typeof path === "string" && normalizedOutputPath(path) === normalizedOutputPath(expectedOutputPath));
+              };
+              const match = candidateRows.find(({ evidence }) => isReadbackForPath(evidence));
               if (!match) {
-                const matchingReads = currentEvidence.flatMap((evidence, index) => evidence.name === "file_read" && evidencePath(evidence) !== undefined && normalizedOutputPath(evidencePath(evidence)!) === normalizedOutputPath(expectedOutputPath) ? [index + 1] : []);
-                const correction = matchingReads.length ? ` Matching successful file_read evidence indexes: ${matchingReads.join(", ")}. Include one of those indexes.` : " Read the output with file_read first, then include its index.";
-                throw new Error(`The selected evidence indexes must include a successful file_read of declared output ${expectedOutputPath}.${correction}`);
+                const matchingReads = currentEvidence.flatMap((evidence, index) => isReadbackForPath(evidence) ? [index + 1] : []);
+                const correction = matchingReads.length ? ` Matching successful readback evidence indexes: ${matchingReads.join(", ")}. Include one of those indexes.` : " Read the output with file_read or office_read first, then include its index.";
+                throw new Error(`The selected evidence indexes must include a successful file_read or office_read of declared output ${expectedOutputPath}.${correction}`);
               }
               return match.index;
             }
@@ -736,7 +742,7 @@ export class AgentRunner {
           }
         }
         if (!requiredCompletionCriteria.length || requiredCompletionCriteria.length > 50 || !Array.isArray(indexes) || indexes.length !== requiredCompletionCriteria.length || !indexes.every((item) => Number.isSafeInteger(item) && (item as number) >= 1 && (item as number) <= currentEvidence.length)) {
-          throw new Error(`Completion verification needs exactly ${requiredCompletionCriteria.length} evidence indexes in criterion order; received ${receivedIndexCount}. One index is accepted only when the same tool result supports every criterion.`);
+          throw new Error(`Completion verification needs one evidence index shared by every criterion, or between 2 and ${requiredCompletionCriteria.length} candidate evidence indexes; received ${receivedIndexCount}.`);
         }
         const checked = requiredCompletionCriteria.map((criterion, index) => {
           const evidenceId = currentEvidence[(indexes[index] as number) - 1]!.id;
