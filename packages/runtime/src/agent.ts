@@ -672,7 +672,10 @@ export class AgentRunner {
         if (Array.isArray(suppliedIds)) {
           if (!suppliedIds.every((id) => typeof id === "string" && id.length > 0)) throw new Error("Evidence tool call IDs must be non-empty strings");
           const resolvedIndexes = suppliedIds.map((id) => currentEvidence.findIndex((evidence) => evidence.id === id) + 1);
-          if (resolvedIndexes.some((index) => index === 0)) throw new Error("Every evidence_tool_call_id must appear in the current system message's available evidence list");
+          if (resolvedIndexes.some((index) => index === 0)) {
+            const evidenceList = currentEvidence.map(evidenceLabel).join("\n");
+            throw new Error(`Every evidence_tool_call_id must appear in the current system message's available evidence list. Provide IDs only; file contents, marker values, and expected output text are not evidence IDs. Available evidence:\n${evidenceList}`);
+          }
           suppliedIndexes = resolvedIndexes;
         }
         let indexes = Array.isArray(suppliedIndexes) && requiredCompletionCriteria.length > 1 && suppliedIndexes.length === 1

@@ -1823,11 +1823,13 @@ test("task completion accepts stable IDs from the persisted evidence list", asyn
         listedIds = calls.map((call) => call.id);
         const system = String(request.messages.find((message) => message.role === "system")?.content ?? "");
         for (const id of listedIds) assert.ok(system.includes(id), `available evidence should show stable ID ${id}`);
-        return response("id-evidence-invalid", "task_complete", { evidence_tool_call_ids: ["not-in-this-session"] });
+        return response("id-evidence-invalid", "task_complete", { evidence_tool_call_ids: [listedIds[2]!, "READY"] });
       }
       if (turn === 5) {
         const correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
         assert.match(correction, /Every evidence_tool_call_id must appear in the current system message's available evidence list/);
+        assert.match(correction, /file contents, marker values, and expected output text are not evidence IDs/);
+        assert.match(correction, /id-evidence-read/);
         return response("id-evidence-missing-process", "task_complete", { evidence_tool_call_ids: [listedIds[0], listedIds[2]] });
       }
       if (turn === 6) {
