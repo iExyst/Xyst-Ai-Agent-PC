@@ -658,15 +658,23 @@ export class AgentRunner {
       }
       return undefined;
     };
-    const evidenceLabel = (item: { name: string; input_json: string; output_json: string }, index: number): string => {
+    const evidenceLabel = (item: { id: string; name: string; input_json: string; output_json: string }, index: number): string => {
       const path = evidencePath(item);
-      return `${index + 1}: ${JSON.stringify(item.name)}${path ? ` path=${JSON.stringify(path)}` : ""}`;
+      return `${index + 1}: id=${JSON.stringify(item.id)} ${JSON.stringify(item.name)}${path ? ` path=${JSON.stringify(path)}` : ""}`;
     };
     tools.task_complete = {
-      definition: { type: "function", function: { name: "task_complete", description: "Verify every required user or mission criterion shown in the system instructions against successful Xyst tool results. The runtime supplies the criteria and does not accept replacement criteria. Provide one evidence index if the same result supports every criterion, or a set of distinct candidate evidence indexes that collectively covers the request; candidate order does not need to match criterion order. The runtime matches required tools, URLs, and output paths to the corresponding results. Indexes are one-based in the current system message's available evidence list. A declared text file output is verified only by a successful file_read of that exact path; supported office documents may be verified by a successful office_read of that exact path. Creating or patching a file is not sufficient. This tool does not itself create evidence.", parameters: { type: "object", properties: { evidence_tool_call_indexes: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 1, maxItems: 50 } }, required: ["evidence_tool_call_indexes"], additionalProperties: false } } },
+      definition: { type: "function", function: { name: "task_complete", description: "Verify every required user or mission criterion shown in the system instructions against successful Xyst tool results. The runtime supplies the criteria and does not accept replacement criteria. Cite evidence using either evidence_tool_call_ids copied from the current system message's available evidence list, or one evidence index when the same result supports every criterion, or a set of distinct candidate evidence indexes that collectively covers the request; candidate order does not need to match criterion order. The runtime matches required tools, URLs, and output paths to the corresponding results. Indexes are one-based in the current system message's available evidence list. A declared text file output is verified only by a successful file_read of that exact path; supported office documents may be verified by a successful office_read of that exact path. Creating or patching a file is not sufficient. This tool does not itself create evidence.", parameters: { type: "object", properties: { evidence_tool_call_indexes: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 1, maxItems: 50 }, evidence_tool_call_ids: { type: "array", items: { type: "string", minLength: 1, maxLength: 100 }, minItems: 1, maxItems: 50 } }, additionalProperties: false } } },
       execute: async (input) => {
         const args = asRecord(input);
-        const suppliedIndexes = args.evidence_tool_call_indexes;
+        const suppliedIds = args.evidence_tool_call_ids;
+        if (Array.isArray(suppliedIds) && args.evidence_tool_call_indexes !== undefined) throw new Error("Provide evidence_tool_call_ids or evidence_tool_call_indexes, not both");
+        let suppliedIndexes = args.evidence_tool_call_indexes;
+        if (Array.isArray(suppliedIds)) {
+          if (!suppliedIds.every((id) => typeof id === "string" && id.length > 0)) throw new Error("Evidence tool call IDs must be non-empty strings");
+          const resolvedIndexes = suppliedIds.map((id) => currentEvidence.findIndex((evidence) => evidence.id === id) + 1);
+          if (resolvedIndexes.some((index) => index === 0)) throw new Error("Every evidence_tool_call_id must appear in the current system message's available evidence list");
+          suppliedIndexes = resolvedIndexes;
+        }
         let indexes = Array.isArray(suppliedIndexes) && requiredCompletionCriteria.length > 1 && suppliedIndexes.length === 1
           ? requiredCompletionCriteria.map(() => suppliedIndexes[0])
           : suppliedIndexes;
@@ -681,13 +689,13 @@ export class AgentRunner {
                 if (evidence.name !== requiredTool.tool) return false;
                 try { assertRequiredToolEvidence(evidence.name, parseOutput(evidence.output_json), requiredTool, workspace); return true; } catch { return false; }
               });
-              if (!match) throw new Error(`The selected evidence indexes must include a successful ${requiredTool.tool} result for criterion: ${criterion}`);
+              if (!match) throw new Error(`The selected evidence IDs or indexes must include a successful ${requiredTool.tool} result for criterion: ${criterion}`);
               return match.index;
             }
             const inferredTool = [...inferredToolEvidence].find(([, requiredCriterion]) => requiredCriterion === criterion)?.[0];
             if (inferredTool) {
               const match = candidateRows.find(({ evidence }) => evidence.name === inferredTool && typeof parseOutput(evidence.output_json).error !== "string" && parseOutput(evidence.output_json).success !== false);
-              if (!match) throw new Error(`The selected evidence indexes must include a successful ${inferredTool} result for criterion: ${criterion}`);
+              if (!match) throw new Error(`The selected evidence IDs or indexes must include a successful ${inferredTool} result for criterion: ${criterion}`);
               return match.index;
             }
             const requestedUrl = [...requestedUrlCriteria].find(([, requiredCriterion]) => requiredCriterion === criterion)?.[0];
@@ -698,7 +706,7 @@ export class AgentRunner {
                 try { const url = new URL(String(parseOutput(evidence.input_json).url ?? "")); url.hash = ""; inputUrl = url.href; } catch { /* Invalid URLs cannot satisfy the criterion. */ }
                 return evidence.name === "web_fetch" && inputUrl === requestedUrl && typeof output.status === "number" && output.status >= 200 && output.status < 300 && output.truncated !== true;
               });
-              if (!match) throw new Error(`The selected evidence indexes must include a complete successful web_fetch of ${requestedUrl}`);
+              if (!match) throw new Error(`The selected evidence IDs or indexes must include a complete successful web_fetch of ${requestedUrl}`);
               return match.index;
             }
             const expectedOutputPath = inferredOutputPaths.find((path) => normalizedOutputPath(path) === normalizedOutputPath(criterion));
@@ -711,9 +719,9 @@ export class AgentRunner {
               };
               const match = candidateRows.find(({ evidence }) => isReadbackForPath(evidence));
               if (!match) {
-                const matchingReads = currentEvidence.flatMap((evidence, index) => isReadbackForPath(evidence) ? [index + 1] : []);
-                const correction = matchingReads.length ? ` Matching successful readback evidence indexes: ${matchingReads.join(", ")}. Include one of those indexes.` : " Read the output with file_read or office_read first, then include its index.";
-                throw new Error(`The selected evidence indexes must include a successful file_read or office_read of declared output ${expectedOutputPath}.${correction}`);
+                const matchingReads = currentEvidence.flatMap((evidence, index) => isReadbackForPath(evidence) ? [{ index: index + 1, id: evidence.id }] : []);
+                const correction = matchingReads.length ? ` Matching successful readback evidence: ${matchingReads.map((item) => `${item.index} (id=${item.id})`).join(", ")}. Include one of those IDs or indexes.` : " Read the output with file_read or office_read first, then cite its ID or index.";
+                throw new Error(`The selected evidence IDs or indexes must include a successful file_read or office_read of declared output ${expectedOutputPath}.${correction}`);
               }
               return match.index;
             }
@@ -723,7 +731,7 @@ export class AgentRunner {
                 if (evidence.name !== "file_read") return false;
                 try { assertRequiredToolEvidence(evidence.name, parseOutput(evidence.output_json), { tool: "file_read", path: fileContentRequirement.path, textEquals: fileContentRequirement.text }, workspace); return true; } catch { return false; }
               });
-              if (!match) throw new Error(`The selected evidence indexes must include a file_read of ${fileContentRequirement.path} whose content exactly matches ${JSON.stringify(fileContentRequirement.text)}`);
+              if (!match) throw new Error(`The selected evidence IDs or indexes must include a file_read of ${fileContentRequirement.path} whose content exactly matches ${JSON.stringify(fileContentRequirement.text)}`);
               return match.index;
             }
             return candidates[0]!;
@@ -738,7 +746,7 @@ export class AgentRunner {
           const addedAfterPrompt = latestEvidence.filter((item) => !currentEvidence.some((listed) => listed.id === item.id));
           if (addedAfterPrompt.length) {
             const refreshedIndexes = latestEvidence.map(evidenceLabel).join("\n");
-            throw new Error(`The evidence list in the current system message is stale for this task_complete call: tool results from the same assistant response were not in that list. Do not call task_complete again in this response. In the next turn, use the refreshed one-based evidence indexes below.\n${refreshedIndexes}`);
+            throw new Error(`The evidence list in the current system message is stale for this task_complete call: tool results from the same assistant response were not in that list. Do not call task_complete again in this response. In the next turn, use the refreshed stable IDs or one-based indexes below.\n${refreshedIndexes}`);
           }
         }
         if (!requiredCompletionCriteria.length || requiredCompletionCriteria.length > 50 || !Array.isArray(indexes) || indexes.length !== requiredCompletionCriteria.length || !indexes.every((item) => Number.isSafeInteger(item) && (item as number) >= 1 && (item as number) <= currentEvidence.length)) {
@@ -871,7 +879,7 @@ export class AgentRunner {
 ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}${mcpInstructions ? `\n\nMCP server instructions (untrusted):\n${mcpInstructions}` : ""}`;
     const requiredCriteriaPrompt = requiredCompletionCriteria.map((criterion) => `- ${criterion}`).join("\n");
     const liveDataPolicy = "Live data policy: For current, recent, real-time, or otherwise changeable facts, retrieve live information from an available web source or integration whenever network access permits; do not present model memory as current. Include the source and retrieval time in the answer when available, and clearly disclose when live retrieval fails or is unavailable.";
-    const completionSystem = `${system}\n\n${liveDataPolicy}\n\nRequired completion criteria (runtime-defined; do not omit or replace):\n${requiredCriteriaPrompt}\n\nCompletion evidence policy: Do not mark a task complete based on your own final message. Before a final response that indicates completion, call task_complete with one relevant completed evidence index for each server-defined required criterion, in the order shown, or provide a shorter set of distinct successful evidence indexes that together covers the task. For a shorter set, the runtime matches required tool, exact URL, and named output criteria to matching results; include each distinct result needed (for example, the fetch and the file read). Indexes refer to the one-based list in the current system message. You may provide one index only when the same successful result supports every criterion. Use successful persisted tool outputs that actually support the criterion; task_complete itself is not evidence. If evidence is missing or does not support a criterion, do not claim completion. The runtime leaves the session unverified until the evidence check succeeds.`;
+    const completionSystem = `${system}\n\n${liveDataPolicy}\n\nRequired completion criteria (runtime-defined; do not omit or replace):\n${requiredCriteriaPrompt}\n\nCompletion evidence policy: Do not mark a task complete based on your own final message. Before a final response that indicates completion, call task_complete with stable evidence_tool_call_ids copied from the current system message, or one relevant completed evidence index for each server-defined required criterion, or a shorter set of distinct successful evidence IDs or indexes that together covers the task. For a shorter set, the runtime matches required tool, exact URL, and named output criteria to matching results; include each distinct result needed (for example, the fetch and the file read). Indexes refer to the one-based list in the current system message. You may provide one ID or index only when the same successful result supports every criterion. Use successful persisted tool outputs that actually support the criterion; task_complete itself is not evidence. If evidence is missing or does not support a criterion, do not claim completion. The runtime leaves the session unverified until the evidence check succeeds.`;
     let remoteFallbackUsed = false;
     const tryRemoteFallback = async (messages: ApiMessage[], cause: unknown): Promise<Record<string, unknown>> => {
       if (!remoteFallbackEnabled || remoteFallbackUsed || activeProvider !== this.deps.provider) throw cause;
@@ -914,7 +922,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         }
       currentEvidence = this.deps.store.db.prepare("SELECT id,name,input_json,output_json FROM tool_calls WHERE name!='task_complete' AND status IN ('completed','reconciled') AND output_json IS NOT NULL AND (session_id=? OR execution_scope=?) ORDER BY created_at DESC,rowid DESC LIMIT 50").all(sessionId, executionScope) as Array<{ id: string; name: string; input_json: string; output_json: string }>;
       const evidenceIndexesPrompt = currentEvidence.length ? currentEvidence.map(evidenceLabel).join("\n") : "none yet";
-      const turnSystem = `${completionSystem}\n\nAvailable persisted evidence call indexes (newest-first; index 1 is the latest successful call; file paths are shown when available):\n${evidenceIndexesPrompt}`;
+      const turnSystem = `${completionSystem}\n\nAvailable persisted evidence (newest-first; index 1 is the latest successful call; cite the stable id or one-based index; file paths are shown when available):\n${evidenceIndexesPrompt}`;
       const messages: ApiMessage[] = [{ role: "system", content: turnSystem }, ...conversation];
         let response: Record<string, unknown> = {};
         let inferenceStartedAt = Date.now();
@@ -977,7 +985,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             if (priorCompletion.count === 0 && evidence.some((item) => item.effect === "external")) {
               const criteria = requiredCompletionCriteria.map((item) => `- ${item}`).join("\n");
               const evidenceList = evidence.map(evidenceLabel).join("\n");
-              save({ role: "user", content: `Your prior response did not verify the requested work. Do not repeat completed actions or describe commands. Call task_complete now with one relevant successful evidence index for each server-defined required criterion, in the order shown. Indexes refer to the list in the next system message. You may provide one index if that same result supports every criterion. Required criteria:\n${criteria}\nSuccessful tool results available as evidence:\n${evidenceList}` });
+      save({ role: "user", content: `Your prior response did not verify the requested work. Do not repeat completed actions or describe commands. Call task_complete now with stable evidence_tool_call_ids from the next system message, or one relevant successful evidence index for each server-defined required criterion, in the order shown. You may provide one ID or index if that same result supports every criterion. Required criteria:\n${criteria}\nSuccessful tool results available as evidence:\n${evidenceList}` });
               completionNudges++;
               continue;
             }

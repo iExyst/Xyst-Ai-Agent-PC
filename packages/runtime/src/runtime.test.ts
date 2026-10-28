@@ -1433,7 +1433,8 @@ test("agent completion requires successful persisted tool evidence", async () =>
     const verified = await agent.run("List files in the workspace", { workspace: root, maxTurns: 4 });
     assert.equal(verified.status, "completed");
     assert.doesNotMatch(JSON.stringify(completionDefinition), /"criteria"/, "the model cannot replace or paraphrase runtime-defined criteria");
-    assert.ok(completionSystemWithEvidence.includes("Available persisted evidence call indexes"));
+    assert.ok(completionSystemWithEvidence.includes("Available persisted evidence (newest-first"));
+    assert.match(completionSystemWithEvidence, /id="[^"]+"/);
     assert.ok(completionSystemWithEvidence.includes(`Current workspace root: ${root}`));
     assert.ok(completionSystemWithEvidence.includes('Use "." for the workspace root'));
     assert.ok(completionSystemWithEvidence.includes('do not prepend "workspace/"'));
@@ -1441,7 +1442,7 @@ test("agent completion requires successful persisted tool evidence", async () =>
     assert.ok(completionSystemWithEvidence.includes("Honor the requested runtime, test framework, and exact verification command"));
     assert.ok(completionSystemWithEvidence.includes("If a tool call fails, correct the path or arguments and retry"));
     assert.ok(completionSystemWithEvidence.includes("retrieve live information from an available web source or integration"));
-    assert.ok(completionSystemWithEvidence.includes('1: "file_list"'), "one-based indexes and safe tool names are shown to the model");
+    assert.match(completionSystemWithEvidence, /1: id="[^"]+" "file_list"/, "stable IDs, one-based indexes, and safe tool names are shown to the model");
     assert.equal(round, 2, "successful verification ends the run without another inference turn");
     assert.equal(JSON.parse((store.db.prepare("SELECT details_json FROM usage WHERE session_id=? ORDER BY rowid DESC LIMIT 1").get(verified.sessionId) as { details_json: string }).details_json).task_outcome, "verified_success");
     const checked = store.db.prepare("SELECT output_json FROM tool_calls WHERE session_id=? AND name='task_complete' AND status='completed'").get(verified.sessionId) as { output_json: string };
@@ -1661,12 +1662,12 @@ test("same-response file writes and readbacks explain stale completion indexes a
       .run("Use file_create to create marker.txt with exactly READY, then use file_read to verify it and call task_complete.", { workspace: root, maxTurns: 2, expectedOutputPaths: ["marker.txt"] });
     assert.equal(result.status, "completed");
     assert.equal(await readFileAsync(join(root, "marker.txt"), "utf8"), "READY");
-    assert.match(refreshedSystem, /1: "file_read" path=.*marker\.txt"/);
-    assert.match(refreshedSystem, /2: "file_create" path=.*marker\.txt"/);
+    assert.match(refreshedSystem, /1: id="same-response-read" "file_read" path=.*marker\.txt"/);
+    assert.match(refreshedSystem, /2: id="same-response-create" "file_create" path=.*marker\.txt"/);
     const calls = store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId) as Array<{ name: string; status: string; output_json: string | null }>;
     assert.deepEqual(calls.map(({ name, status }) => [name, status]), [["file_create", "completed"], ["file_read", "completed"], ["task_complete", "failed"], ["task_complete", "completed"]]);
     assert.match(calls[2]!.output_json!, /stale for this task_complete call/);
-    assert.match(calls[2]!.output_json!, /next turn, use the refreshed one-based evidence indexes/);
+    assert.match(calls[2]!.output_json!, /next turn, use the refreshed stable IDs or one-based indexes/);
     assert.equal(JSON.parse(calls[3]!.output_json!).verified, true);
   } finally { store.close(); }
 }));
@@ -1790,16 +1791,62 @@ test("completion feedback identifies omitted read evidence and maps an unordered
       ] } }] };
       if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `wrong-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [2, 3] }) } }] } }] };
       correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
-      assert.match(JSON.stringify(request.messages), /Matching successful readback evidence indexes: 1/);
+      assert.match(JSON.stringify(request.messages), /Matching successful readback evidence: 1 \(id=/);
       return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `correct-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1, 3, 2] }) } }] } }] };
     }
   };
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
       .run("Create marker.txt with exactly READY and verify it by reading it back.", { workspace: root, model: "test-model", maxTurns: 4, completionCriteria: ["Create marker.txt with exactly READY.", "The requested command verification was completed."], expectedOutputPaths: ["marker.txt"] });
-    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId))); assert.equal(correction.includes("Matching successful readback evidence indexes: 1"), true);
+    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId))); assert.match(correction, /Matching successful readback evidence: 1 \(id=/);
     const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string | null }>;
-    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /Matching successful readback evidence indexes: 1/);
+    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /Matching successful readback evidence: 1 \(id=/);
+    assert.equal(completions[1]?.status, "completed"); assert.equal(JSON.parse(completions[1]!.output_json!).verified, true);
+  } finally { store.close(); }
+}));
+
+test("task completion accepts stable IDs from the persisted evidence list", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "completion-evidence-ids.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0; let listedIds: string[] = [];
+  const response = (id: string, name: string, args: Record<string, unknown>) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async (request: { messages: Array<{ role: string; content?: unknown }> }) => {
+      turn++;
+      if (turn === 1) return response("id-evidence-create", "file_create", { path: "marker.txt", content: "READY" });
+      if (turn === 2) return response("id-evidence-process", "run_process", { executable: "node", args: ["--version"], cwd: root });
+      if (turn === 3) return response("id-evidence-read", "file_read", { path: "marker.txt" });
+      if (turn === 4) {
+        const calls = store.db.prepare("SELECT id,name FROM tool_calls WHERE name IN ('file_create','run_process','file_read') ORDER BY rowid").all() as Array<{ id: string; name: string }>;
+        assert.deepEqual(calls.map((call) => call.name), ["file_create", "run_process", "file_read"]);
+        listedIds = calls.map((call) => call.id);
+        const system = String(request.messages.find((message) => message.role === "system")?.content ?? "");
+        for (const id of listedIds) assert.ok(system.includes(id), `available evidence should show stable ID ${id}`);
+        return response("id-evidence-invalid", "task_complete", { evidence_tool_call_ids: ["not-in-this-session"] });
+      }
+      if (turn === 5) {
+        const correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
+        assert.match(correction, /Every evidence_tool_call_id must appear in the current system message's available evidence list/);
+        return response("id-evidence-complete", "task_complete", { evidence_tool_call_ids: [...listedIds].reverse() });
+      }
+      throw new Error(`Unexpected model turn ${turn}: ${JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls ORDER BY rowid").all())}`);
+    }
+  };
+  try {
+    const expectedPath = join(root, "marker.txt");
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Create marker.txt with exactly READY and verify it by reading it back.", {
+        workspace: root,
+        model: "test-model",
+        maxTurns: 6,
+        expectedOutputPaths: ["marker.txt"],
+        requiredToolEvidence: [{ tool: "run_process", exitCode: 0 }]
+      });
+    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId)));
+    assert.equal(turn, 5);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string | null }>;
+    assert.equal(completions.length, 2);
+    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /must appear in the current system message's available evidence list/);
     assert.equal(completions[1]?.status, "completed"); assert.equal(JSON.parse(completions[1]!.output_json!).verified, true);
   } finally { store.close(); }
 }));
@@ -2108,9 +2155,9 @@ test("declared outputs require exact readback and the refreshed evidence list id
     assert.equal(completionCalls[0]?.status, "failed", "a file_create result cannot verify a declared file output");
     assert.match(completionCalls[0]!.output_json, /readback completed after the displayed evidence list was sent/);
     assert.equal(completionCalls[1]?.status, "completed");
-    assert.match(prompts[0]!, /Available persisted evidence call indexes \(newest-first/);
-    assert.match(prompts[1]!, /1: "file_read" path=/);
-    assert.match(prompts[1]!, /2: "file_create" path=/);
+    assert.match(prompts[0]!, /Available persisted evidence \(newest-first/);
+    assert.match(prompts[1]!, /1: id="read-expected" "file_read" path=/);
+    assert.match(prompts[1]!, /2: id="write-expected" "file_create" path=/);
   } finally { store.close(); }
 }));
 
@@ -2129,7 +2176,7 @@ test("agent prompts once for evidence verification when actions succeeded but th
       if (turn === 3) return { choices: [{ message: { role: "assistant", content: "The file was created and checked." } }] };
       if (turn === 4) {
         const reminder = request.messages.filter((message) => message.role === "user").at(-1)?.content;
-        assert.match(String(reminder), /call task_complete now/i); assert.match(String(reminder), /1: "file_read"/);
+        assert.match(String(reminder), /call task_complete now/i); assert.match(String(reminder), /1: id="nudge-read-output" "file_read"/);
         return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "nudge-task-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
       }
       return { choices: [{ message: { role: "assistant", content: "Verified." } }] };
