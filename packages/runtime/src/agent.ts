@@ -746,7 +746,7 @@ export class AgentRunner {
           if (!evidenceRow) throw new Error(`Completion evidence ${evidenceId} is no longer available`);
           const subsequentMutations = this.deps.store.db.prepare("SELECT name,input_json FROM tool_calls WHERE rowid>? AND (session_id=? OR execution_scope=?) AND status IN ('completed','reconciled') ORDER BY rowid")
             .all(evidenceRow.rowid, sessionId, executionScope) as Array<{ name: string; input_json: string }>;
-          const mutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "git_clone", "run_process", "run_shell", "desktop_action"]);
+          const mutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact", "git_clone", "run_process", "run_shell", "desktop_action"]);
           const evidenceFilePath = ["file_read", "office_read"].includes(evidence.name) ? evidencePath(evidence) : undefined;
           const laterRelevantMutation = ["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name) ? subsequentMutations.find((mutation) => {
             if (!mutationNames.has(mutation.name)) return false;
@@ -1030,7 +1030,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             const requestHash = effect === "external" ? createHash("sha256").update(`${name}:${stableJson(args)}`).digest("hex") : undefined;
             const tracksWorkspaceRevision = name === "run_process" || workspaceMutationNames.has(name);
             const workspaceRevision = tracksWorkspaceRevision
-              ? (this.deps.store.db.prepare("SELECT COALESCE(MAX(rowid),0) AS revision FROM tool_calls WHERE execution_scope=? AND status IN ('completed','reconciled') AND name IN ('file_create','file_patch','file_delete','file_move','office_create','office_edit','office_preview','browser_download','git_clone','git_create_branch','git_fetch','git_stage','git_commit') AND name<>?").get(executionScope, name) as { revision: number }).revision
+              ? (this.deps.store.db.prepare("SELECT COALESCE(MAX(rowid),0) AS revision FROM tool_calls WHERE execution_scope=? AND status IN ('completed','reconciled') AND name IN ('file_create','file_patch','file_delete','file_move','office_create','office_edit','office_preview','browser_download','github_download_release_asset','github_download_actions_artifact','git_clone','git_create_branch','git_fetch','git_stage','git_commit') AND name<>?").get(executionScope, name) as { revision: number }).revision
               : undefined;
             const idempotencyHash = requestHash && workspaceRevision !== undefined
               ? createHash("sha256").update(requestHash + ":workspace-revision:" + workspaceRevision).digest("hex")

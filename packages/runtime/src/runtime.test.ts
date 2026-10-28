@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile as readFileAsync, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile as readFileAsync, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1656,6 +1656,45 @@ test("completion rejects a file read made stale by a later patch and accepts a f
     assert.equal(JSON.parse(calls[5]!.output_json!).verified, true);
   } finally { store.close(); }
 }));
+
+test("completion rejects file evidence invalidated by a GitHub download", async () => {
+  for (const downloadName of ["github_download_release_asset", "github_download_actions_artifact"]) {
+    await withTemp(async (root) => {
+      const store = new XystStore(join(root, "stale-read-after-github-download.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+      config.set("global", "model.default", "test-model"); let turn = 0; const downloadedPath = join(root, "result.zip");
+      const provider = {
+        redact: (value: string) => value,
+        streamChatWithTools: async () => {
+          turn++;
+          if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `seed-${downloadName}`, type: "function", function: { name: "file_create", arguments: JSON.stringify({ path: "result.zip", content: "before" }) } }] } }] };
+          if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `read-before-${downloadName}`, type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.zip" }) } }] } }] };
+          if (turn === 3) {
+            const seed = store.db.prepare("SELECT session_id,execution_scope FROM tool_calls WHERE name='file_create' ORDER BY rowid DESC LIMIT 1").get() as { session_id: string; execution_scope: string };
+            const args = downloadName === "github_download_release_asset"
+              ? { owner: "example", repo: "project", assetId: 24, destination: downloadedPath }
+              : { owner: "example", repo: "project", artifactId: 25, destination: downloadedPath };
+            store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,finished_at,effect,execution_scope,request_hash) VALUES(?,?,?,?,?,'completed',?,?,'external',?,?)")
+              .run(`simulated-${downloadName}`, seed.session_id, downloadName, JSON.stringify(args), JSON.stringify({ path: downloadedPath, bytes: 7 }), new Date().toISOString(), new Date().toISOString(), seed.execution_scope, `hash-${downloadName}`);
+            await unlink(downloadedPath); // Simulate an earlier file removal outside this agent run; downloads themselves never overwrite.
+            await writeFile(downloadedPath, "new zip");
+            return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `complete-stale-${downloadName}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+          }
+          if (turn === 4) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `read-after-${downloadName}`, type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.zip" }) } }] } }] };
+          return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `complete-fresh-${downloadName}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+        }
+      };
+      try {
+        const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+          .run("Create result.zip, read it, then inspect the downloaded replacement and verify it.", { workspace: root, model: "test-model", maxTurns: 5, expectedOutputPaths: ["result.zip"] });
+        const calls = store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId);
+        assert.equal(result.status, "completed", JSON.stringify({ turn, calls })); assert.equal(turn, 5);
+        assert.equal(await readFileAsync(downloadedPath, "utf8"), "new zip");
+        const rejected = store.db.prepare("SELECT output_json FROM tool_calls WHERE id=?").get(`complete-stale-${downloadName}`) as { output_json: string };
+        assert.match(rejected.output_json, new RegExp(`is stale: ${downloadName} ran after the evidence`));
+      } finally { store.close(); }
+    });
+  }
+});
 
 test("agent nudges a narrated pseudo-tool call without executing it and recovers through real tool calls", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "narrated-tool-call.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
