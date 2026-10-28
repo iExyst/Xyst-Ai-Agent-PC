@@ -1377,6 +1377,9 @@ test("agent completion requires successful persisted tool evidence", async () =>
     assert.ok(completionSystemWithEvidence.includes(`Current workspace root: ${root}`));
     assert.ok(completionSystemWithEvidence.includes('Use "." for the workspace root'));
     assert.ok(completionSystemWithEvidence.includes('do not prepend "workspace/"'));
+    assert.ok(completionSystemWithEvidence.includes("using only {path}, start_line, and end_line; do not add an operation field"));
+    assert.ok(completionSystemWithEvidence.includes("Honor the requested runtime, test framework, and exact verification command"));
+    assert.ok(completionSystemWithEvidence.includes("If a tool call fails, correct the path or arguments and retry"));
     assert.ok(completionSystemWithEvidence.includes("retrieve live information from an available web source or integration"));
     assert.ok(completionSystemWithEvidence.includes('1: "file_list"'), "one-based indexes and safe tool names are shown to the model");
     assert.equal(round, 2, "successful verification ends the run without another inference turn");
