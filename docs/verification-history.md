@@ -1861,3 +1861,8 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 - PR #55 merged as `66d8423f02afd3b34008747fbc61302c401de193`. Its eight Windows/Linux PR and push checks succeeded. The hosted Windows Desktop package job logged that it installed, ran, observed `Running`, uninstalled, and confirmed removal of the Xyst mission daemon task.
 - Post-merge Cross-platform CI run [40687616009](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/40687616009) and Desktop packages run [40687616004](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/40687616004) both passed on the merge commit.
 - The live scheduler check used the disposable hosted package runner. Windows logoff/reboot recovery, long-duration scheduler reliability, and other Windows environments remain open under C4.
+
+## Twelve-task mission cancellation and resume stress · 2026-10-28
+
+- Added a deterministic 12-task, four-worker mission regression that cancels while all four initial workers are blocked, verifies each active task receives abort, confirms all twelve task checkpoints remain pending with only the active batch consuming attempts, then resumes and completes all tasks without exceeding the worker ceiling or duplicating any task within a run.
+- The focused regression passed 1/1. Full runtime suite passed **194 passed, 0 failed, 2 host-specific skips**; runtime build, workspace typecheck, and `git diff --check` passed. This uses a fake agent to test scheduler/cancellation state transitions; it does not claim sustained live-model reliability.
