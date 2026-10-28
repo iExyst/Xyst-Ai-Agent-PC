@@ -490,6 +490,7 @@ function App() {
   const currentModel = models.find((model) => model.loaded_instances?.length)?.name ?? "No model loaded";
 
   return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to main content</a>
     {layout.navigation && <aside className="sidebar">
       <div className="brand"><RobotMark/><div><strong>XYST</strong><span>CONTROL ROOM</span></div><span className="brand-version">0.1</span></div>
       <div className="workspace-chip"><span className="workspace-marker" aria-hidden="true"/>LOCAL WORKSPACE<i>⌄</i></div>
@@ -513,7 +514,7 @@ function App() {
       <div className="profile-line"><span>ACCESS PROFILE</span><strong>{profileLabel}</strong></div>
     </aside>}
 
-    <main className="main-area">
+    <main id="main-content" tabIndex={-1} className="main-area">
       <header className="topbar"><div className="breadcrumbs"><span>LOCAL SYSTEM</span><i>/</i><strong>{viewOptions.find(([key]) => key === view)?.[1].toUpperCase() ?? "OVERVIEW"}</strong></div><div className="topbar-right">{!layout.navigation && <select className="layout-page-select" aria-label="Navigate to page" value={view} onChange={(event) => setView(event.target.value as View)}>{viewOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}<div className="layout-control"><button className="secondary-button layout-button" aria-expanded={layoutMenuOpen} aria-controls="layout-panel-menu" onClick={() => setLayoutMenuOpen((open) => !open)}>Panels</button>{layoutMenuOpen && <section id="layout-panel-menu" className="layout-menu" aria-label="Visible workspace panels"><div className="layout-menu-title"><strong>WORKSPACE PANELS</strong><button className="icon-button" aria-label="Close panel menu" onClick={() => setLayoutMenuOpen(false)}>×</button></div><p>Show or hide the main control-room panels. Your choices are saved on this device.</p>{layoutPanelOptions.map((option) => <label className="layout-option" key={option.key}><span><strong>{option.title}</strong><small>{option.description}</small></span><input type="checkbox" checked={layout[option.key]} onChange={(event) => setLayoutPanel(option.key, event.target.checked)} aria-label={option.title}/></label>)}</section>}</div><span className={`server-state ${runtimeState}`} role="status" aria-live="polite"><i/>{runtimeLabel}</span><span className="separator"/><span className="clock">{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span><button className="avatar" aria-label="Profile">X</button></div></header>
       {browserPreview && <div className="browser-preview-banner" role="status">Browser preview · connect through the Xyst desktop app to access local sessions, models, and actions.</div>}
       {error && <div className="error-banner" role="alert"><div className="error-message"><span>⚠ {error}</span>{errorDetails && <details className="error-details"><summary>Technical details</summary><pre>{errorDetails}</pre></details>}</div><button aria-label="Dismiss error" onClick={() => setError("")}>×</button></div>}

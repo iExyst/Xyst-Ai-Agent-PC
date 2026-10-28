@@ -91,6 +91,24 @@ async function waitForUi(page, timeoutMs = 45_000) {
   throw new Error(`Packaged renderer did not reach the expected control room UI: ${JSON.stringify(snapshot ?? {})}`);
 }
 
+async function pressKey(page, key, virtualKeyCode, id) {
+  const params = { key, code: key, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
+  await cdpCommand(page, "Input.dispatchKeyEvent", { ...params, type: "keyDown" }, id);
+  await cdpCommand(page, "Input.dispatchKeyEvent", { ...params, type: "keyUp" }, id + 1);
+}
+
+async function verifyKeyboardSkipLink(page) {
+  await evaluate(page, "if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) document.activeElement.blur()", 29);
+  await pressKey(page, "Tab", 9, 30);
+  const focusedLink = JSON.parse(await evaluate(page, "JSON.stringify({ text: document.activeElement?.textContent?.trim(), top: document.activeElement?.getBoundingClientRect().top })", 32));
+  assert.equal(focusedLink.text, "Skip to main content", `Expected Tab to focus the skip link, got ${JSON.stringify(focusedLink)}`);
+  assert.ok(focusedLink.top >= 0, `The keyboard-focused skip link should be visible: ${JSON.stringify(focusedLink)}`);
+  await pressKey(page, "Enter", 13, 33);
+  const targetId = await evaluate(page, "document.activeElement?.id ?? ''", 35);
+  assert.equal(targetId, "main-content", `Expected Enter on the skip link to focus main content, got ${targetId}`);
+  return { firstTabTarget: focusedLink.text, enterTarget: targetId };
+}
+
 function stopInstalledCopies(executable) {
   const escaped = executable.replace(/'/g, "''");
   const command = `$target = '${escaped}'; Get-CimInstance Win32_Process -Filter "Name='Xyst.exe'" | Where-Object { $_.ExecutablePath -eq $target } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
@@ -123,10 +141,11 @@ try {
   const appError = new Promise((_, reject) => app.once("error", reject));
   const page = await Promise.race([waitForTarget(port), appError]);
   const snapshot = await waitForUi(page);
+  const keyboard = await verifyKeyboardSkipLink(page);
   const screenshot = await cdpCommand(page, "Page.captureScreenshot", { format: "png", fromSurface: true }, 2);
   assert.ok(screenshot?.data, "Packaged renderer did not return a screenshot");
   await writeFile(join(packageDir, "windows-gui-smoke.png"), Buffer.from(screenshot.data, "base64"));
-  process.stdout.write(`Clean Windows install UI smoke passed: ${JSON.stringify(snapshot)}\n`);
+  process.stdout.write(`Clean Windows install UI smoke passed: ${JSON.stringify({ ...snapshot, keyboard })}\n`);
 } finally {
   if (app?.pid) spawnSync("taskkill.exe", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
   if (app?.pid) stopInstalledCopies(installedExe);
