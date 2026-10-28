@@ -3331,6 +3331,72 @@ test("mission cancellation aborts concurrent inference and child processes witho
   }
 }));
 
+test("mission cancellation stress resumes twelve tasks without duplicating completed work", async () => withTemp(async (root) => {
+  const taskCount = 12; const concurrency = 4;
+  const store = new XystStore(join(root, "mission-cancellation-stress.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
+  config.set("global", "orchestration.maxConcurrency", concurrency);
+  const workspaces = await Promise.all(Array.from({ length: taskCount }, async (_, index) => {
+    const path = join(root, `cancel-worker-${String(index).padStart(2, "0")}`); await mkdir(path); return path;
+  }));
+  let phase: "cancel" | "resume" = "cancel"; let active = 0; let peak = 0; let markInitialBatchStarted!: () => void;
+  const initialBatchStarted = new Promise<void>((resolve) => { markInitialBatchStarted = resolve; });
+  const initialStarts = new Set<string>(); const resumeStarts = new Set<string>(); const aborts = new Set<string>(); const starts = new Map<string, number>();
+  const agent = { run: async (objective: string, options: { onSession?: (id: string) => void; signal?: AbortSignal }) => {
+    const taskId = objective.match(/\n\nAssigned task: ([^\n]+)/)?.[1] ?? "unknown";
+    starts.set(taskId, (starts.get(taskId) ?? 0) + 1);
+    if (phase === "cancel") {
+      initialStarts.add(taskId); active++; peak = Math.max(peak, active); options.onSession?.(`cancel-stress-${taskId}`);
+      if (initialStarts.size === concurrency) markInitialBatchStarted();
+      try {
+        await new Promise<never>((_resolve, reject) => {
+          if (options.signal?.aborted) { aborts.add(taskId); reject(new Error("Task cancelled")); return; }
+          options.signal?.addEventListener("abort", () => { aborts.add(taskId); reject(new Error("Task cancelled")); }, { once: true });
+        });
+      } finally { active--; }
+    }
+    resumeStarts.add(taskId); active++; peak = Math.max(peak, active); options.onSession?.(`resume-stress-${taskId}`);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5 + (Number(taskId.slice(-2)) % 4) * 5));
+      return { sessionId: `resume-stress-${taskId}`, model: "fake", selectionReason: "cancellation stress", turns: 1, status: "completed" as const, response: `completed ${taskId}` };
+    } finally { active--; }
+  } };
+  const runner = new PersistentMissionRunner({ store, config, events, agent: agent as never });
+  try {
+    const mission = runner.repository.create({ name: "Twelve-task cancellation stress", objective: "Cancel and resume the full batch", maxConcurrency: concurrency, tasks: workspaces.map((workspace, index) => ({
+      id: `worker-${String(index).padStart(2, "0")}`, objective: `Complete cancellation stress task ${index}`, workspace, dependsOn: []
+    })) });
+    const running = runner.run(mission.id);
+    const started = await Promise.race([initialBatchStarted.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000))]);
+    assert.equal(started, true, "the initial four-task batch must be active before cancellation");
+    assert.equal(peak, concurrency);
+    runner.cancel(mission.id);
+    const cancelled = await running;
+    assert.equal(cancelled.status, "cancelled");
+    assert.equal(aborts.size, concurrency, "every in-flight task must receive cancellation");
+    const cancelledRows = store.db.prepare("SELECT task_key,state,attempts FROM mission_tasks WHERE run_id=? ORDER BY task_key").all(cancelled.runId) as Array<{ task_key: string; state: string; attempts: number }>;
+    assert.equal(cancelledRows.length, taskCount);
+    assert.ok(cancelledRows.every((row) => row.state === "pending"), "cancelled and unscheduled work must remain resumable");
+    assert.equal(cancelledRows.filter((row) => row.attempts === 1).length, concurrency, `only the active batch should consume attempts before cancellation: ${JSON.stringify(cancelledRows)}`);
+    assert.equal(cancelledRows.filter((row) => row.attempts === 0).length, taskCount - concurrency);
+
+    phase = "resume"; peak = 0;
+    const resumed = await runner.resume(mission.id);
+    assert.equal(resumed.status, "completed");
+    assert.equal(peak, concurrency, "resumed scheduling must respect the same worker ceiling");
+    const completedRows = store.db.prepare("SELECT task_key,state,attempts FROM mission_tasks WHERE run_id=? ORDER BY task_key").all(resumed.runId) as Array<{ task_key: string; state: string; attempts: number }>;
+    assert.equal(completedRows.length, taskCount);
+    assert.ok(completedRows.every((row) => row.state === "completed"), "every task should finish after resume");
+    assert.ok(completedRows.every((row) => row.attempts === 1), "each task should have one attempt in the resumed run");
+    assert.equal(resumeStarts.size, taskCount, "every task should run exactly once in the resumed phase");
+    assert.ok([...starts.entries()].every(([taskId, count]) => count === (initialStarts.has(taskId) ? 2 : 1)), "only the cancelled active tasks should have run in both phases");
+    assert.equal(starts.size, taskCount, "all tasks should start after resume");
+  } finally {
+    const current = runner.repository.list().find((item) => item.definition.name === "Twelve-task cancellation stress");
+    if (current?.status === "running") runner.cancel(current.id);
+    store.close();
+  }
+}));
+
 test("mission task prompts keep the model on its assigned task", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "mission-task-boundary.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
   const prompts: string[] = [];
