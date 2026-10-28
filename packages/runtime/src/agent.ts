@@ -1100,9 +1100,9 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             const output = await tool.execute(args, options.signal);
             const safeOutput = this.deps.provider.redact(JSON.stringify(output)).slice(0, 30000);
             const artifactPath = asRecord(output).path;
-            if (typeof artifactPath === "string" && ["file_create", "office_create", "office_edit", "office_preview"].includes(name)) {
+            if (typeof artifactPath === "string" && ["file_create", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact"].includes(name)) {
               const artifactName = basename(artifactPath).slice(0, 255) || "artifact";
-              const mimeByExtension: Record<string, string> = { ".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv", ".json": "application/json", ".png": "image/png", ".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
+              const mimeByExtension: Record<string, string> = { ".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv", ".json": "application/json", ".png": "image/png", ".zip": "application/zip", ".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
               const metadata = { tool: name, ...(typeof asRecord(output).sha256 === "string" ? { sha256: asRecord(output).sha256 } : {}) };
               this.deps.store.db.prepare("INSERT INTO artifacts(id,session_id,name,path,mime_type,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)")
                 .run(randomUUID(), sessionId, artifactName, artifactPath, mimeByExtension[extname(artifactPath).toLowerCase()] ?? null, JSON.stringify(metadata), new Date().toISOString());

@@ -1270,10 +1270,13 @@ test("all GitHub mutations require approval and durable external-action tracking
     } };
     const approvedAgent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: approvedProvider as never, github: github as never });
     const approvedPath = String((requested.args as Record<string, unknown>).destination);
-    await approvedAgent.run("Download this release asset to the requested path.", { workspace: root, approveExternalAction: async (request) => request.toolName === requested.name });
+    const approvedResult = await approvedAgent.run("Download this release asset to the requested path.", { workspace: root, approveExternalAction: async (request) => request.toolName === requested.name });
     assert.equal(await readFileAsync(approvedPath, "utf8"), "release");
     const recordedDownload = store.db.prepare("SELECT status,effect FROM tool_calls WHERE name='github_download_release_asset' ORDER BY rowid DESC LIMIT 1").get() as { status: string; effect: string };
     assert.deepEqual([recordedDownload.status, recordedDownload.effect], ["completed", "external"]);
+    const recordedArtifact = store.db.prepare("SELECT name,path,mime_type,metadata_json FROM artifacts WHERE session_id=?").get(approvedResult.sessionId) as { name: string; path: string; mime_type: string; metadata_json: string };
+    assert.deepEqual([recordedArtifact.name, recordedArtifact.path, recordedArtifact.mime_type], ["unapproved-release.zip", approvedPath, "application/zip"]);
+    assert.equal(JSON.parse(recordedArtifact.metadata_json).tool, "github_download_release_asset");
   } finally { store.close(); }
 }));
 
@@ -1307,6 +1310,31 @@ test("browser page mutations and transfers require approval and durable external
       assert.deepEqual([call.status, call.effect], ["failed", "external"]); assert.ok(call.execution_scope); assert.match(call.request_hash, /^[a-f0-9]{64}$/);
     }
     assert.deepEqual(sideEffects, [], "browser mutations, transfers, and closing tabs never execute without user approval");
+  } finally { store.close(); }
+}));
+
+test("browser downloads are listed as persisted session artifacts", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "browser-download-artifact.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); config.set("global", "browser.automation.enabled", true); config.set("global", "autonomy.externalActionApproval", true);
+  const downloadPath = join(root, "browser-result.zip"); let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    return turn === 1
+      ? { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "browser-download-artifact", type: "function", function: { name: "browser_download", arguments: JSON.stringify({ selector: "a[download]", path: downloadPath }) } }] } }] }
+      : { choices: [{ message: { role: "assistant", content: "The file was downloaded." } }] };
+  } };
+  const browserTools = { browser_download: {
+    definition: { type: "function", function: { name: "browser_download", parameters: { type: "object", properties: {}, additionalProperties: false } } },
+    execute: async () => { await writeFile(downloadPath, "browser zip"); return { path: downloadPath, bytes: 11 }; }
+  } };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, dataDir: root,
+    browserToolsFactory: () => ({ tools: browserTools, close: async () => undefined }) });
+  try {
+    const result = await agent.run("Download the requested browser file.", { workspace: root, maxTurns: 2, approveExternalAction: async (request) => request.toolName === "browser_download" });
+    assert.equal(await readFileAsync(downloadPath, "utf8"), "browser zip");
+    const artifact = store.db.prepare("SELECT name,path,mime_type,metadata_json FROM artifacts WHERE session_id=?").get(result.sessionId) as { name: string; path: string; mime_type: string; metadata_json: string };
+    assert.deepEqual([artifact.name, artifact.path, artifact.mime_type], ["browser-result.zip", downloadPath, "application/zip"]);
+    assert.equal(JSON.parse(artifact.metadata_json).tool, "browser_download");
   } finally { store.close(); }
 }));
 
