@@ -1852,7 +1852,7 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 
 ## Process-tree termination escalation · 2026-10-28
 
-- POSIX process cancellation sends `SIGTERM` to the detached process group and now schedules an unreferenced `SIGKILL` after a one-second grace period if the group still exists. The escalation timer is cleared when the process closes. Windows retains its `taskkill /T /F` behavior.
+- POSIX process cancellation sends `SIGTERM` to the detached process group and now schedules an unreferenced `SIGKILL` after a one-second grace period if the group still exists, even if the original leader has already closed. Windows retains its `taskkill /T /F` behavior.
 - A Windows regression starts a parent and grandchild, waits until the grandchild confirms that its SIGTERM-ignoring handler is installed, aborts the parent process group, then waits past the grandchild's delayed-write deadline and confirms no marker file was created. The focused regression passed 1/1. Full local Windows runtime suite passed 194 tests, 2 host-specific skips, 0 failures; runtime build and workspace `npm run typecheck` passed; `git diff --check` passed.
 - This is representative process-tree coverage. A descendant that creates a new session/process group can still escape; PTY control/resize and broader packaged terminal acceptance remain open under E2.
 
