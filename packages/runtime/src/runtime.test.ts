@@ -1237,15 +1237,19 @@ test("all GitHub mutations require approval and durable external-action tracking
     { name: "github_issue_labels_add", args: { owner: "iExyst", repo: "xyst", number: 1, labels: ["bug"] } },
     { name: "github_issue_labels_replace", args: { owner: "iExyst", repo: "xyst", number: 1, labels: ["bug"] } },
     { name: "github_issue_label_remove", args: { owner: "iExyst", repo: "xyst", number: 1, label: "bug" } },
-    { name: "github_update_pull_request", args: { owner: "iExyst", repo: "xyst", number: 1, title: "Unapproved update" } }
+    { name: "github_update_pull_request", args: { owner: "iExyst", repo: "xyst", number: 1, title: "Unapproved update" } },
+    { name: "github_download_release_asset", args: { owner: "iExyst", repo: "xyst", assetId: 1, destination: join(root, "unapproved-release.zip") } },
+    { name: "github_download_actions_artifact", args: { owner: "iExyst", repo: "xyst", artifactId: 2, destination: join(root, "unapproved-artifact.zip") } }
   ];
-  let requested = actions[0]!; const sideEffects: string[] = [];
+  let requested = actions[0]!; let inferenceCalls = 0; const sideEffects: string[] = [];
   const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", tool_calls: [{ id: `unapproved-${requested.name}`, type: "function", function: { name: requested.name, arguments: JSON.stringify(requested.args) } }] } }] }) };
   const record = async (name: string) => { sideEffects.push(name); return { ok: true }; };
   const github = {
     enterpriseHost: null, gitToken: async () => undefined,
     addIssueLabels: async () => record("github_issue_labels_add"), replaceIssueLabels: async () => record("github_issue_labels_replace"),
-    removeIssueLabel: async () => record("github_issue_label_remove"), updatePullRequest: async () => record("github_update_pull_request")
+    removeIssueLabel: async () => record("github_issue_label_remove"), updatePullRequest: async () => record("github_update_pull_request"),
+    downloadReleaseAsset: async () => { sideEffects.push("github_download_release_asset"); return Buffer.from("release"); },
+    downloadActionsArtifact: async () => { sideEffects.push("github_download_actions_artifact"); return Buffer.from("artifact"); }
   };
   try {
     const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: github as never });
@@ -1257,6 +1261,19 @@ test("all GitHub mutations require approval and durable external-action tracking
       assert.ok(call.execution_scope); assert.match(call.request_hash, /^[a-f0-9]{64}$/);
     }
     assert.deepEqual(sideEffects, [], "none of the GitHub providers may be reached without user approval");
+    requested = actions[4]!; inferenceCalls = 0;
+    const approvedProvider = { ...provider, streamChatWithTools: async () => {
+      inferenceCalls++;
+      return inferenceCalls === 1
+        ? { choices: [{ message: { role: "assistant", tool_calls: [{ id: "approved-release-download", type: "function", function: { name: requested.name, arguments: JSON.stringify(requested.args) } }] } }] }
+        : { choices: [{ message: { role: "assistant", content: "Downloaded." } }] };
+    } };
+    const approvedAgent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: approvedProvider as never, github: github as never });
+    const approvedPath = String((requested.args as Record<string, unknown>).destination);
+    await approvedAgent.run("Download this release asset to the requested path.", { workspace: root, approveExternalAction: async (request) => request.toolName === requested.name });
+    assert.equal(await readFileAsync(approvedPath, "utf8"), "release");
+    const recordedDownload = store.db.prepare("SELECT status,effect FROM tool_calls WHERE name='github_download_release_asset' ORDER BY rowid DESC LIMIT 1").get() as { status: string; effect: string };
+    assert.deepEqual([recordedDownload.status, recordedDownload.effect], ["completed", "external"]);
   } finally { store.close(); }
 }));
 
@@ -2732,7 +2749,7 @@ test("GitHub release and Actions artifact downloads stay within profile paths an
     throw new Error(`Unexpected GitHub URL ${url}`);
   };
   const provider = new GitHubProvider({ get: async () => undefined } as never, { apiBase: "https://api.github.test" });
-  const access = new AccessController({ mode: "restricted", network: true, integrations: true, readRoots: [root], writeRoots: [root] });
+  const access = new AccessController({ mode: "restricted", network: true, integrations: true, externalActions: true, readRoots: [root], writeRoots: [root] });
   const tools = createGitHubTools(access, provider, { writesEnabled: false, mergeAuthorized: false });
   const assetPath = join(root, "release.zip"); const artifactPath = join(root, "artifact.zip");
   try {
@@ -2742,8 +2759,11 @@ test("GitHub release and Actions artifact downloads stay within profile paths an
     assert.equal(await realpath(releaseResult.path), await realpath(assetPath)); assert.equal(await realpath(artifactResult.path), await realpath(artifactPath));
     assert.deepEqual(await readFileAsync(assetPath), Buffer.from(archive)); assert.deepEqual(await readFileAsync(artifactPath), Buffer.from(archive));
     await assert.rejects(tools.github_download_release_asset!.execute({ owner: "example", repo: "project", assetId: 24, destination: assetPath }), /already exists|EEXIST/);
-    const denied = createGitHubTools(new AccessController({ mode: "restricted", network: true, integrations: true, readRoots: [root], writeRoots: [] }), provider, { writesEnabled: false, mergeAuthorized: false }).github_download_release_asset!;
+    const denied = createGitHubTools(new AccessController({ mode: "restricted", network: true, integrations: true, externalActions: true, readRoots: [root], writeRoots: [] }), provider, { writesEnabled: false, mergeAuthorized: false }).github_download_release_asset!;
     await assert.rejects(denied.execute({ owner: "example", repo: "project", assetId: 24, destination: join(root, "denied.zip") }), /denies write access/);
+    const externalDenied = createGitHubTools(new AccessController({ mode: "restricted", network: true, integrations: true, externalActions: false, readRoots: [root], writeRoots: [root] }), provider, { writesEnabled: false, mergeAuthorized: false });
+    await assert.rejects(externalDenied.github_download_release_asset!.execute({ owner: "example", repo: "project", assetId: 24, destination: join(root, "external-denied.zip") }), /denies externalActions/);
+    await assert.rejects(externalDenied.github_download_actions_artifact!.execute({ owner: "example", repo: "project", artifactId: 25, destination: join(root, "external-denied-artifact.zip") }), /denies externalActions/);
     assert.deepEqual(urls, ["https://api.github.test/repos/example/project/releases/assets/24", "https://api.github.test/repos/example/project/actions/artifacts/25/zip"]);
   } finally { globalThis.fetch = originalFetch; }
 }));
