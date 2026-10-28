@@ -1683,10 +1683,10 @@ test("completion rejects a file read made stale by a later patch and accepts a f
       if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "stale-read-first", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
       if (turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [
         { id: "stale-read-patch", type: "function", function: { name: "file_patch", arguments: JSON.stringify({ path: "result.txt", expected_sha256: createHash("sha256").update("before").digest("hex"), old_text: "before", new_text: "after" }) } },
-        { id: "stale-read-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }
+        { id: "stale-read-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["stale-read-first"] }) } }
       ] } }] };
       if (turn === 4) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "stale-read-final", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
-      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "stale-read-fresh-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "stale-read-fresh-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["stale-read-final"] }) } }] } }] };
     }
   };
   try {
@@ -1697,6 +1697,7 @@ test("completion rejects a file read made stale by a later patch and accepts a f
     const calls = store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId) as Array<{ name: string; status: string; output_json: string | null }>;
     assert.deepEqual(calls.map(({ name, status }) => [name, status]), [["file_create", "completed"], ["file_read", "completed"], ["file_patch", "completed"], ["task_complete", "failed"], ["file_read", "completed"], ["task_complete", "completed"]]);
     assert.match(calls[3]!.output_json!, /is stale: file_patch ran after the evidence/);
+    assert.match(calls[3]!.output_json!, /fresh stable evidence ID from the next system message/);
     assert.equal(JSON.parse(calls[5]!.output_json!).verified, true);
   } finally { store.close(); }
 }));

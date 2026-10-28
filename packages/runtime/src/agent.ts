@@ -780,7 +780,10 @@ export class AgentRunner {
           }) : undefined;
           if (laterRelevantMutation) {
             const affectedPath = evidenceFilePath ? ` for ${evidenceFilePath}` : "";
-            throw new Error(`Completion evidence ${evidenceId} is stale: ${laterRelevantMutation.name} ran after the evidence and may have changed the verified result${affectedPath}. Repeat the verification after the last change, then use its fresh evidence index.`);
+            const freshReference = Array.isArray(suppliedIds)
+              ? "fresh stable evidence ID from the next system message (or its corresponding one-based index)"
+              : "fresh evidence index";
+            throw new Error(`Completion evidence ${evidenceId} is stale: ${laterRelevantMutation.name} ran after the evidence and may have changed the verified result${affectedPath}. Repeat the verification after the last change, then cite its ${freshReference}.`);
           }
           let evidenceOutput: unknown;
           try { evidenceOutput = JSON.parse(evidence.output_json) as unknown; } catch { evidenceOutput = evidence.output_json; }
