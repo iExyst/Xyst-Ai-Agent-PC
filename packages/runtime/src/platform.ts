@@ -47,7 +47,6 @@ async function killTree(child: ChildProcess): Promise<void> {
       try { process.kill(-child.pid!, 0); process.kill(-child.pid!, "SIGKILL"); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill("SIGKILL"); }
     }, 1_000);
-    escalation.unref();
   }
 }
 

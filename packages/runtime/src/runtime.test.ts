@@ -2092,16 +2092,12 @@ test("aborting a process execution terminates it and returns a cancellation erro
 
 test("aborting a process execution force-kills a grandchild that ignores SIGTERM", async () => withTemp(async (root) => {
   const marker = join(root, "surviving-grandchild.txt");
-  const controller = new AbortController();
   const grandchild = `process.on("SIGTERM", () => {}); process.stdout.write("READY\\n"); setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"); }, 3000);`;
-  const parent = `const { spawn } = require("node:child_process"); const child = spawn(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { stdio: ["ignore", "pipe", "ignore"] }); child.stdout.on("data", chunk => process.stdout.write(chunk)); setInterval(() => {}, 1000);`;
-  const running = runProcess(process.execPath, ["-e", parent], {
-    signal: controller.signal,
-    onStdout: (chunk) => { if (chunk.includes("READY")) controller.abort(); }
-  });
-  await assert.rejects(running, /Process cancelled/);
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const controller = new AbortController(); try { await runProcess(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { signal: controller.signal, onStdout: chunk => { if (chunk.includes("READY")) controller.abort(); } }); } catch (error) { if (error.message !== "Process cancelled") throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 10_000 });
+  assert.equal(result.code, 0, result.stderr);
   await new Promise((resolve) => setTimeout(resolve, 3_300));
-  assert.equal(existsSync(marker), false, "a descendant that ignores SIGTERM must not survive cancellation");
+  assert.equal(existsSync(marker), false, "a standalone Xyst process must remain alive long enough to force-kill a grandchild that ignores SIGTERM");
 }));
 
 test("restricted profiles block paths and executables outside explicit allowlists", async () => withTemp(async (root) => {
