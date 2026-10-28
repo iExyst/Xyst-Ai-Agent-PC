@@ -1861,3 +1861,10 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 - PR #55 merged as `66d8423f02afd3b34008747fbc61302c401de193`. Its eight Windows/Linux PR and push checks succeeded. The hosted Windows Desktop package job logged that it installed, ran, observed `Running`, uninstalled, and confirmed removal of the Xyst mission daemon task.
 - Post-merge Cross-platform CI run [40687616009](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/40687616009) and Desktop packages run [40687616004](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/40687616004) both passed on the merge commit.
 - The live scheduler check used the disposable hosted package runner. Windows logoff/reboot recovery, long-duration scheduler reliability, and other Windows environments remain open under C4.
+
+## Process-tree abort and interactive stdin coverage · 2026-10-28
+
+- Added a real process integration test that launches a Node parent and grandchild, waits until the grandchild is running, aborts Xyst's process runner, and asserts the descendant cannot write a delayed marker. The same test exercises POSIX process-group termination on Linux and Windows `taskkill /T /F` on Windows when run by those hosts.
+- Added a direct interactive process test that streams two input chunks through the provided writer, closes stdin, and verifies the child receives the complete input through EOF and returns it on stdout. Detached descendants and PTY resize/control behavior remain outside this evidence.
+- Verification on Windows: focused process-tree and stdin regressions **2/2 passed**; full runtime suite **195 passed / 0 failed / 2 host-specific skips**; runtime build and workspace typecheck passed; `git diff --check` passed.
+- PR #76 head `a7b63a27b832f7f17b37cfeb85e2dd82b7b6486c` passed all eight exact-head Windows/Linux pull-request and push verification/package checks. Hosted runtime suites passed the process-tree regression on both platforms; packaged clean-install/renderer and Windows mission-service lifecycle smokes passed.
