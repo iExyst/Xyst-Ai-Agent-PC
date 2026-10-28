@@ -685,11 +685,16 @@ export class AgentRunner {
           const candidateFor = (criterion: string): number => {
             const requiredTool = requiredToolEvidence.find((_requirement, requirementIndex) => criterion === requiredCompletionCriteria[baseCompletionCriteria.length + requirementIndex]);
             if (requiredTool) {
-              const match = candidateRows.find(({ evidence }) => {
+              const satisfiesRequirement = (evidence: typeof currentEvidence[number]) => {
                 if (evidence.name !== requiredTool.tool) return false;
                 try { assertRequiredToolEvidence(evidence.name, parseOutput(evidence.output_json), requiredTool, workspace); return true; } catch { return false; }
-              });
-              if (!match) throw new Error(`The selected evidence IDs or indexes must include a successful ${requiredTool.tool} result for criterion: ${criterion}`);
+              };
+              const match = candidateRows.find(({ evidence }) => satisfiesRequirement(evidence));
+              if (!match) {
+                const available = currentEvidence.flatMap((evidence, index) => satisfiesRequirement(evidence) ? [evidenceLabel(evidence, index)] : []).slice(0, 5);
+                const hint = available.length ? ` Matching successful evidence: ${available.join("; ")}. Include one of these IDs or indexes.` : " No matching successful result is currently available; run the required tool first.";
+                throw new Error(`The selected evidence IDs or indexes must include a successful ${requiredTool.tool} result for criterion: ${criterion}.${hint}`);
+              }
               return match.index;
             }
             const inferredTool = [...inferredToolEvidence].find(([, requiredCriterion]) => requiredCriterion === criterion)?.[0];

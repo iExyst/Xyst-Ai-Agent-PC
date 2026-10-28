@@ -1828,6 +1828,11 @@ test("task completion accepts stable IDs from the persisted evidence list", asyn
       if (turn === 5) {
         const correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
         assert.match(correction, /Every evidence_tool_call_id must appear in the current system message's available evidence list/);
+        return response("id-evidence-missing-process", "task_complete", { evidence_tool_call_ids: [listedIds[0], listedIds[2]] });
+      }
+      if (turn === 6) {
+        const correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
+        assert.match(correction, /Matching successful evidence:.*id-evidence-process/);
         return response("id-evidence-complete", "task_complete", { evidence_tool_call_ids: [...listedIds].reverse() });
       }
       throw new Error(`Unexpected model turn ${turn}: ${JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls ORDER BY rowid").all())}`);
@@ -1839,16 +1844,17 @@ test("task completion accepts stable IDs from the persisted evidence list", asyn
       .run("Create marker.txt with exactly READY and verify it by reading it back.", {
         workspace: root,
         model: "test-model",
-        maxTurns: 6,
+        maxTurns: 7,
         expectedOutputPaths: ["marker.txt"],
         requiredToolEvidence: [{ tool: "run_process", exitCode: 0 }]
       });
     assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId)));
-    assert.equal(turn, 5);
+    assert.equal(turn, 6);
     const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string | null }>;
-    assert.equal(completions.length, 2);
+    assert.equal(completions.length, 3);
     assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /must appear in the current system message's available evidence list/);
-    assert.equal(completions[1]?.status, "completed"); assert.equal(JSON.parse(completions[1]!.output_json!).verified, true);
+    assert.equal(completions[1]?.status, "failed"); assert.match(completions[1]!.output_json!, /Matching successful evidence:.*id-evidence-process/);
+    assert.equal(completions[2]?.status, "completed"); assert.equal(JSON.parse(completions[2]!.output_json!).verified, true);
   } finally { store.close(); }
 }));
 
