@@ -2090,6 +2090,16 @@ test("aborting a process execution terminates it and returns a cancellation erro
   await assert.rejects(running, /Process cancelled/);
 });
 
+test("aborting a process execution force-kills a grandchild that ignores SIGTERM", async () => withTemp(async (root) => {
+  const marker = join(root, "surviving-grandchild.txt");
+  const grandchild = `process.on("SIGTERM", () => {}); process.stdout.write("READY\\n"); setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"); }, 3000);`;
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const controller = new AbortController(); try { await runProcess(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { signal: controller.signal, onStdout: chunk => { if (chunk.includes("READY")) controller.abort(); } }); } catch (error) { if (error.message !== "Process cancelled") throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 10_000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 3_300));
+  assert.equal(existsSync(marker), false, "a standalone Xyst process must remain alive long enough to force-kill a grandchild that ignores SIGTERM");
+}));
+
 test("restricted profiles block paths and executables outside explicit allowlists", async () => withTemp(async (root) => {
   const allowed = join(root, "allowed"); const denied = join(root, "denied"); await mkdir(allowed); await mkdir(denied);
   const access = new AccessController({ mode: "restricted", readRoots: [allowed], writeRoots: [allowed], allowedExecutables: ["node"] });

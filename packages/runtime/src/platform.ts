@@ -42,7 +42,11 @@ async function killTree(child: ChildProcess): Promise<void> {
       killer.once("close", () => resolveDone()); killer.once("error", () => resolveDone());
     });
   } else {
-    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
+    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); return; }
+    const escalation = setTimeout(() => {
+      try { process.kill(-child.pid!, 0); process.kill(-child.pid!, "SIGKILL"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill("SIGKILL"); }
+    }, 1_000);
   }
 }
 
@@ -62,7 +66,12 @@ export async function runProcess(command: string, args: string[], options: Proce
   child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { if (stdout.length < maxOutputChars) stdout += chunk.slice(0, maxOutputChars - stdout.length); options.onStdout?.(chunk); });
   child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (stderr.length < maxOutputChars) stderr += chunk.slice(0, maxOutputChars - stderr.length); options.onStderr?.(chunk); });
   let timer: NodeJS.Timeout | undefined;
-  const cancel = () => { void killTree(child); };
+  let cancellationStarted = false;
+  const cancel = () => {
+    if (cancellationStarted) return;
+    cancellationStarted = true;
+    void killTree(child);
+  };
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   if (options.timeoutMs && options.timeoutMs > 0) timer = setTimeout(() => { timedOut = true; cancel(); }, options.timeoutMs);

@@ -1850,6 +1850,12 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 - PDF attachment acceptance had multiple non-passes: the model first asked for a path despite the extracted text, then returned exact text without satisfying the persisted completion gate. In a fresh isolated workspace with a temporary copy of the PDF, the model called `office_read` on the attachment, the persisted result returned the exact page content `VISION-731`, and `task_complete` verified the `office_read` evidence. After a resumed answer and another successful completion check, session `033ea0d5-f2a5-4d95-b805-7680e15bc64c` ended `completed`; the exact answer appears in its persisted assistant messages, and SQLite integrity is `ok`.
 - The original four user-provided visual fixtures in `apps/cli/` were read-only and remain untouched. These are bounded CLI cases and do not establish broad attachment or model reliability.
 
+## Process-tree termination escalation · 2026-10-28
+
+- POSIX process cancellation sends `SIGTERM` to the detached process group and now schedules a referenced `SIGKILL` after a one-second grace period if the group still exists, even if the original leader has already closed. The referenced timer keeps a standalone CLI alive long enough to apply the fallback. Windows retains its `taskkill /T /F` behavior.
+- A regression starts a standalone Xyst child process, waits until its grandchild confirms that its SIGTERM-ignoring handler is installed, aborts the process group, then waits past the grandchild's delayed-write deadline and confirms no marker file was created. The focused regression passed 1/1 on Windows. Full local Windows runtime suite passed 194 tests, 2 host-specific skips, 0 failures; runtime build and workspace `npm run typecheck` passed; `git diff --check` passed.
+- This is representative process-tree coverage. A descendant that creates a new session/process group can still escape; PTY control/resize and broader packaged terminal acceptance remain open under E2.
+
 ## Desktop appearance preference behavior · 2026-10-28
 
 - Corrected preference selectors to match the kebab-case `data-*` attributes generated from `document.documentElement.dataset` for reduced motion, high contrast, larger text, decorative effects, and robot presentation. The prior camel-case selectors did not match those attributes. Larger-text mode now applies Chromium page zoom at 1.15× so fixed-pixel renderer text scales too; high-contrast mode also brightens muted text while increasing panel borders.
