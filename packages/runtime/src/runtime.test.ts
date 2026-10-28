@@ -607,7 +607,7 @@ test("SQLite migrations persist sessions and resolve config from most specific s
   reopened.close();
 }));
 
-test("version-one database upgrades through every migration without losing saved sessions", async () => withTemp(async (root) => {
+test("version-one database with a large history upgrades through every migration intact", async () => withTemp(async (root) => {
   const path = join(root, "version-one.sqlite"); const legacy = new Database(path);
   legacy.pragma("foreign_keys = ON");
   legacy.exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
@@ -623,16 +623,36 @@ test("version-one database upgrades through every migration without losing saved
     CREATE INDEX messages_session_created ON messages(session_id, created_at);
     CREATE INDEX tool_calls_session_created ON tool_calls(session_id, created_at);
     INSERT INTO schema_migrations(version, applied_at) VALUES (1, '2024-01-01T00:00:00.000Z');`);
-  legacy.prepare("INSERT INTO sessions(id,title,status,created_at,updated_at) VALUES(?,?,'active',?,?)").run("legacy-session", "Saved before migrations", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");
-  legacy.prepare("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,'user',?,?)").run("legacy-message", "legacy-session", "Keep this historic request", "2024-01-01T00:01:00.000Z");
+  const insertSession = legacy.prepare("INSERT INTO sessions(id,title,status,created_at,updated_at) VALUES(?,?,'active',?,?)");
+  const insertMessage = legacy.prepare("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,?, ?,?)");
+  const insertToolCall = legacy.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,finished_at) VALUES(?,?,?,?,?,'completed',?,?)");
+  legacy.transaction(() => {
+    for (let sessionIndex = 0; sessionIndex < 1_000; sessionIndex++) {
+      const id = sessionIndex === 0 ? "legacy-session" : `legacy-session-${String(sessionIndex).padStart(4, "0")}`;
+      const timestamp = "2024-01-01T00:00:00.000Z";
+      insertSession.run(id, `Saved before migrations ${sessionIndex}`, timestamp, timestamp);
+      if (sessionIndex === 0) insertMessage.run("legacy-message", id, "user", "Keep this historic request", "2024-01-01T00:00:01.000Z");
+      const generatedMessages = sessionIndex === 0 ? 19 : 20;
+      for (let messageIndex = 0; messageIndex < generatedMessages; messageIndex++) {
+        insertMessage.run(`legacy-message-${sessionIndex}-${messageIndex}`, id, messageIndex % 2 === 0 ? "user" : "assistant", `Historical message ${sessionIndex}-${messageIndex}`, timestamp);
+      }
+      insertToolCall.run(`legacy-tool-${sessionIndex}`, id, "file_create", "{}", "{}", timestamp, timestamp);
+    }
+  })();
   legacy.close();
 
   const upgraded = new XystStore(path);
   try {
     const version = upgraded.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number };
     assert.equal(version.version, 15);
+    assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as { count: number }).count, 1_000);
+    assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM messages").get() as { count: number }).count, 20_000);
+    assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE effect='external' AND execution_scope IS NOT NULL").get() as { count: number }).count, 1_000);
     const savedMessages = new SessionStore(upgraded).messages("legacy-session") as Array<{ content: unknown }>;
-    assert.deepEqual(savedMessages.map((message) => message.content), ["Keep this historic request"]);
+    assert.equal(savedMessages.length, 20);
+    assert.ok(savedMessages.some((message) => message.content === "Keep this historic request"));
+    const lastSession = new SessionStore(upgraded).messages("legacy-session-0999") as Array<{ content: unknown }>;
+    assert.equal(lastSession.length, 20);
     assert.equal((upgraded.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   } finally { upgraded.close(); }
 }));
