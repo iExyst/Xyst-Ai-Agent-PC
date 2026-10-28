@@ -43,6 +43,19 @@ async function killTree(child: ChildProcess): Promise<void> {
     });
   } else {
     try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
+    const deadline = Date.now() + 500;
+    let groupExited = false;
+    while (Date.now() < deadline) {
+      try { process.kill(-child.pid, 0); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") { groupExited = true; break; }
+      }
+      await new Promise((resolveDone) => setTimeout(resolveDone, Math.min(50, Math.max(1, deadline - Date.now()))));
+    }
+    if (!groupExited) {
+      try { process.kill(-child.pid, "SIGKILL"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill("SIGKILL"); }
+    }
   }
 }
 

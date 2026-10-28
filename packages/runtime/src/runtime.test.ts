@@ -2403,6 +2403,29 @@ test("aborting a process execution terminates it and returns a cancellation erro
   await assert.rejects(running, /Process cancelled/);
 });
 
+test("aborting a process group escalates when descendants ignore SIGTERM", { skip: process.platform === "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "stubborn-descendant.pid");
+  const ready = join(root, "stubborn-descendant.ready");
+  const descendant = `process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(${JSON.stringify(ready)}, 'ready'); setInterval(() => {}, 1000)`;
+  const script = `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); setInterval(() => {}, 1000);`;
+  const controller = new AbortController();
+  const running = runProcess(process.execPath, ["-e", script], { cwd: root, signal: controller.signal });
+  const markerDeadline = Date.now() + 3_000;
+  while (!existsSync(ready) && Date.now() < markerDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(existsSync(ready), true, "the stubborn grandchild should install its SIGTERM handler before cancellation");
+  const descendantPid = Number(await readFileAsync(marker, "utf8"));
+  assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
+  controller.abort();
+  await assert.rejects(running, /Process cancelled/);
+  const exitDeadline = Date.now() + 2_000;
+  let descendantAlive = true;
+  while (descendantAlive && Date.now() < exitDeadline) {
+    try { process.kill(descendantPid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") descendantAlive = false; else throw error; }
+    if (descendantAlive) await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(descendantAlive, false, "SIGKILL escalation should remove a grandchild that ignores SIGTERM");
+}));
+
 test("restricted profiles block paths and executables outside explicit allowlists", async () => withTemp(async (root) => {
   const allowed = join(root, "allowed"); const denied = join(root, "denied"); await mkdir(allowed); await mkdir(denied);
   const access = new AccessController({ mode: "restricted", readRoots: [allowed], writeRoots: [allowed], allowedExecutables: ["node"] });
