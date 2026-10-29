@@ -1855,13 +1855,13 @@ test("completion rejects saved GitHub observations after same-repository mutatio
     { name: "different-repository", evidenceInput: { owner: "example", repo: "project", number: 7 }, mutationInput: { owner: "example", repo: "other", number: 7, labels: ["ready"] }, stale: false }
   ]) {
     const store = new XystStore(join(root, `github-observation-${scenario.name}.sqlite`)); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
-    config.set("global", "model.default", "test-model"); const sessionId = sessions.create(`GitHub ${scenario.name}`); const scope = `github-${scenario.name}`; const now = new Date().toISOString();
+    config.set("global", "model.default", "test-model"); config.set("global", "integrations.github.enabled", true); const sessionId = sessions.create(`GitHub ${scenario.name}`); const scope = `github-${scenario.name}`; const now = new Date().toISOString();
     const insert = store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,finished_at,effect,execution_scope,request_hash) VALUES(?,?,?,?,?,'completed',?,?,'external',?,?)");
     insert.run(`issue-read-${scenario.name}`, sessionId, "github_issue_get", JSON.stringify(scenario.evidenceInput), JSON.stringify({ number: 7, title: "Current issue", state: "open" }), now, now, scope, `read-${scenario.name}`);
     insert.run(`issue-labels-${scenario.name}`, sessionId, "github_issue_labels_add", JSON.stringify(scenario.mutationInput), JSON.stringify({ labels: ["ready"] }), now, now, scope, `mutation-${scenario.name}`);
     const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `complete-${scenario.name}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: [`issue-read-${scenario.name}`] }) } }] } }] }) };
     try {
-      const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: { issue: async () => ({ number: 7, title: "Current issue", state: "open" }) } as never })
         .run("Confirm the observed state.", { sessionId, executionScope: scope, model: "test-model", completionCriteria: ["Confirm state"], maxTurns: 1 });
       const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id=?").get(`complete-${scenario.name}`) as { status: string; output_json: string };
       assert.equal(completion.status, scenario.stale ? "failed" : "completed");
@@ -1869,6 +1869,28 @@ test("completion rejects saved GitHub observations after same-repository mutatio
       else assert.equal(result.status, "completed");
     } finally { store.close(); }
   }
+}));
+
+test("completion refreshes GitHub observations to detect state changed outside Xyst", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "github-observation-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); config.set("global", "integrations.github.enabled", true);
+  let reads = 0; let turn = 0;
+  const github = { issue: async () => ({ number: 7, title: ++reads === 1 ? "Before external edit" : "After external edit", state: "open" }) };
+  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return call(turn === 1 ? "issue-read-before-edit" : "issue-read-after-edit", "github_issue_get", { owner: "example", repo: "project", number: 7 });
+    return call(turn === 2 ? "complete-stale-issue" : "complete-refreshed-issue", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "issue-read-before-edit" : "issue-read-after-edit"] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: github as never })
+      .run("Report the current issue title.", { workspace: root, model: "test-model", maxTurns: 4, completionCriteria: ["Report the current issue title"] });
+    assert.equal(result.status, "completed"); assert.equal(turn, 4); assert.equal(reads, 4);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /current github_issue_get data differs from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
 }));
 
 test("completion rejects browser observations after a later browser state action", async () => withTemp(async (root) => {
@@ -1884,6 +1906,32 @@ test("completion rejects browser observations after a later browser state action
     const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='complete-stale-browser'").get() as { status: string; output_json: string };
     assert.equal(completion.status, "failed");
     assert.match(completion.output_json, /browser_click ran after the evidence/);
+  } finally { store.close(); }
+}));
+
+test("completion refreshes browser snapshots to detect page changes outside Xyst", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "browser-observation-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); config.set("global", "browser.automation.enabled", true);
+  let snapshots = 0; let turn = 0;
+  const browserTools = { browser_snapshot: {
+    definition: { type: "function", function: { name: "browser_snapshot", parameters: { type: "object", properties: { max_chars: { type: "integer" } }, additionalProperties: false } } },
+    execute: async () => ({ url: "https://example.test/status", title: "Status", text: ++snapshots === 1 ? "Before external edit" : "After external edit", truncated: false })
+  } };
+  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return call(turn === 1 ? "browser-read-before-edit" : "browser-read-after-edit", "browser_snapshot", {});
+    return call(turn === 2 ? "complete-stale-browser-refresh" : "complete-fresh-browser-refresh", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "browser-read-before-edit" : "browser-read-after-edit"] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, dataDir: root,
+      browserToolsFactory: () => ({ tools: browserTools, close: async () => undefined }) })
+      .run("Report the current page status.", { workspace: root, model: "test-model", maxTurns: 4, completionCriteria: ["Report current page status"] });
+    assert.equal(result.status, "completed"); assert.equal(turn, 4); assert.equal(snapshots, 4);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /current browser_snapshot data differs from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
   } finally { store.close(); }
 }));
 

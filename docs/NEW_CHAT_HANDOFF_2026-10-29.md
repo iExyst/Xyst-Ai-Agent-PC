@@ -258,3 +258,12 @@ The saved state in the opening section is historical. Current active PC worktree
 ## Exact-head check update · 2026-10-29
 
 The remote observation invalidation source commit `333eda4491dba3fd1eb236158e67702e61f87890` passed all eight hosted checks: push CI `40876186180`, PR CI `40876196850`, push packages `40876186184`, and PR packages `40876196855`. Windows/Ubuntu verification and Linux/Windows packages passed, including Windows install/renderer and mission-service smoke. PR #82 remains OPEN/DRAFT, CLEAN and unmerged. A docs follow-up is being prepared and will require its own exact-head checks. The broader C2, sustained acceptance, CLI selector, Windows timeout, accessibility/platform, and signed release gaps remain open.
+
+## Continuation addendum · completion-time refresh for GitHub/browser reads · 2026-10-29
+
+The current remote branch was at docs commit `959ab99a7c7d60709dac60f3593d8db97e7bc92b` before this local edit; the active worktree is now dirty with the source/test/documentation change below. PR #82 is OPEN/DRAFT, CLEAN, unmerged at the published head until the next push.
+
+- Selected GitHub observations and browser snapshots/tab lists are re-run through the current tool context at completion. The provider-redacted result must exactly match its persisted evidence; out-of-band changes, unavailable read tools, access/network/browser errors, malformed inputs, and results reaching 30,000 characters fail closed and ask for a fresh or narrower query. Existing invalidation after later in-Xyst mutations remains.
+- Two new AgentRunner regressions simulate out-of-band GitHub issue-title and browser-page text changes, require a fresh read, then complete successfully. Four focused remote evidence regressions passed 4/4.
+- Full Windows root suite passed runtime 252 (249 passed, 3 host-specific skips), CLI 31/31, release verification 5/5; root typecheck, Desktop build, and `git diff --check` passed. Exact hosted checks on `959ab99` do not cover this diff.
+- Next: review full source/doc diff, commit and push to existing draft PR #82, wait for exact-head checks, update PR description and checkpoint. Do not merge. Continue C2/other matrix gaps and sustained acceptance; do not declare overall completion.

@@ -48,6 +48,7 @@ const parallelReadToolNames = new Set(["file_read", "file_list", "file_search", 
 const workspaceMutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact", "git_clone", "git_create_branch", "git_fetch", "git_stage", "git_commit"]);
 const browserObservationNames = new Set(["browser_open", "browser_snapshot", "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
 const browserStateMutationNames = new Set(["browser_open", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
+const browserRefreshableEvidenceNames = new Set(["browser_snapshot", "browser_tabs"]);
 const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
 const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
 function parsedInputRecord(inputJson: string): Record<string, unknown> {
@@ -858,6 +859,22 @@ export class AgentRunner {
           try { evidenceOutput = JSON.parse(evidence.output_json) as unknown; } catch { evidenceOutput = evidence.output_json; }
           const evidenceRecord = asRecord(evidenceOutput);
           if (typeof evidenceRecord.error === "string" || evidenceRecord.success === false) throw new Error(`Completion evidence ${evidenceId} reports a tool error`);
+          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name)) {
+            const revalidationTool = tools[evidence.name];
+            if (!revalidationTool) throw new Error(`Completion evidence ${evidenceId} cannot be refreshed because ${evidence.name} is unavailable in this run; enable the relevant integration and read the current state again.`);
+            let revalidationInput: unknown;
+            try { revalidationInput = JSON.parse(evidence.input_json) as unknown; }
+            catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be refreshed because its original ${evidence.name} input is invalid; run a fresh read.`, { cause: error }); }
+            let revalidatedOutput: string;
+            try {
+              const output = await revalidationTool.execute(revalidationInput, options.signal);
+              revalidatedOutput = this.deps.provider.redact(JSON.stringify(output)).slice(0, 30_000);
+            } catch (error) {
+              throw new Error(`Completion evidence ${evidenceId} cannot be refreshed; run ${evidence.name} again after resolving the current access, network, or browser error.`, { cause: error });
+            }
+            if (evidence.output_json.length >= 30_000 || revalidatedOutput.length >= 30_000) throw new Error(`Completion evidence ${evidenceId} is too large to compare safely after refresh; use a narrower ${evidence.name} request and verify its fresh result.`);
+            if (revalidatedOutput !== evidence.output_json) throw new Error(`Completion evidence ${evidenceId} is stale: current ${evidence.name} data differs from the saved observation. Read and verify the current state before completing.`);
+          }
           const processOutputRequirement = inferredProcessOutputRequirements.get(criterion);
           if (processOutputRequirement) assertRequiredToolEvidence(evidence.name, evidenceRecord, processOutputRequirement.requirement, workspace);
           if (evidence.name === "file_list") {
