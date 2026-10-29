@@ -343,3 +343,7 @@ Later entries in docs/verification-history.md supersede the earlier “no live o
 - The current-source native composer attempt did not submit a task. Do not count it as a desktop session acceptance. The traceability row’s bounded CDP renderer evidence and the separate native UI gap are both accurate.
 
 PR #82 remains open/draft/unmerged. Its current head and checks must be revalidated before further integration. The unexplained original Windows timeout stall, historical CLI selector discrepancy, broad representative mission reliability, platform/accessibility coverage, and signed production delivery remain open.
+
+## Continuation · current-source native input fallback · 2026-10-29
+
+The isolated package built from `f288e73950bb0e7d64979ac45d75321876e0e3a2` rendered the Control Room with runtime ready and its composer focused. Two `type_text` attempts left the field empty; a clipboard-paste fallback also left it empty after an unknown paste/refresh outcome. The clipboard was restored and the isolated package was closed after fresh enumeration confirmed the field remained empty. No task/session/model/tool/process was started. This repeats the native input harness limitation; it does not demonstrate a product pass or failure and is not a model attempt. Full details are in `docs/verification-history.md`.
