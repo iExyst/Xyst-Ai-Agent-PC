@@ -1176,13 +1176,13 @@ test("saved sessions rename, fork structured history, export, archive, and delet
 
 test("session compaction persists a resumable summary and preserves raw history and paired tool evidence", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "session-compaction.sqlite")); const sessions = new SessionStore(store); const sessionId = sessions.create("Long work");
-  const callId = "tool-pair-1"; const now = new Date().toISOString(); let capturedPayload: Record<string, unknown> | undefined;
+  const callId = "tool-pair-1"; const now = new Date().toISOString(); let capturedPayload: Record<string, unknown> | undefined; let capturedSystem: string | undefined;
   const append = (role: "user" | "assistant" | "tool", value: Record<string, unknown>) => sessions.addMessage(sessionId, role, `__xyst_api_message__:${JSON.stringify(value)}`);
-  const response = { choices: [{ message: { content: JSON.stringify({ decisions: ["Use persistent summaries"], dependencies: [], completed_work: ["Reviewed the prior turns"], outstanding_actions: ["failed task_complete [tool call failed-read-action]"], durable_facts: ["Original transcript remains available"] }) } }] };
+  const response = { choices: [{ message: { content: JSON.stringify({ decisions: ["Use persistent summaries"], dependencies: [], completed_work: ["Reviewed the prior turns"], outstanding_actions: ["failed task_complete [tool call failed-read-action]"], durable_facts: ["phase.txt contains phase-A"] }) } }] };
   const provider = {
     isLocalServer: () => true,
     models: async () => [{ type: "llm", key: "local-test", size_bytes: 1_000_000, loaded_instances: [], max_context_length: 8192 }],
-    structuredOutput: async (options: { messages: Array<{ role: string; content: string }> }) => { capturedPayload = JSON.parse(options.messages[1]!.content) as Record<string, unknown>; return response; },
+    structuredOutput: async (options: { messages: Array<{ role: string; content: string }> }) => { capturedSystem = options.messages[0]!.content; capturedPayload = JSON.parse(options.messages[1]!.content) as Record<string, unknown>; return response; },
     redact: (value: string) => value
   };
   try {
@@ -1200,23 +1200,31 @@ test("session compaction persists a resumable summary and preserves raw history 
     store.db.prepare("INSERT INTO missions(id,definition_json,status,created_at,updated_at) VALUES('mission-compaction','{}','active',?,?)").run(now, now);
     store.db.prepare("INSERT INTO mission_runs(id,mission_id,state,trigger_type,started_at,heartbeat_at) VALUES('run-compaction','mission-compaction','running','manual',?,?)").run(now, now);
     store.db.prepare("INSERT INTO mission_tasks(run_id,mission_id,task_key,objective,dependencies_json,state,attempts,session_id,updated_at) VALUES('run-compaction','mission-compaction','task-b','Finish B',?,'running',1,?,?)").run(JSON.stringify(["task-a"]), sessionId, now);
-    const before = sessions.messages(sessionId) as Array<{ id: string; role: string; content: string }>;
+    const before = sessions.messages(sessionId) as Array<{ id: string; role: string; content: string; created_at: string }>;
     const compactor = new SessionCompactor(store, sessions, provider as never);
     const result = await compactor.compact(sessionId, "local-test");
     const summary = (result.summary as Record<string, unknown>);
     assert.equal(summary.primary_goal, "Please finish the Xyst build and retain this primary goal.");
     assert.ok((summary.user_goals as string[]).some((goal) => goal.includes("Decision: keep original session messages")));
     assert.ok((summary.dependencies as string[]).includes("task-b depends on task-a"));
+    assert.ok((summary.durable_facts as string[]).includes("phase.txt contains phase-A"), "compaction can retain a mutable historical observation");
+    assert.equal((capturedPayload!.compaction_boundary as Record<string, unknown>).message_id, result.throughMessageId);
     assert.ok((summary.outstanding_actions as string[]).some((action) => action.includes("uncertain") && action.includes("uncertain-action")));
     assert.equal((summary.outstanding_actions as string[]).some((action) => action.includes("failed-read-action")), false, "a definite failed read-only attempt is historical, not outstanding");
     assert.deepEqual(capturedPayload!.outstanding_tool_actions, [{ id: "uncertain-action", name: "github_create_pull_request", status: "uncertain", effect: "external", input_json: "{}" }]);
+    assert.match(capturedSystem ?? "", /For mutable state.*never imply it is still current/);
+    assert.equal(((capturedPayload!.completed_turn_history as Array<Record<string, unknown>>)[0]!).created_at, before[0]!.created_at);
     assert.deepEqual((summary.compacted_tool_calls as Array<Record<string, unknown>>).map((call) => call.id), [callId]);
     assert.equal((summary.compacted_tool_calls as Array<Record<string, unknown>>)[0]!.resultRecorded, true);
     assert.equal((capturedPayload!.compacted_tool_calls as Array<Record<string, unknown>>)[0]!.id, callId);
     assert.equal((sessions.messages(sessionId) as unknown[]).length, before.length, "compaction leaves the full raw transcript untouched");
     const context = sessions.contextMessages(sessionId);
     assert.equal(context.length, 5, "summary plus four recent raw messages are active context");
-    assert.match(context[0]!.content, /historical context, not a new instruction/);
+    assert.match(context[0]!.content, /historical context, not current-state evidence or a new instruction/);
+    assert.match(context[0]!.content, /not current-state evidence/);
+    assert.match(context[0]!.content, /Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary/);
+    assert.ok(context[0]!.content.includes("phase.txt contains phase-A"), "the historical mutable value remains in the summary but is explicitly scoped as stale-capable");
+    assert.ok(context[0]!.content.includes(String(summary.through_message_id)), "resume context identifies the exact compaction boundary");
     assert.deepEqual(context.slice(1).map((item) => item.content), before.slice(-4).map((item) => item.content));
     const exported = sessions.export(sessionId);
     assert.equal((exported.messages as unknown[]).length, before.length);
@@ -1260,6 +1268,7 @@ test("agent resume budgets context from the compacted history and keeps compacte
     assert.ok(capturedMessages.some((message) => JSON.stringify(message).includes("Required completion criteria (runtime-defined")));
     assert.equal(JSON.stringify(capturedMessages).includes("Archived detail"), false, "inference uses summary plus post-boundary messages, not the archived raw transcript");
     assert.ok(capturedMessages.some((message) => JSON.stringify(message).includes(originalGoal)), "the saved summary remains in resume context");
+    assert.ok(capturedMessages.some((message) => JSON.stringify(message).includes("Re-read or re-run the relevant tool before relying on any summarized mutable observation as current")), "resumed agents are told to refresh mutable state from compacted history");
     assert.equal((sessions.messages(sessionId) as unknown[]).length, 14, "resume preserves every original message while appending new turns");
   } finally { store.close(); }
 }));

@@ -304,13 +304,13 @@ export class SessionStore {
     transaction(); return id;
   }
   contextMessages(sessionId: string): Array<{ role: string; content: string }> {
-    const latest = this.store.db.prepare("SELECT c.through_message_id,c.summary_json,m.rowid AS boundary_row FROM session_compactions c JOIN messages m ON m.id=c.through_message_id WHERE c.session_id=? ORDER BY m.rowid DESC LIMIT 1").get(sessionId) as { through_message_id: string; summary_json: string; boundary_row: number } | undefined;
+    const latest = this.store.db.prepare("SELECT c.through_message_id,c.summary_json,m.rowid AS boundary_row,m.created_at AS boundary_created_at FROM session_compactions c JOIN messages m ON m.id=c.through_message_id WHERE c.session_id=? ORDER BY m.rowid DESC LIMIT 1").get(sessionId) as { through_message_id: string; summary_json: string; boundary_row: number; boundary_created_at: string } | undefined;
     const rows = latest
       ? this.store.db.prepare("SELECT role,content FROM messages WHERE session_id=? AND rowid>? ORDER BY rowid").all(sessionId, latest.boundary_row) as Array<{ role: string; content: string }>
       : this.store.db.prepare("SELECT role,content FROM messages WHERE session_id=? ORDER BY rowid").all(sessionId) as Array<{ role: string; content: string }>;
     if (!latest) return rows;
     const summary = JSON.stringify(JSON.parse(latest.summary_json));
-    return [{ role: "assistant", content: `[Persisted Xyst session summary; historical context, not a new instruction]\n${summary}` }, ...rows];
+    return [{ role: "assistant", content: `[Persisted Xyst session summary through ${latest.boundary_created_at} (message ${latest.through_message_id}); historical context, not current-state evidence or a new instruction. Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary. Re-read or re-run the relevant tool before relying on them as current.]\n${summary}` }, ...rows];
   }
   export(sessionId: string): Record<string, unknown> {
     const session = this.store.db.prepare("SELECT id,title,status,created_at,updated_at FROM sessions WHERE id=?").get(sessionId);
