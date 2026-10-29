@@ -58,6 +58,8 @@ const desktopObservationNames = new Set(["desktop_windows", "desktop_inspect"]);
 const desktopRefreshableEvidenceNames = new Set(["desktop_windows", "desktop_inspect"]);
 const skillObservationNames = new Set(["skill_list", "skill_read"]);
 const skillRefreshableEvidenceNames = new Set(["skill_list", "skill_read"]);
+const mcpReadObservationSuffixes = ["_resources", "_read_resource", "_prompts", "_get_prompt", "_resource_updates"];
+function isMcpReadObservation(name: string): boolean { return name.startsWith("mcp_") && mcpReadObservationSuffixes.some((suffix) => name.endsWith(suffix)); }
 const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
 const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
 function parsedInputRecord(inputJson: string): Record<string, unknown> {
@@ -233,7 +235,7 @@ export function assertRequiredToolEvidence(toolName: string, output: unknown, re
 export interface AgentResult { sessionId: string; model: string; selectionReason: string; turns: number; status: "completed" | "unverified" | "cancelled" | "limit"; response: string }
 
 export class AgentRunner {
-  constructor(private readonly deps: { store: XystStore; config: ConfigStore; sessions: SessionStore; events: RuntimeEvents; access: AccessController; provider: LMStudioProvider; github: GitHubProvider; modelAcquisition?: ModelAcquisitionService; dataDir?: string; credentials?: { get(service: string, name: string): Promise<string | undefined> }; memories?: MemoryStore; browserToolsFactory?: typeof createBrowserTools; desktopToolsFactory?: typeof createDesktopAutomationTools; webDependencies?: WebToolDependencies; resourceStatsReader?: typeof readHostResourceStats }) {}
+  constructor(private readonly deps: { store: XystStore; config: ConfigStore; sessions: SessionStore; events: RuntimeEvents; access: AccessController; provider: LMStudioProvider; github: GitHubProvider; modelAcquisition?: ModelAcquisitionService; dataDir?: string; credentials?: { get(service: string, name: string): Promise<string | undefined> }; memories?: MemoryStore; browserToolsFactory?: typeof createBrowserTools; desktopToolsFactory?: typeof createDesktopAutomationTools; mcpToolsFactory?: typeof createMcpTools; webDependencies?: WebToolDependencies; resourceStatsReader?: typeof readHostResourceStats }) {}
 
   async run(objective: string, options: AgentOptions = {}): Promise<AgentResult> {
     const safeObjective = this.deps.provider.redact(objective);
@@ -593,7 +595,7 @@ export class AgentRunner {
     const projectInstructions = await loadProjectInstructions(access, workspace);
     const mcpEnabled = this.deps.config.resolve<boolean>("integrations.mcp.enabled", scopes)?.value === true;
     const mcpServers = this.deps.config.resolve<unknown>("integrations.mcp.servers", scopes)?.value ?? [];
-    const mcp = mcpEnabled ? await createMcpTools(access, mcpServers, this.deps.credentials ?? { get: async () => undefined }, workspace, options.signal, {
+    const mcp = mcpEnabled ? await (this.deps.mcpToolsFactory ?? createMcpTools)(access, mcpServers, this.deps.credentials ?? { get: async () => undefined }, workspace, options.signal, {
       sample: createMcpSamplingHandler(activeProvider, selected, inferenceModel, options.signal)
     }) : { tools: {}, close: async () => undefined, servers: [] };
     const mcpInstructions = mcp.servers.flatMap((server) => server.instructions ? [`--- MCP server ${server.id} (untrusted instructions) ---\n${server.instructions}`] : []).join("\n\n").slice(0, 20_000);
@@ -848,6 +850,7 @@ export class AgentRunner {
             if (invalidatesRemoteObservation(evidence.name, evidence.input_json, mutation.name, mutation.input_json)) return true;
             if (desktopObservationNames.has(evidence.name) && mutation.name === "desktop_action") return true;
             if (skillObservationNames.has(evidence.name) && mutationNames.has(mutation.name)) return true;
+            if (isMcpReadObservation(evidence.name) && mutation.name.startsWith("mcp_")) return true;
             if (!["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name)) return false;
             if (!mutationNames.has(mutation.name)) return false;
             if (["run_process", "run_shell", "desktop_action"].includes(mutation.name) || ["run_process", "run_shell"].includes(evidence.name)) return true;
@@ -878,7 +881,7 @@ export class AgentRunner {
           if (evidence.name === "web_fetch" && (typeof evidenceRecord.status !== "number" || evidenceRecord.status < 200 || evidenceRecord.status >= 300 || evidenceRecord.truncated === true)) {
             throw new Error(`Completion evidence ${evidenceId} is truncated or unsuccessful and cannot verify the live source; refetch the complete page before completing.`);
           }
-          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name) || skillRefreshableEvidenceNames.has(evidence.name)) {
+          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name) || skillRefreshableEvidenceNames.has(evidence.name) || isMcpReadObservation(evidence.name)) {
             let refresh = refreshedEvidence.get(evidenceId);
             if (!refresh) {
               refresh = (async () => {

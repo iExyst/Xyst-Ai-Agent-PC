@@ -600,6 +600,65 @@ test("skill read evidence is refreshed after an external guide edit", async () =
   } finally { store.close(); }
 }));
 
+test("MCP resource read evidence is refreshed against the current server result", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "mcp-evidence-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "integrations.mcp.enabled", true);
+  config.set("global", "integrations.mcp.servers", [{ id: "docs", transport: "stdio", command: "unused" }]);
+  let resource = "Initial MCP resource contents."; let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "loaded-chat", display_name: "Chat", size_bytes: 20, loaded_instances: [{ id: "loaded-chat", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1 || turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-read-${turn}`, type: "function", function: { name: "mcp_docs_read_resource", arguments: JSON.stringify({ uri: "fixture://guide" }) } }] } }] };
+      if (turn === 2) resource = "Updated MCP resource contents.";
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-complete-${turn}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1, 1] }) } }] } }] };
+    }
+  };
+  const definition = { type: "function", function: { name: "mcp_docs_read_resource", description: "Read one MCP resource", parameters: { type: "object", properties: { uri: { type: "string" } }, required: ["uri"], additionalProperties: false } } };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+    mcpToolsFactory: (async () => ({ tools: { mcp_docs_read_resource: { definition, execute: async () => ({ contents: resource, trust: "untrusted-mcp-content" }) } }, close: async () => undefined, servers: [{ id: "docs", toolCount: 0 }] })) as never
+  });
+  try {
+    const result = await agent.run("Use mcp_docs_read_resource to read the guide.", { workspace: root, model: "loaded-chat", maxTurns: 5 });
+    assert.equal(result.status, "completed");
+    const reads = store.db.prepare("SELECT output_json FROM tool_calls WHERE name='mcp_docs_read_resource' ORDER BY rowid").all() as Array<{ output_json: string }>;
+    assert.deepEqual(reads.map(({ output_json }) => JSON.parse(output_json).contents), ["Initial MCP resource contents.", "Updated MCP resource contents."]);
+  } finally { store.close(); }
+}));
+
+test("MCP actions invalidate earlier resource evidence until it is reread", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "mcp-action-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "integrations.mcp.enabled", true);
+  config.set("global", "integrations.mcp.servers", [{ id: "docs", transport: "stdio", command: "unused" }]);
+  let resource = "Before MCP write."; let turn = 0; let writeCalls = 0;
+  const provider = {
+    redact: (value: string) => value,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "loaded-chat", display_name: "Chat", size_bytes: 20, loaded_instances: [{ id: "loaded-chat", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1 || turn === 4) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-action-read-${turn}`, type: "function", function: { name: "mcp_docs_read_resource", arguments: JSON.stringify({ uri: "fixture://guide" }) } }] } }] };
+      if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "mcp-action-write", type: "function", function: { name: "mcp_docs_append_note", arguments: JSON.stringify({ text: "write" }) } }] } }] };
+      const indexes = turn === 3 ? [2, 2, 1] : [1, 1, 2];
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-action-complete-${turn}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: indexes }) } }] } }] };
+    }
+  };
+  const definition = (name: string, schema: Record<string, unknown>) => ({ type: "function", function: { name, description: name, parameters: schema } });
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+    mcpToolsFactory: (async () => ({ tools: {
+      mcp_docs_read_resource: { definition: definition("mcp_docs_read_resource", { type: "object", properties: { uri: { type: "string" } }, required: ["uri"], additionalProperties: false }), execute: async () => ({ contents: resource, trust: "untrusted-mcp-content" }) },
+      mcp_docs_append_note: { definition: definition("mcp_docs_append_note", { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }), execute: async () => { writeCalls++; resource = "After MCP write."; return { updated: true, trust: "untrusted-mcp-content" }; } }
+    }, close: async () => undefined, servers: [{ id: "docs", toolCount: 1 }] })) as never
+  });
+  try {
+    const result = await agent.run("Use mcp_docs_read_resource to read the guide, then use mcp_docs_append_note to update it.", { workspace: root, model: "loaded-chat", maxTurns: 6, approveExternalAction: async () => true });
+    assert.equal(result.status, "completed");
+    assert.equal(writeCalls, 1);
+    const reads = store.db.prepare("SELECT output_json FROM tool_calls WHERE name='mcp_docs_read_resource' ORDER BY rowid").all() as Array<{ output_json: string }>;
+    assert.deepEqual(reads.map(({ output_json }) => JSON.parse(output_json).contents), ["Before MCP write.", "After MCP write."]);
+  } finally { store.close(); }
+}));
+
 test("browser automation setting controls whether browser tools reach the agent", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "browser-automation-setting.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "browser.automation.enabled", false);
