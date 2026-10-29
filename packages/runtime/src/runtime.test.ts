@@ -4844,15 +4844,18 @@ test("independent HTTP MCP server negotiates sampling tools and completes a tool
     'process.on("SIGTERM", () => { void transport.close().finally(() => http.close(() => process.exit(0))); });'
   ].join("\n"));
 
-  const child = spawn(process.execPath, [serverPath, readyPath], { cwd: root, stdio: "ignore" });
+  const child = spawn(process.execPath, [serverPath, readyPath], { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  let childStderr = "";
+  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (childStderr.length < 4000) childStderr += chunk.slice(0, 4000 - childStderr.length); });
   let connection: Awaited<ReturnType<typeof createMcpTools>> | undefined;
   try {
     let port: number | undefined;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (child.exitCode !== null) throw new Error(`HTTP MCP fixture exited early with ${child.exitCode}`);
-      try { port = (JSON.parse(await readFileAsync(readyPath, "utf8")) as { port: number }).port; break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); }
+    const readyDeadline = Date.now() + 10_000;
+    while (Date.now() < readyDeadline) {
+      if (child.exitCode !== null) throw new Error(`HTTP MCP fixture exited early with ${child.exitCode}: ${childStderr}`);
+      try { port = (JSON.parse(await readFileAsync(readyPath, "utf8")) as { port: number }).port; break; } catch { await new Promise((resolve) => setTimeout(resolve, 25)); }
     }
-    assert.ok(port, "independent HTTP MCP fixture should announce its loopback port");
+    assert.ok(port, `independent HTTP MCP fixture should announce its loopback port within 10 seconds${childStderr ? `; stderr: ${childStderr}` : ""}`);
     const modelRequests: Array<{ messages: unknown[]; tools: unknown[]; tool_choice?: string }> = [];
     const sample = createMcpSamplingHandler({
       chat: async () => { throw new Error("sampling with tools must use chatWithTools"); },
