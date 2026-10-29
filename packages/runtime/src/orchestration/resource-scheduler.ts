@@ -37,6 +37,15 @@ export interface ResourceBatchPlan {
   requestedConcurrency: number;
 }
 
+/** Resolve an exact model key or a uniquely owned loaded instance ID. */
+export function resolveResourceModel(models: LMStudioModel[], identifier: string): LMStudioModel | undefined {
+  const llms = models.filter((candidate) => candidate.type === "llm");
+  const exact = llms.find((candidate) => candidate.key === identifier);
+  if (exact) return exact;
+  const owners = llms.filter((candidate) => candidate.loaded_instances.some((instance) => instance.id === identifier));
+  return owners.length === 1 ? owners[0] : undefined;
+}
+
 /**
  * Admit ready work against RAM estimates and optional LM Studio GPU estimates.
  * Concurrent KV-cache costs remain heuristic; neither figure reserves hardware.
@@ -61,7 +70,7 @@ export function planResourceAwareBatch(
     let model: LMStudioModel | undefined;
     let selectionReason = task.model ? "explicit mission or agent model assignment" : "no automatic model assignment requested";
     if (task.model) {
-      model = llms.find((candidate) => candidate.key === task.model);
+      model = resolveResourceModel(llms, task.model);
       if (model && model.loaded_instances.length === 0 && coldModelReservations.has(model.key)) {
         deferredTaskIds.push(task.id);
         continue;
@@ -147,7 +156,7 @@ export function planResourceAwareBatch(
     }
     const assignment: ResourceTaskAssignment = {
       ...task,
-      ...(model ? { selectedModel: model.key } : {}),
+      ...(model ? { selectedModel: task.model ?? model.key } : {}),
       selectionReason,
       estimatedAdditionalBytes: incrementalBytes,
       ...(incrementalGpuBytes === undefined ? {} : { estimatedAdditionalGpuMemoryBytes: incrementalGpuBytes }),

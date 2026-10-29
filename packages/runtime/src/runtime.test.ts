@@ -225,6 +225,23 @@ test("mission resource scheduler defers oversized models and fits workers to the
   assert.equal(pinned.assignments[0]?.admittedOverBudget, true);
 });
 
+test("mission resource scheduler resolves loaded instance IDs without changing assignments", () => {
+  const gib = 1024 ** 3;
+  const models = [
+    { type: "llm" as const, publisher: "test", key: "alpha", display_name: "Alpha", size_bytes: 2 * gib, loaded_instances: [{ id: "alpha-instance", config: {} }] },
+    { type: "llm" as const, publisher: "test", key: "beta", display_name: "Beta", size_bytes: 2 * gib, loaded_instances: [{ id: "beta-instance", config: {} }] }
+  ];
+  const options = { memoryBudgetBytes: 4 * gib, maxConcurrency: 2, availableGpuMemoryBytes: 2 * gib, estimatedGpuMemoryBytesByModel: { alpha: 3 * gib, beta: 3 * gib } };
+  const plan = planResourceAwareBatch([{ id: "a", model: "alpha-instance" }, { id: "b", model: "beta-instance" }], models, options);
+  assert.deepEqual(plan.assignments.map((item) => item.selectedModel), ["alpha-instance", "beta-instance"]);
+  assert.equal(plan.assignments.length, 2);
+  assert.ok(plan.assignments.every((item) => item.estimatedAdditionalGpuMemoryBytes !== undefined));
+  const ambiguous = [...models, { ...models[1]!, key: "other", loaded_instances: [{ id: "alpha-instance", config: {} }] }];
+  const guarded = planResourceAwareBatch([{ id: "a", model: "alpha-instance" }, { id: "b", model: "missing" }], ambiguous, options);
+  assert.equal(guarded.assignments.length, 1);
+  assert.equal(guarded.assignments[0]?.admittedOverBudget, true);
+});
+
 test("mission resource scheduler considers live free VRAM and LM Studio GPU estimates", () => {
   const models = [
     { type: "llm" as const, publisher: "test", key: "gpu-heavy", display_name: "GPU heavy", size_bytes: 4 * 1024 ** 3, loaded_instances: [], max_context_length: 8192, capabilities: { trained_for_tool_use: true } },
@@ -3523,6 +3540,21 @@ test("mission execution defers ready work when model memory estimates exceed the
     assert.ok(assignments.every((assignment) => assignment.model === "loaded-small" && assignment.automaticModelAssignment === true));
     const agents = store.db.prepare("SELECT definition_json FROM agents WHERE mission_id=? ORDER BY id").all(mission.id) as Array<{ definition_json: string }>;
     assert.ok(agents.every((entry) => JSON.parse(entry.definition_json).model === "loaded-small"));
+  } finally { store.close(); }
+}));
+
+test("mission admission estimates catalog models for pinned loaded instance IDs", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "instance-gpu-mission.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
+  const gib = 1024 ** 3; config.set("global", "orchestration.memoryBudgetBytes", 4 * gib); config.set("global", "orchestration.maxConcurrency", 2);
+  const models = ["alpha", "beta"].map((key) => ({ type: "llm" as const, publisher: "Test", key, display_name: key, size_bytes: gib, loaded_instances: [{ id: `${key}-instance`, config: {} }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }));
+  const estimates: string[] = []; const assigned: string[] = []; let active = 0; let peak = 0;
+  let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; });
+  const runner = new PersistentMissionRunner({ store, config, events, modelProvider: { supportsLocalCliModelLifecycle: () => true, models: async () => models, estimateLoad: async (model: string) => { estimates.push(model); if (!models.some((item) => item.key === model)) throw new Error("Unknown catalog model"); return { output: "Estimated GPU Memory: 3 GiB" }; } } as never, resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 16 * gib, usedBytes: 4 * gib, availableBytes: 12 * gib, usedPercent: 25 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 14 * gib, freeBytes: 2 * gib }] } }), agent: { run: async (_objective: string, options: Record<string, unknown>) => { assigned.push(String(options.model)); active++; peak = Math.max(peak, active); if (active === 2) release(); await Promise.race([gate, new Promise<void>((resolve) => setTimeout(resolve, 1000))]); active--; return { sessionId: `instance-${options.model}`, model: options.model, turns: 1, status: "completed" as const, response: "done" }; } } as never });
+  try {
+    await mkdir(join(root, "a")); await mkdir(join(root, "b"));
+    const mission = runner.repository.create({ name: "Loaded instance admission", objective: "Run both workers", maxConcurrency: 2, tasks: [{ id: "a", objective: "Work", workspace: join(root, "a"), model: "alpha-instance", dependsOn: [] }, { id: "b", objective: "Work", workspace: join(root, "b"), model: "beta-instance", dependsOn: [] }] });
+    const result = await runner.run(mission.id);
+    assert.equal(result.status, "completed"); assert.equal(peak, 2); assert.deepEqual(assigned.sort(), ["alpha-instance", "beta-instance"]); assert.ok(estimates.includes("alpha") && estimates.includes("beta")); assert.ok(!estimates.includes("alpha-instance"));
   } finally { store.close(); }
 }));
 

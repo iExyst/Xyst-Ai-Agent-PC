@@ -13,7 +13,7 @@ import { AccessController, type AccessProfile } from "../access.js";
 import { runProcess } from "../platform.js";
 import { freemem, totalmem } from "node:os";
 import type { LMStudioProvider } from "../providers/lm-studio.js";
-import { planResourceAwareBatch, type ResourceTaskAssignment, type ResourceTaskCandidate } from "./resource-scheduler.js";
+import { planResourceAwareBatch, resolveResourceModel, type ResourceTaskAssignment, type ResourceTaskCandidate } from "./resource-scheduler.js";
 import { readModelPerformance } from "../model-performance.js";
 import { classifyModelTaskObjective } from "../model-task-type.js";
 import { chooseAgentModel, estimateRequiredContextTokens, modelLoadContextLength } from "../model-selection.js";
@@ -436,7 +436,7 @@ export class PersistentMissionRunner {
               availableGpuMemoryBytes = hostResources.nvidiaGpuMemory.devices.reduce((sum, device) => sum + device.freeBytes, 0);
               const requiredContextTokens = Math.max(...resourceCandidates.map((task) => task.requiredContextTokens ?? 4096));
               gpuEstimateContextTokens = requiredContextTokens;
-              const pinnedKeys = resourceCandidates.flatMap((task) => task.model ? [task.model] : []);
+              const pinnedKeys = resourceCandidates.flatMap((task) => task.model ? [resolveResourceModel(installedModels, task.model)?.key ?? task.model] : []);
               const toolModels = installedModels.some((candidate) => candidate.type === "llm" && candidate.capabilities?.trained_for_tool_use === true);
               const eligible = installedModels.filter((candidate) => candidate.type === "llm" && (!toolModels || candidate.capabilities?.trained_for_tool_use === true)
                 && (typeof candidate.max_context_length !== "number" || candidate.max_context_length >= requiredContextTokens));
@@ -646,7 +646,7 @@ export class PersistentMissionRunner {
                 const eligible = currentModels.filter((candidate) => candidate.type === "llm" && (!toolModels || candidate.capabilities?.trained_for_tool_use === true)
                   && (typeof candidate.max_context_length !== "number" || candidate.max_context_length >= requiredContextTokens));
                 const best = eligible.length ? chooseAgentModel(eligible, { requiredContextTokens, performanceByModel }).model : undefined;
-                const pinnedKeys = resourceCandidates.flatMap((candidate) => candidate.model ? [candidate.model] : []);
+                const pinnedKeys = resourceCandidates.flatMap((candidate) => candidate.model ? [resolveResourceModel(currentModels, candidate.model)?.key ?? candidate.model] : []);
                 const shortlist = [...new Set([...pinnedKeys, ...(best ? [best.key] : []), ...[...eligible].sort((left, right) => left.size_bytes - right.size_bytes).map((candidate) => candidate.key)])].slice(0, 8);
                 for (const modelKey of shortlist) {
                   if (controller.signal.aborted) throw new Error("Mission cancelled");
