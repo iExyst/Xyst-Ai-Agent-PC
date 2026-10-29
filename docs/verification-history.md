@@ -2619,3 +2619,10 @@ Updated C2 to reflect the shipped-local candidate work and bounded evidence: exp
 - Added an AgentRunner regression that changes a matching line outside Xyst between the search and completion. Stale completion is rejected; a fresh search supports verified completion. The focused regression passed in the Windows root suite.
 - Windows `npm test` passed runtime 257 (254 passed, 3 host-specific skips, 0 failed), CLI 31/31, release verification 5/5. `npm run typecheck`, `npm run desktop:build`, and `git diff --check` passed.
 - This closes one bounded `file_search` freshness gap under C2. The comparison does not establish completeness of results beyond the tool's bounded file/match limits, and broader stale evidence, representative sustained acceptance, platform/accessibility coverage, the historical CLI recovery-selector discrepancy, the original Windows timeout stall, and signed production release/update hosting remain open. These local source and documentation edits have no exact-head hosted checks yet; PR #82 remains OPEN/DRAFT and unmerged.
+
+## Completion evidence refresh for Git observations · 2026-10-29
+
+- Selected `git_status`, `git_diff`, `git_log`, and `git_branches` evidence is now re-executed at `task_complete` through each registered tool with its saved arguments and current access policy. The redacted JSON result must match the persisted observation. Changed state, unavailable tools, malformed saved data, access/repository errors, or output at the 30,000-character cap fail closed.
+- Expanded the AgentRunner regression to cover all four tools. Each case changes the working tree, commits an external edit, or adds a branch after the original observation; stale completion is rejected, then a fresh result completes. Focused Windows regression passed all four cases.
+- Root Windows `npm test` passed runtime 258 (255 passed, 3 host-specific skips), CLI 31/31, and release verification 5/5. `npm run typecheck`, `npm run desktop:build`, and `git diff --check` passed.
+- This closes a bounded Git-observation freshness slice under C2. It does not resolve every external state race or the other open C2 and project acceptance gaps.

@@ -1872,6 +1872,36 @@ test("completion rejects file_search results made stale by an out-of-band edit a
   } finally { store.close(); }
 }));
 
+test("completion refreshes Git observations and rejects repository changes made outside Xyst", async () => withTemp(async (root) => {
+  for (const toolName of ["git_status", "git_diff", "git_log", "git_branches"]) {
+    const repo = join(root, toolName); await mkdir(repo); await git(["init", "--quiet", "--initial-branch=main"], { cwd: repo });
+    await git(["config", "user.name", "Xyst Test"], { cwd: repo }); await git(["config", "user.email", "xyst-test@example.invalid"], { cwd: repo });
+    const sourcePath = join(repo, "README.md"); await writeFile(sourcePath, "before\n", "utf8"); await git(["add", "README.md"], { cwd: repo }); await git(["commit", "--quiet", "-m", "base"], { cwd: repo });
+    const store = new XystStore(join(root, `${toolName}.sqlite`)); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+    config.set("global", "model.default", "test-model"); let turn = 0;
+    const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+    const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1 || turn === 3) return call(`${toolName}-observation-${turn}`, toolName, toolName === "git_diff" ? { cwd: repo } : {});
+      if (turn === 2) {
+        await writeFile(sourcePath, "after external edit\n", "utf8");
+        if (toolName === "git_log") { await git(["add", "README.md"], { cwd: repo }); await git(["commit", "--quiet", "-m", "external edit"], { cwd: repo }); }
+        if (toolName === "git_branches") await git(["branch", "external-observation"], { cwd: repo });
+      }
+      return call(`${toolName}-completion-${turn}`, "task_complete", { evidence_tool_call_indexes: [1] });
+    } };
+    try {
+      const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+        .run(`Report the current state using ${toolName}.`, { workspace: repo, maxTurns: 4 });
+      assert.equal(result.status, "completed", `${toolName} should complete after taking a fresh observation`); assert.equal(turn, 4, `${toolName} stale output should be refreshed`);
+      const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string }>;
+      assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"], toolName);
+      assert.match(completions[0]!.output_json, new RegExp(`current ${toolName} data differs from the saved observation`));
+      assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+    } finally { store.close(); }
+  }
+}));
+
 test("completion rejects saved GitHub observations after same-repository mutations but keeps unrelated repositories", async () => withTemp(async (root) => {
   for (const scenario of [
     { name: "same-repository", evidenceInput: { owner: "Example", repo: "Project", number: 7 }, mutationInput: { owner: "example", repo: "project", number: 7, labels: ["ready"] }, stale: true },
