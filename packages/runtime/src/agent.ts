@@ -21,6 +21,7 @@ import { createMcpTools } from "./integrations/mcp.js";
 import { createMcpSamplingHandler } from "./integrations/mcp-sampling.js";
 import { parseLmStudioResourceEstimate, readHostResourceStats } from "./system-resources.js";
 import { createBrowserTools } from "./tools/browser.js";
+import type { WebToolDependencies } from "./tools/web.js";
 import type { ModelAcquisitionService } from "./integrations/model-acquisition.js";
 import { runBoundedOrdered } from "./orchestration/tool-batches.js";
 import { ProcessStartError } from "./platform.js";
@@ -49,6 +50,7 @@ const workspaceMutationNames = new Set(["file_create", "file_patch", "file_delet
 const browserObservationNames = new Set(["browser_open", "browser_snapshot", "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
 const browserStateMutationNames = new Set(["browser_open", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
 const browserRefreshableEvidenceNames = new Set(["browser_snapshot", "browser_tabs"]);
+const webRefreshableEvidenceNames = new Set(["web_fetch", "web_search"]);
 const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
 const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
 function parsedInputRecord(inputJson: string): Record<string, unknown> {
@@ -224,7 +226,7 @@ export function assertRequiredToolEvidence(toolName: string, output: unknown, re
 export interface AgentResult { sessionId: string; model: string; selectionReason: string; turns: number; status: "completed" | "unverified" | "cancelled" | "limit"; response: string }
 
 export class AgentRunner {
-  constructor(private readonly deps: { store: XystStore; config: ConfigStore; sessions: SessionStore; events: RuntimeEvents; access: AccessController; provider: LMStudioProvider; github: GitHubProvider; modelAcquisition?: ModelAcquisitionService; dataDir?: string; credentials?: { get(service: string, name: string): Promise<string | undefined> }; memories?: MemoryStore; browserToolsFactory?: typeof createBrowserTools; resourceStatsReader?: typeof readHostResourceStats }) {}
+  constructor(private readonly deps: { store: XystStore; config: ConfigStore; sessions: SessionStore; events: RuntimeEvents; access: AccessController; provider: LMStudioProvider; github: GitHubProvider; modelAcquisition?: ModelAcquisitionService; dataDir?: string; credentials?: { get(service: string, name: string): Promise<string | undefined> }; memories?: MemoryStore; browserToolsFactory?: typeof createBrowserTools; webDependencies?: WebToolDependencies; resourceStatsReader?: typeof readHostResourceStats }) {}
 
   async run(objective: string, options: AgentOptions = {}): Promise<AgentResult> {
     const safeObjective = this.deps.provider.redact(objective);
@@ -629,7 +631,7 @@ export class AgentRunner {
       }
     } : undefined;
     const tools: Record<string, { definition: Record<string, unknown>; execute(args: unknown, signal?: AbortSignal): Promise<unknown> }> = {
-      ...createAgentTools(access, workspace, { searchToken: () => this.deps.credentials?.get("brave", "search-api-key") ?? Promise.resolve(undefined) }, ocrLanguages, officeRendererExecutable, desktopAutomationEnabled), ...createGitTools(access, workspace, { githubEnabled, githubWritesEnabled, ...(this.deps.github.enterpriseHost ? { githubEnterpriseHost: this.deps.github.enterpriseHost } : {}), githubToken: (signal) => this.deps.github.gitToken(signal) }),
+      ...createAgentTools(access, workspace, { ...this.deps.webDependencies, searchToken: () => this.deps.credentials?.get("brave", "search-api-key") ?? Promise.resolve(undefined) }, ocrLanguages, officeRendererExecutable, desktopAutomationEnabled), ...createGitTools(access, workspace, { githubEnabled, githubWritesEnabled, ...(this.deps.github.enterpriseHost ? { githubEnterpriseHost: this.deps.github.enterpriseHost } : {}), githubToken: (signal) => this.deps.github.gitToken(signal) }),
       ...mcp.tools,
       ...browser.tools,
       ...(githubEnabled ? createGitHubTools(access, this.deps.github, { writesEnabled: githubWritesEnabled, mergeAuthorized }) : {}),
@@ -819,6 +821,7 @@ export class AgentRunner {
         if (!requiredCompletionCriteria.length || requiredCompletionCriteria.length > 50 || !Array.isArray(indexes) || indexes.length !== requiredCompletionCriteria.length || !indexes.every((item) => Number.isSafeInteger(item) && (item as number) >= 1 && (item as number) <= currentEvidence.length)) {
           throw new Error(`Completion verification needs one evidence index shared by every criterion, or between 2 and ${requiredCompletionCriteria.length} candidate evidence indexes; received ${receivedIndexCount}.`);
         }
+        const refreshedEvidence = new Map<string, Promise<void>>();
         const checked = await Promise.all(requiredCompletionCriteria.map(async (criterion, index) => {
           const evidenceId = currentEvidence[(indexes[index] as number) - 1]!.id;
           const evidence = this.deps.store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE id=? AND (session_id=? OR execution_scope=?)").get(evidenceId, sessionId, executionScope) as { name: string; status: string; input_json: string; output_json: string | null } | undefined;
@@ -859,21 +862,47 @@ export class AgentRunner {
           try { evidenceOutput = JSON.parse(evidence.output_json) as unknown; } catch { evidenceOutput = evidence.output_json; }
           const evidenceRecord = asRecord(evidenceOutput);
           if (typeof evidenceRecord.error === "string" || evidenceRecord.success === false) throw new Error(`Completion evidence ${evidenceId} reports a tool error`);
-          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name)) {
-            const revalidationTool = tools[evidence.name];
-            if (!revalidationTool) throw new Error(`Completion evidence ${evidenceId} cannot be refreshed because ${evidence.name} is unavailable in this run; enable the relevant integration and read the current state again.`);
-            let revalidationInput: unknown;
-            try { revalidationInput = JSON.parse(evidence.input_json) as unknown; }
-            catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be refreshed because its original ${evidence.name} input is invalid; run a fresh read.`, { cause: error }); }
-            let revalidatedOutput: string;
-            try {
-              const output = await revalidationTool.execute(revalidationInput, options.signal);
-              revalidatedOutput = this.deps.provider.redact(JSON.stringify(output)).slice(0, 30_000);
-            } catch (error) {
-              throw new Error(`Completion evidence ${evidenceId} cannot be refreshed; run ${evidence.name} again after resolving the current access, network, or browser error.`, { cause: error });
+          if (evidence.name === "web_fetch" && (typeof evidenceRecord.status !== "number" || evidenceRecord.status < 200 || evidenceRecord.status >= 300 || evidenceRecord.truncated === true)) {
+            throw new Error(`Completion evidence ${evidenceId} is truncated or unsuccessful and cannot verify the live source; refetch the complete page before completing.`);
+          }
+          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name)) {
+            let refresh = refreshedEvidence.get(evidenceId);
+            if (!refresh) {
+              refresh = (async () => {
+                const revalidationTool = tools[evidence.name];
+                if (!revalidationTool) throw new Error(`Completion evidence ${evidenceId} cannot be refreshed because ${evidence.name} is unavailable in this run; enable the relevant integration and read the current state again.`);
+                let revalidationInput: unknown;
+                try { revalidationInput = JSON.parse(evidence.input_json) as unknown; }
+                catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be refreshed because its original ${evidence.name} input is invalid; run a fresh read.`, { cause: error }); }
+                let revalidatedOutput: string;
+                try {
+                  const output = await revalidationTool.execute(revalidationInput, options.signal);
+                  revalidatedOutput = this.deps.provider.redact(JSON.stringify(output)).slice(0, 30_000);
+                } catch (error) {
+                  throw new Error(`Completion evidence ${evidenceId} cannot be refreshed; run ${evidence.name} again after resolving the current access, network, or browser error.`, { cause: error });
+                }
+                if (evidence.output_json!.length >= 30_000 || revalidatedOutput.length >= 30_000) throw new Error(`Completion evidence ${evidenceId} is too large to compare safely after refresh; use a narrower ${evidence.name} request and verify its fresh result.`);
+                let savedComparable = evidence.output_json!;
+                let refreshedComparable = revalidatedOutput;
+                if (webRefreshableEvidenceNames.has(evidence.name)) {
+                  try {
+                    const withoutRetrievalTime = (serialized: string) => {
+                      const value = JSON.parse(serialized) as Record<string, unknown>;
+                      if (typeof value.retrieved_at !== "string" || !Number.isFinite(Date.parse(value.retrieved_at))) throw new Error("missing valid retrieval timestamp");
+                      const { retrieved_at: _retrievedAt, ...stable } = value;
+                      return stableJson(stable);
+                    };
+                    savedComparable = withoutRetrievalTime(evidence.output_json!);
+                    refreshedComparable = withoutRetrievalTime(revalidatedOutput);
+                  } catch (error) {
+                    throw new Error(`Completion evidence ${evidenceId} cannot be refreshed safely because its ${evidence.name} result is malformed; run a fresh web read.`, { cause: error });
+                  }
+                }
+                if (refreshedComparable !== savedComparable) throw new Error(`Completion evidence ${evidenceId} is stale: current ${evidence.name} data differs from the saved observation. Read and verify the current state before completing.`);
+              })();
+              refreshedEvidence.set(evidenceId, refresh);
             }
-            if (evidence.output_json.length >= 30_000 || revalidatedOutput.length >= 30_000) throw new Error(`Completion evidence ${evidenceId} is too large to compare safely after refresh; use a narrower ${evidence.name} request and verify its fresh result.`);
-            if (revalidatedOutput !== evidence.output_json) throw new Error(`Completion evidence ${evidenceId} is stale: current ${evidence.name} data differs from the saved observation. Read and verify the current state before completing.`);
+            await refresh;
           }
           const processOutputRequirement = inferredProcessOutputRequirements.get(criterion);
           if (processOutputRequirement) assertRequiredToolEvidence(evidence.name, evidenceRecord, processOutputRequirement.requirement, workspace);

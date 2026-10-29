@@ -1726,7 +1726,7 @@ test("agent blocks an identical web fetch after a successful truncated response 
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Fetch the live API response", { workspace: root, maxTurns: 4 });
     assert.equal(result.status, "completed");
     assert.equal(inferenceRound, 4);
-    assert.equal(fetchCalls, 2, "the exact repeated truncated request is rejected before a duplicate network call");
+    assert.equal(fetchCalls, 3, "the exact repeated truncated request is rejected and the cited full result is refreshed once at completion");
     const calls = store.db.prepare("SELECT input_json,status,output_json FROM tool_calls WHERE session_id=? AND name='web_fetch' ORDER BY rowid").all(result.sessionId) as Array<{ input_json: string; status: string; output_json: string | null }>;
     assert.deepEqual(calls.map((call) => call.status), ["completed", "completed"]);
     assert.equal(JSON.parse(calls[0]!.output_json!).truncated, true);
@@ -1931,6 +1931,83 @@ test("completion refreshes browser snapshots to detect page changes outside Xyst
     const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
     assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
     assert.match(completions[0]!.output_json, /current browser_snapshot data differs from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
+test("completion refreshes web fetches, ignores retrieval timestamps, and rejects changed page content", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "web-observation-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let fetches = 0; let turn = 0;
+  const fetcher: typeof fetch = async () => {
+    fetches++;
+    const text = fetches <= 2 ? (fetches === 1 ? "Before external edit" : "After external edit") : "After external edit";
+    return new Response(text, { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } });
+  };
+  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const url = "https://8.8.8.8/api/status";
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return call(turn === 1 ? "web-read-before-edit" : "web-read-after-edit", "web_fetch", { url });
+    return call(turn === 2 ? "complete-stale-web" : "complete-fresh-web", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "web-read-before-edit" : "web-read-after-edit"] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+      webDependencies: { fetcher } })
+      .run(`Use web_fetch to retrieve exactly ${url}, then report the current status.`, { workspace: root, model: "test-model", maxTurns: 4 });
+    assert.equal(result.status, "completed"); assert.equal(turn, 4); assert.equal(fetches, 4);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /current web_fetch data differs from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
+test("completion does not treat a web-fetch timestamp change as stale content", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "web-observation-timestamp.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let fetches = 0; let turn = 0;
+  const fetcher: typeof fetch = async () => {
+    fetches++;
+    return new Response("Stable public status", { status: 200, headers: { "content-type": "text/plain" } });
+  };
+  const url = "https://8.8.8.8/api/status";
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    return turn === 1
+      ? { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "web-read-stable", type: "function", function: { name: "web_fetch", arguments: JSON.stringify({ url }) } }] } }] }
+      : { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "complete-stable-web", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["web-read-stable"] }) } }] } }] };
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+      webDependencies: { fetcher } })
+      .run(`Use web_fetch to retrieve exactly ${url}, then report the current status.`, { workspace: root, model: "test-model", maxTurns: 2 });
+    assert.equal(result.status, "completed"); assert.equal(turn, 2); assert.equal(fetches, 2);
+    const completion = store.db.prepare("SELECT output_json FROM tool_calls WHERE id='complete-stable-web'").get() as { output_json: string };
+    assert.equal(JSON.parse(completion.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
+test("completion refreshes web search results and rejects changes outside Xyst", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "web-search-observation-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let fetches = 0; let turn = 0;
+  const fetcher: typeof fetch = async () => {
+    fetches++;
+    const description = fetches === 1 ? "Before external edit" : "After external edit";
+    return new Response(JSON.stringify({ web: { results: [{ title: "Status", url: "https://example.test/status", description }] } }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return call(turn === 1 ? "web-search-before-edit" : "web-search-after-edit", "web_search", { query: "current service status", count: 3 });
+    return call(turn === 2 ? "complete-stale-web-search" : "complete-fresh-web-search", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "web-search-before-edit" : "web-search-after-edit"] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+      credentials: { get: async () => "test-search-token" }, webDependencies: { fetcher } })
+      .run("Use web_search to research the current service status and report it.", { workspace: root, model: "test-model", maxTurns: 4 });
+    assert.equal(result.status, "completed"); assert.equal(turn, 4); assert.equal(fetches, 4);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /current web_search data differs from the saved observation/);
     assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
   } finally { store.close(); }
 }));
@@ -2197,7 +2274,7 @@ test("task completion rejects truncated web fetch evidence and accepts a success
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Fetch the complete live API response", { workspace: root, maxTurns: 4 });
     assert.equal(result.status, "completed");
-    assert.equal(fetchCalls, 2);
+    assert.equal(fetchCalls, 3, "the truncated result is rejected without refresh; the later full result is refreshed once at completion");
     const calls = store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId) as Array<{ name: string; status: string; input_json: string; output_json: string | null }>;
     assert.deepEqual(calls.map((call) => [call.name, call.status]), [["web_fetch", "completed"], ["task_complete", "failed"], ["web_fetch", "completed"], ["task_complete", "completed"]]);
     assert.match(calls[1]!.output_json!, /is truncated/);
