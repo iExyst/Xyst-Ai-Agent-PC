@@ -1850,6 +1850,28 @@ test("completion rejects a file_list made stale by an out-of-band entry and acce
   } finally { store.close(); }
 }));
 
+test("completion rejects file_search results made stale by an out-of-band edit and accepts a fresh search", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-file-search.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  const sourcePath = join(root, "search-target.txt"); await writeFile(sourcePath, "MATCH before external edit\n", "utf8");
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return call(turn === 1 ? "file-search-before-external-edit" : "file-search-after-external-edit", "file_search", { path: ".", query: "MATCH" });
+    if (turn === 2) await writeFile(sourcePath, "MATCH after external edit\n", "utf8");
+    return call(turn === 2 ? "complete-stale-file-search" : "complete-fresh-file-search", "task_complete", { evidence_tool_call_indexes: [1] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Search for MATCH and verify the current matching line.", { workspace: root, maxTurns: 4 });
+    assert.equal(result.status, "completed"); assert.equal(turn, 4, "the stale search must be rejected before a fresh search verifies completion");
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /current file_search results differ from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
 test("completion rejects saved GitHub observations after same-repository mutations but keeps unrelated repositories", async () => withTemp(async (root) => {
   for (const scenario of [
     { name: "same-repository", evidenceInput: { owner: "Example", repo: "Project", number: 7 }, mutationInput: { owner: "example", repo: "project", number: 7, labels: ["ready"] }, stale: true },

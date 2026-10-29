@@ -932,6 +932,25 @@ export class AgentRunner {
             catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; list the directory again before completing.`, { cause: error }); }
             if (!listingMatches) throw new Error(`Completion evidence ${evidenceId} is stale: the file_list contents changed outside Xyst after the listing. List the directory again and verify the current entries before completing.`);
           }
+          if (evidence.name === "file_search") {
+            let searchInput: unknown;
+            try { searchInput = JSON.parse(evidence.input_json) as unknown; }
+            catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; search the files again before completing.`, { cause: error }); }
+            const revalidationTool = tools.file_search;
+            if (!revalidationTool) throw new Error(`Completion evidence ${evidenceId} cannot be revalidated because file_search is unavailable; search the files again before completing.`);
+            let currentSearch: string;
+            try {
+              const output = await revalidationTool.execute(searchInput, options.signal);
+              currentSearch = this.deps.provider.redact(JSON.stringify(output));
+            } catch (error) {
+              throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; search the files again after resolving the access or filesystem error.`, { cause: error });
+            }
+            const savedSearch = this.deps.provider.redact(evidence.output_json!);
+            if (savedSearch.length >= 30_000 || currentSearch.length >= 30_000) throw new Error(`Completion evidence ${evidenceId} is too large to compare safely; use a narrower file_search query before completing.`);
+            if (stableJson(JSON.parse(currentSearch) as unknown) !== stableJson(JSON.parse(savedSearch) as unknown)) {
+              throw new Error(`Completion evidence ${evidenceId} is stale: current file_search results differ from the saved observation. Search and verify the current matching lines before completing.`);
+            }
+          }
           if (evidence.name === "office_preview") {
             const sourcePath = evidenceRecord.source_path;
             const sourceHash = evidenceRecord.source_sha256;
