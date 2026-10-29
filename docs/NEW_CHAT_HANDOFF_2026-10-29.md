@@ -220,10 +220,10 @@ Next: publish this source/doc candidate to draft PR #82, wait for exact-head hos
 
 ## Continuation addendum · ordinary command output evidence · 2026-10-29
 
-- Current PC worktree branch is `codex/integrate-pr72-through-command-rerun`, based at PR #82 head `26f4b35a92b9595f344b6f7451de2bab2504c4ee` before this local edit. `pc` targets Xyst-Ai-Agent-PC; `origin` is the separate repository. PR #82 remains open/draft and must remain unmerged without explicit authorization.
+- Current PC worktree branch is `codex/integrate-pr72-through-command-rerun`, source commit `ada91f74e955f76161400d17ea51e1f3e84b2eeb`. `pc` targets Xyst-Ai-Agent-PC; `origin` is the separate repository. PR #82 remains open/draft and must remain unmerged without explicit authorization.
 - Reproduced a task-completion false positive: an objective explicitly required stdout exactly `EXPECTED`; a successful `run_process` printing `WRONG` was accepted. Added inference for quoted stdout exact/equality/match and include/contain assertions, enforced against successful exit-0 process results both during evidence mapping and final criterion validation. Requirements remain active when `run_process` is excluded from allowed tools. Regressions prove wrong-output rejection, exact and substring matching, and fail-closed behavior without the process tool.
 - Verification: focused regressions passed; final Windows root `npm test` passed runtime 246 (243 passed, 3 platform skips), CLI 31/31, release 5/5; `npm run typecheck`; `npm run desktop:build`; `git diff --check`. No Linux/hosted checks cover this edit yet.
-- Source/test/docs changes are local and uncommitted. Next: final diff review; commit and push to draft PR #82, update its description, and verify exact-head hosted checks. Continue the requirement audit and preserve recorded failures; do not claim overall completion.
+- Source/test commit `ada91f7` was pushed to draft PR #82. All eight exact-head hosted jobs passed: push CI `40867681683`, PR CI `40867690009`, push Desktop packages `40867681671`, PR Desktop packages `40867690004`. Next: record this evidence in the final PR/checkpoint, keep #82 draft, and continue the requirement audit while preserving recorded failures. Do not claim overall completion.
 
 ### Exact-head verification follow-up · 2026-10-29
 
