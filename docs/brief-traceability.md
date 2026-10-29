@@ -67,3 +67,7 @@ Built-in MCP `resources`, `read_resource`, `prompts`, `get_prompt`, and `resourc
 ### A1 follow-up · readable saved desktop transcripts
 
 A live inspection of the packaged Control Room found that persisted API message envelopes appeared as [object Object] in the saved-session transcript. The renderer now unwraps message content and renders tool-call labels, structured text/image parts, and unknown structured data readably; four renderer regressions cover these forms. Root tests, desktop typecheck/production renderer build, and diff check passed locally. All eight hosted checks passed on commit 228bf89, including the Windows clean-install renderer smoke. Manual native UI acceptance of the corrected transcript and rerun controls remains open.
+
+### C2 follow-up · native authorization control reached; resume still unverified
+
+In the isolated packaged Control Room, the selected current replay-head command's native one-use authorization dialog was accepted and read-only SQLite confirmed a new pending authorization. Computer Use could not populate the continuation field (`set_value` timed out; `type_text` produced no visible text), so no desktop resume or child process was launched. The installed package predates the transcript renderer fix. This partial control-path observation does not close native UI/accessibility acceptance or the desktop owner-crash requirement; see [`verification-history.md`](verification-history.md#native-desktop-authorization-control-and-continuation-attempt--2026-10-29--incomplete).
