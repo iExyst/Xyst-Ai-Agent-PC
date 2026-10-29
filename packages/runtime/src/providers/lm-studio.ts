@@ -379,7 +379,7 @@ export class LMStudioProvider {
     try {
       const token = await this.tokenResolver(); this.remember(token); const headers = new Headers({ Accept: "text/event-stream", "Content-Type": "application/json" });
       if (token) headers.set("Authorization", `Bearer ${token}`);
-      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, body: JSON.stringify({ ...request, stream: true }), signal: deadline.signal });
+      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, body: JSON.stringify({ ...request, stream: true, stream_options: { include_usage: true } }), signal: deadline.signal });
       if (!response.ok) {
         let message = "";
         try { message = await response.text(); } catch (error) { throw this.deadlineError(deadline, signal, "/v1/chat/completions", error); }

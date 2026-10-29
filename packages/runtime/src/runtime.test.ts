@@ -6145,6 +6145,7 @@ test("LM Studio tool streams parse tool calls and fail on server errors or empty
       else response.end([
         `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: "dummy_echo", arguments: '{"text":' } }] }, finish_reason: null }] })}`,
         `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"ok"}' } }] }, finish_reason: "tool_calls" }] })}`,
+        `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 } })}`,
         "data: [DONE]", ""
       ].join("\n\n"));
     });
@@ -6155,6 +6156,8 @@ test("LM Studio tool streams parse tool calls and fail on server errors or empty
     const provider = new LMStudioProvider({ baseUrl: `http://127.0.0.1:${address.port}` });
     const result = await provider.streamChatWithTools({ model: "test-model", messages: [{ role: "user", content: "Call dummy_echo" }], tools: [], reasoning_effort: "none" });
     assert.equal(requestBody?.reasoning_effort, "none");
+    assert.deepEqual(requestBody?.stream_options, { include_usage: true });
+    assert.deepEqual(result.usage, { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 });
     assert.deepEqual((result.choices as Array<{ message: { tool_calls: Array<{ function: { name: string; arguments: string } }> } }>)[0]?.message.tool_calls, [{ id: "call-1", type: "function", function: { name: "dummy_echo", arguments: '{"text":"ok"}' } }]);
     mode = "error";
     await assert.rejects(provider.streamChatWithTools({ model: "test-model", messages: [], tools: [] }), /Invalid request: tool schema/);
