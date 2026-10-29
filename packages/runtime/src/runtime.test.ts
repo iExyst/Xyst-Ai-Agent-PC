@@ -7300,7 +7300,7 @@ test("agent compacts a saved oversized tool chain before resuming on its residen
 test("compaction checks its entire prompt against the selected resident instance context", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "compaction-input-budget.sqlite")); const sessions = new SessionStore(store); const sessionId = sessions.create("Bounded summary");
   for (let i = 0; i < 3; i++) {
-    sessions.addMessage(sessionId, "user", `Goal ${i}: ` + "g".repeat(1000));
+    sessions.addMessage(sessionId, "user", `Goal ${i}: ` + "g".repeat(i === 0 ? 30_000 : 1000));
     sessions.addMessage(sessionId, "assistant", "Recorded this goal.");
   }
   for (let i = 0; i < 4; i++) sessions.addMessage(sessionId, "assistant", "Recent turn");
@@ -7309,7 +7309,7 @@ test("compaction checks its entire prompt against the selected resident instance
     structuredOutput: async () => assert.fail("must not send an oversized summary prompt to the small instance")
   };
   try {
-    await assert.rejects(() => new SessionCompactor(store, sessions, provider as never).compact(sessionId, "small"), /Compaction input cannot fit/);
+    await assert.rejects(() => new SessionCompactor(store, sessions, provider as never).compact(sessionId, "small"), /No safe completed-turn prefix|Compaction input cannot fit/);
     assert.equal(sessions.compactions(sessionId).length, 0); assert.equal(sessions.messages(sessionId).length, 10);
   } finally { store.close(); }
 }));

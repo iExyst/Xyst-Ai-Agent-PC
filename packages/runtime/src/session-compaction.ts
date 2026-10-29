@@ -33,6 +33,13 @@ function contentText(content: unknown): string {
   }).join("\n");
 }
 
+function compactSummaryText(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  const head = Math.ceil((limit - 80) / 2);
+  const tail = Math.floor((limit - 80) / 2);
+  return `${value.slice(0, head)}\n[${value.length - head - tail} characters omitted from this summary excerpt; full message remains in saved history]\n${value.slice(-tail)}`;
+}
+
 function containsImage(message: ApiMessage): boolean {
   return Array.isArray(message.content) && message.content.some((part) => Boolean(part && typeof part === "object" && ["image", "image_url"].includes(String((part as Record<string, unknown>).type))));
 }
@@ -80,8 +87,8 @@ function compactableHistory(messages: StoredMessage[], maxChars: number): { boun
     // cutoff merely because its raw output exceeds the summary input limit.
     const summarized = JSON.stringify({
       id: row.id, created_at: row.created_at, role: message.role,
-      content: contentText(message.content).slice(0, 4000),
-      tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: call.input.slice(0, 2000) })),
+      content: compactSummaryText(contentText(message.content), 1000),
+      tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: compactSummaryText(call.input, 500) })),
       ...(message.role === "tool" && typeof message.tool_call_id === "string" ? { tool_call_id: message.tool_call_id } : {})
     });
     chars += summarized.length;
@@ -105,10 +112,28 @@ function compactableHistory(messages: StoredMessage[], maxChars: number): { boun
 
 function unique(values: string[]): string[] { return [...new Set(values.map((value) => value.trim()).filter(Boolean))]; }
 
+function previousSummaryContext(snapshot: Record<string, unknown> | undefined, isStillOutstanding: (action: string) => boolean): string {
+  if (!snapshot) return "null";
+  const recentText = (key: string, limit: number): string[] => Array.isArray(snapshot[key])
+    ? (snapshot[key] as unknown[]).filter((item): item is string => typeof item === "string")
+      .filter((item) => key !== "outstanding_actions" || isStillOutstanding(item))
+      .slice(-limit).map((item) => item.slice(0, 300))
+    : [];
+  // Durable arrays and the compacted call journal are merged from `snapshot`
+  // below, so the summarizer only needs a small recent sample. Sending the
+  // entire old call journal again can make compaction of an 8k resident model
+  // impossible even when the new prefix is small.
+  return JSON.stringify({
+    decisions: recentText("decisions", 4), dependencies: recentText("dependencies", 4),
+    completed_work: recentText("completed_work", 4), outstanding_actions: recentText("outstanding_actions", 6),
+    durable_facts: recentText("durable_facts", 4)
+  });
+}
+
 export class SessionCompactor {
   constructor(private readonly store: XystStore, private readonly sessions: SessionStore, private readonly provider: LMStudioProvider) {}
 
-  async compact(sessionId: string, model: string, signal?: AbortSignal, options: { requireLoadedInstanceId?: string } = {}): Promise<Record<string, unknown>> {
+  async compact(sessionId: string, model: string, signal?: AbortSignal, options: { requireLoadedInstanceId?: string; maxSummaryChars?: number; fitAttempts?: number } = {}): Promise<Record<string, unknown>> {
     if (!model.trim()) throw new Error("Compaction requires a local LM Studio model");
     if (!this.provider.isLocalServer()) throw new Error("Session compaction is disabled for remote LM Studio endpoints to keep saved conversation data local");
     const rows = this.store.db.prepare("SELECT rowid,id,role,content,created_at FROM messages WHERE session_id=? ORDER BY rowid").all(sessionId) as StoredMessage[];
@@ -127,7 +152,8 @@ export class SessionCompactor {
     if (options.requireLoadedInstanceId && !requestedInstance) throw new Error(`The resident compaction instance ${options.requireLoadedInstanceId} is no longer loaded; automatic compaction will not request a replacement`);
     const configuredContext = (requestedInstance ? [requestedInstance] : selectedModel.loaded_instances).map((item) => item.config.context_length).filter((value): value is number => typeof value === "number" && value > 0);
     const contextTokens = configuredContext.length ? Math.max(...configuredContext) : selectedModel.max_context_length ?? 8192;
-    const candidate = compactableHistory(remaining, Math.max(500, Math.min(28_000, (contextTokens - 1800) * 2)));
+    const maximumSummaryChars = options.maxSummaryChars ?? Math.max(500, Math.min(28_000, (contextTokens - 1800) * 2));
+    const candidate = compactableHistory(remaining, maximumSummaryChars);
     if (!candidate.boundary || candidate.messages.length < 4) throw new Error("No safe completed-turn prefix is available to compact. Xyst keeps recent turns, image attachments, and incomplete tool-call/result pairs intact.");
     const compactedIds = new Set(candidate.messages.map((item) => item.id));
     const parsedPrefix = candidate.messages.map(parseMessage);
@@ -140,8 +166,8 @@ export class SessionCompactor {
       id: candidate.messages[index]!.id,
       created_at: candidate.messages[index]!.created_at,
       role: message.role,
-      content: contentText(message.content).slice(0, 4000),
-      tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: call.input.slice(0, 2000) })),
+      content: compactSummaryText(contentText(message.content), 1000),
+      tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: compactSummaryText(call.input, 500) })),
       ...(message.role === "tool" && typeof message.tool_call_id === "string" ? { tool_call_id: message.tool_call_id } : {})
     }));
     const compactedToolCalls = this.toolCallPairs(sessionId, parsedPrefix);
@@ -152,7 +178,7 @@ export class SessionCompactor {
     const isStillOutstanding = (action: string): boolean => !toolStates.some((tool) => action.includes(tool.id) && !unresolvedToolIds.has(tool.id));
     const pendingActions: Array<Record<string, unknown>> = (this.store.db.prepare("SELECT id,name,status,effect,input_json FROM tool_calls WHERE session_id=? AND status IN ('running','uncertain') ORDER BY created_at").all(sessionId) as Array<Record<string, unknown>>)
       .map((action) => ({ ...action, input_json: String(action.input_json ?? "{}").slice(0, 2000) }));
-    const priorState = currentSnapshot ? JSON.stringify({ ...currentSnapshot, outstanding_actions: Array.isArray(currentSnapshot.outstanding_actions) ? currentSnapshot.outstanding_actions.filter((item): item is string => typeof item === "string" && isStillOutstanding(item)) : [] }).slice(0, 12000) : "null";
+    const priorState = previousSummaryContext(currentSnapshot, isStillOutstanding);
     const promptPayload = JSON.stringify({ compaction_boundary: { message_id: candidate.boundary.id, created_at: candidate.boundary.created_at }, primary_goal: primaryGoal, prior_user_goals: priorGoals, new_user_goals: originalUserGoals, previous_compaction: priorState, mission_tasks: missionTasks, outstanding_tool_actions: pendingActions, compacted_tool_calls: compactedToolCalls, completed_turn_history: history });
     const request = {
       model,
@@ -175,7 +201,14 @@ export class SessionCompactor {
         { role: "user", content: promptPayload }
       ]
     };
-    if (estimateRequiredContextTokens(request.messages, 1800) > contextTokens) throw new Error("Compaction input cannot fit the selected model context; choose a larger already-loaded instance or reduce the saved task context explicitly");
+    if (estimateRequiredContextTokens(request.messages, 1800) > contextTokens) {
+      const nextMaximum = Math.floor(maximumSummaryChars * 0.7);
+      const fitAttempts = options.fitAttempts ?? 0;
+      if (fitAttempts < 5 && nextMaximum >= 500 && nextMaximum < maximumSummaryChars) {
+        return this.compact(sessionId, model, signal, { ...options, maxSummaryChars: nextMaximum, fitAttempts: fitAttempts + 1 });
+      }
+      throw new Error("Compaction input cannot fit the selected model context after reducing the history prefix; choose a larger already-loaded instance or reduce the saved task context explicitly");
+    }
     const response = await this.provider.structuredOutput(request, signal);
     const choices = Array.isArray(response.choices) ? response.choices : [];
     const choice = choices[0] && typeof choices[0] === "object" ? choices[0] as Record<string, unknown> : {};
