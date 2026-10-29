@@ -10,7 +10,7 @@ import { createGitHubTools } from "./tools/github.js";
 import { AccessController, type AccessProfile } from "./access.js";
 import type { ConfigStore, SettingScope, XystStore, SessionStore, MemoryStore } from "./storage.js";
 import { authorizeCommandRerun, quarantineAbandonedCommandRerun, resolveCommandReplay } from "./command-rerun.js";
-import { LMStudioProvider, type LMStudioModel } from "./providers/lm-studio.js";
+import { LMStudioProvider, modelForIdentifier, type LMStudioModel } from "./providers/lm-studio.js";
 import { GitHubError, type GitHubProvider } from "./integrations/github.js";
 import { chooseAgentModel, chooseEmbeddingModel, estimateRequiredContextTokens, modelLoadContextLength } from "./model-selection.js";
 import { readModelPerformance } from "./model-performance.js";
@@ -34,9 +34,6 @@ async function hashFile(path: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
   return hash.digest("hex");
-}
-function modelForIdentifier(inventory: LMStudioModel[], identifier: string): LMStudioModel | undefined {
-  return inventory.find((model) => model.key === identifier) ?? inventory.find((model) => model.loaded_instances.some((instance) => instance.id === identifier));
 }
 function instanceContextLength(instance: LMStudioModel["loaded_instances"][number], fallback?: number | null): number | undefined {
   const context = instance.config.context_length;
@@ -551,7 +548,7 @@ export class AgentRunner {
         : await provider.load(candidate.key, loadOptions, options.signal);
         const refreshedInventory = await provider.models(options.signal);
         if (provider === this.deps.provider) inventory = refreshedInventory;
-      const loadedModel = refreshedInventory.find((entry) => entry.key === candidate.key);
+      const loadedModel = modelForIdentifier(refreshedInventory, candidate.key);
       if (!loadedModel?.loaded_instances.length) throw new Error(`LM Studio did not report ${candidate.key} as loaded after Xyst requested it`);
       const returnedInstanceId = typeof loadResult.instance_id === "string" ? loadResult.instance_id : undefined;
       const reportedLoadConfig = asRecord(loadResult.load_config);

@@ -38,6 +38,22 @@ export interface LMStudioLoadOptions {
   ttl_seconds?: number;
   echo_load_config?: boolean;
 }
+/** A server may repeat a model key; do not hide instances on later rows. */
+export function modelForIdentifier(inventory: LMStudioModel[], identifier: string): LMStudioModel | undefined {
+  const candidate = inventory.find((model) => model.key === identifier && model.loaded_instances.length > 0)
+    ?? inventory.find((model) => model.key === identifier)
+    ?? inventory.find((model) => model.loaded_instances.some((instance) => instance.id === identifier));
+  if (!candidate) return undefined;
+  const instances = new Map<string, LMStudioModel["loaded_instances"][number]>();
+  for (const row of inventory) {
+    if (row.key !== candidate.key || row.type !== candidate.type) continue;
+    for (const instance of row.loaded_instances) {
+      const previous = instances.get(instance.id);
+      instances.set(instance.id, { ...instance, config: { ...previous?.config, ...instance.config } });
+    }
+  }
+  return { ...candidate, loaded_instances: [...instances.values()] };
+}
 export interface LMStudioChatOptions {
   model: string;
   input: string | Array<Record<string, unknown>>;
@@ -201,7 +217,7 @@ export class LMStudioProvider {
     }
     try {
       signal?.throwIfAborted();
-      const candidate = (await this.models(signal)).find((entry) => entry.key === model);
+      const candidate = modelForIdentifier(await this.models(signal), model);
       if (!candidate) throw new LMStudioError(`Model ${model} is no longer installed`);
       const suitable = candidate.loaded_instances.find((instance) => {
         const context = instance.config.context_length ?? candidate.max_context_length;

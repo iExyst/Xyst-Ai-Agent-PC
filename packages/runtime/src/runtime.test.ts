@@ -7157,7 +7157,10 @@ test("automatic model loads across Node workers reuse one instance and refuse a 
   const server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/v1/models") {
-      response.end(JSON.stringify({ models: [{ key: "shared-model", max_context_length: 32768, loaded_instances: loaded ? [{ id: "only-instance", config: { context_length: 8192 } }] : [] }] }));
+      response.end(JSON.stringify({ models: [
+        { key: "shared-model", max_context_length: 32768, loaded_instances: [] },
+        { key: "shared-model", max_context_length: 32768, loaded_instances: loaded ? [{ id: "only-instance", config: { context_length: 8192 } }] : [] }
+      ] }));
     } else if (request.url === "/api/v1/models/load") {
       loads++;
       setTimeout(() => { loaded = true; response.end(JSON.stringify({ instance_id: "only-instance", load_config: { context_length: 8192 } })); }, 100);
@@ -7193,3 +7196,20 @@ test("automatic model loads across Node workers reuse one instance and refuse a 
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+test("agent reuses a loaded instance reported only on a later duplicate inventory row", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "duplicate-inventory.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "duplicate-model"); config.set("global", "models.automaticLoading", false);
+  const empty = { type: "llm", key: "duplicate-model", max_context_length: 32768, size_bytes: 1, loaded_instances: [] };
+  let loads = 0; let inferenceModel = "";
+  const provider = {
+    redact: (value: string) => value, isLocalServer: () => true,
+    models: async () => [empty, { ...empty, loaded_instances: [{ id: "resident-instance", config: { context_length: 32768 } }] }],
+    load: async () => { loads++; throw new Error("unnecessary load"); },
+    streamChatWithTools: async (request: { model: string }) => { inferenceModel = request.model; return { choices: [{ message: { role: "assistant", content: "Ready" } }] }; }
+  };
+  try {
+    await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Reply ready", { workspace: root, maxTurns: 1 });
+    assert.equal(inferenceModel, "resident-instance"); assert.equal(loads, 0);
+  } finally { store.close(); }
+}));
