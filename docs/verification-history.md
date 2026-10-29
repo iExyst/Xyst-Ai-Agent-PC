@@ -2192,3 +2192,8 @@ This is one bounded two-model run. Request overlap does not independently prove 
 ## UTF-16 file preservation regression (Windows, 2026-10-29)
 
 A focused runtime test rejects truncated code units and unpaired surrogates in both UTF-16 byte orders for reads and patches, and confirms the original bytes remain unchanged. It also reads and patches valid UTF-16LE and UTF-16BE files while preserving the BOM and a leading content byte-order mark. This is bounded deterministic coverage; it does not establish preservation for every encoding or concurrent edit scenario.
+
+## Twelve-task mission cancellation and resume stress · 2026-10-28
+
+- Added a deterministic 12-task, four-worker mission regression that cancels while all four initial workers are blocked, verifies each active task receives abort, confirms all twelve task checkpoints remain pending with only the active batch consuming attempts, then resumes and completes all tasks without exceeding the worker ceiling or duplicating any task within a run.
+- The focused regression passed 1/1. Full runtime suite passed 194 passed, 0 failed, 2 host-specific skips; runtime build, workspace typecheck, and `git diff --check` passed. This uses a fake agent to test scheduler/cancellation state transitions; it does not claim sustained live-model reliability.
