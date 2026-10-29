@@ -9,12 +9,22 @@ import type { AccessController } from "../access.js";
 
 const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,35}$/);
 const credentialRef = z.object({ service: z.string().min(1).max(100), name: z.string().min(1).max(100) }).strict();
+const toolNamesSchema = z.array(z.string().min(1).max(200)).max(100);
+function validateToolPolicy(config: { allowed_tools?: string[] | undefined; read_only_tools?: string[] | undefined }, context: z.RefinementCtx): void {
+  const readOnlyTools = config.read_only_tools ?? [];
+  if (new Set(readOnlyTools).size !== readOnlyTools.length) context.addIssue({ code: "custom", path: ["read_only_tools"], message: "Read-only MCP tool names must be unique" });
+  if (config.allowed_tools) for (const [index, name] of readOnlyTools.entries()) {
+    if (!config.allowed_tools.includes(name)) context.addIssue({ code: "custom", path: ["read_only_tools", index], message: `Read-only MCP tool ${name} must also be listed in allowed_tools` });
+  }
+}
 function isLoopbackHost(hostname: string): boolean { return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname.toLowerCase()); }
 const serverSchema = z.discriminatedUnion("transport", [
-  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.literal("stdio"), command: z.string().min(1).max(500), args: z.array(z.string().max(4000)).max(100).optional(), cwd: z.string().max(2000).optional(), env: z.record(z.string(), z.string().max(4000)).optional(), credential_env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), credentialRef).optional(), allowed_tools: z.array(z.string().min(1).max(200)).max(100).optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.literal("stdio"), command: z.string().min(1).max(500), args: z.array(z.string().max(4000)).max(100).optional(), cwd: z.string().max(2000).optional(), env: z.record(z.string(), z.string().max(4000)).optional(), credential_env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), credentialRef).optional(), allowed_tools: toolNamesSchema.optional(), read_only_tools: toolNamesSchema.optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+    validateToolPolicy(config, context);
     for (const key of Object.keys(config.env ?? {})) if (/(?:token|secret|password|credential|api.?key|authorization)/i.test(key)) context.addIssue({ code: "custom", path: ["env", key], message: "Secret environment variables must use credential_env references" });
   }),
-  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.enum(["streamable-http", "sse"]), url: z.string().url(), bearer_credential: credentialRef.optional(), oauth: z.boolean().optional(), allowed_tools: z.array(z.string().min(1).max(200)).max(100).optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.enum(["streamable-http", "sse"]), url: z.string().url(), bearer_credential: credentialRef.optional(), oauth: z.boolean().optional(), allowed_tools: toolNamesSchema.optional(), read_only_tools: toolNamesSchema.optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+    validateToolPolicy(config, context);
     if (config.oauth && config.bearer_credential) context.addIssue({ code: "custom", path: ["oauth"], message: "Choose OAuth or a static bearer credential, not both" });
   })
 ]);
@@ -326,6 +336,8 @@ export async function createMcpTools(access: AccessController, rawServers: unkno
       const discovered = await client.listTools(undefined, { ...(signal ? { signal } : {}), timeout });
       const allowedTools = server.allowed_tools ? new Set(server.allowed_tools) : undefined;
       const available = discovered.tools.filter((tool) => !allowedTools || allowedTools.has(tool.name)).slice(0, 100);
+      const configuredReadOnlyTools = new Set(server.read_only_tools ?? []);
+      const exposedReadOnlyTools = new Set<string>();
       let count = 0;
       for (const serverTool of available) {
         if (!/^[A-Za-z0-9_-]{1,100}$/.test(serverTool.name) || !serverTool.inputSchema || serverTool.inputSchema.type !== "object") continue;
@@ -348,8 +360,14 @@ export async function createMcpTools(access: AccessController, rawServers: unkno
             return { result: bounded, trust: "untrusted-mcp-content" };
           }
         };
+        if (configuredReadOnlyTools.has(serverTool.name)) {
+          readObservationNames.add(name);
+          exposedReadOnlyTools.add(serverTool.name);
+        }
         count++;
       }
+      const unavailableReadOnlyTools = [...configuredReadOnlyTools].filter((name) => !exposedReadOnlyTools.has(name));
+      if (unavailableReadOnlyTools.length) throw new Error(`Configured read-only MCP tool(s) were not exposed by server ${server.id}: ${unavailableReadOnlyTools.join(", ")}`);
       const requestOptions = { ...(signal ? { signal } : {}), timeout };
       const serverPrefix = server.id.replace(/[^A-Za-z0-9_-]/g, "_");
       if (client.listResources && client.readResource) {

@@ -62,7 +62,11 @@ Selected `skill_list` and `skill_read` evidence is refreshed through the current
 
 ### C2 follow-up · built-in MCP observation freshness
 
-Built-in MCP `resources`, `read_resource`, `prompts`, `get_prompt`, and `resource_updates` observations refresh through the current run's registered tool connection at completion. A later MCP tool call invalidates prior selected observations; arbitrary server-defined tools remain unclassified and are not automatically replayed. Deterministic AgentRunner tests cover external result changes and later MCP actions; these do not constitute live remote MCP acceptance. See [`verification-history.md`](verification-history.md#c2-follow-up--built-in-mcp-observation-freshness).
+Built-in MCP `resources`, `read_resource`, `prompts`, `get_prompt`, and `resource_updates` observations refresh through the current run's registered tool connection at completion. A later MCP tool call invalidates prior selected observations. Dynamic server-defined observations require explicit configuration as described below. Deterministic AgentRunner tests cover external result changes and later MCP actions; these do not constitute live remote MCP acceptance. See [`verification-history.md`](verification-history.md#c2-follow-up--built-in-mcp-observation-freshness).
+
+### C2 follow-up · operator-declared read-only MCP tools
+
+An MCP server definition may list discovered tool names in `read_only_tools` (also bounded by `allowed_tools`, when present). Only those exact, successfully exposed server tools join the refreshable observation set. Their cited results are re-executed at task completion and compared; unlisted server tools remain external actions. This classification is an explicit operator assertion, not a guarantee from MCP metadata: an incorrectly declared or dishonest server can still cause side effects. Deterministic coverage tests stale dynamic-tool output, configuration constraints, discovery, and failure when a configured name is unavailable. Live remote server semantics remain unverified. See [`verification-history.md`](verification-history.md#c2-follow-up--operator-declared-read-only-mcp-tools).
 
 ### A1 follow-up · readable saved desktop transcripts
 

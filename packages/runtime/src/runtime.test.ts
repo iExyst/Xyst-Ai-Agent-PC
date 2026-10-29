@@ -600,29 +600,29 @@ test("skill read evidence is refreshed after an external guide edit", async () =
   } finally { store.close(); }
 }));
 
-test("MCP resource read evidence is refreshed against the current server result", async () => withTemp(async (root) => {
+test("configured read-only MCP tool evidence is refreshed against the current server result", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "mcp-evidence-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "integrations.mcp.enabled", true);
-  config.set("global", "integrations.mcp.servers", [{ id: "docs", transport: "stdio", command: "unused" }]);
+  config.set("global", "integrations.mcp.servers", [{ id: "docs", transport: "stdio", command: "unused", read_only_tools: ["lookup"] }]);
   let resource = "Initial MCP resource contents."; let turn = 0;
   const provider = {
     redact: (value: string) => value,
     models: async () => [{ type: "llm" as const, publisher: "test", key: "loaded-chat", display_name: "Chat", size_bytes: 20, loaded_instances: [{ id: "loaded-chat", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
     streamChatWithTools: async () => {
       turn++;
-      if (turn === 1 || turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-read-${turn}`, type: "function", function: { name: "mcp_docs_read_resource", arguments: JSON.stringify({ uri: "fixture://guide" }) } }] } }] };
+      if (turn === 1 || turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-read-${turn}`, type: "function", function: { name: "mcp_docs_lookup", arguments: JSON.stringify({ query: "guide" }) } }] } }] };
       if (turn === 2) resource = "Updated MCP resource contents.";
       return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `mcp-complete-${turn}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1, 1] }) } }] } }] };
     }
   };
-  const definition = { type: "function", function: { name: "mcp_docs_read_resource", description: "Read one MCP resource", parameters: { type: "object", properties: { uri: { type: "string" } }, required: ["uri"], additionalProperties: false } } };
+  const definition = { type: "function", function: { name: "mcp_docs_lookup", description: "Configured read-only MCP lookup", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false } } };
   const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
-    mcpToolsFactory: (async () => ({ tools: { mcp_docs_read_resource: { definition, execute: async () => ({ contents: resource, trust: "untrusted-mcp-content" }) } }, readObservationNames: new Set(["mcp_docs_read_resource"]), close: async () => undefined, servers: [{ id: "docs", toolCount: 0 }] })) as never
+    mcpToolsFactory: (async () => ({ tools: { mcp_docs_lookup: { definition, execute: async () => ({ contents: resource, trust: "untrusted-mcp-content" }) } }, readObservationNames: new Set(["mcp_docs_lookup"]), close: async () => undefined, servers: [{ id: "docs", toolCount: 1 }] })) as never
   });
   try {
-    const result = await agent.run("Use mcp_docs_read_resource to read the guide.", { workspace: root, model: "loaded-chat", maxTurns: 5 });
+    const result = await agent.run("Use mcp_docs_lookup to read the guide.", { workspace: root, model: "loaded-chat", maxTurns: 5, approveExternalAction: async () => { throw new Error("configured read-only MCP tool must not require external-action approval"); } });
     assert.equal(result.status, "completed");
-    const reads = store.db.prepare("SELECT output_json FROM tool_calls WHERE name='mcp_docs_read_resource' ORDER BY rowid").all() as Array<{ output_json: string }>;
+    const reads = store.db.prepare("SELECT output_json FROM tool_calls WHERE name='mcp_docs_lookup' ORDER BY rowid").all() as Array<{ output_json: string }>;
     assert.deepEqual(reads.map(({ output_json }) => JSON.parse(output_json).contents), ["Initial MCP resource contents.", "Updated MCP resource contents."]);
   } finally { store.close(); }
 }));
@@ -5764,9 +5764,9 @@ test("local skills are discoverable and readable only by validated name", async 
   await assert.rejects(() => tools.skill_read!.execute({ name: "../secret" }), /Invalid|pattern/);
 }));
 
-test("MCP server tools are discovered, policy-gated, logged-compatible, and marked untrusted", async () => withTemp(async (root) => {
+test("MCP server tools are discovered, policy-gated, configured read-only, and marked untrusted", async () => withTemp(async (root) => {
   let called = ""; let closed = false; let notification: ((value: { uri: string }) => void) | undefined; const subscriptions = new Set<string>();
-  const connected = await createMcpTools(new AccessController({ mode: "restricted", integrations: true, network: true }), [{ id: "docs", transport: "streamable-http", url: "https://mcp.example.test/mcp", allowed_tools: ["lookup", "append_read_resource"] }], { get: async () => undefined }, root, undefined, {
+  const connected = await createMcpTools(new AccessController({ mode: "restricted", integrations: true, network: true }), [{ id: "docs", transport: "streamable-http", url: "https://mcp.example.test/mcp", allowed_tools: ["lookup", "append_read_resource"], read_only_tools: ["lookup"] }], { get: async () => undefined }, root, undefined, {
     connect: async () => ({
       listTools: async () => ({ tools: [
         { name: "lookup", description: "Search docs", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
@@ -5787,6 +5787,7 @@ test("MCP server tools are discovered, policy-gated, logged-compatible, and mark
   });
   assert.deepEqual(connected.servers, [{ id: "docs", toolCount: 2 }]);
   assert.equal(connected.readObservationNames.has("mcp_docs_read_resource"), true);
+  assert.equal(connected.readObservationNames.has("mcp_docs_lookup"), true);
   assert.equal(connected.readObservationNames.has("mcp_docs_append_read_resource"), false);
   const result = await connected.tools.mcp_docs_lookup!.execute({ query: "cancellation" }) as { trust: string; result: { content: Array<{ text: string }> } };
   assert.equal(called, "lookup"); assert.equal(result.result.content[0]?.text, "Found cancellation"); assert.equal(result.trust, "untrusted-mcp-content");
@@ -5802,6 +5803,9 @@ test("MCP server tools are discovered, policy-gated, logged-compatible, and mark
   const prompt = await connected.tools.mcp_docs_get_prompt!.execute({ name: "summarize" }) as { trust: string; result: string };
   assert.equal(prompt.trust, "untrusted-mcp-content"); assert.match(prompt.result, /Prompt summarize/);
   await connected.close(); assert.equal(closed, true); assert.equal(subscriptions.size, 0, "active MCP subscriptions are released when the agent run closes");
+  await assert.rejects(() => createMcpTools(new AccessController({ mode: "restricted", integrations: true, network: true }), [{ id: "docs", transport: "streamable-http", url: "https://mcp.example.test/mcp", read_only_tools: ["missing"] }], { get: async () => undefined }, root, undefined, {
+    connect: async () => ({ listTools: async () => ({ tools: [] }), callTool: async () => ({}), close: async () => { closed = true; } })
+  }), /Configured read-only MCP tool.*not exposed/);
   const denied = createMcpTools(new AccessController({ mode: "restricted", integrations: false }), [{ id: "docs", transport: "streamable-http", url: "https://mcp.example.test/mcp" }], { get: async () => undefined }, root, undefined, { connect: async () => { throw new Error("should not connect"); } });
   await assert.rejects(() => denied, /denies integrations/);
 }));
@@ -6071,6 +6075,8 @@ test("MCP configuration rejects inline secret environment variables and duplicat
   const token = { service: "test", name: "token" };
   assert.throws(() => mcpServersSchema.parse([{ id: "remote", transport: "streamable-http", url: "http://mcp.example.com/mcp", bearer_credential: token }]), /bearer credentials require HTTPS/);
   assert.doesNotThrow(() => mcpServersSchema.parse([{ id: "remote", transport: "streamable-http", url: "https://mcp.example.com/mcp", bearer_credential: token }]));
+  assert.throws(() => mcpServersSchema.parse([{ id: "local", transport: "stdio", command: "node", allowed_tools: ["lookup"], read_only_tools: ["mutate"] }]), /must also be listed in allowed_tools/);
+  assert.throws(() => mcpServersSchema.parse([{ id: "local", transport: "stdio", command: "node", read_only_tools: ["lookup", "lookup"] }]), /must be unique/);
   assert.doesNotThrow(() => mcpServersSchema.parse([{ id: "local", transport: "sse", url: "http://127.0.0.1:8080/sse", bearer_credential: token }]));
   assert.doesNotThrow(() => mcpServersSchema.parse([{ id: "local-v6", transport: "streamable-http", url: "http://[::1]:8080/mcp", bearer_credential: token }]));
 });
