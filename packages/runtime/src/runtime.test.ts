@@ -1943,12 +1943,12 @@ test("completion refreshes web fetches, ignores retrieval timestamps, and reject
     const text = fetches <= 2 ? (fetches === 1 ? "Before external edit" : "After external edit") : "After external edit";
     return new Response(text, { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } });
   };
-  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const call = (id: string, name: string, args: unknown, content: string | null = null) => ({ choices: [{ message: { role: "assistant", content, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
   const url = "https://8.8.8.8/api/status";
   const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
     turn++;
     if (turn === 1 || turn === 3) return call(turn === 1 ? "web-read-before-edit" : "web-read-after-edit", "web_fetch", { url });
-    return call(turn === 2 ? "complete-stale-web" : "complete-fresh-web", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "web-read-before-edit" : "web-read-after-edit"] });
+    return call(turn === 2 ? "complete-stale-web" : "complete-fresh-web", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "web-read-before-edit" : "web-read-after-edit"] }, turn === 2 ? "The current status is Before external edit." : "The current status is After external edit.");
   } };
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
@@ -1974,7 +1974,7 @@ test("completion does not treat a web-fetch timestamp change as stale content", 
     turn++;
     return turn === 1
       ? { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "web-read-stable", type: "function", function: { name: "web_fetch", arguments: JSON.stringify({ url }) } }] } }] }
-      : { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "complete-stable-web", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["web-read-stable"] }) } }] } }] };
+      : { choices: [{ message: { role: "assistant", content: "The current status is stable.", tool_calls: [{ id: "complete-stable-web", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["web-read-stable"] }) } }] } }] };
   } };
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
@@ -1994,11 +1994,11 @@ test("completion refreshes web search results and rejects changes outside Xyst",
     const description = fetches === 1 ? "Before external edit" : "After external edit";
     return new Response(JSON.stringify({ web: { results: [{ title: "Status", url: "https://example.test/status", description }] } }), { status: 200, headers: { "content-type": "application/json" } });
   };
-  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const call = (id: string, name: string, args: unknown, content: string | null = null) => ({ choices: [{ message: { role: "assistant", content, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
   const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
     turn++;
     if (turn === 1 || turn === 3) return call(turn === 1 ? "web-search-before-edit" : "web-search-after-edit", "web_search", { query: "current service status", count: 3 });
-    return call(turn === 2 ? "complete-stale-web-search" : "complete-fresh-web-search", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "web-search-before-edit" : "web-search-after-edit"] });
+    return call(turn === 2 ? "complete-stale-web-search" : "complete-fresh-web-search", "task_complete", { evidence_tool_call_ids: [turn === 2 ? "web-search-before-edit" : "web-search-after-edit"] }, turn === 2 ? "The search says Before external edit." : "The search says After external edit.");
   } };
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
@@ -2008,6 +2008,34 @@ test("completion refreshes web search results and rejects changes outside Xyst",
     const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
     assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
     assert.match(completions[0]!.output_json, /current web_search data differs from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
+test("live web research cannot complete without a user-facing answer", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "web-answer-required.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0; let fetches = 0;
+  const url = "https://8.8.8.8/api/repository";
+  const fetcher: typeof fetch = async () => {
+    fetches++;
+    return new Response(JSON.stringify({ description: null, default_branch: "main" }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "answer-required-fetch", type: "function", function: { name: "web_fetch", arguments: JSON.stringify({ url }) } }] } }] };
+    if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "answer-required-empty-completion", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["answer-required-fetch"] }) } }] } }] };
+    return { choices: [{ message: { role: "assistant", content: "The repository description is null and its default branch is main.", tool_calls: [{ id: "answer-required-final-completion", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["answer-required-fetch"] }) } }] } }] };
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+      webDependencies: { fetcher } })
+      .run(`Use web_fetch to retrieve exactly ${url} and report the repository description and default branch.`, { workspace: root, model: "test-model", maxTurns: 4 });
+    const calls = store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId);
+    assert.equal(result.status, "completed", JSON.stringify({ turn, fetches, calls })); assert.equal(turn, 3); assert.equal(fetches, 2);
+    assert.match(result.response, /description is null and its default branch is main/);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /provide the user-facing answer grounded in the fetched or searched evidence/);
     assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
   } finally { store.close(); }
 }));

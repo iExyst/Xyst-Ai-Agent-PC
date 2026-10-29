@@ -698,7 +698,10 @@ export class AgentRunner {
       && inferredFileContentRequirements.size === 0
       && !/\b(?:create|write|edit|modify|change|save|delete|move|upload|send|post|run|install|fetch|search|open|click)\b/i.test(safeObjective)
       && /^(?:please\s+)?(?:what\b|who\b|which\b|where\b|when\b|why\b|how\b|describe\b|identify\b|name\b|point out\b|read\b|transcribe\b|summari[sz]e\b|count\b|compare\b|explain\b|is there\b|are there\b|does\b|do\b|can you tell\b|tell me\b|look at\b|analy[sz]e\b)/i.test(safeObjective.trim());
+    const requiresWebAnswer = (inferredToolEvidence.has("web_fetch") || inferredToolEvidence.has("web_search") || requestedUrlCriteria.size > 0)
+      && /\b(?:report|summari[sz]e|describe|explain|tell me|answer|what|why|how|which|who|where|when)\b/i.test(safeObjective);
     let completionVerified = false;
+    let finalResponse = "";
     let currentEvidence: Array<{ id: string; name: string; input_json: string; output_json: string }> = [];
     const evidencePath = (item: { input_json: string; output_json: string | null }): string | undefined => {
       for (const value of [item.output_json, item.input_json]) {
@@ -717,6 +720,7 @@ export class AgentRunner {
     tools.task_complete = {
       definition: { type: "function", function: { name: "task_complete", description: "Verify every required user or mission criterion shown in the system instructions against successful Xyst tool results. The runtime supplies the criteria and does not accept replacement criteria. Cite evidence using either evidence_tool_call_ids copied from the current system message's available evidence list, or one evidence index when the same result supports every criterion, or a set of distinct candidate evidence indexes that collectively covers the request; candidate order does not need to match criterion order. The runtime matches required tools, URLs, and output paths to the corresponding results. Indexes are one-based in the current system message's available evidence list. A declared text file output is verified only by a successful file_read of that exact path; supported office documents may be verified by a successful office_read of that exact path. Creating or patching a file is not sufficient. This tool does not itself create evidence.", parameters: { type: "object", properties: { evidence_tool_call_indexes: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 1, maxItems: 50 }, evidence_tool_call_ids: { type: "array", items: { type: "string", minLength: 1, maxLength: 100 }, minItems: 1, maxItems: 50 } }, additionalProperties: false } } },
       execute: async (input) => {
+        if (requiresWebAnswer && !finalResponse.trim()) throw new Error("Before completing this live web research request, provide the user-facing answer grounded in the fetched or searched evidence. Then call task_complete with the persisted evidence IDs.");
         const args = asRecord(input);
         const suppliedIds = args.evidence_tool_call_ids;
         if (Array.isArray(suppliedIds) && args.evidence_tool_call_indexes !== undefined) throw new Error("Provide evidence_tool_call_ids or evidence_tool_call_indexes, not both");
@@ -1081,7 +1085,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       return this.generateWithRetry({ model: inferenceModel, messages, tools: definitions, ...inferenceOptions, ...(automaticUnloading ? { ttl: idleUnloadSeconds } : {}) }, options.onText, options.signal, provider, requestTimeoutMs);
     };
     this.deps.events.emit("agent.started", { sessionId, model: selected, maxTurns }, sessionId);
-    let turns = 0; let finalResponse = ""; let status: AgentResult["status"] = "limit"; let switchedModel = false;
+    let turns = 0; let status: AgentResult["status"] = "limit"; let switchedModel = false;
     try {
       for (; turns < maxTurns; turns++) {
         if (options.signal?.aborted) { status = "cancelled"; break; }
@@ -1143,7 +1147,10 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         const toolCalls = asArray(assistant.tool_calls);
         const text = typeof assistant.content === "string" ? assistant.content : "";
         const includesCompletionCall = toolCalls.some((value) => String(asRecord(asRecord(value).function).name ?? "") === "task_complete");
-        if (text && !includesCompletionCall) { finalResponse = text; this.deps.events.emit("agent.text", { text }, sessionId); }
+        if (text) {
+          finalResponse = text;
+          if (!includesCompletionCall) this.deps.events.emit("agent.text", { text }, sessionId);
+        }
         save(assistant as ApiMessage);
         const usage = asRecord(response.usage);
         if (localMetricsEnabled && this.isLocalMetricsProvider(activeProvider)) this.recordInferenceUsage(sessionId, selected, Date.now() - inferenceStartedAt, usage.prompt_tokens ?? usage.input_tokens ?? null, usage.completion_tokens ?? usage.output_tokens ?? null, { outcome: "success" });
@@ -1336,7 +1343,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         if (status === "cancelled") break;
         if (completionVerified) {
           status = "completed";
-          if (includesCompletionCall && text.trim()) finalResponse = "";
+          if (includesCompletionCall && text.trim() && !requiresWebAnswer) finalResponse = "";
           if (!finalResponse.trim()) {
             finalResponse = "Task completed and verified against persisted tool evidence.";
             save({ role: "assistant", content: finalResponse });
