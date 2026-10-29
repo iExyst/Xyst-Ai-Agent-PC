@@ -86,27 +86,61 @@ export class GitHubProvider {
   private async error(response: Response): Promise<GitHubError> {
     const body = await response.text().catch(() => ""); let detail = body;
     try { const parsed = JSON.parse(body) as { message?: string }; detail = parsed.message ?? body; } catch { /* keep response text */ }
+    if (response.status === 401) { this.authenticatedUser = undefined; this.appAccess = undefined; }
     const accepted = response.headers.get("X-Accepted-GitHub-Permissions") ?? undefined;
-    const rate = response.status === 403 && response.headers.get("X-RateLimit-Remaining") === "0" ? " (GitHub API rate limit reached)" : "";
-    return new GitHubError(redactSecrets(`GitHub API HTTP ${response.status}${rate}: ${detail.slice(0, 1000)}${accepted ? `; required permissions: ${accepted}` : ""}`), response.status, accepted);
-  }
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const retryAfterNumber = retryAfterHeader && /^\d+(?:\.\d+)?$/.test(retryAfterHeader) ? Number(retryAfterHeader) : undefined;
+    const retryAfterDate = retryAfterHeader && retryAfterNumber === undefined ? Date.parse(retryAfterHeader) : Number.NaN;
+    const retryAfterSeconds = retryAfterNumber !== undefined && Number.isFinite(retryAfterNumber)
+      ? Math.max(0, Math.ceil(retryAfterNumber))
+      : Number.isFinite(retryAfterDate) ? Math.max(0, Math.ceil((retryAfterDate - Date.now()) / 1000)) : undefined;
+    const remaining = response.headers.get("X-RateLimit-Remaining");
+    const resetSeconds = Number(response.headers.get("X-RateLimit-Reset"));
+    const resetDate = new Date(resetSeconds * 1000);
+    const resetAt = Number.isFinite(resetSeconds) && Number.isFinite(resetDate.getTime()) && resetSeconds > 0 ? resetDate.toISOString() : undefined;
+    const rateStatus = response.status === 403 || response.status === 429;
+    const primaryLimit = rateStatus && remaining === "0";
+    const secondaryLimit = rateStatus && /secondary rate limit|abuse detection/i.test(detail);
+    const rateLimited = primaryLimit || secondaryLimit || (rateStatus && retryAfterSeconds !== undefined) || response.status === 429;
+    const waitSeconds = retryAfterSeconds ?? (primaryLimit && resetSeconds > Date.now() / 1000 ? Math.ceil(resetSeconds - Date.now() / 1000) : undefined);
+    const rate = !rateLimited ? "" : primaryLimit
+      ? ` (GitHub primary API rate limit reached${resetAt ? `; do not retry before ${resetAt} UTC` : waitSeconds === undefined ? "; wait at least 60 seconds before retrying" : `; wait about ${waitSeconds} seconds before retrying`})`
+      : secondaryLimit
+        ? ` (GitHub secondary rate limit or abuse protection triggered${waitSeconds === undefined ? "; wait at least 60 seconds before retrying" : `; wait at least ${waitSeconds} seconds before retrying`})`
+        : ` (GitHub returned HTTP ${response.status} rate limiting${waitSeconds === undefined ? "; wait at least 60 seconds before retrying" : `; wait at least ${waitSeconds} seconds before retrying`})`;
+    const authentication = response.status === 401 ? " (GitHub rejected authentication; the token may be invalid, expired, or revoked. Check `xyst github auth status`; replace a personal token with `xyst credential set github personal-token`, or verify the GitHub App credentials.)" : "";
+    const inaccessible = response.status === 404 ? " (The resource may not exist, or it may be private and inaccessible to this account; check authentication and repository permissions.)" : "";
+    return new GitHubError(redactSecrets(`GitHub API HTTP ${response.status}${rate}${authentication}${inaccessible}: ${detail.slice(0, 1000)}${accepted ? `; required permissions: ${accepted}` : ""}`), response.status, accepted);  }
   async request<T>(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<T> {
     const token = await this.token(signal);
     let response: Response;
     try { response = await fetch(`${this.apiBase}${path}`, { ...init, headers: this.headers(token), ...(signal ? { signal } : {}) }); }
-    catch (error) { throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { if (signal?.aborted) throw error; throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
     if (!response.ok) throw await this.error(response);
     if (response.status === 204) return undefined as T;
     return await response.json() as T;
   }
   async paginate<T>(path: string, maxPages = 5, signal?: AbortSignal): Promise<T[]> {
-    const output: T[] = []; let next: string | undefined = `${this.apiBase}${path}`; const token = await this.token(signal);
+    const output: T[] = []; const apiBase = new URL(this.apiBase); const apiPathPrefix = apiBase.pathname.replace(/\/+$/, "");
+    let next: string | undefined = `${this.apiBase}${path}`; const token = await this.token(signal);
     for (let page = 0; page < Math.max(1, Math.min(maxPages, 10)) && next; page++) {
       let response: Response;
-      try { response = await fetch(next, { headers: this.headers(token), ...(signal ? { signal } : {}) }); } catch (error) { throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
+      try { response = await fetch(next, { headers: this.headers(token), redirect: "error", ...(signal ? { signal } : {}) }); } catch (error) { if (signal?.aborted) throw error; throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
       if (!response.ok) throw await this.error(response);
       const body = await response.json() as T[]; output.push(...body);
-      const link = response.headers.get("link"); next = link?.split(",").map((part) => part.trim()).find((part) => part.endsWith('rel="next"'))?.match(/<([^>]+)>/)?.[1];
+      const link = response.headers.get("link"); const candidate = link?.split(",").map((part) => part.trim()).find((part) => {
+        const relations = part.match(/;\s*rel\s*=\s*"?([^";,]+)"?/i)?.[1]?.split(/\s+/) ?? [];
+        return relations.includes("next");
+      })?.match(/<([^>]+)>/)?.[1];
+      if (!candidate) { next = undefined; continue; }
+      let nextUrl: URL;
+      try { nextUrl = new URL(candidate, apiBase); }
+      catch { throw new GitHubError("GitHub pagination returned an invalid next-page URL"); }
+      const pathIsInApi = !apiPathPrefix || nextUrl.pathname === apiPathPrefix || nextUrl.pathname.startsWith(`${apiPathPrefix}/`);
+      if (nextUrl.origin !== apiBase.origin || !pathIsInApi || nextUrl.username || nextUrl.password) {
+        throw new GitHubError("GitHub pagination next-page URL must remain on the configured API host and path");
+      }
+      next = nextUrl.href;
     }
     return output;
   }
@@ -125,7 +159,7 @@ export class GitHubProvider {
     if (!appId || !privateKey) return { authenticated: false, message: "GitHub App credentials are incomplete" };
     let response: Response;
     try { response = await fetch(`${this.apiBase}/app`, { headers: this.headers(signAppJwt(appId, privateKey)), ...(signal ? { signal } : {}) }); }
-    catch (error) { throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { if (signal?.aborted) throw error; throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
     if (!response.ok) throw await this.error(response);
     const app = await response.json() as { slug: string; html_url: string };
     const login = `${app.slug}[bot]`; this.authenticatedUser = { login, url: app.html_url, type: "App", expiresAt: Date.now() + 5 * 60_000 };
@@ -166,7 +200,7 @@ export class GitHubProvider {
     const token = await this.token(signal);
     let response: Response;
     try { response = await fetch(`${this.apiBase}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/logs`, { headers: this.headers(token), ...(signal ? { signal } : {}) }); }
-    catch (error) { throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { if (signal?.aborted) throw error; throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
     if (!response.ok) throw await this.error(response);
     const declaredSize = Number(response.headers.get("content-length") ?? 0);
     if (declaredSize > 25 * 1024 * 1024) throw new GitHubError("Workflow logs archive exceeds the 25 MiB download limit");
@@ -204,7 +238,7 @@ export class GitHubProvider {
     const token = await this.token(signal); const headers = this.headers(token); headers.set("Accept", "application/octet-stream");
     let response: Response;
     try { response = await fetch(`${this.apiBase}${path}`, { headers, ...(signal ? { signal } : {}) }); }
-    catch (error) { throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { if (signal?.aborted) throw error; throw new GitHubError(`GitHub connection failed: ${error instanceof Error ? error.message : String(error)}`); }
     if (!response.ok) throw await this.error(response);
     const declaredSize = Number(response.headers.get("content-length") ?? 0);
     if (declaredSize > 100 * 1024 * 1024) throw new GitHubError("GitHub archive exceeds the 100 MiB download limit");

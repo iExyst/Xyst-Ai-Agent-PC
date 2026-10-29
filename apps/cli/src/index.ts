@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { totalmem } from "node:os";
 import { spawn } from "node:child_process";
 import * as nodePty from "node-pty";
-import { authenticateMcpOAuth, chooseEmbeddingModel, createMcpTools, createRuntime, createText, deletePath, getDataDirectory, getSessionCompactionModel, inspectDatabaseIntegrity, McpOAuthClientProvider, resolveLMStudioIntegrations, gitBranches, gitClone, gitCommit, gitCreateBranch, gitDiff, gitFetch, gitLog, gitPush, gitStage, gitStatus, indexMemories, inspectDesktopCapabilities, inspectLmsDaemon, listFiles, mcpServersSchema, movePath, patchText, readModelPerformance, readText, requestEmbeddings, runProcess, runShell, searchFiles, sendNativeNotification, subscribeRunNotifications, type ExternalActionApprovalRequest, type RemoteFallbackApprovalRequest } from "@xyst/runtime";
+import { authenticateMcpOAuth, chooseEmbeddingModel, createMcpTools, createRuntime, createText, deletePath, getDataDirectory, getSessionCompactionModel, inspectDatabaseIntegrity, McpOAuthClientProvider, resolveLMStudioIntegrations, gitBranches, gitClone, gitCommit, gitCreateBranch, gitDiff, gitFetch, gitLog, gitPush, gitStage, gitStatus, indexMemories, inspectDesktopCapabilities, inspectLmsDaemon, killProcessTree, listFiles, mcpServersSchema, movePath, patchText, readModelPerformance, readText, requestEmbeddings, runProcess, runShell, searchFiles, sendNativeNotification, subscribeRunNotifications, type ExternalActionApprovalRequest, type RemoteFallbackApprovalRequest } from "@xyst/runtime";
 import { parseLoadOptions } from "./load-options.js";
 import { agentOutcomeNotice } from "./agent-outcome.js";
 import { parseChatOptions } from "./chat-options.js";
@@ -440,7 +440,9 @@ try {
       let result: { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; durationMs: number };
       if (spec.pty) {
         terminalSession = nodePty.spawn(spec.command, spec.args, { name: "xterm-256color", cols: spec.cols, rows: spec.rows, cwd: spec.cwd, env: process.env, ...(process.platform === "win32" ? { useConpty: true } : { encoding: "utf8" }) });
-        if (workerController.signal.aborted) terminalSession.kill(); else workerController.signal.addEventListener("abort", () => terminalSession?.kill(), { once: true });
+        const terminalPid = terminalSession.pid;
+        if (workerController.signal.aborted) await killProcessTree(terminalPid);
+        else workerController.signal.addEventListener("abort", () => { void killProcessTree(terminalPid); }, { once: true });
         writeStdin = (value) => terminalSession?.write(value);
         closeStdin = () => terminalSession?.write("\u0004");
         terminalSession.onData((chunk) => append("stdout", chunk));
