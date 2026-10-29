@@ -2,6 +2,12 @@ import type { RuntimeEvents } from "../events.js";
 import { redactSecrets } from "../credentials.js";
 import { runProcess, type ProcessOptions, type ProcessResult } from "../platform.js";
 import { LMStudioClient } from "@lmstudio/sdk";
+import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { lock } from "proper-lockfile";
 
 export interface LMStudioModel {
   type: "llm" | "embedding" | "decision";
@@ -174,6 +180,37 @@ export class LMStudioProvider {
     if (available.has(instanceId)) return instanceId;
     if (options.allowBaseModelFallback && available.has(modelKey)) return modelKey;
     throw new LMStudioError(`LM Studio reports ${modelKey} in its native inventory, but inference model ID ${instanceId} is not available from the OpenAI-compatible /v1/models endpoint${options.allowBaseModelFallback ? ` (base ID ${modelKey} is unavailable too)` : ""}. Refresh LM Studio's model list or choose a model visible to its inference API.`);
+  }
+  /** Agent loads share a lock across CLI/desktop workers and recheck live inventory. */
+  async ensureLoaded(model: string, options: LMStudioLoadOptions = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const directory = join(tmpdir(), "xyst-model-loads");
+    await mkdir(directory, { recursive: true });
+    const endpoint = new URL(this.baseUrl);
+    if (["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) endpoint.hostname = "localhost";
+    const target = join(directory, createHash("sha256").update(endpoint.href).digest("hex"));
+    const deadline = Date.now() + 120_000;
+    let release: (() => Promise<void>) | undefined;
+    while (!release) {
+      signal?.throwIfAborted();
+      try { release = await lock(target, { realpath: false, stale: 30_000, update: 10_000, retries: 0 }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
+        if (Date.now() >= deadline) throw new LMStudioError("Another Xyst worker is loading a model; retry when it finishes");
+        await delay(100, undefined, signal ? { signal } : {});
+      }
+    }
+    try {
+      signal?.throwIfAborted();
+      const candidate = (await this.models(signal)).find((entry) => entry.key === model);
+      if (!candidate) throw new LMStudioError(`Model ${model} is no longer installed`);
+      const suitable = candidate.loaded_instances.find((instance) => {
+        const context = instance.config.context_length ?? candidate.max_context_length;
+        return !options.context_length || (typeof context === "number" && context >= options.context_length);
+      });
+      if (suitable) return { instance_id: suitable.id, reused: true, load_config: suitable.config };
+      if (candidate.loaded_instances.length) throw new LMStudioError(`Model ${model} is already loaded with insufficient context. Compact the conversation or explicitly reload it with more context; Xyst will not automatically load a duplicate instance.`);
+      return await this.load(model, options, signal);
+    } finally { await release(); }
   }
   async load(model: string, options: LMStudioLoadOptions = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
     const usesCliLoad = options.gpu_offload !== undefined || options.ttl_seconds !== undefined || options.speculative_draft_mtp !== undefined || options.draft_model !== undefined ||

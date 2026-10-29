@@ -2937,7 +2937,7 @@ test("agent rechecks context as queued messages grow the saved conversation", as
   } finally { store.close(); }
 }));
 
-test("agent loads a larger-context LM Studio instance without replacing an existing instance", async () => withTemp(async (root) => {
+test("agent refuses to automatically duplicate a loaded model for more context", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "context-instance.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   const model = { type: "llm" as const, key: "context-model", max_context_length: 32768, size_bytes: 1_000_000_000, loaded_instances: [{ id: "context-model", config: { context_length: 8192 } }] };
   const generationModels: string[] = []; let loadedContext: number | undefined;
@@ -2954,14 +2954,10 @@ test("agent loads a larger-context LM Studio instance without replacing an exist
   };
   const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
   try {
-    const result = await agent.run("Reply with a short status. ".repeat(1200), { workspace: root, maxTurns: 1 });
-    assert.equal(result.model, "context-model");
-    assert.equal(generationModels.length, 1);
-    assert.equal(generationModels[0], "context-model:2");
-    assert.ok((loadedContext ?? 0) > 8192);
-    assert.deepEqual(model.loaded_instances.map((instance) => instance.id), ["context-model", "context-model:2"]);
-    const decision = store.db.prepare("SELECT model FROM model_decisions WHERE session_id=?").get(result.sessionId) as { model: string };
-    assert.equal(decision.model, "context-model");
+    await assert.rejects(() => agent.run("Reply with a short status. ".repeat(1200), { workspace: root, maxTurns: 1 }), /will not automatically load a duplicate/);
+    assert.equal(generationModels.length, 0);
+    assert.equal(loadedContext, undefined);
+    assert.deepEqual(model.loaded_instances.map((instance) => instance.id), ["context-model"]);
   } finally { store.close(); }
 }));
 
@@ -7153,4 +7149,46 @@ test("MCP sampling rejects undeclared calls, mismatched results, and unsupported
   await assert.rejects(() => sample({ messages: [{ role: "assistant", content: { type: "tool_use", id: "call-x", name: "unknown", input: {} } }], maxTokens: 16, tools: [{ name: "known", inputSchema: { type: "object" } }] }), /unknown or duplicate tool call/);
   await assert.rejects(() => sample({ messages: [{ role: "user", content: { type: "tool_result", toolUseId: "missing", content: [{ type: "text", text: "x" }] } }], maxTokens: 16, tools: [{ name: "known", inputSchema: { type: "object" } }] }), /no matching prior tool call/);
   await assert.rejects(() => sample({ messages: [{ role: "user", content: { type: "image", data: "AA==", mimeType: "image/png" } }], maxTokens: 16 }), /active inference provider does not support multimodal MCP sampling/);
+});
+
+test("automatic model loads across Node workers reuse one instance and refuse a context duplicate", { timeout: 30_000 }, async () => {
+  let loads = 0;
+  let loaded = false;
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/api/v1/models") {
+      response.end(JSON.stringify({ models: [{ key: "shared-model", max_context_length: 32768, loaded_instances: loaded ? [{ id: "only-instance", config: { context_length: 8192 } }] : [] }] }));
+    } else if (request.url === "/api/v1/models/load") {
+      loads++;
+      setTimeout(() => { loaded = true; response.end(JSON.stringify({ instance_id: "only-instance", load_config: { context_length: 8192 } })); }, 100);
+    } else { response.statusCode = 404; response.end("{}"); }
+  });
+  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  const children: ReturnType<typeof spawn>[] = [];
+  try {
+    const address = server.address(); assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const source = `import { LMStudioProvider } from ${JSON.stringify(new URL("../dist/providers/lm-studio.js", import.meta.url).href)}; console.log(JSON.stringify(await new LMStudioProvider({baseUrl:process.env.XYST_MODEL_TEST_URL}).ensureLoaded('shared-model',{context_length:8192})));`;
+    const outcomes = [1, 2].map(() => {
+      const child = spawn(process.execPath, ["--input-type=module", "-e", source], { env: { ...process.env, XYST_MODEL_TEST_URL: baseUrl }, stdio: ["ignore", "pipe", "pipe"] }); children.push(child);
+      return new Promise<{ code: number | null; output: string; error: string }>((resolve, reject) => {
+        let output = ""; let error = "";
+        child.stdout!.on("data", (chunk) => { output += String(chunk); }); child.stderr!.on("data", (chunk) => { error += String(chunk); });
+        child.once("error", reject); child.once("close", (code) => resolve({ code, output, error }));
+      });
+    });
+    const results = await Promise.all(outcomes);
+    for (const result of results) { assert.equal(result.code, 0, result.error); assert.equal(JSON.parse(result.output).instance_id, "only-instance"); }
+    assert.equal(loads, 1);
+    assert.equal(results.filter((result) => JSON.parse(result.output).reused === true).length, 1);
+    const provider = new LMStudioProvider({ baseUrl });
+    await assert.rejects(() => provider.ensureLoaded("shared-model", { context_length: 16384 }), /will not automatically load a duplicate/);
+    assert.equal(loads, 1);
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(() => provider.ensureLoaded("shared-model", {}, controller.signal), /abort/i);
+    assert.equal(loads, 1);
+  } finally {
+    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });

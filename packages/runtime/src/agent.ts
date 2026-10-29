@@ -497,7 +497,8 @@ export class AgentRunner {
       const isLocalServer = typeof provider.isLocalServer === "function" ? provider.isLocalServer() : true;
       if (!isLocalServer) access.assertCapability("network");
       if (typeof provider.models !== "function") return { modelKey: key, inferenceModel: key };
-      const providerInventory = provider === this.deps.provider ? (inventory ??= await provider.models(options.signal)) : await provider.models(options.signal);
+      const providerInventory = await provider.models(options.signal);
+      if (provider === this.deps.provider) inventory = providerInventory;
       const candidate = modelForIdentifier(providerInventory, key);
       if (!candidate) throw new Error(`Selected model ${key} is not present in the LM Studio model inventory`);
       const requestedInstance = key === candidate.key ? undefined : candidate.loaded_instances.find((instance) => instance.id === key);
@@ -527,7 +528,7 @@ export class AgentRunner {
       }
       if (candidate.loaded_instances.length === 0 && !automaticLoading) throw new Error(`Model ${candidate.key} is not loaded and automatic model loading is off. Load it in LM Studio or enable Xyst automatic model loading.`);
       if (typeof candidate.max_context_length === "number" && candidate.max_context_length < requiredContextTokens) throw new Error(`The conversation now needs an estimated ${requiredContextTokens} context tokens, but selected model ${candidate.key} provides ${candidate.max_context_length}. Choose a model with a larger declared context.`);
-      if (candidate.loaded_instances.length > 0 && !automaticLoading && typeof currentContext === "number") throw new Error(`The conversation now needs an estimated ${requiredContextTokens} context tokens, but selected model ${candidate.key} provides ${currentContext}. Increase its LM Studio context or enable automatic model loading so Xyst can load a separate instance with a larger context.`);
+      if (candidate.loaded_instances.length > 0 && !automaticLoading && typeof currentContext === "number") throw new Error(`The conversation now needs an estimated ${requiredContextTokens} context tokens, but selected model ${candidate.key} provides ${currentContext}. Compact the conversation or explicitly reload the model with more context.`);
       if (candidate.loaded_instances.length === 0 && !automaticLoading) throw new Error(`Model ${candidate.key} is not loaded and automatic model loading is off. Load it in LM Studio or enable Xyst automatic model loading.`);
       if (typeof provider.load !== "function") {
         // Lightweight/mock providers can expose inventory without a lifecycle
@@ -542,8 +543,10 @@ export class AgentRunner {
       const supportsLocalCli = typeof provider.supportsLocalCliModelLifecycle === "function" ? provider.supportsLocalCliModelLifecycle() : isLocalServer;
       if (automaticUnloading && !supportsLocalCli) throw new Error("Automatic model unloading requires the local LM Studio CLI; install it or disable automatic unloading before loading a task-specific instance.");
       const previousInstanceIds = new Set(candidate.loaded_instances.map((instance) => instance.id));
+      if (previousInstanceIds.size) throw new Error(`Model ${candidate.key} is already loaded with insufficient context. Compact the conversation or explicitly reload it with more context; Xyst will not automatically load a duplicate instance.`);
       const loadContext = modelLoadContextLength(candidate.max_context_length, requiredContextTokens);
-      const loadResult = await provider.load(candidate.key, { ...(loadContext !== undefined ? { context_length: loadContext } : {}), ...(automaticUnloading ? { ttl_seconds: idleUnloadSeconds } : {}) }, options.signal);
+      const load = typeof provider.ensureLoaded === "function" ? provider.ensureLoaded.bind(provider) : provider.load.bind(provider);
+      const loadResult = await load(candidate.key, { ...(loadContext !== undefined ? { context_length: loadContext } : {}), ...(automaticUnloading ? { ttl_seconds: idleUnloadSeconds } : {}) }, options.signal);
         const refreshedInventory = await provider.models(options.signal);
         if (provider === this.deps.provider) inventory = refreshedInventory;
       const loadedModel = refreshedInventory.find((entry) => entry.key === candidate.key);
