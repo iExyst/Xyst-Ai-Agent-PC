@@ -2202,3 +2202,9 @@ A focused runtime test rejects truncated code units and unpaired surrogates in b
 
 - Retained the 1,000-session, 20,000-message, 1,000-tool-call legacy migration case from PR #75, updated to expect current schema version 16. It asserts preserved counts/history, external-action backfill, and SQLite integrity.
 - The integration branch retains its process-kill migration regression, which pauses a real child process after migration DDL and before its marker, kills the child, verifies rollback and preserved data, then reopens successfully through the latest schema. PR #75's separate version-15 process-kill evidence remains recorded in its source PR; the combined branch will rerun the current candidate suite.
+
+## Process-tree abort and interactive stdin coverage · 2026-10-28
+
+- Added a real process integration test that launches a Node parent and grandchild, waits until the grandchild is running, aborts Xyst's process runner, and asserts the descendant cannot write a delayed marker. The same test exercises POSIX process-group termination on Linux and Windows `taskkill /T /F` on Windows.
+- Added a direct interactive process test that streams two input chunks through the provided writer, closes stdin, and verifies the child receives the complete input through EOF and returns it on stdout. Detached descendants and PTY resize/control behavior remain outside this evidence.
+- PR #76's exact head passed all eight Windows/Linux PR and push verification/package checks. The integration branch retains the deterministic tests; rerun the combined candidate after conflict resolution.

@@ -6279,3 +6279,44 @@ test("mission lifecycle supports rename, safe fork, portable export, and guarded
   assert.ok(missions.get(worktree.id));
   } finally { store.close(); }
 }));
+
+
+test("aborting a process terminates its grandchild before a delayed side effect", async () => withTemp(async (root) => {
+  const marker = join(root, "grandchild-survived.txt"); const controller = new AbortController();
+  let markGrandchildStarted!: (pid: number) => void;
+  const grandchildStarted = new Promise<number>((resolve) => { markGrandchildStarted = resolve; });
+  let output = "";
+  const parentSource = `
+    const { spawn } = require("node:child_process");
+    const grandchild = spawn(process.execPath, ["-e", "setTimeout(() => require('node:fs').writeFileSync(process.argv[1], 'survived'), 2000)", process.argv[1]], { stdio: "ignore", windowsHide: true });
+    process.stdout.write("grandchild=" + grandchild.pid + "\\n");
+    setInterval(() => {}, 1000);
+  `;
+  const running = runProcess(process.execPath, ["-e", parentSource, marker], {
+    signal: controller.signal,
+    onStdout: (chunk) => {
+      output += chunk;
+      const match = output.match(/grandchild=(\d+)/);
+      if (match) markGrandchildStarted(Number(match[1]));
+    }
+  });
+  void running.catch(() => undefined);
+  const timeout = new Promise<undefined>((resolve) => setTimeout(resolve, 5_000));
+  const grandchildPid = await Promise.race([grandchildStarted, timeout]);
+  controller.abort();
+  await assert.rejects(running, /Process cancelled/);
+  assert.ok(typeof grandchildPid === "number" && Number.isInteger(grandchildPid), `parent did not report a started grandchild: ${output}`);
+  await new Promise((resolve) => setTimeout(resolve, 2_200));
+  assert.equal(existsSync(marker), false, "the terminated process tree must not leave a delayed child side effect");
+}));
+
+
+test("interactive process stdin writer streams input and closes stdin", async () => {
+  const source = "process.stdin.setEncoding('utf8'); let input=''; process.stdin.on('data', chunk => input += chunk); process.stdin.on('end', () => process.stdout.write('received:' + input));";
+  const result = await runProcess(process.execPath, ["-e", source], {
+    stdin: true,
+    onStdinWriter: (write, close) => { write("first "); write("second\n"); close(); }
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, "received:first second\n");
+});
