@@ -21,6 +21,7 @@ import { createMcpTools } from "./integrations/mcp.js";
 import { createMcpSamplingHandler } from "./integrations/mcp-sampling.js";
 import { parseLmStudioResourceEstimate, readHostResourceStats } from "./system-resources.js";
 import { createBrowserTools } from "./tools/browser.js";
+import { createDesktopAutomationTools } from "./tools/desktop-automation.js";
 import type { WebToolDependencies } from "./tools/web.js";
 import type { ModelAcquisitionService } from "./integrations/model-acquisition.js";
 import { runBoundedOrdered } from "./orchestration/tool-batches.js";
@@ -53,6 +54,8 @@ const browserRefreshableEvidenceNames = new Set(["browser_snapshot", "browser_ta
 const webRefreshableEvidenceNames = new Set(["web_fetch", "web_search"]);
 const gitRefreshableEvidenceNames = new Set(["git_status", "git_diff", "git_log", "git_branches"]);
 const memoryRefreshableEvidenceNames = new Set(["memory_search"]);
+const desktopObservationNames = new Set(["desktop_windows", "desktop_inspect"]);
+const desktopRefreshableEvidenceNames = new Set(["desktop_windows", "desktop_inspect"]);
 const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
 const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
 function parsedInputRecord(inputJson: string): Record<string, unknown> {
@@ -228,7 +231,7 @@ export function assertRequiredToolEvidence(toolName: string, output: unknown, re
 export interface AgentResult { sessionId: string; model: string; selectionReason: string; turns: number; status: "completed" | "unverified" | "cancelled" | "limit"; response: string }
 
 export class AgentRunner {
-  constructor(private readonly deps: { store: XystStore; config: ConfigStore; sessions: SessionStore; events: RuntimeEvents; access: AccessController; provider: LMStudioProvider; github: GitHubProvider; modelAcquisition?: ModelAcquisitionService; dataDir?: string; credentials?: { get(service: string, name: string): Promise<string | undefined> }; memories?: MemoryStore; browserToolsFactory?: typeof createBrowserTools; webDependencies?: WebToolDependencies; resourceStatsReader?: typeof readHostResourceStats }) {}
+  constructor(private readonly deps: { store: XystStore; config: ConfigStore; sessions: SessionStore; events: RuntimeEvents; access: AccessController; provider: LMStudioProvider; github: GitHubProvider; modelAcquisition?: ModelAcquisitionService; dataDir?: string; credentials?: { get(service: string, name: string): Promise<string | undefined> }; memories?: MemoryStore; browserToolsFactory?: typeof createBrowserTools; desktopToolsFactory?: typeof createDesktopAutomationTools; webDependencies?: WebToolDependencies; resourceStatsReader?: typeof readHostResourceStats }) {}
 
   async run(objective: string, options: AgentOptions = {}): Promise<AgentResult> {
     const safeObjective = this.deps.provider.redact(objective);
@@ -633,7 +636,7 @@ export class AgentRunner {
       }
     } : undefined;
     const tools: Record<string, { definition: Record<string, unknown>; execute(args: unknown, signal?: AbortSignal): Promise<unknown> }> = {
-      ...createAgentTools(access, workspace, { ...this.deps.webDependencies, searchToken: () => this.deps.credentials?.get("brave", "search-api-key") ?? Promise.resolve(undefined) }, ocrLanguages, officeRendererExecutable, desktopAutomationEnabled), ...createGitTools(access, workspace, { githubEnabled, githubWritesEnabled, ...(this.deps.github.enterpriseHost ? { githubEnterpriseHost: this.deps.github.enterpriseHost } : {}), githubToken: (signal) => this.deps.github.gitToken(signal) }),
+      ...createAgentTools(access, workspace, { ...this.deps.webDependencies, searchToken: () => this.deps.credentials?.get("brave", "search-api-key") ?? Promise.resolve(undefined) }, ocrLanguages, officeRendererExecutable, desktopAutomationEnabled, this.deps.desktopToolsFactory), ...createGitTools(access, workspace, { githubEnabled, githubWritesEnabled, ...(this.deps.github.enterpriseHost ? { githubEnterpriseHost: this.deps.github.enterpriseHost } : {}), githubToken: (signal) => this.deps.github.gitToken(signal) }),
       ...mcp.tools,
       ...browser.tools,
       ...(githubEnabled ? createGitHubTools(access, this.deps.github, { writesEnabled: githubWritesEnabled, mergeAuthorized }) : {}),
@@ -841,6 +844,7 @@ export class AgentRunner {
           const evidenceFilePath = ["file_read", "office_read"].includes(evidence.name) ? evidencePath(evidence) : undefined;
           const laterRelevantMutation = subsequentMutations.find((mutation) => {
             if (invalidatesRemoteObservation(evidence.name, evidence.input_json, mutation.name, mutation.input_json)) return true;
+            if (desktopObservationNames.has(evidence.name) && mutation.name === "desktop_action") return true;
             if (!["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name)) return false;
             if (!mutationNames.has(mutation.name)) return false;
             if (["run_process", "run_shell", "desktop_action"].includes(mutation.name) || ["run_process", "run_shell"].includes(evidence.name)) return true;
@@ -871,7 +875,7 @@ export class AgentRunner {
           if (evidence.name === "web_fetch" && (typeof evidenceRecord.status !== "number" || evidenceRecord.status < 200 || evidenceRecord.status >= 300 || evidenceRecord.truncated === true)) {
             throw new Error(`Completion evidence ${evidenceId} is truncated or unsuccessful and cannot verify the live source; refetch the complete page before completing.`);
           }
-          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name)) {
+          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name)) {
             let refresh = refreshedEvidence.get(evidenceId);
             if (!refresh) {
               refresh = (async () => {

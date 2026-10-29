@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 
 type Tool = { definition: Record<string, unknown>; execute(args: unknown, signal?: AbortSignal): Promise<unknown> };
 
-export function createAgentTools(access: AccessController, workspace = process.cwd(), webDependencies: WebToolDependencies = {}, ocrLanguages: PdfOcrLanguage[] = ["eng"], officeRendererExecutable: string | null = null, desktopAutomationEnabled = false): Record<string, Tool> {
+export function createAgentTools(access: AccessController, workspace = process.cwd(), webDependencies: WebToolDependencies = {}, ocrLanguages: PdfOcrLanguage[] = ["eng"], officeRendererExecutable: string | null = null, desktopAutomationEnabled = false, desktopToolsFactory: typeof createDesktopAutomationTools = createDesktopAutomationTools): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   const add = (name: string, description: string, parameters: Record<string, unknown>, schema: z.ZodType, execute: (args: any, signal?: AbortSignal) => Promise<unknown>) => {
     tools[name] = {
@@ -47,5 +47,5 @@ export function createAgentTools(access: AccessController, workspace = process.c
     const result = await runProcess(args.executable, args.args, { cwd, timeoutMs: args.timeout_ms ?? 30000, maxOutputChars: 30000, ...(signal ? { signal } : {}) });
     return { code: result.code, signal: result.signal, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs };
   });
-  return { ...tools, ...createWebTools(access, webDependencies), ...createOfficeTools(access, workspace, ocrLanguages, officeRendererExecutable), ...createDesktopAutomationTools(access, desktopAutomationEnabled), ...createSkillTools(access, workspace) };
+  return { ...tools, ...createWebTools(access, webDependencies), ...createOfficeTools(access, workspace, ocrLanguages, officeRendererExecutable), ...desktopToolsFactory(access, desktopAutomationEnabled), ...createSkillTools(access, workspace) };
 }

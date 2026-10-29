@@ -523,6 +523,60 @@ test("desktop automation setting controls which native tools reach the agent", a
   } finally { store.close(); }
 }));
 
+test("desktop window evidence is refreshed at completion after an external UI change", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "desktop-evidence-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "desktop.automation.enabled", true);
+  let windowReads = 0; let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "loaded-chat", display_name: "Chat", size_bytes: 20, loaded_instances: [{ id: "loaded-chat", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1 || turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `desktop-windows-${turn}`, type: "function", function: { name: "desktop_windows", arguments: "{}" } }] } }] };
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `desktop-complete-${turn}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1, 1] }) } }] } }] };
+    }
+  };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+    desktopToolsFactory: ((_access: unknown, enabled: boolean) => enabled ? {
+      desktop_windows: { definition: { type: "function", function: { name: "desktop_windows", description: "List visible windows", parameters: { type: "object", properties: {}, additionalProperties: false } } }, execute: async () => ({ windows: ++windowReads === 1 ? ["Before external app change"] : ["After external app change"] }) }
+    } : {}) as never
+  });
+  try {
+    const result = await agent.run("Use desktop_windows to list the current windows.", { workspace: root, model: "loaded-chat", maxTurns: 5 });
+    assert.equal(result.status, "completed");
+    assert.equal(windowReads, 4, "the old observation is refreshed and rejected, then fresh evidence is refreshed and accepted");
+  } finally { store.close(); }
+}));
+
+test("desktop actions invalidate earlier window evidence until it is inspected again", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "desktop-action-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "desktop.automation.enabled", true);
+  let windowReads = 0; let actions = 0; let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "loaded-chat", display_name: "Chat", size_bytes: 20, loaded_instances: [{ id: "loaded-chat", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
+    streamChatWithTools: async () => {
+      turn++;
+      const name = turn === 1 || turn === 4 ? "desktop_windows" : turn === 2 ? "desktop_action" : "task_complete";
+      const indexes = turn === 3 ? [2, 2, 1] : [1, 1, 2];
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `desktop-action-flow-${turn}`, type: "function", function: { name, arguments: JSON.stringify(name === "task_complete" ? { evidence_tool_call_indexes: indexes } : name === "desktop_action" ? { action: "focus_window", window_title: "Example" } : {}) } }] } }] };
+    }
+  };
+  const definition = (name: string) => ({ type: "function", function: { name, description: name, parameters: { type: "object", properties: {}, additionalProperties: true } } });
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never,
+    desktopToolsFactory: ((_access: unknown, enabled: boolean) => enabled ? {
+      desktop_windows: { definition: definition("desktop_windows"), execute: async () => { windowReads++; return { windows: ["Example"] }; } },
+      desktop_action: { definition: definition("desktop_action"), execute: async () => ({ action: ++actions, changed: true }) }
+    } : {}) as never
+  });
+  try {
+    const result = await agent.run("Use desktop_windows to inspect the windows, then use desktop_action to focus Example.", { workspace: root, model: "loaded-chat", maxTurns: 6, approveExternalAction: async () => true });
+    assert.equal(result.status, "completed");
+    assert.equal(windowReads, 3, "the original read is invalidated, and the fresh read is independently refreshed at completion");
+    assert.equal(actions, 1);
+  } finally { store.close(); }
+}));
+
 test("browser automation setting controls whether browser tools reach the agent", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "browser-automation-setting.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "browser.automation.enabled", false);

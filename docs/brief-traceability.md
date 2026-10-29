@@ -51,3 +51,7 @@ Mission definitions now accept a bounded JSON `inputs` object. Deterministic cov
 ### C2 follow-up · explicit process-output assertions
 
 The runtime now enforces machine-checkable quoted stdout requirements in ordinary objectives when phrased as `stdout exactly equals/matches "..."` or `stdout includes/contains "..."`, including when `run_process` is excluded from allowed tools. Regressions reproduced and closed acceptance of a successful but wrong-output command; exact and inclusion assertions require matching `run_process` output and exit code 0. This parser does not judge arbitrary semantic requirements. Local Windows suite/typecheck/build evidence and remaining C2 gaps are recorded in [`verification-history.md`](verification-history.md#ordinary-command-output-evidence-enforcement-2026-10-29). C2 remains partial.
+
+### C2 follow-up · native desktop observation freshness
+
+Selected `desktop_windows` and `desktop_inspect` evidence is re-executed at completion through the current registered desktop tools and must match the redacted saved result. Later successful `desktop_action` calls invalidate earlier native desktop evidence; external UI changes are detected by the completion refresh. Deterministic AgentRunner tests cover both stale observation rejection/fresh retry and action-driven invalidation. See [`verification-history.md`](verification-history.md#c2-follow-up--native-desktop-observation-freshness--2026-10-29). Native Computer Use and screen-reader acceptance remain separate open requirements.
