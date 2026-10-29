@@ -47,3 +47,7 @@ Deterministic coverage now follows same-origin pagination links and rejects link
 ### C4 mission input payloads
 
 Mission definitions now accept a bounded JSON `inputs` object. Deterministic coverage verifies size rejection, persistence/export, and delivery to task prompts with an explicit untrusted-data boundary. The inputs feature is local and does not replace attached-file support or broader mission acceptance.
+
+### C2 follow-up · explicit process-output assertions
+
+The runtime now enforces machine-checkable quoted stdout requirements in ordinary objectives when phrased as `stdout exactly equals/matches "..."` or `stdout includes/contains "..."`, including when `run_process` is excluded from allowed tools. Regressions reproduced and closed acceptance of a successful but wrong-output command; exact and inclusion assertions require matching `run_process` output and exit code 0. This parser does not judge arbitrary semantic requirements. Local Windows suite/typecheck/build evidence and remaining C2 gaps are recorded in [`verification-history.md`](verification-history.md#ordinary-command-output-evidence-enforcement-2026-10-29). C2 remains partial.

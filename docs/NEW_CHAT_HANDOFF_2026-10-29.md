@@ -218,6 +218,13 @@ A separate real Desktop smoke exposed a completed-run IPC leak: CLI child `21336
 
 Next: publish this source/doc candidate to draft PR #82, wait for exact-head hosted checks, characterize the Desktop transient lock-clear delay and continue representative acceptance against both briefs. Keep #82 draft; do not merge. The historical real CLI recovery-selector discrepancy, original unattended Windows timeout stall, sustained acceptance, and signed production delivery remain unresolved.
 
+## Continuation addendum · ordinary command output evidence · 2026-10-29
+
+- Current PC worktree branch is `codex/integrate-pr72-through-command-rerun`, based at PR #82 head `26f4b35a92b9595f344b6f7451de2bab2504c4ee` before this local edit. `pc` targets Xyst-Ai-Agent-PC; `origin` is the separate repository. PR #82 remains open/draft and must remain unmerged without explicit authorization.
+- Reproduced a task-completion false positive: an objective explicitly required stdout exactly `EXPECTED`; a successful `run_process` printing `WRONG` was accepted. Added inference for quoted stdout exact/equality/match and include/contain assertions, enforced against successful exit-0 process results both during evidence mapping and final criterion validation. Requirements remain active when `run_process` is excluded from allowed tools. Regressions prove wrong-output rejection, exact and substring matching, and fail-closed behavior without the process tool.
+- Verification: focused regressions passed; final Windows root `npm test` passed runtime 246 (243 passed, 3 platform skips), CLI 31/31, release 5/5; `npm run typecheck`; `npm run desktop:build`; `git diff --check`. No Linux/hosted checks cover this edit yet.
+- Source/test/docs changes are local and uncommitted. Next: final diff review; commit and push to draft PR #82, update its description, and verify exact-head hosted checks. Continue the requirement audit and preserve recorded failures; do not claim overall completion.
+
 ### Exact-head verification follow-up · 2026-10-29
 
 PR #82 head `8808d3bdc57ee04d3a421b5aa7d2e03ee9cf8914` passed all eight hosted push/PR Windows/Ubuntu verification and Linux/Windows packaging jobs. Windows package checks include clean-install renderer and live mission-service lifecycle smoke. Run IDs: CI `40857551670`, `40857561063`; packages `40857551863`, `40857561032`. PR #82 remains OPEN/DRAFT, merge state CLEAN; no merge was performed. See `docs/verification-history.md` for the bounded Desktop owner-crash recovery and IPC fix.

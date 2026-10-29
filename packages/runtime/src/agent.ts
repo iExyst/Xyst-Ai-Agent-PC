@@ -85,6 +85,25 @@ function inferExplicitToolEvidence(criteria: string[], availableTools: string[])
   return required;
 }
 
+interface InferredProcessOutputRequirement { criterion: string; requirement: RequiredToolEvidence }
+function inferProcessOutputRequirements(criteria: string[]): InferredProcessOutputRequirement[] {
+  const inferred = new Map<string, InferredProcessOutputRequirement>();
+  for (const criterion of criteria) {
+    const exact = criterion.match(/\bstdout\s+(?:must\s+|should\s+)?exactly\s+(?:equal(?:s)?|match(?:es)?)\s+(["'\x60])([\s\S]*?)\1/i);
+    const included = criterion.match(/\bstdout\s+(?:must\s+|should\s+)?(?:include|contain)(?:s)?\s+(["'\x60])([\s\S]*?)\1/i);
+    const match = exact ?? included;
+    if (!match) continue;
+    const expected = match[2]!;
+    const requirement: RequiredToolEvidence = exact
+      ? { tool: "run_process", exitCode: 0, stdoutEquals: expected }
+      : { tool: "run_process", exitCode: 0, stdoutIncludes: expected };
+    const assertion = exact ? "exactly equal" : "include";
+    const outputCriterion = `Required run_process stdout to ${assertion} ${JSON.stringify(expected)}`;
+    inferred.set(outputCriterion, { criterion: outputCriterion, requirement });
+  }
+  return [...inferred.values()];
+}
+
 function inferRequestedUrls(criteria: string[]): string[] {
   const urls = new Set<string>();
   for (const criterion of criteria) {
@@ -600,6 +619,7 @@ export class AgentRunner {
       ...(this.deps.memories ? createMemoryTools(this.deps.memories, semanticMemory) : {})
     };
     const inferredToolEvidence = new Map<string, string>();
+    const inferredProcessOutputRequirements = new Map<string, InferredProcessOutputRequirement>();
     const requestedUrlCriteria = new Map<string, string>();
     const inferredFileContentRequirements = new Map<string, InferredFileContentRequirement>();
     const inferredOutputPaths = [...new Set(options.expectedOutputPaths ?? [])];
@@ -614,6 +634,11 @@ export class AgentRunner {
     };
     const refreshEvidenceRequirements = (criteria: string[]) => {
       for (const [tool, criterion] of inferExplicitToolEvidence(criteria, Object.keys(tools))) { inferredToolEvidence.set(tool, criterion); addCompletionCriterion(criterion); }
+      for (const requirement of inferProcessOutputRequirements(criteria)) {
+        inferredProcessOutputRequirements.set(requirement.criterion, requirement);
+        inferredToolEvidence.set("run_process", "Required evidence from requested command execution: run_process");
+        addCompletionCriterion(requirement.criterion);
+      }
       if (inferredToolEvidence.has("web_fetch")) {
         for (const url of inferRequestedUrls(criteria)) {
           const criterion = `Required live fetch from requested URL: ${url}`;
@@ -706,6 +731,15 @@ export class AgentRunner {
                 const hint = available.length ? ` Matching successful evidence: ${available.join("; ")}. Include one of these IDs or indexes.` : " No matching successful result is currently available; run the required tool first.";
                 throw new Error(`The selected evidence IDs or indexes must include a successful ${requiredTool.tool} result for criterion: ${criterion}.${hint}`);
               }
+              return match.index;
+            }
+            const processOutput = inferredProcessOutputRequirements.get(criterion);
+            if (processOutput) {
+              const match = candidateRows.find(({ evidence }) => {
+                if (evidence.name !== "run_process") return false;
+                try { assertRequiredToolEvidence(evidence.name, parseOutput(evidence.output_json), processOutput.requirement, workspace); return true; } catch { return false; }
+              });
+              if (!match) throw new Error(`The selected evidence IDs or indexes must include a run_process result whose stdout meets the requested assertion (${criterion})`);
               return match.index;
             }
             const inferredTool = [...inferredToolEvidence].find(([, requiredCriterion]) => requiredCriterion === criterion)?.[0];
@@ -806,6 +840,8 @@ export class AgentRunner {
           try { evidenceOutput = JSON.parse(evidence.output_json) as unknown; } catch { evidenceOutput = evidence.output_json; }
           const evidenceRecord = asRecord(evidenceOutput);
           if (typeof evidenceRecord.error === "string" || evidenceRecord.success === false) throw new Error(`Completion evidence ${evidenceId} reports a tool error`);
+          const processOutputRequirement = inferredProcessOutputRequirements.get(criterion);
+          if (processOutputRequirement) assertRequiredToolEvidence(evidence.name, evidenceRecord, processOutputRequirement.requirement, workspace);
           if (evidence.name === "web_fetch" && evidenceRecord.truncated === true) throw new Error(`Completion evidence ${evidenceId} is truncated. Increase max_chars or request narrower API fields, then cite the successful full fetch.`);
           if (evidence.name === "file_read" || evidence.name === "office_read") {
             const readPath = evidencePath(evidence);

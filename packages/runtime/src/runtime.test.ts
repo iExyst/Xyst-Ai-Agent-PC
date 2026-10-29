@@ -2102,6 +2102,47 @@ test("mission completion enforces required tool name, exit code, and output asse
   assert.throws(() => assertRequiredToolEvidence("run_process", { code: 0, stdout: "OTHER\n" }, requirement), /stdout did not exactly match/);
 });
 
+test("ordinary command completion requires explicitly requested stdout evidence", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "ordinary-command-output-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) {
+      const stdout = turn === 1 ? "WRONG" : "EXPECTED MARKER";
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `ordinary-command-${turn}`, type: "function", function: { name: "run_process", arguments: JSON.stringify({ executable: process.execPath, args: ["-e", `process.stdout.write(${JSON.stringify(stdout)})`], cwd: root }) } }] } }] };
+    }
+    return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `ordinary-command-complete-${turn}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run('Run a command and verify stdout exactly equals "EXPECTED MARKER" and stdout includes "MARKER".', { workspace: root, maxTurns: 4 });
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string }>;
+    assert.equal(result.status, "completed", JSON.stringify(completions));
+    assert.equal(turn, 4, "the incorrect output must be rejected before the correct rerun is accepted");
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /stdout did not exactly match/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
+test("ordinary command stdout assertions cannot be completed when run_process is unavailable", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "unavailable-command-output-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "unavailable-command-list", type: "function", function: { name: "file_list", arguments: JSON.stringify({ path: "." }) } }] } }] };
+    return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "unavailable-command-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run('Run a command and verify stdout exactly equals "EXPECTED".', { workspace: root, maxTurns: 2, allowedTools: ["file_list"] });
+    assert.notEqual(result.status, "completed");
+    const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete'").get(result.sessionId) as { status: string; output_json: string };
+    assert.equal(completion.status, "failed");
+    assert.match(completion.output_json, /must come from run_process/);
+  } finally { store.close(); }
+}));
+
 test("mission completion evidence must reference each declared file output path", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "expected-output-path.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model");
