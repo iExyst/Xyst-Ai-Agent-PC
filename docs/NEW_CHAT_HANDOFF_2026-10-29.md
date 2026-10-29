@@ -332,3 +332,14 @@ A second isolated Qwen3.5 9B CLI session with a value-independent criterion comp
 ## Compaction mutable-state safeguard · 2026-10-29
 
 A live CLI session showed a saved compaction could say `phase.txt contains phase-A` after a later authorized rerun had read `phase-B`. The resume wrapper now states its exact message cutoff and warns that mutable observations may be stale, and the AgentRunner instructs the model to refresh mutable state before treating it as current or using it for completion. The compactor also supplies message timestamps and requires temporal qualification of mutable observations. Focused tests passed 3/3 after correcting a stale header assertion; final root `npm test` passed runtime 266 (263 passed, 3 platform skips), CLI 31/31, renderer 4/4, release checks 5/5; root typecheck and diff check passed. No live-model acceptance of the updated compaction behavior is claimed. See `docs/verification-history.md`.
+
+## Evidence reconciliation · rerun and owner-crash status · 2026-10-29
+
+Later entries in docs/verification-history.md supersede the earlier “no live owner-crash acceptance” statements above:
+
+- A real Windows CLI session completed an external-edit authorized rerun with task_complete verified:true (session 70836d19-1d55-4c36-b0fc-2328d2dbebf3, recorded around line 2327). A separate real CLI session completed owner termination, uncertain quarantine, explicit retry reconciliation, resumed execution, and verified completion (around line 2433). This does not erase the earlier selector rejection or the 30-second timeout-after-effect failure.
+- Two bounded CDP-driven Windows Control Room renderer sessions completed owner-crash recovery and verified retry completion (around lines 2479 and 2494). The second observed the renderer unlock without reload. This does not establish native Computer Use, screen-reader/physical-keyboard acceptance, or sustained reliability.
+- A later repeat harness attempt stopped before authorization and remains incomplete (around line 2501); native Computer Use composer attempts also remain incomplete (around line 2685 and the current-source attempt near the end of this file).
+- The current-source native composer attempt did not submit a task. Do not count it as a desktop session acceptance. The traceability row’s bounded CDP renderer evidence and the separate native UI gap are both accurate.
+
+PR #82 remains open/draft/unmerged. Its current head and checks must be revalidated before further integration. The unexplained original Windows timeout stall, historical CLI selector discrepancy, broad representative mission reliability, platform/accessibility coverage, and signed production delivery remain open.
