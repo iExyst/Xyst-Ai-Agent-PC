@@ -1,4 +1,4 @@
-import { realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 
 export type AccessMode = "full" | "restricted";
@@ -32,17 +32,32 @@ export class AccessController {
     const absolute = resolve(parentPath ?? path);
     if (this.profile.mode === "full") return parentPath ?? absolute;
     const roots = (operation === "read" ? this.profile.readRoots : this.profile.writeRoots) ?? [];
-    const resolveCanonical = async (candidate: string) => await realpath(candidate).catch(async () => {
+    // Only a genuinely absent path component may be reconstructed. A dangling
+    // link or an inaccessible component must not be treated as an ordinary
+    // new path: a later filesystem operation could follow it outside a root.
+    const resolveCanonical = async (candidate: string): Promise<string> => {
       let parent = candidate;
       const suffix: string[] = [];
       while (true) {
         try { return resolve(await realpath(parent), ...suffix.reverse()); }
-        catch { const next = resolve(parent, ".."); if (next === parent) return candidate; suffix.push(parent.slice(next.length + 1)); parent = next; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          try {
+            await lstat(parent);
+            throw new Error(`Cannot resolve existing path: ${parent}`);
+          } catch (statError) {
+            if ((statError as NodeJS.ErrnoException).code !== "ENOENT") throw statError;
+          }
+          const next = resolve(parent, "..");
+          if (next === parent) throw error;
+          suffix.push(parent.slice(next.length + 1));
+          parent = next;
+        }
       }
-    });
+    };
     const canonicalTarget = await resolveCanonical(absolute);
     const allowed = await Promise.all(roots.map(async (root) => {
-      const canonicalRoot = await realpath(resolve(root)).catch(() => resolve(root));
+      const canonicalRoot = await resolveCanonical(resolve(root));
       return { canonicalRoot, allowed: inside(canonicalRoot, canonicalTarget) };
     }));
     const matchedRoot = allowed.find((candidate) => candidate.allowed);
