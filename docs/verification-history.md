@@ -2174,3 +2174,21 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 - Published runtime prompt guidance and mission evidence in commit `627352b3bcd8976eaed5250d21956cb7be1c8ff8` on PR #72. The prior entry's statement that these changes were uncommitted describes their state when first recorded; this follow-up is the later publication result.
 - Exact head passed both Windows/Linux hosted workflows on push and pull_request: Cross-platform CI runs `40818316962` and `40818322700`; Desktop packages runs `40818316942` and `40818322745`. All eight jobs passed. Package jobs include update metadata checks, the clean Windows install/renderer smoke, and live Windows mission-service lifecycle smoke.
 - PR #72 remains OPEN/DRAFT and unmerged. No merge authorization beyond #58–#60. Hosted green does not upgrade the mission evidence beyond one bounded single-task pass; full brief and sustained/delegated reliability remain open.
+## Process-tree termination escalation · 2026-10-28
+
+- POSIX process cancellation sends `SIGTERM` to the detached process group and now schedules a referenced `SIGKILL` after a one-second grace period if the group still exists, even if the original leader has already closed. The referenced timer keeps a standalone CLI alive long enough to apply the fallback. Windows retains its `taskkill /T /F` behavior.
+- A regression starts a standalone Xyst child process, waits until its grandchild confirms that its SIGTERM-ignoring handler is installed, aborts the process group, then waits past the grandchild's delayed-write deadline and confirms no marker file was created. The focused regression passed 1/1 on Windows. Full local Windows runtime suite passed 194 tests, 2 host-specific skips, 0 failures; runtime build and workspace `npm run typecheck` passed; `git diff --check` passed.
+- This is representative process-tree coverage. A descendant that creates a new session/process group can still escape; PTY control/resize and broader packaged terminal acceptance remain open under E2.
+
+
+## Live loaded-instance concurrent mission (2026-10-29)
+
+On Windows, an isolated Xyst profile ran mission `pr78-live-concurrency` (run `86917041-c002-46b9-8f0d-f3771ac85eb6`) on the PR 78 code head `650c69c88df8cb3f3a81471e7c41a9677507e183`. Qwen 3.5 9B and Nemotron 3 Nano 4B were loaded as separate LM Studio instances with 8,192-token contexts. The scheduler resolved each instance to its catalog model for a GPU estimate and admitted both separate-workspace tasks at 00:12:20 UTC. Their agent lifetimes overlapped, and the persisted first model-request records ended at 00:12:24.756 and 00:12:24.925 with durations 4,701 and 4,873 ms respectively, indicating overlapping requests. Both tasks completed in one attempt with `task_complete verified=true`, exact `file_read` markers, and `run_process` exit code 0 with exact matching stdout. The mission completed at 00:12:43 UTC.
+
+This is one bounded two-model run. Request overlap does not independently prove simultaneous GPU execution, sustained reliability, contention handling, or Linux behavior. Earlier attempts with malformed file contents, incorrect evidence indexes, or insufficient context remain non-passes. Both test instances were unloaded after the run.
+
+
+
+## UTF-16 file preservation regression (Windows, 2026-10-29)
+
+A focused runtime test rejects truncated code units and unpaired surrogates in both UTF-16 byte orders for reads and patches, and confirms the original bytes remain unchanged. It also reads and patches valid UTF-16LE and UTF-16BE files while preserving the BOM and a leading content byte-order mark. This is bounded deterministic coverage; it does not establish preservation for every encoding or concurrent edit scenario.

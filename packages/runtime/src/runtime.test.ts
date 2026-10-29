@@ -241,6 +241,23 @@ test("mission resource scheduler defers oversized models and fits workers to the
   assert.equal(pinned.assignments[0]?.admittedOverBudget, true);
 });
 
+test("mission resource scheduler resolves loaded instance IDs without changing assignments", () => {
+  const gib = 1024 ** 3;
+  const models = [
+    { type: "llm" as const, publisher: "test", key: "alpha", display_name: "Alpha", size_bytes: 2 * gib, loaded_instances: [{ id: "alpha-instance", config: {} }] },
+    { type: "llm" as const, publisher: "test", key: "beta", display_name: "Beta", size_bytes: 2 * gib, loaded_instances: [{ id: "beta-instance", config: {} }] }
+  ];
+  const options = { memoryBudgetBytes: 4 * gib, maxConcurrency: 2, availableGpuMemoryBytes: 2 * gib, estimatedGpuMemoryBytesByModel: { alpha: 3 * gib, beta: 3 * gib } };
+  const plan = planResourceAwareBatch([{ id: "a", model: "alpha-instance" }, { id: "b", model: "beta-instance" }], models, options);
+  assert.deepEqual(plan.assignments.map((item) => item.selectedModel), ["alpha-instance", "beta-instance"]);
+  assert.equal(plan.assignments.length, 2);
+  assert.ok(plan.assignments.every((item) => item.estimatedAdditionalGpuMemoryBytes !== undefined));
+  const ambiguous = [...models, { ...models[1]!, key: "other", loaded_instances: [{ id: "alpha-instance", config: {} }] }];
+  const guarded = planResourceAwareBatch([{ id: "a", model: "alpha-instance" }, { id: "b", model: "missing" }], ambiguous, options);
+  assert.equal(guarded.assignments.length, 1);
+  assert.equal(guarded.assignments[0]?.admittedOverBudget, true);
+});
+
 test("mission resource scheduler considers live free VRAM and LM Studio GPU estimates", () => {
   const models = [
     { type: "llm" as const, publisher: "test", key: "gpu-heavy", display_name: "GPU heavy", size_bytes: 4 * 1024 ** 3, loaded_instances: [], max_context_length: 8192, capabilities: { trained_for_tool_use: true } },
@@ -2520,6 +2537,29 @@ test("file patch rejects stale edits and preserves UTF-8 BOM and CRLF", async ()
   assert.equal(patched.path, path);
 }));
 
+test("file reads and patches reject malformed UTF-16 without modifying bytes", async () => withTemp(async (root) => {
+  const cases = [
+    Buffer.from([0xff, 0xfe, 0x61]), // truncated little-endian code unit
+    Buffer.from([0xfe, 0xff, 0x00]), // truncated big-endian code unit
+    Buffer.from([0xff, 0xfe, 0x00, 0xd8]), // unpaired little-endian surrogate
+    Buffer.from([0xfe, 0xff, 0xd8, 0x00]) // unpaired big-endian surrogate
+  ];
+  for (const [index, bytes] of cases.entries()) {
+    const path = join(root, `invalid-${index}.txt`); await writeFile(path, bytes);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    await assert.rejects(() => readText(path));
+    await assert.rejects(() => patchText(path, digest, "a", "b"));
+    assert.deepEqual(await readFileAsync(path), bytes);
+  }
+  for (const [name, bytes] of [["le", Buffer.from([0xff, 0xfe, 0xff, 0xfe, 0x61, 0x00])], ["be", Buffer.from([0xfe, 0xff, 0xfe, 0xff, 0x00, 0x61])]] as const) {
+    const path = join(root, `valid-${name}.txt`); await writeFile(path, bytes);
+    const read = await readText(path); assert.equal(read.text, "\uFEFFa");
+    await patchText(path, read.sha256, "a", "b");
+    const updated = await readFileAsync(path); assert.deepEqual(updated.subarray(0, 4), bytes.subarray(0, 4));
+    assert.equal((await readText(path)).text, "\uFEFFb");
+  }
+}));
+
 test("text search ignores dependency and build output directories", async () => withTemp(async (root) => {
   await createText(join(root, "src.ts"), "needle in source"); await mkdir(join(root, "node_modules", "pkg"), { recursive: true }); await writeFile(join(root, "node_modules", "pkg", "generated.js"), "needle in dependency");
   const matches = await searchFiles(root, "needle"); assert.equal(matches.length, 1); assert.equal(matches[0]?.path, join(root, "src.ts"));
@@ -2635,6 +2675,16 @@ test("aborting a process group escalates when descendants ignore SIGTERM", { ski
   assert.equal(descendantAlive, false, "SIGKILL escalation should remove a grandchild that ignores SIGTERM");
 }));
 
+test("aborting a process execution force-kills a grandchild that ignores SIGTERM", async () => withTemp(async (root) => {
+  const marker = join(root, "surviving-grandchild.txt");
+  const grandchild = `process.on("SIGTERM", () => {}); process.stdout.write("READY\\n"); setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"); }, 3000);`;
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const controller = new AbortController(); try { await runProcess(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { signal: controller.signal, onStdout: chunk => { if (chunk.includes("READY")) controller.abort(); } }); } catch (error) { if (error.message !== "Process cancelled") throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 10_000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 3_300));
+  assert.equal(existsSync(marker), false, "a standalone Xyst process must remain alive long enough to force-kill a grandchild that ignores SIGTERM");
+}));
+
 test("restricted profiles block paths and executables outside explicit allowlists", async () => withTemp(async (root) => {
   const allowed = join(root, "allowed"); const denied = join(root, "denied"); await mkdir(allowed); await mkdir(denied);
   const access = new AccessController({ mode: "restricted", readRoots: [allowed], writeRoots: [allowed], allowedExecutables: ["node"] });
@@ -2728,6 +2778,19 @@ test("Windows restricted path checks resolve junctions before allowing file oper
   assert.equal(await access.assertPath(join(insideJunction, "new.txt"), "write"), join(await realpath(target), "new.txt"));
   await assert.rejects(() => access.assertPath(join(outsideJunction, "secret.txt"), "read"), /denies read access/);
   await assert.rejects(() => access.assertPath(join(outsideJunction, "new.txt"), "write"), /denies write access/);
+}));
+
+test("restricted path checks reject dangling links but allow genuinely new paths", async (t) => withTemp(async (root) => {
+  const allowed = join(root, "allowed"); await mkdir(allowed);
+  const dangling = join(allowed, "dangling");
+  try { await symlink(join(root, "missing-outside"), dangling, process.platform === "win32" ? "junction" : "dir"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "EPERM") { t.skip("Symlink privilege is unavailable"); return; } throw error; }
+  const access = new AccessController({ mode: "restricted", readRoots: [allowed], writeRoots: [allowed] });
+  await assert.rejects(() => access.assertPath(join(dangling, "new.txt"), "write"), /Cannot resolve existing path/);
+  await assert.rejects(() => access.assertPath(dangling, "read"), /Cannot resolve existing path/);
+  const missingRootAccess = new AccessController({ mode: "restricted", writeRoots: [dangling] });
+  await assert.rejects(() => missingRootAccess.assertPath(join(allowed, "new.txt"), "write"), /Cannot resolve existing path/);
+  assert.equal(await access.assertPath(join(allowed, "new-directory", "new.txt"), "write"), join(await realpath(allowed), "new-directory", "new.txt"));
 }));
 
 test("Windows long paths support atomic create, read, and patch", { skip: process.platform !== "win32" }, async () => withTemp(async (root) => {
@@ -4222,6 +4285,21 @@ test("mission execution defers ready work when model memory estimates exceed the
     assert.ok(assignments.every((assignment) => assignment.model === "loaded-small" && assignment.automaticModelAssignment === true));
     const agents = store.db.prepare("SELECT definition_json FROM agents WHERE mission_id=? ORDER BY id").all(mission.id) as Array<{ definition_json: string }>;
     assert.ok(agents.every((entry) => JSON.parse(entry.definition_json).model === "loaded-small"));
+  } finally { store.close(); }
+}));
+
+test("mission admission estimates catalog models for pinned loaded instance IDs", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "instance-gpu-mission.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
+  const gib = 1024 ** 3; config.set("global", "orchestration.memoryBudgetBytes", 4 * gib); config.set("global", "orchestration.maxConcurrency", 2);
+  const models = ["alpha", "beta"].map((key) => ({ type: "llm" as const, publisher: "Test", key, display_name: key, size_bytes: gib, loaded_instances: [{ id: `${key}-instance`, config: {} }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }));
+  const estimates: string[] = []; const assigned: string[] = []; let active = 0; let peak = 0;
+  let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; });
+  const runner = new PersistentMissionRunner({ store, config, events, modelProvider: { supportsLocalCliModelLifecycle: () => true, models: async () => models, estimateLoad: async (model: string) => { estimates.push(model); if (!models.some((item) => item.key === model)) throw new Error("Unknown catalog model"); return { output: "Estimated GPU Memory: 3 GiB" }; } } as never, resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 16 * gib, usedBytes: 4 * gib, availableBytes: 12 * gib, usedPercent: 25 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 14 * gib, freeBytes: 2 * gib }] } }), agent: { run: async (_objective: string, options: Record<string, unknown>) => { assigned.push(String(options.model)); active++; peak = Math.max(peak, active); if (active === 2) release(); await Promise.race([gate, new Promise<void>((resolve) => setTimeout(resolve, 1000))]); active--; return { sessionId: `instance-${options.model}`, model: options.model, turns: 1, status: "completed" as const, response: "done" }; } } as never });
+  try {
+    await mkdir(join(root, "a")); await mkdir(join(root, "b"));
+    const mission = runner.repository.create({ name: "Loaded instance admission", objective: "Run both workers", maxConcurrency: 2, tasks: [{ id: "a", objective: "Work", workspace: join(root, "a"), model: "alpha-instance", dependsOn: [] }, { id: "b", objective: "Work", workspace: join(root, "b"), model: "beta-instance", dependsOn: [] }] });
+    const result = await runner.run(mission.id);
+    assert.equal(result.status, "completed"); assert.equal(peak, 2); assert.deepEqual(assigned.sort(), ["alpha-instance", "beta-instance"]); assert.ok(estimates.includes("alpha") && estimates.includes("beta")); assert.ok(!estimates.includes("alpha-instance"));
   } finally { store.close(); }
 }));
 

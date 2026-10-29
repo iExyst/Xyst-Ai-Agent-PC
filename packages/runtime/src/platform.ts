@@ -60,24 +60,39 @@ export async function killProcessTree(pid: number): Promise<boolean> {
   } else {
     let target = -pid;
     try { process.kill(target, "SIGTERM"); }
-    catch {
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
       target = pid;
-      try { process.kill(target, "SIGTERM"); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; }
+      try { process.kill(target, "SIGTERM"); }
+      catch (fallbackError) { return (fallbackError as NodeJS.ErrnoException).code === "ESRCH"; }
     }
-    const deadline = Date.now() + 500;
+    const deadline = Date.now() + 1_000;
     let targetExited = false;
     while (Date.now() < deadline) {
       try { process.kill(target, 0); }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ESRCH") { targetExited = true; break; }
+        return false;
       }
       await new Promise((resolveDone) => setTimeout(resolveDone, Math.min(50, Math.max(1, deadline - Date.now()))));
     }
     if (!targetExited) {
       try { process.kill(target, "SIGKILL"); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") targetExited = true;
+        else return false;
+      }
+      const killDeadline = Date.now() + 1_000;
+      while (!targetExited && Date.now() < killDeadline) {
+        try { process.kill(target, 0); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") { targetExited = true; break; }
+          return false;
+        }
+        await new Promise((resolveDone) => setTimeout(resolveDone, Math.min(50, Math.max(1, killDeadline - Date.now()))));
+      }
     }
-    return true;
+    return targetExited;
   }
 }
 
