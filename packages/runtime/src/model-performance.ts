@@ -8,6 +8,7 @@ export interface ModelPerformanceStats {
   successes: number;
   successRate: number;
   medianLatencyMs: number;
+  /** Effective completion tokens per full inference-response duration; includes prompt processing. */
   tokensPerSecond: number | null;
   taskSamples: number;
   taskSuccesses: number;

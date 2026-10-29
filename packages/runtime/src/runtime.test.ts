@@ -367,6 +367,7 @@ test("local model performance aggregates and informs automatic selection without
     const models = ["fast", "reliable"].map((key) => ({ type: "llm" as const, publisher: "unknown", key, display_name: key, size_bytes: 4_000_000_000, loaded_instances: [], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }));
     const choice = chooseAgentModel(models, { performanceByModel: performance });
     assert.equal(choice.model.key, "reliable", "verified task outcomes outrank inference-response success and speed"); assert.match(choice.reason, /observed locally over 3 tasks: 3\/3 verified completions/);
+    assert.match(choice.reason, /effective end-to-end output tokens\/s/);
   } finally { store.close(); }
 }));
 
