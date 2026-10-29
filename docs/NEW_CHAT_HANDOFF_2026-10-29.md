@@ -221,3 +221,7 @@ Next: publish this source/doc candidate to draft PR #82, wait for exact-head hos
 ### Exact-head verification follow-up · 2026-10-29
 
 PR #82 head `8808d3bdc57ee04d3a421b5aa7d2e03ee9cf8914` passed all eight hosted push/PR Windows/Ubuntu verification and Linux/Windows packaging jobs. Windows package checks include clean-install renderer and live mission-service lifecycle smoke. Run IDs: CI `40857551670`, `40857561063`; packages `40857551863`, `40857561032`. PR #82 remains OPEN/DRAFT, merge state CLEAN; no merge was performed. See `docs/verification-history.md` for the bounded Desktop owner-crash recovery and IPC fix.
+
+### Desktop crash-recovery attempt 5 · 2026-10-29
+
+A fresh isolated Control Room session `6df47868-36ac-41b4-8cd0-daf5742d23a0` ran `owner-crash-probe5.cjs` as baseline call `1N41GSNCbtjHsWpATgFyDyMEvBvC5g9l`, returned `OWNER_CRASH_BASELINE_5_OK`, and completed `task_complete verified:true` as `JJNeYXmjXYZ0Tsh773ANqCRrWYZClPsZ`. After externally editing `phase5.txt`, the attempt stopped at UI authorization: the CDP renderer stopped answering evaluations after the one-use authorization control was clicked; SQLite showed no authorization and no rerun, and no process was terminated. Computer Use listed six Electron windows sharing the same `@xyst/desktop` title, so no ambiguous target was activated or manipulated. This is an incomplete harness attempt, not owner-crash acceptance. Preserve the successful baseline and failed setup separately; prior bounded no-reload recovery remains the only repeat proving natural unlock.
