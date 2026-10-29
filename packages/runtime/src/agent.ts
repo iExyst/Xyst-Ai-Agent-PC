@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { basename, extname, resolve, sep } from "node:path";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import type { RuntimeEvents } from "./events.js";
 import { createAgentTools } from "./tools/registry.js";
 import { validatePdfOcrLanguages } from "./tools/office.js";
@@ -42,6 +42,11 @@ function instanceContextLength(instance: LMStudioModel["loaded_instances"][numbe
 }
 const asRecord = (value: unknown): Record<string, any> => value && typeof value === "object" ? value as Record<string, any> : {};
 const asArray = (value: unknown): any[] => Array.isArray(value) ? value : [];
+/** Keep every persisted tool response valid JSON even when its serialized size exceeds the context limit. */
+function boundedToolOutput(value: string): string {
+  if (value.length <= 30_000) return value;
+  return JSON.stringify({ error: "Tool result exceeded the context limit; request a narrower result.", truncated: true, preview: value.slice(0, 2000) });
+}
 const externalToolNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "run_process", "git_clone", "git_create_branch", "git_stage", "git_commit", "git_fetch", "git_push", "github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_update_pull_request", "github_create_pull_request", "github_create_review_comment", "github_workflow_dispatch", "github_merge_pull_request", "github_download_release_asset", "github_download_actions_artifact", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "desktop_action"]);
 const isExternalAction = (name: string, mcpReadObservationNames: ReadonlySet<string>) => externalToolNames.has(name) || (name.startsWith("mcp_") && !mcpReadObservationNames.has(name));
 const parallelReadToolNames = new Set(["file_read", "file_list", "file_search", "git_status", "git_diff", "git_log", "git_branches"]);
@@ -218,6 +223,7 @@ export function assertRequiredToolEvidence(toolName: string, output: unknown, re
   const result = asRecord(output);
   if (requirement.exitCode !== undefined && result.code !== requirement.exitCode) throw new Error(`Completion evidence exited with code ${String(result.code)}; required ${requirement.exitCode}`);
   const normalizeNewlines = (value: string) => requirement.normalizeNewlines ? value.replace(/\r\n?/g, "\n") : value;
+  if ((requirement.stdoutEquals !== undefined || requirement.stdoutIncludes !== undefined) && result.stdoutTruncated === true) throw new Error("Completion evidence stdout was truncated and cannot prove the requested output assertion");
   if (requirement.stdoutEquals !== undefined && (typeof result.stdout !== "string" || normalizeNewlines(result.stdout) !== normalizeNewlines(requirement.stdoutEquals))) throw new Error("Completion evidence stdout did not exactly match the required value");
   if (requirement.stdoutIncludes !== undefined && (typeof result.stdout !== "string" || !normalizeNewlines(result.stdout).includes(normalizeNewlines(requirement.stdoutIncludes)))) throw new Error("Completion evidence stdout did not include the required value");
   if (requirement.path !== undefined || requirement.textEquals !== undefined || requirement.textIncludes !== undefined) {
@@ -522,7 +528,7 @@ export class AgentRunner {
         const previousEstimate = requiredContextTokens;
         try {
           const result = await new SessionCompactor(this.deps.store, this.deps.sessions, provider)
-            .compact(sessionId, await resolveInferenceModel(resident.instance.id), options.signal);
+            .compact(sessionId, await resolveInferenceModel(resident.instance.id), options.signal, { requireLoadedInstanceId: resident.instance.id });
           const compactedMessages = this.deps.sessions.contextMessages(sessionId).map((row) => {
             if (!row.content.startsWith(MESSAGE_PREFIX)) return { role: row.role, content: row.content };
             return JSON.parse(row.content.slice(MESSAGE_PREFIX.length)) as ApiMessage;
@@ -1332,7 +1338,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
                   this.deps.events.emit("tool.started", { id: callId, name }, sessionId);
                   try {
                     const output = await tool.execute(args, options.signal);
-                    const safeOutput = this.deps.provider.redact(JSON.stringify(output)).slice(0, 30000);
+                    const safeOutput = boundedToolOutput(this.deps.provider.redact(JSON.stringify(output)));
                     this.deps.store.db.prepare("UPDATE tool_calls SET output_json=?,status='completed',finished_at=? WHERE id=?").run(safeOutput, new Date().toISOString(), callId);
                     this.deps.events.emit("tool.completed", { id: callId, name }, sessionId);
                     return { role: "tool", tool_call_id: callId, content: safeOutput };
@@ -1362,8 +1368,43 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
               if (!approved) throw new ExternalActionApprovalError("EXTERNAL_ACTION_DENIED", `The user denied ${name}`);
             }
             this.deps.events.emit("tool.started", { id: callId, name }, sessionId);
-            const output = await tool.execute(args, options.signal);
-            const safeOutput = this.deps.provider.redact(JSON.stringify(output)).slice(0, 30000);
+            let output = await tool.execute(args, options.signal);
+            if (name === "run_process") {
+              const processOutput = asRecord(output);
+              if (typeof processOutput.stdout === "string" && typeof processOutput.stderr === "string") {
+                const stdout = this.deps.provider.redact(processOutput.stdout);
+                const stderr = this.deps.provider.redact(processOutput.stderr);
+                const stdoutTruncated = processOutput.stdoutTruncated === true || stdout.length > 2000;
+                const stderrTruncated = processOutput.stderrTruncated === true || stderr.length > 2000;
+                let outputArtifactPath: string | undefined; let outputArtifactError: string | undefined;
+                if (stdoutTruncated || stderrTruncated) {
+                  if (processOutput.stdoutTruncated === true || processOutput.stderrTruncated === true) {
+                    outputArtifactError = "Output exceeded the capture limit; full output is unavailable.";
+                  } else {
+                    let createdPath: string | undefined;
+                    try {
+                      const directory = await access.assertPath(resolve(workspace, ".xyst-process-output"), "write");
+                      await mkdir(directory, { recursive: true });
+                      const target = await access.assertPath(resolve(directory, `${randomUUID()}.json`), "write");
+                      await writeFile(target, JSON.stringify({ stdout, stderr }), { encoding: "utf8", flag: "wx", mode: 0o600 });
+                      createdPath = target;
+                      this.deps.store.db.prepare("INSERT INTO artifacts(id,session_id,name,path,mime_type,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)")
+                        .run(randomUUID(), sessionId, "Process output", target, "application/json", JSON.stringify({ tool: name, toolCallId: callId }), new Date().toISOString());
+                      outputArtifactPath = target;
+                    } catch (error) {
+                      if (createdPath) await unlink(createdPath).catch(() => undefined);
+                      outputArtifactError = this.deps.provider.redact(error instanceof Error ? error.message : String(error));
+                    }
+                  }
+                }
+                output = { ...processOutput,
+                  stdout: processOutput.stdoutTruncated === true ? "[Output exceeds capture limit; unavailable]" : stdout.slice(0, 2000),
+                  stderr: processOutput.stderrTruncated === true ? "[Output exceeds capture limit; unavailable]" : stderr.slice(0, 2000),
+                  ...(stdoutTruncated ? { stdoutTruncated: true } : {}), ...(stderrTruncated ? { stderrTruncated: true } : {}),
+                  ...(outputArtifactPath ? { outputArtifactPath } : {}), ...(outputArtifactError ? { outputArtifactError } : {}) };
+              }
+            }
+            const safeOutput = boundedToolOutput(this.deps.provider.redact(JSON.stringify(output)));
             const artifactPath = asRecord(output).path;
             if (typeof artifactPath === "string" && ["file_create", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact"].includes(name)) {
               const artifactName = basename(artifactPath).slice(0, 255) || "artifact";

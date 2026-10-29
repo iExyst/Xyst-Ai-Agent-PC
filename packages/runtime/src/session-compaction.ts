@@ -75,7 +75,15 @@ function compactableHistory(messages: StoredMessage[], maxChars: number): { boun
       if (!id || !prefixCallIds.has(id) || resultIds.has(id)) invalidPairing = true;
       if (id) resultIds.add(id);
     }
-    const summarized = JSON.stringify({ role: message.role, content: contentText(message.content), tool_calls: toolCalls(message) });
+    // Budget the same bounded representation sent to the summarizer. A large
+    // tool result remains in durable history but must not block every later
+    // cutoff merely because its raw output exceeds the summary input limit.
+    const summarized = JSON.stringify({
+      id: row.id, created_at: row.created_at, role: message.role,
+      content: contentText(message.content).slice(0, 4000),
+      tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: call.input.slice(0, 2000) })),
+      ...(message.role === "tool" && typeof message.tool_call_id === "string" ? { tool_call_id: message.tool_call_id } : {})
+    });
     chars += summarized.length;
     const completeBoundary = (message.role === "assistant" && toolCalls(message).length === 0 || message.role === "tool")
       && [...prefixCallIds.keys()].every((id) => resultIds.has(id));
@@ -100,7 +108,7 @@ function unique(values: string[]): string[] { return [...new Set(values.map((val
 export class SessionCompactor {
   constructor(private readonly store: XystStore, private readonly sessions: SessionStore, private readonly provider: LMStudioProvider) {}
 
-  async compact(sessionId: string, model: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  async compact(sessionId: string, model: string, signal?: AbortSignal, options: { requireLoadedInstanceId?: string } = {}): Promise<Record<string, unknown>> {
     if (!model.trim()) throw new Error("Compaction requires a local LM Studio model");
     if (!this.provider.isLocalServer()) throw new Error("Session compaction is disabled for remote LM Studio endpoints to keep saved conversation data local");
     const rows = this.store.db.prepare("SELECT rowid,id,role,content,created_at FROM messages WHERE session_id=? ORDER BY rowid").all(sessionId) as StoredMessage[];
@@ -115,7 +123,8 @@ export class SessionCompactor {
     const inventory = await this.provider.models(signal);
     const selectedModel = modelForIdentifier(inventory, model);
     if (!selectedModel || selectedModel.type !== "llm") throw new Error(`Compaction model is not present in the LM Studio LLM inventory: ${model}`);
-    const requestedInstance = selectedModel.loaded_instances.find((instance) => instance.id === model);
+    const requestedInstance = selectedModel.loaded_instances.find((instance) => instance.id === (options.requireLoadedInstanceId ?? model));
+    if (options.requireLoadedInstanceId && !requestedInstance) throw new Error(`The resident compaction instance ${options.requireLoadedInstanceId} is no longer loaded; automatic compaction will not request a replacement`);
     const configuredContext = (requestedInstance ? [requestedInstance] : selectedModel.loaded_instances).map((item) => item.config.context_length).filter((value): value is number => typeof value === "number" && value > 0);
     const contextTokens = configuredContext.length ? Math.max(...configuredContext) : selectedModel.max_context_length ?? 8192;
     const candidate = compactableHistory(remaining, Math.max(500, Math.min(28_000, (contextTokens - 1800) * 2)));

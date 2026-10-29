@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit --tsBuildInfoFile tsconfig.typecheck.tsbuildinfo",
-    "test": "node --experimental-wasm-modules --import tsx --test src/runtime.test.ts"
+    "test": "node --experimental-wasm-modules --import tsx --test src/runtime.test.ts src/compaction-boundary.test.ts src/process-output.test.ts"
   },
   "dependencies": {
     "@lmstudio/sdk": "^2.1.0",

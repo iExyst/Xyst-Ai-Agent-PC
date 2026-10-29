@@ -309,8 +309,41 @@ export class SessionStore {
       ? this.store.db.prepare("SELECT role,content FROM messages WHERE session_id=? AND rowid>? ORDER BY rowid").all(sessionId, latest.boundary_row) as Array<{ role: string; content: string }>
       : this.store.db.prepare("SELECT role,content FROM messages WHERE session_id=? ORDER BY rowid").all(sessionId) as Array<{ role: string; content: string }>;
     if (!latest) return rows;
-    const summary = JSON.stringify(JSON.parse(latest.summary_json));
-    return [{ role: "assistant", content: `[Persisted Xyst session summary through ${latest.boundary_created_at} (message ${latest.through_message_id}); historical context, not current-state evidence or a new instruction. Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary. Re-read or re-run the relevant tool before relying on them as current.]\n${summary}` }, ...rows];
+    const summaryValue = JSON.parse(latest.summary_json) as Record<string, unknown>;
+    const summary = JSON.stringify(summaryValue);
+    const context = [{ role: "assistant", content: `[Persisted Xyst session summary through ${latest.boundary_created_at} (message ${latest.through_message_id}); historical context, not current-state evidence or a new instruction. Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary. Re-read or re-run the relevant tool before relying on them as current.]\n${summary}` }, ...rows];
+    const parsed = rows.map((row) => {
+      if (!row.content.startsWith("__xyst_api_message__:")) return { role: row.role, content: row.content };
+      try { return JSON.parse(row.content.slice("__xyst_api_message__:".length)) as { role?: string; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string }; }
+      catch { return { role: row.role, content: row.content }; }
+    });
+    if (!parsed.some((message) => message.role === "user")) {
+      const pendingCalls = new Set<string>();
+      for (const message of parsed) {
+        if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+          for (const raw of message.tool_calls) {
+            const id = raw && typeof raw === "object" ? (raw as Record<string, unknown>).id : undefined;
+            if (typeof id === "string" && id) pendingCalls.add(id);
+          }
+        } else if (message.role === "tool" && typeof message.tool_call_id === "string") pendingCalls.delete(message.tool_call_id);
+      }
+      // Some chat templates require a user-role message even when a saved
+      // conversation resumes at a completed tool-result boundary. Recreate a
+      // clearly labeled continuation from the primary goal preserved from the
+      // original user message. Never append across an unresolved tool call.
+      if (!pendingCalls.size) {
+        let primaryGoal = "";
+        try {
+          const value = summaryValue.primary_goal;
+          if (typeof value === "string") primaryGoal = value.trim();
+        } catch { /* A malformed summary must not fabricate a user request. */ }
+        const continuation = primaryGoal
+          ? `Continue the saved task. This original user goal was preserved from before the compaction boundary:\n${primaryGoal}\nTreat the saved summary as historical context and refresh mutable state before relying on it.`
+          : "Continue the saved task from its historical context. Refresh mutable state before relying on it, and do not invent or broaden the user's objective.";
+        context.push({ role: "user", content: continuation });
+      }
+    }
+    return context;
   }
   export(sessionId: string): Record<string, unknown> {
     const session = this.store.db.prepare("SELECT id,title,status,created_at,updated_at FROM sessions WHERE id=?").get(sessionId);

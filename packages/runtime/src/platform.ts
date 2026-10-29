@@ -24,7 +24,7 @@ export interface ProcessOptions {
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
 }
-export interface ProcessResult { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; durationMs: number }
+export interface ProcessResult { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; durationMs: number; stdoutTruncated?: boolean; stderrTruncated?: boolean }
 
 /** The OS rejected process creation; no program executed. */
 export class ProcessStartError extends Error {
@@ -113,10 +113,10 @@ export async function runProcess(command: string, args: string[], options: Proce
   let spawned = false;
   child.once("spawn", () => { spawned = true; });
   if (options.stdin && child.stdin) options.onStdinWriter?.((value) => { if (child.stdin && !child.stdin.destroyed) child.stdin.write(value); }, () => child.stdin?.end());
-  let stdout = ""; let stderr = ""; let timedOut = false;
+  let stdout = ""; let stderr = ""; let timedOut = false; let stdoutTruncated = false; let stderrTruncated = false;
   const maxOutputChars = options.maxOutputChars ?? 200_000;
-  child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { if (stdout.length < maxOutputChars) stdout += chunk.slice(0, maxOutputChars - stdout.length); options.onStdout?.(chunk); });
-  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (stderr.length < maxOutputChars) stderr += chunk.slice(0, maxOutputChars - stderr.length); options.onStderr?.(chunk); });
+  child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { if (chunk.length > maxOutputChars - stdout.length) stdoutTruncated = true; if (stdout.length < maxOutputChars) stdout += chunk.slice(0, maxOutputChars - stdout.length); options.onStdout?.(chunk); });
+  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (chunk.length > maxOutputChars - stderr.length) stderrTruncated = true; if (stderr.length < maxOutputChars) stderr += chunk.slice(0, maxOutputChars - stderr.length); options.onStderr?.(chunk); });
   let timer: NodeJS.Timeout | undefined;
   let cancellationStarted = false;
   let rejectTermination: (error: Error) => void = () => {};
@@ -134,7 +134,7 @@ export async function runProcess(command: string, args: string[], options: Proce
   try {
     const result = await Promise.race([terminationFailure, new Promise<ProcessResult>((resolveDone, reject) => {
       child.once("error", (error) => reject(!spawned && child.pid === undefined ? new ProcessStartError(error) : error));
-      child.once("close", (code, signal) => resolveDone({ code, signal, stdout, stderr, durationMs: Date.now() - started }));
+      child.once("close", (code, signal) => resolveDone({ code, signal, stdout, stderr, durationMs: Date.now() - started, ...(stdoutTruncated ? { stdoutTruncated: true } : {}), ...(stderrTruncated ? { stderrTruncated: true } : {}) }));
     })]);
     if (timedOut) throw new Error(`Process timed out after ${options.timeoutMs} ms`);
     if (options.signal?.aborted) throw new Error("Process cancelled");

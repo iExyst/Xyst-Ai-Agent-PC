@@ -2599,6 +2599,8 @@ test("mission completion enforces required tool name, exit code, and output asse
   assert.throws(() => assertRequiredToolEvidence("file_read", { code: 0, stdout: "EXPECTED\n" }, requirement), /must come from run_process/);
   assert.throws(() => assertRequiredToolEvidence("run_process", { code: 1, stdout: "EXPECTED\n" }, requirement), /required 0/);
   assert.throws(() => assertRequiredToolEvidence("run_process", { code: 0, stdout: "OTHER\n" }, requirement), /stdout did not exactly match/);
+  assert.throws(() => assertRequiredToolEvidence("run_process", { code: 0, stdout: "EXPECTED", stdoutTruncated: true }, requirement), /truncated/);
+  assert.throws(() => assertRequiredToolEvidence("run_process", { code: 0, stdout: "EXPECTED", stdoutTruncated: true }, { tool: "run_process", stdoutIncludes: "EXPECTED" }), /truncated/);
 });
 
 test("ordinary command completion requires explicitly requested stdout evidence", async () => withTemp(async (root) => {
@@ -7232,10 +7234,11 @@ test("compaction accepts complete tool-result boundaries and retains recent pair
     assert.equal(requestedModel, "resident"); assert.equal(result.compactedMessages, 9); assert.equal(result.retainedMessages, 4);
     assert.equal(sessions.messages(sessionId).length, 13);
     const context = sessions.contextMessages(sessionId);
-    assert.equal(context.length, 5);
+    assert.equal(context.length, 6);
     assert.match(context[0]!.content, /historical context/);
     assert.match(context[1]!.content, /chain-4/); assert.match(context[2]!.content, /chain-4/);
     assert.match(context[3]!.content, /chain-5/); assert.match(context[4]!.content, /chain-5/);
+    assert.equal(context[5]!.role, "user"); assert.match(context[5]!.content, /Continue the saved task/);
   } finally { store.close(); }
 }));
 

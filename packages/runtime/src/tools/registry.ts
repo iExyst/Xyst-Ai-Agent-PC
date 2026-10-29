@@ -44,8 +44,8 @@ export function createAgentTools(access: AccessController, workspace = process.c
   add("run_process", "Run an executable with an explicit argv array. No shell parsing occurs. Pass the program name only as executable, not again as args[0]; for `node --test file.test.mjs`, use executable `node` and args `[\"--test\", \"file.test.mjs\"]` (or `node.exe` on Windows).", { type: "object", properties: { executable: { type: "string" }, args: { type: "array", items: { type: "string" } }, cwd: { type: "string" }, timeout_ms: { type: "integer", minimum: 100, maximum: 120000 } }, required: ["executable", "args"], additionalProperties: false }, z.object({ executable: z.string().min(1), args: z.array(z.string()).max(100), cwd: z.string().optional(), timeout_ms: z.number().int().min(100).max(120000).optional() }).strict(), async (args, signal) => {
     access.assertCapability("externalActions"); access.assertExecutable(args.executable);
     const cwd = await access.assertPath(resolve(workspace, args.cwd ?? "."), "read");
-    const result = await runProcess(args.executable, args.args, { cwd, timeoutMs: args.timeout_ms ?? 30000, maxOutputChars: 30000, ...(signal ? { signal } : {}) });
-    return { code: result.code, signal: result.signal, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs };
+    const result = await runProcess(args.executable, args.args, { cwd, timeoutMs: args.timeout_ms ?? 30000, maxOutputChars: 8 * 1024 * 1024, ...(signal ? { signal } : {}) });
+    return result;
   });
   return { ...tools, ...createWebTools(access, webDependencies), ...createOfficeTools(access, workspace, ocrLanguages, officeRendererExecutable), ...desktopToolsFactory(access, desktopAutomationEnabled), ...createSkillTools(access, workspace) };
 }
