@@ -7213,3 +7213,100 @@ test("agent reuses a loaded instance reported only on a later duplicate inventor
     assert.equal(inferenceModel, "resident-instance"); assert.equal(loads, 0);
   } finally { store.close(); }
 }));
+
+test("compaction accepts complete tool-result boundaries and retains recent paired turns", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "tool-chain-compaction.sqlite")); const sessions = new SessionStore(store); const sessionId = sessions.create("Tool chain");
+  const append = (role: "user" | "assistant" | "tool", value: Record<string, unknown>) => sessions.addMessage(sessionId, role, `__xyst_api_message__:${JSON.stringify(value)}`);
+  append("user", { role: "user", content: "Inspect the input files." });
+  for (let i = 0; i < 6; i++) {
+    append("assistant", { role: "assistant", content: null, tool_calls: [{ id: `chain-${i}`, type: "function", function: { name: "file_read", arguments: "{}" } }] });
+    append("tool", { role: "tool", tool_call_id: `chain-${i}`, content: `result ${i}` });
+  }
+  let requestedModel = "";
+  const provider = { isLocalServer: () => true, redact: (value: string) => value,
+    models: async () => [{ type: "llm", key: "chain-model", max_context_length: 32768, loaded_instances: [{ id: "resident", config: { context_length: 8192 } }] }],
+    structuredOutput: async (request: { model: string }) => { requestedModel = request.model; return { choices: [{ message: { content: JSON.stringify({ decisions: [], dependencies: [], completed_work: [], outstanding_actions: [], durable_facts: [] }) } }] }; }
+  };
+  try {
+    const result = await new SessionCompactor(store, sessions, provider as never).compact(sessionId, "resident");
+    assert.equal(requestedModel, "resident"); assert.equal(result.compactedMessages, 9); assert.equal(result.retainedMessages, 4);
+    assert.equal(sessions.messages(sessionId).length, 13);
+    const context = sessions.contextMessages(sessionId);
+    assert.equal(context.length, 5);
+    assert.match(context[0]!.content, /historical context/);
+    assert.match(context[1]!.content, /chain-4/); assert.match(context[2]!.content, /chain-4/);
+    assert.match(context[3]!.content, /chain-5/); assert.match(context[4]!.content, /chain-5/);
+  } finally { store.close(); }
+}));
+
+test("agent compacts growing tool history within a resident model without loading or unloading", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "automatic-context-compaction.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "resident-model"); config.set("global", "models.automaticLoading", false);
+  for (let i = 0; i < 4; i++) await writeFile(join(root, `input-${i}.txt`), String(i).repeat(7000));
+  let generation = 0; let summaries = 0; const budgets: number[] = []; let sawSummary = false;
+  const provider = {
+    redact: (value: string) => value, isLocalServer: () => true,
+    models: async () => [{ type: "llm", key: "resident-model", max_context_length: 32768, size_bytes: 1, loaded_instances: [{ id: "resident", config: { context_length: 14000 } }] }],
+    load: async () => assert.fail("must not load another instance"), unload: async () => assert.fail("must not unload a shared instance"),
+    structuredOutput: async (request: { model: string }) => { summaries++; assert.equal(request.model, "resident"); return { choices: [{ message: { content: JSON.stringify({ decisions: [], dependencies: [], completed_work: [], outstanding_actions: [], durable_facts: [] }) } }] }; },
+    streamChatWithTools: async (request: { model: string; messages: Array<{ content?: unknown }> }) => {
+      assert.equal(request.model, "resident"); budgets.push(estimateRequiredContextTokens(request.messages.slice(1))); sawSummary ||= JSON.stringify(request.messages).includes("Persisted Xyst session summary");
+      const i = generation++;
+      const name = i < 4 ? "file_read" : "task_complete"; const args = i < 4 ? { path: `input-${i}.txt` } : { evidence_tool_call_ids: ["grow-3"] };
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `grow-${i}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] };
+    }
+  };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Inspect input files.", { workspace: root, maxTurns: 6 });
+    assert.equal(result.status, "completed"); assert.equal(summaries, 1); assert.equal(sawSummary, true); assert.ok(budgets.every((value) => value <= 14000), JSON.stringify(budgets));
+    assert.equal(sessions.compactions(result.sessionId).length, 1);
+    assert.ok((sessions.messages(result.sessionId) as Array<{ content: string }>).some((row) => row.content.includes('0'.repeat(7000))), "raw tool history remains intact");
+  } finally { store.close(); }
+}));
+
+test("agent compacts a saved oversized tool chain before resuming on its resident instance", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "resident-resume-compaction.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "resume-model"); config.set("global", "models.automaticLoading", false);
+  const sessionId = sessions.create("Resume tool chain");
+  const append = (role: "user" | "assistant" | "tool", value: Record<string, unknown>) => sessions.addMessage(sessionId, role, `__xyst_api_message__:${JSON.stringify(value)}`);
+  append("user", { role: "user", content: "Inspect this workspace." });
+  for (let i = 0; i < 6; i++) {
+    append("assistant", { role: "assistant", content: null, tool_calls: [{ id: `saved-${i}`, type: "function", function: { name: "file_read", arguments: "{}" } }] });
+    append("tool", { role: "tool", tool_call_id: `saved-${i}`, content: "old".repeat(2334) });
+  }
+  let generation = 0; let summaries = 0;
+  const provider = {
+    redact: (value: string) => value, isLocalServer: () => true,
+    models: async () => [{ type: "llm", key: "resume-model", max_context_length: 32768, size_bytes: 1, loaded_instances: [{ id: "resident-resume", config: { context_length: 14000 } }] }],
+    load: async () => assert.fail("must not load while resuming"), unload: async () => assert.fail("must not unload while resuming"),
+    structuredOutput: async (request: { model: string }) => { summaries++; assert.equal(request.model, "resident-resume"); return { choices: [{ message: { content: JSON.stringify({ decisions: [], dependencies: [], completed_work: [], outstanding_actions: [], durable_facts: [] }) } }] }; },
+    streamChatWithTools: async (request: { model: string; messages: Array<{ content?: unknown }> }) => {
+      assert.equal(request.model, "resident-resume"); assert.match(JSON.stringify(request.messages), /Persisted Xyst session summary/);
+      assert.ok(estimateRequiredContextTokens(request.messages.slice(1)) <= 14000);
+      const name = generation++ === 0 ? "file_list" : "task_complete";
+      const args = name === "file_list" ? { path: "." } : { evidence_tool_call_ids: ["resumed-list"] };
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: name === "file_list" ? "resumed-list" : "resumed-done", type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] };
+    }
+  };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Continue inspection.", { sessionId, workspace: root, maxTurns: 3 });
+    assert.equal(result.status, "completed"); assert.equal(summaries, 1); assert.ok(sessions.messages(sessionId).length > 13);
+  } finally { store.close(); }
+}));
+
+test("compaction checks its entire prompt against the selected resident instance context", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "compaction-input-budget.sqlite")); const sessions = new SessionStore(store); const sessionId = sessions.create("Bounded summary");
+  for (let i = 0; i < 3; i++) {
+    sessions.addMessage(sessionId, "user", `Goal ${i}: ` + "g".repeat(1000));
+    sessions.addMessage(sessionId, "assistant", "Recorded this goal.");
+  }
+  for (let i = 0; i < 4; i++) sessions.addMessage(sessionId, "assistant", "Recent turn");
+  const provider = { isLocalServer: () => true, redact: (value: string) => value,
+    models: async () => [{ type: "llm", key: "budget-model", max_context_length: 32768, loaded_instances: [{ id: "large", config: { context_length: 32768 } }, { id: "small", config: { context_length: 4096 } }] }],
+    structuredOutput: async () => assert.fail("must not send an oversized summary prompt to the small instance")
+  };
+  try {
+    await assert.rejects(() => new SessionCompactor(store, sessions, provider as never).compact(sessionId, "small"), /Compaction input cannot fit/);
+    assert.equal(sessions.compactions(sessionId).length, 0); assert.equal(sessions.messages(sessionId).length, 10);
+  } finally { store.close(); }
+}));

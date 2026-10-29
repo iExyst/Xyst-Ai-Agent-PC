@@ -26,6 +26,7 @@ import type { WebToolDependencies } from "./tools/web.js";
 import type { ModelAcquisitionService } from "./integrations/model-acquisition.js";
 import { runBoundedOrdered } from "./orchestration/tool-batches.js";
 import { ProcessStartError } from "./platform.js";
+import { SessionCompactor } from "./session-compaction.js";
 
 const MESSAGE_PREFIX = "__xyst_api_message__:";
 type ApiMessage = Record<string, unknown> & { role: string; content?: unknown };
@@ -490,6 +491,7 @@ export class AgentRunner {
     }
     await this.deps.modelAcquisition?.verifyForAgent?.(model, options.signal);
     let activeProvider = this.deps.provider;
+    let automaticCompactions = 0;
     const prepareModel = async (key: string, provider: LMStudioProvider = activeProvider): Promise<{ modelKey: string; inferenceModel: string }> => {
       const isLocalServer = typeof provider.isLocalServer === "function" ? provider.isLocalServer() : true;
       if (!isLocalServer) access.assertCapability("network");
@@ -512,6 +514,27 @@ export class AgentRunner {
         .filter((item): item is { instance: LMStudioModel["loaded_instances"][number]; contextLength: number } => typeof item.contextLength === "number" && item.contextLength + contextTolerance >= requiredContextTokens)
         .sort((left, right) => left.contextLength - right.contextLength)[0];
       if (adequateInstance) return { modelKey: candidate.key, inferenceModel: await resolveInferenceModel(adequateInstance.instance.id) };
+      const resident = availableInstances.map((instance) => ({ instance, context: instanceContextLength(instance) }))
+        .filter((item): item is { instance: LMStudioModel["loaded_instances"][number]; context: number } => typeof item.context === "number")
+        .sort((left, right) => right.context - left.context)[0];
+      if (isLocalServer && resident && typeof provider.structuredOutput === "function" && automaticCompactions < 3) {
+        automaticCompactions++;
+        const previousEstimate = requiredContextTokens;
+        try {
+          const result = await new SessionCompactor(this.deps.store, this.deps.sessions, provider)
+            .compact(sessionId, await resolveInferenceModel(resident.instance.id), options.signal);
+          const compactedMessages = this.deps.sessions.contextMessages(sessionId).map((row) => {
+            if (!row.content.startsWith(MESSAGE_PREFIX)) return { role: row.role, content: row.content };
+            return JSON.parse(row.content.slice(MESSAGE_PREFIX.length)) as ApiMessage;
+          });
+          requiredContextTokens = estimateRequiredContextTokens(compactedMessages);
+          this.deps.events.emit("session.compacted", { ...result, automatic: true, previousContextEstimate: previousEstimate, contextEstimate: requiredContextTokens }, sessionId);
+          if (resident.context + contextTolerance >= requiredContextTokens) return { modelKey: candidate.key, inferenceModel: await resolveInferenceModel(resident.instance.id) };
+        } catch (error) {
+          if (options.signal?.aborted) throw error;
+          this.deps.events.emit("session.compaction.skipped", { automatic: true, reason: provider.redact(error instanceof Error ? error.message : String(error)) }, sessionId);
+        }
+      }
       const loadedContexts = availableInstances.map((instance) => instanceContextLength(instance)).filter((value): value is number => typeof value === "number");
       const currentContext = loadedContexts.length ? Math.max(...loadedContexts) : candidate.max_context_length;
       if (requestedInstance && typeof currentContext === "number") throw new Error(`The conversation now needs an estimated ${requiredContextTokens} context tokens, but selected model instance ${key} provides ${currentContext}. Choose a loaded instance with a larger context.`);
@@ -1122,13 +1145,14 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       for (; turns < maxTurns; turns++) {
         if (options.signal?.aborted) { status = "cancelled"; break; }
         drainUserMessages();
-        const conversation = sessionMessages();
-        requiredContextTokens = Math.max(requiredContextTokens, estimateRequiredContextTokens(conversation));
+        let conversation = sessionMessages();
+        requiredContextTokens = estimateRequiredContextTokens(conversation);
         if (requiredContextTokens > contextPreparedForTokens) {
           const prepared = await prepareModel(selected, activeProvider);
           selected = prepared.modelKey; inferenceModel = prepared.inferenceModel; contextPreparedForTokens = requiredContextTokens;
+          conversation = sessionMessages();
         }
-        const selectedModelInfo = inventory?.find((candidate) => candidate.key === selected);
+        const selectedModelInfo = inventory ? modelForIdentifier(inventory, selected) : undefined;
         if (selectedModelInfo) {
           const selectedInstance = selectedModelInfo.loaded_instances.find((instance) => instance.id === inferenceModel);
           const loadedContexts = selectedInstance ? [instanceContextLength(selectedInstance, selectedModelInfo.max_context_length)].filter((value): value is number => typeof value === "number") : selectedModelInfo.loaded_instances.map((instance) => instanceContextLength(instance, selectedModelInfo.max_context_length)).filter((value): value is number => typeof value === "number");
