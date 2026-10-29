@@ -842,6 +842,28 @@ export class AgentRunner {
           if (typeof evidenceRecord.error === "string" || evidenceRecord.success === false) throw new Error(`Completion evidence ${evidenceId} reports a tool error`);
           const processOutputRequirement = inferredProcessOutputRequirements.get(criterion);
           if (processOutputRequirement) assertRequiredToolEvidence(evidence.name, evidenceRecord, processOutputRequirement.requirement, workspace);
+          if (evidence.name === "file_list") {
+            let listingInput: unknown;
+            try { listingInput = JSON.parse(evidence.input_json) as unknown; }
+            catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; list the directory again before completing.`, { cause: error }); }
+            let currentListing: unknown;
+            try { currentListing = await tools.file_list!.execute(listingInput); }
+            catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; list the directory again after resolving the access or filesystem error.`, { cause: error }); }
+            const normalizeListing = (value: unknown): string[] => {
+              if (!Array.isArray(value) || !value.every((entry) => {
+                const row = asRecord(entry);
+                return typeof row.path === "string" && ["file", "directory", "symlink"].includes(String(row.type));
+              })) throw new Error("File listing evidence has an invalid shape");
+              return value.map((entry) => {
+                const row = asRecord(entry); const listedPath = String(row.path);
+                return `${listedPath}\0${String(row.type)}`;
+              }).sort();
+            };
+            let listingMatches = false;
+            try { listingMatches = JSON.stringify(normalizeListing(currentListing)) === JSON.stringify(normalizeListing(evidenceOutput)); }
+            catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; list the directory again before completing.`, { cause: error }); }
+            if (!listingMatches) throw new Error(`Completion evidence ${evidenceId} is stale: the file_list contents changed outside Xyst after the listing. List the directory again and verify the current entries before completing.`);
+          }
           if (evidence.name === "web_fetch" && evidenceRecord.truncated === true) throw new Error(`Completion evidence ${evidenceId} is truncated. Increase max_chars or request narrower API fields, then cite the successful full fetch.`);
           if (evidence.name === "file_read" || evidence.name === "office_read") {
             const readPath = evidencePath(evidence);

@@ -1797,6 +1797,27 @@ test("completion detects an external edit after file_read, then accepts a fresh 
   } finally { store.close(); }
 }));
 
+test("completion rejects a file_list made stale by an out-of-band entry and accepts a fresh listing", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-file-list.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: turn === 1 ? "file-list-before-external-entry" : "file-list-after-external-entry", type: "function", function: { name: "file_list", arguments: JSON.stringify({ path: "." }) } }] } }] };
+    if (turn === 2) await writeFile(join(root, "created-outside-xyst.txt"), "external entry");
+    return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: turn === 2 ? "complete-stale-file-list" : "complete-fresh-file-list", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("List the workspace entries and verify the listing is current.", { workspace: root, maxTurns: 4 });
+    assert.equal(result.status, "completed");
+    assert.equal(turn, 4, "the stale listing must be rejected before a fresh listing can verify completion");
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /file_list contents changed outside Xyst/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
 test("completion rejects file evidence invalidated by a GitHub download", async () => {
   for (const downloadName of ["github_download_release_asset", "github_download_actions_artifact"]) {
     await withTemp(async (root) => {
