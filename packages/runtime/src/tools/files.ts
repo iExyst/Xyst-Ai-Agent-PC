@@ -12,13 +12,11 @@ function decodeText(buffer: Buffer): DecodedText {
     return { text, encoding: "utf-8", encode: (updated) => Buffer.concat([bom, Buffer.from(updated, "utf8")]) };
   }
   if (buffer[0] === 0xff && buffer[1] === 0xfe) {
-    const bom = Buffer.from([0xff, 0xfe]); const text = buffer.subarray(2).toString("utf16le");
+    const bom = Buffer.from([0xff, 0xfe]); const text = new TextDecoder("utf-16le", { fatal: true, ignoreBOM: true }).decode(buffer.subarray(2));
     return { text, encoding: "utf-16le", encode: (updated) => Buffer.concat([bom, Buffer.from(updated, "utf16le")]) };
   }
   if (buffer[0] === 0xfe && buffer[1] === 0xff) {
-    if ((buffer.length - 2) % 2 !== 0) throw new Error("Invalid UTF-16BE file length");
-    const body = Buffer.from(buffer.subarray(2)); for (let i = 0; i < body.length; i += 2) [body[i], body[i + 1]] = [body[i + 1]!, body[i]!];
-    const bom = Buffer.from([0xfe, 0xff]); const text = body.toString("utf16le");
+    const bom = Buffer.from([0xfe, 0xff]); const text = new TextDecoder("utf-16be", { fatal: true, ignoreBOM: true }).decode(buffer.subarray(2));
     return { text, encoding: "utf-16be", encode: (updated) => { const le = Buffer.from(updated, "utf16le"); for (let i = 0; i < le.length; i += 2) [le[i], le[i + 1]] = [le[i + 1]!, le[i]!]; return Buffer.concat([bom, le]); } };
   }
   const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);

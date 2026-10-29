@@ -2040,6 +2040,29 @@ test("file patch rejects stale edits and preserves UTF-8 BOM and CRLF", async ()
   assert.equal(patched.path, path);
 }));
 
+test("file reads and patches reject malformed UTF-16 without modifying bytes", async () => withTemp(async (root) => {
+  const cases = [
+    Buffer.from([0xff, 0xfe, 0x61]), // truncated little-endian code unit
+    Buffer.from([0xfe, 0xff, 0x00]), // truncated big-endian code unit
+    Buffer.from([0xff, 0xfe, 0x00, 0xd8]), // unpaired little-endian surrogate
+    Buffer.from([0xfe, 0xff, 0xd8, 0x00]) // unpaired big-endian surrogate
+  ];
+  for (const [index, bytes] of cases.entries()) {
+    const path = join(root, `invalid-${index}.txt`); await writeFile(path, bytes);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    await assert.rejects(() => readText(path));
+    await assert.rejects(() => patchText(path, digest, "a", "b"));
+    assert.deepEqual(await readFileAsync(path), bytes);
+  }
+  for (const [name, bytes] of [["le", Buffer.from([0xff, 0xfe, 0xff, 0xfe, 0x61, 0x00])], ["be", Buffer.from([0xfe, 0xff, 0xfe, 0xff, 0x00, 0x61])]] as const) {
+    const path = join(root, `valid-${name}.txt`); await writeFile(path, bytes);
+    const read = await readText(path); assert.equal(read.text, "\uFEFFa");
+    await patchText(path, read.sha256, "a", "b");
+    const updated = await readFileAsync(path); assert.deepEqual(updated.subarray(0, 4), bytes.subarray(0, 4));
+    assert.equal((await readText(path)).text, "\uFEFFb");
+  }
+}));
+
 test("text search ignores dependency and build output directories", async () => withTemp(async (root) => {
   await createText(join(root, "src.ts"), "needle in source"); await mkdir(join(root, "node_modules", "pkg"), { recursive: true }); await writeFile(join(root, "node_modules", "pkg", "generated.js"), "needle in dependency");
   const matches = await searchFiles(root, "needle"); assert.equal(matches.length, 1); assert.equal(matches[0]?.path, join(root, "src.ts"));
