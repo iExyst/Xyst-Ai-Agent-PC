@@ -55,3 +55,7 @@ The runtime now enforces machine-checkable quoted stdout requirements in ordinar
 ### C2 follow-up · native desktop observation freshness
 
 Selected `desktop_windows` and `desktop_inspect` evidence is re-executed at completion through the current registered desktop tools and must match the redacted saved result. Later successful `desktop_action` calls invalidate earlier native desktop evidence; external UI changes are detected by the completion refresh. Deterministic AgentRunner tests cover both stale observation rejection/fresh retry and action-driven invalidation. See [`verification-history.md`](verification-history.md#c2-follow-up--native-desktop-observation-freshness--2026-10-29). Native Computer Use and screen-reader acceptance remain separate open requirements.
+
+### C2 follow-up · local skill evidence freshness
+
+Selected `skill_list` and `skill_read` evidence is refreshed through the current registered, access-checked tools before completion; changed results or later successful workspace mutations invalidate stale skill evidence. The deterministic regression changes a guide outside Xyst between turns and requires a fresh read before completion. Dynamic MCP tools and other unclassified external surfaces remain open. See [`verification-history.md`](verification-history.md#c2-follow-up--local-skill-evidence-freshness).

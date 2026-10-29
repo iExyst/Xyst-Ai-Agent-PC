@@ -2647,3 +2647,9 @@ Updated C2 to reflect the shipped-local candidate work and bounded evidence: exp
 The first focused action-invalidation assertion expected two reads but correctly observed three: initial read, fresh read after the old result was invalidated, and completion-time refresh of that new result. The assertion was corrected. The first root `npm test` invocation then failed compilation because the test passed `approveExternalAction` to the runner constructor instead of the run options; that placement was corrected and the full root verification passed: runtime 261 (258 passed, 3 Windows-host skips), CLI 31/31, release verification 5/5. `npm run typecheck`, `npm run desktop:build`, and `git diff --check` passed.
 
 This is a bounded native desktop C2 slice; it does not provide native Computer Use or screen-reader acceptance. The source change is currently local and has not yet received exact-head hosted checks. The integration PR remains open/draft and unmerged.
+
+### C2 follow-up · local skill evidence freshness
+
+`skill_list` and `skill_read` are now re-executed through their registered access-checked tools at `task_complete`; selected results must match their redacted saved output. Later successful workspace mutations invalidate earlier skill observations. An AgentRunner regression edits a skill file outside Xyst after its initial read, confirms stale completion is rejected, then completes using a fresh read. Focused desktop/skill freshness regressions passed 3/3.
+
+Windows root `npm test` passed runtime 262 (259 passed, 3 host-specific skips, 0 failed), CLI 31/31, and release verification 5/5. `npm run typecheck`, `npm run desktop:build`, and `git diff --check` passed. This closes only local skill-file/list observations; dynamic MCP tools and other unclassified external surfaces remain open. The source/documentation change is not yet covered by exact-head hosted checks.

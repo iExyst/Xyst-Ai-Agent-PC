@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile as readFileAsync, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { Cron } from "croner";
@@ -574,6 +574,29 @@ test("desktop actions invalidate earlier window evidence until it is inspected a
     assert.equal(result.status, "completed");
     assert.equal(windowReads, 3, "the original read is invalidated, and the fresh read is independently refreshed at completion");
     assert.equal(actions, 1);
+  } finally { store.close(); }
+}));
+
+test("skill read evidence is refreshed after an external guide edit", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "skill-evidence-refresh.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  const skillPath = join(root, ".xyst", "skills", "review", "SKILL.md"); await mkdir(dirname(skillPath), { recursive: true }); await writeFile(skillPath, "Initial guide text.\n");
+  let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "loaded-chat", display_name: "Chat", size_bytes: 20, loaded_instances: [{ id: "loaded-chat", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1 || turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `skill-read-${turn}`, type: "function", function: { name: "skill_read", arguments: JSON.stringify({ name: "review" }) } }] } }] };
+      if (turn === 2) await writeFile(skillPath, "Updated guide after external edit.\n");
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `skill-complete-${turn}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1, 1] }) } }] } }] };
+    }
+  };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  try {
+    const result = await agent.run("Use skill_read to read the review skill.", { workspace: root, model: "loaded-chat", maxTurns: 5 });
+    assert.equal(result.status, "completed");
+    const reads = store.db.prepare("SELECT output_json FROM tool_calls WHERE name='skill_read' ORDER BY rowid").all() as Array<{ output_json: string }>;
+    assert.deepEqual(reads.map(({ output_json }) => JSON.parse(output_json).content), ["Initial guide text.\n", "Updated guide after external edit.\n"]);
   } finally { store.close(); }
 }));
 

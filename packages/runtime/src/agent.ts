@@ -56,6 +56,8 @@ const gitRefreshableEvidenceNames = new Set(["git_status", "git_diff", "git_log"
 const memoryRefreshableEvidenceNames = new Set(["memory_search"]);
 const desktopObservationNames = new Set(["desktop_windows", "desktop_inspect"]);
 const desktopRefreshableEvidenceNames = new Set(["desktop_windows", "desktop_inspect"]);
+const skillObservationNames = new Set(["skill_list", "skill_read"]);
+const skillRefreshableEvidenceNames = new Set(["skill_list", "skill_read"]);
 const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
 const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
 function parsedInputRecord(inputJson: string): Record<string, unknown> {
@@ -845,6 +847,7 @@ export class AgentRunner {
           const laterRelevantMutation = subsequentMutations.find((mutation) => {
             if (invalidatesRemoteObservation(evidence.name, evidence.input_json, mutation.name, mutation.input_json)) return true;
             if (desktopObservationNames.has(evidence.name) && mutation.name === "desktop_action") return true;
+            if (skillObservationNames.has(evidence.name) && mutationNames.has(mutation.name)) return true;
             if (!["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name)) return false;
             if (!mutationNames.has(mutation.name)) return false;
             if (["run_process", "run_shell", "desktop_action"].includes(mutation.name) || ["run_process", "run_shell"].includes(evidence.name)) return true;
@@ -875,7 +878,7 @@ export class AgentRunner {
           if (evidence.name === "web_fetch" && (typeof evidenceRecord.status !== "number" || evidenceRecord.status < 200 || evidenceRecord.status >= 300 || evidenceRecord.truncated === true)) {
             throw new Error(`Completion evidence ${evidenceId} is truncated or unsuccessful and cannot verify the live source; refetch the complete page before completing.`);
           }
-          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name)) {
+          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name) || skillRefreshableEvidenceNames.has(evidence.name)) {
             let refresh = refreshedEvidence.get(evidenceId);
             if (!refresh) {
               refresh = (async () => {
