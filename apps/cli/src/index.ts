@@ -13,6 +13,7 @@ import * as nodePty from "node-pty";
 import { authenticateMcpOAuth, chooseEmbeddingModel, createMcpTools, createRuntime, createText, deletePath, getDataDirectory, getSessionCompactionModel, inspectDatabaseIntegrity, McpOAuthClientProvider, resolveLMStudioIntegrations, gitBranches, gitClone, gitCommit, gitCreateBranch, gitDiff, gitFetch, gitLog, gitPush, gitStage, gitStatus, indexMemories, inspectDesktopCapabilities, inspectLmsDaemon, killProcessTree, listFiles, mcpServersSchema, movePath, patchText, readModelPerformance, readText, requestEmbeddings, runProcess, runShell, searchFiles, sendNativeNotification, subscribeRunNotifications, type ExternalActionApprovalRequest, type RemoteFallbackApprovalRequest } from "@xyst/runtime";
 import { parseLoadOptions } from "./load-options.js";
 import { agentOutcomeNotice } from "./agent-outcome.js";
+import { disconnectAgentParent } from "./agent-ipc.js";
 import { parseChatOptions } from "./chat-options.js";
 import { parseResponsesRequest } from "./responses-options.js";
 import { installMissionService, missionServiceStatus, uninstallMissionService, type MissionServiceSpec } from "./mission-service.js";
@@ -563,7 +564,7 @@ try {
       if (result.status === "cancelled") process.exitCode = 130;
       else if (result.status === "limit") process.exitCode = 2;
       else if (result.status === "unverified") process.exitCode = 3;
-    } finally { activeUserMessages = undefined; unsub(); }
+    } finally { activeUserMessages = undefined; unsub(); disconnectAgentParent(process); }
   } else if (command === "telemetry") {
     if (subcommand === "status") output(runtime.config.resolve<boolean>("telemetry.localMetrics") ?? { key: "telemetry.localMetrics", configured: false, value: true, source: "runtime default" });
     else if (subcommand === "on" || subcommand === "off") { runtime.config.set("global", "telemetry.localMetrics", subcommand === "on"); output({ key: "telemetry.localMetrics", enabled: subcommand === "on", scope: "global", applies: "next inference call" }); }
