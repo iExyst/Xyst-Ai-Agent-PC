@@ -203,3 +203,7 @@ Integrated Windows checks: root `npm test` runtime 243 (240 pass, 3 host-specifi
 ## Integrated candidate verification addendum · 2026-10-29
 
 The committed local candidate `be276c7` also passed on WSL Ubuntu 24.04 with Node 24.22.0: runtime 243 (236 pass, 7 platform skips, 0 failures), CLI 29/29, release verification 5/5, typecheck, and desktop build. Published PR heads #72–#81 each had eight passing Windows/Ubuntu verify/package checks at the latest read-only inspection; none covers `be276c7`. A renewed desktop UI attempt did not reach Xyst controls: Computer Use screenshots showed an unrelated app despite the Xyst AX window name, and an Electron error dialog reported EPIPE. Keep desktop reconciliation acceptance open.
+
+## Review candidate update · draft PR #82
+
+The integrated branch is published as draft [PR #82](https://github.com/iExyst/Xyst-Ai-Agent-PC/pull/82), targeting `main`, exact head `c256176af9c5fe9529326d5e1fa3a2dd07bcf1d3`. PR #72, #73–#81 remain open; #82 consolidates #72 with unique #73–#76/#80 changes and command-rerun recovery. Exact-head GitHub push and pull-request workflows passed Windows/Ubuntu verification and Linux/Windows package jobs (8/8); local Windows and WSL Linux suites/typechecks/desktop builds passed. #82 is a draft and was not merged. It is ready for human review; outstanding project requirements and C2 gaps remain. See latest verification-history addendum and PR body.
