@@ -545,8 +545,10 @@ export class AgentRunner {
       const previousInstanceIds = new Set(candidate.loaded_instances.map((instance) => instance.id));
       if (previousInstanceIds.size) throw new Error(`Model ${candidate.key} is already loaded with insufficient context. Compact the conversation or explicitly reload it with more context; Xyst will not automatically load a duplicate instance.`);
       const loadContext = modelLoadContextLength(candidate.max_context_length, requiredContextTokens);
-      const load = typeof provider.ensureLoaded === "function" ? provider.ensureLoaded.bind(provider) : provider.load.bind(provider);
-      const loadResult = await load(candidate.key, { ...(loadContext !== undefined ? { context_length: loadContext } : {}), ...(automaticUnloading ? { ttl_seconds: idleUnloadSeconds } : {}) }, options.signal);
+      const loadOptions = { ...(loadContext !== undefined ? { context_length: loadContext } : {}), ...(automaticUnloading ? { ttl_seconds: idleUnloadSeconds } : {}) };
+      const loadResult = typeof provider.ensureLoaded === "function"
+        ? await provider.ensureLoaded(candidate.key, loadOptions, options.signal, requiredContextTokens - contextTolerance)
+        : await provider.load(candidate.key, loadOptions, options.signal);
         const refreshedInventory = await provider.models(options.signal);
         if (provider === this.deps.provider) inventory = refreshedInventory;
       const loadedModel = refreshedInventory.find((entry) => entry.key === candidate.key);

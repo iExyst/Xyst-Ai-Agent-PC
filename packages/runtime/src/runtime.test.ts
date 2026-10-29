@@ -7182,6 +7182,7 @@ test("automatic model loads across Node workers reuse one instance and refuse a 
     assert.equal(loads, 1);
     assert.equal(results.filter((result) => JSON.parse(result.output).reused === true).length, 1);
     const provider = new LMStudioProvider({ baseUrl });
+    assert.equal((await provider.ensureLoaded("shared-model", { context_length: 16384 }, undefined, 4096)).reused, true, "optional load headroom must not reject an adequate resident instance");
     await assert.rejects(() => provider.ensureLoaded("shared-model", { context_length: 16384 }), /will not automatically load a duplicate/);
     assert.equal(loads, 1);
     const controller = new AbortController(); controller.abort();

@@ -182,7 +182,7 @@ export class LMStudioProvider {
     throw new LMStudioError(`LM Studio reports ${modelKey} in its native inventory, but inference model ID ${instanceId} is not available from the OpenAI-compatible /v1/models endpoint${options.allowBaseModelFallback ? ` (base ID ${modelKey} is unavailable too)` : ""}. Refresh LM Studio's model list or choose a model visible to its inference API.`);
   }
   /** Agent loads share a lock across CLI/desktop workers and recheck live inventory. */
-  async ensureLoaded(model: string, options: LMStudioLoadOptions = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  async ensureLoaded(model: string, options: LMStudioLoadOptions = {}, signal?: AbortSignal, minimumContextLength = options.context_length ?? 0): Promise<Record<string, unknown>> {
     const directory = join(tmpdir(), "xyst-model-loads");
     await mkdir(directory, { recursive: true });
     const endpoint = new URL(this.baseUrl);
@@ -205,7 +205,7 @@ export class LMStudioProvider {
       if (!candidate) throw new LMStudioError(`Model ${model} is no longer installed`);
       const suitable = candidate.loaded_instances.find((instance) => {
         const context = instance.config.context_length ?? candidate.max_context_length;
-        return !options.context_length || (typeof context === "number" && context >= options.context_length);
+        return !minimumContextLength || (typeof context === "number" && context >= minimumContextLength);
       });
       if (suitable) return { instance_id: suitable.id, reused: true, load_config: suitable.config };
       if (candidate.loaded_instances.length) throw new LMStudioError(`Model ${model} is already loaded with insufficient context. Compact the conversation or explicitly reload it with more context; Xyst will not automatically load a duplicate instance.`);
