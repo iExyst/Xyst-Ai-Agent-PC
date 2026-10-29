@@ -34,6 +34,7 @@ import { LMStudioProvider } from "./providers/lm-studio.js";
 import { SessionCompactor } from "./session-compaction.js";
 import { parseLmsDaemonStatus } from "./lm-studio-daemon.js";
 import { createOfficeTools, extractPdfAttachmentText } from "./tools/office.js";
+import { createAgentTools } from "./tools/registry.js";
 import { createDesktopAutomationTools, inspectNativeAutomation } from "./tools/desktop-automation.js";
 import { createMemoryTools, indexMemories } from "./tools/memory.js";
 import { createRuntime } from "./index.js";
@@ -1440,6 +1441,7 @@ test("agent completion requires successful persisted tool evidence", async () =>
     assert.ok(completionSystemWithEvidence.includes('do not prepend "workspace/"'));
     assert.ok(completionSystemWithEvidence.includes("using only {path}, start_line, and end_line; do not add an operation field"));
     assert.ok(completionSystemWithEvidence.includes("Honor the requested runtime, test framework, and exact verification command"));
+    assert.ok(completionSystemWithEvidence.includes("write test files for that runner (not a hand-written replacement harness)"));
     assert.ok(completionSystemWithEvidence.includes("If a tool call fails, correct the path or arguments and retry"));
     assert.ok(completionSystemWithEvidence.includes("retrieve live information from an available web source or integration"));
     assert.match(completionSystemWithEvidence, /1: id="[^"]+" "file_list"/, "stable IDs, one-based indexes, and safe tool names are shown to the model");
@@ -2535,6 +2537,13 @@ test("a process that cannot start lets the agent correct the command without rec
     assert.equal(round, 3);
   } finally { store.close(); }
 }));
+
+test("run_process instructions show command and argv separately", () => {
+  const tools = createAgentTools(new AccessController(), process.cwd());
+  const description = (tools.run_process?.definition as { function: { description: string } }).function.description;
+  assert.match(description, /Pass the program name only as executable, not again as args\[0\]/);
+  assert.match(description, /executable `node` and args `\["--test", "file\.test\.mjs"\]`/);
+});
 
 test("a process timeout after writing a file still requires external-action reconciliation", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "process-timeout.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
