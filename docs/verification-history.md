@@ -2197,3 +2197,8 @@ A focused runtime test rejects truncated code units and unpaired surrogates in b
 
 - Added a deterministic 12-task, four-worker mission regression that cancels while all four initial workers are blocked, verifies each active task receives abort, confirms all twelve task checkpoints remain pending with only the active batch consuming attempts, then resumes and completes all tasks without exceeding the worker ceiling or duplicating any task within a run.
 - The focused regression passed 1/1. Full runtime suite passed 194 passed, 0 failed, 2 host-specific skips; runtime build, workspace typecheck, and `git diff --check` passed. This uses a fake agent to test scheduler/cancellation state transitions; it does not claim sustained live-model reliability.
+
+## Large-profile and process-kill migration recovery · 2026-10-29 integration
+
+- Retained the 1,000-session, 20,000-message, 1,000-tool-call legacy migration case from PR #75, updated to expect current schema version 16. It asserts preserved counts/history, external-action backfill, and SQLite integrity.
+- The integration branch retains its process-kill migration regression, which pauses a real child process after migration DDL and before its marker, kills the child, verifies rollback and preserved data, then reopens successfully through the latest schema. PR #75's separate version-15 process-kill evidence remains recorded in its source PR; the combined branch will rerun the current candidate suite.
