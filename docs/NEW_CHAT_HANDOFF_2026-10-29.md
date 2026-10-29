@@ -199,3 +199,7 @@ The local integration branch has advanced beyond this handoff's earlier branch-p
 The actual CLI owner-crash acceptance later in this handoff passed: an owner was killed while a rerun was running, the CLI quarantined it, retry was explicitly reconciled after checking for no effect, and resumed execution produced fresh output with `task_complete verified=true`. Retain all recorded failed attempts and the unresolved earlier lookup discrepancy. Desktop reconciliation remains unverified.
 
 Integrated Windows checks: root `npm test` runtime 243 (240 pass, 3 host-specific skips, 0 fail), CLI 29/29, release verification 5/5; `npm run typecheck` passed; `npm run desktop:build` passed. No exact combined-head hosted checks or Linux run yet. See the final `verification-history.md` entry for scope and remaining blockers.
+
+## Integrated candidate verification addendum · 2026-10-29
+
+The committed local candidate `be276c7` also passed on WSL Ubuntu 24.04 with Node 24.22.0: runtime 243 (236 pass, 7 platform skips, 0 failures), CLI 29/29, release verification 5/5, typecheck, and desktop build. Published PR heads #72–#81 each had eight passing Windows/Ubuntu verify/package checks at the latest read-only inspection; none covers `be276c7`. A renewed desktop UI attempt did not reach Xyst controls: Computer Use screenshots showed an unrelated app despite the Xyst AX window name, and an Electron error dialog reported EPIPE. Keep desktop reconciliation acceptance open.
