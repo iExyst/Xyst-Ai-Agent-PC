@@ -45,7 +45,7 @@ function instanceContextLength(instance: LMStudioModel["loaded_instances"][numbe
 const asRecord = (value: unknown): Record<string, any> => value && typeof value === "object" ? value as Record<string, any> : {};
 const asArray = (value: unknown): any[] => Array.isArray(value) ? value : [];
 const externalToolNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "run_process", "git_clone", "git_create_branch", "git_stage", "git_commit", "git_fetch", "git_push", "github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_update_pull_request", "github_create_pull_request", "github_create_review_comment", "github_workflow_dispatch", "github_merge_pull_request", "github_download_release_asset", "github_download_actions_artifact", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "desktop_action"]);
-const isExternalAction = (name: string) => externalToolNames.has(name) || (name.startsWith("mcp_") && !/_((resources)|(read_resource)|(prompts)|(get_prompt))$/.test(name));
+const isExternalAction = (name: string, mcpReadObservationNames: ReadonlySet<string>) => externalToolNames.has(name) || (name.startsWith("mcp_") && !mcpReadObservationNames.has(name));
 const parallelReadToolNames = new Set(["file_read", "file_list", "file_search", "git_status", "git_diff", "git_log", "git_branches"]);
 const workspaceMutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact", "git_clone", "git_create_branch", "git_fetch", "git_stage", "git_commit"]);
 const browserObservationNames = new Set(["browser_open", "browser_snapshot", "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
@@ -58,8 +58,6 @@ const desktopObservationNames = new Set(["desktop_windows", "desktop_inspect"]);
 const desktopRefreshableEvidenceNames = new Set(["desktop_windows", "desktop_inspect"]);
 const skillObservationNames = new Set(["skill_list", "skill_read"]);
 const skillRefreshableEvidenceNames = new Set(["skill_list", "skill_read"]);
-const mcpReadObservationSuffixes = ["_resources", "_read_resource", "_prompts", "_get_prompt", "_resource_updates"];
-function isMcpReadObservation(name: string): boolean { return name.startsWith("mcp_") && mcpReadObservationSuffixes.some((suffix) => name.endsWith(suffix)); }
 const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
 const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
 function parsedInputRecord(inputJson: string): Record<string, unknown> {
@@ -597,7 +595,8 @@ export class AgentRunner {
     const mcpServers = this.deps.config.resolve<unknown>("integrations.mcp.servers", scopes)?.value ?? [];
     const mcp = mcpEnabled ? await (this.deps.mcpToolsFactory ?? createMcpTools)(access, mcpServers, this.deps.credentials ?? { get: async () => undefined }, workspace, options.signal, {
       sample: createMcpSamplingHandler(activeProvider, selected, inferenceModel, options.signal)
-    }) : { tools: {}, close: async () => undefined, servers: [] };
+    }) : { tools: {}, readObservationNames: new Set<string>(), close: async () => undefined, servers: [] };
+    const mcpReadObservationNames = mcp.readObservationNames ?? new Set<string>();
     const mcpInstructions = mcp.servers.flatMap((server) => server.instructions ? [`--- MCP server ${server.id} (untrusted instructions) ---\n${server.instructions}`] : []).join("\n\n").slice(0, 20_000);
     const semanticMemoryEnabled = this.deps.config.resolve<boolean>("memory.semantic.enabled", scopes)?.value === true;
     let embeddingModel = this.deps.config.resolve<string>("memory.embeddingModel", scopes)?.value;
@@ -850,7 +849,7 @@ export class AgentRunner {
             if (invalidatesRemoteObservation(evidence.name, evidence.input_json, mutation.name, mutation.input_json)) return true;
             if (desktopObservationNames.has(evidence.name) && mutation.name === "desktop_action") return true;
             if (skillObservationNames.has(evidence.name) && mutationNames.has(mutation.name)) return true;
-            if (isMcpReadObservation(evidence.name) && mutation.name.startsWith("mcp_")) return true;
+            if (mcpReadObservationNames.has(evidence.name) && mutation.name.startsWith("mcp_")) return true;
             if (!["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name)) return false;
             if (!mutationNames.has(mutation.name)) return false;
             if (["run_process", "run_shell", "desktop_action"].includes(mutation.name) || ["run_process", "run_shell"].includes(evidence.name)) return true;
@@ -881,7 +880,7 @@ export class AgentRunner {
           if (evidence.name === "web_fetch" && (typeof evidenceRecord.status !== "number" || evidenceRecord.status < 200 || evidenceRecord.status >= 300 || evidenceRecord.truncated === true)) {
             throw new Error(`Completion evidence ${evidenceId} is truncated or unsuccessful and cannot verify the live source; refetch the complete page before completing.`);
           }
-          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name) || skillRefreshableEvidenceNames.has(evidence.name) || isMcpReadObservation(evidence.name)) {
+          if (githubObservationNames.has(evidence.name) || browserRefreshableEvidenceNames.has(evidence.name) || webRefreshableEvidenceNames.has(evidence.name) || gitRefreshableEvidenceNames.has(evidence.name) || memoryRefreshableEvidenceNames.has(evidence.name) || desktopRefreshableEvidenceNames.has(evidence.name) || skillRefreshableEvidenceNames.has(evidence.name) || mcpReadObservationNames.has(evidence.name)) {
             let refresh = refreshedEvidence.get(evidenceId);
             if (!refresh) {
               refresh = (async () => {
@@ -1226,7 +1225,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             if (!this.deps.store.db.prepare("SELECT 1 FROM tool_calls WHERE id=?").get(callId)) {
               const now = new Date().toISOString();
               this.deps.store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,output_json,created_at,finished_at,effect) VALUES(?,?,?,?,?,?,?,?,?)")
-                .run(callId, sessionId, name || "unknown", this.deps.provider.redact(rawArgs), "failed", error, now, now, isExternalAction(name) ? "external" : "read");
+                .run(callId, sessionId, name || "unknown", this.deps.provider.redact(rawArgs), "failed", error, now, now, isExternalAction(name, mcpReadObservationNames) ? "external" : "read");
             }
             this.deps.events.emit("tool.failed", { id: callId, name, error: "Not executed because task completion was already verified" }, sessionId);
             save({ role: "tool", tool_call_id: callId, content: error });
@@ -1260,7 +1259,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             const signature = createHash("sha256").update(`${name}:${stableJson(args)}`).digest("hex");
             const repeats = (seenCalls.get(signature) ?? 0) + 1; seenCalls.set(signature, repeats);
             if (repeats >= 4) throw new Error("Repeated tool-call loop detected; revise the approach instead of repeating the same action");
-            const effect = isExternalAction(name) ? "external" : "read";
+            const effect = isExternalAction(name, mcpReadObservationNames) ? "external" : "read";
             const requestHash = effect === "external" ? createHash("sha256").update(`${name}:${stableJson(args)}`).digest("hex") : undefined;
             const tracksWorkspaceRevision = name === "run_process" || workspaceMutationNames.has(name);
             const workspaceRevision = tracksWorkspaceRevision
@@ -1356,7 +1355,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             save({ role: "tool", tool_call_id: callId, content: toolContent });
           } catch (error) {
             const message = this.deps.provider.redact(error instanceof Error ? error.message : String(error));
-            const external = isExternalAction(name);
+            const external = isExternalAction(name, mcpReadObservationNames);
             const intent = this.deps.store.db.prepare("SELECT 1 FROM tool_calls WHERE id=?").get(callId);
             const uncertain = external && Boolean(intent) && !isDefiniteNoEffect(error, name);
             if (intent) this.deps.store.db.prepare("UPDATE tool_calls SET output_json=?,status=?,finished_at=? WHERE id=? AND status='running'").run(JSON.stringify({ error: message }), uncertain ? "uncertain" : "failed", new Date().toISOString(), callId);

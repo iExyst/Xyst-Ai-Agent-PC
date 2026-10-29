@@ -59,7 +59,11 @@ const migrations = [
   `CREATE TABLE command_replay_heads (execution_scope TEXT NOT NULL, request_hash TEXT NOT NULL, tool_call_id TEXT NOT NULL REFERENCES tool_calls(id), PRIMARY KEY(execution_scope,request_hash));
    CREATE TABLE command_rerun_authorizations (id TEXT PRIMARY KEY, execution_scope TEXT NOT NULL, request_hash TEXT NOT NULL, prior_tool_call_id TEXT NOT NULL REFERENCES tool_calls(id), created_at TEXT NOT NULL, consumed_at TEXT, new_tool_call_id TEXT REFERENCES tool_calls(id), CHECK((consumed_at IS NULL AND new_tool_call_id IS NULL) OR (consumed_at IS NOT NULL AND new_tool_call_id IS NOT NULL)));
    CREATE TABLE command_rerun_owners (tool_call_id TEXT PRIMARY KEY REFERENCES tool_calls(id), host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0));
-   CREATE UNIQUE INDEX command_rerun_one_pending ON command_rerun_authorizations(execution_scope,request_hash) WHERE consumed_at IS NULL;`
+   CREATE UNIQUE INDEX command_rerun_one_pending ON command_rerun_authorizations(execution_scope,request_hash) WHERE consumed_at IS NULL;`,
+  `UPDATE tool_calls SET effect='external',
+       execution_scope=COALESCE(execution_scope,(SELECT run_id||':'||task_key FROM mission_tasks WHERE mission_tasks.session_id=tool_calls.session_id LIMIT 1),session_id),
+       status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP)
+   WHERE substr(name,1,4)='mcp_' AND status='running';`
 ];
 
 export type DatabaseIntegrityReport = { path: string; status: "healthy" | "corrupt" | "missing" | "unavailable"; details?: string[]; error?: string };
