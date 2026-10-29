@@ -1957,3 +1957,124 @@ The desktop development build completed and opened a single `Xyst Control Room` 
 
 - In the JSONL session, the later `node --test` tool message repeated the earlier 6/7 output without a new `tool_calls` execution row. The test fixture had been corrected outside Xyst. `AgentRunner` hashes commands using a workspace revision derived from recorded Xyst mutations, so external changes do not invalidate the replay. This is strong evidence that stale output was replayed; the independent 7/7 run remains separate from the agent result.
 - The completion gate also detects later mutations through persisted tool calls, so external edits can leave prior command evidence appearing current. The existing reconciliation API applies only to uncertain external actions. A user-authorized fresh execution must preserve durable intent and must not silently repeat arbitrary side effects; this capability and live acceptance remain open. C2 is therefore partial.
+
+## Uncommitted command rerun and owner recovery candidate · 2026-10-29
+
+- Added an explicit one-use completed-command rerun candidate in the isolated PR #81 worktree, retaining old action history and atomically selecting a new running intent. Added CLI/desktop authorization controls, stale completion-evidence rejection, and owner host/PID records. An explicit recovery action checks that the local owner PID is absent before moving an abandoned rerun to uncertain; it neither proves descendant termination nor authorizes retry.
+- Focused coverage passed for actual two-process authorization contention, abrupt owner exit after claim, refusal to quarantine a live owner, quarantine after owner exit, retained history, session deletion, and an AgentRunner rerun after an external edit. Runtime build and CLI/desktop typechecks passed during implementation. The earlier desktop production build predates the latest owner-recovery changes.
+- Final correct Windows suite invocation `npm test -w @xyst/runtime` completed normally with 211 tests: 209 passed, 2 host skips, 0 failures, 40.49 seconds. Process timeout/cancellation cases passed without intervention. The original roughly 57-second stall's trigger is still unresolved.
+- Preserve the failed attempts: a mistaken direct invocation of `dist/runtime.test.js` failed 8 tests due source-relative child imports and old-schema fixture construction. The subsequent correct npm invocation failed 3 migration fixture tests because the new owner table was not dropped when reconstructing old schemas. Fixed those fixtures; the 3 focused cases and then the full npm suite passed. Neither failed run is counted as acceptance.
+- Review still requires desktop reconciliation after quarantine, safer PID-reuse wording, and checking the conditional completion update's affected-row count before reporting success. Migration integration, legacy/retry paths, current Linux checks, live resumed-model CLI flow and interactive desktop flow remain open. The candidate is uncommitted/unpushed; PR #81's eight successful hosted checks at db45ae8 do not cover it. C2 remains partial.
+- A new-conversation handoff with exact workspaces, PR state, original brief paths and ordered next steps is saved in `docs/NEW_CHAT_HANDOFF_2026-10-29.md`.
+
+## Command-rerun review follow-up (Windows, 2026-10-29)
+
+- Resolved the three concrete handoff review findings in the uncommitted PR #81 worktree candidate: desktop saved-session tool logs now offer explicit completed/no-effect reconciliation for quarantined reruns; recovery errors say a live recorded PID may be the original owner or an unrelated process after PID reuse; and the normal tool completion path checks that exactly one `running` row was finalized before emitting `tool.completed` or returning output.
+- `npm run typecheck` passed, including runtime build, CLI typecheck, runtime typecheck, and desktop typecheck.
+- The correct `npm test -w @xyst/runtime` command passed: 211 tests, 209 passed, 2 host-specific skips, 0 failures; 40.7 seconds. Covered the command rerun authorization/recovery and owner crash tests, AgentRunner external-edit rerun, and process timeout tests. The original ~57-second Windows timeout stall remains unexplained.
+- `git diff --check` passed before validation. This source has not been committed, pushed, or covered by hosted CI. There is not yet a dedicated assertion for the changed-row-count race path, and no live resumed CLI/desktop owner-crash acceptance has been completed. Linux validation and historical migration/replay audit remain open.
+
+## Command-rerun completion ownership race regression (Windows, 2026-10-29)
+
+- Added a deterministic AgentRunner regression that changes a running command's durable row to `uncertain` from the `tool.started` event before the child process returns. The runner rejects the turn with `EXTERNAL_ACTION_UNCERTAIN`, leaves the recovery-owned row/output untouched, and does not emit `tool.completed` for that call.
+- Focused regression passed. Full `npm test -w @xyst/runtime` passed on the current uncommitted candidate: 212 tests, 210 passed, 2 host-specific skips, 0 failures; 40.8 seconds. `npm run typecheck` and `git diff --check` also passed.
+- Still local/uncommitted/unpushed; hosted CI and Linux checks do not cover this candidate. Live resumed CLI/desktop acceptance, external edit plus owner crash flow, and integration placement remain open. The historical Windows timeout stall is still unexplained.
+
+## Live resumed CLI rerun after external edit (Windows, 2026-10-29)
+
+- In disposable APPDATA profile `C:\Users\hicks.GAMERX\AppData\Local\Temp\xyst-rerun-acceptance-profile` and workspace `C:\Users\hicks.GAMERX\AppData\Local\Temp\xyst-rerun-acceptance-work`, Qwen 3.5 9B (loaded through Xyst CLI, context 8192) ran saved session `70836d19-1d55-4c36-b0fc-2328d2dbebf3`.
+- Initial `run_process` call `ARD00t...` (full ID `ARD00u5zY74UTmjlrh8y6L1xfVzb9VhE`) executed `node <workspace>\probe.js`, returned `BEFORE_EDIT`, and the session recorded `task_complete verified=true`.
+- The script was then edited outside Xyst to print `AFTER_EXTERNAL_EDIT`. `agent authorize-rerun` authorized one use against the original completed call; resuming the same saved session generated new `run_process` call `r3QUx5LwnmVCTdKJvbW0RxVXhH1bRZIO`, which returned `AFTER_EXTERNAL_EDIT`, and fresh `task_complete` call `XLhKRtXo17SQkpE87IDLOsWswpCUoGQt` recorded `verified=true` using the new call. `session calls` confirmed the original result remains intact and the new call is marked `is_rerun=1`.
+- This is a bounded real Windows CLI acceptance pass after external edits. It does not test owner crash recovery, desktop UI, broad model reliability, or the overall C2 scope. Earlier failed model attempts remain non-passes.
+
+## Live CLI owner-crash acceptance attempt (Windows, 2026-10-29) — failed before crash injection
+
+- Attempted to authorize a second rerun of the successful fresh command from session `70836d19-1d55-4c36-b0fc-2328d8dbebf3` so a delayed child could be left behind during owner termination. Xyst CLI rejected the authorization with `Only a completed process action in this session can be authorized for rerun` (exit path did not reach child execution or owner termination). The separately launched resume process exited; no crash or quarantine occurred. Session remained `completed`, and no acceptance pass is claimed.
+- This is a concrete follow-up defect/limitation after the first successful rerun: the current code rejects because the requested call is not eligible by its stored name/status/effect/scope/hash, despite the prior session listing it as a completed rerun. Inspect the persisted row and replay-head/authorization chain before changing behavior. No retries were attempted. The prior successful external-edit acceptance remains valid but bounded.
+
+## Correction to owner-crash CLI attempt record (Windows, 2026-10-29)
+
+The earlier authorization rejection was caused by targeting the original call ID `ARD00u5zY74UTmjlrh8y6L1xfVzb9VhE` after it ceased to be the replay head. It is not evidence that the current rerun call is ineligible. Authorization against the actual current head `r3QUx5LwnmVCTdKJvbW0RxVXhH1bRZIO` succeeded as ID `c7d388ff-7752-4672-8266-48742bd86f54`. The subsequent background harness did not create a new tool-call row or reach crash injection; its polling script had PowerShell/JavaScript quoting errors. No process was killed and no owner-crash pass is claimed. Preserve the initial rejected CLI attempt as a harness/targeting failure, not a product failure.
+
+## Live CLI owner-crash acceptance attempt (Windows, 2026-10-29) — product failure before child start
+
+- After successfully authorizing the current replay-head call `r3QUx5LwnmVCTdKJvbW0RxVXhH1bRZIO` (authorization `c7d388ff-7752-4672-8266-48742bd86f54`), resumed the real saved CLI session with a delayed child command in the disposable workspace. The CLI exited immediately with `FOREIGN KEY constraint failed` before recording any new tool call or rerun owner.
+- Read-only SQLite inspection confirmed no running `command_rerun_owners` row, no new run_process call, no foreign-key-check violations, and no delayed side-effect file. No process was killed. This is a failed live acceptance of the current candidate; owner crash/quarantine remains untested. Investigate why consuming the pending authorization fails under this changed-workspace replay hash, and add a regression before retrying.
+
+## Repeated command reruns across external edits (Windows, 2026-10-29)
+
+- Expanded the AgentRunner external-edit regression to cover two sequential explicit rerun authorizations. The program output progressed `before` -> `after` -> `after second external edit`; all three completed `run_process` records retained distinct IDs, and the test passed.
+- `npm run typecheck` passed (runtime build plus CLI/runtime/desktop typechecks). Full `npm test -w @xyst/runtime`: 212 tests, 210 passed, 2 host-specific skips, 0 failures; 46.2 seconds. `git diff --check` passed.
+- This deterministic test does not resolve the separate live CLI `FOREIGN KEY constraint failed` attempt, which produced no new call/owner row. Preserve the live failure. Root cause remains open; owner-crash acceptance remains unverified.
+
+## Root-cause correction: CLI resume foreign-key failure (Windows, 2026-10-29)
+
+A temporary SQLite statement trace localized the live CLI `FOREIGN KEY constraint failed` to `SessionStore.addMessage` inserting the resumed user message, before any rerun lookup or command call. A read-only query showed session `70836d19-1d55-4c36-b0fc-2328d8dbebf3` no longer exists in that disposable profile's `sessions` table, although the session had been listed earlier. Therefore this failure does **not** establish a rerun-authorization FK defect. The immediate issue is disappearance of the disposable saved session before resume; its cause is unknown. No new tool call was inserted, no process ran/killed, and no owner-crash acceptance occurred. Preserve as failed live acceptance, and investigate session persistence/profile lifecycle separately.
+
+## Live owner-crash injection and recovery (Windows, 2026-10-29) — recovery failed
+
+- In the same disposable session/profile, a foreground resumed CLI finally claimed rerun call `Rv5haths1B4nAYcffpy1YNlpfO9VwtOp`; SQLite showed status `running`, an owner row with host `GamerX` and PID `30628`, and the replay head pointed to that call. I force-terminated that exact owner PID to simulate an owner crash as required by this acceptance scenario.
+- CLI `agent recover-rerun` then rejected with `This call is not a running command rerun head in the session`, even though an immediate read-only query still showed the call running, owner row present, and replay head pointing to it. No uncertain quarantine/reconciliation or successful owner-crash recovery was established. The delayed child side-effect file was absent on checks; the process-tree observation was ambiguous because PowerShell command text matched the probe filename. Preserve this as a failed live acceptance. Investigate why the CLI recovery command sees different eligibility/state or database scope before any further injection.
+
+## Owner-crash recovery helper verification (Windows, 2026-10-29)
+
+- Following the failed CLI `recover-rerun` attempt, invoked `quarantineAbandonedCommandRerun` directly from the active worktree source against the same isolated APPDATA SQLite profile and call `Rv5haths1B4nAYcffpy1YNlpfO9VwtOp`. It succeeded and transitioned the running head to uncertain after the recorded owner PID was absent. This establishes the helper's recovery transition on the persisted live-crash row.
+- It does not clear the CLI failure: the CLI's eligibility SELECT returned no row despite the same database path and a separate connection seeing the row. Root cause of that discrepancy remains unresolved. No CLI recovery pass, desktop acceptance, or reconciliation/resume acceptance is claimed. The delayed side-effect file remained absent when checked after the child's expected delay.
+
+## CLI recovery fixture verification (Windows, 2026-10-29)
+
+- Seeded a fresh disposable profile `C:\Users\hicks.GAMERX\AppData\Local\Temp\xyst-rerun-cli-recovery-fixture` with one valid session, a `run_process` running row, matching replay head, and owner PID `999999` on the local host. The CLI command `agent recover-rerun <session> fixture-rerun` returned status `uncertain` as expected.
+- This confirms the CLI command works against a coherent synthetic fixture; it is not model-backed owner-crash acceptance and does not explain why the prior real-session CLI selector returned no row. The direct helper had already quarantined that real session row successfully. Preserve the real-session discrepancy and do not claim the requested crash acceptance complete.
+
+## Desktop build and Computer Use retry (Windows, 2026-10-29)
+
+- `npm run desktop:build` passed on the current command-rerun candidate. It rebuilt runtime/CLI, passed desktop typechecks, compiled Electron main/preload, and produced the Vite renderer bundle.
+- Launched the dev Control Room with the isolated rerun profile. The returned Electron window was titled `Xyst Control Room`; its accessibility tree showed runtime ready, Qwen 3.5 9B connected, and one saved session.
+- Computer Use activation initially failed with `failed to activate captured window`. After refreshing app/window selection, the next interaction reported `user input was detected in this window; call get_window_state before continuing`; a fresh state capture succeeded. The subsequent indexed click failed with `coordinate input geometry is unavailable`. Per the computer-use recovery instructions, stopped further UI interaction and terminated the dev process. No session was opened or reconciled; no desktop mission ran. This is a UI automation limitation, not desktop product acceptance or a product failure.
+
+## C2 traceability correction · 2026-10-29
+
+Updated C2 to reflect the shipped-local candidate work and bounded evidence: explicit one-use command rerun, two deterministic sequential external edits, one real resumed CLI external-edit pass, and completion ownership race coverage. Kept C2 partial because general stale read-evidence invalidation, real owner-crash end-to-end recovery, and desktop interactive reconciliation acceptance remain unverified.
+
+## Full root test suite on command-rerun candidate (Windows, 2026-10-29)
+
+- `npm test` passed on the current uncommitted candidate. It rebuilt runtime, then passed runtime 212 tests (210 pass, 2 host-specific skips, 0 failures), CLI 28/28, and release verification 5/5. Runtime test duration was 41.6 seconds; CLI 10.9 seconds; release checks 0.4 seconds.
+- `git diff --check` passed after the run. This is local Windows evidence only; the candidate has no exact-head hosted checks and no current Linux run. It does not clear the failed real-session owner-crash CLI lookup; desktop UI acceptance also remains blocked by computer-use geometry/activation errors.
+
+## Command-rerun branch placement · 2026-10-29
+
+- Preserved the full tracked patch as `%TEMP%\xyst-command-rerun-snapshot\tracked-diff.patch`, plus copies of untracked `packages/runtime/src/command-rerun.ts` and `docs/NEW_CHAT_HANDOFF_2026-10-29.md`, with base commit recorded as `db45ae8b995482213a58e36e08182625f5f8e8d6`.
+- Created local branch `codex/command-rerun-recovery` from that exact PR #81 head so the feature is stacked on the process-recovery implementation it extends. Verified PR #81 remains open at that head and bases on `codex/restricted-path-fail-closed`.
+- All existing working-tree changes remain uncommitted and intact. No push, PR creation, base retarget, or merge occurred. Wait to publish until the live owner-crash/CLI discrepancy is resolved and exact-head checks can cover the final candidate.
+
+## Synthetic CLI crash reconciliation and retry (Windows, 2026-10-29)
+
+- In the existing fresh disposable recovery fixture, seeded a second valid head-linked running `run_process` with an absent owner PID. CLI `agent recover-rerun` returned `uncertain`; CLI `agent reconcile <session> fixture-rerun-2 retry` then returned `retry`. Direct SQLite inspection confirmed status `retry_allowed` and the explicit user-confirmed-no-effect reconciliation record.
+- This verifies the CLI fixture path through quarantine and retry authorization. It does not execute a resumed model task or prove the real owner-crash CLI lookup discrepancy resolved; the earlier live failure remains open and no actual retry was run.
+
+## Command-rerun session deletion coverage (Windows, 2026-10-29)
+
+- Expanded `session deletion cleans its own rerun records and guards shared replay history` to claim a pending rerun before deleting the owning session. The regression now asserts deletion removes the execution-scope replay head and authorization, the rerun owner row, and both tool-call records; attempting deletion with cross-scope shared replay history remains blocked and leaves the other session's action intact.
+- Focused test passed. `npm run typecheck` passed for runtime build plus CLI/runtime/desktop checks. `git diff --check` passed. This is deterministic local storage coverage; real model-backed owner-crash CLI recovery remains unresolved, and no Linux/hosted checks cover the current dirty candidate.
+
+## Reconciliation-path retry regression · 2026-10-29
+
+- Updated `command rerun authorization is consumed once and preserves the original action` to drive `uncertain` → `retry_allowed` through `AgentRunner.reconcileExternalAction`, the shared reconciliation path used by interactive clients, rather than directly mutating the DB to authorize retry. The focused test passed: 1 passed, 0 failed. This deterministic test does not resolve the separate real-session CLI owner-crash lookup failure or desktop interaction gap.
+
+- Follow-up verification: `npm run typecheck` passed for runtime build and CLI/runtime/desktop typechecks; `git diff --check` passed. CLI inspection confirms recovery delegates directly to `AgentRunner.recoverAbandonedProcessRerun`; the user-visible rejection text originates from the transactional row lookup in `quarantineAbandonedCommandRerun` (requires same-session external `run_process`, owner row, replay-head link, and `running` status). The earlier live SQLite observation did not preserve a query transcript proving all these predicates simultaneously, so the discrepancy remains unlocalized.
+
+## Real resumed CLI after owner crash: retry timed out after effect (Windows, 2026-10-29)
+
+- Read-only inspection confirmed the crashed call `Rv5haths1B4nAYcffpy1YNlpfO9VwtOp` was a `run_process` external action in the expected session with its owner row and replay-head link. Its persisted status was already `uncertain` after the earlier direct quarantine; that snapshot cannot establish why the earlier CLI recovery command rejected it while it was still running.
+- Fresh disposable CLI owner-crash fixture passed: with the actual built CLI and isolated APPDATA, `agent recover-rerun` returned `uncertain` and SQLite confirmed the status transition.
+- For the real saved session, inspected `probe.js`: it waits 30 seconds, appends `done` to `crash-side-effect.log`, then writes `CRASH_CHILD_FINISHED`. Before retry reconciliation the file was absent and no matching child process was found. CLI `agent reconcile ... retry` succeeded. A real `agent resume` caused the model to issue the same run_process again, but the run_process 30,000 ms timeout raced the script's 30-second completion: CLI returned `EXTERNAL_ACTION_UNCERTAIN` and tool call `aEquV5a0GJViT7usDBOHHmHjR74YXxox` persisted as uncertain with `Process timed out after 30000 ms`. Subsequent inspection found the file containing `done` and no live probe process, proving the external effect occurred although stdout was lost. This failed model-backed attempt remains recorded as failed/uncertain; do not repeat it. Reconcile this new call as completed from the file evidence and retain this timeout as a distinct acceptance failure. This does not explain the separate historical unattended Windows timeout stall.
+
+## Real authorized owner-crash recovery and CLI resume (Windows, 2026-10-29)
+
+- In a fresh real Qwen3.5 9B CLI session, completed `run_process` call `jULbhQ8iEEi9ycYVnCCjHWwm47j0ouAh` produced `OWNER_CRASH_FRESH_OK`; persisted `task_complete` was `verified:true`. After externally editing the same script (same executable, args, and cwd) to a 15-second marker probe, CLI `agent authorize-rerun` issued one-use authorization `9c732afe-8f32-41ec-bc3f-6a4eef85fd18`.
+- Resumed the saved session and waited until authorized rerun `CDn8bsmKzxneuvX9xqzeLzd4TlfR4XRm` was durably `running` with owner PID 9380. Terminated that exact CLI owner. After waiting beyond the probe delay, inspected the isolated workspace and found no marker file or matching live process; the recorded tool call remained running with its owner row.
+- Invoked the actual built CLI: `agent recover-rerun <session> <call>` returned `uncertain`. Inspected the no-effect evidence, then `agent reconcile ... retry` returned `retry`. A real `agent resume` issued retry call `A3xvFKFntZforam2LyoFdLIIjk1v3cI4`, which completed with exit code 0, stdout `OWNER_CRASH_REAL_RERUN_OK`, and 15,054 ms duration. Persisted `task_complete` `CNCzBeobQfCQxGqStmFaqQlvl0NsNruN` returned `verified:true` against that fresh call. This is bounded Windows CLI acceptance after an owner crash, not sustained reliability evidence.
+- Other attempts in this sequence remain failures in the saved acceptance session history: a 30-second probe hit the 30,000 ms timeout while its side effect completed (then reconciled completed); a completed-session follow-up did not issue a call and ended unverified; one longer probe was syntactically invalid due a literal `\\n`, and a follow-up on a completed session did not issue the authorized rerun. The earlier real-session `recover-rerun` lookup rejection is still unexplained; do not remove these failed attempts from reliability records.
+- Desktop interaction remains unverified. The handoff and checkpoint should continue to mark C2 partial.
+
+- Full candidate verification after the retry-reconciliation regression and documentation update: root `npm test` passed on Windows: runtime 212 tests (210 passed, 2 host-specific skips), CLI 28/28, release verification 5/5. The existing runtime timeout test also passed; this does not negate the real 30-second acceptance timeout above. `npm run typecheck` passed after the code/test change; `git diff --check` passed. No hosted exact-candidate checks or Linux run exist.

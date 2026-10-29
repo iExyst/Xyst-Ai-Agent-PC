@@ -258,6 +258,8 @@ Usage: xyst [--json] <command>
   agent chat [--session id] [--model key] [--max-turns 1-50] [--attach path]...  Start an interactive saved chat; enter /compact or /exit
   agent list [mission-id]
   agent reconcile <session-id> <tool-call-id> completed|retry
+  agent authorize-rerun <session-id> <tool-call-id>  Authorize one fresh execution of a completed process; it may have side effects
+  agent recover-rerun <session-id> <tool-call-id>  Quarantine a running rerun only after its owner process has exited
   mission plan <objective> [--name NAME] [--workspace PATH] [--project ID] [--model KEY] [--max-concurrency 1-8]
   mission create <definition.json> | list | show <id> | rename <id> <name> | fork <id> [name] | export <id> [path] | delete <id> | workspaces [id]
   mission templates | template <template-id>  List or load an executable workflow definition
@@ -457,6 +459,14 @@ try {
       const cancelled = workerController.signal.aborted;
       runtime.jobs.updateProcess(id, cancelled ? "cancelled" : "failed", { stdout, stderr, outputTruncated, error: runtime.lmStudio.redact(error instanceof Error ? error.message : String(error)), finishedAt: new Date().toISOString() });
     } finally { clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
+  } else if (command === "agent" && subcommand === "authorize-rerun") {
+    const [sessionId, toolCallId] = rest;
+    if (!sessionId || !toolCallId || rest.length !== 2) fail("Usage: agent authorize-rerun <session-id> <tool-call-id>");
+    output(runtime.agent.authorizeProcessRerun(sessionId, toolCallId));
+  } else if (command === "agent" && subcommand === "recover-rerun") {
+    const [sessionId, toolCallId] = rest;
+    if (!sessionId || !toolCallId || rest.length !== 2) fail("Usage: agent recover-rerun <session-id> <tool-call-id>");
+    output(runtime.agent.recoverAbandonedProcessRerun(sessionId, toolCallId));
   } else if (command === "agent" && subcommand === "reconcile") {
     const [sessionId, toolCallId, resolution] = rest;
     if (!sessionId || !toolCallId || !["completed", "retry"].includes(resolution ?? "")) fail("Usage: agent reconcile <session-id> <tool-call-id> completed|retry");
@@ -1112,7 +1122,7 @@ try {
     output({ ...result, model: selected.model, modelReason: selected.reason });
   } else if (command === "session" && subcommand === "calls") {
     if (!rest[0]) fail("Usage: session calls <session-id>");
-    output(runtime.store.db.prepare("SELECT id,name,input_json,output_json,status,effect,created_at,finished_at FROM tool_calls WHERE session_id=? ORDER BY created_at").all(rest[0]));
+    output(runtime.store.db.prepare("SELECT id,name,input_json,output_json,status,effect,created_at,finished_at,EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id) AS is_rerun FROM tool_calls WHERE session_id=? ORDER BY created_at").all(rest[0]));
   } else if (command === "session" && subcommand === "artifacts") {
     if (!rest[0]) fail("Usage: session artifacts <session-id>");
     output(runtime.store.db.prepare("SELECT id,name,path,mime_type,metadata_json,created_at FROM artifacts WHERE session_id=? ORDER BY created_at").all(rest[0]));

@@ -8,6 +8,7 @@ import { createGitTools } from "./tools/git.js";
 import { createGitHubTools } from "./tools/github.js";
 import { AccessController, type AccessProfile } from "./access.js";
 import type { ConfigStore, SettingScope, XystStore, SessionStore, MemoryStore } from "./storage.js";
+import { authorizeCommandRerun, quarantineAbandonedCommandRerun, resolveCommandReplay } from "./command-rerun.js";
 import { LMStudioProvider, type LMStudioModel } from "./providers/lm-studio.js";
 import { GitHubError, type GitHubProvider } from "./integrations/github.js";
 import { chooseAgentModel, chooseEmbeddingModel, estimateRequiredContextTokens, modelLoadContextLength } from "./model-selection.js";
@@ -721,6 +722,7 @@ export class AgentRunner {
           const evidenceId = currentEvidence[(indexes[index] as number) - 1]!.id;
           const evidence = this.deps.store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE id=? AND (session_id=? OR execution_scope=?)").get(evidenceId, sessionId, executionScope) as { name: string; status: string; input_json: string; output_json: string | null } | undefined;
           if (!evidence || evidence.name === "task_complete" || !["completed", "reconciled"].includes(evidence.status) || evidence.output_json === null) throw new Error(`Completion evidence ${evidenceId} is missing, failed, or not a completed tool result`);
+          if (evidence.name === "run_process" && this.deps.store.db.prepare("SELECT 1 FROM command_rerun_authorizations WHERE prior_tool_call_id=? LIMIT 1").get(evidenceId)) throw new Error(`Completion evidence ${evidenceId} has been superseded by a user-authorized rerun; use the fresh process result`);
           const evidenceRow = this.deps.store.db.prepare("SELECT rowid FROM tool_calls WHERE id=?").get(evidenceId) as { rowid: number } | undefined;
           if (!evidenceRow) throw new Error(`Completion evidence ${evidenceId} is no longer available`);
           const subsequentMutations = this.deps.store.db.prepare("SELECT name,input_json FROM tool_calls WHERE rowid>? AND (session_id=? OR execution_scope=?) AND status IN ('completed','reconciled') ORDER BY rowid")
@@ -1014,8 +1016,14 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             const idempotencyHash = requestHash && workspaceRevision !== undefined
               ? createHash("sha256").update(requestHash + ":workspace-revision:" + workspaceRevision).digest("hex")
               : requestHash;
-            let existing = effect === "external" ? this.deps.store.db.prepare("SELECT id,status,output_json FROM tool_calls WHERE execution_scope=? AND request_hash=? AND effect='external'").get(executionScope, idempotencyHash) as { id: string; status: string; output_json: string | null } | undefined : undefined;
-            if (!existing && tracksWorkspaceRevision && requestHash && workspaceRevision !== undefined) {
+            let claimedCommand = false;
+            let existing: { id: string; status: string; output_json: string | null } | undefined;
+            if (name === "run_process" && idempotencyHash && requestHash && workspaceRevision !== undefined) {
+              const resolution = resolveCommandReplay(this.deps.store, executionScope, idempotencyHash, { id: callId, sessionId, inputJson: this.deps.provider.redact(rawArgs) }, { requestHash, workspaceRevision });
+              if (resolution.kind === "claimed") claimedCommand = true;
+              else if (resolution.kind === "head") existing = { id: resolution.id, status: resolution.status, output_json: resolution.outputJson };
+            } else if (effect === "external") existing = this.deps.store.db.prepare("SELECT id,status,output_json FROM tool_calls WHERE execution_scope=? AND request_hash=? AND effect='external'").get(executionScope, idempotencyHash) as typeof existing;
+            if (name !== "run_process" && !existing && tracksWorkspaceRevision && requestHash && workspaceRevision !== undefined) {
               const legacy = this.deps.store.db.prepare("SELECT id,status,output_json,rowid FROM tool_calls WHERE execution_scope=? AND request_hash=? AND effect='external'").get(executionScope, requestHash) as { id: string; status: string; output_json: string | null; rowid: number } | undefined;
               if (legacy && workspaceRevision <= legacy.rowid) existing = legacy;
             }
@@ -1037,7 +1045,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             if (existing?.status === "retry_allowed") {
               this.deps.store.db.prepare("UPDATE tool_calls SET id=?,session_id=?,input_json=?,status='running',output_json=NULL,finished_at=NULL WHERE id=?")
                 .run(callId, sessionId, this.deps.provider.redact(rawArgs), existing.id);
-            } else {
+            } else if (!claimedCommand) {
               if (parallelReadBatchEnabled) {
                 parallelReadBatch.push(async () => {
                   const now = new Date().toISOString();
@@ -1086,7 +1094,8 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
               this.deps.store.db.prepare("INSERT INTO artifacts(id,session_id,name,path,mime_type,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)")
                 .run(randomUUID(), sessionId, artifactName, artifactPath, mimeByExtension[extname(artifactPath).toLowerCase()] ?? null, JSON.stringify(metadata), new Date().toISOString());
             }
-            this.deps.store.db.prepare("UPDATE tool_calls SET output_json=?,status='completed',finished_at=? WHERE id=?").run(safeOutput, new Date().toISOString(), callId);
+            const finalized = this.deps.store.db.prepare("UPDATE tool_calls SET output_json=?,status='completed',finished_at=? WHERE id=? AND status='running'").run(safeOutput, new Date().toISOString(), callId);
+            if (finalized.changes !== 1) throw new Error(`Tool call ${callId} lost ownership before completion; its result was not accepted`);
             this.deps.events.emit("tool.completed", { id: callId, name }, sessionId);
             const toolContent = name === "office_preview" && typeof artifactPath === "string"
               ? [{ type: "text", text: safeOutput }, { type: "image_url", image_url: { url: `data:image/png;base64,${(await readFile(artifactPath)).toString("base64")}` } }]
@@ -1097,7 +1106,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             const external = isExternalAction(name);
             const intent = this.deps.store.db.prepare("SELECT 1 FROM tool_calls WHERE id=?").get(callId);
             const uncertain = external && Boolean(intent) && !isDefiniteNoEffect(error, name);
-            if (intent) this.deps.store.db.prepare("UPDATE tool_calls SET output_json=?,status=?,finished_at=? WHERE id=?").run(JSON.stringify({ error: message }), uncertain ? "uncertain" : "failed", new Date().toISOString(), callId);
+            if (intent) this.deps.store.db.prepare("UPDATE tool_calls SET output_json=?,status=?,finished_at=? WHERE id=? AND status='running'").run(JSON.stringify({ error: message }), uncertain ? "uncertain" : "failed", new Date().toISOString(), callId);
             this.deps.events.emit("tool.failed", { id: callId, name, error: message }, sessionId);
             if (error instanceof ExternalActionApprovalError) throw error;
             save({ role: "tool", tool_call_id: callId, content: JSON.stringify({ error: message }) });
@@ -1159,6 +1168,20 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       this.deps.events.emit("agent.failed", { sessionId, model: selected, error: message }, sessionId);
       throw error;
     } finally { await browser.close(); await mcp.close(); }
+  }
+
+  authorizeProcessRerun(sessionId: string, toolCallId: string): { sessionId: string; toolCallId: string; authorizationId: string } {
+    this.deps.access.assertCapability("externalActions");
+    const authorizationId = authorizeCommandRerun(this.deps.store, sessionId, toolCallId);
+    this.deps.events.emit("tool.rerun_authorized", { sessionId, toolCallId, authorizationId }, sessionId);
+    return { sessionId, toolCallId, authorizationId };
+  }
+
+  recoverAbandonedProcessRerun(sessionId: string, toolCallId: string): { sessionId: string; toolCallId: string; status: "uncertain" } {
+    this.deps.access.assertCapability("externalActions");
+    quarantineAbandonedCommandRerun(this.deps.store, sessionId, toolCallId);
+    this.deps.events.emit("tool.rerun_quarantined", { sessionId, toolCallId }, sessionId);
+    return { sessionId, toolCallId, status: "uncertain" };
   }
 
   reconcileExternalAction(sessionId: string, toolCallId: string, resolution: "completed" | "retry"): { sessionId: string; toolCallId: string; resolution: string } {
