@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { basename, extname, resolve, sep } from "node:path";
 import { readFile } from "node:fs/promises";
 import type { RuntimeEvents } from "./events.js";
@@ -26,6 +27,12 @@ import { ProcessStartError } from "./platform.js";
 
 const MESSAGE_PREFIX = "__xyst_api_message__:";
 type ApiMessage = Record<string, unknown> & { role: string; content?: unknown };
+
+async function hashFile(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  return hash.digest("hex");
+}
 function modelForIdentifier(inventory: LMStudioModel[], identifier: string): LMStudioModel | undefined {
   return inventory.find((model) => model.key === identifier) ?? inventory.find((model) => model.loaded_instances.some((instance) => instance.id === identifier));
 }
@@ -761,7 +768,7 @@ export class AgentRunner {
         if (!requiredCompletionCriteria.length || requiredCompletionCriteria.length > 50 || !Array.isArray(indexes) || indexes.length !== requiredCompletionCriteria.length || !indexes.every((item) => Number.isSafeInteger(item) && (item as number) >= 1 && (item as number) <= currentEvidence.length)) {
           throw new Error(`Completion verification needs one evidence index shared by every criterion, or between 2 and ${requiredCompletionCriteria.length} candidate evidence indexes; received ${receivedIndexCount}.`);
         }
-        const checked = requiredCompletionCriteria.map((criterion, index) => {
+        const checked = await Promise.all(requiredCompletionCriteria.map(async (criterion, index) => {
           const evidenceId = currentEvidence[(indexes[index] as number) - 1]!.id;
           const evidence = this.deps.store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE id=? AND (session_id=? OR execution_scope=?)").get(evidenceId, sessionId, executionScope) as { name: string; status: string; input_json: string; output_json: string | null } | undefined;
           if (!evidence || evidence.name === "task_complete" || !["completed", "reconciled"].includes(evidence.status) || evidence.output_json === null) throw new Error(`Completion evidence ${evidenceId} is missing, failed, or not a completed tool result`);
@@ -800,6 +807,23 @@ export class AgentRunner {
           const evidenceRecord = asRecord(evidenceOutput);
           if (typeof evidenceRecord.error === "string" || evidenceRecord.success === false) throw new Error(`Completion evidence ${evidenceId} reports a tool error`);
           if (evidence.name === "web_fetch" && evidenceRecord.truncated === true) throw new Error(`Completion evidence ${evidenceId} is truncated. Increase max_chars or request narrower API fields, then cite the successful full fetch.`);
+          if (evidence.name === "file_read" || evidence.name === "office_read") {
+            const readPath = evidencePath(evidence);
+            const recordedHash = evidenceRecord.sha256;
+            if (!readPath || typeof recordedHash !== "string" || !/^[a-f0-9]{64}$/i.test(recordedHash)) {
+              throw new Error(`Completion evidence ${evidenceId} has no verifiable file hash; read the file again before completing.`);
+            }
+            try {
+              const authorizedPath = await access.assertPath(readPath, "read");
+              const currentHash = await hashFile(authorizedPath);
+              if (currentHash.toLowerCase() !== recordedHash.toLowerCase()) {
+                throw new Error(`Completion evidence ${evidenceId} is stale: ${readPath} changed outside Xyst after the read. Read it again and verify the current contents before completing.`);
+              }
+            } catch (error) {
+              if (error instanceof Error && error.message.startsWith(`Completion evidence ${evidenceId} is stale:`)) throw error;
+              throw new Error(`Completion evidence ${evidenceId} cannot be revalidated at ${readPath}; read the file again after resolving the access or filesystem error.`, { cause: error });
+            }
+          }
           const workspaceRoot = options.workspace ?? process.cwd();
           const normalizeOutputPath = (path: string) => { const normalized = resolve(workspaceRoot, path); return process.platform === "win32" ? normalized.toLowerCase() : normalized; };
           const expectedOutputPath = inferredOutputPaths.find((path) => normalizeOutputPath(path) === normalizeOutputPath(criterion));
@@ -846,7 +870,7 @@ export class AgentRunner {
           }
           if (["run_process", "run_shell"].includes(evidence.name) && (typeof evidenceRecord.code !== "number" || evidenceRecord.code !== 0 || evidenceRecord.signal !== null && evidenceRecord.signal !== undefined)) throw new Error(`Completion evidence ${evidenceId} is a process result that did not exit successfully`);
           return { criterion: criterion as string, evidenceToolCallId: evidenceId, tool: evidence.name, verified: true };
-        });
+        }));
         completionVerified = true;
         return { verified: true, checks: checked };
       }

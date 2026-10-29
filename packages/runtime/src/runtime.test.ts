@@ -1766,6 +1766,37 @@ test("completion rejects a file read made stale by a later patch and accepts a f
   } finally { store.close(); }
 }));
 
+test("completion detects an external edit after file_read, then accepts a fresh verified result", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-read-after-external-edit.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-create", type: "function", function: { name: "file_create", arguments: JSON.stringify({ path: "result.txt", content: "READY" }) } }] } }] };
+      if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-first-read", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
+      if (turn === 3) {
+        await writeFile(join(root, "result.txt"), "BROKEN", "utf8");
+        return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["external-stale-first-read"] }) } }] } }] };
+      }
+      if (turn === 4) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-broken-read", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
+      if (turn === 5) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-repair", type: "function", function: { name: "file_patch", arguments: JSON.stringify({ path: "result.txt", expected_sha256: createHash("sha256").update("BROKEN").digest("hex"), old_text: "BROKEN", new_text: "READY" }) } }] } }] };
+      if (turn === 6) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-final-read", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "external-stale-fresh-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["external-stale-final-read"] }) } }] } }] };
+    }
+  };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Create result.txt with exactly READY, then verify it by reading it back.", { workspace: root, model: "test-model", maxTurns: 7, expectedOutputPaths: ["result.txt"] });
+    assert.equal(result.status, "completed"); assert.equal(turn, 7);
+    assert.equal(await readFileAsync(join(root, "result.txt"), "utf8"), "READY");
+    const calls = store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId) as Array<{ name: string; status: string; output_json: string | null }>;
+    assert.deepEqual(calls.map(({ name, status }) => [name, status]), [["file_create", "completed"], ["file_read", "completed"], ["task_complete", "failed"], ["file_read", "completed"], ["file_patch", "completed"], ["file_read", "completed"], ["task_complete", "completed"]]);
+    assert.match(calls[2]!.output_json!, /changed outside Xyst after the read/);
+    assert.equal(JSON.parse(calls[6]!.output_json!).verified, true);
+  } finally { store.close(); }
+}));
+
 test("completion rejects file evidence invalidated by a GitHub download", async () => {
   for (const downloadName of ["github_download_release_asset", "github_download_actions_artifact"]) {
     await withTemp(async (root) => {
