@@ -2123,7 +2123,7 @@ test("a process timeout after writing a file still requires external-action reco
   } finally { store.close(); }
 }));
 
-test("Windows failed tree termination persists uncertain external action", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+test("Windows timeout with an empty PATH persists uncertain external action", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "kill-failure.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model");
   const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "kill-failure", type: "function", function: { name: "run_process", arguments: JSON.stringify({ executable: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"], timeout_ms: 300 }) } }] } }] }) };
@@ -2133,13 +2133,22 @@ test("Windows failed tree termination persists uncertain external action", { ski
     await assert.rejects(() => new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Execute the requested program.", { workspace: root, maxTurns: 2 }), /EXTERNAL_ACTION_UNCERTAIN/);
     const action = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='kill-failure'").get() as { status: string; output_json: string };
     assert.equal(action.status, "uncertain");
-    assert.match(action.output_json, /termination could not be verified/);
+    assert.match(action.output_json, /timed out/);
   } finally { process.env.PATH = originalPath; store.close(); }
 }));
 
 test("Windows reports uncertain termination when taskkill cannot start", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
   const marker = join(root, "survived.txt");
-  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; process.env.PATH = ""; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300 }); process.exitCode = 1; } catch (error) { if (!error.message.includes("termination could not be verified")) throw error; }`;
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const systemRoot = process.env.SystemRoot ?? process.env.WINDIR; process.env.PATH = ""; process.env.SystemRoot = ${JSON.stringify(join(root, "missing-system-root"))}; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300, env: { ...process.env, SystemRoot: systemRoot } }); process.exitCode = 1; } catch (error) { if (!error.message.includes("termination could not be verified")) throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(existsSync(marker), false);
+}));
+
+test("Windows process-tree timeout finds taskkill with an empty PATH", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "survived.txt");
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; process.env.PATH = ""; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300 }); process.exitCode = 1; } catch (error) { if (!error.message.includes("Process timed out after 300 ms")) throw error; }`;
   const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
   assert.equal(result.code, 0, result.stderr);
   await new Promise((resolve) => setTimeout(resolve, 2200));

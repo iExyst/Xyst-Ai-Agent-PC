@@ -50,7 +50,9 @@ async function killTree(child: ChildProcess): Promise<boolean> {
         resolveDone(success);
       };
       let killer: ChildProcess;
-      try { killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }); }
+      const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+      const taskkill = systemRoot ? resolve(systemRoot, "System32", "taskkill.exe") : "taskkill";
+      try { killer = spawn(taskkill, ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }); }
       catch { finish(false); return; }
       timer = setTimeout(() => { try { killer.kill(); } finally { finish(false); } }, 5_000);
       killer.once("close", (code) => finish(code === 0));
