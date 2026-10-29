@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { Cron } from "croner";
 import Database from "better-sqlite3";
 import { ConfigStore, inspectDatabaseIntegrity, XystStore, SessionStore, MemoryStore, JobStore } from "./storage.js";
+import { authorizeCommandRerun, consumeCommandHeadRetry, consumeCommandRerun, quarantineAbandonedCommandRerun, resolveCommandReplay } from "./command-rerun.js";
 import { createText, movePath, patchText, readText, searchFiles } from "./tools/files.js";
 import { normalizeUserPath, runProcess } from "./platform.js";
 import { AccessController } from "./access.js";
@@ -740,11 +741,11 @@ test("SQLite migrations persist sessions and resolve config from most specific s
   assert.equal(config.resetScope("global"), 1); assert.equal(config.resolve("inference.temperature"), undefined);
   const id = sessions.create("persistence"); sessions.addMessage(id, "user", "hello");
   const version = store.db.prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get() as { version: number };
-  assert.equal(version.version, 16);
+  assert.equal(version.version, 17);
   const legacyCallId = randomUUID(); const legacyCloneCallId = randomUUID();
   const legacyTool = store.db.prepare("INSERT INTO tool_calls(id,name,input_json,status,created_at,effect) VALUES(?, ?, '{}', 'completed', ?, 'read')");
   legacyTool.run(legacyCallId, "git_push", new Date().toISOString()); legacyTool.run(legacyCloneCallId, "git_clone", new Date().toISOString());
-  store.db.exec("DROP TABLE session_compactions; DELETE FROM schema_migrations WHERE version>=14"); store.close();
+  store.db.exec("DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=14"); store.close();
   store = new XystStore(path); sessions = new SessionStore(store);
   assert.equal((sessions.messages(id) as Array<{ content: string }>)[0]?.content, "hello"); store.close();
   const reopened = new XystStore(path);
@@ -790,7 +791,7 @@ test("version-one database with a large history upgrades through every migration
   const upgraded = new XystStore(path);
   try {
     const version = upgraded.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number };
-    assert.equal(version.version, 16);
+    assert.equal(version.version, 17);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as { count: number }).count, 1_000);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM messages").get() as { count: number }).count, 20_000);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE effect='external' AND execution_scope IS NOT NULL").get() as { count: number }).count, 1_000);
@@ -809,7 +810,7 @@ test("failed multi-statement migration rolls back cleanly and can be retried", a
   const saved = new SessionStore(initial);
   const sessionId = saved.create("Preserve across failed migration");
   saved.addMessage(sessionId, "user", "Keep this message during recovery");
-  initial.db.exec("DROP TABLE session_compactions; DELETE FROM schema_migrations WHERE version>=15; CREATE INDEX session_compactions_recent ON sessions(updated_at)");
+  initial.db.exec("DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=15; CREATE INDEX session_compactions_recent ON sessions(updated_at)");
   initial.close();
 
   assert.throws(() => new XystStore(path), /index session_compactions_recent already exists/i);
@@ -825,7 +826,7 @@ test("failed multi-statement migration rolls back cleanly and can be retried", a
 
   const recovered = new XystStore(path);
   try {
-    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 16);
+    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 17);
     assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
     assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message during recovery");
     assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
@@ -838,7 +839,7 @@ test("process killed after migration DDL leaves an intact database that can retr
   const sessions = new SessionStore(initial);
   const sessionId = sessions.create("Preserve across killed migration");
   sessions.addMessage(sessionId, "user", "Keep this message through process termination");
-  initial.db.exec("DROP TABLE session_compactions; DELETE FROM schema_migrations WHERE version>=15");
+  initial.db.exec("DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=15");
   initial.close();
 
   const readyPath = join(root, "migration-ddl-applied.marker");
@@ -896,7 +897,7 @@ test("process killed after migration DDL leaves an intact database that can retr
 
     const recovered = new XystStore(path);
     try {
-      assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 16);
+      assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 17);
       assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
       assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message through process termination");
       assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
@@ -913,14 +914,14 @@ test("migration 16 classifies historical external actions and quarantines interr
   const createdAt = new Date().toISOString();
   const insert = initial.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at,effect) VALUES(?,?,?,'{}','running',?,'read')");
   names.forEach((name) => insert.run(randomUUID(), sessionId, name, createdAt));
-  initial.db.exec("DELETE FROM schema_migrations WHERE version=16");
+  initial.db.exec("DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=16");
   initial.close();
 
   const migrated = new XystStore(path);
   try {
     const records = migrated.db.prepare("SELECT name,effect,status,execution_scope FROM tool_calls ORDER BY name").all() as Array<{ name: string; effect: string; status: string; execution_scope: string }>;
     assert.deepEqual(records.map(({ name, effect, status, execution_scope }) => [name, effect, status, execution_scope]), names.slice().sort().map((name) => [name, "external", "uncertain", sessionId]));
-    assert.equal((migrated.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 16);
+    assert.equal((migrated.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 17);
     assert.equal((migrated.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   } finally { migrated.close(); }
 }));
@@ -966,11 +967,11 @@ test("job inspection aggregates persisted trigger, mission-run, and model-downlo
 test("interactive process schema migrations upgrade existing process-job databases", async () => withTemp(async (root) => {
   const path = join(root, "process-upgrade.sqlite"); const oldStore = new XystStore(path); const oldJobs = new JobStore(oldStore);
   const existingId = oldJobs.createProcess("node", [], root);
-  oldStore.db.exec("DROP TABLE session_compactions; DROP TABLE process_job_inputs; DROP TABLE process_job_resizes; ALTER TABLE process_job_specs DROP COLUMN pty; ALTER TABLE process_job_specs DROP COLUMN cols; ALTER TABLE process_job_specs DROP COLUMN rows; ALTER TABLE process_job_specs DROP COLUMN interactive; ALTER TABLE process_job_control DROP COLUMN stdin_close_requested; DELETE FROM schema_migrations WHERE version>=11");
+  oldStore.db.exec("DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DROP TABLE process_job_inputs; DROP TABLE process_job_resizes; ALTER TABLE process_job_specs DROP COLUMN pty; ALTER TABLE process_job_specs DROP COLUMN cols; ALTER TABLE process_job_specs DROP COLUMN rows; ALTER TABLE process_job_specs DROP COLUMN interactive; ALTER TABLE process_job_control DROP COLUMN stdin_close_requested; DELETE FROM schema_migrations WHERE version>=11");
   oldStore.close();
   const store = new XystStore(path); const jobs = new JobStore(store);
   try {
-    assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 16);
+    assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 17);
     assert.deepEqual(jobs.processSpec(existingId), { command: "node", args: [], cwd: root, interactive: false, pty: false, cols: 80, rows: 24 });
     const interactiveId = jobs.createProcess("node", [], root, true);
     jobs.sendProcessInput(interactiveId, "upgrade ok");
@@ -1123,7 +1124,7 @@ test("concurrent first-run processes serialize SQLite migrations", async () => w
   const failures = outcomes.filter((result): result is PromiseRejectedResult => result.status === "rejected");
   assert.equal(failures.length, 0, failures.map((failure) => String(failure.reason)).join("\n"));
   const store = new XystStore(path);
-  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 16);
+  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 17);
   store.close();
 }));
 
@@ -6213,7 +6214,7 @@ test("memory is searchable, editable, deletable, and keeps inferred notes separa
   memories.delete(inferred.id); assert.equal(memories.list().length, 1); assert.throws(() => memories.delete(inferred.id), /not found/);
   assert.equal(memories.embeddings("test-embed").length, 0, "deleting a memory cascades to its indexed semantic vector");
   assert.equal(memories.searchSemantic([0, 1], "test-embed").length, 0);
-  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 16);
+  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 17);
   store.close();
 }));
 
@@ -6319,4 +6320,254 @@ test("interactive process stdin writer streams input and closes stdin", async ()
   });
   assert.equal(result.code, 0);
   assert.equal(result.stdout, "received:first second\n");
+});
+
+
+test("command rerun authorization is consumed once and preserves the original action", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "rerun-transaction.sqlite"));
+  try {
+    const now = new Date().toISOString();
+    store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,effect,execution_scope,request_hash) VALUES('original','session','run_process','{}','old','completed',?,'external','scope','hash')").run(now);
+    const authorization = authorizeCommandRerun(store, "session", "original");
+    assert.equal(consumeCommandRerun(store, "other", "hash", { id: "wrong", sessionId: "session", inputJson: "{}" }), false);
+    assert.deepEqual(resolveCommandReplay(store, "scope", "hash", { id: "new", sessionId: "session", inputJson: "{}" }), { kind: "claimed" });
+    assert.deepEqual(resolveCommandReplay(store, "scope", "hash", { id: "duplicate", sessionId: "session", inputJson: "{}" }), { kind: "head", id: "new", status: "running", outputJson: null, tracked: true });
+    assert.throws(() => quarantineAbandonedCommandRerun(store, "session", "new"), /recorded owner PID.*PID reuse/);
+    assert.equal((store.db.prepare("SELECT output_json FROM tool_calls WHERE id='original'").get() as { output_json: string }).output_json, "old");
+    assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='new'").get() as { status: string }).status, "running");
+    assert.equal((store.db.prepare("SELECT new_tool_call_id FROM command_rerun_authorizations WHERE id=?").get(authorization) as { new_tool_call_id: string }).new_tool_call_id, "new");
+    assert.throws(() => authorizeCommandRerun(store, "session", "original"), /no longer the current replay head/);
+    assert.throws(() => authorizeCommandRerun(store, "session", "new"), /Only a completed/);
+    store.db.prepare("UPDATE tool_calls SET status='uncertain',output_json='uncertain result' WHERE id='new'").run();
+    assert.equal(consumeCommandHeadRetry(store, "scope", "hash", { id: "retry", sessionId: "session", inputJson: "{}" }), false);
+    const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+    const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: {} as never, github: {} as never });
+    assert.deepEqual(agent.reconcileExternalAction("session", "new", "retry"), { sessionId: "session", toolCallId: "new", resolution: "retry" });
+    assert.equal(consumeCommandHeadRetry(store, "scope", "hash", { id: "retry", sessionId: "session", inputJson: "{}" }), true);
+    assert.equal(consumeCommandHeadRetry(store, "scope", "hash", { id: "duplicate-retry", sessionId: "session", inputJson: "{}" }), false);
+    assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='new'").get() as { status: string }).status, "retry_consumed");
+    assert.equal((store.db.prepare("SELECT tool_call_id FROM command_replay_heads WHERE execution_scope='scope' AND request_hash='hash'").get() as { tool_call_id: string }).tool_call_id, "retry");
+    store.db.prepare("UPDATE tool_calls SET status='completed',output_json='new result' WHERE id='retry'").run();
+    authorizeCommandRerun(store, "session", "retry");
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM command_replay_heads").get() as { count: number }).count, 1);
+  } finally { store.close(); }
+}));
+
+test("abrupt process exit after a rerun claim requires uncertain-action reconciliation", { timeout: 30_000 }, async () => withTemp(async (root) => {
+  const path = join(root, "rerun-crash.sqlite"); const store = new XystStore(path); const now = new Date().toISOString();
+  store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,effect,execution_scope,request_hash) VALUES('old','session','run_process','{}','old result','completed',?,'external','scope','hash')").run(now);
+  authorizeCommandRerun(store, "session", "old");
+  const script = `import { XystStore } from ${JSON.stringify(new URL("../dist/storage.js", import.meta.url).href)}; import { resolveCommandReplay } from ${JSON.stringify(new URL("../dist/command-rerun.js", import.meta.url).href)}; const s=new XystStore(process.env.RERUN_DB); const result=resolveCommandReplay(s,'scope','hash',{id:'abrupt',sessionId:'session',inputJson:'{}'}); if(result.kind!=='claimed') process.exit(1); process.exit(42);`;
+  try {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script], { env: { ...process.env, RERUN_DB: path }, stdio: "ignore" });
+    const code = await new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });
+    assert.equal(code, 42);
+    assert.deepEqual(resolveCommandReplay(store, "scope", "hash", { id: "later", sessionId: "session", inputJson: "{}" }), { kind: "head", id: "abrupt", status: "running", outputJson: null, tracked: true });
+    quarantineAbandonedCommandRerun(store, "session", "abrupt");
+    assert.deepEqual(resolveCommandReplay(store, "scope", "hash", { id: "after-recovery", sessionId: "session", inputJson: "{}" }).kind, "head");
+    assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='abrupt'").get() as { status: string }).status, "uncertain");
+    assert.equal((store.db.prepare("SELECT output_json FROM tool_calls WHERE id='old'").get() as { output_json: string }).output_json, "old result");
+    assert.throws(() => quarantineAbandonedCommandRerun(store, "session", "abrupt"), /not a running command rerun/);
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM tool_calls").get() as { count: number }).count, 2);
+  } finally { store.close(); }
+}));
+
+test("two Node processes cannot both claim a command rerun authorization", { timeout: 30_000 }, async () => withTemp(async (root) => {
+  const path = join(root, "rerun-race.sqlite"); const gate = join(root, "go"); const store = new XystStore(path); const now = new Date().toISOString();
+  store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,effect,execution_scope,request_hash) VALUES('old','session','run_process','{}','old result','completed',?,'external','scope','hash')").run(now);
+  authorizeCommandRerun(store, "session", "old");
+  const script = `import { XystStore } from ${JSON.stringify(new URL("../dist/storage.js", import.meta.url).href)}; import { resolveCommandReplay } from ${JSON.stringify(new URL("../dist/command-rerun.js", import.meta.url).href)}; import { existsSync } from 'node:fs'; const s=new XystStore(process.env.RERUN_DB); while (!existsSync(process.env.RERUN_GATE)) await new Promise(r=>setTimeout(r,10)); console.log(JSON.stringify(resolveCommandReplay(s,'scope','hash',{id:process.env.RERUN_ID,sessionId:'session',inputJson:'{}'}))); s.close();`;
+  const children = ["a", "b"].map((id) => spawn(process.execPath, ["--input-type=module", "-e", script], { env: { ...process.env, RERUN_DB: path, RERUN_GATE: gate, RERUN_ID: id }, stdio: ["ignore", "pipe", "pipe"] }));
+  const outcomes = children.map((child) => new Promise<{ code: number | null; output: string; error: string }>((resolve, reject) => {
+    let output = ""; let error = ""; child.stdout.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; }); child.stderr.setEncoding("utf8").on("data", (chunk: string) => { error += chunk; });
+    child.once("error", reject); child.once("close", (code) => resolve({ code, output, error }));
+  }));
+  try {
+    await writeFile(gate, "go");
+    const results = await Promise.all(outcomes);
+    for (const result of results) assert.equal(result.code, 0, result.error);
+    const values = results.map((result) => JSON.parse(result.output) as { kind: string; status?: string });
+    assert.equal(values.filter((value) => value.kind === "claimed").length, 1);
+    assert.equal(values.filter((value) => value.kind === "head" && value.status === "running").length, 1);
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE status='running'").get() as { count: number }).count, 1);
+  } finally { for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill(); store.close(); }
+}));
+
+test("command rerun head is shared across database connections and blocks stale fallback", async () => withTemp(async (root) => {
+  const path = join(root, "rerun-shared.sqlite"); const first = new XystStore(path); const second = new XystStore(path);
+  try {
+    const now = new Date().toISOString();
+    first.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,effect,execution_scope,request_hash) VALUES('old','session','run_process','{}','old result','completed',?,'external','scope','hash')").run(now);
+    authorizeCommandRerun(first, "session", "old");
+    assert.deepEqual(resolveCommandReplay(first, "scope", "hash", { id: "new", sessionId: "session", inputJson: "{}" }), { kind: "claimed" });
+    assert.deepEqual(resolveCommandReplay(second, "scope", "hash", { id: "competing", sessionId: "session", inputJson: "{}" }), { kind: "head", id: "new", status: "running", outputJson: null, tracked: true });
+    first.db.prepare("UPDATE tool_calls SET status='uncertain',output_json='unknown' WHERE id='new'").run();
+    assert.deepEqual(resolveCommandReplay(second, "scope", "hash", { id: "after-interruption", sessionId: "session", inputJson: "{}" }), { kind: "head", id: "new", status: "uncertain", outputJson: "unknown", tracked: true });
+    assert.equal((second.db.prepare("SELECT COUNT(*) AS count FROM tool_calls").get() as { count: number }).count, 2);
+  } finally { second.close(); first.close(); }
+}));
+
+test("session deletion cleans its own rerun records and guards shared replay history", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "rerun-session-delete.sqlite")); const sessions = new SessionStore(store); const now = new Date().toISOString();
+  try {
+    const own = sessions.create("own"); const shared = sessions.create("shared");
+    const insert = store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,effect,execution_scope,request_hash) VALUES(?,?,'run_process','{}','{}','completed',?,'external',?,?)");
+    insert.run("own-call", own, now, own, "own-hash"); authorizeCommandRerun(store, own, "own-call");
+    assert.deepEqual(resolveCommandReplay(store, own, "own-hash", { id: "own-rerun", sessionId: own, inputJson: "{}" }), { kind: "claimed" });
+    insert.run("shared-call", shared, now, "mission-run:task", "shared-hash"); authorizeCommandRerun(store, shared, "shared-call");
+    sessions.delete(own);
+    assert.equal(store.db.prepare("SELECT 1 FROM command_replay_heads WHERE execution_scope=?").get(own), undefined);
+    assert.equal(store.db.prepare("SELECT 1 FROM command_rerun_authorizations WHERE execution_scope=?").get(own), undefined);
+    assert.equal(store.db.prepare("SELECT 1 FROM command_rerun_owners WHERE tool_call_id='own-rerun'").get(), undefined);
+    assert.equal(store.db.prepare("SELECT 1 FROM tool_calls WHERE session_id=?").get(own), undefined);
+    assert.throws(() => sessions.delete(shared), /shared with another execution scope/);
+    assert.ok(store.db.prepare("SELECT 1 FROM tool_calls WHERE id='shared-call'").get());
+  } finally { store.close(); }
+}));
+
+test("command rerun storage permits one pending authorization and retains its action", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "rerun-storage.sqlite"));
+  try {
+    const now = new Date().toISOString();
+    store.db.prepare("INSERT INTO tool_calls(id,name,input_json,status,created_at,effect,execution_scope,request_hash) VALUES('original','run_process','{}','completed',?,'external','scope','hash')").run(now);
+    store.db.prepare("INSERT INTO command_replay_heads(execution_scope,request_hash,tool_call_id) VALUES('scope','hash','original')").run();
+    const insert = store.db.prepare("INSERT INTO command_rerun_authorizations(id,execution_scope,request_hash,prior_tool_call_id,created_at) VALUES(?,'scope','hash','original',?)");
+    insert.run("first", now);
+    assert.throws(() => insert.run("second", now), /UNIQUE constraint failed/);
+    assert.throws(() => store.db.prepare("UPDATE command_rerun_authorizations SET consumed_at=? WHERE id='first'").run(now), /CHECK constraint failed/);
+    assert.equal((store.db.prepare("SELECT tool_call_id FROM command_replay_heads").get() as { tool_call_id: string }).tool_call_id, "original");
+  } finally { store.close(); }
+}));
+
+test("completion rejects process evidence after an authorized rerun", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "authorized-rerun-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    const call = ++turn === 1 ? { id: "old-process", name: "run_process", args: { executable: process.execPath, args: ["-e", "process.stdout.write('OK')"], cwd: root } } : { id: "old-completion", name: "task_complete", args: { evidence_tool_call_indexes: [1] } };
+    return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } }] } }] };
+  } };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  try {
+    const first = await agent.run("Run a Node command that prints OK.", { workspace: root, maxTurns: 1 });
+    agent.authorizeProcessRerun(first.sessionId, "old-process");
+    await agent.run("Finish using the command result.", { workspace: root, sessionId: first.sessionId, maxTurns: 1 });
+    const failure = store.db.prepare("SELECT output_json FROM tool_calls WHERE id='old-completion'").get() as { output_json: string };
+    assert.match(failure.output_json, /superseded by a user-authorized rerun/);
+  } finally { store.close(); }
+}));
+
+test("completion feedback identifies the exact successful read index omitted from the selected evidence", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "completion-read-index.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0; let correction = "";
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async (request: { messages: Array<{ role: string; content?: unknown }> }) => {
+      turn++;
+      if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [
+        { id: `index-create-${randomUUID()}`, type: "function", function: { name: "file_create", arguments: JSON.stringify({ path: "marker.txt", content: "READY" }) } },
+        { id: `index-list-${randomUUID()}`, type: "function", function: { name: "file_list", arguments: JSON.stringify({ path: "." }) } },
+        { id: `index-read-${randomUUID()}`, type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "marker.txt" }) } }
+      ] } }] };
+      if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `wrong-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [2, 3] }) } }] } }] };
+      correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
+      assert.match(JSON.stringify(request.messages), /Matching successful readback evidence: 1 \(id=index-read-/);
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `correct-index-complete-${randomUUID()}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [2, 3, 1] }) } }] } }] };
+    }
+  };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Create marker.txt with exactly READY and verify it by reading it back.", { workspace: root, model: "test-model", maxTurns: 4, completionCriteria: ["Create marker.txt with exactly READY.", "The requested command verification was completed."], expectedOutputPaths: ["marker.txt"] });
+    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId))); assert.equal(correction.includes("Matching successful readback evidence: 1 (id=index-read-"), true);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string | null }>;
+    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /Matching successful readback evidence: 1 \(id=index-read-/);
+    assert.equal(completions[1]?.status, "completed"); assert.equal(JSON.parse(completions[1]!.output_json!).verified, true);
+  } finally { store.close(); }
+}));
+
+test("Windows timeout with an empty PATH persists uncertain external action", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "kill-failure.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "kill-failure", type: "function", function: { name: "run_process", arguments: JSON.stringify({ executable: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"], timeout_ms: 300 }) } }] } }] }) };
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = "";
+    await assert.rejects(() => new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Execute the requested program.", { workspace: root, maxTurns: 2 }), /EXTERNAL_ACTION_UNCERTAIN/);
+    const action = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='kill-failure'").get() as { status: string; output_json: string };
+    assert.equal(action.status, "uncertain");
+    assert.match(action.output_json, /timed out/);
+  } finally { process.env.PATH = originalPath; store.close(); }
+}));
+
+test("Windows reports uncertain termination when taskkill cannot start", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "survived.txt");
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const systemRoot = process.env.SystemRoot ?? process.env.WINDIR; process.env.PATH = ""; process.env.SystemRoot = ${JSON.stringify(join(root, "missing-system-root"))}; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300, env: { ...process.env, SystemRoot: systemRoot } }); process.exitCode = 1; } catch (error) { if (!error.message.includes("termination could not be verified")) throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(existsSync(marker), false);
+}));
+
+test("authorized process rerun observes an external workspace edit and retains the prior result", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "external-edit-rerun.sqlite"));
+  const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "rerun-model");
+  const target = join(root, "target.txt"); await writeFile(target, "before");
+  let turn = 0;
+  const args = { executable: process.execPath, args: ["-e", "process.stdout.write(require('node:fs').readFileSync('target.txt','utf8'))"], cwd: root };
+  const provider = { redact: (value: string) => value, models: async () => [{ type: "llm", key: "rerun-model", max_context_length: 32768, loaded_instances: [{ id: "loaded", config: { context_length: 32768 } }] }], isLocalServer: () => true, supportsLocalCliModelLifecycle: () => false,
+    streamChatWithTools: async () => ++turn % 2 ? ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `call-${turn}`, type: "function", function: { name: "run_process", arguments: JSON.stringify(args) } }] } }] }) : ({ choices: [{ message: { role: "assistant", content: "Done." } }] }) };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: { enterpriseHost: null, gitToken: async () => undefined } as never });
+  try {
+    const first = await agent.run("Run the program.", { workspace: root, executionScope: "rerun-scope" });
+    await writeFile(target, "after");
+    const authorization = agent.authorizeProcessRerun(first.sessionId, "call-1");
+    assert.ok(authorization.authorizationId);
+    await agent.run("Run the program again.", { workspace: root, sessionId: first.sessionId, executionScope: "rerun-scope" });
+    const rows = store.db.prepare("SELECT id,output_json FROM tool_calls WHERE name='run_process' ORDER BY rowid").all() as Array<{ id: string; output_json: string }>;
+    assert.deepEqual(rows.map((row) => JSON.parse(row.output_json).stdout), ["before", "after"]);
+    assert.notEqual(rows[0]!.id, rows[1]!.id);
+    await agent.run("Inspect the program result.", { workspace: root, sessionId: first.sessionId, executionScope: "rerun-scope" });
+    agent.authorizeProcessRerun(first.sessionId, rows[1]!.id);
+    await writeFile(target, "after second external edit");
+    await agent.run("Run the edited program again.", { workspace: root, sessionId: first.sessionId, executionScope: "rerun-scope" });
+    const reruns = store.db.prepare("SELECT id,output_json FROM tool_calls WHERE name='run_process' ORDER BY rowid").all() as Array<{ id: string; output_json: string }>;
+    assert.equal(reruns.length, 3);
+    assert.deepEqual(reruns.map((row) => JSON.parse(row.output_json).stdout), ["before", "after", "after second external edit"]);
+    assert.notEqual(reruns[1]!.id, reruns[2]!.id);
+  } finally { store.close(); }
+}));
+
+test("tool completion does not overwrite a rerun quarantined while its command is executing", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "rerun-finalize-race.sqlite"));
+  const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "race-model");
+  let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "race-command", type: "function", function: { name: "run_process", arguments: JSON.stringify({ executable: process.execPath, args: ["-e", "process.stdout.write('RACE_DONE')"], cwd: root }) } }] } }] };
+      return { choices: [{ message: { role: "assistant", content: "The command outcome needs review." } }] };
+    }
+  };
+  const emitted: string[] = [];
+  events.on("tool.completed", (event) => emitted.push(String((event.payload as { id: string }).id)));
+  events.on("tool.started", (event) => {
+    if ((event.payload as { id: string }).id === "race-command") store.db.prepare("UPDATE tool_calls SET status='uncertain',output_json='{\"error\":\"quarantined by recovery\"}' WHERE id='race-command' AND status='running'").run();
+  });
+  try {
+    await assert.rejects(() => new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Run the command and report its result.", { workspace: root, executionScope: "race-scope", maxTurns: 2 }), /EXTERNAL_ACTION_UNCERTAIN/);
+    const row = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='race-command'").get() as { status: string; output_json: string };
+    assert.equal(row.status, "uncertain");
+    assert.match(row.output_json, /quarantined by recovery/);
+    assert.ok(!emitted.includes("race-command"), "a runner that lost its durable claim must not emit tool.completed");
+  } finally { store.close(); }
+}));
+
+test("MCP sampling rejects undeclared calls, mismatched results, and unsupported image content", async () => {
+  const sample = createMcpSamplingHandler({ chat: async () => ({ choices: [{ message: { content: "ok" } }] }) }, "qwen/local", "qwen/local:2");
+  await assert.rejects(() => sample({ messages: [{ role: "assistant", content: { type: "tool_use", id: "call-x", name: "unknown", input: {} } }], maxTokens: 16, tools: [{ name: "known", inputSchema: { type: "object" } }] }), /unknown or duplicate tool call/);
+  await assert.rejects(() => sample({ messages: [{ role: "user", content: { type: "tool_result", toolUseId: "missing", content: [{ type: "text", text: "x" }] } }], maxTokens: 16, tools: [{ name: "known", inputSchema: { type: "object" } }] }), /no matching prior tool call/);
+  await assert.rejects(() => sample({ messages: [{ role: "user", content: { type: "image", data: "AA==", mimeType: "image/png" } }], maxTokens: 16 }), /active inference provider does not support multimodal MCP sampling/);
 });

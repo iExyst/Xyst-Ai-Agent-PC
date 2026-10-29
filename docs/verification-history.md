@@ -2200,11 +2200,250 @@ A focused runtime test rejects truncated code units and unpaired surrogates in b
 
 ## Large-profile and process-kill migration recovery · 2026-10-29 integration
 
-- Retained the 1,000-session, 20,000-message, 1,000-tool-call legacy migration case from PR #75, updated to expect current schema version 16. It asserts preserved counts/history, external-action backfill, and SQLite integrity.
-- The integration branch retains its process-kill migration regression, which pauses a real child process after migration DDL and before its marker, kills the child, verifies rollback and preserved data, then reopens successfully through the latest schema. PR #75's separate version-15 process-kill evidence remains recorded in its source PR; the combined branch will rerun the current candidate suite.
+- Retained the 1,000-session, 20,000-message, 1,000-tool-call legacy migration case from PR #75, updated to expect current schema version 17. It asserts preserved counts/history, external-action backfill, and SQLite integrity.
+- The integration branch retains its process-kill migration regression, which pauses a real child process after migration DDL and before its marker, kills the child, verifies rollback and preserved data, then reopens successfully through the schema version 17. PR #75's separate version-15 process-kill evidence remains recorded in its source PR; the combined branch will rerun the current candidate suite.
 
 ## Process-tree abort and interactive stdin coverage · 2026-10-28
 
 - Added a real process integration test that launches a Node parent and grandchild, waits until the grandchild is running, aborts Xyst's process runner, and asserts the descendant cannot write a delayed marker. The same test exercises POSIX process-group termination on Linux and Windows `taskkill /T /F` on Windows.
 - Added a direct interactive process test that streams two input chunks through the provided writer, closes stdin, and verifies the child receives the complete input through EOF and returns it on stdout. Detached descendants and PTY resize/control behavior remain outside this evidence.
 - PR #76's exact head passed all eight Windows/Linux PR and push verification/package checks. The integration branch retains the deterministic tests; rerun the combined candidate after conflict resolution.
+## Resumed Qwen3.5 4B CLI coding acceptance · 2026-10-29
+
+- A fresh CLI coding session used a disposable APPDATA profile and workspace outside the PC repository. Session `e3cbcddf-4e67-4d29-87cf-91a2691b0402` implemented `src/percentile.mjs` and `test/percentile.test.mjs` using the nearest-rank rule specified in the prompt, without dependencies or extra workspace files. Its persisted `run_process` call used `node.exe --test test/percentile.test.mjs` and passed all 11 tests. Xyst read both exact output paths and `task_complete` returned `verified: true`. The session status is `completed`; the profile's SQLite integrity check is `ok`.
+- Independent verification reran `node.exe --test test/percentile.test.mjs` in the same workspace and passed 11/11. SHA-256: `src/percentile.mjs` `118E55766EA6829C92A5849BA4B3A2768CEB108AEB8AA5DEF042B27469CF90A1`; `test/percentile.test.mjs` `1D5A029B6248E84F5B416DDC7EB5D0A3652F57DC8FBF878E7FC9B3AA02F88997`. The two generated files remained in the temporary workspace outside the PC repository.
+- This session required a resume after reaching its turn limit. Earlier turns first invoked `cmd.exe` without `/c`, passed an extra `node` script argument, and generated a test file without importing `node:test`; their command/test failures are not passes. A stale-hash patch also failed, and the agent deleted and recreated the test file before a corrected direct-argv test run succeeded. A separate Qwen3.5 9B attempt with malformed PowerShell quoting declared `est/percentile.test.mjs` and failed completion verification; after its CLI process was interrupted, its saved session still reported `active`. That session is a non-pass and its resumability/terminal-state behavior remains unverified. These live runs show both the recoverable CLI completion path and model/tool reliability limitations; C1 remains partial.
+- The temporary Qwen3.5 4B and Qwen3.5 9B instances were unloaded after the attempts. `lms ps` reported no loaded models and NVIDIA memory returned to approximately 13.0 GiB free.
+
+
+## Windows process-tree timeout failure reporting · 2026-10-29
+
+- A previous full Windows runtime suite stalled for about 57 seconds in a process-timeout test and continued only after its child was manually terminated. That run is not independent cancellation evidence. Ten subsequent focused timeout runs completed without intervention in 1.41–1.51 seconds; the stall did not recur, but these focused runs do not reproduce full-suite load or establish sustained reliability.
+- A standalone Windows spawn with an empty `PATH` confirmed that bare `taskkill` lookup can fail to start with `ENOENT` while the child remains alive. `killTree` now resolves `taskkill.exe` through `%SystemRoot%\System32` (or `%WINDIR%\System32`) so cancellation does not depend on `PATH`, bounds the `/T /F` wait to five seconds, and, on start failure, nonzero exit, or timeout, attempts to kill the direct child. If process-tree termination cannot be verified, `runProcess` rejects with an explicit uncertainty error rather than waiting indefinitely. The direct-child fallback cannot guarantee descendant termination.
+- Focused Windows regressions passed for: tree termination with an empty `PATH` (no delayed marker and the expected timeout); failure to start `taskkill` (explicit uncertainty and no delayed direct-child write); and persisted `AgentRunner` timeout reconciliation (`uncertain` tool-call status). The correctly built full Windows runtime suite passed 201 tests, skipped 2 host-specific cases, and failed 0; runtime build, runtime typecheck, and `git diff --check` passed. An earlier attempt to force a missing system root into the child environment caused Node startup failure and two test failures; the test now isolates the simulated taskkill path from the child environment. That run is not counted as a pass. Earlier test attempts before the required runtime build and a manually interrupted broad run are also not counted.
+- PR #81 code head `b2d718e0dcd7087d9c6efcd7a9da04a8e673f7f9`, stacked on #79, passed all eight hosted Windows/Linux verification and package checks, including Windows clean-install renderer and live mission-service lifecycle smoke tests. PR #81 remains open and unmerged. PR #79 and #80 each had eight passing checks on their inspected heads and remain unmerged. Merge authorization still covers only #58–#60.
+
+
+## Desktop mission acceptance retry (Windows, 2026-10-29)
+
+The desktop development build completed and opened a single `Xyst Control Room` window with `XYST_ROOT` correctly set to the PC checkout and APPDATA/LOCALAPPDATA isolated under a temporary profile. Computer Use selected the fresh Electron window, but `sky.activate_window` failed with `failed to activate captured window`; after refreshing the app/window selection, the one permitted retry failed with the same error. Per the computer-use recovery instructions, no further UI actions were attempted. No mission was run, so this is not desktop acceptance and is not a product failure. The dev process tree was terminated and no source artifacts were created. Desktop end-to-end acceptance remains open.
+
+
+## PR stack and desktop retry follow-up · 2026-10-29
+
+- Rechecked exact open heads in `iExyst/Xyst-Ai-Agent-PC`: PR #79 `0fecfd4a5c7387d23e7219829f3cb1ca9780a80a`, PR #80 `ee1746d9351e46444d44a39c3b3c7267022fac0f`, and PR #81 `78d83c6bf290111a19fb52444eb663fb16f2ef47` each have all eight current-head Windows/Linux verification and package checks passing. All three remain open and no merge was performed.
+- A fresh desktop development launch used the PC checkout as `XYST_ROOT` and a separate temporary application profile; the build finished and the Xyst window was returned by app discovery. `sky.activate_window` failed twice with `failed to activate captured window`, after fresh app/window discovery on the retry. Per Computer Use recovery guidance, no more UI interaction was attempted; no mission ran, so this is not product acceptance. The launched process tree was terminated. F1 remains partial.
+
+
+## Live CLI XLSX generation and DOCX renderer limitation · 2026-10-29
+
+- Created an isolated APPDATA profile and separate temporary workspaces outside the repository. Qwen3-VL 4B (`qwen/qwen3-vl-4b`, loaded as `xyst-docx-acceptance`, context 8192) ran through the current PC CLI. XLSX session `7a805d77-5c5d-4c4d-bb12-2dc0f771ba0b` created `service-inventory.xlsx` (2,840 bytes; SHA-256 `e21947bf3541b3c8abc0f11b7dca5869713ac66aafbdab698cf404ad73e026f1`). The successful `office_read` output named sheet `Service Inventory` and returned exactly the required header cells A1:D1 and rows 2–4 with all three specified services, owners, tiers, and review dates. Persisted `task_complete` returned `verified: true` using that exact `office_read` evidence; the session ended `completed` and the isolated SQLite database passed `database check` with `healthy/ok`.
+- The same XLSX session had non-passing intermediate calls: the first `task_complete` evidence selection was rejected, then `file_read` failed because a binary XLSX is not UTF-8. The agent followed with a new exact-path `office_read`, which succeeded; only the later verified completion counts as acceptance.
+- A separate DOCX session (`c683aec8-438c-48c9-b4fe-046f3151dff0`) created a 10,152-byte `handoff-note.docx`, and `office_read` extracted its content (SHA-256 `963803f46a7e2ebeb7ef3371946403e6f40910b94484cd205e174fc12a61eb54`). The model inserted a stale 2024 date and malformed `14:00 PM`, so content quality was insufficient. `office_preview` could not start `soffice.exe` (`ENOENT`); no PNG was rendered, no visual inspection or `task_complete` occurred, and the run ended `failed`. This is a non-pass, not visual acceptance. No LibreOffice installation was available at the common Program Files paths. The uncertain action remains in this disposable profile and was not reconciled or retried because no renderer was available.
+- The first XLSX completion rejection and invalid UTF-8 read remain recorded failures, not passes. Both outputs stayed in the temporary acceptance directory. The model was unloaded afterward (`lms ps`: no models loaded), and the profile database is healthy. E4 remains partial; E5's live pixel evidence remains limited to the earlier PDF case.
+
+
+## Reproduced bounded Windows timeout when taskkill hangs · 2026-10-29
+
+- On PR #81 source head `d360bc084d7a9d2b5e7aea6c0f6f988dd27ebc71`, four focused process tests passed: persisted uncertain timeout, taskkill-start failure, empty-PATH tree timeout, and normal timeout reconciliation. Durations were 0.51–2.78 seconds. On PR #72's current integration source, the original normal timeout reconciliation regression passed 1/1 in 1.43 seconds; that branch still has no bound around the `taskkill` close event.
+- To exercise the reported wait without manually terminating anything, a temporary .NET `taskkill.exe` stub under an isolated fake `SystemRoot` deliberately slept for 60 seconds. PR #81's real Windows `runProcess` timeout fired at 300 ms, bounded the stuck taskkill attempt, killed the direct child, and rejected with `Process termination could not be verified; descendants may still be running` after 5,347 ms. A subsequent process lookup found the timed child PID gone. Temporary files stayed outside the repository.
+- The controlled hang did not recreate a 57-second wait. It verifies PR #81's five-second fallback and its explicit uncertainty, not successful descendant cleanup when taskkill hangs. The earlier unattended stall's exact trigger therefore remains unresolved; the unbounded taskkill wait on the PR #72 integration branch remains a real gap until the PR #81 change is integrated. No child or taskkill process was manually terminated.
+
+
+## PR #81 full Windows runtime suite · 2026-10-29
+
+- In the isolated worktree at exact PR #81 head `f019ebcf6bbc5cc090d08473445e1ac115ffec4b`, ran `npm ci`, built `packages/runtime` with `npm run build`, then ran the full Windows runtime suite. Result: 203 tests, 201 passed, 2 host-specific skips, 0 failures; duration 41.7 seconds. The process-timeout regressions passed, including AgentRunner uncertainty persistence, missing `taskkill`, empty PATH, direct abort, and force-killing a grandchild that ignores SIGTERM. Cross-process lease acquisition and recovery both passed after the build.
+- An initial full-suite attempt before `npm run build` had two cross-process tests fail because they import `packages/runtime/dist`; the fresh worktree had no `dist` after `npm ci`. Its worker remained live after test output and was stopped after verifying no application child or taskkill process remained. This run is invalid and is not counted as acceptance. Building first resolved the two failures and the rerun exited normally.
+- The passing full suite is local Windows evidence for this PR head. Linux behavior remains supported by hosted checks and still needs broader live platform acceptance; the full original brief remains incomplete.
+
+
+## Live CLI strict ASCII whitespace coding mission · 2026-10-29
+
+- In isolated workspace `%TEMP%\xyst-pr81-c1-whitespace-retry4`, Qwen 3.5 9B completed mission `c1f4ddab-dfbd-46dc-9f33-4817f62c376f` / run `b7a3bf4c-1237-46dd-a811-83abb7f4cff6` / session `76877dfa-8b76-4157-85f4-dc1ec4693140`. The persisted `task_complete` call returned `verified=true`, citing the exact successful `node --test test/compact-whitespace.test.mjs` run (6/6), and fresh post-test reads of both `src/compact-whitespace.mjs` and the fixed test fixture.
+- The saved implementation validates string input, normalizes CRLF/lone CR, uses explicit `[ \\t]` regex classes, and preserves NBSP, vertical tab, and form feed. An independent rerun from the workspace passed all 6 tests. No repository source code changed; all mission files and its SQLite profile are isolated under `%TEMP%`.
+- This is one bounded single-task coding pass after several non-passing attempts at this small task. It improves the C1 evidence but does not establish sustained mission reliability or satisfy the broader coding/delegation requirements. The full project remains incomplete.
+
+
+## WSL Linux runtime acceptance on PR #81 · 2026-10-29
+
+- Created a separate detached worktree at PR #81 documentation head `3e823d03770a91fea187509f4c1d3a817886f892`. Installed Linux dependencies in Ubuntu 24.04 WSL using Node 22.23.4; Node 18 supplied by the distribution is below the repository's supported runtime and caused an initial `npm ci` failure. Built `packages/runtime` before running the suite because cross-process lease tests import `packages/runtime/dist`.
+- On the built source, the full 203-test runtime run produced 196 passes, 6 Windows-specific skips, and one failure: `independent HTTP MCP server negotiates sampling tools and completes a tool-result round trip` did not observe the spawned fixture's loopback-port file within its fixed two-second startup window. The process-timeout reconciliation test and the POSIX abort test that force-kills a SIGTERM-ignoring grandchild both passed. No Windows-specific taskkill behavior was exercised on Linux.
+- An isolated diagnostic change increasing only that fixture's readiness polling window from two to ten seconds made the HTTP MCP test pass in WSL. Diagnostic logs also confirmed the child fixture's startup delay; the test source change was restored, and the PR worktree is clean. This points to slow child startup from WSL's `/mnt/c` checkout as an environment-sensitive test bound, not evidence of a product failure. The full suite on the unmodified source remains one-failure evidence, not a pass.
+- A first Linux suite attempt before the runtime build also failed lease tests because `dist` was absent and did not exit after reporting test output; after confirming the process tree contained only the test runner, that invalid runner was stopped. This is separate from the previously reported Windows ~57-second timeout stall. The original Windows stall trigger remains unresolved. PR #81 hosted exact-head workflows for the documentation commit were still running at the time of this record; no merge was performed.
+
+
+## Full Windows runtime rerun for process-timeout stall · 2026-10-29
+
+- On exact PR #81 head `02141cf0c43915d22c2a0c8e39b784906cfbdac4`, reran the suspected AgentRunner case, `a process timeout after writing a file still requires external-action reconciliation`, in isolation. It passed in 1.41 seconds with the expected timeout reconciliation and no intervention.
+- Ran the full built Windows runtime suite once without intervention. Result: 203 tests, 201 passed, 2 host-specific skips, 0 failures; suite duration 41.4 seconds and normal process exit. The suspected test passed in 1.41 seconds during this loaded run; adjacent Windows process timeout/cancellation cases also completed, including taskkill-start failure (2.62 s), empty-PATH tree timeout (2.78 s), and SIGTERM-ignoring grandchild cancellation (3.61 s).
+- The previous ~57-second stall was not reproduced. This run strengthens bounded local Windows evidence but does not identify the prior trigger or establish sustained reliability. No processes were manually terminated. PR #81 remains open and unmerged; project acceptance remains incomplete.
+
+
+## WSL HTTP MCP fixture startup bound · 2026-10-29
+
+- The prior full Linux suite failed because its independent HTTP MCP fixture did not announce its loopback port inside a fixed 2-second window. The fixture now waits up to 10 seconds, checks whether the child exited, and includes bounded child stderr in startup failures. The 10-second deadline remains finite.
+- The updated focused case passed on Windows in 0.41 seconds and on WSL Ubuntu in 4.72 seconds. The Windows result used the current PR #81 worktree; WSL ran the targeted test-file change in the separate Linux dependency worktree, with all diagnostic edits restored afterward.
+- Re-ran the full WSL runtime suite with only that fixture test change applied to the Linux worktree. Result: 203 tests, 197 passed, 6 Windows-only skips, 0 failures; normal exit in 82.1 seconds. This resolves the previously observed Linux suite failure for this candidate test adjustment. The suite was run on the earlier PR #81 documentation base `3e823d0`; hosted exact-head checks remain required for the current PR head. This does not establish bare-metal Linux coverage or the full product requirements.
+
+
+## Isolated CLI JSONL coding mission and independent review · 2026-10-29
+
+- In disposable workspace `%TEMP%\xyst-pr81-jsonl-summary-mission` and APPDATA profile `%TEMP%\xyst-pr81-jsonl-summary-profile`, Qwen 3.5 9B produced a dependency-free JSONL summarizer and CLI. Initial persisted `task_complete verified=true` cited five passing supplied tests and file reads. Independent contract review found two defects not covered by those tests: the CLI accepted an extra path argument, and frequency keys used locale-sensitive `localeCompare` rather than deterministic code-point ordering. The initial claimed completion is therefore not acceptance evidence.
+- Added a separate acceptance test file without modifying the supplied tests. A resumed model session corrected both implementation defects. One agent-run test result remained 6/7 because the first supplemental test harness used a POSIX URL pathname on Windows. Fixed the harness with `fileURLToPath`; an independent Windows `npm test` then passed 7/7, including both new regressions, in 10.3 seconds.
+- The follow-up Xyst session did not produce accepted completion evidence: its test invocation still reported the earlier 6/7 harness failure, and the saved run ended at the agent turn limit without a fresh successful `task_complete`. The temporary implementation's independent 7/7 result is useful narrow verification, but this coding mission is not counted as an accepted model-backed mission. No project source was changed.
+
+
+## External workspace edits and command replay · 2026-10-29
+
+- In the JSONL session, the later `node --test` tool message repeated the earlier 6/7 output without a new `tool_calls` execution row. The test fixture had been corrected outside Xyst. `AgentRunner` hashes commands using a workspace revision derived from recorded Xyst mutations, so external changes do not invalidate the replay. This is strong evidence that stale output was replayed; the independent 7/7 run remains separate from the agent result.
+- The completion gate also detects later mutations through persisted tool calls, so external edits can leave prior command evidence appearing current. The existing reconciliation API applies only to uncertain external actions. A user-authorized fresh execution must preserve durable intent and must not silently repeat arbitrary side effects; this capability and live acceptance remain open. C2 is therefore partial.
+
+
+## Uncommitted command rerun and owner recovery candidate · 2026-10-29
+
+- Added an explicit one-use completed-command rerun candidate in the isolated PR #81 worktree, retaining old action history and atomically selecting a new running intent. Added CLI/desktop authorization controls, stale completion-evidence rejection, and owner host/PID records. An explicit recovery action checks that the local owner PID is absent before moving an abandoned rerun to uncertain; it neither proves descendant termination nor authorizes retry.
+- Focused coverage passed for actual two-process authorization contention, abrupt owner exit after claim, refusal to quarantine a live owner, quarantine after owner exit, retained history, session deletion, and an AgentRunner rerun after an external edit. Runtime build and CLI/desktop typechecks passed during implementation. The earlier desktop production build predates the latest owner-recovery changes.
+- Final correct Windows suite invocation `npm test -w @xyst/runtime` completed normally with 211 tests: 209 passed, 2 host skips, 0 failures, 40.49 seconds. Process timeout/cancellation cases passed without intervention. The original roughly 57-second stall's trigger is still unresolved.
+- Preserve the failed attempts: a mistaken direct invocation of `dist/runtime.test.js` failed 8 tests due source-relative child imports and old-schema fixture construction. The subsequent correct npm invocation failed 3 migration fixture tests because the new owner table was not dropped when reconstructing old schemas. Fixed those fixtures; the 3 focused cases and then the full npm suite passed. Neither failed run is counted as acceptance.
+- Review still requires desktop reconciliation after quarantine, safer PID-reuse wording, and checking the conditional completion update's affected-row count before reporting success. Migration integration, legacy/retry paths, current Linux checks, live resumed-model CLI flow and interactive desktop flow remain open. The candidate is uncommitted/unpushed; PR #81's eight successful hosted checks at db45ae8 do not cover it. C2 remains partial.
+- A new-conversation handoff with exact workspaces, PR state, original brief paths and ordered next steps is saved in `docs/NEW_CHAT_HANDOFF_2026-10-29.md`.
+
+
+## Command-rerun review follow-up (Windows, 2026-10-29)
+
+- Resolved the three concrete handoff review findings in the uncommitted PR #81 worktree candidate: desktop saved-session tool logs now offer explicit completed/no-effect reconciliation for quarantined reruns; recovery errors say a live recorded PID may be the original owner or an unrelated process after PID reuse; and the normal tool completion path checks that exactly one `running` row was finalized before emitting `tool.completed` or returning output.
+- `npm run typecheck` passed, including runtime build, CLI typecheck, runtime typecheck, and desktop typecheck.
+- The correct `npm test -w @xyst/runtime` command passed: 211 tests, 209 passed, 2 host-specific skips, 0 failures; 40.7 seconds. Covered the command rerun authorization/recovery and owner crash tests, AgentRunner external-edit rerun, and process timeout tests. The original ~57-second Windows timeout stall remains unexplained.
+- `git diff --check` passed before validation. This source has not been committed, pushed, or covered by hosted CI. There is not yet a dedicated assertion for the changed-row-count race path, and no live resumed CLI/desktop owner-crash acceptance has been completed. Linux validation and historical migration/replay audit remain open.
+
+
+## Command-rerun completion ownership race regression (Windows, 2026-10-29)
+
+- Added a deterministic AgentRunner regression that changes a running command's durable row to `uncertain` from the `tool.started` event before the child process returns. The runner rejects the turn with `EXTERNAL_ACTION_UNCERTAIN`, leaves the recovery-owned row/output untouched, and does not emit `tool.completed` for that call.
+- Focused regression passed. Full `npm test -w @xyst/runtime` passed on the current uncommitted candidate: 212 tests, 210 passed, 2 host-specific skips, 0 failures; 40.8 seconds. `npm run typecheck` and `git diff --check` also passed.
+- Still local/uncommitted/unpushed; hosted CI and Linux checks do not cover this candidate. Live resumed CLI/desktop acceptance, external edit plus owner crash flow, and integration placement remain open. The historical Windows timeout stall is still unexplained.
+
+
+## Live resumed CLI rerun after external edit (Windows, 2026-10-29)
+
+- In disposable APPDATA profile `C:\Users\hicks.GAMERX\AppData\Local\Temp\xyst-rerun-acceptance-profile` and workspace `C:\Users\hicks.GAMERX\AppData\Local\Temp\xyst-rerun-acceptance-work`, Qwen 3.5 9B (loaded through Xyst CLI, context 8192) ran saved session `70836d19-1d55-4c36-b0fc-2328d2dbebf3`.
+- Initial `run_process` call `ARD00t...` (full ID `ARD00u5zY74UTmjlrh8y6L1xfVzb9VhE`) executed `node <workspace>\probe.js`, returned `BEFORE_EDIT`, and the session recorded `task_complete verified=true`.
+- The script was then edited outside Xyst to print `AFTER_EXTERNAL_EDIT`. `agent authorize-rerun` authorized one use against the original completed call; resuming the same saved session generated new `run_process` call `r3QUx5LwnmVCTdKJvbW0RxVXhH1bRZIO`, which returned `AFTER_EXTERNAL_EDIT`, and fresh `task_complete` call `XLhKRtXo17SQkpE87IDLOsWswpCUoGQt` recorded `verified=true` using the new call. `session calls` confirmed the original result remains intact and the new call is marked `is_rerun=1`.
+- This is a bounded real Windows CLI acceptance pass after external edits. It does not test owner crash recovery, desktop UI, broad model reliability, or the overall C2 scope. Earlier failed model attempts remain non-passes.
+
+
+## Live CLI owner-crash acceptance attempt (Windows, 2026-10-29) — failed before crash injection
+
+- Attempted to authorize a second rerun of the successful fresh command from session `70836d19-1d55-4c36-b0fc-2328d8dbebf3` so a delayed child could be left behind during owner termination. Xyst CLI rejected the authorization with `Only a completed process action in this session can be authorized for rerun` (exit path did not reach child execution or owner termination). The separately launched resume process exited; no crash or quarantine occurred. Session remained `completed`, and no acceptance pass is claimed.
+- This is a concrete follow-up defect/limitation after the first successful rerun: the current code rejects because the requested call is not eligible by its stored name/status/effect/scope/hash, despite the prior session listing it as a completed rerun. Inspect the persisted row and replay-head/authorization chain before changing behavior. No retries were attempted. The prior successful external-edit acceptance remains valid but bounded.
+
+
+## Correction to owner-crash CLI attempt record (Windows, 2026-10-29)
+
+The earlier authorization rejection was caused by targeting the original call ID `ARD00u5zY74UTmjlrh8y6L1xfVzb9VhE` after it ceased to be the replay head. It is not evidence that the current rerun call is ineligible. Authorization against the actual current head `r3QUx5LwnmVCTdKJvbW0RxVXhH1bRZIO` succeeded as ID `c7d388ff-7752-4672-8266-48742bd86f54`. The subsequent background harness did not create a new tool-call row or reach crash injection; its polling script had PowerShell/JavaScript quoting errors. No process was killed and no owner-crash pass is claimed. Preserve the initial rejected CLI attempt as a harness/targeting failure, not a product failure.
+
+
+## Live CLI owner-crash acceptance attempt (Windows, 2026-10-29) — product failure before child start
+
+- After successfully authorizing the current replay-head call `r3QUx5LwnmVCTdKJvbW0RxVXhH1bRZIO` (authorization `c7d388ff-7752-4672-8266-48742bd86f54`), resumed the real saved CLI session with a delayed child command in the disposable workspace. The CLI exited immediately with `FOREIGN KEY constraint failed` before recording any new tool call or rerun owner.
+- Read-only SQLite inspection confirmed no running `command_rerun_owners` row, no new run_process call, no foreign-key-check violations, and no delayed side-effect file. No process was killed. This is a failed live acceptance of the current candidate; owner crash/quarantine remains untested. Investigate why consuming the pending authorization fails under this changed-workspace replay hash, and add a regression before retrying.
+
+
+## Repeated command reruns across external edits (Windows, 2026-10-29)
+
+- Expanded the AgentRunner external-edit regression to cover two sequential explicit rerun authorizations. The program output progressed `before` -> `after` -> `after second external edit`; all three completed `run_process` records retained distinct IDs, and the test passed.
+- `npm run typecheck` passed (runtime build plus CLI/runtime/desktop typechecks). Full `npm test -w @xyst/runtime`: 212 tests, 210 passed, 2 host-specific skips, 0 failures; 46.2 seconds. `git diff --check` passed.
+- This deterministic test does not resolve the separate live CLI `FOREIGN KEY constraint failed` attempt, which produced no new call/owner row. Preserve the live failure. Root cause remains open; owner-crash acceptance remains unverified.
+
+
+## Root-cause correction: CLI resume foreign-key failure (Windows, 2026-10-29)
+
+A temporary SQLite statement trace localized the live CLI `FOREIGN KEY constraint failed` to `SessionStore.addMessage` inserting the resumed user message, before any rerun lookup or command call. A read-only query showed session `70836d19-1d55-4c36-b0fc-2328d8dbebf3` no longer exists in that disposable profile's `sessions` table, although the session had been listed earlier. Therefore this failure does **not** establish a rerun-authorization FK defect. The immediate issue is disappearance of the disposable saved session before resume; its cause is unknown. No new tool call was inserted, no process ran/killed, and no owner-crash acceptance occurred. Preserve as failed live acceptance, and investigate session persistence/profile lifecycle separately.
+
+
+## Live owner-crash injection and recovery (Windows, 2026-10-29) — recovery failed
+
+- In the same disposable session/profile, a foreground resumed CLI finally claimed rerun call `Rv5haths1B4nAYcffpy1YNlpfO9VwtOp`; SQLite showed status `running`, an owner row with host `GamerX` and PID `30628`, and the replay head pointed to that call. I force-terminated that exact owner PID to simulate an owner crash as required by this acceptance scenario.
+- CLI `agent recover-rerun` then rejected with `This call is not a running command rerun head in the session`, even though an immediate read-only query still showed the call running, owner row present, and replay head pointing to it. No uncertain quarantine/reconciliation or successful owner-crash recovery was established. The delayed child side-effect file was absent on checks; the process-tree observation was ambiguous because PowerShell command text matched the probe filename. Preserve this as a failed live acceptance. Investigate why the CLI recovery command sees different eligibility/state or database scope before any further injection.
+
+
+## Owner-crash recovery helper verification (Windows, 2026-10-29)
+
+- Following the failed CLI `recover-rerun` attempt, invoked `quarantineAbandonedCommandRerun` directly from the active worktree source against the same isolated APPDATA SQLite profile and call `Rv5haths1B4nAYcffpy1YNlpfO9VwtOp`. It succeeded and transitioned the running head to uncertain after the recorded owner PID was absent. This establishes the helper's recovery transition on the persisted live-crash row.
+- It does not clear the CLI failure: the CLI's eligibility SELECT returned no row despite the same database path and a separate connection seeing the row. Root cause of that discrepancy remains unresolved. No CLI recovery pass, desktop acceptance, or reconciliation/resume acceptance is claimed. The delayed side-effect file remained absent when checked after the child's expected delay.
+
+
+## CLI recovery fixture verification (Windows, 2026-10-29)
+
+- Seeded a fresh disposable profile `C:\Users\hicks.GAMERX\AppData\Local\Temp\xyst-rerun-cli-recovery-fixture` with one valid session, a `run_process` running row, matching replay head, and owner PID `999999` on the local host. The CLI command `agent recover-rerun <session> fixture-rerun` returned status `uncertain` as expected.
+- This confirms the CLI command works against a coherent synthetic fixture; it is not model-backed owner-crash acceptance and does not explain why the prior real-session CLI selector returned no row. The direct helper had already quarantined that real session row successfully. Preserve the real-session discrepancy and do not claim the requested crash acceptance complete.
+
+
+## Desktop build and Computer Use retry (Windows, 2026-10-29)
+
+- `npm run desktop:build` passed on the current command-rerun candidate. It rebuilt runtime/CLI, passed desktop typechecks, compiled Electron main/preload, and produced the Vite renderer bundle.
+- Launched the dev Control Room with the isolated rerun profile. The returned Electron window was titled `Xyst Control Room`; its accessibility tree showed runtime ready, Qwen 3.5 9B connected, and one saved session.
+- Computer Use activation initially failed with `failed to activate captured window`. After refreshing app/window selection, the next interaction reported `user input was detected in this window; call get_window_state before continuing`; a fresh state capture succeeded. The subsequent indexed click failed with `coordinate input geometry is unavailable`. Per the computer-use recovery instructions, stopped further UI interaction and terminated the dev process. No session was opened or reconciled; no desktop mission ran. This is a UI automation limitation, not desktop product acceptance or a product failure.
+
+
+## C2 traceability correction · 2026-10-29
+
+Updated C2 to reflect the shipped-local candidate work and bounded evidence: explicit one-use command rerun, two deterministic sequential external edits, one real resumed CLI external-edit pass, and completion ownership race coverage. Kept C2 partial because general stale read-evidence invalidation, real owner-crash end-to-end recovery, and desktop interactive reconciliation acceptance remain unverified.
+
+
+## Full root test suite on command-rerun candidate (Windows, 2026-10-29)
+
+- `npm test` passed on the current uncommitted candidate. It rebuilt runtime, then passed runtime 212 tests (210 pass, 2 host-specific skips, 0 failures), CLI 28/28, and release verification 5/5. Runtime test duration was 41.6 seconds; CLI 10.9 seconds; release checks 0.4 seconds.
+- `git diff --check` passed after the run. This is local Windows evidence only; the candidate has no exact-head hosted checks and no current Linux run. It does not clear the failed real-session owner-crash CLI lookup; desktop UI acceptance also remains blocked by computer-use geometry/activation errors.
+
+
+## Command-rerun branch placement · 2026-10-29
+
+- Preserved the full tracked patch as `%TEMP%\xyst-command-rerun-snapshot\tracked-diff.patch`, plus copies of untracked `packages/runtime/src/command-rerun.ts` and `docs/NEW_CHAT_HANDOFF_2026-10-29.md`, with base commit recorded as `db45ae8b995482213a58e36e08182625f5f8e8d6`.
+- Created local branch `codex/command-rerun-recovery` from that exact PR #81 head so the feature is stacked on the process-recovery implementation it extends. Verified PR #81 remains open at that head and bases on `codex/restricted-path-fail-closed`.
+- All existing working-tree changes remain uncommitted and intact. No push, PR creation, base retarget, or merge occurred. Wait to publish until the live owner-crash/CLI discrepancy is resolved and exact-head checks can cover the final candidate.
+
+
+## Synthetic CLI crash reconciliation and retry (Windows, 2026-10-29)
+
+- In the existing fresh disposable recovery fixture, seeded a second valid head-linked running `run_process` with an absent owner PID. CLI `agent recover-rerun` returned `uncertain`; CLI `agent reconcile <session> fixture-rerun-2 retry` then returned `retry`. Direct SQLite inspection confirmed status `retry_allowed` and the explicit user-confirmed-no-effect reconciliation record.
+- This verifies the CLI fixture path through quarantine and retry authorization. It does not execute a resumed model task or prove the real owner-crash CLI lookup discrepancy resolved; the earlier live failure remains open and no actual retry was run.
+
+
+## Command-rerun session deletion coverage (Windows, 2026-10-29)
+
+- Expanded `session deletion cleans its own rerun records and guards shared replay history` to claim a pending rerun before deleting the owning session. The regression now asserts deletion removes the execution-scope replay head and authorization, the rerun owner row, and both tool-call records; attempting deletion with cross-scope shared replay history remains blocked and leaves the other session's action intact.
+- Focused test passed. `npm run typecheck` passed for runtime build plus CLI/runtime/desktop checks. `git diff --check` passed. This is deterministic local storage coverage; real model-backed owner-crash CLI recovery remains unresolved, and no Linux/hosted checks cover the current dirty candidate.
+
+
+## Reconciliation-path retry regression · 2026-10-29
+
+- Updated `command rerun authorization is consumed once and preserves the original action` to drive `uncertain` → `retry_allowed` through `AgentRunner.reconcileExternalAction`, the shared reconciliation path used by interactive clients, rather than directly mutating the DB to authorize retry. The focused test passed: 1 passed, 0 failed. This deterministic test does not resolve the separate real-session CLI owner-crash lookup failure or desktop interaction gap.
+
+- Follow-up verification: `npm run typecheck` passed for runtime build and CLI/runtime/desktop typechecks; `git diff --check` passed. CLI inspection confirms recovery delegates directly to `AgentRunner.recoverAbandonedProcessRerun`; the user-visible rejection text originates from the transactional row lookup in `quarantineAbandonedCommandRerun` (requires same-session external `run_process`, owner row, replay-head link, and `running` status). The earlier live SQLite observation did not preserve a query transcript proving all these predicates simultaneously, so the discrepancy remains unlocalized.
+
+
+## Real resumed CLI after owner crash: retry timed out after effect (Windows, 2026-10-29)
+
+- Read-only inspection confirmed the crashed call `Rv5haths1B4nAYcffpy1YNlpfO9VwtOp` was a `run_process` external action in the expected session with its owner row and replay-head link. Its persisted status was already `uncertain` after the earlier direct quarantine; that snapshot cannot establish why the earlier CLI recovery command rejected it while it was still running.
+- Fresh disposable CLI owner-crash fixture passed: with the actual built CLI and isolated APPDATA, `agent recover-rerun` returned `uncertain` and SQLite confirmed the status transition.
+- For the real saved session, inspected `probe.js`: it waits 30 seconds, appends `done` to `crash-side-effect.log`, then writes `CRASH_CHILD_FINISHED`. Before retry reconciliation the file was absent and no matching child process was found. CLI `agent reconcile ... retry` succeeded. A real `agent resume` caused the model to issue the same run_process again, but the run_process 30,000 ms timeout raced the script's 30-second completion: CLI returned `EXTERNAL_ACTION_UNCERTAIN` and tool call `aEquV5a0GJViT7usDBOHHmHjR74YXxox` persisted as uncertain with `Process timed out after 30000 ms`. Subsequent inspection found the file containing `done` and no live probe process, proving the external effect occurred although stdout was lost. This failed model-backed attempt remains recorded as failed/uncertain; do not repeat it. Reconcile this new call as completed from the file evidence and retain this timeout as a distinct acceptance failure. This does not explain the separate historical unattended Windows timeout stall.
+
+
+## Real authorized owner-crash recovery and CLI resume (Windows, 2026-10-29)
+
+- In a fresh real Qwen3.5 9B CLI session, completed `run_process` call `jULbhQ8iEEi9ycYVnCCjHWwm47j0ouAh` produced `OWNER_CRASH_FRESH_OK`; persisted `task_complete` was `verified:true`. After externally editing the same script (same executable, args, and cwd) to a 15-second marker probe, CLI `agent authorize-rerun` issued one-use authorization `9c732afe-8f32-41ec-bc3f-6a4eef85fd18`.
+- Resumed the saved session and waited until authorized rerun `CDn8bsmKzxneuvX9xqzeLzd4TlfR4XRm` was durably `running` with owner PID 9380. Terminated that exact CLI owner. After waiting beyond the probe delay, inspected the isolated workspace and found no marker file or matching live process; the recorded tool call remained running with its owner row.
+- Invoked the actual built CLI: `agent recover-rerun <session> <call>` returned `uncertain`. Inspected the no-effect evidence, then `agent reconcile ... retry` returned `retry`. A real `agent resume` issued retry call `A3xvFKFntZforam2LyoFdLIIjk1v3cI4`, which completed with exit code 0, stdout `OWNER_CRASH_REAL_RERUN_OK`, and 15,054 ms duration. Persisted `task_complete` `CNCzBeobQfCQxGqStmFaqQlvl0NsNruN` returned `verified:true` against that fresh call. This is bounded Windows CLI acceptance after an owner crash, not sustained reliability evidence.
+- Other attempts in this sequence remain failures in the saved acceptance session history: a 30-second probe hit the 30,000 ms timeout while its side effect completed (then reconciled completed); a completed-session follow-up did not issue a call and ended unverified; one longer probe was syntactically invalid due a literal `\\n`, and a follow-up on a completed session did not issue the authorized rerun. The earlier real-session `recover-rerun` lookup rejection is still unexplained; do not remove these failed attempts from reliability records.
+- Desktop interaction remains unverified. The handoff and checkpoint should continue to mark C2 partial.
+
+- Full candidate verification after the retry-reconciliation regression and documentation update: root `npm test` passed on Windows: runtime 212 tests (210 passed, 2 host-specific skips), CLI 28/28, release verification 5/5. The existing runtime timeout test also passed; this does not negate the real 30-second acceptance timeout above. `npm run typecheck` passed after the code/test change; `git diff --check` passed. No hosted exact-candidate checks or Linux run exist.
+
+## Integrated command-rerun candidate verification · 2026-10-29
+
+- Local integration branch `codex/integrate-pr72-through-command-rerun` now starts at draft PR #72 head `8e06995`, includes PR #80 and the unique reviewed PR #73–#76 changes, then merges the command-rerun recovery candidate from PR #81's exact base. The combined schema keeps #72's migration 16 and places rerun tables at migration 17. Conflict resolutions retain integration-specific mission evidence and all recorded rerun failures. No remote PR or merge was created.
+- Fixed integration regressions: migration fixtures now remove migration-17 tables before downgrading schema markers; session deletion removes rerun owner/auth/head rows before tool calls; completion feedback test expects the current persisted readback wording; MCP image sampling test expects the provider capability error. Focused regression set passed 5/5, then the two corrected expectation tests passed 2/2.
+- Current Windows verification on the integrated candidate: root `npm test` passed runtime 243 (240 passed, 3 host-specific skips, 0 failed), CLI 29/29, release verification 5/5. `npm run typecheck` passed runtime, CLI, and desktop; `npm run desktop:build` passed. `git diff --check` and staged diff checks passed before the final doc append. This is local Windows evidence only; exact-head hosted checks and Linux checks for this combined commit do not exist.
+- The CLI owner-crash acceptance and external-edit acceptance are now documented above; desktop interactive reconciliation remains unverified because Computer Use could not activate/click the window. General stale read-evidence behavior is open under C2. Earlier live recovery-selector discrepancy and the original unattended Windows timeout stall remain unexplained. Failed model attempts remain in the record. These gaps block an overall completion claim.
+- Next: finish source/doc review, commit the local merge candidate, run exact combined-head CI by an authorized push/PR workflow, then conduct representative end-to-end acceptance against both briefs. Do not merge the open PR stack without explicit authorization; preserve signing and production update hosting as release prerequisites.

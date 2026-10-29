@@ -55,7 +55,11 @@ const migrations = [
     CREATE INDEX session_compactions_recent ON session_compactions(session_id,created_at DESC);`,
   `UPDATE tool_calls SET effect='external' WHERE name IN ('github_issue_labels_add','github_issue_labels_replace','github_issue_label_remove','github_update_pull_request','browser_close_tab');
    UPDATE tool_calls SET execution_scope=COALESCE((SELECT run_id||':'||task_key FROM mission_tasks WHERE mission_tasks.session_id=tool_calls.session_id LIMIT 1),session_id) WHERE effect='external' AND execution_scope IS NULL;
-   UPDATE tool_calls SET status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP) WHERE status='running' AND effect='external';`
+   UPDATE tool_calls SET status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP) WHERE status='running' AND effect='external';`,
+  `CREATE TABLE command_replay_heads (execution_scope TEXT NOT NULL, request_hash TEXT NOT NULL, tool_call_id TEXT NOT NULL REFERENCES tool_calls(id), PRIMARY KEY(execution_scope,request_hash));
+   CREATE TABLE command_rerun_authorizations (id TEXT PRIMARY KEY, execution_scope TEXT NOT NULL, request_hash TEXT NOT NULL, prior_tool_call_id TEXT NOT NULL REFERENCES tool_calls(id), created_at TEXT NOT NULL, consumed_at TEXT, new_tool_call_id TEXT REFERENCES tool_calls(id), CHECK((consumed_at IS NULL AND new_tool_call_id IS NULL) OR (consumed_at IS NOT NULL AND new_tool_call_id IS NOT NULL)));
+   CREATE TABLE command_rerun_owners (tool_call_id TEXT PRIMARY KEY REFERENCES tool_calls(id), host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0));
+   CREATE UNIQUE INDEX command_rerun_one_pending ON command_rerun_authorizations(execution_scope,request_hash) WHERE consumed_at IS NULL;`
 ];
 
 export type DatabaseIntegrityReport = { path: string; status: "healthy" | "corrupt" | "missing" | "unavailable"; details?: string[]; error?: string };
@@ -258,6 +262,12 @@ export class SessionStore {
     if (!this.store.db.prepare("SELECT 1 FROM sessions WHERE id=?").get(sessionId)) throw new Error(`Session not found: ${sessionId}`);
     if (this.store.db.prepare("SELECT 1 FROM mission_tasks WHERE session_id=? LIMIT 1").get(sessionId)) throw new Error("This session belongs to a mission task; archive it to preserve mission history");
     const transaction = this.store.db.transaction(() => {
+      const sharedReplay = this.store.db.prepare(`SELECT 1 FROM command_replay_heads h JOIN tool_calls t ON t.id=h.tool_call_id WHERE t.session_id=? AND h.execution_scope<>?
+        UNION ALL SELECT 1 FROM command_rerun_authorizations a JOIN tool_calls t ON t.id=a.prior_tool_call_id OR t.id=a.new_tool_call_id WHERE t.session_id=? AND a.execution_scope<>? LIMIT 1`).get(sessionId, sessionId, sessionId, sessionId);
+      if (sharedReplay) throw new Error("This session contains command replay history shared with another execution scope; archive it to preserve recovery records");
+      this.store.db.prepare("DELETE FROM command_rerun_authorizations WHERE execution_scope=?").run(sessionId);
+      this.store.db.prepare("DELETE FROM command_replay_heads WHERE execution_scope=?").run(sessionId);
+      this.store.db.prepare("DELETE FROM command_rerun_owners WHERE tool_call_id IN (SELECT id FROM tool_calls WHERE session_id=?)").run(sessionId);
       this.store.db.prepare("DELETE FROM tool_calls WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM usage WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM model_decisions WHERE session_id=?").run(sessionId);
