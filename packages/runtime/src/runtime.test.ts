@@ -1452,6 +1452,29 @@ test("agent completion requires successful persisted tool evidence", async () =>
   } finally { store.close(); }
 }));
 
+test("verified task completion does not publish contradictory same-turn assistant text", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "completion-response.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  let round = 0;
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async () => {
+      round++;
+      if (round === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "completion-response-list", type: "function", function: { name: "file_list", arguments: JSON.stringify({ path: root }) } }] } }] };
+      return { choices: [{ message: { role: "assistant", content: "The successful evidence is stale; completion did not pass.", tool_calls: [{ id: "completion-response-pass", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+    }
+  };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  try {
+    const result = await agent.run("List files in the workspace", { workspace: root, maxTurns: 3 });
+    assert.equal(result.status, "completed");
+    assert.equal(result.response, "Task completed and verified against persisted tool evidence.");
+    const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete'").get(result.sessionId) as { status: string; output_json: string };
+    assert.equal(completion.status, "completed");
+    assert.equal(JSON.parse(completion.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
 test("office preview result sends the rendered PNG pixels to the next model request", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "office-preview-vision.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model");

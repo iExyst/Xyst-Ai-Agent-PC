@@ -972,7 +972,8 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         if (!assistant.role) assistant.role = "assistant";
         const toolCalls = asArray(assistant.tool_calls);
         const text = typeof assistant.content === "string" ? assistant.content : "";
-        if (text) { finalResponse = text; this.deps.events.emit("agent.text", { text }, sessionId); }
+        const includesCompletionCall = toolCalls.some((value) => String(asRecord(asRecord(value).function).name ?? "") === "task_complete");
+        if (text && !includesCompletionCall) { finalResponse = text; this.deps.events.emit("agent.text", { text }, sessionId); }
         save(assistant as ApiMessage);
         const usage = asRecord(response.usage);
         if (localMetricsEnabled && this.isLocalMetricsProvider(activeProvider)) this.recordInferenceUsage(sessionId, selected, Date.now() - inferenceStartedAt, usage.prompt_tokens ?? usage.input_tokens ?? null, usage.completion_tokens ?? usage.output_tokens ?? null, { outcome: "success" });
@@ -1158,7 +1159,8 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         if (status === "cancelled") break;
         if (completionVerified) {
           status = "completed";
-          if (!text.trim() && !finalResponse.trim()) {
+          if (includesCompletionCall) finalResponse = "";
+          if (!finalResponse.trim()) {
             finalResponse = "Task completed and verified against persisted tool evidence.";
             save({ role: "assistant", content: finalResponse });
           }
