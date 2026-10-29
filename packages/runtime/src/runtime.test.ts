@@ -2159,6 +2159,19 @@ test("Windows restricted path checks resolve junctions before allowing file oper
   await assert.rejects(() => access.assertPath(join(outsideJunction, "new.txt"), "write"), /denies write access/);
 }));
 
+test("restricted path checks reject dangling links but allow genuinely new paths", async (t) => withTemp(async (root) => {
+  const allowed = join(root, "allowed"); await mkdir(allowed);
+  const dangling = join(allowed, "dangling");
+  try { await symlink(join(root, "missing-outside"), dangling, process.platform === "win32" ? "junction" : "dir"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "EPERM") { t.skip("Symlink privilege is unavailable"); return; } throw error; }
+  const access = new AccessController({ mode: "restricted", readRoots: [allowed], writeRoots: [allowed] });
+  await assert.rejects(() => access.assertPath(join(dangling, "new.txt"), "write"), /Cannot resolve existing path/);
+  await assert.rejects(() => access.assertPath(dangling, "read"), /Cannot resolve existing path/);
+  const missingRootAccess = new AccessController({ mode: "restricted", writeRoots: [dangling] });
+  await assert.rejects(() => missingRootAccess.assertPath(join(allowed, "new.txt"), "write"), /Cannot resolve existing path/);
+  assert.equal(await access.assertPath(join(allowed, "new-directory", "new.txt"), "write"), join(await realpath(allowed), "new-directory", "new.txt"));
+}));
+
 test("Windows long paths support atomic create, read, and patch", { skip: process.platform !== "win32" }, async () => withTemp(async (root) => {
   let directory = root;
   for (let index = 0; index < 14; index++) { directory = join(directory, index === 7 ? `segment-${index}-段-雪-🤖-${"x".repeat(14)}` : `segment-${index}-${"x".repeat(14)}`); await mkdir(directory); }
