@@ -2040,6 +2040,29 @@ test("file patch rejects stale edits and preserves UTF-8 BOM and CRLF", async ()
   assert.equal(patched.path, path);
 }));
 
+test("file reads and patches reject malformed UTF-16 without modifying bytes", async () => withTemp(async (root) => {
+  const cases = [
+    Buffer.from([0xff, 0xfe, 0x61]), // truncated little-endian code unit
+    Buffer.from([0xfe, 0xff, 0x00]), // truncated big-endian code unit
+    Buffer.from([0xff, 0xfe, 0x00, 0xd8]), // unpaired little-endian surrogate
+    Buffer.from([0xfe, 0xff, 0xd8, 0x00]) // unpaired big-endian surrogate
+  ];
+  for (const [index, bytes] of cases.entries()) {
+    const path = join(root, `invalid-${index}.txt`); await writeFile(path, bytes);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    await assert.rejects(() => readText(path));
+    await assert.rejects(() => patchText(path, digest, "a", "b"));
+    assert.deepEqual(await readFileAsync(path), bytes);
+  }
+  for (const [name, bytes] of [["le", Buffer.from([0xff, 0xfe, 0xff, 0xfe, 0x61, 0x00])], ["be", Buffer.from([0xfe, 0xff, 0xfe, 0xff, 0x00, 0x61])]] as const) {
+    const path = join(root, `valid-${name}.txt`); await writeFile(path, bytes);
+    const read = await readText(path); assert.equal(read.text, "\uFEFFa");
+    await patchText(path, read.sha256, "a", "b");
+    const updated = await readFileAsync(path); assert.deepEqual(updated.subarray(0, 4), bytes.subarray(0, 4));
+    assert.equal((await readText(path)).text, "\uFEFFb");
+  }
+}));
+
 test("text search ignores dependency and build output directories", async () => withTemp(async (root) => {
   await createText(join(root, "src.ts"), "needle in source"); await mkdir(join(root, "node_modules", "pkg"), { recursive: true }); await writeFile(join(root, "node_modules", "pkg", "generated.js"), "needle in dependency");
   const matches = await searchFiles(root, "needle"); assert.equal(matches.length, 1); assert.equal(matches[0]?.path, join(root, "src.ts"));
@@ -2098,6 +2121,38 @@ test("a process timeout after writing a file still requires external-action reco
     assert.equal(action.status, "uncertain");
     assert.match(action.output_json, /timed out/);
   } finally { store.close(); }
+}));
+
+test("Windows timeout with an empty PATH persists uncertain external action", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "kill-failure.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "kill-failure", type: "function", function: { name: "run_process", arguments: JSON.stringify({ executable: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"], timeout_ms: 300 }) } }] } }] }) };
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = "";
+    await assert.rejects(() => new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Execute the requested program.", { workspace: root, maxTurns: 2 }), /EXTERNAL_ACTION_UNCERTAIN/);
+    const action = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='kill-failure'").get() as { status: string; output_json: string };
+    assert.equal(action.status, "uncertain");
+    assert.match(action.output_json, /timed out/);
+  } finally { process.env.PATH = originalPath; store.close(); }
+}));
+
+test("Windows reports uncertain termination when taskkill cannot start", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "survived.txt");
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const systemRoot = process.env.SystemRoot ?? process.env.WINDIR; process.env.PATH = ""; process.env.SystemRoot = ${JSON.stringify(join(root, "missing-system-root"))}; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300, env: { ...process.env, SystemRoot: systemRoot } }); process.exitCode = 1; } catch (error) { if (!error.message.includes("termination could not be verified")) throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(existsSync(marker), false);
+}));
+
+test("Windows process-tree timeout finds taskkill with an empty PATH", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "survived.txt");
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; process.env.PATH = ""; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300 }); process.exitCode = 1; } catch (error) { if (!error.message.includes("Process timed out after 300 ms")) throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(existsSync(marker), false);
 }));
 
 test("aborting a process execution terminates it and returns a cancellation error", async () => {
@@ -4789,15 +4844,18 @@ test("independent HTTP MCP server negotiates sampling tools and completes a tool
     'process.on("SIGTERM", () => { void transport.close().finally(() => http.close(() => process.exit(0))); });'
   ].join("\n"));
 
-  const child = spawn(process.execPath, [serverPath, readyPath], { cwd: root, stdio: "ignore" });
+  const child = spawn(process.execPath, [serverPath, readyPath], { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  let childStderr = "";
+  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (childStderr.length < 4000) childStderr += chunk.slice(0, 4000 - childStderr.length); });
   let connection: Awaited<ReturnType<typeof createMcpTools>> | undefined;
   try {
     let port: number | undefined;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (child.exitCode !== null) throw new Error(`HTTP MCP fixture exited early with ${child.exitCode}`);
-      try { port = (JSON.parse(await readFileAsync(readyPath, "utf8")) as { port: number }).port; break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); }
+    const readyDeadline = Date.now() + 10_000;
+    while (Date.now() < readyDeadline) {
+      if (child.exitCode !== null) throw new Error(`HTTP MCP fixture exited early with ${child.exitCode}: ${childStderr}`);
+      try { port = (JSON.parse(await readFileAsync(readyPath, "utf8")) as { port: number }).port; break; } catch { await new Promise((resolve) => setTimeout(resolve, 25)); }
     }
-    assert.ok(port, "independent HTTP MCP fixture should announce its loopback port");
+    assert.ok(port, `independent HTTP MCP fixture should announce its loopback port within 10 seconds${childStderr ? `; stderr: ${childStderr}` : ""}`);
     const modelRequests: Array<{ messages: unknown[]; tools: unknown[]; tool_choice?: string }> = [];
     const sample = createMcpSamplingHandler({
       chat: async () => { throw new Error("sampling with tools must use chatWithTools"); },

@@ -34,19 +34,37 @@ export class ProcessStartError extends Error {
   }
 }
 
-async function killTree(child: ChildProcess): Promise<void> {
-  if (!child.pid) return;
+async function killTree(child: ChildProcess): Promise<boolean> {
+  if (!child.pid) return false;
   if (process.platform === "win32") {
-    await new Promise<void>((resolveDone) => {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-      killer.once("close", () => resolveDone()); killer.once("error", () => resolveDone());
+    return await new Promise<boolean>((resolveDone) => {
+      let finished = false;
+      let timer: NodeJS.Timeout | undefined;
+      const finish = (success: boolean) => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        // If taskkill cannot start, fails, or hangs, still terminate the direct
+        // child. This fallback cannot guarantee cleanup of its descendants.
+        if (!success) { try { child.kill("SIGKILL"); } catch { /* child may already have exited */ } }
+        resolveDone(success);
+      };
+      let killer: ChildProcess;
+      const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+      const taskkill = systemRoot ? resolve(systemRoot, "System32", "taskkill.exe") : "taskkill";
+      try { killer = spawn(taskkill, ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }); }
+      catch { finish(false); return; }
+      timer = setTimeout(() => { try { killer.kill(); } finally { finish(false); } }, 5_000);
+      killer.once("close", (code) => finish(code === 0));
+      killer.once("error", () => finish(false));
     });
   } else {
-    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); return; }
+    try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); return false; }
     const escalation = setTimeout(() => {
       try { process.kill(-child.pid!, 0); process.kill(-child.pid!, "SIGKILL"); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill("SIGKILL"); }
     }, 1_000);
+    return true;
   }
 }
 
@@ -67,19 +85,21 @@ export async function runProcess(command: string, args: string[], options: Proce
   child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (stderr.length < maxOutputChars) stderr += chunk.slice(0, maxOutputChars - stderr.length); options.onStderr?.(chunk); });
   let timer: NodeJS.Timeout | undefined;
   let cancellationStarted = false;
+  let rejectTermination: (error: Error) => void = () => {};
+  const terminationFailure = new Promise<never>((_, reject) => { rejectTermination = reject; });
   const cancel = () => {
     if (cancellationStarted) return;
     cancellationStarted = true;
-    void killTree(child);
+    void killTree(child).then((success) => { if (!success) rejectTermination(new Error("Process termination could not be verified; descendants may still be running")); }, (error: unknown) => rejectTermination(new Error("Process termination could not be verified", { cause: error })));
   };
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   if (options.timeoutMs && options.timeoutMs > 0) timer = setTimeout(() => { timedOut = true; cancel(); }, options.timeoutMs);
   try {
-    const result = await new Promise<ProcessResult>((resolveDone, reject) => {
+    const result = await Promise.race([terminationFailure, new Promise<ProcessResult>((resolveDone, reject) => {
       child.once("error", (error) => reject(!spawned && child.pid === undefined ? new ProcessStartError(error) : error));
       child.once("close", (code, signal) => resolveDone({ code, signal, stdout, stderr, durationMs: Date.now() - started }));
-    });
+    })]);
     if (timedOut) throw new Error(`Process timed out after ${options.timeoutMs} ms`);
     if (options.signal?.aborted) throw new Error("Process cancelled");
     return result;
