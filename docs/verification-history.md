@@ -1867,3 +1867,10 @@ A live agent run that reached its turn limit without assistant text exposed a CL
 - PR #55 merged as `66d8423f02afd3b34008747fbc61302c401de193`. Its eight Windows/Linux PR and push checks succeeded. The hosted Windows Desktop package job logged that it installed, ran, observed `Running`, uninstalled, and confirmed removal of the Xyst mission daemon task.
 - Post-merge Cross-platform CI run [40687616009](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/40687616009) and Desktop packages run [40687616004](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/40687616004) both passed on the merge commit.
 - The live scheduler check used the disposable hosted package runner. Windows logoff/reboot recovery, long-duration scheduler reliability, and other Windows environments remain open under C4.
+
+
+## Live loaded-instance concurrent mission (2026-10-29)
+
+On Windows, an isolated Xyst profile ran mission `pr78-live-concurrency` (run `86917041-c002-46b9-8f0d-f3771ac85eb6`) on the PR 78 code head `650c69c88df8cb3f3a81471e7c41a9677507e183`. Qwen 3.5 9B and Nemotron 3 Nano 4B were loaded as separate LM Studio instances with 8,192-token contexts. The scheduler resolved each instance to its catalog model for a GPU estimate and admitted both separate-workspace tasks at 00:12:20 UTC. Their agent lifetimes overlapped, and the persisted first model-request records ended at 00:12:24.756 and 00:12:24.925 with durations 4,701 and 4,873 ms respectively, indicating overlapping requests. Both tasks completed in one attempt with `task_complete verified=true`, exact `file_read` markers, and `run_process` exit code 0 with exact matching stdout. The mission completed at 00:12:43 UTC.
+
+This is one bounded two-model run. Request overlap does not independently prove simultaneous GPU execution, sustained reliability, contention handling, or Linux behavior. Earlier attempts with malformed file contents, incorrect evidence indexes, or insufficient context remain non-passes. Both test instances were unloaded after the run.
