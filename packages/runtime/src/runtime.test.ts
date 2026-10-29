@@ -1442,6 +1442,7 @@ test("agent completion requires successful persisted tool evidence", async () =>
     assert.ok(completionSystemWithEvidence.includes("using only {path}, start_line, and end_line; do not add an operation field"));
     assert.ok(completionSystemWithEvidence.includes("Honor the requested runtime, test framework, and exact verification command"));
     assert.ok(completionSystemWithEvidence.includes("write test files for that runner (not a hand-written replacement harness)"));
+    assert.ok(completionSystemWithEvidence.includes("assigned task workspace is already this root: use output filenames directly"));
     assert.ok(completionSystemWithEvidence.includes("If a tool call fails, correct the path or arguments and retry"));
     assert.ok(completionSystemWithEvidence.includes("retrieve live information from an available web source or integration"));
     assert.match(completionSystemWithEvidence, /1: id="[^"]+" "file_list"/, "stable IDs, one-based indexes, and safe tool names are shown to the model");
