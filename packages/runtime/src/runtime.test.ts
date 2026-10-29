@@ -2554,6 +2554,24 @@ test("a process timeout after writing a file still requires external-action reco
   } finally { store.close(); }
 }));
 
+test("Windows timeout reports uncertain termination when taskkill cannot start", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "survived.txt");
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; const systemRoot = process.env.SystemRoot ?? process.env.WINDIR; process.env.PATH = ""; process.env.SystemRoot = ${JSON.stringify(join(root, "missing-system-root"))}; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300, env: { ...process.env, SystemRoot: systemRoot } }); process.exitCode = 1; } catch (error) { if (!error.message.includes("termination could not be verified")) throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(existsSync(marker), false);
+}));
+
+test("Windows process-tree timeout finds taskkill with an empty PATH", { skip: process.platform !== "win32", timeout: 10_000 }, async () => withTemp(async (root) => {
+  const marker = join(root, "survived.txt");
+  const wrapper = `import { runProcess } from ${JSON.stringify(new URL("./platform.ts", import.meta.url).href)}; process.env.PATH = ""; try { await runProcess(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "survived"), 2000)`)}], { timeoutMs: 300 }); process.exitCode = 1; } catch (error) { if (!error.message.includes("Process timed out after 300 ms")) throw error; }`;
+  const result = await runProcess(process.execPath, ["--import", "tsx", "--input-type=module", "-e", wrapper], { timeoutMs: 6000 });
+  assert.equal(result.code, 0, result.stderr);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(existsSync(marker), false);
+}));
+
 test("aborting a process execution terminates it and returns a cancellation error", async () => {
   const controller = new AbortController();
   const running = runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { signal: controller.signal });
