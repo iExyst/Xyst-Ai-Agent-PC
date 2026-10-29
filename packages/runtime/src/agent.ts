@@ -1159,7 +1159,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         if (status === "cancelled") break;
         if (completionVerified) {
           status = "completed";
-          if (includesCompletionCall) finalResponse = "";
+          if (includesCompletionCall && text.trim()) finalResponse = "";
           if (!finalResponse.trim()) {
             finalResponse = "Task completed and verified against persisted tool evidence.";
             save({ role: "assistant", content: finalResponse });
