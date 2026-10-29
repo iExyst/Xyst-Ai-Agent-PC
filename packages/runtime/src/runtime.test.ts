@@ -466,7 +466,7 @@ test("agent automatically selects an installed embedding model for semantic memo
   try {
     const result = await agent.run("Use memory_search to retrieve my saved answer style preference.", { workspace: root, model: "loaded-chat", maxTurns: 3 });
     assert.equal(result.status, "completed");
-    assert.deepEqual(embeddingModels, ["loaded-embedder"]);
+    assert.deepEqual(embeddingModels, ["loaded-embedder", "loaded-embedder"], "semantic memory is re-embedded when its cited results are refreshed at completion");
     assert.equal(selections[0]?.role, "embeddings");
     assert.equal(selections[0]?.model, "loaded-embedder");
     assert.match(String(selections[0]?.reason), /already loaded/);
@@ -499,7 +499,7 @@ test("agent uses the configured embedding model for semantic memory", async () =
   try {
     const result = await agent.run("Use memory_search to retrieve my saved answer style preference.", { workspace: root, model: "loaded-chat", maxTurns: 3 });
     assert.equal(result.status, "completed");
-    assert.deepEqual(embeddingModels, ["manual-embedder"]);
+    assert.deepEqual(embeddingModels, ["manual-embedder", "manual-embedder"], "semantic memory is re-embedded when its cited results are refreshed at completion");
   } finally { store.close(); }
 }));
 
@@ -1900,6 +1900,28 @@ test("completion refreshes Git observations and rejects repository changes made 
       assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
     } finally { store.close(); }
   }
+}));
+
+test("completion refreshes memory searches and rejects saved results after another writer adds a match", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-memory-search.sqlite")); const memories = new MemoryStore(store); memories.add("note", "XYST baseline memory", "user");
+  const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents(); config.set("global", "model.default", "test-model");
+  let turn = 0;
+  const call = (id: string, name: string, args: unknown) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1 || turn === 3) return call(`memory-search-${turn}`, "memory_search", { query: "XYST" });
+    if (turn === 2) memories.add("note", "XYST added by another writer", "user");
+    return call(`memory-completion-${turn}`, "task_complete", { evidence_tool_call_indexes: [1] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, memories })
+      .run("Check current saved XYST memory notes.", { workspace: root, maxTurns: 4 });
+    assert.equal(result.status, "completed"); assert.equal(turn, 4);
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "completed"]);
+    assert.match(completions[0]!.output_json, /current memory_search data differs from the saved observation/);
+    assert.equal(JSON.parse(completions[1]!.output_json).verified, true);
+  } finally { store.close(); }
 }));
 
 test("completion rejects saved GitHub observations after same-repository mutations but keeps unrelated repositories", async () => withTemp(async (root) => {
