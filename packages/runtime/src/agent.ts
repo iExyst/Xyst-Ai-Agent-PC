@@ -864,6 +864,28 @@ export class AgentRunner {
             catch (error) { throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; list the directory again before completing.`, { cause: error }); }
             if (!listingMatches) throw new Error(`Completion evidence ${evidenceId} is stale: the file_list contents changed outside Xyst after the listing. List the directory again and verify the current entries before completing.`);
           }
+          if (evidence.name === "office_preview") {
+            const sourcePath = evidenceRecord.source_path;
+            const sourceHash = evidenceRecord.source_sha256;
+            const previewPath = evidenceRecord.path;
+            const previewHash = evidenceRecord.sha256;
+            if (typeof sourcePath !== "string" || typeof sourceHash !== "string" || !/^[a-f0-9]{64}$/i.test(sourceHash) || typeof previewPath !== "string" || typeof previewHash !== "string" || !/^[a-f0-9]{64}$/i.test(previewHash)) {
+              throw new Error(`Completion evidence ${evidenceId} has no verifiable source and preview hashes; render the document again before completing.`);
+            }
+            try {
+              const authorizedSourcePath = await access.assertPath(sourcePath, "read");
+              if ((await hashFile(authorizedSourcePath)).toLowerCase() !== sourceHash.toLowerCase()) {
+                throw new Error(`Completion evidence ${evidenceId} is stale: ${sourcePath} changed after it was rendered. Render the current document again and inspect the new pixels before completing.`);
+              }
+              const authorizedPreviewPath = await access.assertPath(previewPath, "read");
+              if ((await hashFile(authorizedPreviewPath)).toLowerCase() !== previewHash.toLowerCase()) {
+                throw new Error(`Completion evidence ${evidenceId} is stale: rendered preview ${previewPath} changed after inspection. Render the current document again and inspect the new pixels before completing.`);
+              }
+            } catch (error) {
+              if (error instanceof Error && error.message.startsWith(`Completion evidence ${evidenceId} is stale:`)) throw error;
+              throw new Error(`Completion evidence ${evidenceId} cannot be revalidated; render and inspect the current document again after resolving the access or filesystem error.`, { cause: error });
+            }
+          }
           if (evidence.name === "web_fetch" && evidenceRecord.truncated === true) throw new Error(`Completion evidence ${evidenceId} is truncated. Increase max_chars or request narrower API fields, then cite the successful full fetch.`);
           if (evidence.name === "file_read" || evidence.name === "office_read") {
             const readPath = evidencePath(evidence);

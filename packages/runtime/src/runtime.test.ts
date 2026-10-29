@@ -1555,6 +1555,37 @@ test("office preview result sends the rendered PNG pixels to the next model requ
   } finally { store.close(); }
 }));
 
+test("completion rejects an office preview when the source or rendered PNG becomes stale", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-office-preview.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  const original = await PDFDocument.create(); original.addPage([180, 80]).drawText("ORIGINAL PREVIEW", { x: 20, y: 35 }); await writeFile(join(root, "source.pdf"), await original.save());
+  let round = 0;
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async () => {
+      round++;
+      if (round === 1 || round === 3 || round === 5) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: round === 1 ? "preview-before-external-edit" : round === 3 ? "preview-after-source-edit" : "preview-after-png-edit", type: "function", function: { name: "office_preview", arguments: JSON.stringify({ path: "source.pdf", page: 1, output_path: round === 1 ? "original-preview.png" : round === 3 ? "fresh-preview.png" : "final-preview.png" }) } }] } }] };
+      if (round === 2) {
+        const replacement = await PDFDocument.create(); replacement.addPage([180, 80]).drawText("EXTERNALLY EDITED", { x: 20, y: 35 }); await writeFile(join(root, "source.pdf"), await replacement.save());
+      }
+      if (round === 4) await writeFile(join(root, "fresh-preview.png"), Buffer.from("external preview edit"));
+      const completionId = round === 2 ? "complete-stale-source-preview" : round === 4 ? "complete-stale-png-preview" : "complete-fresh-office-preview";
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: completionId, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
+    }
+  };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Inspect the current PDF preview.", { workspace: root, model: "test-model", maxTurns: 7, allowedTools: ["office_preview"], completionCriteria: ["Inspect the current PDF preview"], requiredToolEvidence: [{ tool: "office_preview" }] });
+    assert.equal(result.status, "completed");
+    assert.equal(round, 6, "stale source and PNG evidence must be rejected before a fresh render can verify completion");
+    const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string }>;
+    assert.deepEqual(completions.map((row) => row.status), ["failed", "failed", "completed"]);
+    assert.match(completions[0]!.output_json, /changed after it was rendered/);
+    assert.match(completions[1]!.output_json, /rendered preview .* changed after inspection/);
+    assert.equal(JSON.parse(completions[2]!.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
 test("office preview does not stale the source PDF readback evidence", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "office-preview-read-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model");
