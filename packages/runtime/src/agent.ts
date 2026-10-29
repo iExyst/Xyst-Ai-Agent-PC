@@ -46,6 +46,22 @@ const externalToolNames = new Set(["file_create", "file_patch", "file_delete", "
 const isExternalAction = (name: string) => externalToolNames.has(name) || (name.startsWith("mcp_") && !/_((resources)|(read_resource)|(prompts)|(get_prompt))$/.test(name));
 const parallelReadToolNames = new Set(["file_read", "file_list", "file_search", "git_status", "git_diff", "git_log", "git_branches"]);
 const workspaceMutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact", "git_clone", "git_create_branch", "git_fetch", "git_stage", "git_commit"]);
+const browserObservationNames = new Set(["browser_open", "browser_snapshot", "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
+const browserStateMutationNames = new Set(["browser_open", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "browser_back"]);
+const githubObservationNames = new Set(["github_repository", "github_issue_list", "github_issue_get", "github_issue_labels", "github_pull_requests", "github_pull_request_diff", "github_pull_request_review_comments", "github_checks", "github_workflow_runs", "github_workflow_run_logs", "github_releases", "github_actions_artifacts"]);
+const githubStateMutationNames = new Set(["github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_create_review_comment", "github_create_pull_request", "github_update_pull_request", "github_workflow_dispatch", "github_merge_pull_request"]);
+function parsedInputRecord(inputJson: string): Record<string, unknown> {
+  try { return asRecord(JSON.parse(inputJson) as unknown); } catch { return {}; }
+}
+function invalidatesRemoteObservation(evidenceName: string, evidenceInput: string, mutationName: string, mutationInput: string): boolean {
+  if (browserObservationNames.has(evidenceName) && browserStateMutationNames.has(mutationName)) return true;
+  if (!githubObservationNames.has(evidenceName) || !githubStateMutationNames.has(mutationName)) return false;
+  const evidenceArgs = parsedInputRecord(evidenceInput); const mutationArgs = parsedInputRecord(mutationInput);
+  return typeof evidenceArgs.owner === "string" && typeof evidenceArgs.repo === "string"
+    && typeof mutationArgs.owner === "string" && typeof mutationArgs.repo === "string"
+    && evidenceArgs.owner.toLowerCase() === mutationArgs.owner.toLowerCase()
+    && evidenceArgs.repo.toLowerCase() === mutationArgs.repo.toLowerCase();
+}
 export interface ExternalActionApprovalRequest { sessionId: string; toolName: string; argumentsJson: string; missionId?: string }
 export interface RemoteFallbackApprovalRequest { sessionId: string; model: string; endpoint: string; reason: string }
 export class ExternalActionApprovalError extends Error {
@@ -813,7 +829,9 @@ export class AgentRunner {
             .all(evidenceRow.rowid, sessionId, executionScope) as Array<{ name: string; input_json: string }>;
           const mutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact", "git_clone", "run_process", "run_shell", "desktop_action"]);
           const evidenceFilePath = ["file_read", "office_read"].includes(evidence.name) ? evidencePath(evidence) : undefined;
-          const laterRelevantMutation = ["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name) ? subsequentMutations.find((mutation) => {
+          const laterRelevantMutation = subsequentMutations.find((mutation) => {
+            if (invalidatesRemoteObservation(evidence.name, evidence.input_json, mutation.name, mutation.input_json)) return true;
+            if (!["file_read", "office_read", "run_process", "run_shell"].includes(evidence.name)) return false;
             if (!mutationNames.has(mutation.name)) return false;
             if (["run_process", "run_shell", "desktop_action"].includes(mutation.name) || ["run_process", "run_shell"].includes(evidence.name)) return true;
             if (!evidenceFilePath) return false;
@@ -828,7 +846,7 @@ export class AgentRunner {
               const evidencePathname = normalizedOutputPath(evidenceFilePath);
               return mutationPath === evidencePathname || mutation.name === "git_clone" && evidencePathname.startsWith(`${mutationPath}${sep}`);
             });
-          }) : undefined;
+          });
           if (laterRelevantMutation) {
             const affectedPath = evidenceFilePath ? ` for ${evidenceFilePath}` : "";
             const freshReference = Array.isArray(suppliedIds)

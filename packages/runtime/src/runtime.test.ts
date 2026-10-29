@@ -1849,6 +1849,44 @@ test("completion rejects a file_list made stale by an out-of-band entry and acce
   } finally { store.close(); }
 }));
 
+test("completion rejects saved GitHub observations after same-repository mutations but keeps unrelated repositories", async () => withTemp(async (root) => {
+  for (const scenario of [
+    { name: "same-repository", evidenceInput: { owner: "Example", repo: "Project", number: 7 }, mutationInput: { owner: "example", repo: "project", number: 7, labels: ["ready"] }, stale: true },
+    { name: "different-repository", evidenceInput: { owner: "example", repo: "project", number: 7 }, mutationInput: { owner: "example", repo: "other", number: 7, labels: ["ready"] }, stale: false }
+  ]) {
+    const store = new XystStore(join(root, `github-observation-${scenario.name}.sqlite`)); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+    config.set("global", "model.default", "test-model"); const sessionId = sessions.create(`GitHub ${scenario.name}`); const scope = `github-${scenario.name}`; const now = new Date().toISOString();
+    const insert = store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,finished_at,effect,execution_scope,request_hash) VALUES(?,?,?,?,?,'completed',?,?,'external',?,?)");
+    insert.run(`issue-read-${scenario.name}`, sessionId, "github_issue_get", JSON.stringify(scenario.evidenceInput), JSON.stringify({ number: 7, title: "Current issue", state: "open" }), now, now, scope, `read-${scenario.name}`);
+    insert.run(`issue-labels-${scenario.name}`, sessionId, "github_issue_labels_add", JSON.stringify(scenario.mutationInput), JSON.stringify({ labels: ["ready"] }), now, now, scope, `mutation-${scenario.name}`);
+    const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: `complete-${scenario.name}`, type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: [`issue-read-${scenario.name}`] }) } }] } }] }) };
+    try {
+      const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+        .run("Confirm the observed state.", { sessionId, executionScope: scope, model: "test-model", completionCriteria: ["Confirm state"], maxTurns: 1 });
+      const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id=?").get(`complete-${scenario.name}`) as { status: string; output_json: string };
+      assert.equal(completion.status, scenario.stale ? "failed" : "completed");
+      if (scenario.stale) assert.match(completion.output_json, /github_issue_labels_add ran after the evidence/);
+      else assert.equal(result.status, "completed");
+    } finally { store.close(); }
+  }
+}));
+
+test("completion rejects browser observations after a later browser state action", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "browser-observation-stale.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); const sessionId = sessions.create("Browser observation stale"); const scope = "browser-observation-stale"; const now = new Date().toISOString();
+  const insert = store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,output_json,status,created_at,finished_at,effect,execution_scope,request_hash) VALUES(?,?,?,?,?,'completed',?,?,'external',?,?)");
+  insert.run("browser-snapshot-before-click", sessionId, "browser_snapshot", "{}", JSON.stringify({ url: "https://example.test/form", title: "Form", text: "Before submit" }), now, now, scope, "browser-read");
+  insert.run("browser-click-after-snapshot", sessionId, "browser_click", JSON.stringify({ selector: "button[type=submit]" }), JSON.stringify({ url: "https://example.test/result", title: "Result", clicked: "button[type=submit]" }), now, now, scope, "browser-click");
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "complete-stale-browser", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["browser-snapshot-before-click"] }) } }] } }] }) };
+  try {
+    await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Confirm the observed state.", { sessionId, executionScope: scope, model: "test-model", completionCriteria: ["Confirm state"], maxTurns: 1 });
+    const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='complete-stale-browser'").get() as { status: string; output_json: string };
+    assert.equal(completion.status, "failed");
+    assert.match(completion.output_json, /browser_click ran after the evidence/);
+  } finally { store.close(); }
+}));
+
 test("completion rejects file evidence invalidated by a GitHub download", async () => {
   for (const downloadName of ["github_download_release_asset", "github_download_actions_artifact"]) {
     await withTemp(async (root) => {
