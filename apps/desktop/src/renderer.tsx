@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./appearance.css";
 import { scopedSettingKeys, scopesForDesktopSetting, settingApplyWhen, type DesktopSettingScope } from "./setting-keys.js";
+import { renderMessageContent } from "./message-content.js";
 const TerminalView = lazy(() => import("./terminal-view.js").then((module) => ({ default: module.TerminalView })));
 
 type View = "overview" | "sessions" | "missions" | "agents" | "jobs" | "terminal" | "models" | "github" | "settings" | "memory" | "changes";
@@ -61,11 +62,6 @@ function playFinishedWorkChime(context: AudioContext): void {
 
 function RobotMark() {
   return <svg className="robot-mark" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4v6M21 4h6"/><rect x="7" y="12" width="34" height="27" rx="10"/><path d="M14 23h7m6 0h7M18 31h12M4 23v7m40-7v7"/><circle cx="17.5" cy="22" r="2"/><circle cx="30.5" cy="22" r="2"/></svg>;
-}
-
-function renderMessageContent(content: unknown): string {
-  if (!Array.isArray(content)) return String(content ?? "");
-  return content.map((part: any) => part?.type === "text" ? String(part.text ?? "") : part?.type === "image_url" ? "[Image attachment]" : JSON.stringify(part)).join("\n");
 }
 
 function prettyStoredJson(value: unknown): string {

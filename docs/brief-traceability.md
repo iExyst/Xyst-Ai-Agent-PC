@@ -63,3 +63,7 @@ Selected `skill_list` and `skill_read` evidence is refreshed through the current
 ### C2 follow-up · built-in MCP observation freshness
 
 Built-in MCP `resources`, `read_resource`, `prompts`, `get_prompt`, and `resource_updates` observations refresh through the current run's registered tool connection at completion. A later MCP tool call invalidates prior selected observations; arbitrary server-defined tools remain unclassified and are not automatically replayed. Deterministic AgentRunner tests cover external result changes and later MCP actions; these do not constitute live remote MCP acceptance. See [`verification-history.md`](verification-history.md#c2-follow-up--built-in-mcp-observation-freshness).
+
+### A1 follow-up · readable saved desktop transcripts
+
+A live inspection of the packaged Control Room found that persisted API message envelopes appeared as [object Object] in the saved-session transcript. The renderer now unwraps message content and renders tool-call labels, structured text/image parts, and unknown structured data readably; four renderer regressions cover these forms. Root tests, desktop typecheck/production renderer build, and diff check passed on the local candidate. The package has not yet been rebuilt for this change or hosted-verified, so this is a source fix with deterministic coverage, not completed native UI acceptance.

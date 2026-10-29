@@ -30,7 +30,7 @@
     "desktop:build": "npm run build && npm run build --workspace @xyst/desktop",
     "desktop:package": "npm run desktop:build && npm run package --workspace @xyst/desktop",
     "typecheck": "npm run build --workspace @xyst/runtime && npm run typecheck --workspace @xyst/cli && npm run typecheck --workspace @xyst/runtime && npm run typecheck --workspace @xyst/desktop",
-    "test": "npm run build --workspace @xyst/runtime && npm run test --workspace @xyst/runtime && npm run test --workspace @xyst/cli && node --test scripts/release-verification.test.cjs"
+    "test": "npm run build --workspace @xyst/runtime && npm run test --workspace @xyst/runtime && npm run test --workspace @xyst/cli && npm run test:renderer --workspace @xyst/desktop && node --test scripts/release-verification.test.cjs"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
