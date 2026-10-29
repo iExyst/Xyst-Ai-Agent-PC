@@ -1893,3 +1893,12 @@ This is one bounded two-model run. Request overlap does not independently prove 
 ## UTF-16 file preservation regression (Windows, 2026-10-29)
 
 A focused runtime test rejects truncated code units and unpaired surrogates in both UTF-16 byte orders for reads and patches, and confirms the original bytes remain unchanged. It also reads and patches valid UTF-16LE and UTF-16BE files while preserving the BOM and a leading content byte-order mark. This is bounded deterministic coverage; it does not establish preservation for every encoding or concurrent edit scenario.
+
+## Desktop mission acceptance retry (Windows, 2026-10-29)
+
+The desktop development build completed and opened a single `Xyst Control Room` window with `XYST_ROOT` correctly set to the PC checkout and APPDATA/LOCALAPPDATA isolated under a temporary profile. Computer Use selected the fresh Electron window, but `sky.activate_window` failed with `failed to activate captured window`; after refreshing the app/window selection, the one permitted retry failed with the same error. Per the computer-use recovery instructions, no further UI actions were attempted. No mission was run, so this is not desktop acceptance and is not a product failure. The dev process tree was terminated and no source artifacts were created. Desktop end-to-end acceptance remains open.
+
+## PR stack and desktop retry follow-up · 2026-10-29
+
+- Rechecked exact open heads in `iExyst/Xyst-Ai-Agent-PC`: PR #79 `0fecfd4a5c7387d23e7219829f3cb1ca9780a80a`, PR #80 `ee1746d9351e46444d44a39c3b3c7267022fac0f`, and PR #81 `78d83c6bf290111a19fb52444eb663fb16f2ef47` each have all eight current-head Windows/Linux verification and package checks passing. All three remain open and no merge was performed.
+- A fresh desktop development launch used the PC checkout as `XYST_ROOT` and a separate temporary application profile; the build finished and the Xyst window was returned by app discovery. `sky.activate_window` failed twice with `failed to activate captured window`, after fresh app/window discovery on the retry. Per Computer Use recovery guidance, no more UI interaction was attempted; no mission ran, so this is not product acceptance. The launched process tree was terminated. F1 remains partial.
