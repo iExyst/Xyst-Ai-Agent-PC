@@ -371,3 +371,6 @@ The Desktop previously lowered priority only for agent/resume children carrying 
 
 ### G2 · bounded Windows UI Automation control search · local candidate · 2026-10-30
 A Windows `desktop_action` no longer asks UI Automation to return every descendant of the target window. It searches a bounded ControlView tree (4,096 nodes, depth 18) and refuses the action when enumeration is incomplete, so it does not guess uniqueness. Regression coverage checks that the encoded helper uses the cap and no longer uses `TreeScope.Descendants`; local focused test, runtime suite, typecheck, and PowerShell parser evidence are in `verification-history.md`. This bounds a single UI action, not aggregate model CPU/GPU use, and has not been accepted against the active user profile. G2 and input-lag acceptance remain partial.
+
+### G2 · bounded Windows UI Automation search · exact-head validation · `6351c00`
+All eight exact-head hosted CI/package checks passed for `6351c009f8615b9ad0688260ef79d4de474a3da3`. Windows clean-install renderer and mission-service smoke and Linux AppImage checks passed. This verifies the bounded UIA implementation builds and is covered by automated regressions; the live application tree and active-profile responsiveness remain unverified. G2 remains Partial. See `verification-history.md` for exact job IDs.
