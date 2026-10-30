@@ -120,3 +120,6 @@ PR #82's combined candidate at `a8290a81a87ce756b93bb17852db681715a3ecfb` passed
 ### G2 follow-up · guarded RAM-backed KV admission · local candidate · 2026-10-30
 
 Automatic local model preparation now checks GPU and total-memory estimates and may request LM Studio's RAM-backed KV setting only when GPU does not fit, the conservative host-memory budget does, and the resulting setting is confirmed before inference. Mission-assigned automatic models receive this check as well. Existing adequate instances and manual choices remain untouched. Runtime regressions, typecheck and desktop production build pass locally; exact-head CI, real-session latency and sustained freeze-resistance have not been measured. This improves the resource guard but does not close G2.
+### G2 follow-up · RAM-backed KV candidate exact-head checks
+
+Commit `296347d` passed all eight exact-head Windows/Ubuntu CI and Linux/Windows package jobs, including Windows installer, clean-install renderer, and mission-service lifecycle checks. Runtime regressions, root typecheck and desktop production build passed locally. These results verify the guard's code/build workflow, not measured live throughput or sustained responsiveness; G2 remains partial.
