@@ -204,3 +204,7 @@ All eight exact-head Windows/Ubuntu CI and Windows/Linux package jobs passed. Wi
 ### A5 follow-up · real resumed CLI status visibility · 2026-10-30 · partial
 
 A low-impact isolated CLI resume on the already-loaded local Qwen3.5 9B showed `session list` reporting `running` during inference, confirming the recent status fix against a real resumed session. The initial task and two completion retries remained unverified: both model-generated `task_complete` calls cited insufficient evidence indexes. After the CLI process was interrupted, its saved session remained `running`; crash recovery for orphaned agent runs therefore needs follow-up. No model was loaded/unloaded, no settings were changed, and no external process or file side effect occurred. This is a bounded status-visibility pass within an otherwise failed task, not external-edit rerun or owner-crash acceptance. Details: [`verification-history.md`](verification-history.md#live-resumed-cli-status-visibility--2026-10-30-utc--task-non-pass).
+
+### Documentation verification · `8d9764a` · all successful
+
+The exact-head Windows/Ubuntu CI and Windows/Linux package jobs passed, including Windows installer/update, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload. This only verifies the docs head; the subsequently documented live CLI sample remains a non-pass as recorded below. Exact job IDs are in [`verification-history.md`](verification-history.md#exact-head-docs-verification--8d9764a071c8f7a15a7ff071f9ec560ec383e098--all-eight-passed).
