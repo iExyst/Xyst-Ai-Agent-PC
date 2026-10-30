@@ -4,6 +4,7 @@ import "./styles.css";
 import "./appearance.css";
 import { scopedSettingKeys, scopesForDesktopSetting, settingApplyWhen, type DesktopSettingScope } from "./setting-keys.js";
 import { renderMessageContent } from "./message-content.js";
+import { agentEventStore, type AgentEvent } from "./agent-event-store.js";
 const TerminalView = lazy(() => import("./terminal-view.js").then((module) => ({ default: module.TerminalView })));
 
 type View = "overview" | "sessions" | "missions" | "agents" | "jobs" | "terminal" | "models" | "github" | "settings" | "memory" | "changes";
@@ -23,30 +24,11 @@ const layoutPanelOptions: Array<{ key: LayoutPanel; title: string; description: 
 ];
 const viewOptions: Array<[View, string]> = [["overview", "Overview"], ["sessions", "Sessions"], ["missions", "Missions"], ["agents", "Agents"], ["jobs", "Jobs"], ["terminal", "Terminal"], ["models", "Model dock"], ["github", "GitHub bridge"], ["changes", "Changes"], ["memory", "Memory"], ["settings", "Settings"]];
 type Snapshot = { status: Record<string, any>; updateState?: Record<string, any>; browser?: Record<string, any>; systemResources?: Record<string, any>; sessions: unknown[]; memories: Array<Record<string, any>>; missions: Array<Record<string, any>>; agents: Array<Record<string, any>>; jobs: Array<Record<string, any>>; models: Array<Record<string, any>>; downloads: Array<Record<string, any>>; modelsError?: string; settings?: Record<string, any> };
-type AgentEvent = { type?: string; event?: string; data?: Record<string, any>; sessionId?: string; at?: string };
 type LMLoadForm = { contextLength: string; ttlSeconds: string; evalBatchSize: string; numExperts: string; flashAttention: "default" | "on" | "off"; kvCacheGpu: "default" | "on" | "off"; gpuOffload: string; draftMode: "default" | "mtp" | "simple"; draftModel: string; draftMaxTokens: string; draftMinTokens: string; draftMinProbability: string };
 const emptyLoadForm: LMLoadForm = { contextLength: "", ttlSeconds: "", evalBatchSize: "", numExperts: "", flashAttention: "default", kvCacheGpu: "default", gpuOffload: "default", draftMode: "default", draftModel: "", draftMaxTokens: "", draftMinTokens: "", draftMinProbability: "" };
-let agentEvents: AgentEvent[] = [];
-const agentEventSubscribers = new Set<() => void>();
 
-function subscribeAgentEvents(listener: () => void): () => void {
-  agentEventSubscribers.add(listener);
-  return () => agentEventSubscribers.delete(listener);
-}
-
-function publishAgentEvent(event: AgentEvent): void {
-  agentEvents = [...agentEvents.slice(-79), event];
-  for (const listener of agentEventSubscribers) listener();
-}
-
-function clearAgentEvents(): void {
-  if (!agentEvents.length) return;
-  agentEvents = [];
-  for (const listener of agentEventSubscribers) listener();
-}
-
-function useAgentEvents(): AgentEvent[] {
-  return useSyncExternalStore(subscribeAgentEvents, () => agentEvents, () => agentEvents);
+function useAgentEvents() {
+  return useSyncExternalStore(agentEventStore.subscribe, agentEventStore.getSnapshot, agentEventStore.getSnapshot);
 }
 
 function isFinishedWorkState(state: unknown): boolean {
@@ -278,7 +260,7 @@ function App() {
   }, []);
   useEffect(() => {
     if (browserPreview) return;
-    return window.xyst.onAgentEvent(publishAgentEvent);
+    return window.xyst.onAgentEvent(agentEventStore.publish);
   }, [browserPreview]);
   useEffect(() => {
     if (browserPreview) return;
@@ -340,7 +322,7 @@ function App() {
     }
     if (runtimeState !== "ready") { setError("The runtime is not ready yet. Refresh the dashboard and inspect any reported error."); return; }
     const runId = crypto.randomUUID(); activeAgentRunId.current = runId;
-    clearAgentEvents(); setBusy(true); setAgentRunning(true); setCancelRequested(false); setError("");
+    agentEventStore.clear(); setBusy(true); setAgentRunning(true); setCancelRequested(false); setError("");
     try { await window.xyst.runAgent(objective.trim(), attachments, runId); setObjective(""); setAttachments([]); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { activeAgentRunId.current = null; setBusy(false); setAgentRunning(false); setCancelRequested(false); await refresh(); }
@@ -495,7 +477,7 @@ function App() {
       return;
     }
     const runId = crypto.randomUUID(); activeAgentRunId.current = runId;
-    clearAgentEvents(); setBusy(true); setAgentRunning(true); setCancelRequested(false); setError("");
+    agentEventStore.clear(); setBusy(true); setAgentRunning(true); setCancelRequested(false); setError("");
     try { await window.xyst.resumeSession(selectedSession.id, sessionReply.trim(), attachments, runId); setSessionReply(""); setAttachments([]); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally {
