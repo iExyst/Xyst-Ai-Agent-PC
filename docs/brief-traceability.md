@@ -350,3 +350,6 @@ The clean-install Windows GUI smoke is also being extended to verify the package
 
 ### Windows background scheduling · exact-head hosted validation · `08d7303`
 All eight exact-head push/PR CI and package jobs passed, including the Windows clean-install assertion that the packaged snapshot worker reports `BelowNormal`. Exact job IDs and the limits of this evidence are in `verification-history.md`. User-profile interactive responsiveness and any separately managed model-server CPU load remain unverified.
+
+### Desktop external-edit session recovery · local candidate · 2026-10-30
+The Windows clean-install smoke now drives a real packaged Desktop saved session through external file editing, UI authorization of a completed `run_process`, and UI resume. A loopback mock provider checks the changed file output, task completion, and the resumed agent child's actual Windows priority, with zero model-load requests. Syntax and diff checks pass; exact-head Windows CI/package execution is pending. The Desktop UI owner-crash recovery/reconciliation flow remains unverified end to end.
