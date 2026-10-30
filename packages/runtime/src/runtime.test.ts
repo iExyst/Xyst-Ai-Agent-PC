@@ -2979,7 +2979,7 @@ test("agent prompts once for evidence verification when actions succeeded but th
       if (turn === 3) return { choices: [{ message: { role: "assistant", content: "The file was created and checked." } }] };
       if (turn === 4) {
         const reminder = request.messages.filter((message) => message.role === "user").at(-1)?.content;
-        assert.match(String(reminder), /call task_complete now/i); assert.match(String(reminder), /1: id="nudge-read-output" "file_read"/);
+        assert.match(String(reminder), /call task_complete only if every criterion is satisfied/i); assert.match(String(reminder), /if any criterion is unmet, contradicted, or unverified, do not call task_complete/i); assert.match(String(reminder), /1: id="nudge-read-output" "file_read"/);
         return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "nudge-task-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_indexes: [1] }) } }] } }] };
       }
       return { choices: [{ message: { role: "assistant", content: "Verified." } }] };
@@ -2990,6 +2990,37 @@ test("agent prompts once for evidence verification when actions succeeded but th
     const result = await agent.run(objective, { workspace: root, completionCriteria: [objective, secondCriterion], maxTurns: 8 });
     assert.equal(result.status, "completed", JSON.stringify(sessions.messages(result.sessionId))); assert.equal(turn, 4);
     assert.equal(await readFileAsync(join(root, "output.txt"), "utf8"), "VERIFIED_CONTENT");
+  } finally { store.close(); }
+}));
+
+test("one completion reminder does not pressure the agent to verify a contradicted stdout-file criterion", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "completion-nudge-mismatch.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  const objective = "Run one Node process that prints phase-A followed by a newline. Read phase.txt, which contains exactly phase-A with no final newline. The stdout must exactly match the current text of phase.txt; if not, report the mismatch and do not claim completion.";
+  const reminders: string[] = []; let turn = 0;
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async (request: { messages: Array<Record<string, unknown>> }) => {
+      turn++;
+      if (turn === 1) return { choices: [{ message: { role: "assistant", tool_calls: [{ id: "mismatch-nudge-process", type: "function", function: { name: "run_process", arguments: JSON.stringify({ executable: process.execPath, args: ["-e", "process.stdout.write('phase-A\\n')"], cwd: root }) } }] } }] };
+      if (turn === 2) return { choices: [{ message: { role: "assistant", tool_calls: [{ id: "mismatch-nudge-read", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "phase.txt" }) } }] } }] };
+      if (turn > 2) {
+        const lastUser = request.messages.filter((message) => message.role === "user").at(-1)?.content;
+        if (String(lastUser).includes("Reassess every required criterion")) reminders.push(String(lastUser));
+      }
+      return { choices: [{ message: { role: "assistant", content: "The process stdout ends in a newline, but phase.txt does not. The criterion failed; I will not claim completion." } }] };
+    }
+  };
+  await writeFile(join(root, "phase.txt"), "phase-A");
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  try {
+    const result = await agent.run(objective, { workspace: root, maxTurns: 4 });
+    assert.equal(result.status, "unverified");
+    assert.equal(reminders.length, 1);
+    assert.match(reminders[0]!, /if any criterion is unmet, contradicted, or unverified, do not call task_complete/i);
+    assert.doesNotMatch(reminders[0]!, /Call task_complete now/i);
+    const completions = store.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE session_id=? AND name='task_complete'").get(result.sessionId) as { count: number };
+    assert.equal(completions.count, 0);
   } finally { store.close(); }
 }));
 

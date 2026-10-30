@@ -146,3 +146,11 @@ A real candidate CLI task returned `phase-A\n` from `run_process` while `file_re
 ### C1 follow-up · exact-head verification · `f2d5e8f` · 2026-10-29
 
 The stdout-versus-file false-positive fix passed all eight exact-head push/PR CI and Windows/Linux package jobs. Exact run and job IDs and package outcomes are in [`verification-history.md`](verification-history.md#exact-head-verification--stdoutfile-completion-guard--f2d5e8f--2026-10-29). The failing live task remains a non-pass; a corrected live rerun and sustained acceptance remain outstanding. C1 stays partial.
+
+### C1 follow-up · live mismatch and recovery reminder · 2026-10-29
+
+An isolated current-source CLI mismatch run confirmed stdout `phase-A\n` versus post-process file text `phase-A`; the first file evidence was correctly rejected as stale. The model reported the mismatch, but the run hit its turn limit before the exact-value completion guard ran. The local fix now makes the completion reminder conditional and single-shot; resuming with existing evidence ended `unverified` without rerunning the process or changing the file. This mismatch attempt is not a completed acceptance. See [`verification-history.md`](verification-history.md#live-cli-stdoutfile-mismatch-and-conditional-completion-recovery--2026-10-29-local); a later positive exact-match live run is recorded below. C1 remains partial.
+
+### C1 follow-up · positive current-source CLI exact-match acceptance · 2026-10-29
+
+The corrected live CLI case ran exactly one successful Node process, read `phase.txt` after the process, and persisted `task_complete verified:true` using both results. Two preceding setup attempts failed and a separate live mismatch remained unverified; all are recorded individually. This verifies one positive current-source completion path only. The live negative comparison path, desktop/owner-crash resume, and broader end-to-end matrix remain open; C1 is still partial. See [`verification-history.md`](verification-history.md#live-exact-match-cli-acceptance-and-failed-setup-attempts--2026-10-29-local).
