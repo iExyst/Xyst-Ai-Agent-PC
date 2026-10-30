@@ -3073,3 +3073,11 @@ The model then generated for over eight minutes without another tool call. At in
 ## Exact-head hosted verification · documentation/evidence head `1f910a1` · all eight passed · 2026-10-30
 
 All eight jobs passed at `1f910a1ab0b4afc13fadfc5c8086d86467e71474`. Push CI `41017845819`: Ubuntu `123938121416`, Windows `123938121642`. PR CI `41017852241`: Ubuntu `123938140628`, Windows `123938140714`. Push Desktop packages `41017845752`: Linux `123938121032`, Windows `123938121312`. PR Desktop packages `41017852104`: Linux `123938139870`, Windows `123938140141`. Windows update/installer, clean-install renderer, mission-service lifecycle; Linux AppImage/update-manifest and artifact upload passed. PR #82 remains OPEN/DRAFT/UNMERGED. This docs-only head records the earlier `bae82f4` source checks and does not turn the external-edit non-pass into a pass.
+
+## Exact-head hosted verification · docs/evidence head `1a3c6bc` · all eight passed · 2026-10-30
+
+All eight jobs passed for `1a3c6bc5040f715cb71769fa3297fcbeb896a1f2`. Push CI `41019488570`: Ubuntu `123943308476`, Windows `123943308722`. PR CI `41019496206`: Ubuntu `123943333015`, Windows `123943333373`. Push Desktop packages `41019488580`: Windows `123943308032`, Linux `123943308370`. PR Desktop packages `41019496054`: Windows `123943332390`, Linux `123943332430`. The cross-platform test/package matrices and platform package jobs passed. PR #82 remains OPEN/DRAFT/UNMERGED. This updates evidence only; it does not close the remaining live acceptance or original-brief gaps.
+
+## Context sizing guidance · B3 clarification · 2026-10-30
+
+VRAM is not a hard upper bound on configured context: LM Studio can keep the KV cache in system RAM when GPU KV offload is disabled, with a likely throughput cost. Conversely, a large configured context can reserve substantial memory even before a prompt fills it, and GPU-resident cache shares VRAM with model weights and other workloads. The current automatic Xyst load policy remains estimated task context plus 8,192 tokens of headroom, capped by the model's declared maximum, and reuses an adequate resident instance. Do not recommend a universal 250K setting from RAM capacity alone. The earlier live run's >8-minute generation is an uncontrolled non-pass, not a context-size benchmark. No model, server, or LM Studio setting was changed here.
