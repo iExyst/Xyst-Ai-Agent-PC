@@ -2,6 +2,10 @@
 
 This audit maps the detailed Xyst specification (456 lines; SHA-256 `F5A6E185B2E189C6CC041055F86FCA3177C9CB84372983A6CEB44EE2BD8A328E`) and ordered build sequence (150 lines; SHA-256 `398D60554F1D427F152D1135BFF26E04F9EF97133EF9EB49BA105CCBE0EA9AC0`) to the PC repository. “Verified” below is limited to the linked test, live record, or package scope; it is not a claim that the whole requirement or final project is complete.
 
+## C2/A5 live CLI owner-crash follow-up · 2026-10-30 UTC
+
+One fresh isolated current-integrated-source CLI session passed a real owner-crash recovery path: baseline command verified; a separately confirmed owner PID was terminated only after matching the exact resumed CLI command line; the recovery CLI changed the abandoned rerun to `uncertain`; no-effect inspection supported explicit retry reconciliation; resumed retry completed `task_complete verified:true` with fresh process evidence. The model first cited superseded baseline evidence and Xyst rejected it; the first 45-second watcher expired before the rerun, then a restarted bounded watcher safely caught the process. Keep those failures and all earlier owner-crash failures in [`verification-history.md`](verification-history.md#live-integrated-cli-owner-crash-rerun-and-retry--bounded-pass-with-retained-non-passes--2026-10-30-utc). This is a bounded acceptance pass, not sustained reliability; C2 and A5 remain partial, and the Windows timeout stall, earlier CLI selector discrepancy, desktop-current-head behavior, and broader requirements remain open.
+
 | ID | Requirement from the briefs | Evidence in the PC repository | Remaining acceptance / status |
 | --- | --- | --- | --- |
 | A1 | Shared TypeScript/Node runtime, CLI and Electron/React desktop; workspace lockfile, SQLite, schema validation, no duplicated UI business logic | Source layout and package scripts; Windows/Linux CI and package workflows; runtime and persistence tests | **Verified for current hosted builds.** Broader clean-install and representative mission evidence remains scoped to documented candidates. |
