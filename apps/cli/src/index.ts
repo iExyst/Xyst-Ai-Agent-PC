@@ -606,7 +606,7 @@ try {
     ] as const;
     const settings = Object.fromEntries(settingKeys.map((key) => [key, runtime.config.resolve(key) ?? { key, configured: false }]));
     const [modelsResult, browserResult, systemResourcesResult] = await Promise.all([
-      lm.models(controller.signal).then((models) => ({ models: models.map(desktopModelSnapshot) })).catch((error) => ({ models: [] as Array<Record<string, unknown>>, modelsError: error instanceof Error ? error.message : String(error) })),
+      lm.models(AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)])).then((models) => ({ models: models.map(desktopModelSnapshot) })).catch((error) => ({ models: [] as Array<Record<string, unknown>>, modelsError: error instanceof Error ? error.message : String(error) })),
       Promise.all([runtime.browser.status(), Promise.resolve(settings["browser.automation.enabled"]), Promise.resolve(settings["browser.headless"]), Promise.resolve(settings["browser.maxDownloadBytes"])]).then(([browser, enabled, headless, maxDownloadBytes]) => ({ browser, enabled, headless, maxDownloadBytes })).catch(() => ({})),
       runtime.resourceStats().catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
     ]);

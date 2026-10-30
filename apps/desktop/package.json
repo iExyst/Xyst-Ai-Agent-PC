@@ -6,7 +6,7 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "node scripts/dev.cjs",
-    "test:renderer": "node --import tsx --test src/message-content.test.ts",
+    "test:renderer": "node --import tsx --test src/message-content.test.ts src/external-links.test.ts src/single-flight.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "build": "npm run typecheck && tsc -p tsconfig.node.json && vite build",
     "start": "electron .",

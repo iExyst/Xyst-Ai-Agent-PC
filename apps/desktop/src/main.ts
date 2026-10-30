@@ -6,8 +6,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { lmStudioIntegrationsSchema, mcpServersSchema } from "@xyst/runtime";
+import { killProcessTree, lmStudioIntegrationsSchema, mcpServersSchema } from "@xyst/runtime";
 import { scopedSettingKeys, scopesForDesktopSetting, settingScopes } from "./setting-keys.js";
+import { openExternalHttps } from "./external-links.js";
+import { singleFlight } from "./single-flight.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = process.env.XYST_ROOT ?? (app.isPackaged ? join(app.getPath("documents"), "Xyst") : resolve(here, "../../.."));
@@ -118,7 +120,7 @@ function consumePickedAttachments(senderId: number, paths: unknown): string[] {
   return resolved;
 }
 
-function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => void, agentRunId?: string, workingDirectory = projectRoot): Promise<unknown> {
+function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => void, agentRunId?: string, workingDirectory = projectRoot, timeoutMs?: number): Promise<unknown> {
   return new Promise((resolvePromise, reject) => {
     const stdio: ["pipe", "pipe", "pipe"] | ["pipe", "pipe", "pipe", "ipc"] = agentRunId
       ? ["pipe", "pipe", "pipe", "ipc"]
@@ -130,6 +132,16 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
       env: { ...process.env, XYST_ROOT: workingDirectory, XYST_DESKTOP_PARENT: "1" }
     });
     const childStdin = child.stdin!; const childStdout = child.stdout!; const childStderr = child.stderr!;
+    let timedOut = false;
+    const deadline = timeoutMs === undefined ? undefined : setTimeout(() => {
+      timedOut = true;
+      // Keep the request pending if cleanup cannot be confirmed, so polling cannot spawn more children.
+      if (child.pid) void killProcessTree(child.pid).then((stopped) => {
+        if (stopped) reject(new Error("Dashboard refresh timed out; its process tree was stopped"));
+      }).catch(() => undefined);
+    }, timeoutMs);
+    child.once("error", () => { if (deadline) clearTimeout(deadline); });
+    child.once("close", () => { if (deadline) clearTimeout(deadline); });
     if (agentRunId) activeAgentRuns.set(agentRunId, child);
     if (agentRunId) {
       const pending = new Map<string, (accepted: boolean) => void>();
@@ -174,6 +186,7 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
     childStderr.on("data", (chunk: string) => { stderr += chunk; });
     child.once("error", (error) => { if (agentRunId && activeAgentRuns.get(agentRunId) === child) activeAgentRuns.delete(agentRunId); reject(error); });
     child.once("close", (code) => {
+      if (timedOut) return; // The deadline owns settlement until tree cleanup is confirmed.
       if (agentRunId && activeAgentRuns.get(agentRunId) === child) activeAgentRuns.delete(agentRunId);
       const pending = pendingAgentMessageResults.get(child);
       if (pending) { for (const resolve of pending.values()) resolve(false); pending.clear(); }
@@ -182,14 +195,15 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
         catch { onLine?.({ type: "output", data: stdout.trim() }); }
       }
       if (agentRunId && (code === 130 || code === 3)) resolvePromise(finalValue);
-      else if (code !== 0) reject(new Error(stderr.trim() || `Xyst CLI exited with code ${code}`));
+      else if (code !== 0) reject(new Error(timedOut ? "Dashboard refresh timed out; its process exited" : stderr.trim() || `Xyst CLI exited with code ${code}`));
       else resolvePromise(finalValue);
     });
   });
 }
 
+const readSnapshot = singleFlight(() => invokeCli(["desktop", "snapshot"], undefined, undefined, projectRoot, 20_000));
 async function snapshot() {
-  const value = await invokeCli(["desktop", "snapshot"]) as Record<string, unknown>;
+  const value = await readSnapshot() as Record<string, unknown>;
   return { ...value, updateState };
 }
 
@@ -606,7 +620,7 @@ function registerIpc(): void {
     try { return await invokeCli(["mission", "create", file]); } finally { await rm(file, { force: true }); }
   });
   ipcMain.handle("xyst:open-external", async (_event, url: string) => {
-    const parsed = new URL(url); if (parsed.protocol !== "https:") throw new Error("Only HTTPS links can be opened"); await shell.openExternal(url);
+    await openExternalHttps(url, (target) => shell.openExternal(target));
   });
 }
 
@@ -617,7 +631,10 @@ async function createWindow() {
     icon: join(here, "..", "resources", process.platform === "win32" ? "xyst-icon.ico" : "xyst-icon.png"),
     webPreferences: { preload: join(here, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  windowRef.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: "deny" }; });
+  windowRef.webContents.setWindowOpenHandler(({ url }) => {
+    void openExternalHttps(url, (target) => shell.openExternal(target)).catch(() => undefined);
+    return { action: "deny" };
+  });
   if (!app.isPackaged) await windowRef.loadURL(process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173");
   else await windowRef.loadFile(join(here, "renderer", "index.html"));
   windowRef.on("closed", () => { windowRef = undefined; });
@@ -632,5 +649,15 @@ async function checkUpdatesOnStartup(): Promise<void> {
   timer.unref();
 }
 
-app.whenReady().then(async () => { await mkdir(projectRoot, { recursive: true }); registerIpc(); await createWindow(); void checkUpdatesOnStartup(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); }); });
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!windowRef || windowRef.isDestroyed()) return;
+    if (windowRef.isMinimized()) windowRef.restore();
+    windowRef.show();
+    windowRef.focus();
+  });
+  app.whenReady().then(async () => { await mkdir(projectRoot, { recursive: true }); registerIpc(); await createWindow(); void checkUpdatesOnStartup(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); }); });
+}
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

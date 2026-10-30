@@ -208,11 +208,14 @@ function App() {
     } catch { /* Audio alerts remain unavailable if the platform has no Web Audio support. */ }
   };
 
+  const refreshPending = useRef(false);
   const refresh = async () => {
+    if (refreshPending.current) return;
     if (browserPreview) {
       setRuntimeState("unavailable");
       return;
     }
+    refreshPending.current = true;
     try {
       const current = await window.xyst.snapshot();
       const previous = previousSnapshot.current;
@@ -236,7 +239,7 @@ function App() {
         setErrorMessage("Xyst couldn't open its local database. Run `xyst database check` for a read-only integrity report, then restore from a known-good backup if needed.");
         setErrorDetails(detail);
       } else setError(detail);
-    }
+    } finally { refreshPending.current = false; }
   };
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 8_000); return () => window.clearInterval(timer); }, []);
   useEffect(() => {
