@@ -579,12 +579,12 @@ export class AgentRunner {
       const resolveInferenceModel = (instanceId: string) => instanceId === candidate.key || typeof provider.resolveInferenceModelId !== "function"
         ? Promise.resolve(instanceId)
         : provider.resolveInferenceModelId(instanceId, candidate.key, { allowBaseModelFallback: !requestedInstance && candidate.loaded_instances.length === 1 }, options.signal);
-      // Token estimates include small template/serialization overhead. Leave a
-      // small margin so a model that is effectively at the requested limit is
-      // not rejected for a handful of estimated tokens.
+      // Model-declared limits can differ slightly from the estimate because
+      // templates and serialization add overhead. A loaded instance's context
+      // is its actual capacity, so require an exact fit before selecting it.
       const contextTolerance = Math.min(128, Math.ceil(requiredContextTokens * 0.01));
       const adequateInstance = availableInstances.map((instance) => ({ instance, contextLength: instanceContextLength(instance, candidate.max_context_length) }))
-        .filter((item): item is { instance: LMStudioModel["loaded_instances"][number]; contextLength: number } => typeof item.contextLength === "number" && item.contextLength + contextTolerance >= requiredContextTokens)
+        .filter((item): item is { instance: LMStudioModel["loaded_instances"][number]; contextLength: number } => typeof item.contextLength === "number" && item.contextLength >= requiredContextTokens)
         .sort((left, right) => left.contextLength - right.contextLength)[0];
       if (adequateInstance) return { modelKey: candidate.key, inferenceModel: await resolveInferenceModel(adequateInstance.instance.id) };
       const resident = availableInstances.map((instance) => ({ instance, context: instanceContextLength(instance) }))

@@ -510,3 +510,11 @@ The current live attempt is a non-pass. See `verification-history.md` section 鈥
 ## Documentation-head verification 路 `af9bee7` 路 2026-10-30 UTC
 
 Commit `af9bee748bd8a94cbee10ae8b26f95a2854b8bbc` passed all eight exact-head hosted jobs. Push CI `40998309597` (Windows `123876527307`, Ubuntu `123876527555`); PR CI `40998316200` (Windows `123876548480`, Ubuntu `123876548787`); push Desktop packages `40998309873` (Windows `123876527668`, Ubuntu `123876527982`); PR Desktop packages `40998316299` (Windows `123876548510`, Ubuntu `123876548858`). Both CI matrices passed. Both package matrices passed, including Windows installer/update metadata, clean-install renderer, mission-service lifecycle, Linux AppImage/update-manifest checks, and artifact upload. PR #82 remains OPEN/DRAFT/unmerged. The newest local owner-crash attempt is documented above and is not an acceptance pass.
+
+### Exact-fit loaded context candidate 路 2026-10-30 UTC
+
+A live saved CLI session needed estimated context 8,256 but the selected instance exposed 8,192, then exited before further inference. The current local source change removes the context tolerance from loaded-instance adequacy selection, avoiding selection of a configured instance that cannot fit the estimate; a test verifies an existing 250,112 instance is selected over an 8,192 instance for an 8,256-token request with no load. Local Windows runtime (294: 291 pass, 3 skip), root typecheck, desktop production build, and diff check pass. Hosted checks for this candidate are pending. Keep the failed live run as failure evidence. Next establish how the real model inventory maps the two Qwen3.5 contexts, verify a resumed session with sufficient context, then repeat owner-crash recovery with a watcher started before the CLI rerun.
+
+### Exact-head verification 路 docs predecessor `96ddeec` 路 2026-10-30 UTC
+
+The previous docs-only head `96ddeec0a99a21332eb67479fce771de817cae01` passed all eight exact-head Windows/Ubuntu CI and Windows/Linux package jobs. Exact run/job IDs are in `verification-history.md`. Windows installer/update metadata, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload passed. This does not verify the new uncommitted exact-fit context source candidate added afterward.
