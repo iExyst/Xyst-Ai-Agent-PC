@@ -316,7 +316,9 @@ try {
   await mkdir(workDir, { recursive: true });
   await mkdir(dataDir, { recursive: true });
   await mkdir(env.APPDATA, { recursive: true });
-  const setup = spawnSync(installer, ["/S", `/D=${installDir}`], { cwd: root, env, stdio: "inherit", timeout: 180_000, windowsHide: true });
+  const installerTimeoutMs = 300_000;
+  const setup = spawnSync(installer, ["/S", `/D=${installDir}`], { cwd: root, env, stdio: "inherit", timeout: installerTimeoutMs, windowsHide: true });
+  if (setup.error?.code === "ETIMEDOUT") throw new Error(`Silent clean installation exceeded ${installerTimeoutMs} ms: ${setup.error.message}`, { cause: setup.error });
   if (setup.error) throw setup.error;
   if (setup.status !== 0) throw new Error(`Silent clean installation failed with exit code ${setup.status}`);
 

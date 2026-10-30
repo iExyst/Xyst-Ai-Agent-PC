@@ -34,14 +34,13 @@ test("every Desktop CLI child runs below normal priority so mission work cannot 
   assert.doesNotMatch(invokeCli.slice(spawn, lower), /if\s*\(agentRunId\)/, "priority must also cover mission workers without an agentRunId");
 });
 
-test("Windows Desktop main and renderer processes yield CPU priority to foreground work", () => {
+test("interactive Desktop main and renderer processes retain normal Windows scheduling priority", () => {
   const source = readFileSync(new URL("./main.ts", import.meta.url), "utf8");
   const windowStart = source.indexOf("async function createWindow()");
   const windowEnd = source.indexOf("\nasync function ", windowStart + 1);
   const createWindow = source.slice(windowStart, windowEnd < 0 ? undefined : windowEnd);
-  assert.match(createWindow, /lowerBackgroundProcessPriority\(windowRef\?\.webContents\.getOSProcessId\(\)\)/, "lower the renderer process priority");
-  assert.match(createWindow, /webContents\.on\("did-start-loading", lowerRendererPriority\)/, "reapply priority when the renderer reloads");
+  assert.doesNotMatch(createWindow, /lowerBackgroundProcessPriority|setPriority|getOSProcessId/, "do not demote the interactive renderer process");
   const instanceLock = source.indexOf("if (!app.requestSingleInstanceLock())");
   const appSetup = source.slice(instanceLock);
-  assert.match(appSetup, /else \{\s*lowerBackgroundProcessPriority\(process\.pid\);/, "lower the Electron main process after acquiring the single-instance lock");
+  assert.doesNotMatch(appSetup, /lowerBackgroundProcessPriority\(process\.pid\)|setPriority\(process\.pid/, "do not demote the interactive Electron main process");
 });

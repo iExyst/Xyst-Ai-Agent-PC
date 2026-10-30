@@ -635,9 +635,6 @@ async function createWindow() {
     icon: join(here, "..", "resources", process.platform === "win32" ? "xyst-icon.ico" : "xyst-icon.png"),
     webPreferences: { preload: join(here, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  const lowerRendererPriority = () => lowerBackgroundProcessPriority(windowRef?.webContents.getOSProcessId());
-  lowerRendererPriority();
-  windowRef.webContents.on("did-start-loading", lowerRendererPriority);
   windowRef.webContents.setWindowOpenHandler(({ url }) => {
     void openExternalHttps(url, (target) => shell.openExternal(target)).catch(() => undefined);
     return { action: "deny" };
@@ -659,7 +656,6 @@ async function checkUpdatesOnStartup(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  lowerBackgroundProcessPriority(process.pid);
   app.on("second-instance", () => {
     if (!windowRef || windowRef.isDestroyed()) return;
     if (windowRef.isMinimized()) windowRef.restore();
