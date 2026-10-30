@@ -6,6 +6,16 @@ import type { ModelTaskType } from "../model-task-type.js";
 const MIB = 1024 ** 2;
 const UNKNOWN_MODEL_LOAD = 1_500 * MIB;
 const MIN_WORKER_MEMORY = 384 * MIB;
+const GPU_SATURATION_SERIALIZATION_THRESHOLD_PERCENT = 90;
+
+export function isGpuSaturated(utilizationPercent: number | undefined): boolean {
+  return utilizationPercent !== undefined && Number.isFinite(utilizationPercent)
+    && utilizationPercent >= GPU_SATURATION_SERIALIZATION_THRESHOLD_PERCENT;
+}
+
+export function shouldDeferGpuBackfill(utilizationPercent: number | undefined, activeTaskCount: number): boolean {
+  return activeTaskCount > 0 && isGpuSaturated(utilizationPercent);
+}
 
 export interface ResourceTaskCandidate {
   id: string;
@@ -34,7 +44,9 @@ export interface ResourceBatchPlan {
   estimatedAdditionalBytes: number;
   estimatedAdditionalGpuMemoryBytes?: number;
   availableGpuMemoryBytes?: number;
+  gpuUtilizationPercent?: number;
   requestedConcurrency: number;
+  effectiveConcurrency: number;
 }
 
 /** Resolve an exact model key or a uniquely owned loaded instance ID. */
@@ -49,14 +61,18 @@ export function resolveResourceModel(models: LMStudioModel[], identifier: string
 /**
  * Admit ready work against context-specific LM Studio estimates when available,
  * with model-size heuristics as fallback. Estimates do not reserve hardware.
+ * High reported GPU utilization serializes new model starts; active work is
+ * allowed to finish before backfill resumes.
  */
 export function planResourceAwareBatch(
   tasks: ResourceTaskCandidate[],
   models: LMStudioModel[],
-  options: { memoryBudgetBytes: number; maxConcurrency: number; performanceByModel?: Record<string, ModelPerformanceStats>; availableGpuMemoryBytes?: number; estimatedGpuMemoryBytesByModel?: Record<string, number>; estimatedTotalMemoryBytesByModel?: Record<string, number> }
+  options: { memoryBudgetBytes: number; maxConcurrency: number; performanceByModel?: Record<string, ModelPerformanceStats>; availableGpuMemoryBytes?: number; gpuUtilizationPercent?: number; estimatedGpuMemoryBytesByModel?: Record<string, number>; estimatedTotalMemoryBytesByModel?: Record<string, number> }
 ): ResourceBatchPlan {
   const memoryBudgetBytes = Math.max(0, Math.floor(options.memoryBudgetBytes));
   const requestedConcurrency = Math.max(1, Math.min(8, Math.floor(options.maxConcurrency)));
+  const gpuSaturated = isGpuSaturated(options.gpuUtilizationPercent);
+  const effectiveConcurrency = gpuSaturated ? 1 : requestedConcurrency;
   const llms = models.filter((model) => model.type === "llm");
   const assignments: ResourceTaskAssignment[] = [];
   const deferredTaskIds: string[] = [];
@@ -66,7 +82,7 @@ export function planResourceAwareBatch(
   let oversizedFallback: ResourceTaskAssignment | undefined;
 
   for (const task of tasks) {
-    if (assignments.length >= requestedConcurrency) { deferredTaskIds.push(task.id); continue; }
+    if (assignments.length >= effectiveConcurrency) { deferredTaskIds.push(task.id); continue; }
     let model: LMStudioModel | undefined;
     let selectionReason = task.model ? "explicit mission or agent model assignment" : "no automatic model assignment requested";
     if (task.model) {
@@ -164,7 +180,7 @@ export function planResourceAwareBatch(
     const assignment: ResourceTaskAssignment = {
       ...task,
       ...(model ? { selectedModel: task.model ?? model.key } : {}),
-      selectionReason,
+      selectionReason: gpuSaturated ? `${selectionReason}; current GPU utilization is ${options.gpuUtilizationPercent}% (at least ${GPU_SATURATION_SERIALIZATION_THRESHOLD_PERCENT}%), so model work is serialized to preserve interactive headroom` : selectionReason,
       estimatedAdditionalBytes: incrementalBytes,
       ...(incrementalGpuBytes === undefined ? {} : { estimatedAdditionalGpuMemoryBytes: incrementalGpuBytes }),
       admittedOverBudget: false
@@ -191,5 +207,5 @@ export function planResourceAwareBatch(
     estimatedAdditionalGpuMemoryBytes = oversizedFallback.estimatedAdditionalGpuMemoryBytes ?? 0;
   }
 
-  return { assignments, deferredTaskIds, memoryBudgetBytes, estimatedAdditionalBytes, ...(options.availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes: options.availableGpuMemoryBytes }), ...(estimatedAdditionalGpuMemoryBytes ? { estimatedAdditionalGpuMemoryBytes } : {}), requestedConcurrency };
+  return { assignments, deferredTaskIds, memoryBudgetBytes, estimatedAdditionalBytes, ...(options.availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes: options.availableGpuMemoryBytes }), ...(options.gpuUtilizationPercent === undefined ? {} : { gpuUtilizationPercent: options.gpuUtilizationPercent }), ...(estimatedAdditionalGpuMemoryBytes ? { estimatedAdditionalGpuMemoryBytes } : {}), requestedConcurrency, effectiveConcurrency };
 }

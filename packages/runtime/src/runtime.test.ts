@@ -22,7 +22,7 @@ import { createGitHubWebhookHandler, GitHubError, GitHubProvider, recordWebhookD
 import { createGitHubTools } from "./tools/github.js";
 import { PersistentMissionRunner, MissionRepository } from "./orchestration/missions.js";
 import { MissionPlanner } from "./orchestration/planner.js";
-import { planResourceAwareBatch } from "./orchestration/resource-scheduler.js";
+import { planResourceAwareBatch, shouldDeferGpuBackfill } from "./orchestration/resource-scheduler.js";
 import { runBoundedOrdered } from "./orchestration/tool-batches.js";
 import { RuntimeEvents } from "./events.js";
 import { runNotification, subscribeRunNotifications, type RunNotification } from "./notifications.js";
@@ -291,6 +291,30 @@ test("mission resource scheduler considers live free VRAM and LM Studio GPU esti
   const unknown = planResourceAwareBatch([{ id: "unknown-a", automatic: true }, { id: "unknown-b", automatic: true }], models, { memoryBudgetBytes: 16 * 1024 ** 3, maxConcurrency: 2, availableGpuMemoryBytes: 4 * 1024 ** 3 });
   assert.equal(unknown.assignments.length, 1, "unknown GPU estimates serialize fallback work rather than assuming unlimited VRAM");
   assert.match(unknown.assignments[0]?.selectionReason ?? "", /GPU estimate.*unknown/);
+});
+
+test("mission resource scheduler serializes concurrent model starts under GPU saturation", () => {
+  const models = ["model-a", "model-b"].map((key) => ({
+    type: "llm" as const, publisher: "test", key, display_name: key, size_bytes: 2 * 1024 ** 3,
+    loaded_instances: [{ id: `${key}-resident`, config: { context_length: 8192 } }], max_context_length: 8192,
+    capabilities: { trained_for_tool_use: true }
+  }));
+  const tasks = [{ id: "task-a", model: "model-a" }, { id: "task-b", model: "model-b" }];
+  const shared = { memoryBudgetBytes: 8 * 1024 ** 3, maxConcurrency: 2, availableGpuMemoryBytes: 8 * 1024 ** 3, estimatedGpuMemoryBytesByModel: { "model-a": 2 * 1024 ** 3, "model-b": 2 * 1024 ** 3 } };
+  const available = planResourceAwareBatch(tasks, models, { ...shared, gpuUtilizationPercent: 89 });
+  assert.equal(available.effectiveConcurrency, 2, "parallel model workers remain available below the saturation threshold");
+  assert.deepEqual(available.assignments.map((task) => task.id), ["task-a", "task-b"]);
+
+  const saturated = planResourceAwareBatch(tasks, models, { ...shared, gpuUtilizationPercent: 90 });
+  assert.equal(saturated.requestedConcurrency, 2);
+  assert.equal(saturated.effectiveConcurrency, 1);
+  assert.deepEqual(saturated.assignments.map((task) => task.id), ["task-a"]);
+  assert.deepEqual(saturated.deferredTaskIds, ["task-b"]);
+  assert.match(saturated.assignments[0]?.selectionReason ?? "", /GPU utilization is 90%.*model work is serialized/);
+  assert.equal(shouldDeferGpuBackfill(97, 1), true, "high GPU use defers starting another model while one task remains active");
+  assert.equal(shouldDeferGpuBackfill(97, 0), false, "the policy does not deadlock a mission with no active task");
+  assert.equal(shouldDeferGpuBackfill(89, 1), false);
+  assert.equal(shouldDeferGpuBackfill(Number.NaN, 1), false, "invalid telemetry does not falsely block progress");
 });
 
 test("mission resource scheduler budgets each concurrent cold model start and shares only resident instances", () => {
@@ -5293,6 +5317,48 @@ test("mission admission estimates catalog models for pinned loaded instance IDs"
     const result = await runner.run(mission.id);
     assert.equal(result.status, "completed"); assert.equal(peak, 2); assert.deepEqual(assigned.sort(), ["alpha-instance", "beta-instance"]); assert.ok(estimates.includes("alpha") && estimates.includes("beta")); assert.ok(!estimates.includes("alpha-instance"));
   } finally { store.close(); }
+}));
+
+test("mission backfill defers new model workers when live GPU utilization saturates", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "gpu-saturated-backfill.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
+  const gib = 1024 ** 3; config.set("global", "orchestration.memoryBudgetBytes", 8 * gib); config.set("global", "orchestration.maxConcurrency", 2);
+  const names = ["fast", "slow", "deferred"]; const workspaces = await Promise.all(names.map(async (name) => { const path = join(root, name); await mkdir(path); return path; }));
+  const models = ["alpha", "beta", "gamma"].map((key) => ({ type: "llm" as const, publisher: "Test", key, display_name: key, size_bytes: gib, loaded_instances: [{ id: `${key}-instance`, config: {} }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }));
+  let resourceReads = 0; let releaseSlow!: () => void; const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+  let releaseFast!: () => void; const fastGate = new Promise<void>((resolve) => { releaseFast = resolve; });
+  let markDeferred!: () => void; const saturationObserved = new Promise<void>((resolve) => { markDeferred = resolve; });
+  let slowFinished = false; let deferredTaskStartedBeforeSlowFinished = false; let active = 0; let peak = 0;
+  events.on("mission.resources.planned", (event) => { if ((event.payload as { reason?: string }).reason?.includes("GPU utilization is at least 90%")) markDeferred(); });
+  const runner = new PersistentMissionRunner({
+    store, config, events,
+    modelProvider: { supportsLocalCliModelLifecycle: () => true, models: async () => models, estimateLoad: async () => ({ output: "Estimated GPU Memory: 3 GiB" }) } as never,
+    resourceStatsReader: async () => {
+      resourceReads++;
+      return { source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 16 * gib, usedBytes: 4 * gib, availableBytes: 12 * gib, usedPercent: 25 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 4 * gib, freeBytes: 12 * gib, utilizationPercent: resourceReads === 1 ? 50 : 95 }] } };
+    },
+    agent: { run: async (objective: string, options: Record<string, unknown>) => {
+      const task = names.find((name) => objective.includes(`Assigned task: ${name}`));
+      active++; peak = Math.max(peak, active);
+      try {
+        if (task === "fast") await fastGate;
+        if (task === "slow") { releaseFast(); await slowGate; slowFinished = true; }
+        if (task === "deferred") deferredTaskStartedBeforeSlowFinished = !slowFinished;
+        return { sessionId: `gpu-backfill-${task}`, model: String(options.model), turns: 1, status: "completed" as const, response: "done" };
+      } finally { active--; }
+    } } as never
+  });
+  try {
+    const mission = runner.repository.create({ name: "GPU saturation backfill", objective: "Run separate model agents", maxConcurrency: 2, tasks: names.map((name, index) => ({ id: name, objective: `Work on ${name}`, workspace: workspaces[index], model: `${["alpha", "beta", "gamma"][index]}-instance`, dependsOn: [] })) });
+    const running = runner.run(mission.id);
+    const deferredInTime = await Promise.race([saturationObserved.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000))]);
+    releaseSlow();
+    const result = await running;
+    assert.equal(result.status, "completed");
+    assert.equal(deferredInTime, true, "a high live GPU sample should produce a deferred-backfill decision while one agent remains active");
+    assert.equal(deferredTaskStartedBeforeSlowFinished, false, "the waiting third model must not start until active GPU work has finished");
+    assert.equal(peak, 2, "initial parallelism remains available when the GPU sample is below the threshold");
+    assert.ok(resourceReads >= 3, "the scheduler should resample GPU utilization before backfill and the next batch");
+  } finally { releaseFast(); releaseSlow(); store.close(); }
 }));
 
 test("mission admission samples LM Studio GPU estimates before assigning automatic models", async () => withTemp(async (root) => {

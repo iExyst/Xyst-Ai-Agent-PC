@@ -13,7 +13,7 @@ import { AccessController, type AccessProfile } from "../access.js";
 import { runProcess } from "../platform.js";
 import { freemem, totalmem } from "node:os";
 import type { LMStudioProvider } from "../providers/lm-studio.js";
-import { planResourceAwareBatch, resolveResourceModel, type ResourceTaskAssignment, type ResourceTaskCandidate } from "./resource-scheduler.js";
+import { planResourceAwareBatch, resolveResourceModel, shouldDeferGpuBackfill, type ResourceTaskAssignment, type ResourceTaskCandidate } from "./resource-scheduler.js";
 import { readModelPerformance } from "../model-performance.js";
 import { classifyModelTaskObjective } from "../model-task-type.js";
 import { chooseAgentModel, estimateRequiredContextTokens, modelLoadContextLength } from "../model-selection.js";
@@ -442,6 +442,7 @@ export class PersistentMissionRunner {
         const resourceCandidates: ResourceTaskCandidate[] = candidates.map(resourceCandidateFor);
         const performanceByModel = this.deps.config.resolve<boolean>("telemetry.localMetrics", { ...(mission.definition.projectId ? { project: mission.definition.projectId } : {}), mission: missionId })?.value === false ? {} : readModelPerformance(this.deps.store);
         let availableGpuMemoryBytes: number | undefined;
+        let gpuUtilizationPercent: number | undefined;
         const estimatedGpuMemoryBytesByModel: Record<string, number> = {};
         const estimatedTotalMemoryBytesByModel: Record<string, number> = {};
         let gpuEstimateContextTokens = 0;
@@ -452,6 +453,8 @@ export class PersistentMissionRunner {
             const hostResources = await (this.deps.resourceStatsReader ?? readHostResourceStats)(effectiveMissionAccess);
             if (hostResources.nvidiaGpuMemory.status === "available") {
               availableGpuMemoryBytes = hostResources.nvidiaGpuMemory.devices.reduce((sum, device) => sum + device.freeBytes, 0);
+              const sampledUtilization = hostResources.nvidiaGpuMemory.devices.flatMap((device) => device.utilizationPercent === undefined ? [] : [device.utilizationPercent]);
+              if (sampledUtilization.length) gpuUtilizationPercent = Math.max(...sampledUtilization);
               const requiredContextTokens = Math.max(...resourceCandidates.map((task) => task.requiredContextTokens ?? 4096));
               gpuEstimateContextTokens = requiredContextTokens;
               const pinnedKeys = resourceCandidates.flatMap((task) => task.model ? [resolveResourceModel(installedModels, task.model)?.key ?? task.model] : []);
@@ -475,11 +478,11 @@ export class PersistentMissionRunner {
           } catch (error) { if (controller.signal.aborted) throw error; }
         }
         const batch = this.deps.modelProvider
-          ? planResourceAwareBatch(resourceCandidates, installedModels, { maxConcurrency, memoryBudgetBytes, performanceByModel, ...(availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}), ...(Object.keys(estimatedTotalMemoryBytesByModel).length ? { estimatedTotalMemoryBytesByModel } : {}) })
+          ? planResourceAwareBatch(resourceCandidates, installedModels, { maxConcurrency, memoryBudgetBytes, performanceByModel, ...(availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes }), ...(gpuUtilizationPercent === undefined ? {} : { gpuUtilizationPercent }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}), ...(Object.keys(estimatedTotalMemoryBytesByModel).length ? { estimatedTotalMemoryBytesByModel } : {}) })
           : undefined;
         const selected = batch ? batch.assignments.map((assignment) => candidates.find((task) => task.id === assignment.id)!) : candidates.slice(0, maxConcurrency);
         const selectedAssignments = new Map(batch?.assignments.map((assignment) => [assignment.id, assignment]) ?? []);
-        if (batch) this.deps.events.emit("mission.resources.planned", { missionId, runId: activeRunId, memoryBudgetBytes, estimatedAdditionalBytes: batch.estimatedAdditionalBytes, ...(batch.availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes: batch.availableGpuMemoryBytes, estimatedAdditionalGpuMemoryBytes: batch.estimatedAdditionalGpuMemoryBytes ?? 0 }), concurrencyLimit: maxConcurrency, selected: batch.assignments.map(({ id, selectedModel, selectionReason, estimatedAdditionalBytes, estimatedAdditionalGpuMemoryBytes, admittedOverBudget }) => ({ taskId: id, model: selectedModel, reason: selectionReason, estimatedAdditionalBytes, ...(estimatedAdditionalGpuMemoryBytes === undefined ? {} : { estimatedAdditionalGpuMemoryBytes }), admittedOverBudget })), deferredTaskIds: batch.deferredTaskIds }, missionId);
+        if (batch) this.deps.events.emit("mission.resources.planned", { missionId, runId: activeRunId, memoryBudgetBytes, estimatedAdditionalBytes: batch.estimatedAdditionalBytes, ...(batch.availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes: batch.availableGpuMemoryBytes, estimatedAdditionalGpuMemoryBytes: batch.estimatedAdditionalGpuMemoryBytes ?? 0 }), ...(batch.gpuUtilizationPercent === undefined ? {} : { gpuUtilizationPercent: batch.gpuUtilizationPercent }), concurrencyLimit: maxConcurrency, effectiveConcurrency: batch.effectiveConcurrency, selected: batch.assignments.map(({ id, selectedModel, selectionReason, estimatedAdditionalBytes, estimatedAdditionalGpuMemoryBytes, admittedOverBudget }) => ({ taskId: id, model: selectedModel, reason: selectionReason, estimatedAdditionalBytes, ...(estimatedAdditionalGpuMemoryBytes === undefined ? {} : { estimatedAdditionalGpuMemoryBytes }), admittedOverBudget })), deferredTaskIds: batch.deferredTaskIds }, missionId);
         const executeTask = async (task: MissionTaskDefinition): Promise<MissionTaskExecutionOutcome> => {
           if (!ownsLiveLease()) loseLease();
           if (leaseLost) return { taskId: task.id!, status: "cancelled" };
@@ -648,13 +651,22 @@ export class PersistentMissionRunner {
             try { currentModels = await this.deps.modelProvider.models(controller.signal); }
             catch (error) { if (controller.signal.aborted) throw error; }
             let currentGpuBytes = availableGpuMemoryBytes;
+            let currentGpuUtilizationPercent = gpuUtilizationPercent;
             if (availableGpuMemoryBytes !== undefined) {
               try {
                 const latestResources = await (this.deps.resourceStatsReader ?? readHostResourceStats)(effectiveMissionAccess);
-                if (latestResources.nvidiaGpuMemory.status === "available") currentGpuBytes = latestResources.nvidiaGpuMemory.devices.reduce((sum, device) => sum + device.freeBytes, 0);
+                if (latestResources.nvidiaGpuMemory.status === "available") {
+                  currentGpuBytes = latestResources.nvidiaGpuMemory.devices.reduce((sum, device) => sum + device.freeBytes, 0);
+                  const sampledUtilization = latestResources.nvidiaGpuMemory.devices.flatMap((device) => device.utilizationPercent === undefined ? [] : [device.utilizationPercent]);
+                  if (sampledUtilization.length) currentGpuUtilizationPercent = Math.max(...sampledUtilization);
+                }
               } catch { /* Keep the last conservative live VRAM sample if refresh fails. */ }
             }
             if (controller.signal.aborted) { allowBackfill = false; continue; }
+            if (shouldDeferGpuBackfill(currentGpuUtilizationPercent, activeTaskRuns.size)) {
+              this.deps.events.emit("mission.resources.planned", { missionId, runId: activeRunId, memoryBudgetBytes, concurrencyLimit: maxConcurrency, effectiveConcurrency: activeTaskRuns.size, gpuUtilizationPercent: currentGpuUtilizationPercent, backfill: true, deferredTaskIds: pending.map((task) => task.id), reason: "GPU utilization is at least 90%; defer new workers until current model tasks finish" }, missionId);
+              continue;
+            }
             const requiredContextTokens = Math.max(...resourceCandidates.map((candidate) => candidate.requiredContextTokens ?? 4096));
             if (currentGpuBytes !== undefined && this.deps.modelProvider.supportsLocalCliModelLifecycle?.() && typeof this.deps.modelProvider.estimateLoad === "function" && requiredContextTokens > gpuEstimateContextTokens) {
               for (const modelKey of Object.keys(estimatedGpuMemoryBytesByModel)) delete estimatedGpuMemoryBytesByModel[modelKey];
@@ -693,11 +705,11 @@ export class PersistentMissionRunner {
               const dynamicPlan = planResourceAwareBatch(
                 pending.map((task) => resourceCandidates.find((candidate) => candidate.id === task.id)!).filter(Boolean),
                 currentModels,
-                { maxConcurrency: slots, memoryBudgetBytes: dynamicBudget, performanceByModel, ...(currentGpuBytes === undefined ? {} : { availableGpuMemoryBytes: currentGpuBytes }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}), ...(Object.keys(estimatedTotalMemoryBytesByModel).length ? { estimatedTotalMemoryBytesByModel } : {}) }
+                { maxConcurrency: slots, memoryBudgetBytes: dynamicBudget, performanceByModel, ...(currentGpuBytes === undefined ? {} : { availableGpuMemoryBytes: currentGpuBytes }), ...(currentGpuUtilizationPercent === undefined ? {} : { gpuUtilizationPercent: currentGpuUtilizationPercent }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}), ...(Object.keys(estimatedTotalMemoryBytesByModel).length ? { estimatedTotalMemoryBytesByModel } : {}) }
               );
               nextAssignments = activeTaskRuns.size ? dynamicPlan.assignments.filter((assignment) => !assignment.admittedOverBudget) : dynamicPlan.assignments;
               const selectedIds = new Set(nextAssignments.map((assignment) => assignment.id));
-              this.deps.events.emit("mission.resources.planned", { missionId, runId: activeRunId, memoryBudgetBytes: dynamicBudget, estimatedAdditionalBytes: nextAssignments.reduce((sum, assignment) => sum + assignment.estimatedAdditionalBytes, 0), ...(dynamicPlan.availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes: dynamicPlan.availableGpuMemoryBytes, estimatedAdditionalGpuMemoryBytes: nextAssignments.reduce((sum, assignment) => sum + (assignment.estimatedAdditionalGpuMemoryBytes ?? 0), 0) }), concurrencyLimit: maxConcurrency, backfill: true, selected: nextAssignments.map(({ id, selectedModel, selectionReason, estimatedAdditionalBytes, estimatedAdditionalGpuMemoryBytes, admittedOverBudget }) => ({ taskId: id, model: selectedModel, reason: selectionReason, estimatedAdditionalBytes, ...(estimatedAdditionalGpuMemoryBytes === undefined ? {} : { estimatedAdditionalGpuMemoryBytes }), admittedOverBudget })), deferredTaskIds: [...new Set([...dynamicPlan.deferredTaskIds, ...dynamicPlan.assignments.filter((assignment) => !selectedIds.has(assignment.id)).map((assignment) => assignment.id)])] }, missionId);
+              this.deps.events.emit("mission.resources.planned", { missionId, runId: activeRunId, memoryBudgetBytes: dynamicBudget, estimatedAdditionalBytes: nextAssignments.reduce((sum, assignment) => sum + assignment.estimatedAdditionalBytes, 0), ...(dynamicPlan.availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes: dynamicPlan.availableGpuMemoryBytes, estimatedAdditionalGpuMemoryBytes: nextAssignments.reduce((sum, assignment) => sum + (assignment.estimatedAdditionalGpuMemoryBytes ?? 0), 0) }), ...(dynamicPlan.gpuUtilizationPercent === undefined ? {} : { gpuUtilizationPercent: dynamicPlan.gpuUtilizationPercent }), concurrencyLimit: maxConcurrency, effectiveConcurrency: dynamicPlan.effectiveConcurrency, backfill: true, selected: nextAssignments.map(({ id, selectedModel, selectionReason, estimatedAdditionalBytes, estimatedAdditionalGpuMemoryBytes, admittedOverBudget }) => ({ taskId: id, model: selectedModel, reason: selectionReason, estimatedAdditionalBytes, ...(estimatedAdditionalGpuMemoryBytes === undefined ? {} : { estimatedAdditionalGpuMemoryBytes }), admittedOverBudget })), deferredTaskIds: [...new Set([...dynamicPlan.deferredTaskIds, ...dynamicPlan.assignments.filter((assignment) => !selectedIds.has(assignment.id)).map((assignment) => assignment.id)])] }, missionId);
             } catch {
               if (controller.signal.aborted) allowBackfill = false;
               nextAssignments = [];
