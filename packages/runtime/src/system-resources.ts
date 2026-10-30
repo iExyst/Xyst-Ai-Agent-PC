@@ -7,6 +7,7 @@ export interface GpuMemoryDevice {
   totalBytes: number;
   usedBytes: number;
   freeBytes: number;
+  utilizationPercent?: number;
 }
 
 export interface HostResourceStats {
@@ -23,7 +24,11 @@ function parseNvidiaSmiCsv(text: string): GpuMemoryDevice[] {
     const values = fields.slice(-3).map(Number);
     if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("nvidia-smi returned invalid memory values");
     const [totalMiB, usedMiB, freeMiB] = values as [number, number, number];
-    return { name: fields.slice(0, -3).join(", "), totalBytes: totalMiB * 1024 ** 2, usedBytes: usedMiB * 1024 ** 2, freeBytes: freeMiB * 1024 ** 2 };
+    const name = fields.slice(0, fields.length >= 5 ? -4 : -3).join(", ");
+    const rawUtilization = fields.length >= 5 ? fields.at(-4) : undefined;
+    const utilizationPercent = rawUtilization && !/^(?:n\/?a|\[(?:n\/?a|not supported)\]|unknown|not supported|-+)$/i.test(rawUtilization) ? Number(rawUtilization) : undefined;
+    if (utilizationPercent !== undefined && (!Number.isFinite(utilizationPercent) || utilizationPercent < 0 || utilizationPercent > 100)) throw new Error("nvidia-smi returned invalid GPU utilization");
+    return { name, totalBytes: totalMiB * 1024 ** 2, usedBytes: usedMiB * 1024 ** 2, freeBytes: freeMiB * 1024 ** 2, ...(utilizationPercent === undefined ? {} : { utilizationPercent }) };
   });
 }
 
@@ -83,7 +88,7 @@ export async function readHostResourceStats(
     return { ...base, nvidiaGpuMemory: { status: "blocked", source: "nvidia-smi", devices: [], reason: error instanceof Error ? error.message : String(error) } };
   }
   try {
-    const result = await commandRunner(command, ["--query-gpu=name,memory.total,memory.used,memory.free", "--format=csv,noheader,nounits"], { timeoutMs: 5000, maxOutputChars: 4000 });
+    const result = await commandRunner(command, ["--query-gpu=name,utilization.gpu,memory.total,memory.used,memory.free", "--format=csv,noheader,nounits"], { timeoutMs: 5000, maxOutputChars: 4000 });
     if (result.code !== 0) return { ...base, nvidiaGpuMemory: { status: "unavailable", source: "nvidia-smi", devices: [], reason: (result.stderr || result.stdout || "nvidia-smi is unavailable").slice(0, 300) } };
     const devices = parseNvidiaSmiCsv(result.stdout);
     return devices.length

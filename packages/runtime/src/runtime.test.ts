@@ -5975,20 +5975,24 @@ test("persistent browser navigates, interacts, transfers bounded files, and enfo
   } finally { await restricted.close(); }
 }));
 
-test("host resource measurements parse NVIDIA memory and respect restricted executable access", async () => {
+test("host resource measurements parse NVIDIA utilization/memory and respect restricted executable access", async () => {
   let invoked = false;
   const measured = await readHostResourceStats(new AccessController(), async (command, args) => {
     invoked = true;
     assert.equal(command, process.platform === "win32" ? "nvidia-smi.exe" : "nvidia-smi");
-    assert.deepEqual(args, ["--query-gpu=name,memory.total,memory.used,memory.free", "--format=csv,noheader,nounits"]);
-    return { code: 0, signal: null, stdout: "NVIDIA Example GPU, 8192, 2048, 6144\n", stderr: "", durationMs: 1 };
+    assert.deepEqual(args, ["--query-gpu=name,utilization.gpu,memory.total,memory.used,memory.free", "--format=csv,noheader,nounits"]);
+    return { code: 0, signal: null, stdout: "NVIDIA Example GPU, 87, 8192, 2048, 6144\nNVIDIA Telemetry N/A, [N/A], 8192, 1024, 7168\nNVIDIA Telemetry Limited, [Not Supported], 8192, 2048, 6144\n", stderr: "", durationMs: 1 };
   });
   assert.equal(invoked, true);
   assert.equal(measured.source, "Xyst host");
   assert.ok(measured.systemMemory.totalBytes > 0);
   assert.ok(measured.systemMemory.availableBytes >= 0);
   assert.equal(measured.nvidiaGpuMemory.status, "available");
-  assert.deepEqual(measured.nvidiaGpuMemory.devices, [{ name: "NVIDIA Example GPU", totalBytes: 8192 * 1024 ** 2, usedBytes: 2048 * 1024 ** 2, freeBytes: 6144 * 1024 ** 2 }]);
+  assert.deepEqual(measured.nvidiaGpuMemory.devices, [
+    { name: "NVIDIA Example GPU", totalBytes: 8192 * 1024 ** 2, usedBytes: 2048 * 1024 ** 2, freeBytes: 6144 * 1024 ** 2, utilizationPercent: 87 },
+    { name: "NVIDIA Telemetry N/A", totalBytes: 8192 * 1024 ** 2, usedBytes: 1024 * 1024 ** 2, freeBytes: 7168 * 1024 ** 2 },
+    { name: "NVIDIA Telemetry Limited", totalBytes: 8192 * 1024 ** 2, usedBytes: 2048 * 1024 ** 2, freeBytes: 6144 * 1024 ** 2 }
+  ]);
 
   invoked = false;
   const blocked = await readHostResourceStats(new AccessController({ mode: "restricted", allowedExecutables: [] }), async () => {
