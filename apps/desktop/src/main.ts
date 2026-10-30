@@ -10,6 +10,7 @@ import { killProcessTree, lmStudioIntegrationsSchema, mcpServersSchema } from "@
 import { scopedSettingKeys, scopesForDesktopSetting, settingScopes } from "./setting-keys.js";
 import { openExternalHttps } from "./external-links.js";
 import { SnapshotWorker } from "./snapshot-worker.js";
+import { createDashboardQuitGuard } from "./dashboard-shutdown.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = process.env.XYST_ROOT ?? (app.isPackaged ? join(app.getPath("documents"), "Xyst") : resolve(here, "../../.."));
@@ -661,11 +662,9 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => { await mkdir(projectRoot, { recursive: true }); registerIpc(); await createWindow(); void checkUpdatesOnStartup(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); }); });
 }
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-let stoppingDashboard = false;
-app.on("before-quit", (event) => {
-  const pending = [...dashboardChildren].filter((child) => child.pid && child.exitCode === null && child.signalCode === null);
-  if (stoppingDashboard || !pending.length) return;
-  event.preventDefault();
-  stoppingDashboard = true;
-  void Promise.allSettled(pending.map((child) => killProcessTree(child.pid!))).finally(() => app.quit());
-});
+const handleDashboardBeforeQuit = createDashboardQuitGuard(
+  (pid) => killProcessTree(pid),
+  () => app.quit(),
+  () => { void dialog.showMessageBox({ type: "warning", title: "Dashboard worker still running", message: "Xyst could not confirm that its dashboard worker processes stopped. The app will stay open so it does not leave them running. Close Xyst again to retry cleanup." }).catch(() => undefined); }
+);
+app.on("before-quit", (event) => handleDashboardBeforeQuit(event, dashboardChildren));
