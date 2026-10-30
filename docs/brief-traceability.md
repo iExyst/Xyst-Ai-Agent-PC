@@ -113,3 +113,7 @@ Documentation commit `5b212b0` passed all eight exact-head hosted Windows/Ubuntu
 ## C2 follow-up · native desktop attempt could not target current window · 2026-10-30
 
 The source-current packaged application was launched with an isolated profile/workspace, but Windows Computer Use supplied a stale current-window ID; after rejecting it, the mandated fresh window enumeration omitted the new window. Stopped without input. No model or product task ran, so this is not desktop acceptance and does not indicate a product failure. Fixture hashes, process cleanup and exact helper result are in `verification-history.md`. Current native desktop composer/accessibility acceptance remains open; C2 remains partial.
+
+### Combined integration candidate · exact-head hosted verification · 2026-10-30
+
+PR #82's combined candidate at `a8290a81a87ce756b93bb17852db681715a3ecfb` passed all eight exact-head push and pull-request CI/package jobs on Windows and Ubuntu. Both package matrices passed, including the Windows clean-install renderer and live mission-service lifecycle checks. This verifies the combined candidate's automated workflow scope; it does not satisfy the open native UI/accessibility, sustained model reliability, bare-metal Linux, historical timeout, or signed production-delivery requirements. PR #82 remains open and draft; the full two-brief objective remains incomplete. See `verification-history.md` for exact run and job IDs.
