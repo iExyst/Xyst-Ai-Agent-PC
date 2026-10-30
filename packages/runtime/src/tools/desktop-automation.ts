@@ -64,7 +64,7 @@ function Get-Controls($window, $limit) {
   $queue = New-Object System.Collections.Queue
   $queue.Enqueue([pscustomobject]@{ element=$window; depth=0 })
   $items = New-Object System.Collections.ArrayList
-  $scanLimit = 4096
+  $scanLimit = 512
   $visited = 0
   $truncated = $false
   $child = $null
@@ -83,7 +83,7 @@ function Get-Controls($window, $limit) {
   if ($queue.Count -gt 0) { $truncated = $true }
   return @{ items=@($items); truncated=$truncated; visited=$visited }
 }
-function Find-Control($window, $propertyName, $propertyValue, $nodeLimit = 4096, $depthLimit = 18) {
+function Find-Control($window, $propertyName, $propertyValue, $nodeLimit = 512, $depthLimit = 12) {
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $queue = New-Object System.Collections.Queue
   $queue.Enqueue([pscustomobject]@{ element=$window; depth=0 })
@@ -144,7 +144,7 @@ if ($request.operation -eq 'windows') {
   Write-Json $result
 }`;
 
-async function run(access: AccessController, runner: Runner, command: string, args: string[], signal?: AbortSignal, timeoutMs = 10_000): Promise<ProcessResult> {
+async function run(access: AccessController, runner: Runner, command: string, args: string[], signal?: AbortSignal, timeoutMs = 5_000): Promise<ProcessResult> {
   access.assertExecutable(command);
   const result = await runner(command, args, { timeoutMs, maxOutputChars: 30_000, ...(signal ? { signal } : {}) });
   if (result.code !== 0 || result.signal) throw new Error((result.stderr || result.stdout || `Desktop automation exited with code ${result.code}`).slice(0, 2000));

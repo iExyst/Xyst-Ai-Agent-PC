@@ -5990,7 +5990,9 @@ test("desktop capability diagnostics distinguish Linux display sessions from nat
 
 test("desktop automation exposes Windows UIA and Linux X11 tools with action policy checks", async () => {
   const windowsScripts: string[] = [];
-  const windowsRunner = async (_command: string, args: string[]) => {
+  const windowsTimeouts: number[] = [];
+  const windowsRunner = async (_command: string, args: string[], options?: { timeoutMs?: number }) => {
+    windowsTimeouts.push(options?.timeoutMs ?? 0);
     const encoded = args[args.indexOf("-EncodedCommand") + 1];
     assert.ok(encoded);
     const script = Buffer.from(encoded, "base64").toString("utf16le");
@@ -6007,14 +6009,15 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
   assert.ok(windows.desktop_windows);
   assert.deepEqual(await windows.desktop_inspect!.execute({ window_title: "Example" }), { window: { name: "Example" }, controls: [], controls_truncated: false, controls_visited: 0 });
   const inspectScript = windowsScripts.at(-1)!;
-  assert.match(inspectScript, /\$scanLimit = 4096/);
+  assert.match(inspectScript, /\$scanLimit = 512/);
   assert.match(inspectScript, /\$visited\+\+/);
   assert.match(inspectScript, /controls_truncated=\$controls\.truncated; controls_visited=\$controls\.visited/);
   assert.deepEqual(await windows.desktop_action!.execute({ action: "focus", window_title: "Example", automation_id: "save" }), { focused: true });
   const actionScript = windowsScripts.at(-1)!;
-  assert.match(actionScript, /function Find-Control\(\$window, \$propertyName, \$propertyValue, \$nodeLimit = 4096, \$depthLimit = 18\)/);
+  assert.match(actionScript, /function Find-Control\(\$window, \$propertyName, \$propertyValue, \$nodeLimit = 512, \$depthLimit = 12\)/);
   assert.match(actionScript, /Find-Control \$window \$propertyName \$propertyValue/);
   assert.doesNotMatch(actionScript, /TreeScope\]::Descendants/);
+  assert.deepEqual(windowsTimeouts, [5_000, 5_000]);
   assert.equal(inspectNativeAutomation({ platform: "win32", env: {} }).available, true);
   assert.deepEqual(createDesktopAutomationTools(new AccessController(), false, { platform: "win32" }), {});
   const denied = createDesktopAutomationTools(new AccessController({ mode: "restricted", externalActions: false }), true, { platform: "win32", env: { PATH: "C:\\Windows\\System32" }, pathExists: () => true, runner: windowsRunner });
