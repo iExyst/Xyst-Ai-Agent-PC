@@ -407,3 +407,6 @@ Static review found the Terminal view performed `process:show` by launching a ne
 
 ### G2 · hosted validation status · `a4d4889` · 2026-10-30 20:44:04 UTC
 All eight exact-head CI/package jobs passed for `a4d4889`; the two Windows push jobs each spent about 10 minutes in `setup-node`, while PR Windows jobs took about 15 seconds. The run still used npm caching, so this does not verify that cache removal fixes the delay. The newer Terminal-worker candidate is hosted-validated at `f9e0494` below. Active-profile lag remains unverified; G2 remains Partial.
+
+### G2 · batch streamed activity-feed rendering · local candidate · 2026-10-30
+The Desktop activity feed now batches React notifications to at most 10 per second while retaining the most recent 80 agent events. This avoids reconciling the feed for every individual streamed token/event. Desktop renderer regressions passed 24/24 and typecheck passed; exact-head CI/package validation is pending. It may reduce renderer work during streaming but is not established as the cause or fix for whole-PC input lag. User reports responsiveness returns with Xyst and its native UI Automation helper stopped; active-profile instrumentation remains unauthorized/unperformed. G2 stays Partial.
