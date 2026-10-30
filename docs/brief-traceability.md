@@ -216,3 +216,9 @@ A low-impact isolated CLI resume on the already-loaded local Qwen3.5 9B showed `
 ### Documentation verification · `8d9764a` · all successful
 
 The exact-head Windows/Ubuntu CI and Windows/Linux package jobs passed, including Windows installer/update, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload. This only verifies the docs head; the subsequently documented live CLI sample remains a non-pass as recorded below. Exact job IDs are in [`verification-history.md`](verification-history.md#exact-head-docs-verification--8d9764a071c8f7a15a7ff071f9ec560ec383e098--all-eight-passed).
+
+## C1/C2 live CLI external-edit rerun · bounded pass · 2026-10-30 UTC
+
+An isolated current-integrated-source saved CLI session passed one bounded external-edit rerun: after a fixture changed from PHASE_A to PHASE_B, the explicitly authorized process returned PHASE_B; a fresh file read returned the same complete text and SHA-256; persisted task_complete verified both fresh evidence IDs. See verification-history.md#live-resumed-cli-external-edit-rerun--bounded-pass-with-retained-non-passes--2026-10-30-utc for IDs and every retained failure.
+
+Keep C1/C2/A5 Partial: the model first cited superseded evidence, an incorrect working directory caused a failed run, discovery attempts exhausted turns or were interrupted, and three completion calls were rejected for stale or index-based evidence before exact-ID guidance succeeded. This is not sustained-reliability evidence. Qwen3.5 9B's existing instance supported 250,112 context, but the task estimate was about 15,770 tokens; no filled-250K speed or freeze test occurred. Native Desktop resume, owner-crash acceptance on this head, the historical timeout diagnosis, representative multi-agent missions, and broader two-brief acceptance remain open.
