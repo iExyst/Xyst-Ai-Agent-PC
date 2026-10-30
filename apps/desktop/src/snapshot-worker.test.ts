@@ -5,7 +5,9 @@ import test from "node:test";
 import { SnapshotWorker } from "./snapshot-worker.js";
 
 class Child extends EventEmitter {
-  unref() { return this; }
+  unrefCalls = 0;
+  channel = { unrefCalls: 0, unref() { this.unrefCalls++; } };
+  unref() { this.unrefCalls++; return this; }
   requests: any[] = [];
   send(message: unknown, callback: (error: Error | null) => void) { this.requests.push(message); callback(null); return true; }
   result(data: unknown) { this.emit("message", { type: "desktop:result", id: this.requests.at(-1).id, data }); }
@@ -24,13 +26,17 @@ test("repeated dashboard reads reuse one child and concurrent readers share one 
 });
 
 test("timed-out dashboard cannot respawn while process-tree cleanup remains pending", async () => {
-  let starts = 0; let release!: (confirmed: boolean) => void;
+  let starts = 0; let timedOutChild!: Child; let release!: (confirmed: boolean) => void;
   const stopped = new Promise<boolean>((resolve) => { release = resolve; });
-  const reader = new SnapshotWorker(() => { starts++; return new Child() as unknown as ChildProcess; }, () => stopped, 10);
+  const reader = new SnapshotWorker(() => { starts++; timedOutChild = new Child(); return timedOutChild as unknown as ChildProcess; }, () => stopped, 10);
   const first = reader.read(); void first.catch(() => undefined);
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(reader.read(), first); assert.equal(starts, 1);
   release(true); await assert.rejects(first, /timed out/);
+  // The child was stopped before it emitted close/exit, so cleanup must release
+  // both process and IPC references itself.
+  await tick(); assert.equal(timedOutChild.unrefCalls, 1);
+  assert.equal(timedOutChild.channel.unrefCalls, 1);
 });
 
 test("worker exit rejects pending read and permits a clean replacement", async () => {

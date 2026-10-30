@@ -74,6 +74,10 @@ export class SnapshotWorker {
         this.finish(this.quarantine);
         return;
       }
+      // The tree may be gone before Node emits its exit/close events. Release the
+      // old IPC handles now so a confirmed timeout cleanup cannot keep Electron alive.
+      child.unref();
+      child.channel?.unref();
       if (this.child === child) { this.child = undefined; this.ready = false; }
       this.stopping = false;
       this.finish(new Error(message));
