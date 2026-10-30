@@ -5998,8 +5998,11 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
     const script = Buffer.from(encoded, "base64").toString("utf16le");
     windowsScripts.push(script);
     const prioritySetup = script.indexOf("PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal");
+    const automationMutex = script.indexOf("Local\\XystDesktopAutomation");
     const automationLoad = script.indexOf("Add-Type -AssemblyName UIAutomationClient");
-    assert.ok(prioritySetup >= 0 && automationLoad >= 0 && prioritySetup < automationLoad);
+    assert.ok(prioritySetup >= 0 && automationMutex > prioritySetup && automationLoad > automationMutex);
+    assert.match(script, /WaitOne\(0\)/);
+    assert.match(script, /AbandonedMutexException/);
     const payload = script.match(/FromBase64String\('([^']+)'\)/)?.[1];
     const request = JSON.parse(Buffer.from(payload!, "base64").toString("utf8"));
     const output = request.operation === "inspect" ? { window: { name: request.window_title }, controls: [], controls_truncated: false, controls_visited: 0 } : request.operation === "action" ? { focused: true } : [];

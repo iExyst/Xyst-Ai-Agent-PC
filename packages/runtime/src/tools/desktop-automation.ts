@@ -45,6 +45,9 @@ try {
   $automationProcess = [System.Diagnostics.Process]::GetCurrentProcess()
   $automationProcess.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
 } catch { }
+$automationMutex = New-Object System.Threading.Mutex($false, 'Local\XystDesktopAutomation')
+try { if (-not $automationMutex.WaitOne(0)) { throw 'Another Xyst native desktop automation call is active; retry after it finishes.' } }
+catch [System.Threading.AbandonedMutexException] { }
 Add-Type -AssemblyName UIAutomationClient
 $request = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
 $root = [System.Windows.Automation.AutomationElement]::RootElement
