@@ -142,3 +142,7 @@ Commit `bbb440b` passed all eight exact-head push/PR CI and Windows/Linux packag
 ### C1 follow-up · live stdout/file equality false positive · 2026-10-29
 
 A real candidate CLI task returned `phase-A\n` from `run_process` while `file_read` showed `phase-A`; the model identified the newline difference, but a single process result still passed `task_complete verified:true`. Treat that live task as a failed acceptance and do not count the stored verified flag as valid. A local fix now requires distinct successful process and file-read evidence, then compares the exact persisted values (and rejects truncated stdout). The mismatch regression, full Windows runtime suite (292 tests: 289 pass, 3 skip), and runtime typecheck pass. The fix is unpublished; hosted checks and a current-source live rerun are pending. C1 remains partial.
+
+### C1 follow-up · exact-head verification · `f2d5e8f` · 2026-10-29
+
+The stdout-versus-file false-positive fix passed all eight exact-head push/PR CI and Windows/Linux package jobs. Exact run and job IDs and package outcomes are in [`verification-history.md`](verification-history.md#exact-head-verification--stdoutfile-completion-guard--f2d5e8f--2026-10-29). The failing live task remains a non-pass; a corrected live rerun and sustained acceptance remain outstanding. C1 stays partial.
