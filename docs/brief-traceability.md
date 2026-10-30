@@ -337,3 +337,6 @@ All eight push/PR CI and package jobs passed for documentation-follow-up head 4e
 
 ### Desktop terminal polling resource guard · local candidate · 2026-10-30
 Terminal status polling now serializes reads, runs at 1-second intervals only while the app is visible and focused, and refreshes on return. Typecheck and renderer 14/14 passed. See `verification-history.md`. This bounds one identified background workload; no end-user lag fix is claimed without current-build interactive acceptance.
+
+### Desktop terminal polling resource guard · hosted validation · `945f5dd`
+All eight exact-head push/PR CI and package jobs passed for `945f5dd`; job IDs and scope are recorded in `verification-history.md`. The guard is automated-check verified. Live current-build responsiveness and overall input-lag diagnosis remain open.
