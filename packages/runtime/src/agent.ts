@@ -309,7 +309,20 @@ export class AgentRunner {
     const ocrLanguages = validatePdfOcrLanguages(this.deps.config.resolve<unknown>("documents.ocrLanguages", scopes)?.value ?? ["eng"]);
     const officeRendererExecutable = this.deps.config.resolve<string>("documents.officeRendererExecutable", scopes)?.value ?? null;
     if (this.deps.config.resolve<boolean>("network.enabled", scopes)?.value === false) access = access.restrictCapabilities({ network: true });
-    const savedModel = this.deps.config.resolve<unknown>("model.default", scopes)?.value;
+    const configuredModel = this.deps.config.resolve<unknown>("model.default", scopes)?.value;
+    let resumedSessionModel: string | undefined;
+    if (options.sessionId) {
+      const priorSessionDecision = this.deps.store.db.prepare("SELECT model,considered_json FROM model_decisions WHERE session_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1").get(sessionId) as { model?: unknown; considered_json?: string } | undefined;
+      if (priorSessionDecision && typeof priorSessionDecision.model === "string" && typeof priorSessionDecision.considered_json === "string") {
+        try {
+          const considered = JSON.parse(priorSessionDecision.considered_json) as Record<string, unknown>;
+          resumedSessionModel = considered.source === "user_approved_remote_fallback"
+            ? typeof considered.previousModel === "string" ? considered.previousModel : undefined
+            : priorSessionDecision.model;
+        } catch { /* A malformed legacy decision cannot safely establish model affinity. */ }
+      }
+    }
+    const savedModel = configuredModel;
     const autoSelect = this.deps.config.resolve<boolean>("model.autoSelect", scopes)?.value ?? true;
     const automaticLoading = this.deps.config.resolve<boolean>("models.automaticLoading", scopes)?.value ?? true;
     const automaticUnloading = this.deps.config.resolve<boolean>("models.automaticUnloading", scopes)?.value ?? false;
@@ -368,8 +381,8 @@ export class AgentRunner {
       }
     }
     let requiredContextTokens = estimateRequiredContextTokens(contextMessages);
-    let model = options.model ?? (typeof savedModel === "string" ? savedModel : "");
-    let selectionReason = options.model ? (options.automaticModelAssignment ? "automatic resource-aware mission assignment" : "manual command-line override") : typeof savedModel === "string" ? "configured default model" : "";
+    let model = options.model ?? (typeof savedModel === "string" ? savedModel : resumedSessionModel ?? "");
+    let selectionReason = options.model ? (options.automaticModelAssignment ? "automatic resource-aware mission assignment" : "manual command-line override") : typeof configuredModel === "string" ? "configured default model" : resumedSessionModel ? "last model used by this saved session" : "";
     let inventory: Awaited<ReturnType<LMStudioProvider["models"]>> | undefined;
     let ramBackedKvCacheModelKey: string | undefined;
     let missionResourceAdmissionFailure: string | undefined;
@@ -686,7 +699,7 @@ export class AgentRunner {
     });
     const decisionId = randomUUID();
     this.deps.store.db.prepare("INSERT INTO model_decisions(id,session_id,objective,model,reason,considered_json,created_at) VALUES(?,?,?,?,?,?,?)")
-      .run(decisionId, sessionId, safeObjective, selected, selectionReason, JSON.stringify({ source: options.automaticModelAssignment ? "automatic_resource_aware" : options.model ? "manual" : "automatic" }), new Date().toISOString());
+      .run(decisionId, sessionId, safeObjective, selected, selectionReason, JSON.stringify({ source: options.automaticModelAssignment ? "automatic_resource_aware" : options.model ? "manual" : typeof configuredModel === "string" ? "configured_default" : resumedSessionModel ? "resumed_session" : "automatic" }), new Date().toISOString());
     this.deps.events.emit("model.selected", { model: selected, modelInstanceId: inferenceModel, reason: selectionReason }, sessionId);
     const githubEnabled = this.deps.config.resolve<boolean>("integrations.github.enabled")?.value === true
       && this.deps.config.resolve<boolean>("integrations.github.enabled", scopes)?.value === true;
@@ -1288,7 +1301,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
         catch (error) {
           if (options.signal?.aborted) { status = "cancelled"; break; }
           if (localMetricsEnabled && this.isLocalMetricsProvider(activeProvider)) this.recordInferenceUsage(sessionId, selected, Date.now() - inferenceStartedAt, null, null, { outcome: "failure", retryAttempts: 3, failureType: error instanceof Error ? error.name : typeof error });
-          const userChoseModel = !options.automaticModelAssignment && (options.model !== undefined || typeof savedModel === "string");
+          const userChoseModel = !options.automaticModelAssignment && (options.model !== undefined || typeof savedModel === "string" || typeof resumedSessionModel === "string");
           const maySwitch = activeProvider === this.deps.provider && !switchedModel && !userChoseModel && this.deps.config.resolve<boolean>("models.automaticSwitching", scopes)?.value === true;
           let localFailure: unknown = error;
           if (maySwitch && !options.signal?.aborted) {

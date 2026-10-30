@@ -409,6 +409,51 @@ test("automatic selection ranks task-matched verified outcomes ahead of pooled h
   assert.equal(chooseAgentModel(models, { performanceByModel: performance }).model.key, "fast-generalist", "general selection retains pooled outcomes when no task role is requested");
 });
 
+test("resuming without a model reuses the saved session model when auto-selection is disabled", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "resume-model.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.autoSelect", false);
+  const seenModels: string[] = [];
+  const model = { type: "llm" as const, publisher: "test", key: "retained-model", display_name: "Retained model", size_bytes: 1, loaded_instances: [{ id: "retained-model", config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } };
+  const provider = {
+    isLocalServer: () => false,
+    redact: (value: string) => value,
+    models: async () => [model],
+    streamChatWithTools: async (request: { model: string }) => { seenModels.push(request.model); return { choices: [{ message: { role: "assistant", content: "Continuing." } }] }; }
+  };
+  try {
+    const runner = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+    const initial = await runner.run("Start a saved task", { model: "retained-model", maxTurns: 1, workspace: root });
+    const resumed = await runner.run("Continue the saved task", { sessionId: initial.sessionId, maxTurns: 1, workspace: root });
+    assert.deepEqual(seenModels, ["retained-model", "retained-model"]);
+    assert.equal(resumed.model, "retained-model");
+    const decision = store.db.prepare("SELECT reason,considered_json FROM model_decisions WHERE session_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1").get(initial.sessionId) as { reason: string; considered_json: string };
+    assert.equal(decision.reason, "last model used by this saved session");
+    assert.equal(JSON.parse(decision.considered_json).source, "resumed_session");
+  } finally { store.close(); }
+}));
+
+test("saved-session model affinity does not silently reuse a one-run remote fallback", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "resume-model-fallback.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.autoSelect", false);
+  const sessionId = sessions.create("Remote fallback session");
+  store.db.prepare("INSERT INTO model_decisions(id,session_id,objective,model,reason,considered_json,created_at) VALUES(?,?,?,?,?,?,?)")
+    .run(randomUUID(), sessionId, "Continue the task", "remote-model", "user-approved remote LM Studio fallback after local inference failure", JSON.stringify({ source: "user_approved_remote_fallback", previousModel: "retained-model" }), new Date().toISOString());
+  const seenModels: string[] = [];
+  const models = ["retained-model", "remote-model"].map((key) => ({ type: "llm" as const, publisher: "test", key, display_name: key, size_bytes: 1, loaded_instances: [{ id: key, config: { context_length: 8192 } }], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }));
+  const provider = {
+    isLocalServer: () => false,
+    redact: (value: string) => value,
+    models: async () => models,
+    streamChatWithTools: async (request: { model: string }) => { seenModels.push(request.model); return { choices: [{ message: { role: "assistant", content: "Continuing." } }] }; }
+  };
+  try {
+    const runner = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+    const resumed = await runner.run("Continue the saved task", { sessionId, maxTurns: 1, workspace: root });
+    assert.deepEqual(seenModels, ["retained-model"]);
+    assert.equal(resumed.model, "retained-model");
+  } finally { store.close(); }
+}));
+
 test("resuming a task on a different model preserves the earlier model's terminal outcome", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "resumed-model-outcomes.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   const originalFetch = globalThis.fetch;

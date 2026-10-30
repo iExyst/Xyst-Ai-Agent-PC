@@ -266,3 +266,11 @@ Current PR #82 head `efaeef7dfa7d61e27f7e29c5cc7f182aeced1e6d` passed exact-head
 ### Current native Desktop tooling outcome · 2026-10-30 UTC
 
 A fresh Computer Use inventory returned no Xyst windows and showed the app not running. The isolated packaged-runtime launch was rejected by the execution policy; no app or profile state changed and no inference ran. The temporary Vite process was stopped by exact PID after command-line verification. This is a tooling/launch non-pass, not a product failure or acceptance. Keep native Desktop resume open.
+
+### A5/C1 follow-up · saved-session model affinity · 2026-10-30 · bounded live pass
+
+A local candidate now reuses a saved session's last model decision when no explicit or scoped/global default is provided; if that decision is a user-approved remote fallback, it restores the pre-fallback model rather than carrying that one-run approval forward. Automatic selection may be disabled and the session still retains its model; a configured default or explicit override continues to win, mission model assignment can still be corrected for saved-context capabilities, and other sessions may use different models. Regressions cover both affinity and the fallback consent boundary. The corrected Windows root suite/typechecks/build passed. A live isolated Qwen3.5 9B CLI session resumed without `--model` and completed against its original file-read ID after one prose-only unverified resume and a coached completion retry. Its first incorrect working-directory invocation, the initial live unverified response, and an initial vision-regression failure are retained in `verification-history.md`. This is bounded and assisted evidence, not first-try/sustained reliability or Desktop/external-edit/crash acceptance. The candidate is unpublished and has no exact-head hosted checks; PR #82 remains OPEN/DRAFT/UNMERGED.
+
+### Exact-head hosted verification · `4dfe3ff` · all eight passed
+
+Docs head `4dfe3ff25f78045ac08316b8d45dabbf90b1d71e` passed all exact-head push/PR Windows/Ubuntu CI and Windows/Linux package jobs. Job IDs and exact scope are recorded in `docs/verification-history.md`. These checks predate and do not cover the local session-affinity source candidate. PR #82 remains OPEN/DRAFT/UNMERGED.
