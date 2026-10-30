@@ -5989,20 +5989,28 @@ test("desktop capability diagnostics distinguish Linux display sessions from nat
 });
 
 test("desktop automation exposes Windows UIA and Linux X11 tools with action policy checks", async () => {
+  const windowsScripts: string[] = [];
   const windowsRunner = async (_command: string, args: string[]) => {
     const encoded = args[args.indexOf("-EncodedCommand") + 1];
     assert.ok(encoded);
     const script = Buffer.from(encoded, "base64").toString("utf16le");
+    windowsScripts.push(script);
     const prioritySetup = script.indexOf("PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal");
     const automationLoad = script.indexOf("Add-Type -AssemblyName UIAutomationClient");
     assert.ok(prioritySetup >= 0 && automationLoad >= 0 && prioritySetup < automationLoad);
     const payload = script.match(/FromBase64String\('([^']+)'\)/)?.[1];
     const request = JSON.parse(Buffer.from(payload!, "base64").toString("utf8"));
-    return { code: 0, signal: null, stdout: JSON.stringify(request.operation === "inspect" ? { window: { name: request.window_title }, controls: [] } : []), stderr: "", durationMs: 0 };
+    const output = request.operation === "inspect" ? { window: { name: request.window_title }, controls: [] } : request.operation === "action" ? { focused: true } : [];
+    return { code: 0, signal: null, stdout: JSON.stringify(output), stderr: "", durationMs: 0 };
   };
   const windows = createDesktopAutomationTools(new AccessController(), true, { platform: "win32", env: { PATH: "C:\\Windows\\System32" }, pathExists: () => true, runner: windowsRunner });
   assert.ok(windows.desktop_windows);
   assert.deepEqual(await windows.desktop_inspect!.execute({ window_title: "Example" }), { window: { name: "Example" }, controls: [] });
+  assert.deepEqual(await windows.desktop_action!.execute({ action: "focus", window_title: "Example", automation_id: "save" }), { focused: true });
+  const actionScript = windowsScripts.at(-1)!;
+  assert.match(actionScript, /function Find-Control\(\$window, \$propertyName, \$propertyValue, \$nodeLimit = 4096, \$depthLimit = 18\)/);
+  assert.match(actionScript, /Find-Control \$window \$propertyName \$propertyValue/);
+  assert.doesNotMatch(actionScript, /TreeScope\]::Descendants/);
   assert.equal(inspectNativeAutomation({ platform: "win32", env: {} }).available, true);
   assert.deepEqual(createDesktopAutomationTools(new AccessController(), false, { platform: "win32" }), {});
   const denied = createDesktopAutomationTools(new AccessController({ mode: "restricted", externalActions: false }), true, { platform: "win32", env: { PATH: "C:\\Windows\\System32" }, pathExists: () => true, runner: windowsRunner });

@@ -75,6 +75,34 @@ function Get-Controls($window, $limit) {
   }
   return @($items)
 }
+function Find-Control($window, $propertyName, $propertyValue, $nodeLimit = 4096, $depthLimit = 18) {
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $queue = New-Object System.Collections.Queue
+  $queue.Enqueue([pscustomobject]@{ element=$window; depth=0 })
+  $foundControls = New-Object System.Collections.ArrayList
+  $visited = 0
+  $incomplete = $false
+  while ($queue.Count -gt 0 -and -not $incomplete) {
+    $entry = $queue.Dequeue()
+    try { $child = $walker.GetFirstChild($entry.element) } catch { $incomplete = $true; break }
+    if ($null -eq $child) { continue }
+    if ($entry.depth -ge $depthLimit) { $incomplete = $true; break }
+    while ($null -ne $child) {
+      if ($visited -ge $nodeLimit) { $incomplete = $true; break }
+      $visited++
+      try {
+        $current = $child.Current
+        $candidate = if ($propertyName -eq 'AutomationId') { $current.AutomationId } else { $current.Name }
+        if ($candidate -ceq $propertyValue) { [void]$foundControls.Add($child) }
+        $queue.Enqueue([pscustomobject]@{ element=$child; depth=$entry.depth + 1 })
+        $child = $walker.GetNextSibling($child)
+      } catch { $incomplete = $true; break }
+    }
+  }
+  if ($incomplete -or $queue.Count -gt 0) { throw "UI Automation control search was incomplete after $visited controls (limits: $nodeLimit controls, depth $depthLimit); refusing to act. Inspect the window or target a smaller control tree." }
+  if ($foundControls.Count -ne 1) { throw "Expected one matching control; found $($foundControls.Count). Use an exact AutomationId or control name." }
+  return $foundControls[0]
+}
 function Write-Json($value) {
   $json = ConvertTo-Json -InputObject $value -Depth 6 -Compress
   [Console]::Out.WriteLine($json)
@@ -93,13 +121,9 @@ if ($request.operation -eq 'windows') {
 } else {
   $window = Find-Window $request.window_title
   if ($request.action -eq 'focus_window') { $window.SetFocus(); Write-Json @{ focused=$true; window=$request.window_title }; exit 0 }
-  $all = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-  $windows = @($all | Where-Object { $_.Current.Name -ceq $request.window_title -and -not $_.Current.IsOffscreen })
-  $window = $windows[0]
-  $condition = if ($request.automation_id) { [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, [string]$request.automation_id) } else { [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, [string]$request.control_name) }
-  $found = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-  if ($found.Count -ne 1) { throw "Expected one matching control; found $($found.Count). Use an exact AutomationId or control name." }
-  $element = $found[0]
+  $propertyName = if ($request.automation_id) { 'AutomationId' } else { 'Name' }
+  $propertyValue = if ($request.automation_id) { [string]$request.automation_id } else { [string]$request.control_name }
+  $element = Find-Control $window $propertyName $propertyValue
   switch ($request.action) {
     'focus' { $element.SetFocus(); $result = @{ focused=$true; target=(Describe $element) } }
     'invoke' { $pattern = $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern); $pattern.Invoke(); $result = @{ invoked=$true; target=(Describe $element) } }
