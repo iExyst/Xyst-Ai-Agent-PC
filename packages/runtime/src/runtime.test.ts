@@ -31,7 +31,7 @@ import { HuggingFaceProvider } from "./integrations/huggingface.js";
 import { createWebTools } from "./tools/web.js";
 import { AgentRunner, ExternalActionApprovalError, assertRequiredToolEvidence } from "./agent.js";
 import { createServer } from "node:http";
-import { LMStudioProvider } from "./providers/lm-studio.js";
+import { LMStudioProvider, modelForIdentifier } from "./providers/lm-studio.js";
 import { SessionCompactor } from "./session-compaction.js";
 import { parseLmsDaemonStatus } from "./lm-studio-daemon.js";
 import { createOfficeTools, extractPdfAttachmentText } from "./tools/office.js";
@@ -7509,6 +7509,17 @@ test("agent keeps the largest context when native inventory repeats an instance 
     assert.equal(result.status, "unverified");
   } finally { store.close(); }
 }));
+
+test("duplicate native model rows with missing or invalid context do not erase known capacity", () => {
+  const row = (context: unknown) => ({
+    type: "llm" as const, publisher: "qwen", key: "context-merge-model", display_name: "Context merge model", size_bytes: 1,
+    loaded_instances: [{ id: "context-merge-instance", config: { context_length: context } }]
+  });
+  for (const duplicateContext of [undefined, Number.NaN, 0, 8_192]) {
+    const merged = modelForIdentifier([row(250_112), row(duplicateContext)], "context-merge-model");
+    assert.equal(merged?.loaded_instances[0]?.config.context_length, 250_112);
+  }
+});
 
 test("agent compacts a saved oversized tool chain before resuming on its resident instance", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "resident-resume-compaction.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
