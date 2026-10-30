@@ -3225,3 +3225,11 @@ All eight push/PR matrix jobs passed for current source `6e85fb1f64bc90d25798ad0
 ## Dashboard shutdown requires confirmed cleanup · local candidate · 2026-10-30 UTC
 
 Review of the reusable snapshot worker found `before-quit` awaited process-tree cleanup but unconditionally called `app.quit()` even when `killProcessTree()` returned `false` or rejected. Added a three-state quit guard: overlapping quit attempts remain prevented; successful cleanup permits Electron to quit; unconfirmed cleanup keeps the app open, shows a retry message, and allows a later close attempt. Added regressions for false-then-true cleanup, overlapping quit, and the no-live-worker path. Desktop focused suite passed 14/14; Desktop typecheck and production build passed; `git diff --check` passed. This closes the known dashboard-worker orphan path under cleanup failure; it does not resolve or prove the separate system-wide input lag cause. Not yet committed or hosted-verified.
+
+## Exact-head hosted validation · `7512686` · 2026-10-30 UTC
+
+All eight push/PR Windows/Linux jobs passed for shutdown-guard source `7512686966c20f3d2cf5fc67399633d19c1aadc2`. Push CI `41042557045`: Windows `124018649571`, Ubuntu `124018649998`. PR CI `41042564652`: Windows `124018674578`, Ubuntu `124018674290`. Push Desktop packages `41042557038`: Windows `124018649268`, Linux `124018649806`. PR Desktop packages `41042564685`: Windows `124018674598`, Linux `124018675000`. Both Windows clean-install renderer and live mission-service lifecycle smoke tests passed; both Linux package jobs passed. PR #82 remains OPEN/DRAFT/UNMERGED with no review/merge authorization. Worktree clean. The new shutdown guard does not establish that system-wide lag is resolved; no interactive Xyst or inference was run.
+
+## Shutdown failure restores a retryable window · local follow-up · 2026-10-30 UTC
+
+Review of the failure UI found that closing the final window could trigger `before-quit`, then leave the process open after cleanup failure with only a modal warning and no Control Room to retry from. After the warning is dismissed, the main process now recreates the Control Room if all windows closed. Focused Desktop suite remains 14/14; Desktop typecheck, production build, and diff check pass. This local follow-up is not yet hosted-verified. It remains a shutdown-path fix, not a proven system-wide lag fix.

@@ -665,6 +665,10 @@ app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(
 const handleDashboardBeforeQuit = createDashboardQuitGuard(
   (pid) => killProcessTree(pid),
   () => app.quit(),
-  () => { void dialog.showMessageBox({ type: "warning", title: "Dashboard worker still running", message: "Xyst could not confirm that its dashboard worker processes stopped. The app will stay open so it does not leave them running. Close Xyst again to retry cleanup." }).catch(() => undefined); }
+  () => {
+    void dialog.showMessageBox({ type: "warning", title: "Dashboard worker still running", message: "Xyst could not confirm that its dashboard worker processes stopped. The app will stay open so it does not leave them running. Close Xyst again to retry cleanup." })
+      .catch(() => undefined)
+      .finally(() => { if (BrowserWindow.getAllWindows().length === 0) void createWindow().catch(() => undefined); });
+  }
 );
 app.on("before-quit", (event) => handleDashboardBeforeQuit(event, dashboardChildren));

@@ -698,3 +698,13 @@ Next: perform current-source representative CLI acceptance and continue the requ
 ## Dashboard shutdown retry guard · local source candidate · 2026-10-30 UTC
 
 Source review after exact-head `6e85fb1` hosted validation found the app always quit after requesting dashboard-worker cleanup, even if process-tree termination was not confirmed. New `createDashboardQuitGuard` prevents overlapping quit events, allows quit only after all tracked live dashboard trees return confirmed cleanup, keeps Xyst open with a user-visible retry message on false/rejected cleanup, and accepts later close attempts. Regressions cover failed then successful retry and already-exited/no-PID children. Local Desktop tests pass 14/14, typecheck and production build pass. These changes remain uncommitted/unhosted at this entry; do not claim lag solved. After publication inspect exact-head CI/package checks. Do not run interactive Desktop or model inference without user authorization.
+
+## Exact-head shutdown-guard checks · 2026-10-30 UTC
+
+Current source `7512686966c20f3d2cf5fc67399633d19c1aadc2` passed all eight push/PR Windows/Linux CI and package jobs. Windows clean-install renderer and mission-service lifecycle checks passed on both push and PR workflows. Full run/job identifiers are in `verification-history.md` under “Exact-head hosted validation · `7512686`”. PR #82 remains open/draft/unmerged. The guard addresses unconfirmed dashboard-worker cleanup during app exit only; the user-reported system input lag remains unresolved and Xyst stays closed.
+
+Next: continue current-source CLI acceptance and the full requirements audit. Do not run model inference or interactive Desktop tests until the user authorizes a bounded diagnostic. Preserve all failed model attempts and the historical Windows timeout stall.
+
+## Shutdown failure window restoration · local follow-up · 2026-10-30 UTC
+
+The cleanup-failure dialog now restores the Control Room if the last window was already closed, so the user can retry instead of leaving Xyst open with no visible window. Local Desktop tests14/14, typecheck, production build, and diff check pass. This follow-up is not committed or hosted-verified yet. Current PR head remains `7512686`; preserve its green checks as evidence for the previous candidate only.
