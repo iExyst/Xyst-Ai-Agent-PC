@@ -2515,27 +2515,24 @@ test("task completion accepts stable IDs from the persisted evidence list", asyn
     redact: (value: string) => value,
     streamChatWithTools: async (request: { messages: Array<{ role: string; content?: unknown }> }) => {
       turn++;
-      if (turn === 1) return response("id-evidence-create", "file_create", { path: "marker.txt", content: "READY" });
-      if (turn === 2) return response("id-evidence-process", "run_process", { executable: "node", args: ["--version"], cwd: root });
-      if (turn === 3) return response("id-evidence-read", "file_read", { path: "marker.txt" });
-      if (turn === 4) {
+      const completionCalls = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE name='task_complete' ORDER BY rowid").all() as Array<{ status: string; output_json: string | null }>;
+      if (completionCalls.length === 0 && !store.db.prepare("SELECT 1 FROM tool_calls WHERE name='file_create'").get()) return response("id-evidence-create", "file_create", { path: "marker.txt", content: "READY" });
+      if (!store.db.prepare("SELECT 1 FROM tool_calls WHERE name='run_process'").get()) return response("id-evidence-process", "run_process", { executable: "node", args: ["--version"], cwd: root });
+      if (!store.db.prepare("SELECT 1 FROM tool_calls WHERE name='file_read'").get()) return response("id-evidence-read", "file_read", { path: "marker.txt" });
+      if (completionCalls.length === 0) {
         const calls = store.db.prepare("SELECT id,name FROM tool_calls WHERE name IN ('file_create','run_process','file_read') ORDER BY rowid").all() as Array<{ id: string; name: string }>;
         assert.deepEqual(calls.map((call) => call.name), ["file_create", "run_process", "file_read"]);
         listedIds = calls.map((call) => call.id);
         const system = String(request.messages.find((message) => message.role === "system")?.content ?? "");
         for (const id of listedIds) assert.ok(system.includes(id), `available evidence should show stable ID ${id}`);
-        return response("id-evidence-invalid", "task_complete", { evidence_tool_call_ids: [listedIds[2]!, "READY"] });
+        return response("id-evidence-invalid", "task_complete", { evidence_tool_call_ids: [listedIds[2]!, "READY", "17"] });
       }
-      if (turn === 5) {
+      if (completionCalls.length === 1) {
         const correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
-        assert.match(correction, /Every evidence_tool_call_id must appear in the current system message's available evidence list/);
-        assert.match(correction, /file contents, marker values, and expected output text are not evidence IDs/);
+        assert.match(correction, /Every evidence_tool_call_id must be a full stable ID from the current system message's available evidence list/);
+        assert.match(correction, /file contents, marker values, and expected output text are not evidence IDs/i);
+        assert.match(correction, /If you meant a list position, pass it as a number in evidence_tool_call_indexes/);
         assert.match(correction, /id-evidence-read/);
-        return response("id-evidence-missing-process", "task_complete", { evidence_tool_call_ids: [listedIds[0], listedIds[2]] });
-      }
-      if (turn === 6) {
-        const correction = String([...request.messages].reverse().find((message) => message.role === "tool")?.content ?? "");
-        assert.match(correction, /Matching successful evidence:.*id-evidence-process/);
         return response("id-evidence-complete", "task_complete", { evidence_tool_call_ids: [...listedIds].reverse() });
       }
       throw new Error(`Unexpected model turn ${turn}: ${JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls ORDER BY rowid").all())}`);
@@ -2547,17 +2544,16 @@ test("task completion accepts stable IDs from the persisted evidence list", asyn
       .run("Create marker.txt with exactly READY and verify it by reading it back.", {
         workspace: root,
         model: "test-model",
-        maxTurns: 7,
+        maxTurns: 6,
         expectedOutputPaths: ["marker.txt"],
         requiredToolEvidence: [{ tool: "run_process", exitCode: 0 }]
       });
     assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId)));
-    assert.equal(turn, 6);
+    assert.equal(turn, 5);
     const completions = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid").all(result.sessionId) as Array<{ status: string; output_json: string | null }>;
-    assert.equal(completions.length, 3);
-    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /must appear in the current system message's available evidence list/);
-    assert.equal(completions[1]?.status, "failed"); assert.match(completions[1]!.output_json!, /Matching successful evidence:.*id-evidence-process/);
-    assert.equal(completions[2]?.status, "completed"); assert.equal(JSON.parse(completions[2]!.output_json!).verified, true);
+    assert.equal(completions.length, 2);
+    assert.equal(completions[0]?.status, "failed"); assert.match(completions[0]!.output_json!, /must be a full stable ID from the current system message's available evidence list/);
+    assert.equal(completions[1]?.status, "completed"); assert.equal(JSON.parse(completions[1]!.output_json!).verified, true);
   } finally { store.close(); }
 }));
 
