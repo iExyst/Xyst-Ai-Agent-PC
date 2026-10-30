@@ -175,6 +175,24 @@ try {
   const snapshot = await waitForUi(page);
   const keyboard = await verifyKeyboardSkipLink(page);
   const appearanceAccessibility = await verifyAppearanceAccessibility(page);
+  const duplicate = spawn(executable, [`--remote-debugging-port=${port}`, "--remote-allow-origins=*", "--disable-gpu"], {
+    cwd: workDir,
+    env,
+    windowsHide: true,
+    stdio: "ignore"
+  });
+  const duplicateExit = await new Promise((resolveExit, rejectExit) => {
+    const timer = setTimeout(() => resolveExit(undefined), 10_000);
+    duplicate.once("error", (error) => { clearTimeout(timer); rejectExit(error); });
+    duplicate.once("exit", (code, signal) => { clearTimeout(timer); resolveExit({ code, signal }); });
+  });
+  if (!duplicateExit) {
+    if (duplicate.pid) spawnSync("taskkill.exe", ["/PID", String(duplicate.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    throw new Error("A second Xyst process stayed alive instead of using the existing single instance");
+  }
+  assert.equal(duplicateExit.code, 0, `Second Xyst process should exit cleanly: ${JSON.stringify(duplicateExit)}`);
+  assert.equal(app.exitCode, null, "The original Xyst process should remain alive after the duplicate launch");
+  await waitForTarget(port, 5_000);
   const screenshot = await cdpCommand(page, "Page.captureScreenshot", { format: "png", fromSurface: true }, 2);
   assert.ok(screenshot?.data, "Packaged renderer did not return a screenshot");
   await writeFile(join(packageDir, "windows-gui-smoke.png"), Buffer.from(screenshot.data, "base64"));

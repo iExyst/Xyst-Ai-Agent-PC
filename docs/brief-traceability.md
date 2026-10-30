@@ -340,3 +340,6 @@ Terminal status polling now serializes reads, runs at 1-second intervals only wh
 
 ### Desktop terminal polling resource guard · hosted validation · `945f5dd`
 All eight exact-head push/PR CI and package jobs passed for `945f5dd`; job IDs and scope are recorded in `verification-history.md`. The guard is automated-check verified. Live current-build responsiveness and overall input-lag diagnosis remain open.
+
+### Desktop single-instance resource guard · local candidate · 2026-10-30
+The packaged Windows UI smoke now verifies a duplicate launch exits while the original renderer remains available, protecting the single-instance/resource boundary. Local script syntax and diff checks passed; hosted clean-install execution is pending. This does not prove live user-machine lag resolution.
