@@ -320,3 +320,6 @@ Fix and regression are published in PR #82 commit `c743f55d8fddb22d0d635d6fc764f
 All eight push/PR Windows/Ubuntu/Linux jobs passed for the session-deletion cleanup fix. Exact run/job IDs are recorded in `verification-history.md`; PR #82 description is updated. This proves only the changed candidate's automated scope. Desktop resumed acceptance, lag cause, sustained reliability, remaining brief requirements and signed production release remain incomplete.
 
 Desktop idle-refresh change is a local candidate only (renderer.tsx, 30-second foreground-only dashboard polling); typecheck passes, but no live responsiveness validation has occurred. Lag cause remains unconfirmed; see verification-history.md. Overall completion remains partial.
+
+### Desktop foreground polling · exact-head checks · 2026-10-30
+Commit `0426e73` reduces dashboard snapshot work to a 30-second foreground-only poll, refreshing on focus regain. Local typecheck and renderer 14/14 passed; all four exact-head PR CI/package jobs passed (run/job IDs are in `verification-history.md`). This does not prove the user-reported input lag is fixed. Desktop acceptance and overall project status remain open.
