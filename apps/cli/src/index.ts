@@ -5,6 +5,7 @@ import { open, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
+import { createCoalescedPersist } from "./coalesced-persist.js";
 import type { Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { totalmem } from "node:os";
@@ -427,26 +428,16 @@ try {
     // Persist streamed output at a bounded rate. Each write serializes the full
     // retained output snapshot, so writing once per PTY/model chunk can turn a
     // fast stream into repeated large SQLite updates.
-    const outputPersistIntervalMs = 250;
-    let outputPersistTimer: ReturnType<typeof setTimeout> | undefined;
-    let lastOutputPersistAt = 0;
-    const persistRunningOutput = () => {
-      outputPersistTimer = undefined;
-      lastOutputPersistAt = Date.now();
+    const outputPersistence = createCoalescedPersist(() => {
       runtime.jobs.updateProcess(id, "running", { stdout, stderr, outputTruncated });
-    };
-    const scheduleOutputPersist = () => {
-      if (outputPersistTimer) return;
-      const delay = Math.max(0, outputPersistIntervalMs - (Date.now() - lastOutputPersistAt));
-      outputPersistTimer = setTimeout(persistRunningOutput, delay);
-    };
+    }, 250);
     const append = (key: "stdout" | "stderr", chunk: string) => {
       const cleanChunk = runtime.lmStudio.redact(chunk); const current = key === "stdout" ? stdout : stderr;
       const next = current + cleanChunk;
       if (next.length > 100_000) outputTruncated = true;
       const bounded = next.slice(-100_000);
       if (key === "stdout") stdout = bounded; else stderr = bounded;
-      scheduleOutputPersist();
+      outputPersistence.schedule();
     };
     let writeStdin: ((value: string) => void) | undefined; let closeStdin: (() => void) | undefined;
     let terminalSession: nodePty.IPty | undefined;
@@ -480,7 +471,7 @@ try {
     } catch (error) {
       const cancelled = workerController.signal.aborted;
       runtime.jobs.updateProcess(id, cancelled ? "cancelled" : "failed", { stdout, stderr, outputTruncated, error: runtime.lmStudio.redact(error instanceof Error ? error.message : String(error)), finishedAt: new Date().toISOString() });
-    } finally { if (outputPersistTimer) clearTimeout(outputPersistTimer); clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
+    } finally { outputPersistence.cancel(); clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
   } else if (command === "agent" && subcommand === "authorize-rerun") {
     const [sessionId, toolCallId] = rest;
     if (!sessionId || !toolCallId || rest.length !== 2) fail("Usage: agent authorize-rerun <session-id> <tool-call-id>");

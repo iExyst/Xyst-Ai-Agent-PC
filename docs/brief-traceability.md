@@ -395,3 +395,6 @@ The Windows clean-install packaged Desktop smoke passed external-edit resume and
 
 ### G2 · bound streamed process-output persistence · local candidate · 2026-10-30
 The CLI worker now persists running process output at most four times per second per process instead of rewriting the full retained stdout/stderr snapshot for every chunk. It preserves full in-memory capture and writes the final output immediately. CLI typecheck and all 35 CLI tests passed, including command recovery and PTY lifecycle; details are in `verification-history.md`. This targets avoidable serialization/SQLite load under output-heavy agent and terminal streams. It has not been hosted-validated or measured against the live user profile; G2 and lag attribution remain Partial.
+
+### G2 · output-persistence scheduler regression · local follow-up
+A direct test verifies 100 rapid output updates result in one leading and one trailing persistence write and that process cleanup cancels a pending write. Expanded CLI suite passed 36/36 and typecheck passed. This test-only follow-up remains local until exact-head CI is run; it does not establish live-profile lag reduction.
