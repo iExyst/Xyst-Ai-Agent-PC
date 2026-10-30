@@ -130,7 +130,7 @@ export class ModelAcquisitionService {
     const totalRamBytes = resources?.systemMemory.totalBytes ?? totalmem();
     const configuredMemoryBudget = this.deps.config.resolve<number | null>("orchestration.memoryBudgetBytes", scopes)?.value;
     const memoryBudgetBytes = Math.floor(Math.min(availableRamBytes * 0.6, totalRamBytes * 0.5, 16 * 1024 ** 3, configuredMemoryBudget ?? Number.MAX_SAFE_INTEGER));
-    const concurrencyLimit = this.deps.config.resolve<number>("orchestration.maxConcurrency", scopes)?.value ?? 8;
+    const concurrencyLimit = this.deps.config.resolve<number>("orchestration.maxConcurrency", scopes)?.value ?? 2;
     const gpuFreeBytes = resources?.nvidiaGpuMemory.status === "available" ? Math.max(...resources.nvidiaGpuMemory.devices.map((device) => device.freeBytes)) : undefined;
     const modelDirectory = await this.modelDirectory();
     const allowedLicenses = this.deps.config.resolve<string[]>("models.allowedLicenses", scopes)?.value ?? [];

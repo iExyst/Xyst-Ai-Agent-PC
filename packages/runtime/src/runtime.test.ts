@@ -5151,7 +5151,7 @@ test("mission task prompts keep the model on its assigned task", async () => wit
 
 test("mission concurrency runs independent tasks in distinct workspaces and serializes shared workspaces", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "mission-concurrency.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
-  const firstWorkspace = join(root, "task-one"); const secondWorkspace = join(root, "task-two"); await mkdir(firstWorkspace); await mkdir(secondWorkspace);
+  const firstWorkspace = join(root, "task-one"); const secondWorkspace = join(root, "task-two"); const thirdWorkspace = join(root, "task-three"); await mkdir(firstWorkspace); await mkdir(secondWorkspace); await mkdir(thirdWorkspace);
   let active = 0; let peak = 0; let sessionNumber = 0;
   const fakeAgent = { run: async (_objective: string, options: { onSession?: (id: string) => void }) => {
     const current = ++active; peak = Math.max(peak, current); const sessionId = `concurrent-${++sessionNumber}`; options.onSession?.(sessionId);
@@ -5159,9 +5159,10 @@ test("mission concurrency runs independent tasks in distinct workspaces and seri
     return { sessionId, model: "fake", selectionReason: "test", turns: 1, status: "completed" as const, response: "ok" };
   } };
   const runner = new PersistentMissionRunner({ store, config, events, agent: fakeAgent as never });
-  const isolated = runner.repository.create({ name: "isolated tasks", objective: "Run safely", maxConcurrency: 2, tasks: [
+  const isolated = runner.repository.create({ name: "isolated tasks", objective: "Run safely", maxConcurrency: 8, tasks: [
     { id: "one", objective: "Workspace one", workspace: firstWorkspace, dependsOn: [] },
-    { id: "two", objective: "Workspace two", workspace: secondWorkspace, dependsOn: [] }
+    { id: "two", objective: "Workspace two", workspace: secondWorkspace, dependsOn: [] },
+    { id: "three", objective: "Workspace three", workspace: thirdWorkspace, dependsOn: [] }
   ] });
   const result = await runner.run(isolated.id); assert.equal(result.status, "completed"); assert.equal(peak, 2);
   peak = 0; active = 0;

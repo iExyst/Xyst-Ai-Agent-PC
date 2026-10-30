@@ -291,7 +291,7 @@ function App() {
   const memoryBudgetChoice = memoryBudgetBytes == null ? "auto" : String(memoryBudgetBytes);
   const maxResourceMemory = Number(snapshot.settings?.maxMemoryBytes ?? 0);
   const memoryBudgetChoices = [0.25, 0.5, 1, 2, 4, 8, 16, 32].filter((gib) => gib * 1024 ** 3 <= maxResourceMemory);
-  const maxConcurrencyChoice = String(snapshot.settings?.maxConcurrency?.value ?? 8);
+  const maxConcurrencyChoice = String(snapshot.settings?.maxConcurrency?.value ?? 2);
   const loadedCount = useMemo(() => models.reduce((count, model) => count + (Array.isArray(model.loaded_instances) ? model.loaded_instances.length : 0), 0), [models]);
   const call = async (action: string, payload?: unknown) => {
     setBusy(true); setError("");

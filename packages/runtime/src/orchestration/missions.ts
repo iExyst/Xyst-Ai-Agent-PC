@@ -373,7 +373,7 @@ export class PersistentMissionRunner {
         if (unresolvedAction) { state = "reconciliation_required"; errorMessage = unresolvedAction.error ?? `Task ${unresolvedAction.task_key} has an unresolved external action`; break; }
         if (rows.every((row) => row.state === "completed")) { state = "completed"; break; }
         const definitions: MissionTaskDefinition[] = mission.definition.tasks ?? [];
-        const concurrencyOverride = this.deps.config.resolve<number>("orchestration.maxConcurrency", { ...(mission.definition.projectId ? { project: mission.definition.projectId } : {}), mission: missionId })?.value ?? 8;
+        const concurrencyOverride = this.deps.config.resolve<number>("orchestration.maxConcurrency", { ...(mission.definition.projectId ? { project: mission.definition.projectId } : {}), mission: missionId })?.value ?? 2;
         if (!Number.isInteger(concurrencyOverride) || concurrencyOverride < 1 || concurrencyOverride > 8) throw new Error("orchestration.maxConcurrency must be an integer from 1 to 8");
         const maxConcurrency = Math.max(1, Math.min(mission.definition.maxConcurrency ?? 1, concurrencyOverride, 8));
         const ready = definitions.filter((task) => {
