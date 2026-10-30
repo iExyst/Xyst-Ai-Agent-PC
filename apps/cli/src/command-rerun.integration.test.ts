@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 
 type MockToolCall = { id: string; name: string; args: Record<string, unknown> };
 type CliResult = { code: number | null; stdout: string; stderr: string };
@@ -18,21 +18,26 @@ function resultPayload(stdout: string): unknown {
   }).at(-1);
 }
 
-test("real CLI resumes an externally edited command only after explicit rerun authorization", { timeout: 30_000 }, async () => {
+test("real CLI resumes externally edited commands after explicit authorization and owner-crash reconciliation", { timeout: 45_000 }, async () => {
   const scratch = await mkdtemp(join(tmpdir(), "xyst-cli-command-rerun-"));
   const workspace = join(scratch, "workspace"); const appData = join(scratch, "appdata");
   await mkdir(workspace); await mkdir(appData);
   await writeFile(join(workspace, "phase.txt"), "PHASE_A\n", "utf8");
-  await writeFile(join(workspace, "probe.mjs"), 'import { readFileSync } from "node:fs"; process.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
+  await writeFile(join(workspace, "probe.mjs"), 'import { existsSync, readFileSync, writeFileSync } from "node:fs";\nif (existsSync("crash-mode.txt")) { const ownerPid = process.ppid; await new Promise((resolve) => setTimeout(resolve, 1800)); try { process.kill(ownerPid, 0); } catch { process.exit(0); } writeFileSync("crash-effect.txt", "applied"); }\nprocess.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
 
   const modelTurns: MockToolCall[] = [
     { id: "call-run-initial", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
     { id: "call-complete-initial", name: "task_complete", args: { evidence_tool_call_ids: ["call-run-initial"] } },
     { id: "call-run-rerun", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
     { id: "call-read-rerun", name: "file_read", args: { path: "phase.txt" } },
-    { id: "call-complete-rerun", name: "task_complete", args: { evidence_tool_call_ids: ["call-run-rerun", "call-read-rerun"] } }
+    { id: "call-complete-rerun", name: "task_complete", args: { evidence_tool_call_ids: ["call-run-rerun", "call-read-rerun"] } },
+    { id: "call-run-crash", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
+    { id: "call-run-retry", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
+    { id: "call-read-retry", name: "file_read", args: { path: "phase.txt" } },
+    { id: "call-complete-retry", name: "task_complete", args: { evidence_tool_call_ids: ["call-run-retry", "call-read-retry"] } }
   ];
   let turn = 0; let modelLoadRequests = 0;
+  const runningChildren = new Set<ChildProcess>();
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/api/v1/models") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -62,20 +67,27 @@ test("real CLI resumes an externally edited command only after explicit rerun au
   const close = () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   const cliEntry = join(dirname(fileURLToPath(import.meta.url)), "index.ts");
   let port = 0;
-  const invoke = (args: string[]) => new Promise<CliResult>((resolve, reject) => {
+  const startCli = (args: string[]) => {
     const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), cliEntry, ...args], {
       cwd: workspace,
       env: { ...process.env, APPDATA: appData, XDG_DATA_HOME: appData, HOME: appData, XYST_ROOT: workspace, LM_STUDIO_BASE_URL: `http://127.0.0.1:${port}`, LM_API_TOKEN: "fixture-token" },
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
     });
+    runningChildren.add(child);
+    child.once("close", () => runningChildren.delete(child));
     let stdout = ""; let stderr = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error(`CLI invocation timed out: ${args.join(" ")}\n${stderr}`)); }, 15_000);
+    let timer: NodeJS.Timeout;
+    const result = new Promise<CliResult>((resolve, reject) => {
+      timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`CLI invocation timed out: ${args.join(" ")}\n${stderr}`)); }, 15_000);
+      child.once("error", (error) => { clearTimeout(timer); reject(error); });
+      child.once("close", (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+    });
     child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => { stdout += chunk; }); child.stderr.on("data", (chunk: string) => { stderr += chunk; });
-    child.once("error", (error) => { clearTimeout(timer); reject(error); });
-    child.once("close", (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
-  });
+    return { child, result };
+  };
+  const invoke = (args: string[]) => startCli(args).result;
 
   try {
     await listen(); port = (server.address() as AddressInfo).port;
@@ -107,9 +119,59 @@ test("real CLI resumes an externally edited command only after explicit rerun au
     assert.match(JSON.parse(rerun!.output_json).stdout, /PHASE_B/);
     assert.equal(completion?.status, "completed", JSON.stringify(rows));
     assert.equal(await readFile(join(workspace, "phase.txt"), "utf8"), "PHASE_B\n");
-    assert.equal(turn, 5, `expected five deterministic CLI inference requests; got ${turn}`);
+
+    await writeFile(join(workspace, "crash-mode.txt"), "enabled\n", "utf8");
+    const crashAuthorization = await invoke(["--json", "agent", "authorize-rerun", sessionId, "call-run-rerun"]);
+    assert.equal(crashAuthorization.code, 0, crashAuthorization.stderr || crashAuthorization.stdout);
+    const interrupted = startCli(["--json", "agent", "resume", sessionId, "Run the next authorized command and confirm the current phase.", "--model", "mock-model", "--max-turns", "4"]);
+    assert.ok(interrupted.child.pid);
+    const deadline = Date.now() + 10_000;
+    let crashCalls: Array<{ id: string; status: string }> = [];
+    while (Date.now() < deadline) {
+      const response = await invoke(["--json", "session", "calls", sessionId]);
+      assert.equal(response.code, 0, response.stderr);
+      crashCalls = resultPayload(response.stdout) as Array<{ id: string; status: string }>;
+      if (crashCalls.some((row) => row.id === "call-run-crash" && row.status === "running")) break;
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    assert.equal(crashCalls.find((row) => row.id === "call-run-crash")?.status, "running", JSON.stringify(crashCalls));
+    interrupted.child.kill("SIGKILL");
+    await interrupted.result;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await assert.rejects(readFile(join(workspace, "crash-effect.txt"), "utf8"), { code: "ENOENT" });
+
+    const recovered = await invoke(["--json", "agent", "recover-rerun", sessionId, "call-run-crash"]);
+    assert.equal(recovered.code, 0, recovered.stderr || recovered.stdout);
+    assert.match(JSON.stringify(resultPayload(recovered.stdout)), /uncertain/);
+    const quarantinedCalls = await invoke(["--json", "session", "calls", sessionId]);
+    assert.equal(quarantinedCalls.code, 0, quarantinedCalls.stderr);
+    const quarantinedRows = resultPayload(quarantinedCalls.stdout) as Array<{ id: string; status: string }>;
+    assert.equal(quarantinedRows.find((row) => row.id === "call-run-crash")?.status, "uncertain", JSON.stringify(quarantinedRows));
+    const retryAuthorization = await invoke(["--json", "agent", "reconcile", sessionId, "call-run-crash", "retry"]);
+    assert.equal(retryAuthorization.code, 0, retryAuthorization.stderr || retryAuthorization.stdout);
+    const retried = await invoke(["--json", "agent", "resume", sessionId, "The owner-crashed command was confirmed to have no effect; run the authorized retry, read phase.txt again, and verify both results.", "--model", "mock-model", "--max-turns", "4"]);
+    assert.equal(retried.code, 0, retried.stderr || retried.stdout);
+    assert.equal((resultPayload(retried.stdout) as { status?: unknown } | undefined)?.status, "completed", retried.stdout);
+    const crashCompletionCalls = await invoke(["--json", "session", "calls", sessionId]);
+    assert.equal(crashCompletionCalls.code, 0, crashCompletionCalls.stderr);
+    const recoveredRows = resultPayload(crashCompletionCalls.stdout) as Array<{ id: string; status: string; output_json: string; is_rerun: number }>;
+    const crashedCall = recoveredRows.find((row) => row.id === "call-run-crash");
+    const retryCall = recoveredRows.find((row) => row.id === "call-run-retry");
+    assert.equal(crashedCall?.status, "retry_consumed", JSON.stringify(crashedCall));
+    assert.equal(retryCall?.status, "completed", JSON.stringify(retryCall));
+    assert.equal(retryCall?.is_rerun, 1, JSON.stringify(retryCall));
+    assert.match(JSON.parse(retryCall!.output_json).stdout, /PHASE_B/);
+    assert.equal(await readFile(join(workspace, "crash-effect.txt"), "utf8"), "applied");
+    assert.equal(turn, 9, `expected nine deterministic CLI inference requests; got ${turn}`);
     assert.equal(modelLoadRequests, 0, "the test must never load a local model");
   } finally {
+    const childrenToStop = [...runningChildren];
+    const closed = childrenToStop.map((child) => new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once("close", () => resolve());
+    }));
+    for (const child of childrenToStop) child.kill("SIGKILL");
+    await Promise.all(closed);
     if (server.listening) await close();
     await rm(scratch, { recursive: true, force: true });
   }
