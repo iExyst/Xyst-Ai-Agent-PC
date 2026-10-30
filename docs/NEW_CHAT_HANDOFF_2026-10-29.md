@@ -568,3 +568,7 @@ All eight jobs passed for documentation/source head `1312f5138a3bd9372930095551a
 ## Exact-head hosted verification · `e023d21b` · all eight passed · 2026-10-30
 
 All eight jobs passed for docs-only head `e023d21b70506297c6aa4fbc89dea612a478d135`. Push CI `41006408460`: Windows `123902196226`, Ubuntu `123902195986`. PR CI `41006413357`: Windows `123902212310`, Ubuntu `123902212123`. Push Desktop packages `41006408434`: Windows `123902196232`, Linux `123902195905`. PR Desktop packages `41006413442`: Windows `123902212308`, Linux `123902212078`. Windows installer/update, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload passed. This commit records verification of its predecessor and adds no source changes. PR #82 remains OPEN/DRAFT/unmerged.
+
+## Exact-head hosted verification · `7ee89199` · all eight passed · 2026-10-30
+
+All eight jobs passed for docs-only head `7ee89199e0c8414b22c4fab3a4959d5cdf69af14`. Push CI `41007018407`: Windows `123904110143`, Ubuntu `123904110295`. PR CI `41007022678`: Windows `123904122980`, Ubuntu `123904122730`. Push Desktop packages `41007018378`: Windows `123904109935`, Linux `123904109824`. PR Desktop packages `41007022729`: Windows `123904122754`, Linux `123904122641`. Windows installer/update, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload passed. This docs-only head records verification of `e023d21`; it does not close any live recovery or original-brief gaps. PR #82 remains OPEN/DRAFT/unmerged.
