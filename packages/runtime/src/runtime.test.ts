@@ -49,7 +49,7 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { createMcpHandler, Server } from "@modelcontextprotocol/server";
 import { browserRuntimeStatus, createBrowserTools } from "./tools/browser.js";
 import { inspectDesktopCapabilities } from "./desktop-capabilities.js";
-import { canUseRamBackedKvCache, parseLmStudioResourceEstimate, ramBackedKvCacheBudgetBytes, readHostResourceStats } from "./system-resources.js";
+import { canUseRamBackedKvCache, conservativeHostMemoryBudgetBytes, parseLmStudioResourceEstimate, ramBackedKvCacheBudgetBytes, readHostResourceStats } from "./system-resources.js";
 import { getDataDirectory } from "./platform.js";
 import { git, gitClone, gitCommit, gitCreateBranch, gitFetch, gitNetworkEnvironment, gitPush, gitStage, gitStatus } from "./tools/git.js";
 import { validateSettingValue } from "./settings-schema.js";
@@ -240,6 +240,22 @@ test("mission resource scheduler defers oversized models and fits workers to the
   const pinned = planResourceAwareBatch([{ id: "pinned", model: "large" }], models, { memoryBudgetBytes: 256 * 1024 ** 2, maxConcurrency: 4 });
   assert.equal(pinned.assignments.length, 1);
   assert.equal(pinned.assignments[0]?.admittedOverBudget, true);
+});
+
+test("mission resource scheduler admits cold models against context-specific total memory estimates", () => {
+  const gib = 1024 ** 3;
+  const models = [
+    { type: "llm" as const, publisher: "Test", key: "small-file-large-kv", display_name: "Small file, large KV", size_bytes: 1 * gib, loaded_instances: [], max_context_length: 262_144, capabilities: { trained_for_tool_use: true } },
+    { type: "llm" as const, publisher: "Test", key: "larger-file-bounded-kv", display_name: "Larger file, bounded KV", size_bytes: 2 * gib, loaded_instances: [], max_context_length: 262_144, capabilities: { trained_for_tool_use: true } }
+  ];
+  const plan = planResourceAwareBatch([{ id: "long-context", automatic: true, requiredContextTokens: 250_000 }], models, {
+    memoryBudgetBytes: 6 * gib,
+    maxConcurrency: 2,
+    estimatedTotalMemoryBytesByModel: { "small-file-large-kv": 9 * gib, "larger-file-bounded-kv": 5 * gib }
+  });
+  assert.equal(plan.assignments[0]?.selectedModel, "larger-file-bounded-kv", "the task uses the context estimate instead of file size alone");
+  assert.equal(plan.assignments[0]?.estimatedAdditionalBytes, 5 * gib, "admission reports the full cold-load estimate");
+  assert.equal(plan.assignments[0]?.admittedOverBudget, false);
 });
 
 test("mission resource scheduler resolves loaded instance IDs without changing assignments", () => {
@@ -839,6 +855,44 @@ test("automatic model selection uses RAM-backed KV only when its total estimate 
     assert.equal(loadedKey, "ram-fit");
     assert.equal(loadedOptions?.offload_kv_cache_to_gpu, false);
     assert.match(result.selectionReason, /within the conservative RAM-backed KV budget/);
+  } finally { store.close(); }
+}));
+
+test("automatic model selection refuses a cold load when GPU and host-memory estimates both exceed safe budgets", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "ram-kv-refusal.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.autoSelect", true); config.set("global", "models.automaticLoading", true);
+  let loadCalls = 0; let inferenceCalls = 0;
+  const provider = {
+    isLocalServer: () => true, supportsLocalCliModelLifecycle: () => true,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "oversized", display_name: "Oversized", size_bytes: 4 * 1024 ** 3, loaded_instances: [], max_context_length: 262_144, capabilities: { trained_for_tool_use: true } }],
+    estimateLoad: async () => ({ output: "Estimated GPU Memory: 30 GiB\nEstimated Total Memory: 30 GiB" }),
+    load: async () => { loadCalls++; return { status: "loaded" }; }, redact: (text: string) => text,
+    streamChatWithTools: async () => { inferenceCalls++; return { choices: [{ message: { role: "assistant", content: "must not run" } }] }; }
+  };
+  const gib = 1024 ** 3;
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 100 * gib, usedBytes: 36 * gib, availableBytes: 64 * gib, usedPercent: 36 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 12 * gib, freeBytes: 4 * gib }] } }) });
+  try {
+    await assert.rejects(agent.run("Do a small task", { workspace: root }), /All sampled cold-model GPU estimates exceed.*conservative.*RAM-backed KV budget.*Refusing an automatic model load/);
+    assert.equal(loadCalls, 0); assert.equal(inferenceCalls, 0);
+  } finally { store.close(); }
+}));
+
+test("automatic mission assignment refuses to load a model when no measured memory path fits", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "mission-resource-refusal.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.autoSelect", true); config.set("global", "models.automaticLoading", true);
+  let loadCalls = 0; let inferenceCalls = 0;
+  const provider = {
+    isLocalServer: () => true, supportsLocalCliModelLifecycle: () => true,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "oversized-mission", display_name: "Oversized mission", size_bytes: 4 * 1024 ** 3, loaded_instances: [], max_context_length: 262_144, capabilities: { trained_for_tool_use: true } }],
+    estimateLoad: async () => ({ output: "Estimated GPU Memory: 30 GiB\nEstimated Total Memory: 30 GiB" }),
+    load: async () => { loadCalls++; return { status: "loaded" }; }, redact: (text: string) => text,
+    streamChatWithTools: async () => { inferenceCalls++; return { choices: [{ message: { role: "assistant", content: "must not run" } }] }; }
+  };
+  const gib = 1024 ** 3;
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 100 * gib, usedBytes: 36 * gib, availableBytes: 64 * gib, usedPercent: 36 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 12 * gib, freeBytes: 4 * gib }] } }) });
+  try {
+    await assert.rejects(agent.run("Do a small task", { workspace: root, model: "oversized-mission", automaticModelAssignment: true }), /no confirmed RAM-backed KV configuration fits.*refusing the automatic mission model load/);
+    assert.equal(loadCalls, 0); assert.equal(inferenceCalls, 0);
   } finally { store.close(); }
 }));
 
@@ -5058,6 +5112,30 @@ test("mission admission samples LM Studio GPU estimates before assigning automat
   } finally { store.close(); }
 }));
 
+test("mission admission uses LM Studio total estimates for bounded-context cold models", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "total-memory-mission.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
+  const gib = 1024 ** 3; config.set("global", "orchestration.memoryBudgetBytes", 6 * gib);
+  const models = [
+    { type: "llm" as const, publisher: "Test", key: "small-file-large-kv", display_name: "Small file, large KV", size_bytes: gib, loaded_instances: [], max_context_length: 262_144, capabilities: { trained_for_tool_use: true } },
+    { type: "llm" as const, publisher: "Test", key: "larger-file-bounded-kv", display_name: "Larger file, bounded KV", size_bytes: 2 * gib, loaded_instances: [], max_context_length: 262_144, capabilities: { trained_for_tool_use: true } }
+  ];
+  let assignedModel = ""; const plans: Array<Record<string, unknown>> = [];
+  events.on("mission.resources.planned", (event) => plans.push(event.payload as Record<string, unknown>));
+  const runner = new PersistentMissionRunner({ store, config, events,
+    modelProvider: { supportsLocalCliModelLifecycle: () => true, models: async () => models, estimateLoad: async (model: string) => ({ output: `Estimated GPU Memory: 2 GiB\nEstimated Total Memory: ${model === "small-file-large-kv" ? 9 : 5} GiB` }) } as never,
+    resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 32 * gib, usedBytes: 16 * gib, availableBytes: 16 * gib, usedPercent: 50 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 8 * gib, freeBytes: 8 * gib }] } }),
+    agent: { run: async (_objective: string, options: Record<string, unknown>) => { assignedModel = String(options.model); return { sessionId: "total-memory-session", model: assignedModel, selectionReason: "test", turns: 1, status: "completed" as const, response: "done" }; } } as never
+  });
+  try {
+    const mission = runner.repository.create({ name: "Context memory admission", objective: "Use a long context", tasks: [{ id: "worker", objective: "Use 250K of context if needed", dependsOn: [] }] });
+    const result = await runner.run(mission.id);
+    assert.equal(result.status, "completed");
+    assert.equal(assignedModel, "larger-file-bounded-kv", "the scheduler avoids a compact weight file with an oversized context cache estimate");
+    const selected = (plans[0]?.selected as Array<{ id: string; estimatedAdditionalBytes: number }> | undefined)?.[0];
+    assert.equal(selected?.estimatedAdditionalBytes, 5 * gib);
+  } finally { store.close(); }
+}));
+
 test("mission resource estimates include trigger data and completed dependency results", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "mission-context-estimate.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
   config.set("global", "orchestration.memoryBudgetBytes", 2 * 1024 ** 3);
@@ -5796,6 +5874,9 @@ test("LM Studio resource estimates parse documented GPU and total memory units",
   assert.deepEqual(parseLmStudioResourceEstimate("Estimated GPU Memory: NaN GB\nEstimated Total Memory: 9 EB"), {});
   const gib = 1024 ** 3;
   const memory = { totalBytes: 96 * gib, availableBytes: 48 * gib };
+  assert.equal(conservativeHostMemoryBudgetBytes(memory), 24 * gib);
+  assert.equal(conservativeHostMemoryBudgetBytes({ totalBytes: 128 * gib, availableBytes: 96 * gib }), 32 * gib, "the automatic mission budget can scale above 8 GiB while retaining the documented RAM reserve");
+  assert.equal(conservativeHostMemoryBudgetBytes({ totalBytes: 16 * gib, availableBytes: 8 * gib }), 4 * gib);
   assert.equal(ramBackedKvCacheBudgetBytes(memory), 24 * gib);
   assert.equal(canUseRamBackedKvCache({ gpuBytes: 19 * gib, totalBytes: 19 * gib }, 6 * gib, memory), true);
   assert.equal(canUseRamBackedKvCache({ gpuBytes: 19 * gib, totalBytes: 25 * gib }, 6 * gib, memory), false, "unknown or excessive host-memory forecasts must not enable the fallback");

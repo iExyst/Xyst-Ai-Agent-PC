@@ -43,11 +43,16 @@ export function parseLmStudioResourceEstimate(text: string): { gpuBytes?: number
   return { ...(gpuBytes === undefined ? {} : { gpuBytes }), ...(totalBytes === undefined ? {} : { totalBytes }) };
 }
 
-/** Keep RAM-backed model loads below half of free RAM, a quarter of installed RAM, and 32 GiB. */
-export function ramBackedKvCacheBudgetBytes(memory: { totalBytes: number; availableBytes: number }): number {
+/** Reserve at least half of free RAM and three quarters of installed RAM for the OS and other work. */
+export function conservativeHostMemoryBudgetBytes(memory: { totalBytes: number; availableBytes: number }): number {
   const { totalBytes, availableBytes } = memory;
   if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0 || !Number.isSafeInteger(availableBytes) || availableBytes <= 0 || availableBytes > totalBytes) return 0;
   return Math.floor(Math.min(availableBytes * 0.5, totalBytes * 0.25, 32 * 1024 ** 3));
+}
+
+/** Keep RAM-backed model loads within the conservative host memory budget. */
+export function ramBackedKvCacheBudgetBytes(memory: { totalBytes: number; availableBytes: number }): number {
+  return conservativeHostMemoryBudgetBytes(memory);
 }
 
 /** LM Studio's total estimate is only a guardrail, not a precise CPU/GPU memory split. */

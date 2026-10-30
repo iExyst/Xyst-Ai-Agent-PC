@@ -47,13 +47,13 @@ export function resolveResourceModel(models: LMStudioModel[], identifier: string
 }
 
 /**
- * Admit ready work against RAM estimates and optional LM Studio GPU estimates.
- * Concurrent KV-cache costs remain heuristic; neither figure reserves hardware.
+ * Admit ready work against context-specific LM Studio estimates when available,
+ * with model-size heuristics as fallback. Estimates do not reserve hardware.
  */
 export function planResourceAwareBatch(
   tasks: ResourceTaskCandidate[],
   models: LMStudioModel[],
-  options: { memoryBudgetBytes: number; maxConcurrency: number; performanceByModel?: Record<string, ModelPerformanceStats>; availableGpuMemoryBytes?: number; estimatedGpuMemoryBytesByModel?: Record<string, number> }
+  options: { memoryBudgetBytes: number; maxConcurrency: number; performanceByModel?: Record<string, ModelPerformanceStats>; availableGpuMemoryBytes?: number; estimatedGpuMemoryBytesByModel?: Record<string, number>; estimatedTotalMemoryBytesByModel?: Record<string, number> }
 ): ResourceBatchPlan {
   const memoryBudgetBytes = Math.max(0, Math.floor(options.memoryBudgetBytes));
   const requestedConcurrency = Math.max(1, Math.min(8, Math.floor(options.maxConcurrency)));
@@ -87,7 +87,11 @@ export function planResourceAwareBatch(
         // its own LM Studio instance. Only inventory-confirmed instances count
         // as reusable model memory.
         const load = candidate.loaded_instances.length > 0 ? 0 : Math.ceil(size * 1.5);
-        return load + Math.max(MIN_WORKER_MEMORY, Math.ceil(size * 0.12));
+        const heuristic = load + Math.max(MIN_WORKER_MEMORY, Math.ceil(size * 0.12));
+        const totalEstimate = options.estimatedTotalMemoryBytesByModel?.[candidate.key];
+        return candidate.loaded_instances.length === 0 && Number.isSafeInteger(totalEstimate) && totalEstimate! > 0
+          ? Math.max(heuristic, totalEstimate!)
+          : heuristic;
       };
       const availableGpuBytes = options.availableGpuMemoryBytes;
       const gpuCost = (candidate: LMStudioModel) => {
@@ -145,7 +149,10 @@ export function planResourceAwareBatch(
     const modelBytes = model && Number.isFinite(model.size_bytes) && model.size_bytes > 0 ? model.size_bytes : UNKNOWN_MODEL_LOAD;
     const loadingBytes = model && model.loaded_instances.length > 0 ? 0 : Math.ceil(modelBytes * 1.5);
     const workerBytes = Math.max(MIN_WORKER_MEMORY, Math.ceil(modelBytes * 0.12));
-    const incrementalBytes = loadingBytes + workerBytes;
+    const totalEstimate = model ? options.estimatedTotalMemoryBytesByModel?.[model.key] : undefined;
+    const incrementalBytes = model && model.loaded_instances.length === 0 && Number.isSafeInteger(totalEstimate) && totalEstimate! > 0
+      ? Math.max(loadingBytes + workerBytes, totalEstimate!)
+      : loadingBytes + workerBytes;
     const gpuEstimate = model ? options.estimatedGpuMemoryBytesByModel?.[model.key] : undefined;
     const modelAlreadyResident = Boolean(model && model.loaded_instances.length > 0);
     const incrementalGpuBytes = gpuEstimate === undefined ? undefined : modelAlreadyResident ? Math.max(MIN_WORKER_MEMORY, Math.ceil(gpuEstimate * 0.12)) : gpuEstimate;

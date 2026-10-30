@@ -17,7 +17,7 @@ import { planResourceAwareBatch, resolveResourceModel, type ResourceTaskAssignme
 import { readModelPerformance } from "../model-performance.js";
 import { classifyModelTaskObjective } from "../model-task-type.js";
 import { chooseAgentModel, estimateRequiredContextTokens, modelLoadContextLength } from "../model-selection.js";
-import { parseLmStudioResourceEstimate, readHostResourceStats } from "../system-resources.js";
+import { conservativeHostMemoryBudgetBytes, parseLmStudioResourceEstimate, readHostResourceStats } from "../system-resources.js";
 
 const profileSchema = z.object({ mode: z.enum(["full", "restricted"]), readRoots: z.array(z.string()).optional(), writeRoots: z.array(z.string()).optional(), allowedExecutables: z.array(z.string()).optional(), network: z.boolean().optional(), integrations: z.boolean().optional(), backgroundJobs: z.boolean().optional(), externalActions: z.boolean().optional() }).strict();
 const agentSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/), name: z.string().min(1).max(100), model: z.string().optional(), maxTurns: z.number().int().min(1).max(50).optional(), access: profileSchema.optional() }).strict();
@@ -427,7 +427,7 @@ export class PersistentMissionRunner {
         const configuredMemoryValue = this.deps.config.resolve<unknown>("orchestration.memoryBudgetBytes", { ...(mission.definition.projectId ? { project: mission.definition.projectId } : {}), mission: missionId })?.value;
         if (configuredMemoryValue !== undefined && configuredMemoryValue !== null && (typeof configuredMemoryValue !== "number" || !Number.isSafeInteger(configuredMemoryValue) || configuredMemoryValue < 256 * 1024 ** 2 || configuredMemoryValue > totalmem())) throw new Error("orchestration.memoryBudgetBytes must be null (automatic) or an integer from 256 MiB through installed system memory");
         const configuredMemoryBudget = typeof configuredMemoryValue === "number" ? configuredMemoryValue : undefined;
-        const memoryBudgetBytes = configuredMemoryBudget ?? Math.floor(Math.min(freemem() * 0.5, totalmem() * 0.25, 8 * 1024 ** 3));
+        const memoryBudgetBytes = configuredMemoryBudget ?? conservativeHostMemoryBudgetBytes({ totalBytes: totalmem(), availableBytes: freemem() });
         let installedModels: Awaited<ReturnType<LMStudioProvider["models"]>> = [];
         if (this.deps.modelProvider) {
           effectiveMissionAccess.assertCapability("network");
@@ -443,6 +443,7 @@ export class PersistentMissionRunner {
         const performanceByModel = this.deps.config.resolve<boolean>("telemetry.localMetrics", { ...(mission.definition.projectId ? { project: mission.definition.projectId } : {}), mission: missionId })?.value === false ? {} : readModelPerformance(this.deps.store);
         let availableGpuMemoryBytes: number | undefined;
         const estimatedGpuMemoryBytesByModel: Record<string, number> = {};
+        const estimatedTotalMemoryBytesByModel: Record<string, number> = {};
         let gpuEstimateContextTokens = 0;
         if (this.deps.modelProvider && this.deps.modelProvider.supportsLocalCliModelLifecycle?.() && typeof this.deps.modelProvider.estimateLoad === "function") {
           try {
@@ -465,15 +466,16 @@ export class PersistentMissionRunner {
                   const candidate = installedModels.find((item) => item.key === modelKey);
                   const estimateContext = modelLoadContextLength(candidate?.max_context_length, requiredContextTokens) ?? requiredContextTokens;
                   const estimate = await this.deps.modelProvider.estimateLoad(modelKey, { context_length: estimateContext }, controller.signal);
-                  const gpuBytes = parseLmStudioResourceEstimate(String(estimate.output ?? "")).gpuBytes;
+                  const { gpuBytes, totalBytes } = parseLmStudioResourceEstimate(String(estimate.output ?? ""));
                   if (gpuBytes !== undefined) estimatedGpuMemoryBytesByModel[modelKey] = gpuBytes;
+                  if (totalBytes !== undefined) estimatedTotalMemoryBytesByModel[modelKey] = totalBytes;
                 } catch (error) { if (controller.signal.aborted) throw error; }
               }
             }
           } catch (error) { if (controller.signal.aborted) throw error; }
         }
         const batch = this.deps.modelProvider
-          ? planResourceAwareBatch(resourceCandidates, installedModels, { maxConcurrency, memoryBudgetBytes, performanceByModel, ...(availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}) })
+          ? planResourceAwareBatch(resourceCandidates, installedModels, { maxConcurrency, memoryBudgetBytes, performanceByModel, ...(availableGpuMemoryBytes === undefined ? {} : { availableGpuMemoryBytes }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}), ...(Object.keys(estimatedTotalMemoryBytesByModel).length ? { estimatedTotalMemoryBytesByModel } : {}) })
           : undefined;
         const selected = batch ? batch.assignments.map((assignment) => candidates.find((task) => task.id === assignment.id)!) : candidates.slice(0, maxConcurrency);
         const selectedAssignments = new Map(batch?.assignments.map((assignment) => [assignment.id, assignment]) ?? []);
@@ -656,6 +658,7 @@ export class PersistentMissionRunner {
             const requiredContextTokens = Math.max(...resourceCandidates.map((candidate) => candidate.requiredContextTokens ?? 4096));
             if (currentGpuBytes !== undefined && this.deps.modelProvider.supportsLocalCliModelLifecycle?.() && typeof this.deps.modelProvider.estimateLoad === "function" && requiredContextTokens > gpuEstimateContextTokens) {
               for (const modelKey of Object.keys(estimatedGpuMemoryBytesByModel)) delete estimatedGpuMemoryBytesByModel[modelKey];
+              for (const modelKey of Object.keys(estimatedTotalMemoryBytesByModel)) delete estimatedTotalMemoryBytesByModel[modelKey];
               try {
                 const cliCommand = process.env.LM_STUDIO_CLI_PATH ?? (process.platform === "win32" ? "lms.exe" : "lms");
                 effectiveMissionAccess.assertExecutable(cliCommand);
@@ -671,11 +674,14 @@ export class PersistentMissionRunner {
                     const candidate = currentModels.find((item) => item.key === modelKey);
                     const estimateContext = modelLoadContextLength(candidate?.max_context_length, requiredContextTokens) ?? requiredContextTokens;
                     const estimate = await this.deps.modelProvider.estimateLoad(modelKey, { context_length: estimateContext }, controller.signal);
-                    const gpuBytes = parseLmStudioResourceEstimate(String(estimate.output ?? "")).gpuBytes;
+                    const { gpuBytes, totalBytes } = parseLmStudioResourceEstimate(String(estimate.output ?? ""));
                     if (gpuBytes === undefined) delete estimatedGpuMemoryBytesByModel[modelKey];
                     else estimatedGpuMemoryBytesByModel[modelKey] = gpuBytes;
+                    if (totalBytes === undefined) delete estimatedTotalMemoryBytesByModel[modelKey];
+                    else estimatedTotalMemoryBytesByModel[modelKey] = totalBytes;
                   } catch (error) {
                     delete estimatedGpuMemoryBytesByModel[modelKey];
+                    delete estimatedTotalMemoryBytesByModel[modelKey];
                     if (controller.signal.aborted) throw error;
                   }
                 }
@@ -687,7 +693,7 @@ export class PersistentMissionRunner {
               const dynamicPlan = planResourceAwareBatch(
                 pending.map((task) => resourceCandidates.find((candidate) => candidate.id === task.id)!).filter(Boolean),
                 currentModels,
-                { maxConcurrency: slots, memoryBudgetBytes: dynamicBudget, performanceByModel, ...(currentGpuBytes === undefined ? {} : { availableGpuMemoryBytes: currentGpuBytes }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}) }
+                { maxConcurrency: slots, memoryBudgetBytes: dynamicBudget, performanceByModel, ...(currentGpuBytes === undefined ? {} : { availableGpuMemoryBytes: currentGpuBytes }), ...(Object.keys(estimatedGpuMemoryBytesByModel).length ? { estimatedGpuMemoryBytesByModel } : {}), ...(Object.keys(estimatedTotalMemoryBytesByModel).length ? { estimatedTotalMemoryBytesByModel } : {}) }
               );
               nextAssignments = activeTaskRuns.size ? dynamicPlan.assignments.filter((assignment) => !assignment.admittedOverBudget) : dynamicPlan.assignments;
               const selectedIds = new Set(nextAssignments.map((assignment) => assignment.id));

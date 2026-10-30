@@ -30,6 +30,7 @@ import { SessionCompactor } from "./session-compaction.js";
 
 const MESSAGE_PREFIX = "__xyst_api_message__:";
 const MAX_AUTOMATIC_COMPACTIONS = 6;
+class AutomaticModelResourceAdmissionError extends Error { constructor(message: string) { super(message); this.name = "AutomaticModelResourceAdmissionError"; } }
 type ApiMessage = Record<string, unknown> & { role: string; content?: unknown };
 
 async function hashFile(path: string): Promise<string> {
@@ -355,6 +356,7 @@ export class AgentRunner {
     let selectionReason = options.model ? (options.automaticModelAssignment ? "automatic resource-aware mission assignment" : "manual command-line override") : typeof savedModel === "string" ? "configured default model" : "";
     let inventory: Awaited<ReturnType<LMStudioProvider["models"]>> | undefined;
     let ramBackedKvCacheModelKey: string | undefined;
+    let missionResourceAdmissionFailure: string | undefined;
     const onlineDiscoveryEnabled = this.deps.config.resolve<boolean>("models.onlineDiscovery", scopes)?.value === true;
     // A mission scheduler's resource-aware model assignment is provisional. The
     // agent has a fuller context estimate (history, tool schemas, and system
@@ -383,11 +385,12 @@ export class AgentRunner {
             if (canUseRamBackedKvCache(estimate, freeGpu, resources.systemMemory)) {
               ramBackedKvCacheModelKey = assigned.key;
               selectionReason += `; automatic mission assignment fits the conservative ${Math.round(ramBackedKvCacheBudgetBytes(resources.systemMemory) / 1024 ** 3 * 100) / 100} GiB RAM-backed KV budget, so its load will keep KV cache in system RAM`;
-            }
+            } else if (typeof estimate.gpuBytes === "number" && estimate.gpuBytes > freeGpu) missionResourceAdmissionFailure = `LM Studio estimates ${Math.round(estimate.gpuBytes / 1024 ** 3 * 100) / 100} GiB GPU memory with ${Math.round(freeGpu / 1024 ** 3 * 100) / 100} GiB free, and no confirmed RAM-backed KV configuration fits the conservative ${Math.round(ramBackedKvCacheBudgetBytes(resources.systemMemory) / 1024 ** 3 * 100) / 100} GiB host budget; refusing the automatic mission model load`;
           }
         } catch (error) { if (options.signal?.aborted) throw error; }
       }
     }
+    if (missionResourceAdmissionFailure) throw new AutomaticModelResourceAdmissionError(missionResourceAdmissionFailure);
     if (visionRequired) {
       access.assertCapability("network");
       inventory = await this.deps.provider.models(options.signal);
@@ -451,6 +454,13 @@ export class AgentRunner {
                 } else {
                   const gpuEstimates = [...estimates.values()].flatMap((value) => value.gpuBytes === undefined ? [] : [value.gpuBytes]);
                   if (gpuEstimates.length) {
+                    const overBudgetGpuEstimate = gpuEstimates.some((value) => value > availableGpuBytes);
+                    if (overBudgetGpuEstimate) {
+                      const budget = ramBackedKvCacheBudgetBytes(hostResources.systemMemory);
+                      const totalEstimates = [...estimates.values()].flatMap((value) => value.totalBytes === undefined ? [] : [value.totalBytes]);
+                      const totalSummary = totalEstimates.length ? `; LM Studio's lowest total-memory estimate is ${Math.round(Math.min(...totalEstimates) / 1024 ** 3 * 100) / 100} GiB` : " and no total-memory estimate is available";
+                      throw new AutomaticModelResourceAdmissionError(`All sampled cold-model GPU estimates exceed ${Math.round(availableGpuBytes / 1024 ** 3 * 100) / 100} GiB free VRAM${totalSummary}; none fits the conservative ${Math.round(budget / 1024 ** 3 * 100) / 100} GiB RAM-backed KV budget. Refusing an automatic model load that could exhaust host memory.`);
+                    }
                     const minimumGpuBytes = Math.min(...gpuEstimates);
                     const lowestEstimate = estimateCandidates.filter((candidate) => estimates.get(candidate.key)?.gpuBytes === minimumGpuBytes);
                     choice = chooseAgentModel(lowestEstimate, requirements);
@@ -461,11 +471,13 @@ export class AgentRunner {
             }
           } catch (error) {
             if (options.signal?.aborted) throw error;
+            if (error instanceof AutomaticModelResourceAdmissionError) throw error;
             gpuResourceReason = "GPU-aware selection could not read the local resource estimate under the current access/runtime configuration; used the regular model selection criteria";
           }
         }
         model = choice.model.key; selectionReason = [choice.reason, gpuResourceReason].filter(Boolean).join("; ");
       } catch (selectionError) {
+        if (selectionError instanceof AutomaticModelResourceAdmissionError) throw selectionError;
         const eligibleForAcquisition = automaticLoading && !savedModel && (!options.model || options.automaticModelAssignment) && this.deps.modelAcquisition;
         if (!eligibleForAcquisition || !onlineDiscoveryEnabled) throw selectionError;
         // Use only a generic capability query. The task objective and workspace content stay local.
