@@ -6007,6 +6007,7 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
   };
   const windows = createDesktopAutomationTools(new AccessController(), true, { platform: "win32", env: { PATH: "C:\\Windows\\System32" }, pathExists: () => true, runner: windowsRunner });
   assert.ok(windows.desktop_windows);
+  assert.deepEqual(await windows.desktop_windows!.execute({}), []);
   assert.deepEqual(await windows.desktop_inspect!.execute({ window_title: "Example" }), { window: { name: "Example" }, controls: [], controls_truncated: false, controls_visited: 0 });
   const inspectScript = windowsScripts.at(-1)!;
   assert.match(inspectScript, /\$scanLimit = 512/);
@@ -6017,15 +6018,17 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
   assert.match(actionScript, /function Find-Control\(\$window, \$propertyName, \$propertyValue, \$nodeLimit = 512, \$depthLimit = 12\)/);
   assert.match(actionScript, /Find-Control \$window \$propertyName \$propertyValue/);
   assert.doesNotMatch(actionScript, /TreeScope\]::Descendants/);
-  assert.deepEqual(windowsTimeouts, [5_000, 5_000]);
+  assert.deepEqual(windowsTimeouts, [5_000, 5_000, 5_000]);
   assert.equal(inspectNativeAutomation({ platform: "win32", env: {} }).available, true);
   assert.deepEqual(createDesktopAutomationTools(new AccessController(), false, { platform: "win32" }), {});
   const denied = createDesktopAutomationTools(new AccessController({ mode: "restricted", externalActions: false }), true, { platform: "win32", env: { PATH: "C:\\Windows\\System32" }, pathExists: () => true, runner: windowsRunner });
   await assert.rejects(() => denied.desktop_action!.execute({ action: "focus_window", window_title: "Example" }), /denies externalActions/);
 
   const calls: string[][] = [];
-  const linuxRunner = async (_command: string, args: string[]) => {
+  const linuxTimeouts: number[] = [];
+  const linuxRunner = async (_command: string, args: string[], options?: { timeoutMs?: number }) => {
     calls.push(args);
+    linuxTimeouts.push(options?.timeoutMs ?? 0);
     const stdout = args[0] === "search" ? "42\n" : args[0] === "getwindowname" ? "Example\n" : "WINDOW=42\nX=10\nY=20\nWIDTH=300\nHEIGHT=200\nSCREEN=0\n";
     return { code: 0, signal: null, stdout, stderr: "", durationMs: 0 };
   };
@@ -6035,6 +6038,8 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
   await linux.desktop_action!.execute({ action: "type_text", window_id: "42", text: "Xyst test" });
   assert.deepEqual(calls.at(-1), ["type", "--clearmodifiers", "--delay", "1", "--", "Xyst test"]);
   await assert.rejects(() => linux.desktop_action!.execute({ action: "click", window_id: "42", x: 300, y: 2 }), /outside the selected window bounds/);
+  assert.equal(linuxTimeouts.length, 5);
+  assert.ok(linuxTimeouts.every((timeout) => timeout === 10_000), "Linux X11 actions retain the original helper timeout");
 });
 
 test("persistent browser navigates, interacts, transfers bounded files, and enforces restricted access", async (t) => withTemp(async (workspace) => {

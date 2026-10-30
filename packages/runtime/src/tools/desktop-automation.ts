@@ -144,7 +144,7 @@ if ($request.operation -eq 'windows') {
   Write-Json $result
 }`;
 
-async function run(access: AccessController, runner: Runner, command: string, args: string[], signal?: AbortSignal, timeoutMs = 5_000): Promise<ProcessResult> {
+async function run(access: AccessController, runner: Runner, command: string, args: string[], signal?: AbortSignal, timeoutMs = 10_000): Promise<ProcessResult> {
   access.assertExecutable(command);
   const result = await runner(command, args, { timeoutMs, maxOutputChars: 30_000, ...(signal ? { signal } : {}) });
   if (result.code !== 0 || result.signal) throw new Error((result.stderr || result.stdout || `Desktop automation exited with code ${result.code}`).slice(0, 2000));
@@ -174,14 +174,14 @@ export function createDesktopAutomationTools(access: AccessController, enabled: 
     return {
       desktop_windows: {
         definition: { type: "function", function: { name: "desktop_windows", description: "List visible top-level Windows desktop windows and their process IDs. This reads the current interactive desktop session.", parameters: { type: "object", properties: {}, additionalProperties: false } } },
-        execute: async (_input: unknown, signal?: AbortSignal) => parseJson(await run(access, runner, command, powershellPayload({ operation: "windows" }), signal).then((result) => result.stdout.trim()))
+        execute: async (_input: unknown, signal?: AbortSignal) => parseJson(await run(access, runner, command, powershellPayload({ operation: "windows" }), signal, 5_000).then((result) => result.stdout.trim()))
       },
       desktop_inspect: {
         definition: { type: "function", function: { name: "desktop_inspect", description: "Inspect a bounded UI Automation control tree for one visible window. The result reports controls_truncated and controls_visited when the scan limit or an inaccessible control prevents a complete read. Match the exact window title; use AutomationId where available when acting on a control.", parameters: { type: "object", properties: { window_title: { type: "string", minLength: 1, maxLength: 500 }, limit: { type: "integer", minimum: 1, maximum: 250 } }, required: ["window_title"], additionalProperties: false } } },
         execute: async (input: unknown, signal?: AbortSignal) => {
           const args = input as { window_title: string; limit?: number };
           if (typeof args?.window_title !== "string" || !args.window_title.trim() || args.window_title.length > 500 || args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 250)) throw new Error("Window title is required; control limit must be 1–250");
-          return parseJson(await run(access, runner, command, powershellPayload({ operation: "inspect", window_title: args.window_title, limit: args.limit ?? 100 }), signal).then((result) => result.stdout.trim()));
+          return parseJson(await run(access, runner, command, powershellPayload({ operation: "inspect", window_title: args.window_title, limit: args.limit ?? 100 }), signal, 5_000).then((result) => result.stdout.trim()));
         }
       },
       desktop_action: {
@@ -194,7 +194,7 @@ export function createDesktopAutomationTools(access: AccessController, enabled: 
           if (args.action !== "focus_window" && !((typeof args.automation_id === "string" && args.automation_id.length > 0 && args.automation_id.length <= 500) || (typeof args.control_name === "string" && args.control_name.length > 0 && args.control_name.length <= 500))) throw new Error("Control actions require an AutomationId or exact control name");
           if (args.action === "set_value" && (typeof args.value !== "string" || args.value.length > 5000)) throw new Error("set_value requires text of at most 5,000 characters");
           const request = { operation: "action", action: args.action, window_title: args.window_title, ...(typeof args.automation_id === "string" ? { automation_id: args.automation_id } : {}), ...(typeof args.control_name === "string" ? { control_name: args.control_name } : {}), ...(typeof args.value === "string" ? { value: args.value } : {}) };
-          return parseJson(await run(access, runner, command, powershellPayload(request), signal).then((result) => result.stdout.trim()));
+          return parseJson(await run(access, runner, command, powershellPayload(request), signal, 5_000).then((result) => result.stdout.trim()));
         }
       }
     };
