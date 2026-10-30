@@ -334,3 +334,6 @@ Commit `0426e73` reduces dashboard snapshot work to a 30-second foreground-only 
 
 ### Exact-head hosted validation · 4ef42db · 2026-10-30
 All eight push/PR CI and package jobs passed for documentation-follow-up head 4ef42db; exact IDs are in verification-history.md. The underlying source commit 0426e73 has its own passing four-job hosted set. Neither automated validation establishes that the reported global lag is fixed; interactive Desktop responsiveness and overall project requirements remain open.
+
+### Desktop terminal polling resource guard · local candidate · 2026-10-30
+Terminal status polling now serializes reads, runs at 1-second intervals only while the app is visible and focused, and refreshes on return. Typecheck and renderer 14/14 passed. See `verification-history.md`. This bounds one identified background workload; no end-user lag fix is claimed without current-build interactive acceptance.
