@@ -996,7 +996,12 @@ export class AgentRunner {
             const freshReference = Array.isArray(suppliedIds)
               ? "fresh stable evidence ID from the next system message (or its corresponding one-based index)"
               : "fresh evidence index";
-            throw new Error(`Completion evidence ${evidenceId} is stale: ${laterRelevantMutation.name} ran after the evidence and may have changed the verified result${affectedPath}. Repeat the verification after the last change, then cite its ${freshReference}.`);
+            const recovery = ["file_read", "office_read"].includes(evidence.name)
+              ? `Do not repeat the later process or write just to refresh this read. Read the exact path again with ${evidence.name} after the last mutation.`
+              : "Repeat only the required verification after the last mutation; do not repeat unrelated writes.";
+            const currentEvidenceList = currentEvidence.map(evidenceLabel).join("\n");
+            const evidenceFieldGuidance = "Use exactly one field: evidence_tool_call_ids with full stable IDs, or evidence_tool_call_indexes with one-based integer positions. Never put a numeric position or numeric string in the ID field. For a process-and-file comparison, cite both the latest run_process and exact-path file_read results.";
+            throw new Error(`Completion evidence ${evidenceId} is stale: ${laterRelevantMutation.name} ran after the evidence and may have changed the verified result${affectedPath}. ${recovery} Then cite its ${freshReference}. ${evidenceFieldGuidance}\nCurrent available evidence:\n${currentEvidenceList}`);
           }
           let evidenceOutput: unknown;
           try { evidenceOutput = JSON.parse(evidence.output_json) as unknown; } catch { evidenceOutput = evidence.output_json; }

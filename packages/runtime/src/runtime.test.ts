@@ -2082,6 +2082,42 @@ test("completion rejects a file read made stale by a later patch and accepts a f
     assert.deepEqual(calls.map(({ name, status }) => [name, status]), [["file_create", "completed"], ["file_read", "completed"], ["file_patch", "completed"], ["task_complete", "failed"], ["file_read", "completed"], ["task_complete", "completed"]]);
     assert.match(calls[3]!.output_json!, /is stale: file_patch ran after the evidence/);
     assert.match(calls[3]!.output_json!, /fresh stable evidence ID from the next system message/);
+    assert.match(calls[3]!.output_json!, /Do not repeat the later process or write just to refresh this read/);
+    assert.match(calls[3]!.output_json!, /evidence_tool_call_ids with full stable IDs, or evidence_tool_call_indexes with one-based integer positions/);
+    assert.match(calls[3]!.output_json!, /Current available evidence:/);
+    assert.match(JSON.parse(calls[3]!.output_json!).error, /id="stale-read-create" "file_create"/);
+    assert.equal(JSON.parse(calls[5]!.output_json!).verified, true);
+  } finally { store.close(); }
+}));
+
+test("stale read feedback after a process requests a fresh read without replaying the process", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-read-after-process.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const processArgs = { executable: process.execPath, args: ["-e", "require('node:fs').writeFileSync('result.txt','after'); process.stdout.write('after')"], cwd: root };
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "process-stale-create", type: "function", function: { name: "file_create", arguments: JSON.stringify({ path: "result.txt", content: "before" }) } }] } }] };
+      if (turn === 2) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "process-stale-read", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
+      if (turn === 3) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "process-stale-run", type: "function", function: { name: "run_process", arguments: JSON.stringify(processArgs) } }] } }] };
+      if (turn === 4) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "process-stale-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["process-stale-read", "process-stale-run"] }) } }] } }] };
+      if (turn === 5) return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "process-fresh-read", type: "function", function: { name: "file_read", arguments: JSON.stringify({ path: "result.txt" }) } }] } }] };
+      return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "process-fresh-complete", type: "function", function: { name: "task_complete", arguments: JSON.stringify({ evidence_tool_call_ids: ["process-stale-run", "process-fresh-read"] }) } }] } }] };
+    }
+  };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Create result.txt with before, run a process that writes after, then verify the process output matches the file.", { workspace: root, model: "test-model", maxTurns: 6, expectedOutputPaths: ["result.txt"], completionCriteria: ["The process output and exact-path file read both show after"] });
+    assert.equal(result.status, "completed"); assert.equal(turn, 6);
+    assert.equal(await readFileAsync(join(root, "result.txt"), "utf8"), "after");
+    const calls = store.db.prepare("SELECT id,name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId) as Array<{ id: string; name: string; status: string; output_json: string | null }>;
+    assert.deepEqual(calls.map(({ name, status }) => [name, status]), [["file_create", "completed"], ["file_read", "completed"], ["run_process", "completed"], ["task_complete", "failed"], ["file_read", "completed"], ["task_complete", "completed"]]);
+    assert.match(calls[3]!.output_json!, /is stale: run_process ran after the evidence/);
+    assert.match(calls[3]!.output_json!, /Do not repeat the later process or write just to refresh this read/);
+    assert.match(calls[3]!.output_json!, /Read the exact path again with file_read after the last mutation/);
+    assert.match(JSON.parse(calls[3]!.output_json!).error, /Current available evidence:[\s\S]*id="process-stale-run" "run_process"/);
+    assert.equal(calls.filter((call) => call.name === "run_process").length, 1, "stale feedback must not cause the process to be replayed");
     assert.equal(JSON.parse(calls[5]!.output_json!).verified, true);
   } finally { store.close(); }
 }));
