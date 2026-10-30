@@ -49,7 +49,17 @@ export function modelForIdentifier(inventory: LMStudioModel[], identifier: strin
     if (row.key !== candidate.key || row.type !== candidate.type) continue;
     for (const instance of row.loaded_instances) {
       const previous = instances.get(instance.id);
-      instances.set(instance.id, { ...instance, config: { ...previous?.config, ...instance.config } });
+      const config = { ...previous?.config, ...instance.config };
+      const previousContext = previous?.config.context_length;
+      const reportedContext = instance.config.context_length;
+      // The native inventory can repeat an addressable instance ID on model
+      // rows with different context settings. Preserve the largest reported
+      // context so a lower, duplicated row cannot hide usable capacity.
+      if (typeof previousContext === "number" && Number.isSafeInteger(previousContext)
+        && typeof reportedContext === "number" && Number.isSafeInteger(reportedContext)) {
+        config.context_length = Math.max(previousContext, reportedContext);
+      }
+      instances.set(instance.id, { ...instance, config });
     }
   }
   return { ...candidate, loaded_instances: [...instances.values()] };

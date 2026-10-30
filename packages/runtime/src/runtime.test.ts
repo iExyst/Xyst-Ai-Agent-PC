@@ -7489,7 +7489,7 @@ test("agent compacts growing tool history within a resident model without loadin
   } finally { store.close(); }
 }));
 
-test("agent chooses a larger resident instance when the smaller context is within the estimation tolerance", async () => withTemp(async (root) => {
+test("agent keeps the largest context when native inventory repeats an instance ID", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "context-boundary-instance.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   const objective = "x".repeat(7_392);
   assert.equal(estimateRequiredContextTokens([{ content: objective }]), 8_256);
@@ -7497,15 +7497,15 @@ test("agent chooses a larger resident instance when the smaller context is withi
   const provider = {
     redact: (value: string) => value,
     isLocalServer: () => true,
-    models: async () => [{ type: "llm", key: "context-boundary-model", max_context_length: 250_112, loaded_instances: [
-      { id: "small-instance", config: { context_length: 8_192 } },
-      { id: "large-instance", config: { context_length: 250_112 } }
-    ] }],
+    models: async () => [
+      { type: "llm", key: "context-boundary-model", max_context_length: 250_112, loaded_instances: [{ id: "context-boundary-model", config: { context_length: 250_112 } }] },
+      { type: "llm", key: "context-boundary-model", max_context_length: 250_112, loaded_instances: [{ id: "context-boundary-model", config: { context_length: 8_192 } }] }
+    ],
     streamChatWithTools: async (request: { model: string }) => { inferenceModel = request.model; return { choices: [{ message: { role: "assistant", content: "Ready." } }] }; }
   };
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run(objective, { workspace: root, model: "context-boundary-model", maxTurns: 1 });
-    assert.equal(inferenceModel, "large-instance", "do not select an 8192-token instance for an 8256-token request merely because of estimation tolerance");
+    assert.equal(inferenceModel, "context-boundary-model", "do not let a repeated lower-context inventory row hide the 250112-token context for an 8256-token request");
     assert.equal(result.status, "unverified");
   } finally { store.close(); }
 }));

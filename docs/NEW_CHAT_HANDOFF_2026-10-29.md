@@ -518,3 +518,11 @@ A live saved CLI session needed estimated context 8,256 but the selected instanc
 ### Exact-head verification · docs predecessor `96ddeec` · 2026-10-30 UTC
 
 The previous docs-only head `96ddeec0a99a21332eb67479fce771de817cae01` passed all eight exact-head Windows/Ubuntu CI and Windows/Linux package jobs. Exact run/job IDs are in `verification-history.md`. Windows installer/update metadata, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload passed. This does not verify the new uncommitted exact-fit context source candidate added afterward.
+
+### Duplicate live LM Studio context rows · 2026-10-30 UTC
+
+The first local exact-fit fix passed its eight hosted jobs, but a follow-up live `lm models` inventory showed two Qwen3.5 9B rows with the same instance ID and contradictory contexts 250,112 and 8,192. Existing dedupe kept the lower row. Current local follow-up preserves the max reported context for that duplicate ID and has a regression using the observed shape; runtime 294 (291 pass, 3 skip), typecheck, desktop build and diff check pass. This follow-up is uncommitted/unhosted until recorded below.
+
+After rebuilding, an isolated resumed session passed the former 8K context guard and made four model requests at ~10.3K–11.2K reported prompt tokens, but failed verification because the model twice cited stale `probe.cjs` evidence even after a fresh read. The session reached its turn limit; no command rerun/file edit occurred. This is bounded context/inference evidence and a failed task, not owner-crash acceptance or speed validation. Full details and exact IDs are in `verification-history.md`. Next publish this local fix to PR #82, collect exact-head CI, then retry owner-crash only with a fresh enough-context session and pre-started watcher. Keep the previous failed model attempts.
+
+The `ea1f7b9` predecessor passed all eight exact-head checks; exact job IDs are in `verification-history.md`. They do not cover the duplicate-row merge change.
