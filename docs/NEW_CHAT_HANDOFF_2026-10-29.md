@@ -548,3 +548,7 @@ The preceding docs-only head `18d9c584dd6eb7eea04b80a324c0b55d152cac7d` has sinc
 ## Exact-head hosted result · `81105a6ca160b9849381701f23ae5f441370f32a` · all eight passed
 
 Push and PR Windows/Ubuntu CI and Windows/Linux package jobs all passed. The exact run/job IDs and package scope are recorded in `docs/verification-history.md`. The branch is clean at the source commit before this documentation addendum; PR #82 remains OPEN/DRAFT/unmerged. This source check does not establish live resumed-session UI behavior or overall project completion.
+
+## Exact-head result · documentation head `d3595b5` · all eight passed
+
+Push CI `41004684135` (Windows `123896778727`, Ubuntu `123896778524`); PR CI `41004678450` (Windows `123896760963`, Ubuntu `123896761124`); push packages `41004684034` (Windows `123896778245`, Linux `123896778018`); PR packages `41004678661` (Windows `123896761246`, Linux `123896761419`). All test and package jobs passed, including Windows install/update and mission-service smoke checks plus Linux AppImage/update verification. No source changed in this docs-only head.

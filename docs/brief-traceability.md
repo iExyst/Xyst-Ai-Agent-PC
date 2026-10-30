@@ -196,3 +196,7 @@ The docs-only predecessor `18d9c58` passed all eight exact-head Windows/Ubuntu C
 ### A5 follow-up · hosted verification · `81105a6` · all successful
 
 The status regression and source change passed all eight exact-head Windows/Ubuntu CI and Windows/Linux package jobs. Windows installer/update, clean-install renderer, mission-service lifecycle, and Linux AppImage/update-manifest checks passed. This verifies the commit within hosted automation; actual live resumed-session UI behavior and the broader partial A5 requirement remain open. Exact IDs are in [`verification-history.md`](verification-history.md#exact-head-verification--resumed-session-running-status--81105a6ca160b9849381701f23ae5f441370f32a--2026-10-30).
+
+### Documentation-head verification · `d3595b5` · all successful
+
+All eight exact-head Windows/Ubuntu CI and Windows/Linux package jobs passed. Windows installer/update, clean-install renderer, mission-service lifecycle, Linux AppImage/update-manifest, and artifact upload passed. This docs-only verification is current as of `d3595b5`; it does not extend acceptance beyond the documented source/test scope. Exact run/job IDs are in [`verification-history.md`](verification-history.md#exact-head-documentation-verification--d3595b5f4378df41c07f53569a1569b896f81243--all-eight-passed).
