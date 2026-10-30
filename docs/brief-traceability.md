@@ -274,3 +274,7 @@ A local candidate now reuses a saved session's last model decision when no expli
 ### Exact-head hosted verification · `4dfe3ff` · all eight passed
 
 Docs head `4dfe3ff25f78045ac08316b8d45dabbf90b1d71e` passed all exact-head push/PR Windows/Ubuntu CI and Windows/Linux package jobs. Job IDs and exact scope are recorded in `docs/verification-history.md`. These checks predate and do not cover the local session-affinity source candidate. PR #82 remains OPEN/DRAFT/UNMERGED.
+
+### Exact-head hosted verification · saved-session affinity · a0d63b2 · 2026-10-30
+
+All eight push/PR Windows/Ubuntu CI and Windows/Linux package jobs passed for a0d63b2e8df5e67f16fe67f3625ac651da4e266c; exact run/job IDs are in docs/verification-history.md. This verifies automation for the model-affinity change, not sustained model behavior. Preserve the unverified first resume response and setup non-pass recorded there. Native Desktop saved-session resume and the broader original-brief acceptance remain incomplete. PR #82 remains OPEN/DRAFT/UNMERGED.

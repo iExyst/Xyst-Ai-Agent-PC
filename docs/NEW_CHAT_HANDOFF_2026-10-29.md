@@ -661,3 +661,9 @@ Next: inspect and validate the complete source/docs diff, publish the candidate 
 ## Exact-head verification · `4dfe3ff` · all eight passed · 2026-10-30 UTC
 
 Published docs head `4dfe3ff25f78045ac08316b8d45dabbf90b1d71e` passed all eight push/PR Windows/Ubuntu CI and Windows/Linux package jobs. Push CI `41022743078` (Windows `123953617595`, Ubuntu `123953617739`); PR CI `41022737421` (Windows `123953597664`, Ubuntu `123953597988`); push packages `41022743107` (Linux `123953617240`, Windows `123953617418`); PR packages `41022737544` (Linux `123953597898`, Windows `123953598087`). These results do not cover the newer local model-affinity source candidate.
+
+## Latest published source verification · saved-session affinity · a0d63b2 · 2026-10-30 UTC
+
+Current published PR #82 source a0d63b2e8df5e67f16fe67f3625ac651da4e266c passed all eight exact-head hosted jobs: push CI 41024307227 (Ubuntu 123958663513, Windows 123958663722), PR CI 41024312287 (Ubuntu 123958679469, Windows 123958679855), push packages 41024307176 (Linux 123958663314, Windows 123958663403), PR packages 41024313133 (Linux 123958682818, Windows 123958682909). PR #82 remains OPEN/DRAFT/UNMERGED. Local Windows full tests/typecheck/build and bounded CLI session-affinity acceptance are recorded above; preserve its prose-only unverified response and earlier setup non-pass.
+
+Still open: native Desktop saved-session acceptance; external-edit and owner-crash recovery on this exact model-affinity source; unexplained earlier CLI recovery-selector discrepancy and Windows timeout stall; representative sustained end-to-end reliability; requirement-by-requirement completion of both original briefs; signed production release/update credentials and hosting. Do not merge or claim project completion. Preserve the original workspace except append-only checkpoint updates, and leave PC Sync vision artifacts untouched.
