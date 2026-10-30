@@ -147,6 +147,18 @@ function stopInstalledCopies(executable) {
   return spawnSync("powershell.exe", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")], { stdio: "ignore", windowsHide: true });
 }
 
+function waitForSnapshotWorkerPriority(parentPid, timeoutMs = 10_000) {
+  if (!Number.isInteger(parentPid) || parentPid < 1) throw new Error("Packaged Xyst did not expose its process ID");
+  const command = `$parent = ${parentPid}; $deadline = [DateTime]::UtcNow.AddMilliseconds(${timeoutMs}); do { $worker = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parent" | Where-Object { $_.CommandLine -match 'desktop\\s+snapshot\\s+--worker' } | Select-Object -First 1; if ($worker) { (Get-Process -Id $worker.ProcessId).PriorityClass; exit 0 }; Start-Sleep -Milliseconds 100 } while ([DateTime]::UtcNow -lt $deadline); exit 1`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")], { encoding: "utf8", timeout: timeoutMs + 2_000, windowsHide: true });
+  if (result.error) throw result.error;
+  const priority = result.stdout.trim();
+  if (result.status !== 0 || priority !== "BelowNormal") {
+    throw new Error(`Packaged dashboard snapshot worker should run at BelowNormal priority; got ${JSON.stringify({ status: result.status, priority, stderr: result.stderr.trim() })}`);
+  }
+  return priority;
+}
+
 try {
   await access(installer);
   await mkdir(workDir, { recursive: true });
@@ -173,6 +185,7 @@ try {
   const appError = new Promise((_, reject) => app.once("error", reject));
   const page = await Promise.race([waitForTarget(port), appError]);
   const snapshot = await waitForUi(page);
+  const snapshotWorkerPriority = waitForSnapshotWorkerPriority(app.pid);
   const keyboard = await verifyKeyboardSkipLink(page);
   const appearanceAccessibility = await verifyAppearanceAccessibility(page);
   const duplicate = spawn(executable, [`--remote-debugging-port=${port}`, "--remote-allow-origins=*", "--disable-gpu"], {
@@ -196,7 +209,7 @@ try {
   const screenshot = await cdpCommand(page, "Page.captureScreenshot", { format: "png", fromSurface: true }, 2);
   assert.ok(screenshot?.data, "Packaged renderer did not return a screenshot");
   await writeFile(join(packageDir, "windows-gui-smoke.png"), Buffer.from(screenshot.data, "base64"));
-  process.stdout.write(`Clean Windows install UI smoke passed: ${JSON.stringify({ ...snapshot, keyboard, appearanceAccessibility })}\n`);
+  process.stdout.write(`Clean Windows install UI smoke passed: ${JSON.stringify({ ...snapshot, snapshotWorkerPriority, keyboard, appearanceAccessibility })}\n`);
 } finally {
   if (app?.pid) spawnSync("taskkill.exe", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
   if (app?.pid) stopInstalledCopies(installedExe);
