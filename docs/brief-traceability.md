@@ -362,3 +362,6 @@ The owner-crash CLI test timing correction now passes the hosted Windows suite; 
 
 ### Native UI Automation helper scheduling · local candidate · 2026-10-30
 The Windows UI Automation PowerShell helper now lowers itself to `BelowNormal` before loading the UI Automation assembly, matching the scheduling safeguard already applied to agent and dashboard workers. Focused regression, runtime typecheck, and a standalone Windows priority readback passed. Exact-head hosted validation and real-profile interactive responsiveness remain unresolved; the user’s stop-state recovery does not isolate which active workload caused the lag.
+
+### Native UI Automation helper scheduling · exact-head validation · `6a4f2da`
+All eight exact-head push/PR CI and package jobs passed, including Windows clean-install renderer and mission-service lifecycle smoke steps. Exact IDs and scope are recorded in `verification-history.md`. This verifies build/test/smoke paths, not the user's active profile or real UI Automation CPU behavior; interactive acceptance remains open.
