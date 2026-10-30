@@ -130,3 +130,11 @@ A new AgentRunner regression exercises an automatically assigned mission model w
 ### C1/G2 follow-up · current-head CLI and instance reuse
 
 After rebuilding runtime and CLI from `228ce6a`, a fresh isolated Windows CLI read-only session completed with `task_complete verified:true` from exact file-read evidence. One short request used 5,728 prompt tokens and completed in about 16.5 seconds. The existing four idle LM Studio instances, including Qwen3.5 9B at context 250112, were unchanged before and after; this run did not create a duplicate. This is bounded current-source CLI and model-reuse evidence, not sustained speed, broad coding reliability, or freeze-resistance proof. C1/G2 remain partial. Native desktop composer/accessibility and production signing/hosting remain open.
+
+### B3/C1/G2 follow-up · automatic model choice and cross-model resume
+
+With loading disabled in a fresh profile, automatic selection chose a resident Qwen3 4B for a 6,226-token read-only task; no new instance loaded. That real run spent about 92 seconds across two turns and ended unverified because the model emitted a completion claim as plain text. Resuming the same saved session on the already-loaded Qwen3.5 9B produced verified completion after one malformed completion call was rejected and corrected. Four model instances and their contexts remained unchanged; one resource snapshot during the 4B run showed 48.1 GiB free RAM and 5,615 MiB free VRAM. This is bounded selector/recovery evidence, not a stable speed comparison or reliability rate. Preserve both outcomes. More representative repeated measurements are needed before changing model-ranking policy; B3/C1/G2 remain partial.
+
+### Exact-head docs verification · `bbb440b`
+
+Commit `bbb440b` passed all eight exact-head push/PR CI and Windows/Linux package jobs, including clean-install renderer and mission-service smoke. This verifies the documentation/source ancestor and automated workflow scope; it does not upgrade the bounded model-selection sample into a reliability or speed claim. PR #82 remains open/draft. See `verification-history.md` for run/job IDs.
