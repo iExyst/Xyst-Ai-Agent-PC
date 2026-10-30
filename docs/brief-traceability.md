@@ -389,3 +389,6 @@ Current worktree CLI subprocess regression passed 1/1: it verifies external-edit
 
 ### Current integrated head · `3bafe17` exact-head verification · 2026-10-30
 All eight exact-head Windows and Ubuntu/Linux CI/package jobs passed for documentation head `3bafe175693d3d794246f6fad66314903744f265`. The Windows clean-install package smoke exercised Desktop external-edit rerun and owner-crash recovery/reconciliation; the Windows mission-service lifecycle and Linux AppImage jobs passed. Exact IDs and the run log scope are in `verification-history.md`. Current source also passed a real CLI subprocess rerun/owner-crash integration with a deterministic loopback mock provider. These results do not establish live-model reliability, user-profile responsiveness, or completion of C2/A5; native Desktop live saved-session acceptance remains open.
+
+### Desktop saved-session acceptance · packaged mock-provider pass · `3bafe17`
+The Windows clean-install packaged Desktop smoke passed external-edit resume and owner-crash recovery/reconciliation during an authorized rerun, using a deterministic loopback mock provider and zero model-load requests. This supersedes the earlier statement that Desktop saved-session crash recovery had not passed. Live user-profile interaction, live-model reliability/contention, and system-wide lag attribution remain open; G2 remains Partial.
