@@ -5175,6 +5175,7 @@ test("mission concurrency runs independent tasks in distinct workspaces and seri
 
 test("mission concurrency stress keeps sixteen independent tasks within four worker slots", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "mission-concurrency-stress.sqlite")); const config = new ConfigStore(store); const events = new RuntimeEvents();
+  config.set("global", "orchestration.maxConcurrency", 4);
   const workspaces = await Promise.all(Array.from({ length: 16 }, async (_, index) => {
     const path = join(root, `worker-${String(index).padStart(2, "0")}`); await mkdir(path); return path;
   }));

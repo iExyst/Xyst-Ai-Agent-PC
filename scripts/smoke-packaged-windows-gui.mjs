@@ -36,14 +36,23 @@ let modelLoadRequests = 0;
 let pauseRerunResponse = false;
 let notifyRerunRequest;
 let releaseRerunResponse;
+let pauseCrashResponse = false;
+let notifyCrashRequest;
+let releaseCrashResponse;
 const rerunRequestReceived = new Promise((resolveRequest) => { notifyRerunRequest = resolveRequest; });
 const rerunResponseGate = new Promise((resolveResponse) => { releaseRerunResponse = resolveResponse; });
+const crashRequestReceived = new Promise((resolveRequest) => { notifyCrashRequest = resolveRequest; });
+const crashResponseGate = new Promise((resolveResponse) => { releaseCrashResponse = resolveResponse; });
 const fixtureTurns = [
   { id: "desktop-smoke-run-initial", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
   { id: "desktop-smoke-complete-initial", name: "task_complete", args: { evidence_tool_call_ids: ["desktop-smoke-run-initial"] } },
   { id: "desktop-smoke-run-rerun", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
   { id: "desktop-smoke-read-rerun", name: "file_read", args: { path: "phase.txt" } },
-  { id: "desktop-smoke-complete-rerun", name: "task_complete", args: { evidence_tool_call_ids: ["desktop-smoke-run-rerun", "desktop-smoke-read-rerun"] } }
+  { id: "desktop-smoke-complete-rerun", name: "task_complete", args: { evidence_tool_call_ids: ["desktop-smoke-run-rerun", "desktop-smoke-read-rerun"] } },
+  { id: "desktop-smoke-run-crash", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
+  { id: "desktop-smoke-run-retry", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
+  { id: "desktop-smoke-read-retry", name: "file_read", args: { path: "phase.txt" } },
+  { id: "desktop-smoke-complete-retry", name: "task_complete", args: { evidence_tool_call_ids: ["desktop-smoke-run-retry", "desktop-smoke-read-retry"] } }
 ];
 const provider = createServer((request, response) => {
   if (request.method === "GET" && request.url === "/api/v1/models") {
@@ -62,6 +71,7 @@ const provider = createServer((request, response) => {
     request.once("end", async () => {
       const index = fixtureTurn++;
       if (index === 2 && pauseRerunResponse) { notifyRerunRequest(); await rerunResponseGate; }
+      if (index === 5 && pauseCrashResponse) { notifyCrashRequest(); await crashResponseGate; }
       const call = fixtureTurns[index];
       if (!call) { response.writeHead(500); response.end("Unexpected packaged smoke inference request"); return; }
       const chunk = { id: `packaged-smoke-${index}`, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } }] }, finish_reason: "tool_calls" }] };
@@ -236,6 +246,19 @@ function waitForAgentResumePriority(parentPid, timeoutMs = 10_000) {
   return priority;
 }
 
+function waitForAgentResumeProcess(parentPid, timeoutMs = 10_000) {
+  if (!Number.isInteger(parentPid) || parentPid < 1) throw new Error("Packaged Xyst did not expose its process ID");
+  const command = `$parent = ${parentPid}; $deadline = [DateTime]::UtcNow.AddMilliseconds(${timeoutMs}); do { $worker = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parent" | Where-Object { $_.CommandLine -match 'agent\\s+resume' } | Select-Object -First 1; if ($worker) { $priority=(Get-Process -Id $worker.ProcessId).PriorityClass; \"$($worker.ProcessId)|$priority\"; exit 0 }; Start-Sleep -Milliseconds 100 } while ([DateTime]::UtcNow -lt $deadline); exit 1`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")], { encoding: "utf8", timeout: timeoutMs + 2_000, windowsHide: true });
+  if (result.error) throw result.error;
+  const [pidText, priority] = result.stdout.trim().split("|");
+  const pid = Number(pidText);
+  if (result.status !== 0 || !Number.isInteger(pid) || pid < 1 || priority !== "BelowNormal") {
+    throw new Error(`Packaged resumed-agent process should be discoverable at BelowNormal priority; got ${JSON.stringify({ status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() })}`);
+  }
+  return { pid, priority };
+}
+
 let rendererEvalId = 100;
 async function waitForRenderer(page, expression, description, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
@@ -251,6 +274,35 @@ async function withTimeout(promise, timeoutMs, message) {
   let timer;
   try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); })]); }
   finally { clearTimeout(timer); }
+}
+
+async function waitForCrashCallReady(nodeBinary, cliEntry, sessionId, probePath, expectedOwnerPid, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus;
+  while (Date.now() < deadline) {
+    const calls = await runCli(nodeBinary, cliEntry, ["session", "calls", sessionId], 5_000);
+    if (calls.code !== 0) throw new Error(`Could not inspect packaged crash-smoke calls: ${calls.stderr || calls.stdout}`);
+    const rows = resultPayload(calls.stdout) ?? [];
+    lastStatus = rows.find((row) => row.id === "desktop-smoke-run-crash")?.status;
+    try {
+      const ownerPid = Number((await readFile(probePath, "utf8")).trim());
+      if (lastStatus === "running" && ownerPid === expectedOwnerPid) return;
+      if (ownerPid !== expectedOwnerPid) throw new Error(`Crash probe captured owner PID ${ownerPid}, expected ${expectedOwnerPid}`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error(`Packaged crash probe did not become ready under its owning CLI process; status=${lastStatus}`);
+}
+
+async function waitForFileText(path, expected, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { if ((await readFile(path, "utf8")).trim() === expected) return; } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error(`Timed out waiting for ${path} to contain ${JSON.stringify(expected)}`);
 }
 
 try {
@@ -275,7 +327,7 @@ try {
   const cliEntry = join(packagedRoot, "apps", "cli", "dist", "index.js");
   await access(nodeBinary); await access(cliEntry);
   await writeFile(join(dataDir, "phase.txt"), "PHASE_A\n", "utf8");
-  await writeFile(join(dataDir, "probe.mjs"), 'import { readFileSync } from "node:fs"; process.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
+  await writeFile(join(dataDir, "probe.mjs"), 'import { existsSync, readFileSync, writeFileSync } from "node:fs";\nconst mode = existsSync("crash-mode.txt") ? readFileSync("crash-mode.txt", "utf8").trim() : "";\nif (mode === "armed") { const ownerPid = process.ppid; writeFileSync("crash-probe-ready.txt", String(ownerPid)); await new Promise((resolve) => setTimeout(resolve, 5000)); try { process.kill(ownerPid, 0); writeFileSync("crash-effect.txt", "applied"); } catch { writeFileSync("crash-probe-finished.txt", "owner-exited"); process.exit(0); } }\nif (mode === "retry") writeFileSync("crash-effect.txt", "applied");\nprocess.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
   await new Promise((resolveListen, rejectListen) => { provider.once("error", rejectListen); provider.listen(0, "127.0.0.1", resolveListen); });
   env.LM_STUDIO_BASE_URL = `http://127.0.0.1:${provider.address().port}`;
   for (const [key, value] of [["model.default", JSON.stringify("packaged-smoke-model")], ["autonomy.externalActionApproval", "false"]]) {
@@ -334,7 +386,55 @@ try {
   assert.equal(rerunRow?.is_rerun, 1, finalCalls.stdout);
   assert.match(JSON.parse(rerunRow.output_json).stdout, /PHASE_B/);
   assert.equal(await readFile(join(dataDir, "phase.txt"), "utf8"), "PHASE_B\n");
-  assert.equal(fixtureTurn, 5, `expected five deterministic provider calls; got ${fixtureTurn}`);
+  await writeFile(join(dataDir, "crash-mode.txt"), "armed\n", "utf8");
+  await evaluate(page, "(() => { const rows=[...document.querySelectorAll('details.tool-log-item')].filter((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process'); const row=rows.find((item)=>item.innerText.includes('PHASE_B')); if(!row) throw new Error('Completed phase-B command is missing'); row.open=true; window.confirm=()=>true; const button=[...row.querySelectorAll('button')].find((item)=>item.textContent.includes('Authorize one fresh execution')); if(!button) throw new Error('Second Desktop rerun authorization action is missing'); button.click(); return true; })()", 57);
+  const crashPrompt = "Run the authorized command again and verify the current phase file.";
+  await cdpCommand(page, "Input.insertText", { text: crashPrompt }, 58);
+  assert.equal(await evaluate(page, "document.querySelector('textarea[aria-label=\"Continue saved session\"]')?.value", 59), crashPrompt, "The Desktop crash-smoke prompt must be entered before resuming");
+  await waitForRenderer(page, "document.querySelector('.session-reply button.primary-button')?.disabled === false", "the second authorized Continue control");
+  pauseCrashResponse = true;
+  await evaluate(page, "document.querySelector('.session-reply button.primary-button')?.click()", 60);
+  await withTimeout(crashRequestReceived, 20_000, "Desktop did not start the owner-crash recovery session");
+  const crashWorker = waitForAgentResumeProcess(app.pid);
+  releaseCrashResponse(); pauseCrashResponse = false;
+  const crashProbePath = join(dataDir, "crash-probe-ready.txt");
+  await waitForCrashCallReady(nodeBinary, cliEntry, sessionId, crashProbePath, crashWorker.pid);
+  const killedOwner = spawnSync("taskkill.exe", ["/PID", String(crashWorker.pid), "/F"], { encoding: "utf8", windowsHide: true });
+  assert.equal(killedOwner.status, 0, `Could not terminate the exact Desktop-owned CLI process: ${killedOwner.stderr || killedOwner.stdout}`);
+  await waitForFileText(join(dataDir, "crash-probe-finished.txt"), "owner-exited");
+  await assert.rejects(access(join(dataDir, "crash-effect.txt")), { code: "ENOENT" }, "The abandoned child process must not perform its side effect");
+
+  await evaluate(page, "document.querySelector('.session-item.selected')?.click()", 61);
+  await waitForRenderer(page, "(() => [...document.querySelectorAll('details.tool-log-item')].some((row)=>row.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...row.querySelectorAll('button')].some((button)=>button.textContent.includes('Review abandoned rerun') && !button.disabled)))()", "the recoverable abandoned Desktop rerun", 30_000);
+  await evaluate(page, "(() => { window.confirm=()=>true; const row=[...document.querySelectorAll('details.tool-log-item')].find((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...item.querySelectorAll('button')].some((button)=>button.textContent.includes('Review abandoned rerun'))); const button=[...row.querySelectorAll('button')].find((item)=>item.textContent.includes('Review abandoned rerun')); if(!button) throw new Error('Desktop abandoned-rerun review action is missing'); button.click(); return true; })()", 62);
+  await waitForRenderer(page, "(() => [...document.querySelectorAll('details.tool-log-item')].some((row)=>row.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...row.querySelectorAll('button')].some((button)=>button.textContent.includes('Confirm no effect and allow retry') && !button.disabled)))()", "the uncertain Desktop rerun reconciliation", 30_000);
+  await evaluate(page, "(() => { window.confirm=()=>true; const row=[...document.querySelectorAll('details.tool-log-item')].find((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...item.querySelectorAll('button')].some((button)=>button.textContent.includes('Confirm no effect and allow retry'))); const button=[...row.querySelectorAll('button')].find((item)=>item.textContent.includes('Confirm no effect and allow retry')); if(!button) throw new Error('Desktop no-effect reconciliation action is missing'); button.click(); return true; })()", 63);
+  await writeFile(join(dataDir, "crash-mode.txt"), "retry\n", "utf8");
+  await waitForRenderer(page, "!!document.querySelector('textarea[aria-label=\"Continue saved session\"]')", "the crash-recovered session reply form");
+  await evaluate(page, "document.querySelector('textarea[aria-label=\"Continue saved session\"]')?.focus()", 64);
+  await cdpCommand(page, "Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 }, 65);
+  await cdpCommand(page, "Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 }, 66);
+  const retryPrompt = "The abandoned command had no effect. Retry it once, read the current phase file, and verify completion.";
+  await cdpCommand(page, "Input.insertText", { text: retryPrompt }, 67);
+  assert.equal(await evaluate(page, "document.querySelector('textarea[aria-label=\"Continue saved session\"]')?.value", 68), retryPrompt, "The crash-recovery prompt must replace the failed response");
+  await waitForRenderer(page, "document.querySelector('.session-reply button.primary-button')?.disabled === false", "the crash-recovered Continue control");
+  await evaluate(page, "document.querySelector('.session-reply button.primary-button')?.click()", 69);
+  const retryVisible = await waitForRenderer(page, "(() => { const rows=[...document.querySelectorAll('details.tool-log-item')].filter((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process'); for(const row of rows) row.open=true; const last=rows.at(-1); return rows.length >= 4 && last?.innerText.includes('PHASE_B') && last.querySelector('.status-pill')?.textContent.trim().toLowerCase()==='completed'; })()", "the retried Desktop command result", 30_000);
+  assert.equal(retryVisible, true);
+  const crashFinalCalls = await runCli(nodeBinary, cliEntry, ["session", "calls", sessionId]);
+  assert.equal(crashFinalCalls.code, 0, crashFinalCalls.stderr || crashFinalCalls.stdout);
+  const crashFinalRows = resultPayload(crashFinalCalls.stdout);
+  const abandonedRow = crashFinalRows?.find((row) => row.id === "desktop-smoke-run-crash");
+  const retryRow = crashFinalRows?.find((row) => row.id === "desktop-smoke-run-retry");
+  assert.equal(abandonedRow?.status, "retry_consumed", crashFinalCalls.stdout);
+  assert.equal(retryRow?.status, "completed", crashFinalCalls.stdout);
+  assert.equal(retryRow?.is_rerun, 1, crashFinalCalls.stdout);
+  assert.match(JSON.parse(retryRow.output_json).stdout, /PHASE_B/);
+  assert.equal(crashFinalRows?.find((row) => row.id === "desktop-smoke-read-retry")?.status, "completed", crashFinalCalls.stdout);
+  assert.equal(crashFinalRows?.find((row) => row.id === "desktop-smoke-complete-retry")?.status, "completed", crashFinalCalls.stdout);
+  assert.equal(await readFile(join(dataDir, "crash-effect.txt"), "utf8"), "applied");
+  const desktopCrashRecovery = { ownerPid: crashWorker.pid, priority: crashWorker.priority, abandonedStatus: abandonedRow.status, retryStatus: retryRow.status, crashChildEffect: "blocked", retryEffect: await readFile(join(dataDir, "crash-effect.txt"), "utf8") };
+  assert.equal(fixtureTurn, 9, `expected nine deterministic provider calls; got ${fixtureTurn}`);
   assert.equal(modelLoadRequests, 0, "the packaged session smoke must not load a model");
   const duplicate = spawn(executable, [`--remote-debugging-port=${port}`, "--remote-allow-origins=*", "--disable-gpu"], {
     cwd: workDir,
@@ -357,9 +457,10 @@ try {
   const screenshot = await cdpCommand(page, "Page.captureScreenshot", { format: "png", fromSurface: true }, 2);
   assert.ok(screenshot?.data, "Packaged renderer did not return a screenshot");
   await writeFile(join(packageDir, "windows-gui-smoke.png"), Buffer.from(screenshot.data, "base64"));
-  process.stdout.write(`Clean Windows install UI smoke passed: ${JSON.stringify({ ...snapshot, snapshotWorkerPriority, agentResumePriority, desktopRerun: { sessionId, status: rerunRow.status, output: JSON.parse(rerunRow.output_json).stdout }, keyboard, appearanceAccessibility })}\n`);
+  process.stdout.write(`Clean Windows install UI smoke passed: ${JSON.stringify({ ...snapshot, snapshotWorkerPriority, agentResumePriority, desktopRerun: { sessionId, status: rerunRow.status, output: JSON.parse(rerunRow.output_json).stdout }, desktopCrashRecovery, keyboard, appearanceAccessibility })}\n`);
 } finally {
   releaseRerunResponse();
+  releaseCrashResponse();
   if (app?.pid) spawnSync("taskkill.exe", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
   if (app?.pid) stopInstalledCopies(installedExe);
   provider.closeAllConnections?.();
