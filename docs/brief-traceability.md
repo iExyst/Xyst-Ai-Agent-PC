@@ -126,3 +126,7 @@ Commit `296347d` passed all eight exact-head Windows/Ubuntu CI and Linux/Windows
 ### G2 follow-up · mission RAM-KV fail-closed coverage
 
 A new AgentRunner regression exercises an automatically assigned mission model whose GPU estimate exceeds free VRAM but whose total estimate fits the conservative RAM budget. It confirms Xyst requests RAM-backed KV and rejects inference when LM Studio does not confirm the applied setting. Windows runtime: 287 (284 pass, 3 skips); root typecheck passes. This is local deterministic evidence; live speed and stability remain open.
+
+### C1/G2 follow-up · current-head CLI and instance reuse
+
+After rebuilding runtime and CLI from `228ce6a`, a fresh isolated Windows CLI read-only session completed with `task_complete verified:true` from exact file-read evidence. One short request used 5,728 prompt tokens and completed in about 16.5 seconds. The existing four idle LM Studio instances, including Qwen3.5 9B at context 250112, were unchanged before and after; this run did not create a duplicate. This is bounded current-source CLI and model-reuse evidence, not sustained speed, broad coding reliability, or freeze-resistance proof. C1/G2 remain partial. Native desktop composer/accessibility and production signing/hosting remain open.

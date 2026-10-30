@@ -434,3 +434,11 @@ Commit `296347ddd83881c3aad9ba2b2a6a84ecc88c9ed5` passed all eight exact-head Wi
 ## RAM-KV mission-path regression · 2026-10-30
 
 The previously noted gap in dedicated coverage for mission-assigned RAM-backed KV is closed in the current local candidate. A test verifies the automatic mission-assignment estimate path requests RAM KV and fails closed before inference if LM Studio omits the applied setting. Runtime: 287 (284 pass, 3 skip), root typecheck passed. No live server/model mutation. This candidate is not yet published or hosted-checked.
+
+## Exact-head mission guard and current CLI live acceptance · 2026-10-30
+
+The preceding “not yet published” line is superseded: commit `228ce6a36cb9294f6a21f53bda8281ed728b8678` passed all eight exact-head CI/package jobs and PR #82 remains OPEN/DRAFT/unmerged. A fresh native UI targetability recheck again found Xyst IDs in `list_apps()` but no Xyst window in fresh `list_windows()`; no stale handle, live profile, or composer was touched. The attempt and precise limits are in the append-only original checkpoint.
+
+Built runtime and CLI from `228ce6a`, then ran a fresh, read-only Windows CLI acceptance using the already-resident Qwen3.5 9B at 250112 context. Session `37411f83-d327-4f70-93dd-b45f0fa5c2d2` read the exact marker and persisted `task_complete verified:true`; it took about 16.5 seconds from run start with 5,728 prompt tokens on the first provider call. `lms ps` before/after showed the same four idle instances and no queued work; no instance or LM Studio setting changed. This is one short-task live sample, not sustained speed or freeze-resistance evidence. Preserve the prior wrong-CWD setup failure and malformed first completion call recorded in `verification-history.md`.
+
+Next: continue the requirement-by-requirement audit and representative model/platform acceptance. Native desktop composer/accessibility remains open because the supported UI helper cannot target the current window. The original Windows timeout, sustained model reliability, broader bare-metal/platform coverage, signing and production update hosting remain open. No merge is authorized; the overall goal remains incomplete.
