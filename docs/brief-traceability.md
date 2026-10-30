@@ -286,3 +286,8 @@ Current read-only resource evidence: one Qwen3.5 9B `llama-server` with context 
 
 ### Exact-head publication and LM Studio error evidence · 2026-10-30
 Documentation-only `b24d9d1` passed all eight push/PR Windows/Ubuntu/Linux jobs; exact run/job IDs are in `verification-history.md`. PR #82 remains OPEN/DRAFT/UNMERGED and has no reviews. A read-only LM Studio app-log inspection found repeated `Engine protocol predict request failed: fetch failed` entries at local 04:41, 04:44, 04:48, and 04:49, near the later Xyst `LMStudioError` at 04:49:38. This supports an LM Studio engine-communication failure for this attempt but does not prove causality or explain the older Windows stall. C1/C2/A5, sustained reliability, broader acceptance, and production signing/hosting remain open.
+
+### Current RAM-backed context guard and exact-head checks · 2026-10-30
+The current Windows snapshot reports 93.1 GiB total / 46.2 GiB available RAM. Xyst's guard is the minimum of 50% available, 25% total, and 32 GiB (23.1 GiB now); the LM Studio 250,112 default-placement estimate is 19.31 GiB, so the existing RAM-backed KV fallback is allowed when automatic unloading is off. New loads remain task-estimate + 8,192 and adequate resident instances are reused. This respects the 250K target without allocating it for every small task. It does not establish sustained speed; C1/C2/A5 and G2 remain partial.
+
+All eight exact-head jobs passed for docs head `6a9cb0f968f6bf7eebdd9dcb1d91db44ced1900b`; exact job IDs and scope are in `verification-history.md`. PR #82 remains OPEN/DRAFT/UNMERGED.
