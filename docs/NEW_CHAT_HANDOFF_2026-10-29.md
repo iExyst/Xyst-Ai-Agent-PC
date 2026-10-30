@@ -560,3 +560,7 @@ Isolated real CLI session `dd027da2-d889-4e20-a877-717b6fee947e` was created in 
 ## Exact-head result · documentation head `8d9764a` · all eight passed
 
 Push CI `41005247120` (Windows `123898566863`, Ubuntu `123898567050`); PR CI `41005241463` (Windows `123898549493`, Ubuntu `123898549321`); push packages `41005247131` (Windows `123898566512`, Linux `123898566650`); PR packages `41005241491` (Windows `123898549437`, Linux `123898549726`). All jobs passed. The live resumed CLI attempt documented below is a non-pass and is not covered by those documentation-only checks.
+
+## Exact-head hosted verification · `1312f513` · all eight passed · 2026-10-30
+
+All eight jobs passed for documentation/source head `1312f5138a3bd9372930095551a4b773559b2485`. Push CI `41005831858`: Windows `123900470273`, Ubuntu `123900470081`. PR CI `41005836489`: Windows `123900644896`, Ubuntu `123900645014`. Push Desktop packages `41005831841`: Windows `123900398394`, Linux `123900398181`. PR Desktop packages `41005836690`: Windows `123900413005`, Linux `123900413333`. Windows installer/update, clean-install renderer, mission-service lifecycle, Linux AppImage/update manifest, and artifact upload all passed. This verifies the CI/package scope only; live orphan recovery, broader acceptance, and both-brief gaps remain open. PR #82 remains OPEN/DRAFT/unmerged.
