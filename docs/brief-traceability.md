@@ -356,3 +356,6 @@ The Windows clean-install smoke now drives a real packaged Desktop saved session
 
 ### Desktop external-edit session recovery · Windows package smoke passed · `a13bbfb`
 The Windows clean-install package smoke passed the real Desktop UI authorize/resume flow and verified persisted `PHASE_B` command output, `BelowNormal` priority for the resumed agent process, and zero model-load requests. The separate Windows cross-platform suite exposed a timing race in the CLI owner-crash test harness; its production recovery path is not disproven by that test failure. A slower, readiness-signaled test correction passes locally and awaits fresh hosted validation. Desktop UI owner-crash recovery remains unverified.
+
+### CLI owner-crash recovery and Desktop external-edit recovery · exact-head validation · `d42c66f`
+The owner-crash CLI test timing correction now passes the hosted Windows suite; the packaged Desktop external-edit authorization/resume flow passed Windows clean-install smoke. All eight exact-head CI/package jobs passed. Detailed IDs and scope are in `verification-history.md`. Desktop UI crash recovery/reconciliation and user-profile lag acceptance remain open.
