@@ -7521,6 +7521,35 @@ test("duplicate native model rows with missing or invalid context do not erase k
   }
 });
 
+test("resumed session status is visible as running while inference is in flight", async () => withTemp(async (root) => {
+  const databasePath = join(root, "resumed-session-status.sqlite");
+  const store = new XystStore(databasePath); const observerStore = new XystStore(databasePath);
+  const config = new ConfigStore(store); const sessions = new SessionStore(store); const observerSessions = new SessionStore(observerStore); const events = new RuntimeEvents();
+  const sessionId = sessions.create("Status visibility"); sessions.setStatus(sessionId, "completed");
+  let markInferenceStarted!: () => void; const inferenceStarted = new Promise<void>((resolve) => { markInferenceStarted = resolve; });
+  let resolveInference!: (value: unknown) => void; const inferenceResult = new Promise<unknown>((resolve) => { resolveInference = resolve; });
+  const provider = {
+    redact: (value: string) => value,
+    isLocalServer: () => true,
+    models: async () => [{ type: "llm", publisher: "Test", key: "status-model", display_name: "Status model", size_bytes: 1, max_context_length: 16_384, loaded_instances: [{ id: "status-model", config: { context_length: 16_384 } }] }],
+    streamChatWithTools: async () => { markInferenceStarted(); return await inferenceResult; }
+  };
+  const runner = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  const runPromise = runner.run("Explain a short example.", { sessionId, model: "status-model", maxTurns: 1 });
+  try {
+    await inferenceStarted;
+    assert.equal((observerSessions.list() as Array<{ id: string; status: string }>).find((item) => item.id === sessionId)?.status, "running");
+    resolveInference({ choices: [{ message: { role: "assistant", content: "Example explained." } }] });
+    const result = await runPromise;
+    assert.notEqual(result.status, "running");
+    assert.equal((observerSessions.list() as Array<{ id: string; status: string }>).find((item) => item.id === sessionId)?.status, result.status);
+  } finally {
+    resolveInference({ choices: [{ message: { role: "assistant", content: "Example explained." } }] });
+    await runPromise.catch(() => undefined);
+    observerStore.close(); store.close();
+  }
+}));
+
 test("agent compacts a saved oversized tool chain before resuming on its resident instance", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "resident-resume-compaction.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "resume-model"); config.set("global", "models.automaticLoading", false);

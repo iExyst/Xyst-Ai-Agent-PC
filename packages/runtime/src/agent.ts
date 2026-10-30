@@ -1250,6 +1250,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       this.deps.events.emit("model.selected", { model: selected, modelInstanceId: inferenceModel, reason: selectionReason, previousModel, remote: true }, sessionId);
       return this.generateWithRetry({ model: inferenceModel, messages, tools: definitions, ...inferenceOptions, ...(automaticUnloading ? { ttl: idleUnloadSeconds } : {}) }, options.onText, options.signal, provider, requestTimeoutMs);
     };
+    this.deps.sessions.setStatus(sessionId, "running");
     this.deps.events.emit("agent.started", { sessionId, model: selected, maxTurns }, sessionId);
     let turns = 0; let status: AgentResult["status"] = "limit"; let switchedModel = false;
     try {
