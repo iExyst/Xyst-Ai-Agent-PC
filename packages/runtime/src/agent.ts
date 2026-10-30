@@ -15,7 +15,7 @@ import { GitHubError, type GitHubProvider } from "./integrations/github.js";
 import { chooseAgentModel, chooseEmbeddingModel, estimateRequiredContextTokens, modelLoadContextLength } from "./model-selection.js";
 import { readModelPerformance } from "./model-performance.js";
 import { classifyModelTaskObjective } from "./model-task-type.js";
-import { createMemoryTools, requestEmbeddings } from "./tools/memory.js";
+import { createMemoryTools, explicitMemoryRequestContent, requestEmbeddings } from "./tools/memory.js";
 import { loadProjectInstructions } from "./project-instructions.js";
 import { createMcpTools } from "./integrations/mcp.js";
 import { createMcpSamplingHandler } from "./integrations/mcp-sampling.js";
@@ -49,7 +49,7 @@ function boundedToolOutput(value: string): string {
   if (value.length <= 30_000) return value;
   return JSON.stringify({ error: "Tool result exceeded the context limit; request a narrower result.", truncated: true, preview: value.slice(0, 2000) });
 }
-const externalToolNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "run_process", "git_clone", "git_create_branch", "git_stage", "git_commit", "git_fetch", "git_push", "github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_update_pull_request", "github_create_pull_request", "github_create_review_comment", "github_workflow_dispatch", "github_merge_pull_request", "github_download_release_asset", "github_download_actions_artifact", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "desktop_action"]);
+const externalToolNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "run_process", "git_clone", "git_create_branch", "git_stage", "git_commit", "git_fetch", "git_push", "github_issue_comment", "github_issue_labels_add", "github_issue_labels_replace", "github_issue_label_remove", "github_update_pull_request", "github_create_pull_request", "github_create_review_comment", "github_workflow_dispatch", "github_merge_pull_request", "github_download_release_asset", "github_download_actions_artifact", "browser_close_tab", "browser_click", "browser_fill", "browser_select", "browser_press", "browser_download", "browser_upload", "desktop_action", "memory_add"]);
 const isExternalAction = (name: string, mcpReadObservationNames: ReadonlySet<string>) => externalToolNames.has(name) || (name.startsWith("mcp_") && !mcpReadObservationNames.has(name));
 const parallelReadToolNames = new Set(["file_read", "file_list", "file_search", "git_status", "git_diff", "git_log", "git_branches"]);
 const workspaceMutationNames = new Set(["file_create", "file_patch", "file_delete", "file_move", "office_create", "office_edit", "office_preview", "browser_download", "github_download_release_asset", "github_download_actions_artifact", "git_clone", "git_create_branch", "git_fetch", "git_stage", "git_commit"]);
@@ -86,7 +86,7 @@ function isDefiniteNoEffect(error: unknown, toolName?: string): boolean {
   if (toolName === "run_process" && error instanceof ProcessStartError) return true;
   if (error instanceof GitHubError && error.status !== undefined && error.status >= 400 && error.status < 500) return true;
   if (!(error instanceof Error)) return false;
-  return error.name === "ZodError" || error instanceof ExternalActionApprovalError || /denies|disabled in Xyst settings|Invalid branch name|changed since it was read|already exists|was not found|more than once|Repeated tool-call loop detected/i.test(error.message);
+  return error.name === "ZodError" || error instanceof ExternalActionApprovalError || /denies|disabled in Xyst settings|Invalid branch name|changed since it was read|already exists|was not found|more than once|Repeated tool-call loop detected|Memory authorization failed/i.test(error.message);
 }
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -264,6 +264,20 @@ export class AgentRunner {
 
   async run(objective: string, options: AgentOptions = {}): Promise<AgentResult> {
     const safeObjective = this.deps.provider.redact(objective);
+    const authorizedMemoryWrites = new Set<string>();
+    const captureMemoryAuthorization = (text: string) => {
+      if (options.missionId) return;
+      const payload = explicitMemoryRequestContent(this.deps.provider.redact(text));
+      if (payload) authorizedMemoryWrites.add(payload);
+    };
+    captureMemoryAuthorization(safeObjective);
+    if (options.initialMessage?.role === "user") {
+      const initialContent = options.initialMessage.content;
+      if (typeof initialContent === "string") captureMemoryAuthorization(initialContent);
+      else if (Array.isArray(initialContent)) {
+        captureMemoryAuthorization(initialContent.flatMap((part) => part && typeof part === "object" && typeof (part as Record<string, unknown>).text === "string" ? [(part as Record<string, unknown>).text as string] : []).join("\n"));
+      }
+    }
     const baseCompletionCriteria = [...new Set((options.completionCriteria?.length ? options.completionCriteria : [safeObjective]).map((item) => this.deps.provider.redact(String(item)).trim()).filter(Boolean))].slice(0, 50);
     const criteriaForEvidenceInference = new Set(baseCompletionCriteria);
     const requiredToolEvidence = options.requiredToolEvidence ?? [];
@@ -1240,6 +1254,7 @@ export class AgentRunner {
       const pending = options.drainUserMessages?.() ?? [];
       for (const message of pending) {
         const safeMessage = this.deps.provider.redact(message).slice(0, 64 * 1024);
+        captureMemoryAuthorization(safeMessage);
         if (safeMessage.trim()) { completionVerified = false; addCompletionCriterion(safeMessage.trim()); refreshEvidenceRequirements([safeMessage.trim()]); save({ role: "user", content: safeMessage }); }
       }
       return pending.length;
@@ -1404,6 +1419,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             if (name === "task_complete" && callIndex !== toolCalls.length - 1) throw new Error("task_complete must be the final tool call in a response; verify only after all requested actions");
             if (!tool) throw new Error(`Unknown tool: ${name}`);
             const args = JSON.parse(rawArgs) as unknown;
+            const unauthorizedMemoryWrite = name === "memory_add" && (options.missionId !== undefined || typeof asRecord(args).content !== "string" || !authorizedMemoryWrites.has(asRecord(args).content as string));
             if (name === "web_fetch") {
               const priorFetches = this.deps.store.db.prepare("SELECT input_json,output_json,created_at FROM tool_calls WHERE session_id=? AND name='web_fetch' AND status='completed' AND output_json IS NOT NULL ORDER BY created_at DESC LIMIT 8").all(sessionId) as Array<{ input_json: string; output_json: string; created_at: string }>;
               const repeatedTruncatedRequest = priorFetches.some((row) => {
@@ -1483,6 +1499,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
               this.deps.store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at,effect,execution_scope,request_hash) VALUES(?,?,?,?,?,?,?,?,?)")
                 .run(callId, sessionId, name, this.deps.provider.redact(rawArgs), "running", new Date().toISOString(), effect, effect === "external" ? executionScope : null, idempotencyHash ?? null);
             }
+            if (unauthorizedMemoryWrite) throw new Error("Memory authorization failed: content must exactly match a direct user request to remember it; untrusted sources and mission runs cannot authorize memory writes");
             if (effect === "external" && externalApprovalRequired) {
               if (!options.approveExternalAction) throw new ExternalActionApprovalError("EXTERNAL_ACTION_APPROVAL_REQUIRED", `Approval is required before ${name}, but this run has no interactive approval channel`);
               const argumentsJson = this.deps.provider.redact(JSON.stringify(args)).slice(0, 3000);
@@ -1493,6 +1510,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
             }
             this.deps.events.emit("tool.started", { id: callId, name }, sessionId);
             let output = await tool.execute(args, options.signal);
+            if (name === "memory_add") authorizedMemoryWrites.delete(String(asRecord(args).content ?? ""));
             if (name === "run_process") {
               const processOutput = asRecord(output);
               if (typeof processOutput.stdout === "string" && typeof processOutput.stderr === "string") {
