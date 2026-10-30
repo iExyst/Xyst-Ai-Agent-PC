@@ -5,12 +5,14 @@ import { modelForIdentifier, type LMStudioProvider } from "./providers/lm-studio
 import { estimateRequiredContextTokens } from "./model-selection.js";
 
 const MESSAGE_PREFIX = "__xyst_api_message__:";
+const SUMMARY_MAX_OUTPUT_TOKENS = 2400;
+const SUMMARY_OUTPUT_RESERVE_TOKENS = SUMMARY_MAX_OUTPUT_TOKENS + 200;
 const summaryOutputSchema = z.object({
-  decisions: z.array(z.string().min(1).max(2000)).max(40),
-  dependencies: z.array(z.string().min(1).max(2000)).max(40),
-  completed_work: z.array(z.string().min(1).max(2000)).max(60),
-  outstanding_actions: z.array(z.string().min(1).max(2000)).max(40),
-  durable_facts: z.array(z.string().min(1).max(2000)).max(60)
+  decisions: z.array(z.string().min(1).max(10_000)).max(40),
+  dependencies: z.array(z.string().min(1).max(10_000)).max(40),
+  completed_work: z.array(z.string().min(1).max(10_000)).max(60),
+  outstanding_actions: z.array(z.string().min(1).max(10_000)).max(40),
+  durable_facts: z.array(z.string().min(1).max(10_000)).max(60)
 }).strict();
 
 type StoredMessage = { id: string; rowid: number; role: string; content: string; created_at: string };
@@ -35,8 +37,8 @@ function contentText(content: unknown): string {
 
 function compactSummaryText(value: string, limit: number): string {
   if (value.length <= limit) return value;
-  const head = Math.ceil((limit - 80) / 2);
-  const tail = Math.floor((limit - 80) / 2);
+  const head = Math.ceil((limit - 120) / 2);
+  const tail = Math.floor((limit - 120) / 2);
   return `${value.slice(0, head)}\n[${value.length - head - tail} characters omitted from this summary excerpt; full message remains in saved history]\n${value.slice(-tail)}`;
 }
 
@@ -87,7 +89,7 @@ function compactableHistory(messages: StoredMessage[], maxChars: number): { boun
     // cutoff merely because its raw output exceeds the summary input limit.
     const summarized = JSON.stringify({
       id: row.id, created_at: row.created_at, role: message.role,
-      content: compactSummaryText(contentText(message.content), 1000),
+      content: compactSummaryText(contentText(message.content), 500),
       tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: compactSummaryText(call.input, 500) })),
       ...(message.role === "tool" && typeof message.tool_call_id === "string" ? { tool_call_id: message.tool_call_id } : {})
     });
@@ -111,6 +113,37 @@ function compactableHistory(messages: StoredMessage[], maxChars: number): { boun
 }
 
 function unique(values: string[]): string[] { return [...new Set(values.map((value) => value.trim()).filter(Boolean))]; }
+
+function boundModelSummary(summary: z.infer<typeof summaryOutputSchema>): z.infer<typeof summaryOutputSchema> {
+  const bound = (values: string[]) => unique(values.map((value) => compactSummaryText(value, 1800)));
+  return {
+    decisions: bound(summary.decisions), dependencies: bound(summary.dependencies),
+    completed_work: bound(summary.completed_work), outstanding_actions: bound(summary.outstanding_actions),
+    durable_facts: bound(summary.durable_facts)
+  };
+}
+
+function extractJsonObject(content: string): unknown {
+  const cleaned = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const unfenced = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try { return JSON.parse(unfenced) as unknown; } catch { /* Try a single balanced object wrapped by model commentary. */ }
+  const start = unfenced.indexOf("{");
+  if (start < 0) throw new Error("no JSON object in model output");
+  let depth = 0; let quoted = false; let escaped = false;
+  for (let index = start; index < unfenced.length; index++) {
+    const char = unfenced[index]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) return JSON.parse(unfenced.slice(start, index + 1)) as unknown;
+  }
+  throw new Error("incomplete JSON object in model output");
+}
 
 function previousSummaryContext(snapshot: Record<string, unknown> | undefined, isStillOutstanding: (action: string) => boolean): string {
   if (!snapshot) return "null";
@@ -152,7 +185,7 @@ export class SessionCompactor {
     if (options.requireLoadedInstanceId && !requestedInstance) throw new Error(`The resident compaction instance ${options.requireLoadedInstanceId} is no longer loaded; automatic compaction will not request a replacement`);
     const configuredContext = (requestedInstance ? [requestedInstance] : selectedModel.loaded_instances).map((item) => item.config.context_length).filter((value): value is number => typeof value === "number" && value > 0);
     const contextTokens = configuredContext.length ? Math.max(...configuredContext) : selectedModel.max_context_length ?? 8192;
-    const maximumSummaryChars = options.maxSummaryChars ?? Math.max(500, Math.min(28_000, (contextTokens - 1800) * 2));
+    const maximumSummaryChars = options.maxSummaryChars ?? Math.max(500, Math.min(28_000, (contextTokens - SUMMARY_OUTPUT_RESERVE_TOKENS - 800) * 4));
     const candidate = compactableHistory(remaining, maximumSummaryChars);
     if (!candidate.boundary || candidate.messages.length < 4) throw new Error("No safe completed-turn prefix is available to compact. Xyst keeps recent turns, image attachments, and incomplete tool-call/result pairs intact.");
     const compactedIds = new Set(candidate.messages.map((item) => item.id));
@@ -166,7 +199,7 @@ export class SessionCompactor {
       id: candidate.messages[index]!.id,
       created_at: candidate.messages[index]!.created_at,
       role: message.role,
-      content: compactSummaryText(contentText(message.content), 1000),
+      content: compactSummaryText(contentText(message.content), 500),
       tool_calls: toolCalls(message).map((call) => ({ id: call.id, name: call.name, arguments: compactSummaryText(call.input, 500) })),
       ...(message.role === "tool" && typeof message.tool_call_id === "string" ? { tool_call_id: message.tool_call_id } : {})
     }));
@@ -184,7 +217,8 @@ export class SessionCompactor {
       model,
       name: "xyst_session_compaction",
       temperature: 0,
-      max_tokens: 1600,
+      max_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
+      reasoning_effort: "none" as const,
       schema: {
         type: "object", additionalProperties: false,
         properties: {
@@ -201,7 +235,7 @@ export class SessionCompactor {
         { role: "user", content: promptPayload }
       ]
     };
-    if (estimateRequiredContextTokens(request.messages, 1800) > contextTokens) {
+    if (estimateRequiredContextTokens(request.messages, SUMMARY_OUTPUT_RESERVE_TOKENS) > contextTokens) {
       const nextMaximum = Math.floor(maximumSummaryChars * 0.7);
       const fitAttempts = options.fitAttempts ?? 0;
       if (fitAttempts < 5 && nextMaximum >= 500 && nextMaximum < maximumSummaryChars) {
@@ -215,8 +249,12 @@ export class SessionCompactor {
     const message = choice.message && typeof choice.message === "object" ? choice.message as Record<string, unknown> : {};
     if (typeof message.content !== "string") throw new Error("LM Studio returned no structured session summary");
     let modelSummary: z.infer<typeof summaryOutputSchema>;
-    try { modelSummary = summaryOutputSchema.parse(JSON.parse(message.content)); }
-    catch { throw new Error("LM Studio returned a session summary that did not match the required schema"); }
+    try { modelSummary = boundModelSummary(summaryOutputSchema.parse(extractJsonObject(message.content))); }
+    catch (error) {
+      const finishReason = String(choice.finish_reason ?? "unknown");
+      const detail = error instanceof z.ZodError ? `schema paths: ${error.issues.map((issue) => issue.path.join(".") || "<root>").slice(0, 8).join(", ")}` : error instanceof Error ? error.message : "invalid summary";
+      throw new Error(`LM Studio returned an invalid session summary (finish_reason=${finishReason}, content_chars=${message.content.length}; ${detail})`);
+    }
     const summary = {
       version: 1,
       primary_goal: primaryGoal,

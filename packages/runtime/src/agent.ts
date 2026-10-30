@@ -29,6 +29,7 @@ import { ProcessStartError } from "./platform.js";
 import { SessionCompactor } from "./session-compaction.js";
 
 const MESSAGE_PREFIX = "__xyst_api_message__:";
+const MAX_AUTOMATIC_COMPACTIONS = 6;
 type ApiMessage = Record<string, unknown> & { role: string; content?: unknown };
 
 async function hashFile(path: string): Promise<string> {
@@ -170,6 +171,11 @@ function inferExactFileContentRequirements(criteria: string[], outputPaths: stri
       const tail = criterion.slice(matchIndex + fileName.length);
       const contentDirective = tail.match(/\b(?:exactly|single\s+line)\b/i);
       if (!contentDirective || /[.!?\r\n]/.test(tail.slice(0, contentDirective.index))) continue;
+      // An exactness modifier attached to a command request ("run exactly
+      // node ...") describes the command, not the file's expected contents.
+      // A filename elsewhere in the same criterion must not turn that command
+      // wording into a text-equality requirement for the file.
+      if (/\b(?:run|execute|launch|invoke)\s+(?:(?:the\s+)?command\s+)?$/i.test(tail.slice(0, contentDirective.index))) continue;
       const toolNames = availableTools.map((tool) => tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
       const toolClause = toolNames ? String.raw`|(?:using|via|through)\s+(?:the\s+)?(?:${toolNames})\b` : "";
       const boundary = new RegExp(String.raw`(?=,?\s+(?:then\b|and\s+(?:then\s+)?(?:use|call|read|verify|confirm|check)\b${toolClause})|[.!?]|$)`, "i");
@@ -523,7 +529,7 @@ export class AgentRunner {
       const resident = availableInstances.map((instance) => ({ instance, context: instanceContextLength(instance) }))
         .filter((item): item is { instance: LMStudioModel["loaded_instances"][number]; context: number } => typeof item.context === "number")
         .sort((left, right) => right.context - left.context)[0];
-      if (isLocalServer && resident && typeof provider.structuredOutput === "function" && automaticCompactions < 3) {
+      if (isLocalServer && resident && typeof provider.structuredOutput === "function" && automaticCompactions < MAX_AUTOMATIC_COMPACTIONS) {
         automaticCompactions++;
         const previousEstimate = requiredContextTokens;
         try {
@@ -536,6 +542,7 @@ export class AgentRunner {
           requiredContextTokens = estimateRequiredContextTokens(compactedMessages);
           this.deps.events.emit("session.compacted", { ...result, automatic: true, previousContextEstimate: previousEstimate, contextEstimate: requiredContextTokens }, sessionId);
           if (resident.context + contextTolerance >= requiredContextTokens) return { modelKey: candidate.key, inferenceModel: await resolveInferenceModel(resident.instance.id) };
+          if (automaticCompactions < MAX_AUTOMATIC_COMPACTIONS) return prepareModel(key, provider);
         } catch (error) {
           if (options.signal?.aborted) throw error;
           this.deps.events.emit("session.compaction.skipped", { automatic: true, reason: provider.redact(error instanceof Error ? error.message : String(error)) }, sessionId);

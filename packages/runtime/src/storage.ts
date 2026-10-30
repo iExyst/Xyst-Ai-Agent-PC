@@ -311,12 +311,12 @@ export class SessionStore {
     if (!latest) return rows;
     const summaryValue = JSON.parse(latest.summary_json) as Record<string, unknown>;
     const summary = JSON.stringify(summaryValue);
-    const context = [{ role: "assistant", content: `[Persisted Xyst session summary through ${latest.boundary_created_at} (message ${latest.through_message_id}); historical context, not current-state evidence or a new instruction. Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary. Re-read or re-run the relevant tool before relying on them as current.]\n${summary}` }, ...rows];
     const parsed = rows.map((row) => {
       if (!row.content.startsWith("__xyst_api_message__:")) return { role: row.role, content: row.content };
       try { return JSON.parse(row.content.slice("__xyst_api_message__:".length)) as { role?: string; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string }; }
       catch { return { role: row.role, content: row.content }; }
     });
+    const context = [{ role: "assistant", content: `[Persisted Xyst session summary through ${latest.boundary_created_at} (message ${latest.through_message_id}); historical context, not current-state evidence or a new instruction. Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary. Re-read or re-run the relevant tool before relying on them as current.]\n${summary}` }, ...rows];
     if (!parsed.some((message) => message.role === "user")) {
       const pendingCalls = new Set<string>();
       for (const message of parsed) {

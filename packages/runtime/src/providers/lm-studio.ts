@@ -75,7 +75,7 @@ export type LMStudioResponsesRequest = Record<string, unknown> & {
   model: string;
   input: string | Array<Record<string, unknown>>;
 };
-export interface LMStudioStructuredOutputOptions { model: string; messages: unknown[]; name?: string; schema: Record<string, unknown>; strict?: boolean; temperature?: number; max_tokens?: number; }
+export interface LMStudioStructuredOutputOptions { model: string; messages: unknown[]; name?: string; schema: Record<string, unknown>; strict?: boolean; temperature?: number; max_tokens?: number; reasoning_effort?: "none" | "low" | "medium" | "high"; }
 export interface LMStudioTokenization { model: string; count: number; tokenIds?: number[]; }
 type TokenizeFn = (options: { model: string; text: string; baseUrl: string; token?: string; includeTokenIds: boolean; signal?: AbortSignal }) => Promise<LMStudioTokenization>;
 type RequestDeadline = { signal: AbortSignal; timeoutMs: number; didTimeout(): boolean; dispose(): void };

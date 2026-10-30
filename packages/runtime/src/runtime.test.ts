@@ -2484,6 +2484,33 @@ test("command wording after an output filename does not become an exact file-con
   } finally { store.close(); }
 }));
 
+test("exact command wording after a declared filename is not inferred as the file's expected contents", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "command-exactness-content-inference.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  await writeFile(join(root, "duration.cjs"), "module.exports.parseDuration = (value) => value.length;\n", "utf8");
+  await writeFile(join(root, "acceptance.test.cjs"), "const test = require('node:test'); const assert = require('node:assert/strict'); const { parseDuration } = require('./duration.cjs'); test('parser export', () => assert.equal(parseDuration('1s'), 2));\n", "utf8");
+  const response = (id: string, name: string, args: Record<string, unknown>) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = {
+    redact: (value: string) => value,
+    streamChatWithTools: async () => {
+      turn++;
+      if (turn === 1) return response("duration-command-run", "run_process", { executable: process.execPath, args: ["--test", "acceptance.test.cjs"], cwd: root });
+      if (turn === 2) return response("duration-final-read", "file_read", { path: "duration.cjs" });
+      return response("duration-task-complete", "task_complete", { evidence_tool_call_indexes: [2, 1] });
+    }
+  };
+  try {
+    const objective = "Correct duration.cjs with file_patch. Run exactly node --test acceptance.test.cjs, then read back the final file.";
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run(objective, { workspace: root, maxTurns: 3, expectedOutputPaths: ["duration.cjs"] });
+    assert.equal(result.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,input_json,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(result.sessionId)));
+    assert.equal(turn, 3);
+    const run = store.db.prepare("SELECT output_json FROM tool_calls WHERE session_id=? AND name='run_process' AND status='completed'").get(result.sessionId) as { output_json: string };
+    assert.equal(JSON.parse(run.output_json).code, 0);
+    const completion = store.db.prepare("SELECT output_json FROM tool_calls WHERE session_id=? AND name='task_complete' AND status='completed'").get(result.sessionId) as { output_json: string };
+    assert.equal(JSON.parse(completion.output_json).verified, true);
+  } finally { store.close(); }
+}));
+
 test("explicit live API requests require evidence from the exact requested URL", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "requested-live-api-evidence.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model");
@@ -6348,8 +6375,9 @@ test("structured output uses LM Studio's JSON Schema response format", async () 
   try {
     const address = server.address(); assert.ok(address && typeof address !== "string");
     const provider = new LMStudioProvider({ baseUrl: `http://127.0.0.1:${address.port}` });
-    await provider.structuredOutput({ model: "test", messages: [{ role: "user", content: "Return JSON" }], schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } });
+    await provider.structuredOutput({ model: "test", messages: [{ role: "user", content: "Return JSON" }], schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false }, reasoning_effort: "none" });
     assert.deepEqual(requestBody?.response_format, { type: "json_schema", json_schema: { name: "xyst_response", strict: true, schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } } });
+    assert.equal(requestBody?.reasoning_effort, "none");
   } finally { await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
 });
 
@@ -7294,6 +7322,35 @@ test("agent compacts a saved oversized tool chain before resuming on its residen
   try {
     const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Continue inspection.", { sessionId, workspace: root, maxTurns: 3 });
     assert.equal(result.status, "completed"); assert.equal(summaries, 1); assert.ok(sessions.messages(sessionId).length > 13);
+  } finally { store.close(); }
+}));
+
+test("agent performs multiple bounded resident compactions until saved context fits", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "repeated-resident-compaction.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "resident-model"); config.set("global", "models.automaticLoading", false);
+  const sessionId = sessions.create("Repeated compaction");
+  const content = "Historical user instruction: " + "x".repeat(1000);
+  for (let i = 0; i < 40; i++) { sessions.addMessage(sessionId, "user", content); sessions.addMessage(sessionId, "assistant", "Recorded this user instruction."); }
+  let summaries = 0; let inferenceCalls = 0;
+  const provider = {
+    redact: (value: string) => value, isLocalServer: () => true,
+    models: async () => [{ type: "llm", key: "resident-model", max_context_length: 32768, size_bytes: 1, loaded_instances: [{ id: "resident", config: { context_length: 8192 } }] }],
+    load: async () => assert.fail("must not load another instance"), unload: async () => assert.fail("must not unload the resident instance"),
+    structuredOutput: async () => { summaries++; return { choices: [{ message: { content: JSON.stringify({ decisions: [], dependencies: [], completed_work: [], outstanding_actions: [], durable_facts: [] }) } }] }; },
+    streamChatWithTools: async (request: { model: string; messages: Array<{ content?: unknown }> }) => {
+      inferenceCalls++; assert.equal(request.model, "resident");
+      assert.ok(estimateRequiredContextTokens(request.messages.slice(1)) <= 8192, "inference must follow only after repeated compaction fits");
+      return { choices: [{ message: { role: "assistant", content: "Continue." } }] };
+    }
+  };
+  try {
+    let result: Awaited<ReturnType<AgentRunner["run"]>> | undefined; let runError: unknown;
+    try { result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never }).run("Continue the saved task.", { sessionId, workspace: root, maxTurns: 1 }); }
+    catch (error) { runError = error; }
+    const boundaries = sessions.compactions(sessionId).map((item) => (sessions.messages(sessionId) as Array<{ id: string }>).findIndex((row) => row.id === item.through_message_id)).join(",");
+    assert.ok(result, `expected inference after repeated compaction; summaries=${summaries}, boundaries=${boundaries}, context=${estimateRequiredContextTokens(sessions.contextMessages(sessionId))}, error=${String(runError)}`);
+    assert.equal(result.status, "unverified"); assert.ok(summaries >= 2 && summaries <= 6, `expected bounded repeated compactions, received ${summaries}`); assert.equal(inferenceCalls, 1);
+    assert.equal(sessions.messages(sessionId).length, 82, "all raw messages remain saved across compaction");
   } finally { store.close(); }
 }));
 
