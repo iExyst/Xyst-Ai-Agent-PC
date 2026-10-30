@@ -392,3 +392,6 @@ All eight exact-head Windows and Ubuntu/Linux CI/package jobs passed for documen
 
 ### Desktop saved-session acceptance · packaged mock-provider pass · `3bafe17`
 The Windows clean-install packaged Desktop smoke passed external-edit resume and owner-crash recovery/reconciliation during an authorized rerun, using a deterministic loopback mock provider and zero model-load requests. This supersedes the earlier statement that Desktop saved-session crash recovery had not passed. Live user-profile interaction, live-model reliability/contention, and system-wide lag attribution remain open; G2 remains Partial.
+
+### G2 · bound streamed process-output persistence · local candidate · 2026-10-30
+The CLI worker now persists running process output at most four times per second per process instead of rewriting the full retained stdout/stderr snapshot for every chunk. It preserves full in-memory capture and writes the final output immediately. CLI typecheck and all 35 CLI tests passed, including command recovery and PTY lifecycle; details are in `verification-history.md`. This targets avoidable serialization/SQLite load under output-heavy agent and terminal streams. It has not been hosted-validated or measured against the live user profile; G2 and lag attribution remain Partial.

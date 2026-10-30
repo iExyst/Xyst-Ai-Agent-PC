@@ -424,13 +424,29 @@ try {
     const spec = runtime.jobs.processSpec(id); if (!spec) fail(`Process job specification missing: ${id}`);
     runtime.jobs.updateProcess(id, "running", { startedAt: new Date().toISOString() });
     const workerController = new AbortController(); let stdout = ""; let stderr = ""; let outputTruncated = false;
+    // Persist streamed output at a bounded rate. Each write serializes the full
+    // retained output snapshot, so writing once per PTY/model chunk can turn a
+    // fast stream into repeated large SQLite updates.
+    const outputPersistIntervalMs = 250;
+    let outputPersistTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastOutputPersistAt = 0;
+    const persistRunningOutput = () => {
+      outputPersistTimer = undefined;
+      lastOutputPersistAt = Date.now();
+      runtime.jobs.updateProcess(id, "running", { stdout, stderr, outputTruncated });
+    };
+    const scheduleOutputPersist = () => {
+      if (outputPersistTimer) return;
+      const delay = Math.max(0, outputPersistIntervalMs - (Date.now() - lastOutputPersistAt));
+      outputPersistTimer = setTimeout(persistRunningOutput, delay);
+    };
     const append = (key: "stdout" | "stderr", chunk: string) => {
       const cleanChunk = runtime.lmStudio.redact(chunk); const current = key === "stdout" ? stdout : stderr;
       const next = current + cleanChunk;
       if (next.length > 100_000) outputTruncated = true;
       const bounded = next.slice(-100_000);
       if (key === "stdout") stdout = bounded; else stderr = bounded;
-      runtime.jobs.updateProcess(id, "running", { stdout, stderr, outputTruncated });
+      scheduleOutputPersist();
     };
     let writeStdin: ((value: string) => void) | undefined; let closeStdin: (() => void) | undefined;
     let terminalSession: nodePty.IPty | undefined;
@@ -464,7 +480,7 @@ try {
     } catch (error) {
       const cancelled = workerController.signal.aborted;
       runtime.jobs.updateProcess(id, cancelled ? "cancelled" : "failed", { stdout, stderr, outputTruncated, error: runtime.lmStudio.redact(error instanceof Error ? error.message : String(error)), finishedAt: new Date().toISOString() });
-    } finally { clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
+    } finally { if (outputPersistTimer) clearTimeout(outputPersistTimer); clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
   } else if (command === "agent" && subcommand === "authorize-rerun") {
     const [sessionId, toolCallId] = rest;
     if (!sessionId || !toolCallId || rest.length !== 2) fail("Usage: agent authorize-rerun <session-id> <tool-call-id>");
