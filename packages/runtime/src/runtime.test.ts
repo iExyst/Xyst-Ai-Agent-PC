@@ -4266,8 +4266,10 @@ test("mission scheduler applies missed-run policy and preserves the scheduled in
   const finished: Array<Record<string, unknown>> = [];
   const unsubscribe = events.on("mission.finished", (event) => finished.push(event.payload as Record<string, unknown>));
   const runner = new PersistentMissionRunner({ store, config, events, agent: { run: async () => ({ sessionId: randomUUID(), model: "fake", turns: 1, status: "completed" as const, response: "done" }) } as never });
-  const runOnce = runner.repository.create({ name: "Run missed schedule", objective: "Run once after restart", schedule: { cron: "*/5 * * * *", timezone: "UTC", enabled: true, missedRun: "run_once" } });
-  const skip = runner.repository.create({ name: "Skip missed schedule", objective: "Do not replay stale work", schedule: { cron: "*/5 * * * *", timezone: "UTC", enabled: true, missedRun: "skip" } });
+  // Keep the normal cron fire outside this short recovery test. A five-minute
+  // cadence can cross a boundary during slow CI and create a second valid run.
+  const runOnce = runner.repository.create({ name: "Run missed schedule", objective: "Run once after restart", schedule: { cron: "0 0 1 1 *", timezone: "UTC", enabled: true, missedRun: "run_once" } });
+  const skip = runner.repository.create({ name: "Skip missed schedule", objective: "Do not replay stale work", schedule: { cron: "0 0 1 1 *", timezone: "UTC", enabled: true, missedRun: "skip" } });
   const missedAt = new Date(Date.now() - 60_000).toISOString();
   runner.repository.setScheduleState(runOnce.id, missedAt);
   runner.repository.setScheduleState(skip.id, missedAt);
