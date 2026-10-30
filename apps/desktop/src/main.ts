@@ -11,6 +11,7 @@ import { scopedSettingKeys, scopesForDesktopSetting, settingScopes } from "./set
 import { openExternalHttps } from "./external-links.js";
 import { SnapshotWorker } from "./snapshot-worker.js";
 import { createDashboardQuitGuard } from "./dashboard-shutdown.js";
+import { lowerBackgroundProcessPriority } from "./process-priority.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = process.env.XYST_ROOT ?? (app.isPackaged ? join(app.getPath("documents"), "Xyst") : resolve(here, "../../.."));
@@ -133,6 +134,7 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
       stdio,
       env: { ...process.env, XYST_ROOT: workingDirectory, XYST_DESKTOP_PARENT: "1" }
     });
+    if (agentRunId) lowerBackgroundProcessPriority(child.pid);
     const childStdin = child.stdin!; const childStdout = child.stdout!; const childStderr = child.stderr!;
     if (agentRunId) activeAgentRuns.set(agentRunId, child);
     if (agentRunId) {
@@ -197,6 +199,7 @@ const snapshotWorker = new SnapshotWorker(() => {
     cwd: projectRoot, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: { ...process.env, XYST_ROOT: projectRoot, XYST_DESKTOP_PARENT: "1" }
   });
+  lowerBackgroundProcessPriority(child.pid);
   dashboardChildren.add(child);
   child.once("close", () => dashboardChildren.delete(child));
   child.once("exit", () => dashboardChildren.delete(child));

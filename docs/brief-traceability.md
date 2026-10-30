@@ -343,3 +343,6 @@ All eight exact-head push/PR CI and package jobs passed for `945f5dd`; job IDs a
 
 ### Desktop single-instance resource guard · local candidate · 2026-10-30
 The packaged Windows UI smoke now verifies a duplicate launch exits while the original renderer remains available, protecting the single-instance/resource boundary. Local script syntax and diff checks passed; hosted clean-install execution is pending. This does not prove live user-machine lag resolution.
+
+### Windows background process scheduling · local candidate · 2026-10-30
+Agent CLI workers and the persistent dashboard snapshot worker now receive below-normal Windows process priority so background runtime work yields CPU scheduling to interactive app/UI work. The priority change is best-effort and does not apply to Linux/macOS, Electron's renderer, or a separately managed model server; it cannot guarantee low total CPU use. Unit tests, live Windows child-priority verification, Desktop typecheck, and renderer tests passed. Hosted exact-head checks and current-build user-profile responsiveness remain pending.
