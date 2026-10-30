@@ -41,6 +41,10 @@ export function inspectNativeAutomation(environment: RuntimeEnvironment = {}): C
 
 const uiAutomationScript = String.raw`
 $ErrorActionPreference = 'Stop'
+try {
+  $automationProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+  $automationProcess.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+} catch { }
 Add-Type -AssemblyName UIAutomationClient
 $request = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
 $root = [System.Windows.Automation.AutomationElement]::RootElement

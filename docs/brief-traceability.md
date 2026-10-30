@@ -359,3 +359,6 @@ The Windows clean-install package smoke passed the real Desktop UI authorize/res
 
 ### CLI owner-crash recovery and Desktop external-edit recovery · exact-head validation · `d42c66f`
 The owner-crash CLI test timing correction now passes the hosted Windows suite; the packaged Desktop external-edit authorization/resume flow passed Windows clean-install smoke. All eight exact-head CI/package jobs passed. Detailed IDs and scope are in `verification-history.md`. Desktop UI crash recovery/reconciliation and user-profile lag acceptance remain open.
+
+### Native UI Automation helper scheduling · local candidate · 2026-10-30
+The Windows UI Automation PowerShell helper now lowers itself to `BelowNormal` before loading the UI Automation assembly, matching the scheduling safeguard already applied to agent and dashboard workers. Focused regression, runtime typecheck, and a standalone Windows priority readback passed. Exact-head hosted validation and real-profile interactive responsiveness remain unresolved; the user’s stop-state recovery does not isolate which active workload caused the lag.

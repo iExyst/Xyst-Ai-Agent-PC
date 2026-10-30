@@ -5993,6 +5993,9 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
     const encoded = args[args.indexOf("-EncodedCommand") + 1];
     assert.ok(encoded);
     const script = Buffer.from(encoded, "base64").toString("utf16le");
+    const prioritySetup = script.indexOf("PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal");
+    const automationLoad = script.indexOf("Add-Type -AssemblyName UIAutomationClient");
+    assert.ok(prioritySetup >= 0 && automationLoad >= 0 && prioritySetup < automationLoad);
     const payload = script.match(/FromBase64String\('([^']+)'\)/)?.[1];
     const request = JSON.parse(Buffer.from(payload!, "base64").toString("utf8"));
     return { code: 0, signal: null, stdout: JSON.stringify(request.operation === "inspect" ? { window: { name: request.window_title }, controls: [] } : []), stderr: "", durationMs: 0 };
