@@ -105,3 +105,7 @@ The resume context now carries the complete persisted summary, compacted call jo
 ## C1/G2 follow-up · full resume context and 250K RAM-backed sample · 2026-10-30
 
 Commit `37bdc9b` restores the full saved summary/call journal and retained user messages when resuming and retries safe resident-model compaction up to six bounded passes. A parser correction enables verified completion when exactness refers to a command, not an exact file body. Local coverage passed; one real resumed CLI task completed its fixed 25-test verifier. A single 40,367-token prompt completed in about 33 seconds at 250112 context with KV on system RAM. This does not measure sustained throughput or reliability. Exact-head CI/package checks passed with one first-attempt 180-second Windows NSIS spawn timeout whose targeted same-head rerun passed; preserve the initial failure. C1/G2 remain partial.
+
+## C1/G2 follow-up · hosted verification of documentation head · 2026-10-30
+
+Documentation commit `5b212b0` passed all eight exact-head hosted Windows/Ubuntu CI and Linux/Windows packaging checks, including Windows clean-install renderer and mission-service lifecycle smoke. This verifies the documentation/source ancestor `37bdc9b`; it does not broaden the one live 25/25 resumed CLI result or ~33-second 40K-token speed sample into sustained reliability. The prior Windows installer timeout and successful retry are both retained. C1/G2 and the two-brief goal remain partial.
