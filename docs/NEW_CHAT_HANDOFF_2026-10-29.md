@@ -633,3 +633,7 @@ Exact-head push/PR CI and Desktop package runs all passed for `1a3c6bc5040f715cb
 ## Exact-head follow-up · `48057dc` · all hosted checks passed · 2026-10-30 UTC
 
 Documentation head `48057dc06de30e8594546c4accd315ff6059f7eb` passed all eight push/PR Windows/Ubuntu CI and Windows/Linux Desktop package jobs. Run/job IDs are recorded in `docs/verification-history.md`. PR #82 remains OPEN/DRAFT/UNMERGED. The worktree source is unchanged; no model, server, or LM Studio settings changed. Next resume the open model-backed CLI/Desktop acceptance and requirement-by-requirement brief audit; retain all non-passes, and do not merge or claim completion.
+
+## Native Desktop resume attempt · 2026-10-30 UTC
+
+Computer Use could not select a unique Xyst target: app inventory showed six indistinguishable development windows and two packaged windows, while its fresh window inventory omitted all Xyst windows. No UI action, inference, or app/profile state change occurred. This is a tooling-target non-pass, not a product failure. Retry native Desktop acceptance only after obtaining a unique fresh Xyst window selection; meanwhile continue independent CLI and brief work. Full details are in `docs/verification-history.md`.
