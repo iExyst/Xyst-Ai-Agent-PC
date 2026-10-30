@@ -334,8 +334,8 @@ export class SessionStore {
       this.store.db.prepare("DELETE FROM tool_calls WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM usage WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM model_decisions WHERE session_id=?").run(sessionId);
-      this.store.db.prepare("DELETE FROM jobs WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM artifacts WHERE session_id=? OR job_id IN (SELECT id FROM jobs WHERE session_id=?)").run(sessionId, sessionId);
+      this.store.db.prepare("DELETE FROM jobs WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM sessions WHERE id=?").run(sessionId);
     });
     transaction();

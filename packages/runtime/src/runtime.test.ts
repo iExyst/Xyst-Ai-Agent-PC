@@ -1321,8 +1321,12 @@ test("saved sessions rename, fork structured history, export, archive, and delet
     store.db.prepare("INSERT INTO mission_tasks(run_id,mission_id,task_key,objective,dependencies_json,state,attempts,session_id,updated_at) VALUES('r','m','t','task','[]','completed',1,?,?)").run(fork, now);
     await assert.rejects(async () => sessions.delete(fork), /belongs to a mission task/);
     sessions.archive(fork); assert.equal((sessions.list() as Array<{ id: string; status: string }>).find((item) => item.id === fork)?.status, "archived");
+    store.db.prepare("INSERT INTO jobs(id,session_id,kind,state,details_json,created_at,updated_at) VALUES('source-job',?,'process','completed','{}',?,?)").run(source, now, now);
+    store.db.prepare("INSERT INTO artifacts(id,job_id,name,path,metadata_json,created_at) VALUES('job-only-artifact','source-job','result.txt','result.txt','{}',?)").run(now);
     sessions.delete(source); assert.equal((sessions.list() as Array<{ id: string }>).some((item) => item.id === source), false);
     assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM session_compactions WHERE session_id=?").get(source) as { count: number }).count, 0);
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM artifacts WHERE id='job-only-artifact'").get() as { count: number }).count, 0);
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE id='source-job'").get() as { count: number }).count, 0);
   } finally { store.close(); }
 }));
 
