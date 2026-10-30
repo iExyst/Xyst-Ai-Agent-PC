@@ -123,3 +123,6 @@ Automatic local model preparation now checks GPU and total-memory estimates and 
 ### G2 follow-up · RAM-backed KV candidate exact-head checks
 
 Commit `296347d` passed all eight exact-head Windows/Ubuntu CI and Linux/Windows package jobs, including Windows installer, clean-install renderer, and mission-service lifecycle checks. Runtime regressions, root typecheck and desktop production build passed locally. These results verify the guard's code/build workflow, not measured live throughput or sustained responsiveness; G2 remains partial.
+### G2 follow-up · mission RAM-KV fail-closed coverage
+
+A new AgentRunner regression exercises an automatically assigned mission model whose GPU estimate exceeds free VRAM but whose total estimate fits the conservative RAM budget. It confirms Xyst requests RAM-backed KV and rejects inference when LM Studio does not confirm the applied setting. Windows runtime: 287 (284 pass, 3 skips); root typecheck passes. This is local deterministic evidence; live speed and stability remain open.

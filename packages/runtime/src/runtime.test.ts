@@ -842,6 +842,30 @@ test("automatic model selection uses RAM-backed KV only when its total estimate 
   } finally { store.close(); }
 }));
 
+test("mission-assigned RAM-backed KV fallback fails closed when LM Studio omits the applied setting", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "mission-ram-kv-confirmation.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.autoSelect", true);
+  let loaded = false;
+  let loadOptions: Record<string, unknown> | undefined;
+  let inferenceCalls = 0;
+  const provider = {
+    isLocalServer: () => true,
+    supportsLocalCliModelLifecycle: () => true,
+    models: async () => [{ type: "llm" as const, publisher: "test", key: "mission-model", display_name: "Mission model", size_bytes: 4 * 1024 ** 3, loaded_instances: loaded ? [{ id: "mission-instance", config: { context_length: 8192 } }] : [], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }],
+    estimateLoad: async () => ({ output: "Estimated GPU Memory: 8 GiB\nEstimated Total Memory: 19 GiB" }),
+    load: async (_model: string, options: Record<string, unknown>) => { loadOptions = options; loaded = true; return { status: "loaded", instance_id: "mission-instance", load_config: { context_length: 8192 } }; },
+    redact: (text: string) => text,
+    streamChatWithTools: async () => { inferenceCalls++; return { choices: [{ message: { role: "assistant", content: "must not run" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }; }
+  };
+  const gib = 1024 ** 3;
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 100 * gib, usedBytes: 36 * gib, availableBytes: 64 * gib, usedPercent: 36 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 12 * gib, freeBytes: 4 * gib }] } }) });
+  try {
+    await assert.rejects(agent.run("Do a small task", { workspace: root, model: "mission-model", automaticModelAssignment: true }), /did not confirm that mission-model stores its KV cache in system RAM/);
+    assert.equal(loadOptions?.offload_kv_cache_to_gpu, false, "the mission-assigned load requested CPU-backed KV");
+    assert.equal(inferenceCalls, 0, "unconfirmed KV placement must block model inference");
+  } finally { store.close(); }
+}));
+
 test("automatic model selection filters declared context limits using a bounded task estimate", () => {
   assert.equal(modelLoadContextLength(32_768, 6144), 14_336, "local model loads reserve bounded room for additional tool results");
   assert.equal(modelLoadContextLength(8192, 6144), 8192, "headroom is capped at the model's declared maximum");

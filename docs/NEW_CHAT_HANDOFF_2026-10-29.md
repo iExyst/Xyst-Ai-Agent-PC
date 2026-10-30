@@ -431,3 +431,6 @@ Local Windows runtime suite: 286 tests (283 pass, 3 skips, 0 fail); root typeche
 ## Exact-head verification · RAM-backed context candidate · 296347d · 2026-10-30
 
 Commit `296347ddd83881c3aad9ba2b2a6a84ecc88c9ed5` passed all eight exact-head Windows/Ubuntu CI and Linux/Windows packaging checks. Both Windows CI/package paths passed, including Windows installer/update metadata, clean-install renderer, and mission-service lifecycle smoke. Exact IDs: push CI `40984404084`, PR CI `40984411524`, push packages `40984404100`, PR packages `40984411275`; job IDs are listed in `docs/verification-history.md`. PR #82 remains OPEN/DRAFT/unmerged. The RAM estimate remains only a guardrail, not proof of a specific speed or sustained freeze resistance.
+## RAM-KV mission-path regression · 2026-10-30
+
+The previously noted gap in dedicated coverage for mission-assigned RAM-backed KV is closed in the current local candidate. A test verifies the automatic mission-assignment estimate path requests RAM KV and fails closed before inference if LM Studio omits the applied setting. Runtime: 287 (284 pass, 3 skip), root typecheck passed. No live server/model mutation. This candidate is not yet published or hosted-checked.
