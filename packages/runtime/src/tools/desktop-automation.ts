@@ -64,16 +64,24 @@ function Get-Controls($window, $limit) {
   $queue = New-Object System.Collections.Queue
   $queue.Enqueue([pscustomobject]@{ element=$window; depth=0 })
   $items = New-Object System.Collections.ArrayList
-  while ($queue.Count -gt 0 -and $items.Count -lt $limit) {
+  $scanLimit = 4096
+  $visited = 0
+  $truncated = $false
+  $child = $null
+  while ($queue.Count -gt 0 -and $items.Count -lt $limit -and $visited -lt $scanLimit) {
     $entry = $queue.Dequeue()
-    if ($entry.depth -ge 10) { continue }
-    $child = $walker.GetFirstChild($entry.element)
-    while ($null -ne $child -and $items.Count -lt $limit) {
-      try { [void]$items.Add((Describe $child)); $queue.Enqueue([pscustomobject]@{ element=$child; depth=$entry.depth + 1 }) } catch { }
-      $child = $walker.GetNextSibling($child)
+    try { $child = $walker.GetFirstChild($entry.element) } catch { $truncated = $true; continue }
+    if ($null -eq $child) { continue }
+    if ($entry.depth -ge 10) { $truncated = $true; continue }
+    while ($null -ne $child -and $items.Count -lt $limit -and $visited -lt $scanLimit) {
+      $visited++
+      try { [void]$items.Add((Describe $child)); $queue.Enqueue([pscustomobject]@{ element=$child; depth=$entry.depth + 1 }) } catch { $truncated = $true }
+      try { $child = $walker.GetNextSibling($child) } catch { $truncated = $true; $child = $null }
     }
+    if ($null -ne $child) { $truncated = $true }
   }
-  return @($items)
+  if ($queue.Count -gt 0) { $truncated = $true }
+  return @{ items=@($items); truncated=$truncated; visited=$visited }
 }
 function Find-Control($window, $propertyName, $propertyValue, $nodeLimit = 4096, $depthLimit = 18) {
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
@@ -117,7 +125,8 @@ if ($request.operation -eq 'windows') {
   Write-Json @($items)
 } elseif ($request.operation -eq 'inspect') {
   $window = Find-Window $request.window_title
-  Write-Json @{ window=(Describe $window); controls=@(Get-Controls $window ([int]$request.limit)) }
+  $controls = Get-Controls $window ([int]$request.limit)
+  Write-Json @{ window=(Describe $window); controls=@($controls.items); controls_truncated=$controls.truncated; controls_visited=$controls.visited }
 } else {
   $window = Find-Window $request.window_title
   if ($request.action -eq 'focus_window') { $window.SetFocus(); Write-Json @{ focused=$true; window=$request.window_title }; exit 0 }
@@ -168,7 +177,7 @@ export function createDesktopAutomationTools(access: AccessController, enabled: 
         execute: async (_input: unknown, signal?: AbortSignal) => parseJson(await run(access, runner, command, powershellPayload({ operation: "windows" }), signal).then((result) => result.stdout.trim()))
       },
       desktop_inspect: {
-        definition: { type: "function", function: { name: "desktop_inspect", description: "Inspect a bounded UI Automation control tree for one visible window. Match the exact window title; use AutomationId where available when acting on a control.", parameters: { type: "object", properties: { window_title: { type: "string", minLength: 1, maxLength: 500 }, limit: { type: "integer", minimum: 1, maximum: 250 } }, required: ["window_title"], additionalProperties: false } } },
+        definition: { type: "function", function: { name: "desktop_inspect", description: "Inspect a bounded UI Automation control tree for one visible window. The result reports controls_truncated and controls_visited when the scan limit or an inaccessible control prevents a complete read. Match the exact window title; use AutomationId where available when acting on a control.", parameters: { type: "object", properties: { window_title: { type: "string", minLength: 1, maxLength: 500 }, limit: { type: "integer", minimum: 1, maximum: 250 } }, required: ["window_title"], additionalProperties: false } } },
         execute: async (input: unknown, signal?: AbortSignal) => {
           const args = input as { window_title: string; limit?: number };
           if (typeof args?.window_title !== "string" || !args.window_title.trim() || args.window_title.length > 500 || args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 250)) throw new Error("Window title is required; control limit must be 1–250");

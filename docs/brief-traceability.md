@@ -374,3 +374,6 @@ A Windows `desktop_action` no longer asks UI Automation to return every descenda
 
 ### G2 · bounded Windows UI Automation search · exact-head validation · `6351c00`
 All eight exact-head hosted CI/package checks passed for `6351c009f8615b9ad0688260ef79d4de474a3da3`. Windows clean-install renderer and mission-service smoke and Linux AppImage checks passed. This verifies the bounded UIA implementation builds and is covered by automated regressions; the live application tree and active-profile responsiveness remain unverified. G2 remains Partial. See `verification-history.md` for exact job IDs.
+
+### G2 · bound unsuccessful Windows UI Automation inspection reads · local candidate · 2026-10-30
+The Windows `desktop_inspect` tool now caps attempted control nodes separately from returned descriptions, so inaccessible elements cannot bypass the limit. It reports whether the result was truncated and how many nodes were visited. Runtime suite, typecheck, embedded-script parser, and diff-check evidence is in `verification-history.md`; hosted checks are pending. This bounds one inspection but does not prove active-profile input lag is resolved. G2 remains Partial.

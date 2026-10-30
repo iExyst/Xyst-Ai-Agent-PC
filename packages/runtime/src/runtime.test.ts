@@ -6000,12 +6000,16 @@ test("desktop automation exposes Windows UIA and Linux X11 tools with action pol
     assert.ok(prioritySetup >= 0 && automationLoad >= 0 && prioritySetup < automationLoad);
     const payload = script.match(/FromBase64String\('([^']+)'\)/)?.[1];
     const request = JSON.parse(Buffer.from(payload!, "base64").toString("utf8"));
-    const output = request.operation === "inspect" ? { window: { name: request.window_title }, controls: [] } : request.operation === "action" ? { focused: true } : [];
+    const output = request.operation === "inspect" ? { window: { name: request.window_title }, controls: [], controls_truncated: false, controls_visited: 0 } : request.operation === "action" ? { focused: true } : [];
     return { code: 0, signal: null, stdout: JSON.stringify(output), stderr: "", durationMs: 0 };
   };
   const windows = createDesktopAutomationTools(new AccessController(), true, { platform: "win32", env: { PATH: "C:\\Windows\\System32" }, pathExists: () => true, runner: windowsRunner });
   assert.ok(windows.desktop_windows);
-  assert.deepEqual(await windows.desktop_inspect!.execute({ window_title: "Example" }), { window: { name: "Example" }, controls: [] });
+  assert.deepEqual(await windows.desktop_inspect!.execute({ window_title: "Example" }), { window: { name: "Example" }, controls: [], controls_truncated: false, controls_visited: 0 });
+  const inspectScript = windowsScripts.at(-1)!;
+  assert.match(inspectScript, /\$scanLimit = 4096/);
+  assert.match(inspectScript, /\$visited\+\+/);
+  assert.match(inspectScript, /controls_truncated=\$controls\.truncated; controls_visited=\$controls\.visited/);
   assert.deepEqual(await windows.desktop_action!.execute({ action: "focus", window_title: "Example", automation_id: "save" }), { focused: true });
   const actionScript = windowsScripts.at(-1)!;
   assert.match(actionScript, /function Find-Control\(\$window, \$propertyName, \$propertyValue, \$nodeLimit = 4096, \$depthLimit = 18\)/);
