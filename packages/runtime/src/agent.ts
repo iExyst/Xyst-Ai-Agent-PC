@@ -1250,7 +1250,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       this.deps.events.emit("model.selected", { model: selected, modelInstanceId: inferenceModel, reason: selectionReason, previousModel, remote: true }, sessionId);
       return this.generateWithRetry({ model: inferenceModel, messages, tools: definitions, ...inferenceOptions, ...(automaticUnloading ? { ttl: idleUnloadSeconds } : {}) }, options.onText, options.signal, provider, requestTimeoutMs);
     };
-    this.deps.sessions.setStatus(sessionId, "running");
+    const runOwnerId = this.deps.sessions.beginAgentRun(sessionId);
     this.deps.events.emit("agent.started", { sessionId, model: selected, maxTurns }, sessionId);
     let turns = 0; let status: AgentResult["status"] = "limit"; let switchedModel = false;
     try {
@@ -1574,7 +1574,7 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       drainUserMessages();
       options.onRunClosing?.();
       if (options.signal?.aborted) status = "cancelled";
-      this.deps.sessions.setStatus(sessionId, status);
+      this.deps.sessions.finishAgentRun(sessionId, runOwnerId, status);
       if (localMetricsEnabled && this.isLocalMetricsProvider(activeProvider)) this.recordTaskOutcome(sessionId, selected, status);
       const result = { sessionId, model: selected, selectionReason, turns, status, response: finalResponse };
       this.deps.events.emit("agent.finished", result, sessionId);
@@ -1583,17 +1583,20 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
       const message = activeProvider.redact(error instanceof Error ? error.message : String(error));
       if (options.signal?.aborted) {
         const uncertainExternalActions = (this.deps.store.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE session_id=? AND effect='external' AND status='uncertain'").get(sessionId) as { count: number }).count;
-        this.deps.sessions.setStatus(sessionId, "cancelled");
+        this.deps.sessions.finishAgentRun(sessionId, runOwnerId, "cancelled");
         if (localMetricsEnabled && this.isLocalMetricsProvider(activeProvider)) this.recordTaskOutcome(sessionId, selected, "cancelled");
         const result = { sessionId, model: selected, selectionReason, turns, status: "cancelled" as const, response: finalResponse };
         this.deps.events.emit("agent.finished", { ...result, ...(uncertainExternalActions ? { actionReviewRequired: true } : {}) }, sessionId);
         return result;
       }
-      this.deps.sessions.setStatus(sessionId, "failed");
+      this.deps.sessions.finishAgentRun(sessionId, runOwnerId, "failed");
       if (localMetricsEnabled && this.isLocalMetricsProvider(activeProvider)) this.recordTaskOutcome(sessionId, selected, "failed");
       this.deps.events.emit("agent.failed", { sessionId, model: selected, error: message }, sessionId);
       throw error;
-    } finally { await browser.close(); await mcp.close(); }
+    } finally {
+      try { await browser.close(); await mcp.close(); }
+      finally { this.deps.sessions.releaseAgentRun(sessionId, runOwnerId); }
+    }
   }
 
   authorizeProcessRerun(sessionId: string, toolCallId: string): { sessionId: string; toolCallId: string; authorizationId: string } {

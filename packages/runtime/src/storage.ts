@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import { supportedSettingScopes, validateSettingContext, validateSettingScope, validateSettingValue } from "./settings-schema.js";
 
 const migrations = [
@@ -63,8 +64,15 @@ const migrations = [
   `UPDATE tool_calls SET effect='external',
        execution_scope=COALESCE(execution_scope,(SELECT run_id||':'||task_key FROM mission_tasks WHERE mission_tasks.session_id=tool_calls.session_id LIMIT 1),session_id),
        status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP)
-   WHERE substr(name,1,4)='mcp_' AND status='running';`
+   WHERE substr(name,1,4)='mcp_' AND status='running';`,
+  `CREATE TABLE session_run_owners (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, owner_id TEXT NOT NULL, host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0), started_at TEXT NOT NULL);
+   CREATE INDEX session_run_owners_host_pid ON session_run_owners(host,pid);`
 ];
+
+function isProcessAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
+}
 
 export type DatabaseIntegrityReport = { path: string; status: "healthy" | "corrupt" | "missing" | "unavailable"; details?: string[]; error?: string };
 
@@ -239,13 +247,64 @@ export class SessionStore {
     this.store.db.prepare("INSERT INTO sessions(id,title,created_at,updated_at) VALUES(?,?,?,?)").run(id, name, now, now);
     return id;
   }
-  list(): unknown[] { return this.store.db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC").all(); }
+  list(): unknown[] { this.recoverAbandonedAgentRuns(); return this.store.db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC").all(); }
   rename(sessionId: string, title: string): void {
     const name = title.trim(); if (!name || name.length > 160) throw new Error("Session title must contain 1–160 characters");
     const result = this.store.db.prepare("UPDATE sessions SET title=?,updated_at=? WHERE id=?").run(name, new Date().toISOString(), sessionId);
     if (!result.changes) throw new Error(`Session not found: ${sessionId}`);
   }
   setStatus(sessionId: string, status: string): void { this.store.db.prepare("UPDATE sessions SET status=?, updated_at=? WHERE id=?").run(status, new Date().toISOString(), sessionId); }
+  beginAgentRun(sessionId: string): string {
+    const ownerId = randomUUID(); const now = new Date().toISOString();
+    this.store.db.transaction(() => {
+      if (!this.store.db.prepare("SELECT 1 FROM sessions WHERE id=?").get(sessionId)) throw new Error(`Session not found: ${sessionId}`);
+      const existing = this.store.db.prepare("SELECT owner_id,host,pid FROM session_run_owners WHERE session_id=?").get(sessionId) as { owner_id: string; host: string; pid: number } | undefined;
+      if (existing) {
+        if (existing.host !== hostname() || isProcessAlive(existing.pid)) throw new Error(`Session ${sessionId} is already owned by a live or unverifiable agent process (${existing.host}:${existing.pid})`);
+        this.recoverAgentRunOwner(sessionId, existing.owner_id, now);
+      }
+      const unresolved = this.store.db.prepare(`SELECT id,name,status FROM tool_calls WHERE session_id=? AND effect='external'
+        AND (status='uncertain' OR (status='running' AND name='run_process' AND EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id)))
+        ORDER BY created_at,rowid LIMIT 1`).get(sessionId) as { id: string; name: string; status: string } | undefined;
+      if (unresolved) throw new Error(`Session ${sessionId} has unresolved external action ${unresolved.name} (${unresolved.id}, ${unresolved.status}); inspect and reconcile it before resuming`);
+      this.store.db.prepare("INSERT INTO session_run_owners(session_id,owner_id,host,pid,started_at) VALUES(?,?,?,?,?)").run(sessionId, ownerId, hostname(), process.pid, now);
+      this.store.db.prepare("UPDATE sessions SET status='running',updated_at=? WHERE id=?").run(now, sessionId);
+    }).immediate();
+    return ownerId;
+  }
+  finishAgentRun(sessionId: string, ownerId: string, status: string): void {
+    this.store.db.transaction(() => {
+      const owner = this.store.db.prepare("SELECT 1 FROM session_run_owners WHERE session_id=? AND owner_id=?").get(sessionId, ownerId);
+      if (!owner) throw new Error(`Agent run no longer owns session ${sessionId}; its result cannot replace recovered session state`);
+      this.store.db.prepare("UPDATE sessions SET status=?,updated_at=? WHERE id=?").run(status, new Date().toISOString(), sessionId);
+      this.store.db.prepare("DELETE FROM session_run_owners WHERE session_id=? AND owner_id=?").run(sessionId, ownerId);
+    }).immediate();
+  }
+  releaseAgentRun(sessionId: string, ownerId: string): void {
+    this.store.db.transaction(() => this.recoverAgentRunOwner(sessionId, ownerId, new Date().toISOString())).immediate();
+  }
+  recoverAbandonedAgentRuns(): number {
+    const owners = this.store.db.prepare("SELECT session_id,owner_id,host,pid FROM session_run_owners").all() as Array<{ session_id: string; owner_id: string; host: string; pid: number }>;
+    let recovered = 0;
+    for (const owner of owners) {
+      if (owner.host !== hostname() || isProcessAlive(owner.pid)) continue;
+      const changed = this.store.db.transaction(() => this.recoverAgentRunOwner(owner.session_id, owner.owner_id, new Date().toISOString())).immediate();
+      recovered += changed;
+    }
+    return recovered;
+  }
+  private recoverAgentRunOwner(sessionId: string, ownerId: string, now: string): number {
+    const removed = this.store.db.prepare("DELETE FROM session_run_owners WHERE session_id=? AND owner_id=?").run(sessionId, ownerId);
+    if (removed.changes !== 1) return 0;
+    this.store.db.prepare(`UPDATE tool_calls SET status='failed',output_json=COALESCE(output_json,?),finished_at=COALESCE(finished_at,?)
+      WHERE session_id=? AND status='running' AND effect='read'`).run(JSON.stringify({ error: "The agent owner exited before the read action recorded an outcome." }), now, sessionId);
+    this.store.db.prepare(`UPDATE tool_calls SET status='uncertain',output_json=COALESCE(output_json,?),finished_at=COALESCE(finished_at,?)
+      WHERE session_id=? AND status='running' AND effect='external'
+      AND NOT (name='run_process' AND EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id))`)
+      .run(JSON.stringify({ error: "The agent owner exited during an external action. Inspect its effects and reconcile before retrying." }), now, sessionId);
+    this.store.db.prepare("UPDATE sessions SET status='interrupted',updated_at=? WHERE id=? AND status='running'").run(now, sessionId);
+    return 1;
+  }
   archive(sessionId: string): void {
     const result = this.store.db.prepare("UPDATE sessions SET status='archived',updated_at=? WHERE id=?").run(new Date().toISOString(), sessionId);
     if (!result.changes) throw new Error(`Session not found: ${sessionId}`);
