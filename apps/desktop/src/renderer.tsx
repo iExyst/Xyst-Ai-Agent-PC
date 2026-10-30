@@ -241,7 +241,20 @@ function App() {
       } else setError(detail);
     } finally { refreshPending.current = false; }
   };
-  useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 8_000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    void refresh();
+    const isForeground = () => document.visibilityState === "visible" && document.hasFocus();
+    const poll = () => { if (isForeground()) void refresh(); };
+    const onVisibilityChange = () => { if (isForeground()) void refresh(); };
+    const timer = window.setInterval(poll, 30_000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onVisibilityChange);
+    };
+  }, []);
   useEffect(() => {
     if (browserPreview) return;
     return window.xyst.onAgentEvent((event) => setEvents((current) => [...current.slice(-79), event]));

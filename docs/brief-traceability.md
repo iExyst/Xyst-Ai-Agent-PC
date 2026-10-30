@@ -312,3 +312,11 @@ A no-inference app launch under temporary data/workspace opened a window, but th
 
 ### C2 session deletion artifact cleanup · local candidate · 2026-10-30
 A regression now verifies deleting a saved session removes artifacts linked only through its job IDs; deletion order was fixed to remove artifacts before jobs. Focused and full runtime tests, root `npm test`, typecheck, and diff check passed. Source is local after `d654cd4`, not covered by hosted checks yet. C2 remains partial for the broader evidence/recovery requirements.
+
+### C2 session deletion artifact cleanup · hosted validation pending · 2026-10-30
+Fix and regression are published in PR #82 commit `c743f55d8fddb22d0d635d6fc764f96f799ba7b6`. Root `npm test`, typecheck, and diff check passed. The exact-head Windows/Ubuntu CI and package workflows are currently running; see `verification-history.md` for IDs. Do not treat the earlier `d654cd4` green checks as covering this code. C2 and overall completion remain partial.
+
+### Exact-head CI/package verification · `c743f55` · 2026-10-30
+All eight push/PR Windows/Ubuntu/Linux jobs passed for the session-deletion cleanup fix. Exact run/job IDs are recorded in `verification-history.md`; PR #82 description is updated. This proves only the changed candidate's automated scope. Desktop resumed acceptance, lag cause, sustained reliability, remaining brief requirements and signed production release remain incomplete.
+
+Desktop idle-refresh change is a local candidate only (renderer.tsx, 30-second foreground-only dashboard polling); typecheck passes, but no live responsiveness validation has occurred. Lag cause remains unconfirmed; see verification-history.md. Overall completion remains partial.
