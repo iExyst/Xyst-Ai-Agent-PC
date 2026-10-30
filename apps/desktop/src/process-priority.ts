@@ -2,7 +2,7 @@ import { constants, setPriority } from "node:os";
 
 type PrioritySetter = (pid: number, priority: number) => void;
 
-/** Keep background runtime work from competing at normal priority with Windows UI input. */
+/** Let Windows foreground work outrank Xyst's desktop and runtime processes. */
 export function lowerBackgroundProcessPriority(
   pid: number | undefined,
   platform = process.platform,
