@@ -258,3 +258,11 @@ A disposable current-worktree CLI session stopped at a deliberate one-turn limit
 A native Desktop resume could not be attempted because Computer Use failed to return any Xyst window from fresh window enumeration while app inventory contained multiple ambiguous Xyst windows. No UI action or inference occurred. This remains tooling-target non-pass, not product failure; native Desktop resume is open.
 
 The intervening `12ec5fb` CI runs were canceled after the branch advanced; its package runs passed. All eight checks passed on successor `3a893a7ff7dee55566cf1b9ee9ae77033f9eb475`; exact jobs are in `verification-history.md`. These results do not close broad acceptance.
+
+### Exact-head hosted verification · `efaeef7` · all eight passed
+
+Current PR #82 head `efaeef7dfa7d61e27f7e29c5cc7f182aeced1e6d` passed exact-head push/PR Windows/Ubuntu CI and Windows/Linux Desktop package jobs. Windows installer/update verification, clean-install renderer, mission-service lifecycle, Linux AppImage/update-manifest verification, and artifact upload passed. Exact run/job IDs are in `docs/verification-history.md`. PR #82 remains OPEN/DRAFT/UNMERGED.
+
+### Current native Desktop tooling outcome · 2026-10-30 UTC
+
+A fresh Computer Use inventory returned no Xyst windows and showed the app not running. The isolated packaged-runtime launch was rejected by the execution policy; no app or profile state changed and no inference ran. The temporary Vite process was stopped by exact PID after command-line verification. This is a tooling/launch non-pass, not a product failure or acceptance. Keep native Desktop resume open.
