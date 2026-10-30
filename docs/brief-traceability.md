@@ -377,3 +377,6 @@ All eight exact-head hosted CI/package checks passed for `6351c009f8615b9ad06882
 
 ### G2 · bound unsuccessful Windows UI Automation inspection reads · local candidate · 2026-10-30
 The Windows `desktop_inspect` tool now caps attempted control nodes separately from returned descriptions, so inaccessible elements cannot bypass the limit. It reports whether the result was truncated and how many nodes were visited. Runtime suite, typecheck, embedded-script parser, and diff-check evidence is in `verification-history.md`; hosted checks are pending. This bounds one inspection but does not prove active-profile input lag is resolved. G2 remains Partial.
+
+### G2 · Windows UI Automation search bounds · exact-head validation · `e415b4e`
+All eight exact-head Windows/Ubuntu/Linux CI/package jobs passed for the combined UIA action and inspection bounds. Windows update-manifest, clean-install renderer, and mission-service smoke passed; Linux AppImage checks passed. This is package/automated evidence only; no real application tree or active-profile lag test ran. G2 remains Partial. See `verification-history.md` for exact IDs and the retained canceled documentation-head check.
