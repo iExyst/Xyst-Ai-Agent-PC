@@ -58,13 +58,15 @@ test("cancelling a PTY terminates a signal-ignoring descendant", async () => {
   const survivedPath = join(root, "descendant-survived");
   const descendantSource = `
     process.on("SIGTERM", () => {});
-    process.stdout.write("DESCENDANT_READY\\n");
-    setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(survivedPath)}, "alive"); process.exit(0); }, 1200);
+    process.stdout.write("DESCENDANT_READY=" + process.pid + "\\n");
+    process.stdin.once("data", () => setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(survivedPath)}, "alive"); process.exit(0); }, 1200));
   `;
   const parentSource = `
     const { spawn } = require("node:child_process");
-    const child = spawn(process.execPath, ["-e", ${JSON.stringify(descendantSource)}], { stdio: ["ignore", "pipe", "ignore"] });
-    child.stdout.on("data", (value) => { if (value.toString().includes("DESCENDANT_READY")) process.stdout.write("PTY_TREE_READY\\n"); });
+    const child = spawn(process.execPath, ["-e", ${JSON.stringify(descendantSource)}], { stdio: ["pipe", "pipe", "ignore"] });
+    child.stdout.on("data", (value) => { const match = value.toString().match(/DESCENDANT_READY=(\\d+)/); if (match) process.stdout.write("PTY_TREE_READY=" + match[1] + "\\n"); });
+    process.stdin.setRawMode(true);
+    process.stdin.once("data", () => child.stdin.write("arm"));
     process.on("SIGTERM", () => process.exit(0));
     setInterval(() => {}, 1000);
   `;
@@ -83,12 +85,17 @@ test("cancelling a PTY terminates a signal-ignoring descendant", async () => {
   };
   try {
     await waitForReady();
-    await killProcessTree(terminal.pid);
+    const descendantPid = Number(output.match(/PTY_TREE_READY=(\d+)/)?.[1]);
+    assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
+    // Start the delayed effect only now: suite load must not let it happen before cancellation starts.
+    terminal.write("arm");
+    assert.equal(await killProcessTree(terminal.pid), true, "process-tree cleanup must be confirmed");
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try { await Promise.race([exitPromise, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error(`PTY parent did not exit; output: ${JSON.stringify(output)}`)), 5000); })]); }
     finally { if (timeout) clearTimeout(timeout); }
     await new Promise((resolveWait) => setTimeout(resolveWait, 1400));
     await assert.rejects(access(survivedPath));
+    if (process.platform === "win32") assert.throws(() => process.kill(descendantPid, 0), { code: "ESRCH" });
   } finally {
     if (!exited) await killProcessTree(terminal.pid);
     if (process.platform === "win32") {
