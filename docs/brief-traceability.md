@@ -291,3 +291,6 @@ Documentation-only `b24d9d1` passed all eight push/PR Windows/Ubuntu/Linux jobs;
 The current Windows snapshot reports 93.1 GiB total / 46.2 GiB available RAM. Xyst's guard is the minimum of 50% available, 25% total, and 32 GiB (23.1 GiB now); the LM Studio 250,112 default-placement estimate is 19.31 GiB, so the existing RAM-backed KV fallback is allowed when automatic unloading is off. New loads remain task-estimate + 8,192 and adequate resident instances are reused. This respects the 250K target without allocating it for every small task. It does not establish sustained speed; C1/C2/A5 and G2 remain partial.
 
 All eight exact-head jobs passed for docs head `6a9cb0f968f6bf7eebdd9dcb1d91db44ced1900b`; exact job IDs and scope are in `verification-history.md`. PR #82 remains OPEN/DRAFT/UNMERGED.
+
+### Latest recovery hardening · local candidate · 2026-10-30
+External-action reconciliation now uses a conditional state transition inside an immediate transaction, preventing a stale or competing confirmation from changing an already reconciled/retry-authorized command. Runtime build and 302-test runtime suite passed (299 passed, 3 skipped); focused regression 1/1. This remains local-only evidence and does not close C2/A5, which still require broader live resumed CLI/Desktop acceptance and sustained reliability.

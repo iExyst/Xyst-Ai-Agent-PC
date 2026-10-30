@@ -1633,15 +1633,16 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
 
   reconcileExternalAction(sessionId: string, toolCallId: string, resolution: "completed" | "retry"): { sessionId: string; toolCallId: string; resolution: string } {
     this.deps.access.assertCapability("externalActions");
-    const action = this.deps.store.db.prepare("SELECT id FROM tool_calls WHERE id=? AND session_id=? AND effect='external' AND status='uncertain'").get(toolCallId, sessionId) as { id: string } | undefined;
-    if (!action) throw new Error("Tool call is not an uncertain external action in this session");
-    if (resolution === "completed") {
-      const output = JSON.stringify({ reconciled: "User confirmed this external action completed; reuse its recorded result and do not repeat it." });
-      this.deps.store.db.prepare("UPDATE tool_calls SET status='reconciled',output_json=?,finished_at=? WHERE id=?").run(output, new Date().toISOString(), toolCallId);
-    } else {
-      const authorization = JSON.stringify({ reconciled: "User confirmed the prior action did not take effect; retry is authorized." });
-      this.deps.store.db.prepare("UPDATE tool_calls SET status='retry_allowed',output_json=?,finished_at=NULL WHERE id=?").run(authorization, toolCallId);
-    }
+    this.deps.store.db.transaction(() => {
+      const now = new Date().toISOString();
+      const status = resolution === "completed" ? "reconciled" : "retry_allowed";
+      const output = resolution === "completed"
+        ? "User confirmed this external action completed; reuse its recorded result and do not repeat it."
+        : "User confirmed the prior action did not take effect; retry is authorized.";
+      const changed = this.deps.store.db.prepare("UPDATE tool_calls SET status=?,output_json=?,finished_at=? WHERE id=? AND session_id=? AND effect='external' AND status='uncertain'")
+        .run(status, JSON.stringify({ reconciled: output }), resolution === "completed" ? now : null, toolCallId, sessionId);
+      if (changed.changes !== 1) throw new Error("Tool call is not an uncertain external action in this session");
+    }).immediate();
     this.deps.events.emit("tool.reconciled", { sessionId, toolCallId, resolution }, sessionId);
     return { sessionId, toolCallId, resolution };
   }

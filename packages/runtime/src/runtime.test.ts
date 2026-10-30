@@ -7227,6 +7227,8 @@ test("command rerun authorization is consumed once and preserves the original ac
     const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
     const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: {} as never, github: {} as never });
     assert.deepEqual(agent.reconcileExternalAction("session", "new", "retry"), { sessionId: "session", toolCallId: "new", resolution: "retry" });
+    assert.throws(() => agent.reconcileExternalAction("session", "new", "completed"), /not an uncertain external action/);
+    assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='new'").get() as { status: string }).status, "retry_allowed");
     assert.equal(consumeCommandHeadRetry(store, "scope", "hash", { id: "retry", sessionId: "session", inputJson: "{}" }), true);
     assert.equal(consumeCommandHeadRetry(store, "scope", "hash", { id: "duplicate-retry", sessionId: "session", inputJson: "{}" }), false);
     assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='new'").get() as { status: string }).status, "retry_consumed");
