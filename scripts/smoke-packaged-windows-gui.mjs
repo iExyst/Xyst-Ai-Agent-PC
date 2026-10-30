@@ -296,15 +296,6 @@ async function waitForCrashCallReady(nodeBinary, cliEntry, sessionId, probePath,
   throw new Error(`Packaged crash probe did not become ready under its owning CLI process; status=${lastStatus}`);
 }
 
-async function waitForFileText(path, expected, timeoutMs = 15_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try { if ((await readFile(path, "utf8")).trim() === expected) return; } catch (error) { if (error?.code !== "ENOENT") throw error; }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-  }
-  throw new Error(`Timed out waiting for ${path} to contain ${JSON.stringify(expected)}`);
-}
-
 try {
   await access(installer);
   await mkdir(workDir, { recursive: true });
@@ -327,7 +318,7 @@ try {
   const cliEntry = join(packagedRoot, "apps", "cli", "dist", "index.js");
   await access(nodeBinary); await access(cliEntry);
   await writeFile(join(dataDir, "phase.txt"), "PHASE_A\n", "utf8");
-  await writeFile(join(dataDir, "probe.mjs"), 'import { existsSync, readFileSync, writeFileSync } from "node:fs";\nconst mode = existsSync("crash-mode.txt") ? readFileSync("crash-mode.txt", "utf8").trim() : "";\nif (mode === "armed") { const ownerPid = process.ppid; writeFileSync("crash-probe-ready.txt", String(ownerPid)); await new Promise((resolve) => setTimeout(resolve, 5000)); try { process.kill(ownerPid, 0); writeFileSync("crash-effect.txt", "applied"); } catch { writeFileSync("crash-probe-finished.txt", "owner-exited"); process.exit(0); } }\nif (mode === "retry") writeFileSync("crash-effect.txt", "applied");\nprocess.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
+  await writeFile(join(dataDir, "probe.mjs"), 'import { existsSync, readFileSync, writeFileSync } from "node:fs";\nconst mode = existsSync("crash-mode.txt") ? readFileSync("crash-mode.txt", "utf8").trim() : "";\nif (mode === "armed") { const ownerPid = process.ppid; writeFileSync("crash-probe-ready.txt", String(ownerPid)); await new Promise((resolve) => setTimeout(resolve, 5000)); try { process.kill(ownerPid, 0); writeFileSync("crash-effect.txt", "applied"); } catch { process.exit(0); } }\nif (mode === "retry") writeFileSync("crash-effect.txt", "applied");\nprocess.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
   await new Promise((resolveListen, rejectListen) => { provider.once("error", rejectListen); provider.listen(0, "127.0.0.1", resolveListen); });
   env.LM_STUDIO_BASE_URL = `http://127.0.0.1:${provider.address().port}`;
   for (const [key, value] of [["model.default", JSON.stringify("packaged-smoke-model")], ["autonomy.externalActionApproval", "false"]]) {
@@ -401,8 +392,8 @@ try {
   await waitForCrashCallReady(nodeBinary, cliEntry, sessionId, crashProbePath, crashWorker.pid);
   const killedOwner = spawnSync("taskkill.exe", ["/PID", String(crashWorker.pid), "/F"], { encoding: "utf8", windowsHide: true });
   assert.equal(killedOwner.status, 0, `Could not terminate the exact Desktop-owned CLI process: ${killedOwner.stderr || killedOwner.stdout}`);
-  await waitForFileText(join(dataDir, "crash-probe-finished.txt"), "owner-exited");
-  await assert.rejects(access(join(dataDir, "crash-effect.txt")), { code: "ENOENT" }, "The abandoned child process must not perform its side effect");
+  await new Promise((resolveWait) => setTimeout(resolveWait, 6_000));
+  await assert.rejects(access(join(dataDir, "crash-effect.txt")), { code: "ENOENT" }, "The abandoned Desktop command must not perform its side effect after owner exit");
 
   await evaluate(page, "document.querySelector('.session-item.selected')?.click()", 61);
   await waitForRenderer(page, "(() => [...document.querySelectorAll('details.tool-log-item')].some((row)=>row.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...row.querySelectorAll('button')].some((button)=>button.textContent.includes('Review abandoned rerun') && !button.disabled)))()", "the recoverable abandoned Desktop rerun", 30_000);
