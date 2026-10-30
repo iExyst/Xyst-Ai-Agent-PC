@@ -49,7 +49,7 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { createMcpHandler, Server } from "@modelcontextprotocol/server";
 import { browserRuntimeStatus, createBrowserTools } from "./tools/browser.js";
 import { inspectDesktopCapabilities } from "./desktop-capabilities.js";
-import { parseLmStudioResourceEstimate, readHostResourceStats } from "./system-resources.js";
+import { canUseRamBackedKvCache, parseLmStudioResourceEstimate, ramBackedKvCacheBudgetBytes, readHostResourceStats } from "./system-resources.js";
 import { getDataDirectory } from "./platform.js";
 import { git, gitClone, gitCommit, gitCreateBranch, gitFetch, gitNetworkEnvironment, gitPush, gitStage, gitStatus } from "./tools/git.js";
 import { validateSettingValue } from "./settings-schema.js";
@@ -810,6 +810,35 @@ test("automatic local model selection prefers LM Studio GPU estimates that fit c
     assert.equal(result.model, "fits-gpu", "the higher task-success model's LM Studio estimate exceeds live free VRAM");
     assert.match(result.selectionReason, /estimates 3 GiB GPU memory.*4 GiB NVIDIA VRAM is currently free/);
     assert.equal(loaded, "fits-gpu");
+  } finally { store.close(); }
+}));
+
+test("automatic model selection uses RAM-backed KV only when its total estimate fits a conservative host budget", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "ram-kv-selection.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.autoSelect", true);
+  let loadedOptions: Record<string, unknown> | undefined;
+  let loadedKey = "";
+  const inventory = () => [
+    { type: "llm" as const, publisher: "test", key: "ram-fit", display_name: "RAM fit", size_bytes: 4 * 1024 ** 3, loaded_instances: loadedKey === "ram-fit" ? [{ id: "ram-fit-instance", config: { context_length: 8192, offload_kv_cache_to_gpu: false } }] : [], max_context_length: 8192, capabilities: { trained_for_tool_use: true } },
+    { type: "llm" as const, publisher: "test", key: "ram-too-large", display_name: "RAM too large", size_bytes: 3 * 1024 ** 3, loaded_instances: [], max_context_length: 8192, capabilities: { trained_for_tool_use: true } }
+  ];
+  const provider = {
+    isLocalServer: () => true,
+    supportsLocalCliModelLifecycle: () => true,
+    models: async () => inventory(),
+    estimateLoad: async (model: string) => ({ output: `Estimated GPU Memory: ${model === "ram-fit" ? 8 : 9} GiB\nEstimated Total Memory: ${model === "ram-fit" ? 19 : 30} GiB` }),
+    load: async (model: string, options: Record<string, unknown>) => { loadedKey = model; loadedOptions = options; return { status: "loaded", instance_id: "ram-fit-instance", load_config: { context_length: 8192, offload_kv_cache_to_gpu: false } }; },
+    redact: (text: string) => text,
+    streamChatWithTools: async () => ({ choices: [{ message: { role: "assistant", content: "done" } }], usage: { prompt_tokens: 10, completion_tokens: 1 } })
+  };
+  const gib = 1024 ** 3;
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never, resourceStatsReader: async () => ({ source: "Xyst host", checkedAt: new Date().toISOString(), systemMemory: { totalBytes: 100 * gib, usedBytes: 36 * gib, availableBytes: 64 * gib, usedPercent: 36 }, nvidiaGpuMemory: { status: "available", source: "nvidia-smi", devices: [{ name: "GPU", totalBytes: 16 * gib, usedBytes: 12 * gib, freeBytes: 4 * gib }] } }) });
+  try {
+    const result = await agent.run("Do a small task", { workspace: root });
+    assert.equal(result.model, "ram-fit");
+    assert.equal(loadedKey, "ram-fit");
+    assert.equal(loadedOptions?.offload_kv_cache_to_gpu, false);
+    assert.match(result.selectionReason, /within the conservative RAM-backed KV budget/);
   } finally { store.close(); }
 }));
 
@@ -5741,6 +5770,12 @@ test("LM Studio resource estimates parse documented GPU and total memory units",
   assert.deepEqual(parseLmStudioResourceEstimate("Model: example\nEstimated GPU Memory: 1.05 GiB\nEstimated Total Memory: 2.5 GB"), { gpuBytes: Math.ceil(1.05 * 1024 ** 3), totalBytes: Math.ceil(2.5 * 1000 ** 3) });
   assert.deepEqual(parseLmStudioResourceEstimate("Estimate unavailable"), {});
   assert.deepEqual(parseLmStudioResourceEstimate("Estimated GPU Memory: NaN GB\nEstimated Total Memory: 9 EB"), {});
+  const gib = 1024 ** 3;
+  const memory = { totalBytes: 96 * gib, availableBytes: 48 * gib };
+  assert.equal(ramBackedKvCacheBudgetBytes(memory), 24 * gib);
+  assert.equal(canUseRamBackedKvCache({ gpuBytes: 19 * gib, totalBytes: 19 * gib }, 6 * gib, memory), true);
+  assert.equal(canUseRamBackedKvCache({ gpuBytes: 19 * gib, totalBytes: 25 * gib }, 6 * gib, memory), false, "unknown or excessive host-memory forecasts must not enable the fallback");
+  assert.equal(canUseRamBackedKvCache({ gpuBytes: 5 * gib, totalBytes: 19 * gib }, 6 * gib, memory), false, "RAM KV is only a fallback when the GPU estimate does not fit");
 });
 
 test("web search uses the configured Brave token and returns bounded untrusted sources", async () => {

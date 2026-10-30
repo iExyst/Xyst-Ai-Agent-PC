@@ -19,7 +19,7 @@ import { createMemoryTools, requestEmbeddings } from "./tools/memory.js";
 import { loadProjectInstructions } from "./project-instructions.js";
 import { createMcpTools } from "./integrations/mcp.js";
 import { createMcpSamplingHandler } from "./integrations/mcp-sampling.js";
-import { parseLmStudioResourceEstimate, readHostResourceStats } from "./system-resources.js";
+import { canUseRamBackedKvCache, parseLmStudioResourceEstimate, readHostResourceStats, ramBackedKvCacheBudgetBytes } from "./system-resources.js";
 import { createBrowserTools } from "./tools/browser.js";
 import { createDesktopAutomationTools } from "./tools/desktop-automation.js";
 import type { WebToolDependencies } from "./tools/web.js";
@@ -354,6 +354,7 @@ export class AgentRunner {
     let model = options.model ?? (typeof savedModel === "string" ? savedModel : "");
     let selectionReason = options.model ? (options.automaticModelAssignment ? "automatic resource-aware mission assignment" : "manual command-line override") : typeof savedModel === "string" ? "configured default model" : "";
     let inventory: Awaited<ReturnType<LMStudioProvider["models"]>> | undefined;
+    let ramBackedKvCacheModelKey: string | undefined;
     const onlineDiscoveryEnabled = this.deps.config.resolve<boolean>("models.onlineDiscovery", scopes)?.value === true;
     // A mission scheduler's resource-aware model assignment is provisional. The
     // agent has a fuller context estimate (history, tool schemas, and system
@@ -369,6 +370,22 @@ export class AgentRunner {
         selectionReason = visionRequired && assigned?.capabilities?.vision !== true
           ? "automatic mission assignment did not declare vision support for the saved image context; reselecting a vision-capable model"
           : "automatic mission assignment did not declare enough context; reselecting for the full agent prompt";
+      } else if (assigned.loaded_instances.length === 0 && automaticLoading && !automaticUnloading
+        && this.deps.provider.supportsLocalCliModelLifecycle?.() && typeof this.deps.provider.estimateLoad === "function") {
+        try {
+          const cli = process.env.LM_STUDIO_CLI_PATH ?? (process.platform === "win32" ? "lms.exe" : "lms");
+          access.assertExecutable(cli);
+          const resources = await (this.deps.resourceStatsReader ?? readHostResourceStats)(access);
+          if (resources.nvidiaGpuMemory.status === "available") {
+            const freeGpu = resources.nvidiaGpuMemory.devices.reduce((sum, device) => sum + device.freeBytes, 0);
+            const estimateResult = await this.deps.provider.estimateLoad(assigned.key, { context_length: modelLoadContextLength(assigned.max_context_length, requiredContextTokens) ?? requiredContextTokens }, options.signal);
+            const estimate = parseLmStudioResourceEstimate(String(estimateResult.output ?? ""));
+            if (canUseRamBackedKvCache(estimate, freeGpu, resources.systemMemory)) {
+              ramBackedKvCacheModelKey = assigned.key;
+              selectionReason += `; automatic mission assignment fits the conservative ${Math.round(ramBackedKvCacheBudgetBytes(resources.systemMemory) / 1024 ** 3 * 100) / 100} GiB RAM-backed KV budget, so its load will keep KV cache in system RAM`;
+            }
+          }
+        } catch (error) { if (options.signal?.aborted) throw error; }
       }
     }
     if (visionRequired) {
@@ -401,7 +418,7 @@ export class AgentRunner {
                 && (!(typeof candidate.max_context_length === "number") || candidate.max_context_length >= requiredContextTokens));
               const alternatives = [...eligible].sort((left, right) => Number(right.loaded_instances.length > 0) - Number(left.loaded_instances.length > 0) || left.size_bytes - right.size_bytes);
               const estimateCandidates = [choice.model, ...alternatives].filter((candidate, index, all) => all.findIndex((entry) => entry.key === candidate.key) === index).slice(0, 3);
-              const estimates = new Map<string, number>();
+              const estimates = new Map<string, { gpuBytes?: number; totalBytes?: number }>();
               const needsLoad = (candidate: LMStudioModel) => !candidate.loaded_instances.some((instance) => (instanceContextLength(instance, candidate.max_context_length) ?? 0) >= requiredContextTokens);
               for (const candidate of estimateCandidates) {
                 if (!needsLoad(candidate)) continue;
@@ -409,21 +426,37 @@ export class AgentRunner {
                 try {
                   const result = await this.deps.provider.estimateLoad(candidate.key, { context_length: modelLoadContextLength(candidate.max_context_length, requiredContextTokens) ?? requiredContextTokens }, options.signal);
                   const parsed = parseLmStudioResourceEstimate(String(result.output ?? ""));
-                  if (parsed.gpuBytes !== undefined) estimates.set(candidate.key, parsed.gpuBytes);
+                  if (parsed.gpuBytes !== undefined || parsed.totalBytes !== undefined) estimates.set(candidate.key, parsed);
                 } catch (error) { if (options.signal?.aborted) throw error; }
               }
-              const gpuFit = estimateCandidates.filter((candidate) => !needsLoad(candidate) || (estimates.get(candidate.key) !== undefined && estimates.get(candidate.key)! <= availableGpuBytes));
+              const gpuFit = estimateCandidates.filter((candidate) => !needsLoad(candidate) || (estimates.get(candidate.key)?.gpuBytes !== undefined && estimates.get(candidate.key)!.gpuBytes! <= availableGpuBytes));
               if (gpuFit.length) {
                 choice = chooseAgentModel(gpuFit, requirements);
-                const estimated = estimates.get(choice.model.key);
+                const estimated = estimates.get(choice.model.key)?.gpuBytes;
                 gpuResourceReason = estimated === undefined
                   ? `selected model is already loaded; ${Math.round(availableGpuBytes / 1024 ** 3 * 100) / 100} GiB NVIDIA VRAM is currently free`
                   : `LM Studio estimates ${Math.round(estimated / 1024 ** 3 * 100) / 100} GiB GPU memory for the selected model and ${Math.round(availableGpuBytes / 1024 ** 3 * 100) / 100} GiB NVIDIA VRAM is currently free`;
               } else if (estimates.size) {
-                const minimumGpuBytes = Math.min(...estimates.values());
-                const lowestEstimate = estimateCandidates.filter((candidate) => estimates.get(candidate.key) === minimumGpuBytes);
-                choice = chooseAgentModel(lowestEstimate, requirements);
-                gpuResourceReason = `no sampled model estimate fits the ${Math.round(availableGpuBytes / 1024 ** 3 * 100) / 100} GiB currently free NVIDIA VRAM; selected the lowest LM Studio GPU estimate (${Math.round(minimumGpuBytes / 1024 ** 3 * 100) / 100} GiB)`;
+                const ramFallbackAllowed = !automaticUnloading;
+                const ramFit = ramFallbackAllowed ? estimateCandidates.filter((candidate) => {
+                  const estimate = estimates.get(candidate.key);
+                  return Boolean(estimate && canUseRamBackedKvCache(estimate, availableGpuBytes, hostResources.systemMemory));
+                }) : [];
+                if (ramFit.length) {
+                  choice = chooseAgentModel(ramFit, requirements);
+                  ramBackedKvCacheModelKey = choice.model.key;
+                  const totalEstimate = estimates.get(choice.model.key)?.totalBytes ?? 0;
+                  const budget = ramBackedKvCacheBudgetBytes(hostResources.systemMemory);
+                  gpuResourceReason = `GPU estimate exceeds currently free VRAM; LM Studio total estimate ${Math.round(totalEstimate / 1024 ** 3 * 100) / 100} GiB is within the conservative RAM-backed KV budget of ${Math.round(budget / 1024 ** 3 * 100) / 100} GiB, so the automatic load will place KV cache in system RAM`;
+                } else {
+                  const gpuEstimates = [...estimates.values()].flatMap((value) => value.gpuBytes === undefined ? [] : [value.gpuBytes]);
+                  if (gpuEstimates.length) {
+                    const minimumGpuBytes = Math.min(...gpuEstimates);
+                    const lowestEstimate = estimateCandidates.filter((candidate) => estimates.get(candidate.key)?.gpuBytes === minimumGpuBytes);
+                    choice = chooseAgentModel(lowestEstimate, requirements);
+                    gpuResourceReason = `no sampled model estimate fits ${Math.round(availableGpuBytes / 1024 ** 3 * 100) / 100} GiB free VRAM and no total-memory estimate fits the conservative RAM budget${ramFallbackAllowed ? "" : " (automatic unloading uses an incompatible CLI load option)"}; selected the lowest LM Studio GPU estimate (${Math.round(minimumGpuBytes / 1024 ** 3 * 100) / 100} GiB)`;
+                  } else gpuResourceReason = "LM Studio estimates did not include usable memory values; used the regular model selection criteria";
+                }
               } else gpuResourceReason = "NVIDIA VRAM is available, but LM Studio returned no parseable GPU estimate; used the normal model selection criteria";
             }
           } catch (error) {
@@ -578,7 +611,8 @@ export class AgentRunner {
       const previousInstanceIds = new Set(candidate.loaded_instances.map((instance) => instance.id));
       if (previousInstanceIds.size) throw new Error(`Model ${candidate.key} is already loaded with insufficient context. Compact the conversation or explicitly reload it with more context; Xyst will not automatically load a duplicate instance.`);
       const loadContext = modelLoadContextLength(candidate.max_context_length, requiredContextTokens);
-      const loadOptions = { ...(loadContext !== undefined ? { context_length: loadContext } : {}), ...(automaticUnloading ? { ttl_seconds: idleUnloadSeconds } : {}) };
+      const useRamBackedKvCache = ramBackedKvCacheModelKey === candidate.key && !automaticUnloading;
+      const loadOptions = { ...(loadContext !== undefined ? { context_length: loadContext } : {}), ...(useRamBackedKvCache ? { offload_kv_cache_to_gpu: false } : {}), ...(automaticUnloading ? { ttl_seconds: idleUnloadSeconds } : {}) };
       const loadResult = typeof provider.ensureLoaded === "function"
         ? await provider.ensureLoaded(candidate.key, loadOptions, options.signal, requiredContextTokens - contextTolerance)
         : await provider.load(candidate.key, loadOptions, options.signal);
@@ -588,6 +622,12 @@ export class AgentRunner {
       if (!loadedModel?.loaded_instances.length) throw new Error(`LM Studio did not report ${candidate.key} as loaded after Xyst requested it`);
       const returnedInstanceId = typeof loadResult.instance_id === "string" ? loadResult.instance_id : undefined;
       const reportedLoadConfig = asRecord(loadResult.load_config);
+      if (useRamBackedKvCache) {
+        const returnedConfig = returnedInstanceId ? loadedModel.loaded_instances.find((item) => item.id === returnedInstanceId)?.config : undefined;
+        if (reportedLoadConfig.offload_kv_cache_to_gpu !== false && returnedConfig?.offload_kv_cache_to_gpu !== false) {
+          throw new Error(`LM Studio did not confirm that ${candidate.key} stores its KV cache in system RAM; refusing inference because the requested memory fallback could not be verified`);
+        }
+      }
       const reportedContext = typeof reportedLoadConfig.context_length === "number" ? reportedLoadConfig.context_length : undefined;
       const returnedInstance = reportedContext !== undefined
         ? (() => {

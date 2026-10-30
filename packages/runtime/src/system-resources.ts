@@ -43,6 +43,25 @@ export function parseLmStudioResourceEstimate(text: string): { gpuBytes?: number
   return { ...(gpuBytes === undefined ? {} : { gpuBytes }), ...(totalBytes === undefined ? {} : { totalBytes }) };
 }
 
+/** Keep RAM-backed model loads below half of free RAM, a quarter of installed RAM, and 32 GiB. */
+export function ramBackedKvCacheBudgetBytes(memory: { totalBytes: number; availableBytes: number }): number {
+  const { totalBytes, availableBytes } = memory;
+  if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0 || !Number.isSafeInteger(availableBytes) || availableBytes <= 0 || availableBytes > totalBytes) return 0;
+  return Math.floor(Math.min(availableBytes * 0.5, totalBytes * 0.25, 32 * 1024 ** 3));
+}
+
+/** LM Studio's total estimate is only a guardrail, not a precise CPU/GPU memory split. */
+export function canUseRamBackedKvCache(
+  estimate: { gpuBytes?: number; totalBytes?: number },
+  availableGpuBytes: number,
+  memory: { totalBytes: number; availableBytes: number }
+): boolean {
+  const budget = ramBackedKvCacheBudgetBytes(memory);
+  return Number.isSafeInteger(availableGpuBytes) && availableGpuBytes >= 0
+    && Number.isSafeInteger(estimate.gpuBytes) && estimate.gpuBytes! > availableGpuBytes
+    && Number.isSafeInteger(estimate.totalBytes) && estimate.totalBytes! > 0 && estimate.totalBytes! <= budget;
+}
+
 export async function readHostResourceStats(
   access: AccessController,
   commandRunner: (command: string, args: string[], options?: { timeoutMs?: number; maxOutputChars?: number }) => Promise<ProcessResult> = runProcess
