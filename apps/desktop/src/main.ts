@@ -134,7 +134,7 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
       stdio,
       env: { ...process.env, XYST_ROOT: workingDirectory, XYST_DESKTOP_PARENT: "1" }
     });
-    if (agentRunId) lowerBackgroundProcessPriority(child.pid);
+    lowerBackgroundProcessPriority(child.pid);
     const childStdin = child.stdin!; const childStdout = child.stdout!; const childStderr = child.stderr!;
     if (agentRunId) activeAgentRuns.set(agentRunId, child);
     if (agentRunId) {
