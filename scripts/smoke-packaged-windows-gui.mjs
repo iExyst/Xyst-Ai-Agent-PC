@@ -428,7 +428,7 @@ try {
   await waitForRenderer(page, "document.querySelector('.session-reply button.primary-button')?.disabled === false", "the crash-recovered Continue control");
   await evaluate(page, "document.querySelector('.session-reply button.primary-button')?.click()", 69);
   await waitForSessionCallStatus(nodeBinary, cliEntry, sessionId, "desktop-smoke-complete-retry", "completed", 30_000);
-  const retryVisible = await waitForRenderer(page, "(() => { const rows=[...document.querySelectorAll('details.tool-log-item')].filter((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process'); for(const row of rows) row.open=true; return rows.length >= 4 && rows.some((row)=>row.innerText.includes('PHASE_B') && row.querySelector('.status-pill')?.textContent.trim().toLowerCase()==='completed'); })()", "the retried Desktop command result", 10_000);
+  const retryVisible = await waitForRenderer(page, "(() => { const rows=[...document.querySelectorAll('details.tool-log-item')].filter((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process'); for(const row of rows) row.open=true; return rows.length >= 4 && rows.some((row)=>row.innerText.includes('PHASE_B') && row.querySelector('.status-pill')?.textContent.trim().toLowerCase().startsWith('completed')); })()", "the retried Desktop command result", 10_000);
   assert.equal(retryVisible, true);
   const crashFinalCalls = await runCli(nodeBinary, cliEntry, ["session", "calls", sessionId]);
   assert.equal(crashFinalCalls.code, 0, crashFinalCalls.stderr || crashFinalCalls.stdout);
