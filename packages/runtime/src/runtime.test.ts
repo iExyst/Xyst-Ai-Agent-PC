@@ -2909,6 +2909,29 @@ test("tool-use wording after an exact output value does not become part of the v
   } finally { store.close(); }
 }));
 
+test("completion rejects process stdout that differs from the current file contents", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "process-file-match.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  await writeFile(join(root, "phase.txt"), "phase-A");
+  const response = (id: string, name: string, args: Record<string, unknown>) => ({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    turn++;
+    if (turn === 1) return response("mismatch-process", "run_process", { executable: process.execPath, args: ["-e", "process.stdout.write('phase-A\\n')"], cwd: root });
+    if (turn === 2) return response("mismatch-read", "file_read", { path: "phase.txt" });
+    return response("mismatch-complete", "task_complete", { evidence_tool_call_indexes: [1, 2] });
+  } };
+  try {
+    const result = await new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never })
+      .run("Run one Node process and ensure its stdout exactly matches the current text of phase.txt.", { workspace: root, maxTurns: 4 });
+    assert.equal(result.status, "limit");
+    assert.equal(turn, 4);
+    const completion = store.db.prepare("SELECT status,output_json FROM tool_calls WHERE id='mismatch-complete'").get() as { status: string; output_json: string };
+    assert.equal(completion.status, "failed");
+    assert.match(completion.output_json, /stdout exactly matching the current contents of phase\.txt/);
+    assert.equal(JSON.parse(completion.output_json).verified, undefined);
+  } finally { store.close(); }
+}));
+
 test("declared outputs require exact readback and the refreshed evidence list identifies its path", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "expected-output-readback.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model");

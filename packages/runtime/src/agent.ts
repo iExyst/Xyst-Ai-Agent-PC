@@ -135,6 +135,22 @@ function inferProcessOutputRequirements(criteria: string[]): InferredProcessOutp
   return [...inferred.values()];
 }
 
+interface InferredProcessFileMatchRequirement { path: string; processCriterion: string; fileCriterion: string }
+function inferProcessFileMatchRequirements(criteria: string[]): InferredProcessFileMatchRequirement[] {
+  const matches = new Map<string, InferredProcessFileMatchRequirement>();
+  for (const criterion of criteria) {
+    const match = criterion.match(/\bstdout\b[\s\S]{0,80}?\bexactly\s+(?:match(?:es)?|equal(?:s)?)\b[\s\S]{0,80}?\b(?:current\s+)?(?:text|contents?)\s+(?:of\s+)?(?:the\s+)?(?:file\s+)?["'`]?([^\s"'`.,;!?]+\.(?:txt|md|json|ya?ml|log|csv))["'`]?/i);
+    if (!match) continue;
+    const path = match[1]!;
+    matches.set(path.toLowerCase(), {
+      path,
+      processCriterion: `Required process stdout to exactly match current file contents: ${path}`,
+      fileCriterion: `Required file read for stdout comparison: ${path}`
+    });
+  }
+  return [...matches.values()];
+}
+
 function inferRequestedUrls(criteria: string[]): string[] {
   const urls = new Set<string>();
   for (const criterion of criteria) {
@@ -737,6 +753,7 @@ export class AgentRunner {
     };
     const inferredToolEvidence = new Map<string, string>();
     const inferredProcessOutputRequirements = new Map<string, InferredProcessOutputRequirement>();
+    const inferredProcessFileMatchRequirements = new Map<string, { path: string; role: "process" | "file" }>();
     const requestedUrlCriteria = new Map<string, string>();
     const inferredFileContentRequirements = new Map<string, InferredFileContentRequirement>();
     const inferredOutputPaths = [...new Set(options.expectedOutputPaths ?? [])];
@@ -755,6 +772,13 @@ export class AgentRunner {
         inferredProcessOutputRequirements.set(requirement.criterion, requirement);
         inferredToolEvidence.set("run_process", "Required evidence from requested command execution: run_process");
         addCompletionCriterion(requirement.criterion);
+      }
+      for (const requirement of inferProcessFileMatchRequirements(criteria)) {
+        inferredProcessFileMatchRequirements.set(requirement.processCriterion, { path: requirement.path, role: "process" });
+        inferredProcessFileMatchRequirements.set(requirement.fileCriterion, { path: requirement.path, role: "file" });
+        inferredToolEvidence.set("run_process", requirement.processCriterion);
+        addCompletionCriterion(requirement.processCriterion);
+        addCompletionCriterion(requirement.fileCriterion);
       }
       if (inferredToolEvidence.has("web_fetch")) {
         for (const url of inferRequestedUrls(criteria)) {
@@ -861,6 +885,17 @@ export class AgentRunner {
                 try { assertRequiredToolEvidence(evidence.name, parseOutput(evidence.output_json), processOutput.requirement, workspace); return true; } catch { return false; }
               });
               if (!match) throw new Error(`The selected evidence IDs or indexes must include a run_process result whose stdout meets the requested assertion (${criterion})`);
+              return match.index;
+            }
+            const processFileMatch = inferredProcessFileMatchRequirements.get(criterion);
+            if (processFileMatch) {
+              const match = candidateRows.find(({ evidence }) => {
+                if (processFileMatch.role === "process") return evidence.name === "run_process" && parseOutput(evidence.output_json).code === 0;
+                if (evidence.name !== "file_read") return false;
+                const path = parseOutput(evidence.input_json).path;
+                return typeof path === "string" && normalizedOutputPath(path) === normalizedOutputPath(processFileMatch.path) && typeof parseOutput(evidence.output_json).text === "string";
+              });
+              if (!match) throw new Error(`The selected evidence must include ${processFileMatch.role === "process" ? "a successful run_process" : `a file_read of ${processFileMatch.path}`} for the stdout comparison`);
               return match.index;
             }
             const inferredTool = [...inferredToolEvidence].find(([, requiredCriterion]) => requiredCriterion === criterion)?.[0];
@@ -1139,6 +1174,17 @@ export class AgentRunner {
           if (["run_process", "run_shell"].includes(evidence.name) && (typeof evidenceRecord.code !== "number" || evidenceRecord.code !== 0 || evidenceRecord.signal !== null && evidenceRecord.signal !== undefined)) throw new Error(`Completion evidence ${evidenceId} is a process result that did not exit successfully`);
           return { criterion: criterion as string, evidenceToolCallId: evidenceId, tool: evidence.name, verified: true };
         }));
+        for (const requirement of inferProcessFileMatchRequirements([...criteriaForEvidenceInference])) {
+          const processIndex = requiredCompletionCriteria.indexOf(requirement.processCriterion);
+          const fileIndex = requiredCompletionCriteria.indexOf(requirement.fileCriterion);
+          const processEvidence = currentEvidence[(indexes[processIndex] as number) - 1];
+          const fileEvidence = currentEvidence[(indexes[fileIndex] as number) - 1];
+          const processOutput = asRecord(JSON.parse(processEvidence!.output_json));
+          const fileOutput = asRecord(JSON.parse(fileEvidence!.output_json));
+          if (typeof processOutput.stdout !== "string" || processOutput.stdoutTruncated === true || typeof fileOutput.text !== "string" || processOutput.stdout !== fileOutput.text) {
+            throw new Error(`Completion evidence must show run_process stdout exactly matching the current contents of ${requirement.path}`);
+          }
+        }
         completionVerified = true;
         return { verified: true, checks: checked };
       }
