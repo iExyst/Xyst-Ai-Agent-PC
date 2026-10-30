@@ -347,3 +347,6 @@ The packaged Windows UI smoke now verifies a duplicate launch exits while the or
 ### Windows background process scheduling · local candidate · 2026-10-30
 Agent CLI workers and the persistent dashboard snapshot worker now receive below-normal Windows process priority so background runtime work yields CPU scheduling to interactive app/UI work. The priority change is best-effort and does not apply to Linux/macOS, Electron's renderer, or a separately managed model server; it cannot guarantee low total CPU use. Unit tests, live Windows child-priority verification, Desktop typecheck, and renderer tests passed. Hosted exact-head checks and current-build user-profile responsiveness remain pending.
 The clean-install Windows GUI smoke is also being extended to verify the packaged snapshot worker's actual Windows priority class.
+
+### Windows background scheduling · exact-head hosted validation · `08d7303`
+All eight exact-head push/PR CI and package jobs passed, including the Windows clean-install assertion that the packaged snapshot worker reports `BelowNormal`. Exact job IDs and the limits of this evidence are in `verification-history.md`. User-profile interactive responsiveness and any separately managed model-server CPU load remain unverified.
