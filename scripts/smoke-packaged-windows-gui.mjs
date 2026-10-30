@@ -276,6 +276,21 @@ async function withTimeout(promise, timeoutMs, message) {
   finally { clearTimeout(timer); }
 }
 
+async function waitForSessionCallStatus(nodeBinary, cliEntry, sessionId, callId, expectedStatus, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = "missing";
+  while (Date.now() < deadline) {
+    const calls = await runCli(nodeBinary, cliEntry, ["session", "calls", sessionId], 5_000);
+    if (calls.code !== 0) throw new Error("Could not inspect packaged session call " + callId + ": " + (calls.stderr || calls.stdout));
+    const rows = resultPayload(calls.stdout) ?? [];
+    const row = rows.find((item) => item.id === callId);
+    lastStatus = row?.status ?? "missing";
+    if (lastStatus === expectedStatus) return row;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error("Timed out waiting for packaged call " + callId + " to become " + expectedStatus + "; last status=" + lastStatus);
+}
+
 async function waitForCrashCallReady(nodeBinary, cliEntry, sessionId, probePath, expectedOwnerPid, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
   let lastStatus;
@@ -399,7 +414,9 @@ try {
   await waitForRenderer(page, "(() => [...document.querySelectorAll('details.tool-log-item')].some((row)=>row.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...row.querySelectorAll('button')].some((button)=>button.textContent.includes('Review abandoned rerun') && !button.disabled)))()", "the recoverable abandoned Desktop rerun", 30_000);
   await evaluate(page, "(() => { window.confirm=()=>true; const row=[...document.querySelectorAll('details.tool-log-item')].find((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...item.querySelectorAll('button')].some((button)=>button.textContent.includes('Review abandoned rerun'))); const button=[...row.querySelectorAll('button')].find((item)=>item.textContent.includes('Review abandoned rerun')); if(!button) throw new Error('Desktop abandoned-rerun review action is missing'); button.click(); return true; })()", 62);
   await waitForRenderer(page, "(() => [...document.querySelectorAll('details.tool-log-item')].some((row)=>row.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...row.querySelectorAll('button')].some((button)=>button.textContent.includes('Confirm no effect and allow retry') && !button.disabled)))()", "the uncertain Desktop rerun reconciliation", 30_000);
+  await waitForSessionCallStatus(nodeBinary, cliEntry, sessionId, "desktop-smoke-run-crash", "uncertain");
   await evaluate(page, "(() => { window.confirm=()=>true; const row=[...document.querySelectorAll('details.tool-log-item')].find((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process' && [...item.querySelectorAll('button')].some((button)=>button.textContent.includes('Confirm no effect and allow retry'))); const button=[...row.querySelectorAll('button')].find((item)=>item.textContent.includes('Confirm no effect and allow retry')); if(!button) throw new Error('Desktop no-effect reconciliation action is missing'); button.click(); return true; })()", 63);
+  await waitForSessionCallStatus(nodeBinary, cliEntry, sessionId, "desktop-smoke-run-crash", "retry_allowed");
   await writeFile(join(dataDir, "crash-mode.txt"), "retry\n", "utf8");
   await waitForRenderer(page, "!!document.querySelector('textarea[aria-label=\"Continue saved session\"]')", "the crash-recovered session reply form");
   await evaluate(page, "document.querySelector('textarea[aria-label=\"Continue saved session\"]')?.focus()", 64);
@@ -410,7 +427,8 @@ try {
   assert.equal(await evaluate(page, "document.querySelector('textarea[aria-label=\"Continue saved session\"]')?.value", 68), retryPrompt, "The crash-recovery prompt must replace the failed response");
   await waitForRenderer(page, "document.querySelector('.session-reply button.primary-button')?.disabled === false", "the crash-recovered Continue control");
   await evaluate(page, "document.querySelector('.session-reply button.primary-button')?.click()", 69);
-  const retryVisible = await waitForRenderer(page, "(() => { const rows=[...document.querySelectorAll('details.tool-log-item')].filter((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process'); for(const row of rows) row.open=true; const last=rows.at(-1); return rows.length >= 4 && last?.innerText.includes('PHASE_B') && last.querySelector('.status-pill')?.textContent.trim().toLowerCase()==='completed'; })()", "the retried Desktop command result", 30_000);
+  await waitForSessionCallStatus(nodeBinary, cliEntry, sessionId, "desktop-smoke-complete-retry", "completed", 30_000);
+  const retryVisible = await waitForRenderer(page, "(() => { const rows=[...document.querySelectorAll('details.tool-log-item')].filter((item)=>item.querySelector('.tool-log-name')?.textContent.trim()==='run_process'); for(const row of rows) row.open=true; return rows.length >= 4 && rows.some((row)=>row.innerText.includes('PHASE_B') && row.querySelector('.status-pill')?.textContent.trim().toLowerCase()==='completed'); })()", "the retried Desktop command result", 10_000);
   assert.equal(retryVisible, true);
   const crashFinalCalls = await runCli(nodeBinary, cliEntry, ["session", "calls", sessionId]);
   assert.equal(crashFinalCalls.code, 0, crashFinalCalls.stderr || crashFinalCalls.stdout);
