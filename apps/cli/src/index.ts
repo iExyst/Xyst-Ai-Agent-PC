@@ -21,6 +21,7 @@ import { getMissionTemplate, MISSION_TEMPLATES } from "./mission-templates.js";
 import { MISSION_PLAN_USAGE, parseMissionPlanArguments } from "./mission-plan-options.js";
 import { createAgentUserMessage } from "./attachments.js";
 import { desktopModelSnapshot } from "./desktop-model-snapshot.js";
+import { serveDesktopSnapshots } from "./desktop-worker.js";
 import { closeWebhookServer, parseGitHubWebhookOptions, startGitHubWebhookServer } from "./webhook-server.js";
 
 const args = process.argv.slice(2);
@@ -78,7 +79,9 @@ if (statusIntegrity?.status === "corrupt") {
     databaseIntegrity: statusIntegrity, error: message,
     errorDetails: statusIntegrity.error ?? statusIntegrity.details?.join("; ") ?? "SQLite reported corruption"
   };
-  if (clean[0] === "desktop") output({ status, sessions: [], memories: [], missions: [], agents: [], jobs: [], models: [], downloads: [] });
+  if (clean[0] === "desktop" && clean[2] === "--worker") {
+    await serveDesktopSnapshots(async () => ({ status, sessions: [], memories: [], missions: [], agents: [], jobs: [], models: [], downloads: [] }), controller, process, 1);
+  } else if (clean[0] === "desktop") output({ status, sessions: [], memories: [], missions: [], agents: [], jobs: [], models: [], downloads: [] });
   else output(status);
   process.exitCode = clean[0] === "status" ? 1 : 0;
   await new Promise<void>((flushed) => process.stdout.write("", () => flushed()));
@@ -588,6 +591,10 @@ try {
     const setting = runtime.config.resolve<boolean>("desktop.automation.enabled");
     output({ ...inspectDesktopCapabilities(), automation: { enabled: setting?.value === true, source: setting?.source ?? "runtime default" } });
   } else if (command === "desktop" && subcommand === "snapshot") {
+    const readSnapshot = async (snapshotRuntime = runtime) => {
+      const runtime = snapshotRuntime;
+      const lm = runtime.lmStudio;
+
     const settingKeys = [
       "model.default", "model.autoSelect", "models.automaticLoading", "models.automaticUnloading", "models.idleUnloadSeconds", "models.maxDownloadBytes", "models.allowedLicenses",
       "models.remoteFallback", "models.remoteFallbackUrl", "models.remoteFallbackModel", "models.onlineDiscovery",
@@ -624,7 +631,7 @@ try {
     const modelsError = "modelsError" in modelsResult ? modelsResult.modelsError : undefined;
     const browser = browserSetting.browser ?? { installed: false };
     const status = { version: "0.1.0", runtime: "ready", dataDir: runtime.dataDir, database: "ready", databaseIntegrity: statusIntegrity?.status === "healthy" ? statusIntegrity : inspectDatabaseIntegrity(resolve(runtime.dataDir, "xyst.sqlite")), sessions: sessions.length, missions: missions.length, profile: runtime.access.profile.mode };
-    output({ status, systemResources: systemResourcesResult, browser, sessions, missions, agents, memories: runtime.memories.list(), models, downloads: runtime.modelAcquisition.listDownloads(), jobs: runtime.jobs.list(50), ...(modelsError ? { modelsError } : {}), settings: {
+    return { status, systemResources: systemResourcesResult, browser, sessions, missions, agents, memories: runtime.memories.list(), models, downloads: runtime.modelAcquisition.listDownloads(), jobs: runtime.jobs.list(50), ...(modelsError ? { modelsError } : {}), settings: {
       accessProfile: scalarSetting("access.profile", { mode: "full", network: true, integrations: true, backgroundJobs: true, externalActions: true }),
       githubEnabled: settingValue("integrations.github.enabled"), githubWrites: settingValue("integrations.github.writeEnabled"), githubMerge: settingValue("integrations.github.mergeEnabled"), githubApiBaseUrl: scalarSetting("integrations.github.apiBaseUrl", ""),
       mcpEnabled: settingValue("integrations.mcp.enabled"), mcpServers: scalarSetting("integrations.mcp.servers", []), nativeChatMcpEnabled: settingValue("integrations.lmStudio.nativeChat.enabled"), nativeChatMcpIntegrations: scalarSetting("integrations.lmStudio.nativeChat.integrations", []),
@@ -634,7 +641,17 @@ try {
       updatesEnabled: settingValue("updates.enabled"), updatesAutomaticDownload: settingValue("updates.autoDownload"), updatesFeedUrl: scalarSetting("updates.feedUrl", ""), ocrLanguages: scalarSetting("documents.ocrLanguages", ["eng"]), officeRendererExecutable: scalarSetting("documents.officeRendererExecutable", ""), maxMemoryBytes: totalmem(),
       embeddingModel: { value: embedding.configured === false ? "" : embedding.value ?? "", source: embedding.source ?? "not configured" },
       inference: { temperature: scalarSetting("inference.temperature", null), maxTokens: scalarSetting("inference.maxTokens", null), requestTimeoutSeconds: scalarSetting("inference.requestTimeoutSeconds", 600), topP: scalarSetting("inference.topP", null), topK: scalarSetting("inference.topK", null), repeatPenalty: scalarSetting("inference.repeatPenalty", null), presencePenalty: scalarSetting("inference.presencePenalty", null), frequencyPenalty: scalarSetting("inference.frequencyPenalty", null), stopSequences: scalarSetting("inference.stopSequences", null), reasoning: scalarSetting("inference.reasoning", null) }
-    } });
+    } };
+
+    };
+    if (rest.length === 1 && rest[0] === "--worker") {
+      await serveDesktopSnapshots(async () => {
+        // Refresh configuration/access from disk per request, while reusing the loaded code and process.
+        const fresh = createRuntime();
+        try { return await readSnapshot(fresh); } finally { fresh.close(); }
+      }, controller);
+    } else if (rest.length === 0) output(await readSnapshot());
+    else fail("Usage: desktop snapshot [--worker]");
   } else if (command === "desktop" && subcommand === "automation") {
     const action = rest[0];
     if (action === "status") {
@@ -1249,4 +1266,9 @@ try {
   if (error instanceof Error && error.message !== "") process.stderr.write(`${error.message}\n`);
 } finally {
   runtime.close();
+  if (clean[0] === "desktop" && clean[1] === "snapshot" && clean[2] === "--worker") {
+    // All read contexts are closed; the worker's lifetime ends with its IPC parent.
+    if (process.connected) process.disconnect();
+    process.exit(process.exitCode ?? 0);
+  }
 }

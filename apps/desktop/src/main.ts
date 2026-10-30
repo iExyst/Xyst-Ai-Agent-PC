@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { killProcessTree, lmStudioIntegrationsSchema, mcpServersSchema } from "@xyst/runtime";
 import { scopedSettingKeys, scopesForDesktopSetting, settingScopes } from "./setting-keys.js";
 import { openExternalHttps } from "./external-links.js";
-import { singleFlight } from "./single-flight.js";
+import { SnapshotWorker } from "./snapshot-worker.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = process.env.XYST_ROOT ?? (app.isPackaged ? join(app.getPath("documents"), "Xyst") : resolve(here, "../../.."));
@@ -121,7 +121,7 @@ function consumePickedAttachments(senderId: number, paths: unknown): string[] {
   return resolved;
 }
 
-function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => void, agentRunId?: string, workingDirectory = projectRoot, timeoutMs?: number): Promise<unknown> {
+function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => void, agentRunId?: string, workingDirectory = projectRoot): Promise<unknown> {
   return new Promise((resolvePromise, reject) => {
     const stdio: ["pipe", "pipe", "pipe"] | ["pipe", "pipe", "pipe", "ipc"] = agentRunId
       ? ["pipe", "pipe", "pipe", "ipc"]
@@ -133,21 +133,6 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
       env: { ...process.env, XYST_ROOT: workingDirectory, XYST_DESKTOP_PARENT: "1" }
     });
     const childStdin = child.stdin!; const childStdout = child.stdout!; const childStderr = child.stderr!;
-    if (args[0] === "desktop" && args[1] === "snapshot") {
-      dashboardChildren.add(child);
-      child.once("close", () => dashboardChildren.delete(child));
-      child.once("error", () => dashboardChildren.delete(child));
-    }
-    let timedOut = false;
-    const deadline = timeoutMs === undefined ? undefined : setTimeout(() => {
-      timedOut = true;
-      // Keep the request pending if cleanup cannot be confirmed, so polling cannot spawn more children.
-      if (child.pid) void killProcessTree(child.pid).then((stopped) => {
-        if (stopped) reject(new Error("Dashboard refresh timed out; its process tree was stopped"));
-      }).catch(() => undefined);
-    }, timeoutMs);
-    child.once("error", () => { if (deadline) clearTimeout(deadline); });
-    child.once("close", () => { if (deadline) clearTimeout(deadline); });
     if (agentRunId) activeAgentRuns.set(agentRunId, child);
     if (agentRunId) {
       const pending = new Map<string, (accepted: boolean) => void>();
@@ -192,7 +177,6 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
     childStderr.on("data", (chunk: string) => { stderr += chunk; });
     child.once("error", (error) => { if (agentRunId && activeAgentRuns.get(agentRunId) === child) activeAgentRuns.delete(agentRunId); reject(error); });
     child.once("close", (code) => {
-      if (timedOut) return; // The deadline owns settlement until tree cleanup is confirmed.
       if (agentRunId && activeAgentRuns.get(agentRunId) === child) activeAgentRuns.delete(agentRunId);
       const pending = pendingAgentMessageResults.get(child);
       if (pending) { for (const resolve of pending.values()) resolve(false); pending.clear(); }
@@ -201,15 +185,25 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
         catch { onLine?.({ type: "output", data: stdout.trim() }); }
       }
       if (agentRunId && (code === 130 || code === 3)) resolvePromise(finalValue);
-      else if (code !== 0) reject(new Error(timedOut ? "Dashboard refresh timed out; its process exited" : stderr.trim() || `Xyst CLI exited with code ${code}`));
+      else if (code !== 0) reject(new Error(stderr.trim() || `Xyst CLI exited with code ${code}`));
       else resolvePromise(finalValue);
     });
   });
 }
 
-const readSnapshot = singleFlight(() => invokeCli(["desktop", "snapshot"], undefined, undefined, projectRoot, 20_000));
+const snapshotWorker = new SnapshotWorker(() => {
+  const child = spawn(nodeBinary, [cliEntry, "--json", "desktop", "snapshot", "--worker"], {
+    cwd: projectRoot, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"],
+    env: { ...process.env, XYST_ROOT: projectRoot, XYST_DESKTOP_PARENT: "1" }
+  });
+  dashboardChildren.add(child);
+  child.once("close", () => dashboardChildren.delete(child));
+  child.once("exit", () => dashboardChildren.delete(child));
+  child.once("error", () => dashboardChildren.delete(child));
+  return child;
+}, (child) => child.pid ? killProcessTree(child.pid) : Promise.resolve(true));
 async function snapshot() {
-  const value = await readSnapshot() as Record<string, unknown>;
+  const value = await snapshotWorker.read() as Record<string, unknown>;
   return { ...value, updateState };
 }
 
