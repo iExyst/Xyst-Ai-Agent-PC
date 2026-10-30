@@ -3314,3 +3314,8 @@ Read-only process sample: no Xyst/Electron process from our earlier diagnostic l
 ## Exact-head hosted validation · 0426e73 · 2026-10-30 UTC
 
 All four PR-triggered hosted jobs passed for source commit `0426e7309f3ffa59a3078f8053843e044df22585`. CI run `41051004245`: Ubuntu job `124046735151` and Windows job `124046735391`. Desktop package run `41051004175`: Linux job `124046735451` and Windows job `124046734889`. Windows package validation passed update manifest/installer checks, clean-install renderer smoke, and mission-service lifecycle smoke; Linux AppImage validation passed. Local workspace typecheck and Desktop renderer suite 14/14 passed. This verifies automated candidate coverage only; no interactive Desktop session or lag reproduction occurred. PR #82 remains OPEN/DRAFT/UNMERGED; no merge authorization.
+
+
+## Exact-head hosted validation · 4ef42db · 2026-10-30 UTC
+
+All eight push/PR CI and package jobs passed for 4ef42dbccd55dc6172352d6b9b45ca9dcb33f698. CI runs 41051771979 (Ubuntu 124049321459, Windows 124049321104) and 41051780040 (Ubuntu 124049349514, Windows 124049349302). Package runs 41051772005 (Linux 124049321515, Windows 124049320760) and 41051780164 (Linux 124049349203, Windows 124049349452). Windows update manifest/installer validation, clean-install renderer smoke, and mission-service lifecycle smoke passed; Linux AppImage validation passed. PR #82 remains OPEN/DRAFT/UNMERGED; no reviews or review threads exist, and no merge authorization was requested. This verifies the documentation-follow-up head; the source change itself passed its own exact-head four-job set at 0426e73. Desktop live responsiveness remains unverified.
