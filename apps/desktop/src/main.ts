@@ -22,6 +22,7 @@ const nodeBinary = process.env.XYST_NODE_PATH ?? (app.isPackaged ? bundledNode :
 let windowRef: BrowserWindow | undefined;
 const pickedAttachments = new Map<number, Set<string>>();
 const activeAgentRuns = new Map<string, ChildProcess>();
+const dashboardChildren = new Set<ChildProcess>();
 const pendingAgentMessageResults = new WeakMap<ChildProcess, Map<string, (accepted: boolean) => void>>();
 let selectedWorkspace = projectRoot;
 type UpdateState = { status: "idle" | "checking" | "available" | "up-to-date" | "downloading" | "downloaded" | "error"; currentVersion: string; version?: string; percent?: number; transferred?: number; total?: number; error?: string };
@@ -132,6 +133,11 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
       env: { ...process.env, XYST_ROOT: workingDirectory, XYST_DESKTOP_PARENT: "1" }
     });
     const childStdin = child.stdin!; const childStdout = child.stdout!; const childStderr = child.stderr!;
+    if (args[0] === "desktop" && args[1] === "snapshot") {
+      dashboardChildren.add(child);
+      child.once("close", () => dashboardChildren.delete(child));
+      child.once("error", () => dashboardChildren.delete(child));
+    }
     let timedOut = false;
     const deadline = timeoutMs === undefined ? undefined : setTimeout(() => {
       timedOut = true;
@@ -661,3 +667,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => { await mkdir(projectRoot, { recursive: true }); registerIpc(); await createWindow(); void checkUpdatesOnStartup(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); }); });
 }
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+let stoppingDashboard = false;
+app.on("before-quit", (event) => {
+  const pending = [...dashboardChildren].filter((child) => child.pid && child.exitCode === null && child.signalCode === null);
+  if (stoppingDashboard || !pending.length) return;
+  event.preventDefault();
+  stoppingDashboard = true;
+  void Promise.allSettled(pending.map((child) => killProcessTree(child.pid!))).finally(() => app.quit());
+});
