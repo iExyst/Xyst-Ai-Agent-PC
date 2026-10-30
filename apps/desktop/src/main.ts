@@ -259,7 +259,7 @@ function registerIpc(): void {
     if (action === "jobs:list") return invokeCli(["jobs", "list", "--limit", "200"]);
     if (action === "process:show") {
       const id = String(payload?.id ?? ""); if (!id) throw new Error("Process inspection requires a job ID");
-      return invokeCli(["process", "show", id]);
+      return snapshotWorker.showProcess(id);
     }
     if (action === "terminal:start") {
       const cols = Number(payload?.cols ?? 80); const rows = Number(payload?.rows ?? 24);

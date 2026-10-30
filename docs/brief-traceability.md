@@ -401,3 +401,9 @@ A direct test verifies 100 rapid output updates result in one leading and one tr
 
 ### G2 update · CLI output persistence bound · `48445ae` · 2026-10-30
 Process stdout/stderr snapshots are now coalesced to at most four SQLite writes per second per process; final results are persisted immediately. A regression verifies leading/trailing write coalescing and cleanup. CLI suite passed 36/36; all eight exact-head hosted CI/package jobs passed on `48445ae`. This reduces avoidable database serialization during fast streams, but has not been measured against the active user profile and does not prove the cause of system-wide lag. G2 remains Partial.
+
+### G2 · persistent-worker terminal polling · local candidate · 2026-10-30 20:43:04 UTC
+Static review found the Terminal view performed `process:show` by launching a new CLI child every second. The current candidate routes that bounded, read-only request through the already-running Desktop IPC worker and its persistent runtime, serializing it with dashboard reads. Focused CLI worker and Desktop worker regressions plus typecheck/build evidence are recorded in `verification-history.md`. This reduces process churn on the Terminal page; it does not prove that this path caused or resolved the user's system-wide lag. G2 remains Partial; active-profile responsiveness is unverified.
+
+### G2 · hosted validation status · `a4d4889` · 2026-10-30 20:44:04 UTC
+All eight exact-head CI/package jobs passed for `a4d4889`; the two Windows push jobs each spent about 10 minutes in `setup-node`, while PR Windows jobs took about 15 seconds. The run still used npm caching, so this does not verify that cache removal fixes the delay. The current Terminal-worker performance candidate is newer and has only local tests/build evidence. Active-profile lag remains unverified; G2 remains Partial.

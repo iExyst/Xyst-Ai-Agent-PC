@@ -25,6 +25,24 @@ test("repeated dashboard reads reuse one child and concurrent readers share one 
   assert.deepEqual(await second, { revision: 2 }); assert.equal(starts, 1);
 });
 
+test("process output reads reuse the dashboard worker and serialize with snapshots", async () => {
+  const child = new Child(); let starts = 0;
+  const reader = new SnapshotWorker(() => { starts++; setImmediate(() => child.emit("message", { type: "desktop:ready" })); return child as unknown as ChildProcess; }, async () => true);
+  const snapshot = reader.read();
+  const processRead = reader.showProcess("job-1");
+  const duplicateProcessRead = reader.showProcess("job-1");
+  assert.equal(processRead, duplicateProcessRead);
+  await tick(); await tick();
+  assert.deepEqual(child.requests.map(({ type }) => type), ["desktop:snapshot"]);
+  child.result({ revision: 1 }); assert.deepEqual(await snapshot, { revision: 1 });
+  await tick();
+  assert.deepEqual(child.requests.map(({ type }) => type), ["desktop:snapshot", "desktop:process-show"]);
+  assert.equal(child.requests[1].jobId, "job-1");
+  child.result({ id: "job-1", details: { stdout: "hello" } });
+  assert.deepEqual(await processRead, { id: "job-1", details: { stdout: "hello" } });
+  assert.equal(starts, 1);
+});
+
 test("timed-out dashboard cannot respawn while process-tree cleanup remains pending", async () => {
   let starts = 0; let timedOutChild!: Child; let release!: (confirmed: boolean) => void;
   const stopped = new Promise<boolean>((resolve) => { release = resolve; });

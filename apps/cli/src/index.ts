@@ -656,7 +656,11 @@ try {
         // Refresh configuration/access from disk per request, while reusing the loaded code and process.
         const fresh = createRuntime();
         try { return await readSnapshot(fresh); } finally { fresh.close(); }
-      }, controller);
+      }, controller, process, Infinity, async (jobId) => {
+        const job = runtime.jobs.show(jobId);
+        if (!job || job.kind !== "process") throw new Error(`No process job found with ID ${jobId}`);
+        return job;
+      });
     } else if (rest.length === 0) output(await readSnapshot());
     else fail("Usage: desktop snapshot [--worker]");
   } else if (command === "desktop" && subcommand === "automation") {

@@ -1,6 +1,5 @@
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { singleFlight } from "./single-flight.js";
 
 /** Reuse one IPC worker. Never replace a timed-out worker until cleanup is confirmed. */
 export class SnapshotWorker {
@@ -8,18 +7,46 @@ export class SnapshotWorker {
   private ready = false;
   private stopping = false;
   private quarantine?: Error;
-  private pending?: { id: string; sent: boolean; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
+  private pending?: { id: string; sent: boolean; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; request: { type: "desktop:snapshot" } | { type: "desktop:process-show"; jobId: string } };
+  private requestQueue: Promise<void> = Promise.resolve();
+  private snapshotRead?: Promise<unknown>;
+  private readonly processReads = new Map<string, Promise<unknown>>();
   constructor(private readonly start: () => ChildProcess, private readonly stop: (child: ChildProcess) => Promise<boolean>, private readonly timeoutMs = 20_000) {}
 
-  readonly read = singleFlight(() => new Promise<unknown>((resolve, reject) => {
-    if (this.quarantine) { reject(this.quarantine); return; }
-    const timer = setTimeout(() => this.terminate("Dashboard refresh timed out"), this.timeoutMs);
-    this.pending = { id: randomUUID(), sent: false, resolve, reject, timer };
-    try {
-      if (!this.child) this.connect();
-      this.dispatch();
-    } catch (error) { this.finish(error instanceof Error ? error : new Error(String(error))); }
-  }));
+  readonly read = (): Promise<unknown> => {
+    if (this.snapshotRead) return this.snapshotRead;
+    const request = this.enqueue(() => this.request({ type: "desktop:snapshot" }));
+    this.snapshotRead = request;
+    void request.finally(() => { if (this.snapshotRead === request) this.snapshotRead = undefined; }).catch(() => undefined);
+    return request;
+  };
+
+  readonly showProcess = (jobId: string): Promise<unknown> => {
+    const existing = this.processReads.get(jobId);
+    if (existing) return existing;
+    const request = this.enqueue(() => this.request({ type: "desktop:process-show", jobId }));
+    this.processReads.set(jobId, request);
+    void request.finally(() => { if (this.processReads.get(jobId) === request) this.processReads.delete(jobId); }).catch(() => undefined);
+    return request;
+  };
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.requestQueue.then(operation, operation);
+    this.requestQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private request(request: { type: "desktop:snapshot" } | { type: "desktop:process-show"; jobId: string }): Promise<unknown> {
+    return new Promise<unknown>((resolve, reject) => {
+      if (this.quarantine) { reject(this.quarantine); return; }
+      const timer = setTimeout(() => this.terminate("Dashboard refresh timed out"), this.timeoutMs);
+      this.pending = { id: randomUUID(), sent: false, resolve, reject, timer, request };
+      try {
+        if (!this.child) this.connect();
+        this.dispatch();
+      } catch (error) { this.finish(error instanceof Error ? error : new Error(String(error))); }
+    });
+  }
 
   private finish(error?: Error, value?: unknown) {
     const pending = this.pending;
@@ -58,7 +85,7 @@ export class SnapshotWorker {
     if (!this.ready || !this.pending || this.pending.sent || !this.child) return;
     this.pending.sent = true;
     try {
-      this.child.send!({ type: "desktop:snapshot", id: this.pending.id }, (error) => {
+      this.child.send!({ ...this.pending.request, id: this.pending.id }, (error) => {
         if (error) this.terminate("Dashboard worker connection failed");
       });
     } catch { this.terminate("Dashboard worker connection failed"); }

@@ -33,6 +33,26 @@ test("dashboard worker reuses its process while rejecting overlapping reads", as
   assert.equal(controller.signal.aborted, true);
 });
 
+test("dashboard worker routes bounded process-show requests through its persistent runtime", async () => {
+  const parent = new Parent(); let reads = 0; let inspected = "";
+  const controller = new AbortController();
+  const serving = serveDesktopSnapshots(async () => ({ snapshot: ++reads }), controller, parent as unknown as NodeJS.Process, Infinity, async (jobId) => {
+    inspected = jobId;
+    return { id: jobId, kind: "process", state: "running" };
+  });
+  parent.emit("message", { type: "desktop:process-show", id: "show-1", jobId: "job-1" });
+  await settle();
+  const result = parent.messages.find((message) => message.id === "show-1");
+  assert.equal(inspected, "job-1");
+  assert.deepEqual(result, { type: "desktop:result", id: "show-1", data: { id: "job-1", kind: "process", state: "running" } });
+
+  parent.emit("message", { type: "desktop:process-show", id: "show-invalid", jobId: "" });
+  const invalid = parent.messages.find((message) => message.id === "show-invalid");
+  assert.equal(invalid.type, "desktop:error");
+  assert.equal(reads, 0);
+  parent.connected = false; parent.emit("disconnect"); await serving;
+});
+
 test("parent exit aborts a pending dashboard operation before worker shutdown", async () => {
   const parent = new Parent(); const controller = new AbortController(); let stopped = false;
   const serving = serveDesktopSnapshots(() => new Promise((resolve) => {
