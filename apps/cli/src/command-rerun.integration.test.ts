@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,12 +19,12 @@ function resultPayload(stdout: string): unknown {
   }).at(-1);
 }
 
-test("real CLI resumes externally edited commands after explicit authorization and owner-crash reconciliation", { timeout: 45_000 }, async () => {
+test("real CLI resumes externally edited commands after explicit authorization and owner-crash reconciliation", { timeout: 60_000 }, async () => {
   const scratch = await mkdtemp(join(tmpdir(), "xyst-cli-command-rerun-"));
   const workspace = join(scratch, "workspace"); const appData = join(scratch, "appdata");
   await mkdir(workspace); await mkdir(appData);
   await writeFile(join(workspace, "phase.txt"), "PHASE_A\n", "utf8");
-  await writeFile(join(workspace, "probe.mjs"), 'import { existsSync, readFileSync, writeFileSync } from "node:fs";\nif (existsSync("crash-mode.txt")) { const ownerPid = process.ppid; await new Promise((resolve) => setTimeout(resolve, 1800)); try { process.kill(ownerPid, 0); } catch { process.exit(0); } writeFileSync("crash-effect.txt", "applied"); }\nprocess.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
+  await writeFile(join(workspace, "probe.mjs"), 'import { existsSync, readFileSync, writeFileSync } from "node:fs";\nconst mode = existsSync("crash-mode.txt") ? readFileSync("crash-mode.txt", "utf8").trim() : "";\nif (mode === "armed") { const ownerPid = process.ppid; writeFileSync("crash-probe-ready.txt", String(ownerPid)); await new Promise((resolve) => setTimeout(resolve, 5000)); try { process.kill(ownerPid, 0); } catch { process.exit(0); } writeFileSync("crash-effect.txt", "applied"); }\nif (mode === "retry") writeFileSync("crash-effect.txt", "applied");\nprocess.stdout.write(readFileSync("phase.txt", "utf8"));\n', "utf8");
 
   const modelTurns: MockToolCall[] = [
     { id: "call-run-initial", name: "run_process", args: { executable: process.execPath, args: ["probe.mjs"], cwd: "." } },
@@ -120,7 +121,7 @@ test("real CLI resumes externally edited commands after explicit authorization a
     assert.equal(completion?.status, "completed", JSON.stringify(rows));
     assert.equal(await readFile(join(workspace, "phase.txt"), "utf8"), "PHASE_B\n");
 
-    await writeFile(join(workspace, "crash-mode.txt"), "enabled\n", "utf8");
+    await writeFile(join(workspace, "crash-mode.txt"), "armed\n", "utf8");
     const crashAuthorization = await invoke(["--json", "agent", "authorize-rerun", sessionId, "call-run-rerun"]);
     assert.equal(crashAuthorization.code, 0, crashAuthorization.stderr || crashAuthorization.stdout);
     const interrupted = startCli(["--json", "agent", "resume", sessionId, "Run the next authorized command and confirm the current phase.", "--model", "mock-model", "--max-turns", "4"]);
@@ -131,13 +132,14 @@ test("real CLI resumes externally edited commands after explicit authorization a
       const response = await invoke(["--json", "session", "calls", sessionId]);
       assert.equal(response.code, 0, response.stderr);
       crashCalls = resultPayload(response.stdout) as Array<{ id: string; status: string }>;
-      if (crashCalls.some((row) => row.id === "call-run-crash" && row.status === "running")) break;
+      if (crashCalls.some((row) => row.id === "call-run-crash" && row.status === "running") && existsSync(join(workspace, "crash-probe-ready.txt"))) break;
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
     assert.equal(crashCalls.find((row) => row.id === "call-run-crash")?.status, "running", JSON.stringify(crashCalls));
+    assert.equal(await readFile(join(workspace, "crash-probe-ready.txt"), "utf8"), String(interrupted.child.pid), "the delayed command must record the exact live CLI owner before it is killed");
     interrupted.child.kill("SIGKILL");
     await interrupted.result;
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await new Promise((resolve) => setTimeout(resolve, 6_000));
     await assert.rejects(readFile(join(workspace, "crash-effect.txt"), "utf8"), { code: "ENOENT" });
 
     const recovered = await invoke(["--json", "agent", "recover-rerun", sessionId, "call-run-crash"]);
@@ -149,6 +151,7 @@ test("real CLI resumes externally edited commands after explicit authorization a
     assert.equal(quarantinedRows.find((row) => row.id === "call-run-crash")?.status, "uncertain", JSON.stringify(quarantinedRows));
     const retryAuthorization = await invoke(["--json", "agent", "reconcile", sessionId, "call-run-crash", "retry"]);
     assert.equal(retryAuthorization.code, 0, retryAuthorization.stderr || retryAuthorization.stdout);
+    await writeFile(join(workspace, "crash-mode.txt"), "retry\n", "utf8");
     const retried = await invoke(["--json", "agent", "resume", sessionId, "The owner-crashed command was confirmed to have no effect; run the authorized retry, read phase.txt again, and verify both results.", "--model", "mock-model", "--max-turns", "4"]);
     assert.equal(retried.code, 0, retried.stderr || retried.stdout);
     assert.equal((resultPayload(retried.stdout) as { status?: unknown } | undefined)?.status, "completed", retried.stdout);
