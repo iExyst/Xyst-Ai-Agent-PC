@@ -7585,6 +7585,35 @@ test("completion rejects process evidence after an authorized rerun", async () =
   } finally { store.close(); }
 }));
 
+test("completion replaces an older exact stdout assertion after an authorized external-edit rerun", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "stale-stdout-rerun.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model");
+  await writeFile(join(root, "phase.txt"), "PHASE_A");
+  const processArgs = { executable: process.execPath, args: ["-e", "process.stdout.write(require('node:fs').readFileSync('phase.txt', 'utf8'))"], cwd: root };
+  let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async (request: { messages: Array<{ role: string; content?: unknown }> }) => {
+    turn++;
+    const call = turn === 1 || turn === 3
+      ? { id: `phase-process-${turn}`, name: "run_process", args: processArgs }
+      : { id: `phase-completion-${turn}`, name: "task_complete", args: { evidence_tool_call_indexes: [1] } };
+    return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } }] } }] };
+  } };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  try {
+    const first = await agent.run("Run the command; expected stdout is exactly PHASE_A.", { workspace: root, maxTurns: 4 });
+    assert.equal(first.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(first.sessionId)));
+    await writeFile(join(root, "phase.txt"), "PHASE_B");
+    agent.authorizeProcessRerun(first.sessionId, "phase-process-1");
+    const resumed = await agent.run("The file changed externally; run it again and expected stdout is exactly PHASE_B.", { workspace: root, sessionId: first.sessionId, maxTurns: 4 });
+    assert.equal(resumed.status, "completed", JSON.stringify(store.db.prepare("SELECT name,status,output_json FROM tool_calls WHERE session_id=? ORDER BY rowid").all(first.sessionId)));
+    const latest = store.db.prepare("SELECT output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid DESC LIMIT 1").get(first.sessionId) as { output_json: string };
+    const verified = JSON.parse(latest.output_json) as { verified: boolean; checks: Array<{ criterion: string; evidenceToolCallId: string }> };
+    assert.equal(verified.verified, true);
+    assert.ok(verified.checks.some((check) => check.criterion.includes('"PHASE_B"')));
+    assert.ok(verified.checks.every((check) => !check.criterion.includes('"PHASE_A"')));
+  } finally { store.close(); }
+}));
+
 test("completion feedback identifies the exact successful read index omitted from the selected evidence", async () => withTemp(async (root) => {
   const store = new XystStore(join(root, "completion-read-index.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
   config.set("global", "model.default", "test-model"); let turn = 0; let correction = "";

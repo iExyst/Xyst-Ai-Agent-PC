@@ -120,11 +120,13 @@ interface InferredProcessOutputRequirement { criterion: string; requirement: Req
 function inferProcessOutputRequirements(criteria: string[]): InferredProcessOutputRequirement[] {
   const inferred = new Map<string, InferredProcessOutputRequirement>();
   for (const criterion of criteria) {
-    const exact = criterion.match(/\bstdout\s+(?:must\s+|should\s+)?exactly\s+(?:equal(?:s)?|match(?:es)?)\s+(["'\x60])([\s\S]*?)\1/i);
+    const exact = criterion.match(/\b(?:expected\s+)?stdout\s+(?:(?:must|should)\s+)?(?:is\s+)?exactly\s+(?:equal(?:s)?|match(?:es)?)\s+(["'\x60])([\s\S]*?)\1/i)
+      ?? criterion.match(/\b(?:expected\s+)?stdout\s+(?:(?:must|should)\s+)?is\s+exactly\s+(["'\x60])([\s\S]*?)\1/i)
+      ?? criterion.match(/\b(?:expected\s+)?stdout\s+(?:(?:must|should)\s+)?is\s+exactly\s+([A-Za-z0-9_./:+-]+)(?=$|[\s.,;!?])/i);
     const included = criterion.match(/\bstdout\s+(?:must\s+|should\s+)?(?:include|contain)(?:s)?\s+(["'\x60])([\s\S]*?)\1/i);
     const match = exact ?? included;
     if (!match) continue;
-    const expected = match[2]!;
+    const expected = (match[2] ?? match[1]!).replace(/[.,!?;]$/, "");
     const requirement: RequiredToolEvidence = exact
       ? { tool: "run_process", exitCode: 0, stdoutEquals: expected }
       : { tool: "run_process", exitCode: 0, stdoutIncludes: expected };
@@ -279,7 +281,15 @@ export class AgentRunner {
       }
     }
     const savedCriteria = options.sessionId ? this.deps.store.db.prepare("SELECT criterion FROM session_completion_criteria WHERE session_id=? ORDER BY rowid").all(options.sessionId) as Array<{ criterion: string }> : [];
-    const baseCompletionCriteria = [...new Set([...savedCriteria.map((row) => row.criterion), ...(options.completionCriteria?.length ? options.completionCriteria : [safeObjective])].map((item) => this.deps.provider.redact(String(item)).trim()).filter(Boolean))];
+    let persistedCriteria = savedCriteria.map((row) => row.criterion);
+    if (options.sessionId && !options.missionId && !options.completionCriteria?.length) {
+      const exactStdout = (criterion: string) => inferProcessOutputRequirements([criterion]).find((requirement) => requirement.requirement.stdoutEquals !== undefined)?.requirement.stdoutEquals;
+      const currentStdout = exactStdout(safeObjective);
+      const latestSavedStdout = [...persistedCriteria].reverse().map(exactStdout).find((value) => value !== undefined);
+      const activeStdout = currentStdout ?? latestSavedStdout;
+      if (activeStdout !== undefined) persistedCriteria = persistedCriteria.filter((criterion) => exactStdout(criterion) === undefined || exactStdout(criterion) === activeStdout);
+    }
+    const baseCompletionCriteria = [...new Set([...persistedCriteria, ...(options.completionCriteria?.length ? options.completionCriteria : [safeObjective])].map((item) => this.deps.provider.redact(String(item)).trim()).filter(Boolean))];
     if (baseCompletionCriteria.length > 50) throw new Error("Session completion criteria exceed the 50-criterion limit; existing requirements cannot be silently dropped");
     const criteriaForEvidenceInference = new Set(baseCompletionCriteria);
     const requiredToolEvidence = options.requiredToolEvidence ?? [];
@@ -373,6 +383,12 @@ export class AgentRunner {
       catch { return { role: row.role, content: row.content }; }
     });
     if (!options.completionCriteria?.length) {
+      const exactStdout = (criterion: string) => inferProcessOutputRequirements([criterion]).find((requirement) => requirement.requirement.stdoutEquals !== undefined)?.requirement.stdoutEquals;
+      const activeSessionStdout = exactStdout(safeObjective) ?? [...contextMessages].reverse().filter((message) => message.role === "user").map((message) => {
+        const content = message.content;
+        const text = typeof content === "string" ? content : Array.isArray(content) ? content.flatMap((part) => part && typeof part === "object" && typeof (part as Record<string, unknown>).text === "string" ? [(part as Record<string, unknown>).text as string] : []).join("\n") : "";
+        return exactStdout(this.deps.provider.redact(text));
+      }).find((value) => value !== undefined);
       const latestCompaction = this.deps.sessions.compactions(sessionId).at(-1);
       if (latestCompaction) {
         try {
@@ -381,6 +397,8 @@ export class AgentRunner {
             for (const goal of summary.user_goals) {
               if (typeof goal !== "string") continue;
               const safeGoal = this.deps.provider.redact(goal).trim();
+              const historicalStdout = exactStdout(safeGoal);
+              if (activeSessionStdout !== undefined && historicalStdout !== undefined && historicalStdout !== activeSessionStdout) continue;
               if (safeGoal) criteriaForEvidenceInference.add(safeGoal);
               if (safeGoal && !requiredCompletionCriteria.includes(safeGoal) && requiredCompletionCriteria.length < 50) requiredCompletionCriteria.push(safeGoal);
             }
@@ -392,6 +410,8 @@ export class AgentRunner {
         const content = message.content;
         const text = typeof content === "string" ? content : Array.isArray(content) ? content.flatMap((part) => part && typeof part === "object" && typeof (part as Record<string, unknown>).text === "string" ? [(part as Record<string, unknown>).text as string] : []).join("\n") : "";
         const safeText = this.deps.provider.redact(text).trim();
+        const historicalStdout = exactStdout(safeText);
+        if (activeSessionStdout !== undefined && historicalStdout !== undefined && historicalStdout !== activeSessionStdout) continue;
         if (safeText) criteriaForEvidenceInference.add(safeText);
         if (safeText && !requiredCompletionCriteria.includes(safeText) && requiredCompletionCriteria.length < 50) requiredCompletionCriteria.push(safeText);
       }
