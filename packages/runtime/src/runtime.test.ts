@@ -10,6 +10,7 @@ import { Cron } from "croner";
 import Database from "better-sqlite3";
 import { ConfigStore, inspectDatabaseIntegrity, XystStore, SessionStore, MemoryStore, JobStore } from "./storage.js";
 import { authorizeCommandRerun, consumeCommandHeadRetry, consumeCommandRerun, quarantineAbandonedCommandRerun, resolveCommandReplay } from "./command-rerun.js";
+import { isRecordedProcessAlive, processStartIdentity } from "./process-identity.js";
 import { createText, movePath, patchText, readText, searchFiles } from "./tools/files.js";
 import { normalizeUserPath, runProcess } from "./platform.js";
 import { AccessController } from "./access.js";
@@ -1076,7 +1077,7 @@ test("SQLite migrations persist sessions and resolve config from most specific s
   assert.equal(config.resetScope("global"), 1); assert.equal(config.resolve("inference.temperature"), undefined);
   const id = sessions.create("persistence"); sessions.addMessage(id, "user", "hello");
   const version = store.db.prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get() as { version: number };
-  assert.equal(version.version, 20);
+  assert.equal(version.version, 21);
   const legacyCallId = randomUUID(); const legacyCloneCallId = randomUUID();
   const legacyTool = store.db.prepare("INSERT INTO tool_calls(id,name,input_json,status,created_at,effect) VALUES(?, ?, '{}', 'completed', ?, 'read')");
   legacyTool.run(legacyCallId, "git_push", new Date().toISOString()); legacyTool.run(legacyCloneCallId, "git_clone", new Date().toISOString());
@@ -1126,7 +1127,7 @@ test("version-one database with a large history upgrades through every migration
   const upgraded = new XystStore(path);
   try {
     const version = upgraded.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number };
-    assert.equal(version.version, 20);
+    assert.equal(version.version, 21);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as { count: number }).count, 1_000);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM messages").get() as { count: number }).count, 20_000);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE effect='external' AND execution_scope IS NOT NULL").get() as { count: number }).count, 1_000);
@@ -1175,7 +1176,7 @@ test("failed multi-statement migration rolls back cleanly and can be retried", a
 
   const recovered = new XystStore(path);
   try {
-    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
+    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 21);
     assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
     assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message during recovery");
     assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
@@ -1246,7 +1247,7 @@ test("process killed after migration DDL leaves an intact database that can retr
 
     const recovered = new XystStore(path);
     try {
-      assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
+      assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 21);
       assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
       assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message through process termination");
       assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
@@ -1270,7 +1271,7 @@ test("migration 16 classifies historical external actions and quarantines interr
   try {
     const records = migrated.db.prepare("SELECT name,effect,status,execution_scope FROM tool_calls ORDER BY name").all() as Array<{ name: string; effect: string; status: string; execution_scope: string }>;
     assert.deepEqual(records.map(({ name, effect, status, execution_scope }) => [name, effect, status, execution_scope]), names.slice().sort().map((name) => [name, "external", "uncertain", sessionId]));
-    assert.equal((migrated.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
+    assert.equal((migrated.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 21);
     assert.equal((migrated.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   } finally { migrated.close(); }
 }));
@@ -1320,7 +1321,7 @@ test("interactive process schema migrations upgrade existing process-job databas
   oldStore.close();
   const store = new XystStore(path); const jobs = new JobStore(store);
   try {
-    assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
+    assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 21);
     assert.deepEqual(jobs.processSpec(existingId), { command: "node", args: [], cwd: root, interactive: false, pty: false, cols: 80, rows: 24 });
     const interactiveId = jobs.createProcess("node", [], root, true);
     jobs.sendProcessInput(interactiveId, "upgrade ok");
@@ -1490,7 +1491,7 @@ test("concurrent first-run processes serialize SQLite migrations", async () => w
   const failures = outcomes.filter((result): result is PromiseRejectedResult => result.status === "rejected");
   assert.equal(failures.length, 0, failures.map((failure) => String(failure.reason)).join("\n"));
   const store = new XystStore(path);
-  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
+  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 21);
   store.close();
 }));
 
@@ -7269,7 +7270,7 @@ test("memory is searchable, editable, deletable, and keeps inferred notes separa
   memories.delete(inferred.id); assert.equal(memories.list().length, 1); assert.throws(() => memories.delete(inferred.id), /not found/);
   assert.equal(memories.embeddings("test-embed").length, 0, "deleting a memory cascades to its indexed semantic vector");
   assert.equal(memories.searchSemantic([0, 1], "test-embed").length, 0);
-  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
+  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 21);
   store.close();
 }));
 
@@ -7423,7 +7424,7 @@ test("command rerun authorization is consumed once and preserves the original ac
     assert.equal(consumeCommandRerun(store, "other", "hash", { id: "wrong", sessionId: "session", inputJson: "{}" }), false);
     assert.deepEqual(resolveCommandReplay(store, "scope", "hash", { id: "new", sessionId: "session", inputJson: "{}" }), { kind: "claimed" });
     assert.deepEqual(resolveCommandReplay(store, "scope", "hash", { id: "duplicate", sessionId: "session", inputJson: "{}" }), { kind: "head", id: "new", status: "running", outputJson: null, tracked: true });
-    assert.throws(() => quarantineAbandonedCommandRerun(store, "session", "new"), /recorded owner PID.*PID reuse/);
+    assert.throws(() => quarantineAbandonedCommandRerun(store, "session", "new"), /recorded owner PID.*creation identity/);
     assert.equal((store.db.prepare("SELECT output_json FROM tool_calls WHERE id='original'").get() as { output_json: string }).output_json, "old");
     assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='new'").get() as { status: string }).status, "running");
     assert.equal((store.db.prepare("SELECT new_tool_call_id FROM command_rerun_authorizations WHERE id=?").get(authorization) as { new_tool_call_id: string }).new_tool_call_id, "new");
@@ -7443,6 +7444,19 @@ test("command rerun authorization is consumed once and preserves the original ac
     store.db.prepare("UPDATE tool_calls SET status='completed',output_json='new result' WHERE id='retry'").run();
     authorizeCommandRerun(store, "session", "retry");
     assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM command_replay_heads").get() as { count: number }).count, 1);
+  } finally { store.close(); }
+}));
+
+test("command rerun recovery accepts a reused owner PID only when its creation identity differs", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "rerun-reused-owner-pid.sqlite")); const now = new Date().toISOString();
+  try {
+    const identity = processStartIdentity(process.pid);
+    assert.ok(identity, `current process identity is available on ${process.platform}`);
+    store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at,effect,execution_scope,request_hash) VALUES('rerun','session','run_process','{}','running',?,'external','scope','hash')").run(now);
+    store.db.prepare("INSERT INTO command_rerun_owners(tool_call_id,host,pid,process_start_identity) VALUES('rerun',?,?,?)").run(hostname(), process.pid, `${identity}:previous`);
+    store.db.prepare("INSERT INTO command_replay_heads(execution_scope,request_hash,tool_call_id) VALUES('scope','hash','rerun')").run();
+    assert.doesNotThrow(() => quarantineAbandonedCommandRerun(store, "session", "rerun"));
+    assert.equal((store.db.prepare("SELECT status FROM tool_calls WHERE id='rerun'").get() as { status: string }).status, "uncertain");
   } finally { store.close(); }
 }));
 
@@ -7875,6 +7889,23 @@ test("an agent run cannot finalize a session after its owner token is replaced",
     assert.equal((sessions.list() as Array<{ id: string; status: string }>).find((session) => session.id === sessionId)?.status, "running");
     sessions.finishAgentRun(sessionId, currentOwner, "completed");
     assert.equal((sessions.list() as Array<{ id: string; status: string }>).find((session) => session.id === sessionId)?.status, "completed");
+  } finally { store.close(); }
+}));
+
+test("owner recovery distinguishes a reused PID by its process creation identity", async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "reused-owner-pid.sqlite")); const sessions = new SessionStore(store);
+  const sessionId = sessions.create("Reused owner PID");
+  try {
+    const previousOwner = sessions.beginAgentRun(sessionId);
+    const currentIdentity = processStartIdentity(process.pid);
+    assert.ok(currentIdentity, `current process identity is available on ${process.platform}`);
+    store.db.prepare("UPDATE session_run_owners SET process_start_identity=? WHERE session_id=?").run(`${currentIdentity}:previous`, sessionId);
+    assert.equal(isRecordedProcessAlive(process.pid, currentIdentity), true);
+    assert.equal(isRecordedProcessAlive(process.pid, `${currentIdentity}:previous`), false);
+    const recoveredOwner = sessions.beginAgentRun(sessionId);
+    assert.notEqual(recoveredOwner, previousOwner);
+    assert.equal((store.db.prepare("SELECT status FROM sessions WHERE id=?").get(sessionId) as { status: string }).status, "running");
+    sessions.finishAgentRun(sessionId, recoveredOwner, "completed");
   } finally { store.close(); }
 }));
 

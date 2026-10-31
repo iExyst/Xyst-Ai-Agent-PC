@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { isRecordedProcessAlive, processStartIdentity } from "./process-identity.js";
 import { supportedSettingScopes, validateSettingContext, validateSettingScope, validateSettingValue } from "./settings-schema.js";
 
 const migrations = [
@@ -67,13 +68,9 @@ const migrations = [
    WHERE substr(name,1,4)='mcp_' AND status='running';`,
   `CREATE TABLE session_run_owners (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, owner_id TEXT NOT NULL, host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0), started_at TEXT NOT NULL);
    CREATE INDEX session_run_owners_host_pid ON session_run_owners(host,pid);`,
-  `CREATE TABLE session_completion_criteria (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, criterion TEXT NOT NULL, PRIMARY KEY(session_id,criterion));`
+  `CREATE TABLE session_completion_criteria (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, criterion TEXT NOT NULL, PRIMARY KEY(session_id,criterion));`,
+  `-- Process identity columns are added conditionally by the migration runner.`
 ];
-
-function isProcessAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
-}
 
 export type DatabaseIntegrityReport = { path: string; status: "healthy" | "corrupt" | "missing" | "unavailable"; details?: string[]; error?: string };
 
@@ -141,7 +138,14 @@ export class XystStore {
         const current = (this.db.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get() as { version: number }).version;
         if (current >= version) return;
         if (current !== version - 1) throw new Error(`Database migration sequence is inconsistent at version ${current}`);
-        this.db.exec(migrations[index]!);
+        if (version === 21) {
+          for (const table of ["session_run_owners", "command_rerun_owners"]) {
+            const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+            if (!columns.some((column) => column.name === "process_start_identity")) this.db.exec(`ALTER TABLE ${table} ADD COLUMN process_start_identity TEXT`);
+          }
+        } else {
+          this.db.exec(migrations[index]!);
+        }
         this.db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(version, new Date().toISOString());
       });
       applyMigration.immediate();
@@ -259,16 +263,16 @@ export class SessionStore {
     const ownerId = randomUUID(); const now = new Date().toISOString();
     this.store.db.transaction(() => {
       if (!this.store.db.prepare("SELECT 1 FROM sessions WHERE id=?").get(sessionId)) throw new Error(`Session not found: ${sessionId}`);
-      const existing = this.store.db.prepare("SELECT owner_id,host,pid FROM session_run_owners WHERE session_id=?").get(sessionId) as { owner_id: string; host: string; pid: number } | undefined;
+      const existing = this.store.db.prepare("SELECT owner_id,host,pid,process_start_identity FROM session_run_owners WHERE session_id=?").get(sessionId) as { owner_id: string; host: string; pid: number; process_start_identity: string | null } | undefined;
       if (existing) {
-        if (existing.host !== hostname() || isProcessAlive(existing.pid)) throw new Error(`Session ${sessionId} is already owned by a live or unverifiable agent process (${existing.host}:${existing.pid})`);
+        if (existing.host !== hostname() || isRecordedProcessAlive(existing.pid, existing.process_start_identity)) throw new Error(`Session ${sessionId} is already owned by a live or unverifiable agent process (${existing.host}:${existing.pid})`);
         this.recoverAgentRunOwner(sessionId, existing.owner_id, now);
       }
       const unresolved = this.store.db.prepare(`SELECT id,name,status FROM tool_calls WHERE session_id=? AND effect='external'
         AND (status='uncertain' OR (status='running' AND name='run_process' AND EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id)))
         ORDER BY created_at,rowid LIMIT 1`).get(sessionId) as { id: string; name: string; status: string } | undefined;
       if (unresolved) throw new Error(`Session ${sessionId} has unresolved external action ${unresolved.name} (${unresolved.id}, ${unresolved.status}); inspect and reconcile it before resuming`);
-      this.store.db.prepare("INSERT INTO session_run_owners(session_id,owner_id,host,pid,started_at) VALUES(?,?,?,?,?)").run(sessionId, ownerId, hostname(), process.pid, now);
+      this.store.db.prepare("INSERT INTO session_run_owners(session_id,owner_id,host,pid,started_at,process_start_identity) VALUES(?,?,?,?,?,?)").run(sessionId, ownerId, hostname(), process.pid, now, processStartIdentity(process.pid));
       this.store.db.prepare("UPDATE sessions SET status='running',updated_at=? WHERE id=?").run(now, sessionId);
     }).immediate();
     return ownerId;
@@ -285,10 +289,10 @@ export class SessionStore {
     this.store.db.transaction(() => this.recoverAgentRunOwner(sessionId, ownerId, new Date().toISOString())).immediate();
   }
   recoverAbandonedAgentRuns(): number {
-    const owners = this.store.db.prepare("SELECT session_id,owner_id,host,pid FROM session_run_owners").all() as Array<{ session_id: string; owner_id: string; host: string; pid: number }>;
+    const owners = this.store.db.prepare("SELECT session_id,owner_id,host,pid,process_start_identity FROM session_run_owners").all() as Array<{ session_id: string; owner_id: string; host: string; pid: number; process_start_identity: string | null }>;
     let recovered = 0;
     for (const owner of owners) {
-      if (owner.host !== hostname() || isProcessAlive(owner.pid)) continue;
+      if (owner.host !== hostname() || isRecordedProcessAlive(owner.pid, owner.process_start_identity)) continue;
       const changed = this.store.db.transaction(() => this.recoverAgentRunOwner(owner.session_id, owner.owner_id, new Date().toISOString())).immediate();
       recovered += changed;
     }

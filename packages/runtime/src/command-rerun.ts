@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { isRecordedProcessAlive, processStartIdentity } from "./process-identity.js";
 import type { XystStore } from "./storage.js";
 
 /** Record an explicit one-use authorization without changing the original action. */
@@ -27,7 +28,7 @@ export function consumeCommandRerun(store: XystStore, scope: string, requestHash
     const now = new Date().toISOString();
     const executionHash = createHash("sha256").update(`command-rerun:${pending.id}`).digest("hex");
     store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at,effect,execution_scope,request_hash) VALUES(?,?,'run_process',?,'running',?,'external',?,?)").run(call.id, call.sessionId, call.inputJson, now, scope, executionHash);
-    store.db.prepare("INSERT INTO command_rerun_owners(tool_call_id,host,pid) VALUES(?,?,?)").run(call.id, hostname(), process.pid);
+    store.db.prepare("INSERT INTO command_rerun_owners(tool_call_id,host,pid,process_start_identity) VALUES(?,?,?,?)").run(call.id, hostname(), process.pid, processStartIdentity(process.pid));
     store.db.prepare("UPDATE command_replay_heads SET tool_call_id=? WHERE execution_scope=? AND request_hash=? AND tool_call_id=?").run(call.id, scope, requestHash, pending.prior_tool_call_id);
     store.db.prepare("UPDATE command_rerun_authorizations SET consumed_at=?,new_tool_call_id=? WHERE id=? AND consumed_at IS NULL").run(now, call.id, pending.id);
     return true;
@@ -42,7 +43,7 @@ export function consumeCommandHeadRetry(store: XystStore, scope: string, request
     const now = new Date().toISOString();
     const hash = createHash("sha256").update(`command-head-retry:${call.id}`).digest("hex");
     store.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at,effect,execution_scope,request_hash) VALUES(?,?,'run_process',?,'running',?,'external',?,?)").run(call.id, call.sessionId, call.inputJson, now, scope, hash);
-    store.db.prepare("INSERT INTO command_rerun_owners(tool_call_id,host,pid) VALUES(?,?,?)").run(call.id, hostname(), process.pid);
+    store.db.prepare("INSERT INTO command_rerun_owners(tool_call_id,host,pid,process_start_identity) VALUES(?,?,?,?)").run(call.id, hostname(), process.pid, processStartIdentity(process.pid));
     store.db.prepare("UPDATE tool_calls SET status='retry_consumed' WHERE id=? AND status='retry_allowed'").run(head.id);
     store.db.prepare("UPDATE command_replay_heads SET tool_call_id=? WHERE execution_scope=? AND request_hash=? AND tool_call_id=?").run(call.id, scope, requestHash, head.id);
     return true;
@@ -52,16 +53,13 @@ export function consumeCommandHeadRetry(store: XystStore, scope: string, request
 /** Quarantine a rerun abandoned by its owning process. Never infer that the command had no effect. */
 export function quarantineAbandonedCommandRerun(store: XystStore, sessionId: string, toolCallId: string): void {
   store.db.transaction(() => {
-    const action = store.db.prepare(`SELECT t.status,o.host,o.pid FROM tool_calls t
+    const action = store.db.prepare(`SELECT t.status,o.host,o.pid,o.process_start_identity FROM tool_calls t
       JOIN command_rerun_owners o ON o.tool_call_id=t.id
       JOIN command_replay_heads h ON h.tool_call_id=t.id
-      WHERE t.id=? AND t.session_id=? AND t.name='run_process' AND t.effect='external'`).get(toolCallId, sessionId) as { status: string; host: string; pid: number } | undefined;
+      WHERE t.id=? AND t.session_id=? AND t.name='run_process' AND t.effect='external'`).get(toolCallId, sessionId) as { status: string; host: string; pid: number; process_start_identity: string | null } | undefined;
     if (!action || action.status !== "running") throw new Error("This call is not a running command rerun head in the session");
     if (action.host !== hostname()) throw new Error("The command owner is on another host; inspect it there before recovery");
-    try { process.kill(action.pid, 0); throw new Error("A process currently has the recorded owner PID. It may be the original command owner or an unrelated process after PID reuse; recovery is blocked until the owner can be verified exited"); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
+    if (isRecordedProcessAlive(action.pid, action.process_start_identity)) throw new Error("A process currently has the recorded owner PID and its creation identity matches or cannot be verified; recovery is blocked until the owner can be verified exited");
     const changed = store.db.prepare("UPDATE tool_calls SET status='uncertain',output_json=?,finished_at=? WHERE id=? AND status='running'")
       .run(JSON.stringify({ error: "The command owner exited before recording an outcome. Inspect external effects before reconciliation." }), new Date().toISOString(), toolCallId);
     if (changed.changes !== 1) throw new Error("The command outcome changed during recovery");
