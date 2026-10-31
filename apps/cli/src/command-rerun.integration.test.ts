@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
+import { XystStore } from "@xyst/runtime";
 
 type MockToolCall = { id: string; name: string; args: Record<string, unknown> };
 type CliResult = { code: number | null; stdout: string; stderr: string };
@@ -39,6 +40,7 @@ test("real CLI resumes externally edited commands after explicit authorization a
   ];
   let turn = 0; let modelLoadRequests = 0;
   const runningChildren = new Set<ChildProcess>();
+  let unrelatedLiveProcess: ChildProcess | undefined;
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/api/v1/models") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -137,8 +139,25 @@ test("real CLI resumes externally edited commands after explicit authorization a
     }
     assert.equal(crashCalls.find((row) => row.id === "call-run-crash")?.status, "running", JSON.stringify(crashCalls));
     assert.equal(await readFile(join(workspace, "crash-probe-ready.txt"), "utf8"), String(interrupted.child.pid), "the delayed command must record the exact live CLI owner before it is killed");
+    const databasePath = join(appData, "xyst", "xyst.sqlite");
+    const ownerStore = new XystStore(databasePath);
+    let crashedOwner: { host: string; pid: number; process_start_identity: string | null } | undefined;
+    try {
+      crashedOwner = ownerStore.db.prepare("SELECT host,pid,process_start_identity FROM command_rerun_owners WHERE tool_call_id='call-run-crash'").get() as typeof crashedOwner;
+    assert.ok(crashedOwner, `the claimed command rerun must have a durable owner record (calls=${JSON.stringify(ownerStore.db.prepare("SELECT id,status,request_hash FROM tool_calls WHERE session_id=?").all(sessionId))}; heads=${JSON.stringify(ownerStore.db.prepare("SELECT * FROM command_replay_heads").all())}; auth=${JSON.stringify(ownerStore.db.prepare("SELECT * FROM command_rerun_authorizations").all())}; owners=${JSON.stringify(ownerStore.db.prepare("SELECT * FROM command_rerun_owners").all())})`);
+      assert.equal(crashedOwner.pid, interrupted.child.pid, "the durable rerun owner must match the exact CLI process being terminated");
+      assert.ok(crashedOwner.process_start_identity, "the durable rerun owner must carry its process creation identity");
+    } finally { ownerStore.close(); }
+    unrelatedLiveProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1_000)"], { windowsHide: true, stdio: "ignore" });
+    await new Promise<void>((resolve, reject) => { unrelatedLiveProcess!.once("error", reject); unrelatedLiveProcess!.once("spawn", () => resolve()); });
+    assert.ok(unrelatedLiveProcess.pid && unrelatedLiveProcess.pid !== interrupted.child.pid);
     interrupted.child.kill("SIGKILL");
     await interrupted.result;
+    const reusedOwnerStore = new XystStore(databasePath);
+    try {
+      const changed = reusedOwnerStore.db.prepare("UPDATE command_rerun_owners SET pid=? WHERE tool_call_id='call-run-crash'").run(unrelatedLiveProcess.pid);
+      assert.equal(changed.changes, 1, "the fixture must preserve the crashed owner's identity while simulating its PID being reused");
+    } finally { reusedOwnerStore.close(); }
     await new Promise((resolve) => setTimeout(resolve, 6_000));
     await assert.rejects(readFile(join(workspace, "crash-effect.txt"), "utf8"), { code: "ENOENT" });
 
@@ -169,6 +188,8 @@ test("real CLI resumes externally edited commands after explicit authorization a
     assert.equal(modelLoadRequests, 0, "the test must never load a local model");
   } finally {
     const childrenToStop = [...runningChildren];
+    if (unrelatedLiveProcess && unrelatedLiveProcess.exitCode === null && unrelatedLiveProcess.signalCode === null) unrelatedLiveProcess.kill("SIGKILL");
+    if (unrelatedLiveProcess) childrenToStop.push(unrelatedLiveProcess);
     const closed = childrenToStop.map((child) => new Promise<void>((resolve) => {
       if (child.exitCode !== null || child.signalCode !== null) resolve();
       else child.once("close", () => resolve());
