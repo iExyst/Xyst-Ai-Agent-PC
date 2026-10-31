@@ -1076,11 +1076,11 @@ test("SQLite migrations persist sessions and resolve config from most specific s
   assert.equal(config.resetScope("global"), 1); assert.equal(config.resolve("inference.temperature"), undefined);
   const id = sessions.create("persistence"); sessions.addMessage(id, "user", "hello");
   const version = store.db.prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get() as { version: number };
-  assert.equal(version.version, 19);
+  assert.equal(version.version, 20);
   const legacyCallId = randomUUID(); const legacyCloneCallId = randomUUID();
   const legacyTool = store.db.prepare("INSERT INTO tool_calls(id,name,input_json,status,created_at,effect) VALUES(?, ?, '{}', 'completed', ?, 'read')");
   legacyTool.run(legacyCallId, "git_push", new Date().toISOString()); legacyTool.run(legacyCloneCallId, "git_clone", new Date().toISOString());
-  store.db.exec("DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=14"); store.close();
+  store.db.exec("DROP TABLE session_completion_criteria; DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=14"); store.close();
   store = new XystStore(path); sessions = new SessionStore(store);
   assert.equal((sessions.messages(id) as Array<{ content: string }>)[0]?.content, "hello"); store.close();
   const reopened = new XystStore(path);
@@ -1126,7 +1126,7 @@ test("version-one database with a large history upgrades through every migration
   const upgraded = new XystStore(path);
   try {
     const version = upgraded.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number };
-    assert.equal(version.version, 19);
+    assert.equal(version.version, 20);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM sessions").get() as { count: number }).count, 1_000);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM messages").get() as { count: number }).count, 20_000);
     assert.equal((upgraded.db.prepare("SELECT COUNT(*) AS count FROM tool_calls WHERE effect='external' AND execution_scope IS NOT NULL").get() as { count: number }).count, 1_000);
@@ -1144,7 +1144,7 @@ test("migration quarantines an interrupted legacy MCP call with an ambiguous rea
   const initial = new XystStore(path); const sessionId = new SessionStore(initial).create("Interrupted MCP tool");
   initial.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at) VALUES(?,?,?,?,?,?)")
     .run("legacy-mcp-call", sessionId, "mcp_docs_append_read_resource", "{}", "running", new Date().toISOString());
-  initial.db.exec("DROP TABLE session_run_owners; DELETE FROM schema_migrations WHERE version>=18"); initial.close();
+  initial.db.exec("DROP TABLE session_completion_criteria; DROP TABLE session_run_owners; DELETE FROM schema_migrations WHERE version>=18"); initial.close();
 
   const upgraded = new XystStore(path);
   try {
@@ -1159,7 +1159,7 @@ test("failed multi-statement migration rolls back cleanly and can be retried", a
   const saved = new SessionStore(initial);
   const sessionId = saved.create("Preserve across failed migration");
   saved.addMessage(sessionId, "user", "Keep this message during recovery");
-  initial.db.exec("DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=15; CREATE INDEX session_compactions_recent ON sessions(updated_at)");
+  initial.db.exec("DROP TABLE session_completion_criteria; DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=15; CREATE INDEX session_compactions_recent ON sessions(updated_at)");
   initial.close();
 
   assert.throws(() => new XystStore(path), /index session_compactions_recent already exists/i);
@@ -1175,7 +1175,7 @@ test("failed multi-statement migration rolls back cleanly and can be retried", a
 
   const recovered = new XystStore(path);
   try {
-    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 19);
+    assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
     assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
     assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message during recovery");
     assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
@@ -1188,7 +1188,7 @@ test("process killed after migration DDL leaves an intact database that can retr
   const sessions = new SessionStore(initial);
   const sessionId = sessions.create("Preserve across killed migration");
   sessions.addMessage(sessionId, "user", "Keep this message through process termination");
-  initial.db.exec("DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=15");
+  initial.db.exec("DROP TABLE session_completion_criteria; DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=15");
   initial.close();
 
   const readyPath = join(root, "migration-ddl-applied.marker");
@@ -1246,7 +1246,7 @@ test("process killed after migration DDL leaves an intact database that can retr
 
     const recovered = new XystStore(path);
     try {
-      assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 19);
+      assert.equal((recovered.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
       assert.notEqual(recovered.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_compactions'").get(), undefined);
       assert.equal((new SessionStore(recovered).messages(sessionId) as Array<{ content: string }>)[0]?.content, "Keep this message through process termination");
       assert.equal((recovered.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
@@ -1263,14 +1263,14 @@ test("migration 16 classifies historical external actions and quarantines interr
   const createdAt = new Date().toISOString();
   const insert = initial.db.prepare("INSERT INTO tool_calls(id,session_id,name,input_json,status,created_at,effect) VALUES(?,?,?,'{}','running',?,'read')");
   names.forEach((name) => insert.run(randomUUID(), sessionId, name, createdAt));
-  initial.db.exec("DROP TABLE session_run_owners; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=16");
+  initial.db.exec("DROP TABLE session_completion_criteria; DROP TABLE session_run_owners; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DELETE FROM schema_migrations WHERE version>=16");
   initial.close();
 
   const migrated = new XystStore(path);
   try {
     const records = migrated.db.prepare("SELECT name,effect,status,execution_scope FROM tool_calls ORDER BY name").all() as Array<{ name: string; effect: string; status: string; execution_scope: string }>;
     assert.deepEqual(records.map(({ name, effect, status, execution_scope }) => [name, effect, status, execution_scope]), names.slice().sort().map((name) => [name, "external", "uncertain", sessionId]));
-    assert.equal((migrated.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 19);
+    assert.equal((migrated.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
     assert.equal((migrated.db.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   } finally { migrated.close(); }
 }));
@@ -1316,11 +1316,11 @@ test("job inspection aggregates persisted trigger, mission-run, and model-downlo
 test("interactive process schema migrations upgrade existing process-job databases", async () => withTemp(async (root) => {
   const path = join(root, "process-upgrade.sqlite"); const oldStore = new XystStore(path); const oldJobs = new JobStore(oldStore);
   const existingId = oldJobs.createProcess("node", [], root);
-  oldStore.db.exec("DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DROP TABLE process_job_inputs; DROP TABLE process_job_resizes; ALTER TABLE process_job_specs DROP COLUMN pty; ALTER TABLE process_job_specs DROP COLUMN cols; ALTER TABLE process_job_specs DROP COLUMN rows; ALTER TABLE process_job_specs DROP COLUMN interactive; ALTER TABLE process_job_control DROP COLUMN stdin_close_requested; DELETE FROM schema_migrations WHERE version>=11");
+  oldStore.db.exec("DROP TABLE session_completion_criteria; DROP TABLE session_run_owners; DROP TABLE session_compactions; DROP TABLE command_rerun_owners; DROP TABLE command_rerun_authorizations; DROP TABLE command_replay_heads; DROP TABLE process_job_inputs; DROP TABLE process_job_resizes; ALTER TABLE process_job_specs DROP COLUMN pty; ALTER TABLE process_job_specs DROP COLUMN cols; ALTER TABLE process_job_specs DROP COLUMN rows; ALTER TABLE process_job_specs DROP COLUMN interactive; ALTER TABLE process_job_control DROP COLUMN stdin_close_requested; DELETE FROM schema_migrations WHERE version>=11");
   oldStore.close();
   const store = new XystStore(path); const jobs = new JobStore(store);
   try {
-    assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 19);
+    assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
     assert.deepEqual(jobs.processSpec(existingId), { command: "node", args: [], cwd: root, interactive: false, pty: false, cols: 80, rows: 24 });
     const interactiveId = jobs.createProcess("node", [], root, true);
     jobs.sendProcessInput(interactiveId, "upgrade ok");
@@ -1332,10 +1332,12 @@ test("saved sessions rename, fork structured history, export, archive, and delet
   const store = new XystStore(join(root, "session-lifecycle.sqlite")); const sessions = new SessionStore(store);
   try {
     const source = sessions.create("Original"); sessions.addMessage(source, "user", "task");
+    store.db.prepare("INSERT INTO session_completion_criteria(session_id,criterion) VALUES(?,?)").run(source, "The required exit code is 0.");
     sessions.addMessage(source, "assistant", `__xyst_api_message__:${JSON.stringify({ role: "assistant", content: "answer" })}`);
     const originalMessages = sessions.messages(source) as Array<{ id: string }>; sessions.addCompaction(source, originalMessages[1]!.id, { primary_goal: "task" });
     sessions.rename(source, "Renamed");
     const fork = sessions.fork(source); assert.notEqual(fork, source);
+    assert.deepEqual(sessions.export(fork).completionCriteria, ["The required exit code is 0."]);
     assert.deepEqual((sessions.messages(fork) as Array<{ role: string }>).map((message) => message.role), ["user", "assistant"]);
     const exported = sessions.export(fork) as { format: string; session: { title: string }; messages: Array<{ content: unknown }> };
     assert.equal(exported.format, "xyst-session-v1"); assert.equal(exported.session.title, "Renamed (fork)"); assert.deepEqual(exported.messages[1]!.content, { role: "assistant", content: "answer" });
@@ -1348,6 +1350,8 @@ test("saved sessions rename, fork structured history, export, archive, and delet
     store.db.prepare("INSERT INTO jobs(id,session_id,kind,state,details_json,created_at,updated_at) VALUES('source-job',?,'process','completed','{}',?,?)").run(source, now, now);
     store.db.prepare("INSERT INTO artifacts(id,job_id,name,path,metadata_json,created_at) VALUES('job-only-artifact','source-job','result.txt','result.txt','{}',?)").run(now);
     sessions.delete(source); assert.equal((sessions.list() as Array<{ id: string }>).some((item) => item.id === source), false);
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM session_completion_criteria WHERE session_id=?").get(source) as { count: number }).count, 0);
+    assert.deepEqual(sessions.export(fork).completionCriteria, ["The required exit code is 0."]);
     assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM session_compactions WHERE session_id=?").get(source) as { count: number }).count, 0);
     assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM artifacts WHERE id='job-only-artifact'").get() as { count: number }).count, 0);
     assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE id='source-job'").get() as { count: number }).count, 0);
@@ -1486,7 +1490,7 @@ test("concurrent first-run processes serialize SQLite migrations", async () => w
   const failures = outcomes.filter((result): result is PromiseRejectedResult => result.status === "rejected");
   assert.equal(failures.length, 0, failures.map((failure) => String(failure.reason)).join("\n"));
   const store = new XystStore(path);
-  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 19);
+  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
   store.close();
 }));
 
@@ -7265,7 +7269,7 @@ test("memory is searchable, editable, deletable, and keeps inferred notes separa
   memories.delete(inferred.id); assert.equal(memories.list().length, 1); assert.throws(() => memories.delete(inferred.id), /not found/);
   assert.equal(memories.embeddings("test-embed").length, 0, "deleting a memory cascades to its indexed semantic vector");
   assert.equal(memories.searchSemantic([0, 1], "test-embed").length, 0);
-  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 19);
+  assert.equal((store.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 20);
   store.close();
 }));
 
@@ -7525,6 +7529,27 @@ test("command rerun storage permits one pending authorization and retains its ac
     assert.throws(() => insert.run("second", now), /UNIQUE constraint failed/);
     assert.throws(() => store.db.prepare("UPDATE command_rerun_authorizations SET consumed_at=? WHERE id='first'").run(now), /CHECK constraint failed/);
     assert.equal((store.db.prepare("SELECT tool_call_id FROM command_replay_heads").get() as { tool_call_id: string }).tool_call_id, "original");
+  } finally { store.close(); }
+}));
+
+for (const optionOnly of [false, true]) test(`completion rejects successful process evidence for an explicit failing exit criterion (${optionOnly ? "options" : "user message"})`, async () => withTemp(async (root) => {
+  const store = new XystStore(join(root, "exit-criterion.sqlite")); const config = new ConfigStore(store); const sessions = new SessionStore(store); const events = new RuntimeEvents();
+  config.set("global", "model.default", "test-model"); let turn = 0;
+  const provider = { redact: (value: string) => value, streamChatWithTools: async () => {
+    const call = ++turn === 1 ? { id: "exit-process", name: "run_process", args: { executable: process.execPath, args: ["-e", "process.stdout.write('PASS')"], cwd: root } } : { id: turn === 2 ? "exit-completion" : "exit-resume-completion", name: "task_complete", args: { evidence_tool_call_indexes: [1] } };
+    return { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } }] } }] };
+  } };
+  const agent = new AgentRunner({ store, config, sessions, events, access: new AccessController(), provider: provider as never, github: {} as never });
+  try {
+    const result = await agent.run(optionOnly ? "Observe the baseline." : "The required baseline outcome is exit code 1.", { workspace: root, maxTurns: 2, ...(optionOnly ? { completionCriteria: ["The required baseline outcome is exit code 1."] } : {}) });
+    assert.notEqual(result.status, "completed");
+    const failure = store.db.prepare("SELECT output_json FROM tool_calls WHERE id='exit-completion'").get() as { output_json: string };
+    assert.match(failure.output_json, /does not match the exit code explicitly required/);
+    // A later request must not let exit-0 evidence verify the saved exit-1 goal.
+    const resumed = await agent.run("The new required outcome is exit code 0.", { workspace: root, sessionId: result.sessionId, maxTurns: 1 });
+    assert.notEqual(resumed.status, "completed");
+    const resumedFailure = store.db.prepare("SELECT output_json FROM tool_calls WHERE session_id=? AND name='task_complete' ORDER BY rowid DESC LIMIT 1").get(result.sessionId) as { output_json: string };
+    assert.match(resumedFailure.output_json, /does not match the exit code explicitly required/);
   } finally { store.close(); }
 }));
 

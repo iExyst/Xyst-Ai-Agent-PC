@@ -66,7 +66,8 @@ const migrations = [
        status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP)
    WHERE substr(name,1,4)='mcp_' AND status='running';`,
   `CREATE TABLE session_run_owners (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, owner_id TEXT NOT NULL, host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0), started_at TEXT NOT NULL);
-   CREATE INDEX session_run_owners_host_pid ON session_run_owners(host,pid);`
+   CREATE INDEX session_run_owners_host_pid ON session_run_owners(host,pid);`,
+  `CREATE TABLE session_completion_criteria (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, criterion TEXT NOT NULL, PRIMARY KEY(session_id,criterion));`
 ];
 
 function isProcessAlive(pid: number): boolean {
@@ -316,7 +317,10 @@ export class SessionStore {
     const id = this.create(forkTitle);
     const messages = this.store.db.prepare("SELECT role,content,created_at FROM messages WHERE session_id=? ORDER BY created_at,rowid").all(sessionId) as Array<{ role: string; content: string; created_at: string }>;
     const insert = this.store.db.prepare("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)");
-    const transaction = this.store.db.transaction(() => { for (const message of messages) insert.run(crypto.randomUUID(), id, message.role, message.content, message.created_at); });
+    const transaction = this.store.db.transaction(() => {
+      for (const message of messages) insert.run(crypto.randomUUID(), id, message.role, message.content, message.created_at);
+      this.store.db.prepare("INSERT INTO session_completion_criteria(session_id,criterion) SELECT ?,criterion FROM session_completion_criteria WHERE session_id=? ORDER BY rowid").run(id, sessionId);
+    });
     transaction();
     this.store.db.prepare("UPDATE sessions SET updated_at=? WHERE id=?").run(new Date().toISOString(), id);
     return id;
@@ -410,7 +414,8 @@ export class SessionStore {
     const messages = this.messages(sessionId) as Array<{ id: string; role: string; content: string; created_at: string }>;
     const decoded = messages.map(({ id, role, content, created_at }) => ({ id, role, content: content.startsWith("__xyst_api_message__:") ? JSON.parse(content.slice("__xyst_api_message__:".length)) : content, created_at }));
     const compactions = this.compactions(sessionId).map((item) => ({ id: item.id, through_message_id: item.through_message_id, summary: JSON.parse(item.summary_json), created_at: item.created_at }));
-    return { format: "xyst-session-v1", session, messages: decoded, compactions };
+    const completionCriteria = (this.store.db.prepare("SELECT criterion FROM session_completion_criteria WHERE session_id=? ORDER BY rowid").all(sessionId) as Array<{ criterion: string }>).map((row) => row.criterion);
+    return { format: "xyst-session-v1", session, messages: decoded, compactions, completionCriteria };
   }
 }
 

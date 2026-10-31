@@ -278,7 +278,9 @@ export class AgentRunner {
         captureMemoryAuthorization(initialContent.flatMap((part) => part && typeof part === "object" && typeof (part as Record<string, unknown>).text === "string" ? [(part as Record<string, unknown>).text as string] : []).join("\n"));
       }
     }
-    const baseCompletionCriteria = [...new Set((options.completionCriteria?.length ? options.completionCriteria : [safeObjective]).map((item) => this.deps.provider.redact(String(item)).trim()).filter(Boolean))].slice(0, 50);
+    const savedCriteria = options.sessionId ? this.deps.store.db.prepare("SELECT criterion FROM session_completion_criteria WHERE session_id=? ORDER BY rowid").all(options.sessionId) as Array<{ criterion: string }> : [];
+    const baseCompletionCriteria = [...new Set([...savedCriteria.map((row) => row.criterion), ...(options.completionCriteria?.length ? options.completionCriteria : [safeObjective])].map((item) => this.deps.provider.redact(String(item)).trim()).filter(Boolean))];
+    if (baseCompletionCriteria.length > 50) throw new Error("Session completion criteria exceed the 50-criterion limit; existing requirements cannot be silently dropped");
     const criteriaForEvidenceInference = new Set(baseCompletionCriteria);
     const requiredToolEvidence = options.requiredToolEvidence ?? [];
     const requiredCompletionCriteria = [
@@ -1203,6 +1205,10 @@ export class AgentRunner {
               throw new Error(`Completion evidence must be a successful web_fetch of the requested URL ${requestedUrl}`);
             }
           }
+          const requestedExitCodes = [...criterion.matchAll(/\bexit\s+(?:code\s*(?:of\s+|(?:is|equals?|must be|should be)\s+|[=:]\s*)?)?(-?\d+)\b/gi)].map((match) => Number(match[1]));
+          if (requestedExitCodes.length) {
+            if (!["run_process", "run_shell"].includes(evidence.name) || requestedExitCodes.some((code) => evidenceRecord.code !== code)) throw new Error(`Completion evidence ${evidenceId} does not match the exit code explicitly required by this criterion: ${requestedExitCodes.join(", ")}`);
+          }
           if (["run_process", "run_shell"].includes(evidence.name) && (typeof evidenceRecord.code !== "number" || evidenceRecord.code !== 0 || evidenceRecord.signal !== null && evidenceRecord.signal !== undefined)) throw new Error(`Completion evidence ${evidenceId} is a process result that did not exit successfully`);
           return { criterion: criterion as string, evidenceToolCallId: evidenceId, tool: evidence.name, verified: true };
         }));
@@ -1287,6 +1293,9 @@ ${projectInstructions ? `\nProject instructions:\n${projectInstructions}` : ""}$
     this.deps.events.emit("agent.started", { sessionId, model: selected, maxTurns }, sessionId);
     let turns = 0; let status: AgentResult["status"] = "limit"; let switchedModel = false;
     try {
+      if (options.completionCriteria?.length) this.deps.store.db.transaction(() => {
+        for (const criterion of baseCompletionCriteria) this.deps.store.db.prepare("INSERT OR IGNORE INTO session_completion_criteria(session_id,criterion) VALUES(?,?)").run(sessionId, criterion);
+      }).immediate();
       for (; turns < maxTurns; turns++) {
         if (options.signal?.aborted) { status = "cancelled"; break; }
         drainUserMessages();
