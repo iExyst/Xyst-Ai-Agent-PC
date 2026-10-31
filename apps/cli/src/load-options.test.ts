@@ -193,7 +193,12 @@ test("mission service definitions preserve executable paths and restart policy",
   assert.match(windows, /Register-ScheduledTask/);
   assert.match(windows, /--webhook-host/);
   assert.match(windows, /--webhook-path/);
-  assert.match(renderWindowsMissionTaskScript(spec, "uninstall"), /Unregister-ScheduledTask/);
+  const uninstall = renderWindowsMissionTaskScript(spec, "uninstall");
+  assert.match(uninstall, /Stop-ScheduledTask/);
+  assert.match(uninstall, /Start-Sleep -Milliseconds 200/);
+  assert.match(uninstall, /AddSeconds\(30\)/);
+  assert.match(uninstall, /did not stop within 30 seconds/);
+  assert.ok(uninstall.indexOf("Unregister-ScheduledTask") > uninstall.indexOf("did not stop within 30 seconds"), "must keep the task registered when its daemon fails to stop");
 });
 
 test("Linux mission service install, status, and removal manage only the requested user unit", async () => {
@@ -254,5 +259,7 @@ test("Windows mission service install, status, and removal use Task Scheduler sa
   const removed = await uninstallMissionService("win32", run);
   assert.deepEqual([removed.installed, removed.manager], [false, "task-scheduler"]);
   assert.match(scripts[2]!, /Stop-ScheduledTask/);
+  assert.match(scripts[2]!, /Start-Sleep -Milliseconds 200/);
+  assert.match(scripts[2]!, /AddSeconds\(30\)/);
   assert.match(scripts[2]!, /Unregister-ScheduledTask/);
 });

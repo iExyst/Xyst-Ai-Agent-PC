@@ -57,6 +57,9 @@ The published integration candidate adds durable per-session run ownership and s
 
 The full two-brief objective is **not complete**. Partial and open areas above are not waived by passing CI or package workflows. Completion still requires stronger model-backed coding reliability plus the stated platform, integration, accessibility, release and sustained-operation gates, or exact documentation of any genuinely external blocker after all independent work is finished.
 
+### Windows mission-service shutdown race candidate · 2026-10-30
+Docs head `094ba22` had an intermittent Windows package lifecycle failure: push package job `124329289228` received SQLite `SQLITE_IOERR_TRUNCATE` on status immediately after uninstall; its same-head PR package counterpart passed. Review found uninstall did not wait for the scheduled daemon to stop before unregistering. The candidate now polls Task Scheduler state with a 30-second bound, leaves a still-running task registered and errors on timeout, and unregisters after stop. Focused script tests and CLI typecheck pass locally. This is a plausible race mitigation, not a confirmed root cause; Windows execution and exact-head hosted validation remain pending. The original timeout stall and overall brief acceptance remain open.
+
 ### D2 GitHub pagination follow-up
 
 Deterministic coverage now follows same-origin pagination links and rejects links outside the configured API host/base path before forwarding credentials. Rate limits, revoked access, branch conflicts, live GHES pagination, and varied protection policies remain open.
