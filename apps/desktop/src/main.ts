@@ -6,8 +6,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { lmStudioIntegrationsSchema, mcpServersSchema } from "@xyst/runtime";
+import { killProcessTree, lmStudioIntegrationsSchema, mcpServersSchema } from "@xyst/runtime";
 import { scopedSettingKeys, scopesForDesktopSetting, settingScopes } from "./setting-keys.js";
+import { openExternalHttps } from "./external-links.js";
+import { SnapshotWorker } from "./snapshot-worker.js";
+import { createDashboardQuitGuard } from "./dashboard-shutdown.js";
+import { lowerBackgroundProcessPriority } from "./process-priority.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = process.env.XYST_ROOT ?? (app.isPackaged ? join(app.getPath("documents"), "Xyst") : resolve(here, "../../.."));
@@ -20,6 +24,7 @@ const nodeBinary = process.env.XYST_NODE_PATH ?? (app.isPackaged ? bundledNode :
 let windowRef: BrowserWindow | undefined;
 const pickedAttachments = new Map<number, Set<string>>();
 const activeAgentRuns = new Map<string, ChildProcess>();
+const dashboardChildren = new Set<ChildProcess>();
 const pendingAgentMessageResults = new WeakMap<ChildProcess, Map<string, (accepted: boolean) => void>>();
 let selectedWorkspace = projectRoot;
 type UpdateState = { status: "idle" | "checking" | "available" | "up-to-date" | "downloading" | "downloaded" | "error"; currentVersion: string; version?: string; percent?: number; transferred?: number; total?: number; error?: string };
@@ -129,6 +134,7 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
       stdio,
       env: { ...process.env, XYST_ROOT: workingDirectory, XYST_DESKTOP_PARENT: "1" }
     });
+    lowerBackgroundProcessPriority(child.pid);
     const childStdin = child.stdin!; const childStdout = child.stdout!; const childStderr = child.stderr!;
     if (agentRunId) activeAgentRuns.set(agentRunId, child);
     if (agentRunId) {
@@ -188,13 +194,25 @@ function invokeCli(args: string[], onLine?: (value: Record<string, unknown>) => 
   });
 }
 
+const snapshotWorker = new SnapshotWorker(() => {
+  const child = spawn(nodeBinary, [cliEntry, "--json", "desktop", "snapshot", "--worker"], {
+    cwd: projectRoot, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"],
+    env: { ...process.env, XYST_ROOT: projectRoot, XYST_DESKTOP_PARENT: "1" }
+  });
+  lowerBackgroundProcessPriority(child.pid);
+  dashboardChildren.add(child);
+  child.once("close", () => dashboardChildren.delete(child));
+  child.once("exit", () => dashboardChildren.delete(child));
+  child.once("error", () => dashboardChildren.delete(child));
+  return child;
+}, (child) => child.pid ? killProcessTree(child.pid) : Promise.resolve(true));
 async function snapshot() {
-  const value = await invokeCli(["desktop", "snapshot"]) as Record<string, unknown>;
+  const value = await snapshotWorker.read() as Record<string, unknown>;
   return { ...value, updateState };
 }
 
 function allowedAction(action: string): boolean {
-  return ["mission:list", "mission:show", "mission:run", "mission:pause", "mission:resume", "mission:cancel", "mission:archive", "mission:rename", "mission:fork", "mission:export", "mission:delete", "mission:templates", "mission:template", "mission:plan", "mission:task-configure", "mission:task-pause", "mission:task-resume", "mission:task-retry", "jobs:list", "process:start", "process:show", "process:stop", "process:input", "process:end-input", "process:resize", "terminal:start", "config:scoped-inspect", "config:scoped-set", "config:scoped-reset", "updates:check", "updates:download", "updates:install", "setting:updates", "setting:ocr-languages", "setting:office-renderer", "setting:desktop-automation", "lm:models", "lm:load", "lm:estimate", "lm:unload", "hf:search", "hf:inspect", "hf:recommend", "hf:download", "hf:status", "hf:verify-download", "hf:downloads", "browser:install", "setting:browser-automation", "setting:browser-headless", "setting:browser-max-download", "setting:model-default", "setting:model-max-download", "setting:model-license-preferences", "setting:model-auto", "setting:model-loading", "setting:model-unloading", "setting:model-idle-unload", "setting:model-remote-fallback", "setting:model-remote-config", "setting:model-discovery", "setting:model-downloads", "setting:model-switching", "setting:local-metrics", "setting:resource-budget", "setting:concurrency", "setting:parallel-reads", "setting:mission-scheduling", "setting:automatic-retries", "setting:delegation", "setting:external-approval", "setting:network", "setting:notifications", "setting:memory-semantic", "setting:inference", "setting:github", "setting:mcp", "setting:native-chat-mcp", "setting:access-profile", "memory:index", "setting:reduced-motion", "setting:high-contrast", "setting:reset-global", "session:list", "session:show", "session:compact", "session:calls", "session:artifacts", "session:rename", "session:archive", "session:delete", "session:export", "memory:list", "memory:add", "memory:edit", "memory:delete", "github:status", "github:repos", "github:issues", "github:prs", "github:open", "git:changes", "git:pick-workspace", "git:current-workspace"].includes(action);
+  return ["mission:list", "mission:show", "mission:run", "mission:pause", "mission:resume", "mission:cancel", "mission:archive", "mission:rename", "mission:fork", "mission:export", "mission:delete", "mission:templates", "mission:template", "mission:plan", "mission:task-configure", "mission:task-pause", "mission:task-resume", "mission:task-retry", "jobs:list", "process:start", "process:show", "process:stop", "process:input", "process:end-input", "process:resize", "terminal:start", "config:scoped-inspect", "config:scoped-set", "config:scoped-reset", "updates:check", "updates:download", "updates:install", "setting:updates", "setting:ocr-languages", "setting:office-renderer", "setting:desktop-automation", "lm:models", "lm:load", "lm:estimate", "lm:unload", "hf:search", "hf:inspect", "hf:recommend", "hf:download", "hf:status", "hf:verify-download", "hf:downloads", "browser:install", "setting:browser-automation", "setting:browser-headless", "setting:browser-max-download", "setting:model-default", "setting:model-max-download", "setting:model-license-preferences", "setting:model-auto", "setting:model-loading", "setting:model-unloading", "setting:model-idle-unload", "setting:model-remote-fallback", "setting:model-remote-config", "setting:model-discovery", "setting:model-downloads", "setting:model-switching", "setting:local-metrics", "setting:resource-budget", "setting:concurrency", "setting:parallel-reads", "setting:mission-scheduling", "setting:automatic-retries", "setting:delegation", "setting:external-approval", "setting:network", "setting:notifications", "setting:memory-semantic", "setting:inference", "setting:github", "setting:mcp", "setting:native-chat-mcp", "setting:access-profile", "memory:index", "setting:reduced-motion", "setting:high-contrast", "setting:reset-global", "session:list", "session:show", "session:compact", "session:calls", "session:authorize-rerun", "session:recover-rerun", "session:reconcile-rerun", "session:artifacts", "session:rename", "session:archive", "session:delete", "session:export", "memory:list", "memory:add", "memory:edit", "memory:delete", "github:status", "github:repos", "github:issues", "github:prs", "github:open", "git:changes", "git:pick-workspace", "git:current-workspace"].includes(action);
 }
 
 function registerIpc(): void {
@@ -241,7 +259,7 @@ function registerIpc(): void {
     if (action === "jobs:list") return invokeCli(["jobs", "list", "--limit", "200"]);
     if (action === "process:show") {
       const id = String(payload?.id ?? ""); if (!id) throw new Error("Process inspection requires a job ID");
-      return invokeCli(["process", "show", id]);
+      return snapshotWorker.showProcess(id);
     }
     if (action === "terminal:start") {
       const cols = Number(payload?.cols ?? 80); const rows = Number(payload?.rows ?? 24);
@@ -366,6 +384,9 @@ function registerIpc(): void {
     if (action === "session:show") return invokeCli(["session", "show", String(payload?.id ?? "")]);
     if (action === "session:compact") return invokeCli(["session", "compact", String(payload?.id ?? "")]);
     if (action === "session:calls") return invokeCli(["session", "calls", String(payload?.id ?? "")]);
+    if (action === "session:authorize-rerun") return invokeCli(["agent", "authorize-rerun", String(payload?.id ?? ""), String(payload?.toolCallId ?? "")]);
+    if (action === "session:recover-rerun") return invokeCli(["agent", "recover-rerun", String(payload?.id ?? ""), String(payload?.toolCallId ?? "")]);
+    if (action === "session:reconcile-rerun") return invokeCli(["agent", "reconcile", String(payload?.id ?? ""), String(payload?.toolCallId ?? ""), String(payload?.resolution ?? "")]);
     if (action === "session:artifacts") return invokeCli(["session", "artifacts", String(payload?.id ?? "")]);
     if (action === "session:rename") return invokeCli(["session", "rename", String(payload?.id ?? ""), String(payload?.title ?? "")]);
     if (action === "session:fork") return invokeCli(["session", "fork", String(payload?.id ?? "")]);
@@ -603,7 +624,7 @@ function registerIpc(): void {
     try { return await invokeCli(["mission", "create", file]); } finally { await rm(file, { force: true }); }
   });
   ipcMain.handle("xyst:open-external", async (_event, url: string) => {
-    const parsed = new URL(url); if (parsed.protocol !== "https:") throw new Error("Only HTTPS links can be opened"); await shell.openExternal(url);
+    await openExternalHttps(url, (target) => shell.openExternal(target));
   });
 }
 
@@ -614,7 +635,10 @@ async function createWindow() {
     icon: join(here, "..", "resources", process.platform === "win32" ? "xyst-icon.ico" : "xyst-icon.png"),
     webPreferences: { preload: join(here, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  windowRef.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: "deny" }; });
+  windowRef.webContents.setWindowOpenHandler(({ url }) => {
+    void openExternalHttps(url, (target) => shell.openExternal(target)).catch(() => undefined);
+    return { action: "deny" };
+  });
   if (!app.isPackaged) await windowRef.loadURL(process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173");
   else await windowRef.loadFile(join(here, "renderer", "index.html"));
   windowRef.on("closed", () => { windowRef = undefined; });
@@ -629,5 +653,25 @@ async function checkUpdatesOnStartup(): Promise<void> {
   timer.unref();
 }
 
-app.whenReady().then(async () => { await mkdir(projectRoot, { recursive: true }); registerIpc(); await createWindow(); void checkUpdatesOnStartup(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); }); });
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!windowRef || windowRef.isDestroyed()) return;
+    if (windowRef.isMinimized()) windowRef.restore();
+    windowRef.show();
+    windowRef.focus();
+  });
+  app.whenReady().then(async () => { await mkdir(projectRoot, { recursive: true }); registerIpc(); await createWindow(); void checkUpdatesOnStartup(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); }); });
+}
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+const handleDashboardBeforeQuit = createDashboardQuitGuard(
+  (pid) => killProcessTree(pid),
+  () => app.quit(),
+  () => {
+    void dialog.showMessageBox({ type: "warning", title: "Dashboard worker still running", message: "Xyst could not confirm that its dashboard worker processes stopped. The app will stay open so it does not leave them running. Close Xyst again to retry cleanup." })
+      .catch(() => undefined)
+      .finally(() => { if (BrowserWindow.getAllWindows().length === 0) void createWindow().catch(() => undefined); });
+  }
+);
+app.on("before-quit", (event) => handleDashboardBeforeQuit(event, dashboardChildren));

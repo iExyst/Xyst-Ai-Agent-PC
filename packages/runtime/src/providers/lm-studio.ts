@@ -2,6 +2,12 @@ import type { RuntimeEvents } from "../events.js";
 import { redactSecrets } from "../credentials.js";
 import { runProcess, type ProcessOptions, type ProcessResult } from "../platform.js";
 import { LMStudioClient } from "@lmstudio/sdk";
+import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { lock } from "proper-lockfile";
 
 export interface LMStudioModel {
   type: "llm" | "embedding" | "decision";
@@ -32,6 +38,35 @@ export interface LMStudioLoadOptions {
   ttl_seconds?: number;
   echo_load_config?: boolean;
 }
+/** A server may repeat a model key; do not hide instances on later rows. */
+export function modelForIdentifier(inventory: LMStudioModel[], identifier: string): LMStudioModel | undefined {
+  const candidate = inventory.find((model) => model.key === identifier && model.loaded_instances.length > 0)
+    ?? inventory.find((model) => model.key === identifier)
+    ?? inventory.find((model) => model.loaded_instances.some((instance) => instance.id === identifier));
+  if (!candidate) return undefined;
+  const instances = new Map<string, LMStudioModel["loaded_instances"][number]>();
+  for (const row of inventory) {
+    if (row.key !== candidate.key || row.type !== candidate.type) continue;
+    for (const instance of row.loaded_instances) {
+      const previous = instances.get(instance.id);
+      const config = { ...previous?.config, ...instance.config };
+      const previousContext = previous?.config.context_length;
+      const reportedContext = instance.config.context_length;
+      const hasPreviousContext = typeof previousContext === "number" && Number.isSafeInteger(previousContext) && previousContext > 0;
+      const hasReportedContext = typeof reportedContext === "number" && Number.isSafeInteger(reportedContext) && reportedContext > 0;
+      // The native inventory can repeat an addressable instance ID on model
+      // rows with different context settings. Preserve the largest reported
+      // context so a lower, duplicated row cannot hide usable capacity.
+      if (hasPreviousContext || hasReportedContext) {
+        config.context_length = hasPreviousContext && hasReportedContext
+          ? Math.max(previousContext as number, reportedContext as number)
+          : hasPreviousContext ? previousContext : reportedContext;
+      }
+      instances.set(instance.id, { ...instance, config });
+    }
+  }
+  return { ...candidate, loaded_instances: [...instances.values()] };
+}
 export interface LMStudioChatOptions {
   model: string;
   input: string | Array<Record<string, unknown>>;
@@ -53,7 +88,7 @@ export type LMStudioResponsesRequest = Record<string, unknown> & {
   model: string;
   input: string | Array<Record<string, unknown>>;
 };
-export interface LMStudioStructuredOutputOptions { model: string; messages: unknown[]; name?: string; schema: Record<string, unknown>; strict?: boolean; temperature?: number; max_tokens?: number; }
+export interface LMStudioStructuredOutputOptions { model: string; messages: unknown[]; name?: string; schema: Record<string, unknown>; strict?: boolean; temperature?: number; max_tokens?: number; reasoning_effort?: "none" | "low" | "medium" | "high"; }
 export interface LMStudioTokenization { model: string; count: number; tokenIds?: number[]; }
 type TokenizeFn = (options: { model: string; text: string; baseUrl: string; token?: string; includeTokenIds: boolean; signal?: AbortSignal }) => Promise<LMStudioTokenization>;
 type RequestDeadline = { signal: AbortSignal; timeoutMs: number; didTimeout(): boolean; dispose(): void };
@@ -174,6 +209,37 @@ export class LMStudioProvider {
     if (available.has(instanceId)) return instanceId;
     if (options.allowBaseModelFallback && available.has(modelKey)) return modelKey;
     throw new LMStudioError(`LM Studio reports ${modelKey} in its native inventory, but inference model ID ${instanceId} is not available from the OpenAI-compatible /v1/models endpoint${options.allowBaseModelFallback ? ` (base ID ${modelKey} is unavailable too)` : ""}. Refresh LM Studio's model list or choose a model visible to its inference API.`);
+  }
+  /** Agent loads share a lock across CLI/desktop workers and recheck live inventory. */
+  async ensureLoaded(model: string, options: LMStudioLoadOptions = {}, signal?: AbortSignal, minimumContextLength = options.context_length ?? 0): Promise<Record<string, unknown>> {
+    const directory = join(tmpdir(), "xyst-model-loads");
+    await mkdir(directory, { recursive: true });
+    const endpoint = new URL(this.baseUrl);
+    if (["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) endpoint.hostname = "localhost";
+    const target = join(directory, createHash("sha256").update(endpoint.href).digest("hex"));
+    const deadline = Date.now() + 120_000;
+    let release: (() => Promise<void>) | undefined;
+    while (!release) {
+      signal?.throwIfAborted();
+      try { release = await lock(target, { realpath: false, stale: 30_000, update: 10_000, retries: 0 }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
+        if (Date.now() >= deadline) throw new LMStudioError("Another Xyst worker is loading a model; retry when it finishes");
+        await delay(100, undefined, signal ? { signal } : {});
+      }
+    }
+    try {
+      signal?.throwIfAborted();
+      const candidate = modelForIdentifier(await this.models(signal), model);
+      if (!candidate) throw new LMStudioError(`Model ${model} is no longer installed`);
+      const suitable = candidate.loaded_instances.find((instance) => {
+        const context = instance.config.context_length ?? candidate.max_context_length;
+        return !minimumContextLength || (typeof context === "number" && context >= minimumContextLength);
+      });
+      if (suitable) return { instance_id: suitable.id, reused: true, load_config: suitable.config };
+      if (candidate.loaded_instances.length) throw new LMStudioError(`Model ${model} is already loaded with insufficient context. Compact the conversation or explicitly reload it with more context; Xyst will not automatically load a duplicate instance.`);
+      return await this.load(model, options, signal);
+    } finally { await release(); }
   }
   async load(model: string, options: LMStudioLoadOptions = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
     const usesCliLoad = options.gpu_offload !== undefined || options.ttl_seconds !== undefined || options.speculative_draft_mtp !== undefined || options.draft_model !== undefined ||
@@ -379,7 +445,7 @@ export class LMStudioProvider {
     try {
       const token = await this.tokenResolver(); this.remember(token); const headers = new Headers({ Accept: "text/event-stream", "Content-Type": "application/json" });
       if (token) headers.set("Authorization", `Bearer ${token}`);
-      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, body: JSON.stringify({ ...request, stream: true }), signal: deadline.signal });
+      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, body: JSON.stringify({ ...request, stream: true, stream_options: { include_usage: true } }), signal: deadline.signal });
       if (!response.ok) {
         let message = "";
         try { message = await response.text(); } catch (error) { throw this.deadlineError(deadline, signal, "/v1/chat/completions", error); }

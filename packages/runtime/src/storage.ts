@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
+import { isRecordedProcessAlive, processStartIdentity } from "./process-identity.js";
 import { supportedSettingScopes, validateSettingContext, validateSettingScope, validateSettingValue } from "./settings-schema.js";
 
 const migrations = [
@@ -52,7 +54,22 @@ const migrations = [
    UPDATE tool_calls SET execution_scope=COALESCE((SELECT run_id||':'||task_key FROM mission_tasks WHERE mission_tasks.session_id=tool_calls.session_id LIMIT 1),session_id) WHERE effect='external' AND execution_scope IS NULL;
    UPDATE tool_calls SET status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP) WHERE status='running' AND effect='external';`,
   `CREATE TABLE session_compactions (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, through_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE, summary_json TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(session_id,through_message_id));
-    CREATE INDEX session_compactions_recent ON session_compactions(session_id,created_at DESC);`
+    CREATE INDEX session_compactions_recent ON session_compactions(session_id,created_at DESC);`,
+  `UPDATE tool_calls SET effect='external' WHERE name IN ('github_issue_labels_add','github_issue_labels_replace','github_issue_label_remove','github_update_pull_request','browser_close_tab');
+   UPDATE tool_calls SET execution_scope=COALESCE((SELECT run_id||':'||task_key FROM mission_tasks WHERE mission_tasks.session_id=tool_calls.session_id LIMIT 1),session_id) WHERE effect='external' AND execution_scope IS NULL;
+   UPDATE tool_calls SET status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP) WHERE status='running' AND effect='external';`,
+  `CREATE TABLE command_replay_heads (execution_scope TEXT NOT NULL, request_hash TEXT NOT NULL, tool_call_id TEXT NOT NULL REFERENCES tool_calls(id), PRIMARY KEY(execution_scope,request_hash));
+   CREATE TABLE command_rerun_authorizations (id TEXT PRIMARY KEY, execution_scope TEXT NOT NULL, request_hash TEXT NOT NULL, prior_tool_call_id TEXT NOT NULL REFERENCES tool_calls(id), created_at TEXT NOT NULL, consumed_at TEXT, new_tool_call_id TEXT REFERENCES tool_calls(id), CHECK((consumed_at IS NULL AND new_tool_call_id IS NULL) OR (consumed_at IS NOT NULL AND new_tool_call_id IS NOT NULL)));
+   CREATE TABLE command_rerun_owners (tool_call_id TEXT PRIMARY KEY REFERENCES tool_calls(id), host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0));
+   CREATE UNIQUE INDEX command_rerun_one_pending ON command_rerun_authorizations(execution_scope,request_hash) WHERE consumed_at IS NULL;`,
+  `UPDATE tool_calls SET effect='external',
+       execution_scope=COALESCE(execution_scope,(SELECT run_id||':'||task_key FROM mission_tasks WHERE mission_tasks.session_id=tool_calls.session_id LIMIT 1),session_id),
+       status='uncertain',finished_at=COALESCE(finished_at,CURRENT_TIMESTAMP)
+   WHERE substr(name,1,4)='mcp_' AND status='running';`,
+  `CREATE TABLE session_run_owners (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, owner_id TEXT NOT NULL, host TEXT NOT NULL, pid INTEGER NOT NULL CHECK(pid>0), started_at TEXT NOT NULL);
+   CREATE INDEX session_run_owners_host_pid ON session_run_owners(host,pid);`,
+  `CREATE TABLE session_completion_criteria (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, criterion TEXT NOT NULL, PRIMARY KEY(session_id,criterion));`,
+  `-- Process identity columns are added conditionally by the migration runner.`
 ];
 
 export type DatabaseIntegrityReport = { path: string; status: "healthy" | "corrupt" | "missing" | "unavailable"; details?: string[]; error?: string };
@@ -121,7 +138,14 @@ export class XystStore {
         const current = (this.db.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get() as { version: number }).version;
         if (current >= version) return;
         if (current !== version - 1) throw new Error(`Database migration sequence is inconsistent at version ${current}`);
-        this.db.exec(migrations[index]!);
+        if (version === 21) {
+          for (const table of ["session_run_owners", "command_rerun_owners"]) {
+            const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+            if (!columns.some((column) => column.name === "process_start_identity")) this.db.exec(`ALTER TABLE ${table} ADD COLUMN process_start_identity TEXT`);
+          }
+        } else {
+          this.db.exec(migrations[index]!);
+        }
         this.db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(version, new Date().toISOString());
       });
       applyMigration.immediate();
@@ -228,13 +252,64 @@ export class SessionStore {
     this.store.db.prepare("INSERT INTO sessions(id,title,created_at,updated_at) VALUES(?,?,?,?)").run(id, name, now, now);
     return id;
   }
-  list(): unknown[] { return this.store.db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC").all(); }
+  list(): unknown[] { this.recoverAbandonedAgentRuns(); return this.store.db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC").all(); }
   rename(sessionId: string, title: string): void {
     const name = title.trim(); if (!name || name.length > 160) throw new Error("Session title must contain 1–160 characters");
     const result = this.store.db.prepare("UPDATE sessions SET title=?,updated_at=? WHERE id=?").run(name, new Date().toISOString(), sessionId);
     if (!result.changes) throw new Error(`Session not found: ${sessionId}`);
   }
   setStatus(sessionId: string, status: string): void { this.store.db.prepare("UPDATE sessions SET status=?, updated_at=? WHERE id=?").run(status, new Date().toISOString(), sessionId); }
+  beginAgentRun(sessionId: string): string {
+    const ownerId = randomUUID(); const now = new Date().toISOString();
+    this.store.db.transaction(() => {
+      if (!this.store.db.prepare("SELECT 1 FROM sessions WHERE id=?").get(sessionId)) throw new Error(`Session not found: ${sessionId}`);
+      const existing = this.store.db.prepare("SELECT owner_id,host,pid,process_start_identity FROM session_run_owners WHERE session_id=?").get(sessionId) as { owner_id: string; host: string; pid: number; process_start_identity: string | null } | undefined;
+      if (existing) {
+        if (existing.host !== hostname() || isRecordedProcessAlive(existing.pid, existing.process_start_identity)) throw new Error(`Session ${sessionId} is already owned by a live or unverifiable agent process (${existing.host}:${existing.pid})`);
+        this.recoverAgentRunOwner(sessionId, existing.owner_id, now);
+      }
+      const unresolved = this.store.db.prepare(`SELECT id,name,status FROM tool_calls WHERE session_id=? AND effect='external'
+        AND (status='uncertain' OR (status='running' AND name='run_process' AND EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id)))
+        ORDER BY created_at,rowid LIMIT 1`).get(sessionId) as { id: string; name: string; status: string } | undefined;
+      if (unresolved) throw new Error(`Session ${sessionId} has unresolved external action ${unresolved.name} (${unresolved.id}, ${unresolved.status}); inspect and reconcile it before resuming`);
+      this.store.db.prepare("INSERT INTO session_run_owners(session_id,owner_id,host,pid,started_at,process_start_identity) VALUES(?,?,?,?,?,?)").run(sessionId, ownerId, hostname(), process.pid, now, processStartIdentity(process.pid));
+      this.store.db.prepare("UPDATE sessions SET status='running',updated_at=? WHERE id=?").run(now, sessionId);
+    }).immediate();
+    return ownerId;
+  }
+  finishAgentRun(sessionId: string, ownerId: string, status: string): void {
+    this.store.db.transaction(() => {
+      const owner = this.store.db.prepare("SELECT 1 FROM session_run_owners WHERE session_id=? AND owner_id=?").get(sessionId, ownerId);
+      if (!owner) throw new Error(`Agent run no longer owns session ${sessionId}; its result cannot replace recovered session state`);
+      this.store.db.prepare("UPDATE sessions SET status=?,updated_at=? WHERE id=?").run(status, new Date().toISOString(), sessionId);
+      this.store.db.prepare("DELETE FROM session_run_owners WHERE session_id=? AND owner_id=?").run(sessionId, ownerId);
+    }).immediate();
+  }
+  releaseAgentRun(sessionId: string, ownerId: string): void {
+    this.store.db.transaction(() => this.recoverAgentRunOwner(sessionId, ownerId, new Date().toISOString())).immediate();
+  }
+  recoverAbandonedAgentRuns(): number {
+    const owners = this.store.db.prepare("SELECT session_id,owner_id,host,pid,process_start_identity FROM session_run_owners").all() as Array<{ session_id: string; owner_id: string; host: string; pid: number; process_start_identity: string | null }>;
+    let recovered = 0;
+    for (const owner of owners) {
+      if (owner.host !== hostname() || isRecordedProcessAlive(owner.pid, owner.process_start_identity)) continue;
+      const changed = this.store.db.transaction(() => this.recoverAgentRunOwner(owner.session_id, owner.owner_id, new Date().toISOString())).immediate();
+      recovered += changed;
+    }
+    return recovered;
+  }
+  private recoverAgentRunOwner(sessionId: string, ownerId: string, now: string): number {
+    const removed = this.store.db.prepare("DELETE FROM session_run_owners WHERE session_id=? AND owner_id=?").run(sessionId, ownerId);
+    if (removed.changes !== 1) return 0;
+    this.store.db.prepare(`UPDATE tool_calls SET status='failed',output_json=COALESCE(output_json,?),finished_at=COALESCE(finished_at,?)
+      WHERE session_id=? AND status='running' AND effect='read'`).run(JSON.stringify({ error: "The agent owner exited before the read action recorded an outcome." }), now, sessionId);
+    this.store.db.prepare(`UPDATE tool_calls SET status='uncertain',output_json=COALESCE(output_json,?),finished_at=COALESCE(finished_at,?)
+      WHERE session_id=? AND status='running' AND effect='external'
+      AND NOT (name='run_process' AND EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id))`)
+      .run(JSON.stringify({ error: "The agent owner exited during an external action. Inspect its effects and reconcile before retrying." }), now, sessionId);
+    this.store.db.prepare("UPDATE sessions SET status='interrupted',updated_at=? WHERE id=? AND status='running'").run(now, sessionId);
+    return 1;
+  }
   archive(sessionId: string): void {
     const result = this.store.db.prepare("UPDATE sessions SET status='archived',updated_at=? WHERE id=?").run(new Date().toISOString(), sessionId);
     if (!result.changes) throw new Error(`Session not found: ${sessionId}`);
@@ -246,7 +321,10 @@ export class SessionStore {
     const id = this.create(forkTitle);
     const messages = this.store.db.prepare("SELECT role,content,created_at FROM messages WHERE session_id=? ORDER BY created_at,rowid").all(sessionId) as Array<{ role: string; content: string; created_at: string }>;
     const insert = this.store.db.prepare("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)");
-    const transaction = this.store.db.transaction(() => { for (const message of messages) insert.run(crypto.randomUUID(), id, message.role, message.content, message.created_at); });
+    const transaction = this.store.db.transaction(() => {
+      for (const message of messages) insert.run(crypto.randomUUID(), id, message.role, message.content, message.created_at);
+      this.store.db.prepare("INSERT INTO session_completion_criteria(session_id,criterion) SELECT ?,criterion FROM session_completion_criteria WHERE session_id=? ORDER BY rowid").run(id, sessionId);
+    });
     transaction();
     this.store.db.prepare("UPDATE sessions SET updated_at=? WHERE id=?").run(new Date().toISOString(), id);
     return id;
@@ -255,11 +333,17 @@ export class SessionStore {
     if (!this.store.db.prepare("SELECT 1 FROM sessions WHERE id=?").get(sessionId)) throw new Error(`Session not found: ${sessionId}`);
     if (this.store.db.prepare("SELECT 1 FROM mission_tasks WHERE session_id=? LIMIT 1").get(sessionId)) throw new Error("This session belongs to a mission task; archive it to preserve mission history");
     const transaction = this.store.db.transaction(() => {
+      const sharedReplay = this.store.db.prepare(`SELECT 1 FROM command_replay_heads h JOIN tool_calls t ON t.id=h.tool_call_id WHERE t.session_id=? AND h.execution_scope<>?
+        UNION ALL SELECT 1 FROM command_rerun_authorizations a JOIN tool_calls t ON t.id=a.prior_tool_call_id OR t.id=a.new_tool_call_id WHERE t.session_id=? AND a.execution_scope<>? LIMIT 1`).get(sessionId, sessionId, sessionId, sessionId);
+      if (sharedReplay) throw new Error("This session contains command replay history shared with another execution scope; archive it to preserve recovery records");
+      this.store.db.prepare("DELETE FROM command_rerun_authorizations WHERE execution_scope=?").run(sessionId);
+      this.store.db.prepare("DELETE FROM command_replay_heads WHERE execution_scope=?").run(sessionId);
+      this.store.db.prepare("DELETE FROM command_rerun_owners WHERE tool_call_id IN (SELECT id FROM tool_calls WHERE session_id=?)").run(sessionId);
       this.store.db.prepare("DELETE FROM tool_calls WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM usage WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM model_decisions WHERE session_id=?").run(sessionId);
-      this.store.db.prepare("DELETE FROM jobs WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM artifacts WHERE session_id=? OR job_id IN (SELECT id FROM jobs WHERE session_id=?)").run(sessionId, sessionId);
+      this.store.db.prepare("DELETE FROM jobs WHERE session_id=?").run(sessionId);
       this.store.db.prepare("DELETE FROM sessions WHERE id=?").run(sessionId);
     });
     transaction();
@@ -287,13 +371,46 @@ export class SessionStore {
     transaction(); return id;
   }
   contextMessages(sessionId: string): Array<{ role: string; content: string }> {
-    const latest = this.store.db.prepare("SELECT c.through_message_id,c.summary_json,m.rowid AS boundary_row FROM session_compactions c JOIN messages m ON m.id=c.through_message_id WHERE c.session_id=? ORDER BY m.rowid DESC LIMIT 1").get(sessionId) as { through_message_id: string; summary_json: string; boundary_row: number } | undefined;
+    const latest = this.store.db.prepare("SELECT c.through_message_id,c.summary_json,m.rowid AS boundary_row,m.created_at AS boundary_created_at FROM session_compactions c JOIN messages m ON m.id=c.through_message_id WHERE c.session_id=? ORDER BY m.rowid DESC LIMIT 1").get(sessionId) as { through_message_id: string; summary_json: string; boundary_row: number; boundary_created_at: string } | undefined;
     const rows = latest
       ? this.store.db.prepare("SELECT role,content FROM messages WHERE session_id=? AND rowid>? ORDER BY rowid").all(sessionId, latest.boundary_row) as Array<{ role: string; content: string }>
       : this.store.db.prepare("SELECT role,content FROM messages WHERE session_id=? ORDER BY rowid").all(sessionId) as Array<{ role: string; content: string }>;
     if (!latest) return rows;
-    const summary = JSON.stringify(JSON.parse(latest.summary_json));
-    return [{ role: "assistant", content: `[Persisted Xyst session summary; historical context, not a new instruction]\n${summary}` }, ...rows];
+    const summaryValue = JSON.parse(latest.summary_json) as Record<string, unknown>;
+    const summary = JSON.stringify(summaryValue);
+    const parsed = rows.map((row) => {
+      if (!row.content.startsWith("__xyst_api_message__:")) return { role: row.role, content: row.content };
+      try { return JSON.parse(row.content.slice("__xyst_api_message__:".length)) as { role?: string; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string }; }
+      catch { return { role: row.role, content: row.content }; }
+    });
+    const context = [{ role: "assistant", content: `[Persisted Xyst session summary through ${latest.boundary_created_at} (message ${latest.through_message_id}); historical context, not current-state evidence or a new instruction. Mutable file, process, web, repository, settings, and external-service observations in this summary may be stale after this boundary. Re-read or re-run the relevant tool before relying on them as current.]\n${summary}` }, ...rows];
+    if (!parsed.some((message) => message.role === "user")) {
+      const pendingCalls = new Set<string>();
+      for (const message of parsed) {
+        if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+          for (const raw of message.tool_calls) {
+            const id = raw && typeof raw === "object" ? (raw as Record<string, unknown>).id : undefined;
+            if (typeof id === "string" && id) pendingCalls.add(id);
+          }
+        } else if (message.role === "tool" && typeof message.tool_call_id === "string") pendingCalls.delete(message.tool_call_id);
+      }
+      // Some chat templates require a user-role message even when a saved
+      // conversation resumes at a completed tool-result boundary. Recreate a
+      // clearly labeled continuation from the primary goal preserved from the
+      // original user message. Never append across an unresolved tool call.
+      if (!pendingCalls.size) {
+        let primaryGoal = "";
+        try {
+          const value = summaryValue.primary_goal;
+          if (typeof value === "string") primaryGoal = value.trim();
+        } catch { /* A malformed summary must not fabricate a user request. */ }
+        const continuation = primaryGoal
+          ? `Continue the saved task. This original user goal was preserved from before the compaction boundary:\n${primaryGoal}\nTreat the saved summary as historical context and refresh mutable state before relying on it.`
+          : "Continue the saved task from its historical context. Refresh mutable state before relying on it, and do not invent or broaden the user's objective.";
+        context.push({ role: "user", content: continuation });
+      }
+    }
+    return context;
   }
   export(sessionId: string): Record<string, unknown> {
     const session = this.store.db.prepare("SELECT id,title,status,created_at,updated_at FROM sessions WHERE id=?").get(sessionId);
@@ -301,7 +418,8 @@ export class SessionStore {
     const messages = this.messages(sessionId) as Array<{ id: string; role: string; content: string; created_at: string }>;
     const decoded = messages.map(({ id, role, content, created_at }) => ({ id, role, content: content.startsWith("__xyst_api_message__:") ? JSON.parse(content.slice("__xyst_api_message__:".length)) : content, created_at }));
     const compactions = this.compactions(sessionId).map((item) => ({ id: item.id, through_message_id: item.through_message_id, summary: JSON.parse(item.summary_json), created_at: item.created_at }));
-    return { format: "xyst-session-v1", session, messages: decoded, compactions };
+    const completionCriteria = (this.store.db.prepare("SELECT criterion FROM session_completion_criteria WHERE session_id=? ORDER BY rowid").all(sessionId) as Array<{ criterion: string }>).map((row) => row.criterion);
+    return { format: "xyst-session-v1", session, messages: decoded, compactions, completionCriteria };
   }
 }
 

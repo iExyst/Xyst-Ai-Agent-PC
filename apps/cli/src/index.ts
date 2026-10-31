@@ -5,14 +5,16 @@ import { open, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
+import { createCoalescedPersist } from "./coalesced-persist.js";
 import type { Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { totalmem } from "node:os";
 import { spawn } from "node:child_process";
 import * as nodePty from "node-pty";
-import { authenticateMcpOAuth, chooseEmbeddingModel, createMcpTools, createRuntime, createText, deletePath, getDataDirectory, getSessionCompactionModel, inspectDatabaseIntegrity, McpOAuthClientProvider, resolveLMStudioIntegrations, gitBranches, gitClone, gitCommit, gitCreateBranch, gitDiff, gitFetch, gitLog, gitPush, gitStage, gitStatus, indexMemories, inspectDesktopCapabilities, inspectLmsDaemon, listFiles, mcpServersSchema, movePath, patchText, readModelPerformance, readText, requestEmbeddings, runProcess, runShell, searchFiles, sendNativeNotification, subscribeRunNotifications, type ExternalActionApprovalRequest, type RemoteFallbackApprovalRequest } from "@xyst/runtime";
+import { authenticateMcpOAuth, chooseEmbeddingModel, createMcpTools, createRuntime, createText, deletePath, getDataDirectory, getSessionCompactionModel, inspectDatabaseIntegrity, McpOAuthClientProvider, resolveLMStudioIntegrations, gitBranches, gitClone, gitCommit, gitCreateBranch, gitDiff, gitFetch, gitLog, gitPush, gitStage, gitStatus, indexMemories, inspectDesktopCapabilities, inspectLmsDaemon, killProcessTree, listFiles, mcpServersSchema, movePath, patchText, readModelPerformance, readText, requestEmbeddings, runProcess, runShell, searchFiles, sendNativeNotification, subscribeRunNotifications, type ExternalActionApprovalRequest, type RemoteFallbackApprovalRequest } from "@xyst/runtime";
 import { parseLoadOptions } from "./load-options.js";
 import { agentOutcomeNotice } from "./agent-outcome.js";
+import { disconnectAgentParent } from "./agent-ipc.js";
 import { parseChatOptions } from "./chat-options.js";
 import { parseResponsesRequest } from "./responses-options.js";
 import { installMissionService, missionServiceStatus, uninstallMissionService, type MissionServiceSpec } from "./mission-service.js";
@@ -20,6 +22,7 @@ import { getMissionTemplate, MISSION_TEMPLATES } from "./mission-templates.js";
 import { MISSION_PLAN_USAGE, parseMissionPlanArguments } from "./mission-plan-options.js";
 import { createAgentUserMessage } from "./attachments.js";
 import { desktopModelSnapshot } from "./desktop-model-snapshot.js";
+import { serveDesktopSnapshots } from "./desktop-worker.js";
 import { closeWebhookServer, parseGitHubWebhookOptions, startGitHubWebhookServer } from "./webhook-server.js";
 
 const args = process.argv.slice(2);
@@ -77,7 +80,9 @@ if (statusIntegrity?.status === "corrupt") {
     databaseIntegrity: statusIntegrity, error: message,
     errorDetails: statusIntegrity.error ?? statusIntegrity.details?.join("; ") ?? "SQLite reported corruption"
   };
-  if (clean[0] === "desktop") output({ status, sessions: [], memories: [], missions: [], agents: [], jobs: [], models: [], downloads: [] });
+  if (clean[0] === "desktop" && clean[2] === "--worker") {
+    await serveDesktopSnapshots(async () => ({ status, sessions: [], memories: [], missions: [], agents: [], jobs: [], models: [], downloads: [] }), controller, process, 1);
+  } else if (clean[0] === "desktop") output({ status, sessions: [], memories: [], missions: [], agents: [], jobs: [], models: [], downloads: [] });
   else output(status);
   process.exitCode = clean[0] === "status" ? 1 : 0;
   await new Promise<void>((flushed) => process.stdout.write("", () => flushed()));
@@ -258,6 +263,8 @@ Usage: xyst [--json] <command>
   agent chat [--session id] [--model key] [--max-turns 1-50] [--attach path]...  Start an interactive saved chat; enter /compact or /exit
   agent list [mission-id]
   agent reconcile <session-id> <tool-call-id> completed|retry
+  agent authorize-rerun <session-id> <tool-call-id>  Authorize one fresh execution of a completed process; it may have side effects
+  agent recover-rerun <session-id> <tool-call-id>  Quarantine a running rerun only after its owner process has exited
   mission plan <objective> [--name NAME] [--workspace PATH] [--project ID] [--model KEY] [--max-concurrency 1-8]
   mission create <definition.json> | list | show <id> | rename <id> <name> | fork <id> [name] | export <id> [path] | delete <id> | workspaces [id]
   mission templates | template <template-id>  List or load an executable workflow definition
@@ -418,13 +425,19 @@ try {
     const spec = runtime.jobs.processSpec(id); if (!spec) fail(`Process job specification missing: ${id}`);
     runtime.jobs.updateProcess(id, "running", { startedAt: new Date().toISOString() });
     const workerController = new AbortController(); let stdout = ""; let stderr = ""; let outputTruncated = false;
+    // Persist streamed output at a bounded rate. Each write serializes the full
+    // retained output snapshot, so writing once per PTY/model chunk can turn a
+    // fast stream into repeated large SQLite updates.
+    const outputPersistence = createCoalescedPersist(() => {
+      runtime.jobs.updateProcess(id, "running", { stdout, stderr, outputTruncated });
+    }, 250);
     const append = (key: "stdout" | "stderr", chunk: string) => {
       const cleanChunk = runtime.lmStudio.redact(chunk); const current = key === "stdout" ? stdout : stderr;
       const next = current + cleanChunk;
       if (next.length > 100_000) outputTruncated = true;
       const bounded = next.slice(-100_000);
       if (key === "stdout") stdout = bounded; else stderr = bounded;
-      runtime.jobs.updateProcess(id, "running", { stdout, stderr, outputTruncated });
+      outputPersistence.schedule();
     };
     let writeStdin: ((value: string) => void) | undefined; let closeStdin: (() => void) | undefined;
     let terminalSession: nodePty.IPty | undefined;
@@ -440,7 +453,9 @@ try {
       let result: { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; durationMs: number };
       if (spec.pty) {
         terminalSession = nodePty.spawn(spec.command, spec.args, { name: "xterm-256color", cols: spec.cols, rows: spec.rows, cwd: spec.cwd, env: process.env, ...(process.platform === "win32" ? { useConpty: true } : { encoding: "utf8" }) });
-        if (workerController.signal.aborted) terminalSession.kill(); else workerController.signal.addEventListener("abort", () => terminalSession?.kill(), { once: true });
+        const terminalPid = terminalSession.pid;
+        if (workerController.signal.aborted) await killProcessTree(terminalPid);
+        else workerController.signal.addEventListener("abort", () => { void killProcessTree(terminalPid); }, { once: true });
         writeStdin = (value) => terminalSession?.write(value);
         closeStdin = () => terminalSession?.write("\u0004");
         terminalSession.onData((chunk) => append("stdout", chunk));
@@ -456,7 +471,15 @@ try {
     } catch (error) {
       const cancelled = workerController.signal.aborted;
       runtime.jobs.updateProcess(id, cancelled ? "cancelled" : "failed", { stdout, stderr, outputTruncated, error: runtime.lmStudio.redact(error instanceof Error ? error.message : String(error)), finishedAt: new Date().toISOString() });
-    } finally { clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
+    } finally { outputPersistence.cancel(); clearInterval(poll); if (terminalSession) releaseWindowsPtyWorker(terminalSession); }
+  } else if (command === "agent" && subcommand === "authorize-rerun") {
+    const [sessionId, toolCallId] = rest;
+    if (!sessionId || !toolCallId || rest.length !== 2) fail("Usage: agent authorize-rerun <session-id> <tool-call-id>");
+    output(runtime.agent.authorizeProcessRerun(sessionId, toolCallId));
+  } else if (command === "agent" && subcommand === "recover-rerun") {
+    const [sessionId, toolCallId] = rest;
+    if (!sessionId || !toolCallId || rest.length !== 2) fail("Usage: agent recover-rerun <session-id> <tool-call-id>");
+    output(runtime.agent.recoverAbandonedProcessRerun(sessionId, toolCallId));
   } else if (command === "agent" && subcommand === "reconcile") {
     const [sessionId, toolCallId, resolution] = rest;
     if (!sessionId || !toolCallId || !["completed", "retry"].includes(resolution ?? "")) fail("Usage: agent reconcile <session-id> <tool-call-id> completed|retry");
@@ -551,7 +574,7 @@ try {
       if (result.status === "cancelled") process.exitCode = 130;
       else if (result.status === "limit") process.exitCode = 2;
       else if (result.status === "unverified") process.exitCode = 3;
-    } finally { activeUserMessages = undefined; unsub(); }
+    } finally { activeUserMessages = undefined; unsub(); disconnectAgentParent(process); }
   } else if (command === "telemetry") {
     if (subcommand === "status") output(runtime.config.resolve<boolean>("telemetry.localMetrics") ?? { key: "telemetry.localMetrics", configured: false, value: true, source: "runtime default" });
     else if (subcommand === "on" || subcommand === "off") { runtime.config.set("global", "telemetry.localMetrics", subcommand === "on"); output({ key: "telemetry.localMetrics", enabled: subcommand === "on", scope: "global", applies: "next inference call" }); }
@@ -575,6 +598,10 @@ try {
     const setting = runtime.config.resolve<boolean>("desktop.automation.enabled");
     output({ ...inspectDesktopCapabilities(), automation: { enabled: setting?.value === true, source: setting?.source ?? "runtime default" } });
   } else if (command === "desktop" && subcommand === "snapshot") {
+    const readSnapshot = async (snapshotRuntime = runtime) => {
+      const runtime = snapshotRuntime;
+      const lm = runtime.lmStudio;
+
     const settingKeys = [
       "model.default", "model.autoSelect", "models.automaticLoading", "models.automaticUnloading", "models.idleUnloadSeconds", "models.maxDownloadBytes", "models.allowedLicenses",
       "models.remoteFallback", "models.remoteFallbackUrl", "models.remoteFallbackModel", "models.onlineDiscovery",
@@ -593,7 +620,7 @@ try {
     ] as const;
     const settings = Object.fromEntries(settingKeys.map((key) => [key, runtime.config.resolve(key) ?? { key, configured: false }]));
     const [modelsResult, browserResult, systemResourcesResult] = await Promise.all([
-      lm.models(controller.signal).then((models) => ({ models: models.map(desktopModelSnapshot) })).catch((error) => ({ models: [] as Array<Record<string, unknown>>, modelsError: error instanceof Error ? error.message : String(error) })),
+      lm.models(AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)])).then((models) => ({ models: models.map(desktopModelSnapshot) })).catch((error) => ({ models: [] as Array<Record<string, unknown>>, modelsError: error instanceof Error ? error.message : String(error) })),
       Promise.all([runtime.browser.status(), Promise.resolve(settings["browser.automation.enabled"]), Promise.resolve(settings["browser.headless"]), Promise.resolve(settings["browser.maxDownloadBytes"])]).then(([browser, enabled, headless, maxDownloadBytes]) => ({ browser, enabled, headless, maxDownloadBytes })).catch(() => ({})),
       runtime.resourceStats().catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
     ]);
@@ -611,7 +638,7 @@ try {
     const modelsError = "modelsError" in modelsResult ? modelsResult.modelsError : undefined;
     const browser = browserSetting.browser ?? { installed: false };
     const status = { version: "0.1.0", runtime: "ready", dataDir: runtime.dataDir, database: "ready", databaseIntegrity: statusIntegrity?.status === "healthy" ? statusIntegrity : inspectDatabaseIntegrity(resolve(runtime.dataDir, "xyst.sqlite")), sessions: sessions.length, missions: missions.length, profile: runtime.access.profile.mode };
-    output({ status, systemResources: systemResourcesResult, browser, sessions, missions, agents, memories: runtime.memories.list(), models, downloads: runtime.modelAcquisition.listDownloads(), jobs: runtime.jobs.list(50), ...(modelsError ? { modelsError } : {}), settings: {
+    return { status, systemResources: systemResourcesResult, browser, sessions, missions, agents, memories: runtime.memories.list(), models, downloads: runtime.modelAcquisition.listDownloads(), jobs: runtime.jobs.list(50), ...(modelsError ? { modelsError } : {}), settings: {
       accessProfile: scalarSetting("access.profile", { mode: "full", network: true, integrations: true, backgroundJobs: true, externalActions: true }),
       githubEnabled: settingValue("integrations.github.enabled"), githubWrites: settingValue("integrations.github.writeEnabled"), githubMerge: settingValue("integrations.github.mergeEnabled"), githubApiBaseUrl: scalarSetting("integrations.github.apiBaseUrl", ""),
       mcpEnabled: settingValue("integrations.mcp.enabled"), mcpServers: scalarSetting("integrations.mcp.servers", []), nativeChatMcpEnabled: settingValue("integrations.lmStudio.nativeChat.enabled"), nativeChatMcpIntegrations: scalarSetting("integrations.lmStudio.nativeChat.integrations", []),
@@ -621,7 +648,21 @@ try {
       updatesEnabled: settingValue("updates.enabled"), updatesAutomaticDownload: settingValue("updates.autoDownload"), updatesFeedUrl: scalarSetting("updates.feedUrl", ""), ocrLanguages: scalarSetting("documents.ocrLanguages", ["eng"]), officeRendererExecutable: scalarSetting("documents.officeRendererExecutable", ""), maxMemoryBytes: totalmem(),
       embeddingModel: { value: embedding.configured === false ? "" : embedding.value ?? "", source: embedding.source ?? "not configured" },
       inference: { temperature: scalarSetting("inference.temperature", null), maxTokens: scalarSetting("inference.maxTokens", null), requestTimeoutSeconds: scalarSetting("inference.requestTimeoutSeconds", 600), topP: scalarSetting("inference.topP", null), topK: scalarSetting("inference.topK", null), repeatPenalty: scalarSetting("inference.repeatPenalty", null), presencePenalty: scalarSetting("inference.presencePenalty", null), frequencyPenalty: scalarSetting("inference.frequencyPenalty", null), stopSequences: scalarSetting("inference.stopSequences", null), reasoning: scalarSetting("inference.reasoning", null) }
-    } });
+    } };
+
+    };
+    if (rest.length === 1 && rest[0] === "--worker") {
+      await serveDesktopSnapshots(async () => {
+        // Refresh configuration/access from disk per request, while reusing the loaded code and process.
+        const fresh = createRuntime();
+        try { return await readSnapshot(fresh); } finally { fresh.close(); }
+      }, controller, process, Infinity, async (jobId) => {
+        const job = runtime.jobs.show(jobId);
+        if (!job || job.kind !== "process") throw new Error(`No process job found with ID ${jobId}`);
+        return job;
+      });
+    } else if (rest.length === 0) output(await readSnapshot());
+    else fail("Usage: desktop snapshot [--worker]");
   } else if (command === "desktop" && subcommand === "automation") {
     const action = rest[0];
     if (action === "status") {
@@ -1112,7 +1153,7 @@ try {
     output({ ...result, model: selected.model, modelReason: selected.reason });
   } else if (command === "session" && subcommand === "calls") {
     if (!rest[0]) fail("Usage: session calls <session-id>");
-    output(runtime.store.db.prepare("SELECT id,name,input_json,output_json,status,effect,created_at,finished_at FROM tool_calls WHERE session_id=? ORDER BY created_at").all(rest[0]));
+    output(runtime.store.db.prepare("SELECT id,name,input_json,output_json,status,effect,created_at,finished_at,EXISTS(SELECT 1 FROM command_rerun_owners o WHERE o.tool_call_id=tool_calls.id) AS is_rerun FROM tool_calls WHERE session_id=? ORDER BY created_at").all(rest[0]));
   } else if (command === "session" && subcommand === "artifacts") {
     if (!rest[0]) fail("Usage: session artifacts <session-id>");
     output(runtime.store.db.prepare("SELECT id,name,path,mime_type,metadata_json,created_at FROM artifacts WHERE session_id=? ORDER BY created_at").all(rest[0]));
@@ -1236,4 +1277,9 @@ try {
   if (error instanceof Error && error.message !== "") process.stderr.write(`${error.message}\n`);
 } finally {
   runtime.close();
+  if (clean[0] === "desktop" && clean[1] === "snapshot" && clean[2] === "--worker") {
+    // All read contexts are closed; the worker's lifetime ends with its IPC parent.
+    if (process.connected) process.disconnect();
+    process.exit(process.exitCode ?? 0);
+  }
 }

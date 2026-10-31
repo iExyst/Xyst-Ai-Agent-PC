@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import * as nodePty from "node-pty";
+import { killProcessTree } from "@xyst/runtime";
 
 test("native PTY provides TTY input, output, and resizable dimensions", async () => {
   const source = `
@@ -46,5 +50,58 @@ test("native PTY provides TTY input, output, and resizable dimensions", async ()
       const internal = terminal as unknown as { _agent?: { _conoutSocketWorker?: { dispose?: () => void } } };
       internal._agent?._conoutSocketWorker?.dispose?.();
     }
+  }
+});
+
+test("cancelling a PTY terminates a signal-ignoring descendant", async () => {
+  const root = await mkdtemp(join(tmpdir(), "xyst-pty-cancel-"));
+  const survivedPath = join(root, "descendant-survived");
+  const descendantSource = `
+    process.on("SIGTERM", () => {});
+    process.stdout.write("DESCENDANT_READY=" + process.pid + "\\n");
+    process.stdin.once("data", () => setTimeout(() => { require("node:fs").writeFileSync(${JSON.stringify(survivedPath)}, "alive"); process.exit(0); }, 1200));
+  `;
+  const parentSource = `
+    const { spawn } = require("node:child_process");
+    const child = spawn(process.execPath, ["-e", ${JSON.stringify(descendantSource)}], { stdio: ["pipe", "pipe", "ignore"] });
+    child.stdout.on("data", (value) => { const match = value.toString().match(/DESCENDANT_READY=(\\d+)/); if (match) process.stdout.write("PTY_TREE_READY=" + match[1] + "\\n"); });
+    process.stdin.setRawMode(true);
+    process.stdin.once("data", () => child.stdin.write("arm"));
+    process.on("SIGTERM", () => process.exit(0));
+    setInterval(() => {}, 1000);
+  `;
+  const terminal = nodePty.spawn(process.execPath, ["-e", parentSource], {
+    name: "xterm-256color", cols: 80, rows: 24, cwd: root, env: process.env,
+    ...(process.platform === "win32" ? { useConpty: true } : { encoding: "utf8" })
+  });
+  let output = "";
+  let exited = false;
+  terminal.onData((chunk) => { output += chunk; });
+  const exitPromise = new Promise<void>((resolveExit) => terminal.onExit(() => { exited = true; resolveExit(); }));
+  const waitForReady = async () => {
+    const deadline = Date.now() + 5000;
+    while (!output.includes("PTY_TREE_READY") && Date.now() < deadline) await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.match(output, /PTY_TREE_READY/, `PTY descendant was not ready; output: ${JSON.stringify(output)}`);
+  };
+  try {
+    await waitForReady();
+    const descendantPid = Number(output.match(/PTY_TREE_READY=(\d+)/)?.[1]);
+    assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
+    // Start the delayed effect only now: suite load must not let it happen before cancellation starts.
+    terminal.write("arm");
+    assert.equal(await killProcessTree(terminal.pid), true, "process-tree cleanup must be confirmed");
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try { await Promise.race([exitPromise, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error(`PTY parent did not exit; output: ${JSON.stringify(output)}`)), 5000); })]); }
+    finally { if (timeout) clearTimeout(timeout); }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 1400));
+    await assert.rejects(access(survivedPath));
+    if (process.platform === "win32") assert.throws(() => process.kill(descendantPid, 0), { code: "ESRCH" });
+  } finally {
+    if (!exited) await killProcessTree(terminal.pid);
+    if (process.platform === "win32") {
+      const internal = terminal as unknown as { _agent?: { _conoutSocketWorker?: { dispose?: () => void } } };
+      internal._agent?._conoutSocketWorker?.dispose?.();
+    }
+    await rm(root, { recursive: true, force: true });
   }
 });

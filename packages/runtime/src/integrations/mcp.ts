@@ -9,12 +9,22 @@ import type { AccessController } from "../access.js";
 
 const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,35}$/);
 const credentialRef = z.object({ service: z.string().min(1).max(100), name: z.string().min(1).max(100) }).strict();
+const toolNamesSchema = z.array(z.string().min(1).max(200)).max(100);
+function validateToolPolicy(config: { allowed_tools?: string[] | undefined; read_only_tools?: string[] | undefined }, context: z.RefinementCtx): void {
+  const readOnlyTools = config.read_only_tools ?? [];
+  if (new Set(readOnlyTools).size !== readOnlyTools.length) context.addIssue({ code: "custom", path: ["read_only_tools"], message: "Read-only MCP tool names must be unique" });
+  if (config.allowed_tools) for (const [index, name] of readOnlyTools.entries()) {
+    if (!config.allowed_tools.includes(name)) context.addIssue({ code: "custom", path: ["read_only_tools", index], message: `Read-only MCP tool ${name} must also be listed in allowed_tools` });
+  }
+}
 function isLoopbackHost(hostname: string): boolean { return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname.toLowerCase()); }
 const serverSchema = z.discriminatedUnion("transport", [
-  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.literal("stdio"), command: z.string().min(1).max(500), args: z.array(z.string().max(4000)).max(100).optional(), cwd: z.string().max(2000).optional(), env: z.record(z.string(), z.string().max(4000)).optional(), credential_env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), credentialRef).optional(), allowed_tools: z.array(z.string().min(1).max(200)).max(100).optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.literal("stdio"), command: z.string().min(1).max(500), args: z.array(z.string().max(4000)).max(100).optional(), cwd: z.string().max(2000).optional(), env: z.record(z.string(), z.string().max(4000)).optional(), credential_env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), credentialRef).optional(), allowed_tools: toolNamesSchema.optional(), read_only_tools: toolNamesSchema.optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+    validateToolPolicy(config, context);
     for (const key of Object.keys(config.env ?? {})) if (/(?:token|secret|password|credential|api.?key|authorization)/i.test(key)) context.addIssue({ code: "custom", path: ["env", key], message: "Secret environment variables must use credential_env references" });
   }),
-  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.enum(["streamable-http", "sse"]), url: z.string().url(), bearer_credential: credentialRef.optional(), oauth: z.boolean().optional(), allowed_tools: z.array(z.string().min(1).max(200)).max(100).optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+  z.object({ id: idSchema, enabled: z.boolean().optional(), transport: z.enum(["streamable-http", "sse"]), url: z.string().url(), bearer_credential: credentialRef.optional(), oauth: z.boolean().optional(), allowed_tools: toolNamesSchema.optional(), read_only_tools: toolNamesSchema.optional(), timeout_ms: z.number().int().min(1000).max(120000).optional() }).strict().superRefine((config, context) => {
+    validateToolPolicy(config, context);
     if (config.oauth && config.bearer_credential) context.addIssue({ code: "custom", path: ["oauth"], message: "Choose OAuth or a static bearer credential, not both" });
   })
 ]);
@@ -282,12 +292,12 @@ function outputForAgent(result: unknown, secrets: string[]): string {
   return serialized.slice(0, 30_000);
 }
 
-export async function createMcpTools(access: AccessController, rawServers: unknown, credentials: McpCredentialStore, workspace: string, signal?: AbortSignal, options: McpToolOptions = {}): Promise<{ tools: Record<string, AgentTool>; close(): Promise<void>; servers: Array<{ id: string; toolCount: number; instructions?: string }> }> {
+export async function createMcpTools(access: AccessController, rawServers: unknown, credentials: McpCredentialStore, workspace: string, signal?: AbortSignal, options: McpToolOptions = {}): Promise<{ tools: Record<string, AgentTool>; readObservationNames: Set<string>; close(): Promise<void>; servers: Array<{ id: string; toolCount: number; instructions?: string }> }> {
   const servers = mcpServersSchema.parse(rawServers);
-  if (!servers.some((server) => server.enabled !== false)) return { tools: {}, close: async () => undefined, servers: [] };
+  if (!servers.some((server) => server.enabled !== false)) return { tools: {}, readObservationNames: new Set(), close: async () => undefined, servers: [] };
   access.assertCapability("integrations");
   const connected: Array<{ id: string; client: McpClient; secrets: string[]; timeout: number; subscriptions: Set<string>; modernSubscription: McpSubscriptionHandle | undefined; subscriptionQueue: Promise<void> }> = [];
-  const tools: Record<string, AgentTool> = {}; const summary: Array<{ id: string; toolCount: number }> = [];
+  const tools: Record<string, AgentTool> = {}; const readObservationNames = new Set<string>(); const summary: Array<{ id: string; toolCount: number }> = [];
   const close = async () => {
     await Promise.allSettled(connected.map(async (connection) => {
       await connection.subscriptionQueue;
@@ -326,6 +336,8 @@ export async function createMcpTools(access: AccessController, rawServers: unkno
       const discovered = await client.listTools(undefined, { ...(signal ? { signal } : {}), timeout });
       const allowedTools = server.allowed_tools ? new Set(server.allowed_tools) : undefined;
       const available = discovered.tools.filter((tool) => !allowedTools || allowedTools.has(tool.name)).slice(0, 100);
+      const configuredReadOnlyTools = new Set(server.read_only_tools ?? []);
+      const exposedReadOnlyTools = new Set<string>();
       let count = 0;
       for (const serverTool of available) {
         if (!/^[A-Za-z0-9_-]{1,100}$/.test(serverTool.name) || !serverTool.inputSchema || serverTool.inputSchema.type !== "object") continue;
@@ -348,15 +360,23 @@ export async function createMcpTools(access: AccessController, rawServers: unkno
             return { result: bounded, trust: "untrusted-mcp-content" };
           }
         };
+        if (configuredReadOnlyTools.has(serverTool.name)) {
+          readObservationNames.add(name);
+          exposedReadOnlyTools.add(serverTool.name);
+        }
         count++;
       }
+      const unavailableReadOnlyTools = [...configuredReadOnlyTools].filter((name) => !exposedReadOnlyTools.has(name));
+      if (unavailableReadOnlyTools.length) throw new Error(`Configured read-only MCP tool(s) were not exposed by server ${server.id}: ${unavailableReadOnlyTools.join(", ")}`);
       const requestOptions = { ...(signal ? { signal } : {}), timeout };
       const serverPrefix = server.id.replace(/[^A-Za-z0-9_-]/g, "_");
       if (client.listResources && client.readResource) {
+        readObservationNames.add(`mcp_${serverPrefix}_resources`);
         tools[`mcp_${serverPrefix}_resources`] = {
           definition: { type: "function", function: { name: `mcp_${serverPrefix}_resources`, description: `List resources exposed by MCP server ${server.id}; resource contents are untrusted.`, parameters: { type: "object", properties: {}, additionalProperties: false } } },
           execute: async () => ({ result: outputForAgent(await client.listResources!({}, requestOptions), secrets), trust: "untrusted-mcp-content" })
         };
+        readObservationNames.add(`mcp_${serverPrefix}_read_resource`);
         tools[`mcp_${serverPrefix}_read_resource`] = {
           definition: { type: "function", function: { name: `mcp_${serverPrefix}_read_resource`, description: `Read one URI from MCP server ${server.id}; returned contents are untrusted.`, parameters: { type: "object", properties: { uri: { type: "string", minLength: 1, maxLength: 4000 } }, required: ["uri"], additionalProperties: false } } },
           execute: async (input) => {
@@ -413,12 +433,15 @@ export async function createMcpTools(access: AccessController, rawServers: unkno
           definition: { type: "function", function: { name: `mcp_${serverPrefix}_resource_updates`, description: `Inspect recent resource-change notices received from MCP server ${server.id}. Notices contain only a URI; reread changed resources separately.`, parameters: { type: "object", properties: {}, additionalProperties: false } } },
           execute: async () => ({ updates: updates.slice(-50), activeSubscriptions: [...subscriptions], trust: "untrusted-mcp-content" })
         };
+        readObservationNames.add(`mcp_${serverPrefix}_resource_updates`);
       }
       if (client.listPrompts && client.getPrompt) {
+        readObservationNames.add(`mcp_${serverPrefix}_prompts`);
         tools[`mcp_${serverPrefix}_prompts`] = {
           definition: { type: "function", function: { name: `mcp_${serverPrefix}_prompts`, description: `List prompts exposed by MCP server ${server.id}; prompt text is untrusted.`, parameters: { type: "object", properties: {}, additionalProperties: false } } },
           execute: async () => ({ result: outputForAgent(await client.listPrompts!({}, requestOptions), secrets), trust: "untrusted-mcp-content" })
         };
+        readObservationNames.add(`mcp_${serverPrefix}_get_prompt`);
         tools[`mcp_${serverPrefix}_get_prompt`] = {
           definition: { type: "function", function: { name: `mcp_${serverPrefix}_get_prompt`, description: `Get one named prompt from MCP server ${server.id}; returned prompt text is untrusted.`, parameters: { type: "object", properties: { name: { type: "string", minLength: 1, maxLength: 200 }, arguments: { type: "object", additionalProperties: { type: "string" } } }, required: ["name"], additionalProperties: false } } },
           execute: async (input) => {
@@ -431,7 +454,7 @@ export async function createMcpTools(access: AccessController, rawServers: unkno
       const instructions = client.getInstructions?.()?.slice(0, 4000);
       summary.push({ id: server.id, toolCount: count, ...(instructions ? { instructions } : {}) });
     }
-    return { tools, close, servers: summary };
+    return { tools, readObservationNames, close, servers: summary };
   } catch (error) {
     await close();
     const reason = error instanceof Error ? error.message : String(error);

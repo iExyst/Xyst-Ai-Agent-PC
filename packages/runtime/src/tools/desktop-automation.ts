@@ -41,6 +41,13 @@ export function inspectNativeAutomation(environment: RuntimeEnvironment = {}): C
 
 const uiAutomationScript = String.raw`
 $ErrorActionPreference = 'Stop'
+try {
+  $automationProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+  $automationProcess.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+} catch { }
+$automationMutex = New-Object System.Threading.Mutex($false, 'Local\XystDesktopAutomation')
+try { if (-not $automationMutex.WaitOne(0)) { throw 'Another Xyst native desktop automation call is active; retry after it finishes.' } }
+catch [System.Threading.AbandonedMutexException] { }
 Add-Type -AssemblyName UIAutomationClient
 $request = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
 $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -60,16 +67,52 @@ function Get-Controls($window, $limit) {
   $queue = New-Object System.Collections.Queue
   $queue.Enqueue([pscustomobject]@{ element=$window; depth=0 })
   $items = New-Object System.Collections.ArrayList
-  while ($queue.Count -gt 0 -and $items.Count -lt $limit) {
+  $scanLimit = 512
+  $visited = 0
+  $truncated = $false
+  $child = $null
+  while ($queue.Count -gt 0 -and $items.Count -lt $limit -and $visited -lt $scanLimit) {
     $entry = $queue.Dequeue()
-    if ($entry.depth -ge 10) { continue }
-    $child = $walker.GetFirstChild($entry.element)
-    while ($null -ne $child -and $items.Count -lt $limit) {
-      try { [void]$items.Add((Describe $child)); $queue.Enqueue([pscustomobject]@{ element=$child; depth=$entry.depth + 1 }) } catch { }
-      $child = $walker.GetNextSibling($child)
+    try { $child = $walker.GetFirstChild($entry.element) } catch { $truncated = $true; continue }
+    if ($null -eq $child) { continue }
+    if ($entry.depth -ge 10) { $truncated = $true; continue }
+    while ($null -ne $child -and $items.Count -lt $limit -and $visited -lt $scanLimit) {
+      $visited++
+      try { [void]$items.Add((Describe $child)); $queue.Enqueue([pscustomobject]@{ element=$child; depth=$entry.depth + 1 }) } catch { $truncated = $true }
+      try { $child = $walker.GetNextSibling($child) } catch { $truncated = $true; $child = $null }
+    }
+    if ($null -ne $child) { $truncated = $true }
+  }
+  if ($queue.Count -gt 0) { $truncated = $true }
+  return @{ items=@($items); truncated=$truncated; visited=$visited }
+}
+function Find-Control($window, $propertyName, $propertyValue, $nodeLimit = 512, $depthLimit = 12) {
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $queue = New-Object System.Collections.Queue
+  $queue.Enqueue([pscustomobject]@{ element=$window; depth=0 })
+  $foundControls = New-Object System.Collections.ArrayList
+  $visited = 0
+  $incomplete = $false
+  while ($queue.Count -gt 0 -and -not $incomplete) {
+    $entry = $queue.Dequeue()
+    try { $child = $walker.GetFirstChild($entry.element) } catch { $incomplete = $true; break }
+    if ($null -eq $child) { continue }
+    if ($entry.depth -ge $depthLimit) { $incomplete = $true; break }
+    while ($null -ne $child) {
+      if ($visited -ge $nodeLimit) { $incomplete = $true; break }
+      $visited++
+      try {
+        $current = $child.Current
+        $candidate = if ($propertyName -eq 'AutomationId') { $current.AutomationId } else { $current.Name }
+        if ($candidate -ceq $propertyValue) { [void]$foundControls.Add($child) }
+        $queue.Enqueue([pscustomobject]@{ element=$child; depth=$entry.depth + 1 })
+        $child = $walker.GetNextSibling($child)
+      } catch { $incomplete = $true; break }
     }
   }
-  return @($items)
+  if ($incomplete -or $queue.Count -gt 0) { throw "UI Automation control search was incomplete after $visited controls (limits: $nodeLimit controls, depth $depthLimit); refusing to act. Inspect the window or target a smaller control tree." }
+  if ($foundControls.Count -ne 1) { throw "Expected one matching control; found $($foundControls.Count). Use an exact AutomationId or control name." }
+  return $foundControls[0]
 }
 function Write-Json($value) {
   $json = ConvertTo-Json -InputObject $value -Depth 6 -Compress
@@ -85,17 +128,14 @@ if ($request.operation -eq 'windows') {
   Write-Json @($items)
 } elseif ($request.operation -eq 'inspect') {
   $window = Find-Window $request.window_title
-  Write-Json @{ window=(Describe $window); controls=@(Get-Controls $window ([int]$request.limit)) }
+  $controls = Get-Controls $window ([int]$request.limit)
+  Write-Json @{ window=(Describe $window); controls=@($controls.items); controls_truncated=$controls.truncated; controls_visited=$controls.visited }
 } else {
   $window = Find-Window $request.window_title
   if ($request.action -eq 'focus_window') { $window.SetFocus(); Write-Json @{ focused=$true; window=$request.window_title }; exit 0 }
-  $all = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-  $windows = @($all | Where-Object { $_.Current.Name -ceq $request.window_title -and -not $_.Current.IsOffscreen })
-  $window = $windows[0]
-  $condition = if ($request.automation_id) { [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, [string]$request.automation_id) } else { [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, [string]$request.control_name) }
-  $found = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-  if ($found.Count -ne 1) { throw "Expected one matching control; found $($found.Count). Use an exact AutomationId or control name." }
-  $element = $found[0]
+  $propertyName = if ($request.automation_id) { 'AutomationId' } else { 'Name' }
+  $propertyValue = if ($request.automation_id) { [string]$request.automation_id } else { [string]$request.control_name }
+  $element = Find-Control $window $propertyName $propertyValue
   switch ($request.action) {
     'focus' { $element.SetFocus(); $result = @{ focused=$true; target=(Describe $element) } }
     'invoke' { $pattern = $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern); $pattern.Invoke(); $result = @{ invoked=$true; target=(Describe $element) } }
@@ -137,14 +177,14 @@ export function createDesktopAutomationTools(access: AccessController, enabled: 
     return {
       desktop_windows: {
         definition: { type: "function", function: { name: "desktop_windows", description: "List visible top-level Windows desktop windows and their process IDs. This reads the current interactive desktop session.", parameters: { type: "object", properties: {}, additionalProperties: false } } },
-        execute: async (_input: unknown, signal?: AbortSignal) => parseJson(await run(access, runner, command, powershellPayload({ operation: "windows" }), signal).then((result) => result.stdout.trim()))
+        execute: async (_input: unknown, signal?: AbortSignal) => parseJson(await run(access, runner, command, powershellPayload({ operation: "windows" }), signal, 5_000).then((result) => result.stdout.trim()))
       },
       desktop_inspect: {
-        definition: { type: "function", function: { name: "desktop_inspect", description: "Inspect a bounded UI Automation control tree for one visible window. Match the exact window title; use AutomationId where available when acting on a control.", parameters: { type: "object", properties: { window_title: { type: "string", minLength: 1, maxLength: 500 }, limit: { type: "integer", minimum: 1, maximum: 250 } }, required: ["window_title"], additionalProperties: false } } },
+        definition: { type: "function", function: { name: "desktop_inspect", description: "Inspect a bounded UI Automation control tree for one visible window. The result reports controls_truncated and controls_visited when the scan limit or an inaccessible control prevents a complete read. Match the exact window title; use AutomationId where available when acting on a control.", parameters: { type: "object", properties: { window_title: { type: "string", minLength: 1, maxLength: 500 }, limit: { type: "integer", minimum: 1, maximum: 250 } }, required: ["window_title"], additionalProperties: false } } },
         execute: async (input: unknown, signal?: AbortSignal) => {
           const args = input as { window_title: string; limit?: number };
           if (typeof args?.window_title !== "string" || !args.window_title.trim() || args.window_title.length > 500 || args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 250)) throw new Error("Window title is required; control limit must be 1–250");
-          return parseJson(await run(access, runner, command, powershellPayload({ operation: "inspect", window_title: args.window_title, limit: args.limit ?? 100 }), signal).then((result) => result.stdout.trim()));
+          return parseJson(await run(access, runner, command, powershellPayload({ operation: "inspect", window_title: args.window_title, limit: args.limit ?? 100 }), signal, 5_000).then((result) => result.stdout.trim()));
         }
       },
       desktop_action: {
@@ -157,7 +197,7 @@ export function createDesktopAutomationTools(access: AccessController, enabled: 
           if (args.action !== "focus_window" && !((typeof args.automation_id === "string" && args.automation_id.length > 0 && args.automation_id.length <= 500) || (typeof args.control_name === "string" && args.control_name.length > 0 && args.control_name.length <= 500))) throw new Error("Control actions require an AutomationId or exact control name");
           if (args.action === "set_value" && (typeof args.value !== "string" || args.value.length > 5000)) throw new Error("set_value requires text of at most 5,000 characters");
           const request = { operation: "action", action: args.action, window_title: args.window_title, ...(typeof args.automation_id === "string" ? { automation_id: args.automation_id } : {}), ...(typeof args.control_name === "string" ? { control_name: args.control_name } : {}), ...(typeof args.value === "string" ? { value: args.value } : {}) };
-          return parseJson(await run(access, runner, command, powershellPayload(request), signal).then((result) => result.stdout.trim()));
+          return parseJson(await run(access, runner, command, powershellPayload(request), signal, 5_000).then((result) => result.stdout.trim()));
         }
       }
     };

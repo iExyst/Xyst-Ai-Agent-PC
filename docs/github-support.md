@@ -2,6 +2,9 @@
 
 Xyst uses GitHub's REST API with version header `2026-03-10`. The provider reads the fine-grained token's actual permissions from the API behavior and includes `X-Accepted-GitHub-Permissions` details when GitHub rejects an operation. It does not claim scopes that the token does not have.
 
+Cancelled API requests preserve the original abort error across single requests, pagination, App authentication, workflow-log reads, and downloads. Xyst does not retry a cancelled operation or reclassify it as a network outage; the shared agent loop can therefore persist the run as cancelled. Other connection failures are wrapped with GitHub-specific context. GitHub's primary rate-limit response is identified in the error message; Xyst does not sleep through rate limits or automatically replay writes.
+For HTTP 403/429 rate-limit responses, Xyst reports primary exhaustion from `X-RateLimit-Remaining: 0`, the UTC reset time from `X-RateLimit-Reset`, and secondary-limit guidance from the response message and `Retry-After` header when available. If the server does not supply a retry time, the error recommends waiting at least 60 seconds. Xyst does not sleep or automatically replay a request: writes are never repeated just because the server returned a rate-limit response. Follow [GitHub's rate-limit guidance](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api) before manually retrying.
+
 GitHub Enterprise Server is supported by setting `integrations.github.apiBaseUrl` to its HTTPS REST API base (commonly `https://HOST/api/v3`). Set it with `xyst config set integrations.github.apiBaseUrl '"https://github.example.com/api/v3"' global`, or use Settings → GitHub Server in the desktop. Xyst sends GitHub credentials only to the selected API host; HTTPS Git clone/fetch/push credentials are scoped to that same host. Leave the setting unset to use GitHub.com. Enterprise instances should be checked against their own GitHub API version and permissions policy before production use.
 
 ## Authentication
@@ -10,6 +13,7 @@ GitHub Enterprise Server is supported by setting `integrations.github.apiBaseUrl
 - GitHub App installation token: store `app-id`, `installation-id`, and `private-key` under service `github-app`. Xyst signs a short-lived app JWT and requests an installation token; the installation token is cached only in memory until shortly before expiry.
 - `xyst github auth status` checks the authenticated user or App identity. Public repository reads can work without authentication, subject to GitHub rate limits.
 - Token permission and organization policy are authoritative. For fine-grained personal access tokens, start with repository metadata and the specific `Issues`, `Pull requests`, `Contents`, `Checks`, or `Actions` permissions needed for the requested operation. Workflow dispatch needs Actions write access; creating a PR needs Pull requests write plus repository/branch access.
+- An HTTP 401 invalidates Xyst's cached GitHub identity and App installation token, then explains how to check authentication and replace or verify credentials. Requests are not automatically replayed. GitHub may return HTTP 404 when a private resource is not accessible to the current account; Xyst tells the user to check both existence and repository access rather than claiming the resource is absent.
 
 ## Supported operations
 
@@ -42,7 +46,7 @@ xyst git fetch origin main
 xyst git push origin feature/issue-123
 ```
 
-`git clone` also accepts a local `file:` URL. Clone destination parents must exist and the final destination must be new. Fetch does not merge or rebase. Commit requires an explicit path list; new files must be staged first. Push targets `HEAD` at the named branch and never force-pushes. Server-side branch protections still apply.
+`git clone` also accepts a local `file:` URL. Clone destination parents must exist and the final destination must be new. Fetch does not merge or rebase. Commit requires an explicit path list; new files must be staged first. Push targets `HEAD` at the named branch and never force-pushes. If the remote has commits the local branch lacks, Xyst explains that it rejected the non-fast-forward push and directs the agent to fetch, inspect, and integrate explicitly; it does not merge or retry automatically. Server-side branch protections still apply and may reject pushes for other policy reasons.
 
 The desktop GitHub view can search accessible repositories, list issues or pull requests by state, and open an item on `github.com`. Configure authentication and enable the integration from the CLI first. The desktop browser view performs reads only; write actions continue to use the runtime's explicit integration and access checks.
 
@@ -67,3 +71,5 @@ Webhook requests use HMAC-SHA256 signature verification, a 1 MiB body limit, the
 - [Release asset REST endpoints](https://docs.github.com/en/rest/releases/assets)
 - [GitHub App REST endpoints](https://docs.github.com/en/rest/apps/apps)
 - [REST API troubleshooting and accepted permissions](https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api)
+
+Pagination is bounded and validates server-provided next-page URLs against the configured API origin and base path before reusing credentials. Regression coverage verifies same-origin traversal and rejects external origins and paths outside a GitHub Enterprise `/api/v3` base. Live GHES pagination remains unverified.

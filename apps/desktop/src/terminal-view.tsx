@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { singleFlight } from "./single-flight.js";
 
 export function TerminalView({ jobs, onRefresh }: { jobs: Array<Record<string, any>>; onRefresh: () => Promise<void> }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -60,7 +61,8 @@ export function TerminalView({ jobs, onRefresh }: { jobs: Array<Record<string, a
     setStatus("connecting");
     void window.xyst.invoke("process:resize", { id: terminalId, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
     let active = true;
-    const refresh = async () => {
+    const refresh = singleFlight(async () => {
+      if (!active || document.visibilityState !== "visible" || !document.hasFocus()) return;
       try {
         const job = await window.xyst.invoke("process:show", { id: terminalId });
         if (!active || !job) return;
@@ -73,10 +75,18 @@ export function TerminalView({ jobs, onRefresh }: { jobs: Array<Record<string, a
         }
         setStatus(String(job.state ?? "unknown"));
       } catch (reason) { if (active) setError(reason instanceof Error ? reason.message : String(reason)); }
-    };
+    });
+    const resumeRefresh = () => { void refresh(); };
     void refresh();
-    const timer = setInterval(() => { void refresh(); }, 350);
-    return () => { active = false; clearInterval(timer); };
+    const timer = setInterval(() => { void refresh(); }, 1_000);
+    document.addEventListener("visibilitychange", resumeRefresh);
+    window.addEventListener("focus", resumeRefresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", resumeRefresh);
+      window.removeEventListener("focus", resumeRefresh);
+    };
   }, [terminalId]);
 
   const chooseWorkspace = async () => {
