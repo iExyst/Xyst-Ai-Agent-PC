@@ -9,6 +9,10 @@ Windows-first desktop agent under development. The native app, local engine and 
 - Hermes audit pin: `1e208b280deb18f01d015b0acdf3ef3552d08039` (official `NousResearch/hermes-agent`, audited 2026-11-03)
 - See `docs/progress.md` for evidence and next gates.
 
+## Unsigned Windows development installer
+
+The [verified hosted build](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41795825037) provides an `xaa-windows-installer-unsigned` artifact (14-day retention). Its setup bundles the engine; Python and Node are not runtime prerequisites. LM Studio remains a separate installation. The disposable hosted Windows test verifies installation, actual GUI/API startup, shutdown, uninstall and data preservation. This remains an unsigned development build; upgrade and clean normal-user-machine acceptance are incomplete. See [installer evidence and limitations](docs/releases/windows-installer.md).
+
 ## Development use
 
 Build the native development bundle with `npm ci`, `uv sync`, then `npm run build:native:dev`. Launch `build/native-dev/xaa-desktop.exe`; it starts its bundled engine and connects automatically. Closing the native app stops that engine and keeps saved database records. The bundle is for development and has not passed installer or clean-machine acceptance.

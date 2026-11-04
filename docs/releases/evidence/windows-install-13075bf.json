@@ -1,0 +1,63 @@
+{
+  "run_url": "https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41795825037",
+  "source_commit": "13075bff3aec49d3e6851ef9175d95a5a05e1cd6",
+  "artifact_id": 13304733886,
+  "source_job": "completed/success",
+  "installer_job": "completed/success",
+  "installer_payload_hash_verified_locally": true,
+  "manifest": {
+    "version": "0.1.0",
+    "target": "x86_64-pc-windows-msvc",
+    "signed": false,
+    "binary_patching": false,
+    "artifacts": {
+      "installer": {
+        "filename": "Xyst AI Agent_0.1.0_x64-setup.exe",
+        "bytes": 23502159,
+        "sha256": "f9b771770e0f9b90b2c25228aabd53c81e732baf3201d97501e980085efd1c72"
+      },
+      "desktop": {
+        "filename": "xaa-desktop.exe",
+        "bytes": 8821248,
+        "sha256": "9208adbb46e67da77e4aa25209545b5ef6f362b3e40a5a25560239bc96b9f87d"
+      },
+      "engine": {
+        "filename": "xaa-engine-x86_64-pc-windows-msvc.exe",
+        "bytes": 21691498,
+        "sha256": "7b8260faa72107b121b66c28616e0f38d203145847b4ca0f19d3352590bb476e"
+      }
+    }
+  },
+  "install_smoke": {
+    "unsigned": true,
+    "passed": true,
+    "environment": "disposable hosted Windows runner",
+    "debugging_configuration_removed": true,
+    "installed_boot_verified": true,
+    "user_data_preserved": true,
+    "binaries_removed": true,
+    "uninstaller_exit_code": 0,
+    "installed_binary_hashes_match": true,
+    "installed_binaries_present": true,
+    "runner_elevated": true
+  },
+  "native_boot": {
+    "passed": true,
+    "executable": "D:\\a\\_temp\\xaa-installer-test\\xaa-desktop.exe",
+    "startup_milliseconds": 7632,
+    "restricted_runtime_path": true,
+    "bundled_engine_ready": true,
+    "authentication_required": true,
+    "no_runs_created": true,
+    "model_inference_requested": false,
+    "desktop_exit": true,
+    "engine_stopped": true,
+    "graceful_shutdown": true
+  },
+  "acceptance_report": ".acceptance/4426d408-d97d-461f-af7c-e26d3a072920/report.json",
+  "limitations": [
+    "Unsigned development artifact; no production signing or notices acceptance.",
+    "Elevated disposable hosted runner with app-specific temporary debugging configuration; normal-user and clean end-user machine coverage remain open.",
+    "No LM Studio prediction, upgrade or optional full data removal exercised."
+  ]
+}

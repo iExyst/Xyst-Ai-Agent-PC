@@ -2,6 +2,16 @@
 
 Updated 2026-11-04.
 
+## Current release status
+
+Approximately 10% of the complete objective. This is a rough release-scope estimate, not a claim that any broad phase or Hermes parity gate is complete. Entries below record historical milestones and retain their original test counts/limitations; later evidence supersedes earlier pending statements only for the specific checks it proves.
+
+Working verified slices include real LM Studio discovery/tool use/streaming, durable permission-scoped workspace file operations and recovery, bounded read-only specialist graphs, explicit preference recall/deletion, conversation FTS and controlled versioned procedure evaluation/activation/rollback. Source verification currently passes 294 engine tests plus strict typing, formatting, generated contracts, TypeScript and seven client checks. Real-model and native evidence is indexed in the architecture/evaluation/release documents.
+
+Packaging produces an unsigned installer with a bundled engine; installed hashes, uninstall and data-marker preservation pass on disposable hosted Windows. Hosted run 41795825037 now passes installed GUI boot, authenticated engine readiness, graceful shutdown, uninstall, binary hashes and data-marker preservation. The test applies and removes an app-specific debugging argument on its elevated runner, as required by modern WebView2. Evidence: `docs/releases/evidence/windows-install-13075bf.json`. This is a test-transport diagnosis, not a completed clean-user release gate.
+
+Major remaining work includes restricted generated-command execution/project validation, coding-worktree integration and autonomous review, complete skill-package discovery/drafting, full onboarding/settings, web/MCP, schedules/channels/media/backends, the remaining pinned capability audit, upgrades/recovery/install coverage, signing/notices and complete user documentation. Existing narrow tests do not prove those requirements.
+
 ## Phase 0
 
 - Repository initialized with project scope and initial architecture/API/data contracts.
@@ -308,3 +318,5 @@ Hosted run 41793568220: all 294 engine tests and source checks passed; installer
 Hosted run 41794323298: source checks passed; profile isolation did not resolve boot-test attachment. Final network cause is ECONNREFUSED at 127.0.0.1:19222, with the desktop still running. Installed hashes, uninstall and marker preservation pass; overall smoke remains failed. Added bounded failure-only diagnostics for owned descendant process IDs/names, WebView runtime version and debugging-port flag, listener state and RemoteDebuggingAllowed policy values. Raw process command lines and secret values are not emitted. The diagnostic script was exercised locally, including absent policies/listeners; hosted runtime diagnosis remains pending.
 
 Hosted process diagnostic run 41795070401 confirms WebView2 156.0.4314.50 runs without any remote-debugging-port argument or listener; no RemoteDebuggingAllowed policy was found. Local process comparison .acceptance/cf806663-ad08-4893-817e-6c5b53f4bbe5/ identifies the expected argument/listener on runtime 156.0.4314.58 (process inspection only, not new full acceptance). Microsoft explains that runtime 150+ intentionally ignores WEBVIEW2_* overrides from elevated hosts: https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645. The CI-only install smoke now detects elevation, refuses an existing app-specific HKLM argument value, temporarily sets only xaa-desktop.exe remote-debugging-port=19222, and removes/verifies removal in finally. It does not change RemoteDebuggingAllowed, wildcard app policy or production application code. PowerShell syntax validation passes; hosted verification of this documented configuration path remains pending.
+
+First passing hosted installer acceptance: [run 41795825037](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41795825037) at 13075bff3aec49d3e6851ef9175d95a5a05e1cd6 reports both source and installer jobs completed/success. Downloaded artifact 13304733886 reports installed hashes, GUI boot/authentication, restricted runtime PATH, zero runs/inference, graceful desktop/engine shutdown, uninstall exit 0, binary removal, preserved data marker and temporary app-debugging configuration removal. Startup: 7632 ms. Installer payload SHA-256 was independently checked against the downloaded manifest. Durable report: docs/releases/evidence/windows-install-13075bf.json. Installer remains unsigned; clean normal-user setup, upgrades, optional full user-data removal, signing and notices remain open.
