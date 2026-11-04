@@ -1,0 +1,9 @@
+# Hosted Windows source checks
+
+[Successful run 41789006353](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41789006353) verified commit 365780b3d1b535e379afe9698410634bf8524622. GitHub's run and job APIs both report completed/success; the pytest step also reports success. Local source checks currently have 294 passing engine tests. The hosted test count is not inferred from step status.
+
+The configured windows-latest job checks a fresh checkout using locked uv dependencies, Ruff lint/format, strict Pyright over both engine and scripts, exported OpenAPI consistency, npm ci, generated desktop types, TypeScript, seven client tests and pytest. It passed dependency setup, contract checks and every configured verification step. The workflow has contents:read permissions.
+
+[Initial failed run 41788808844](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41788808844) verified setup/Ruff but stopped at full diagnostic typing. The exact CI command reproduced 39 local errors in four older diagnostics: benchmark admission callback compatibility, frozen-process wrapper annotations, read-crash optional-result narrowing and write-crash override parameter names. Those were corrected without weakening the workflow. Earlier local engine-only/selected-diagnostic typing did not establish the broader check. Actual frozen cancellation regression remains recorded at .acceptance/6d48e55c-21e3-4596-be88-027aa4399526/.
+
+This job does not build Tauri/PyInstaller, create an installer, run browser tests, use LM Studio or prove clean-Windows installation/upgrade/uninstall. Local native/model/browser evidence is documented separately in native-acceptance.md and the architecture/evaluation records. Those release gates remain incomplete.
