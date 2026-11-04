@@ -29,6 +29,7 @@ from xaa.api.contracts import (
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
+from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
@@ -78,6 +79,7 @@ class CreateRunRequest(BaseModel):
     max_total_tokens: int | None = Field(default=None, ge=1, le=100_000_000, strict=True)
     max_output_tokens: int | None = Field(default=None, ge=1, le=1_000_000, strict=True)
     procedure_trial: SkillTrial | None = None
+    command_grant: CommandGrant | None = None
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
@@ -375,6 +377,8 @@ def create_app(
         payload: CreateRunRequest, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
         try:
+            if payload.command_grant is not None:
+                execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(
                 objective=payload.objective,
                 acceptance_criteria=payload.acceptance_criteria,
@@ -389,7 +393,14 @@ def create_app(
                 procedure_trial=payload.procedure_trial.model_dump()
                 if payload.procedure_trial
                 else None,
+                command_grant=payload.command_grant.model_dump() if payload.command_grant else None,
             )
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=409, detail="Command workspace is unavailable."
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         if record["model"]:

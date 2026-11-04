@@ -521,6 +521,12 @@ class RunStore:
         if row is None:
             return None
         record: dict[str, Any] = dict(row)
+        with self._connection() as connection:
+            grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='execution.granted'",
+                (run_id,),
+            ).fetchall()
+        record["command_grant"] = json.loads(grants[0][0])["grant"] if len(grants) == 1 else None
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (
             {

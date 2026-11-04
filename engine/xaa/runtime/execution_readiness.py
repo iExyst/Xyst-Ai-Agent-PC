@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.cleanup import finish_cleanup
-from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint, response_object
 
@@ -95,6 +95,27 @@ class ExecutionReadiness:
     def __init__(self) -> None:
         self.lock = asyncio.Lock()
         self.cache: dict[str, tuple[float, ReadinessResult]] = {}
+
+    def require_grant(self, grant: CommandGrant) -> None:
+        """Accept only a current successful server-observed check, never client claims."""
+        cached = self.cache.get(grant.distribution)
+        try:
+            digest = profile_fingerprint()[0]
+        except OSError as exc:
+            raise PermissionError(
+                "Sandbox profile is unavailable. Check the sandbox again."
+            ) from exc
+        if (
+            not SUPPORTED
+            or cached is None
+            or cached[0] <= time.monotonic()
+            or cached[1].expires_at <= datetime.now(UTC)
+            or cached[1].state != "ready"
+            or cached[1].profile_sha256 != grant.profile_sha256
+            or grant.profile_sha256 != digest
+            or tuple(cached[1].checks) != CHECKS
+        ):
+            raise PermissionError("A current successful sandbox check is required for this grant.")
 
     async def check(self, request: ReadinessRequest) -> ReadinessResult:
         distribution = request.distribution

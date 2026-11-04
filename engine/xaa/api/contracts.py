@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskStatus
 from xaa.runtime.verification import FileContentCheck
@@ -36,6 +37,7 @@ class RunRecord(BaseModel):
     limits: RunLimits
     file_checks: list[FileContentCheck]
     procedure_trial: SkillTrialRecord | None = None
+    command_grant: CommandGrant | None = None
 
 
 class RunEvent(BaseModel):

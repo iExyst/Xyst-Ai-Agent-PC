@@ -5,7 +5,7 @@ import type {EngineClient} from './api/client.ts';
 type Inventory=components['schemas']['DistributionInventory'];
 type Result=components['schemas']['ReadinessResult'];
 
-export function ExecutionSetup({client}:{client:EngineClient}) {
+export function ExecutionSetup({client,onReady}:{client:EngineClient;onReady:(result:Result|undefined)=>void}) {
   const [inventory,setInventory]=useState<Inventory>();
   const [selected,setSelected]=useState('');
   const [result,setResult]=useState<Result>();
@@ -16,6 +16,7 @@ export function ExecutionSetup({client}:{client:EngineClient}) {
   useEffect(()=>{setInventory(undefined);setSelected('');setResult(undefined);setBusy(false);setError('');return()=>request.current?.abort();},[client]);
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
   const expired=!!result&&now>=Date.parse(result.expires_at);
+  useEffect(()=>{onReady(result?.state==='ready'&&!expired?result:undefined);},[result,expired,onReady]);
   async function load() {
     request.current?.abort();const controller=new AbortController();request.current=controller;
     setBusy(true);setError('');setResult(undefined);setSelected('');

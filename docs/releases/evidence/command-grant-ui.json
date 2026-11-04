@@ -1,0 +1,37 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "profile_sha256": "6cfb2f0b92851ba2fc38cf7f1f04a59af57f310f7cadbe474cfc513e83ebc712",
+  "checks": [
+    "private_input",
+    "unprivileged_identity",
+    "seccomp_and_capabilities",
+    "readonly_runtime",
+    "private_tmpfs",
+    "host_mounts_absent",
+    "credential_environment_absent",
+    "socket_families_denied",
+    "nested_namespaces_denied",
+    "kernel_resource_gate",
+    "cleanup_confirmed"
+  ],
+  "run_creates": 1,
+  "readiness_requests": 1,
+  "model": "qwen/qwen3.5-9b",
+  "command_run_verified": true,
+  "scope": "Edge UI with real source API/WSL and optional real model; test connection shim, not native IPC",
+  "run_id": "b4cfad01-cbab-4aca-b6b9-26cb9df18313",
+  "grant": {
+    "backend": "wsl-bubblewrap-v1",
+    "distribution": "Ubuntu-24.04",
+    "profile_sha256": "6cfb2f0b92851ba2fc38cf7f1f04a59af57f310f7cadbe474cfc513e83ebc712",
+    "max_seconds": 30
+  },
+  "state": "verifying",
+  "launch_events": 1,
+  "completed_commands": 1,
+  "unresolved_commands": 0,
+  "original_project_unchanged": true,
+  "next_run_checkbox_reset": true,
+  "screenshot_visually_reviewed": true
+}

@@ -2,7 +2,7 @@ import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.ts
 import {RunResources} from './RunResources.tsx';
 import { useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { EngineClient, type Run, type Artifact, type Plan } from './api/client.ts';
+import { EngineClient, EngineRequestError, type Run, type Artifact, type Plan } from './api/client.ts';
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { SkillsPanel, type ProcedureTrialSelection } from './SkillsPanel.tsx';
@@ -12,6 +12,7 @@ import { RunReviewPanel } from './RunReviewPanel.tsx';
 import { SavedRunsPanel } from './SavedRunsPanel.tsx';
 import { ActiveRunPanel } from './ActiveRunPanel.tsx';
 import { ExecutionSetup } from './ExecutionSetup.tsx';
+import type {components} from './generated/api.js';
 
 function App() {
   const [token, setToken] = useState('');
@@ -19,11 +20,14 @@ function App() {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState('');
   const [workspace, setWorkspace] = useState('');
+  const [sandbox,setSandbox]=useState<components['schemas']['ReadinessResult']>();
+  const [commandAllowed,setCommandAllowed]=useState(false);
   const [limits, setLimits] = useState<LimitInputs>({max_iterations:'8', max_seconds:'900', max_total_tokens:'', max_output_tokens:''});
   const parsedLimits = parseLimits(limits);
   const [procedureTrial,setProcedureTrial]=useState<ProcedureTrialSelection>();
   const [usageRefresh, setUsageRefresh] = useState(0);
   const [mode, setMode] = useState<'observe' | 'workspace'>('observe');
+  useEffect(()=>setCommandAllowed(false),[sandbox,workspace,mode,client]);
   const [checkPath, setCheckPath] = useState('');
   const [expectedContent, setExpectedContent] = useState('');
   const [objective, setObjective] = useState('');
@@ -100,8 +104,10 @@ function App() {
         if (event.event_type === 'artifact.created') {const saved=await client.artifacts(next.id,controller.signal);if(!controller.signal.aborted)setArtifacts(saved);}
         if(controller.signal.aborted)break;
         const labels: Record<string, string> = { 'run.queued': 'Objective queued', 'tool.intended': 'Workspace operation started', 'tool.completed': 'Workspace operation saved', 'model.message': 'Model response saved', 'run.lease_acquired': 'Worker started', 'run.lease_released': 'Worker stopped', 'verification.feedback': 'File check failed; correction requested', 'verification.passed': 'File checks passed; review pending' };
-        Object.assign(labels, { 'tool.failed': 'Workspace operation stopped before writing', 'plan.rejected': 'Plan proposal rejected; correction needed', 'plan.saved': 'Task plan saved', 'task.claimed': 'Specialist task started', 'task.blocked': 'Specialist task blocked', 'task.result': 'Specialist result submitted', 'task.verification': 'Specialist file evidence checked' });
+        Object.assign(labels, { 'tool.failed': 'Workspace operation needs review', 'plan.rejected': 'Plan proposal rejected; correction needed', 'plan.saved': 'Task plan saved', 'task.claimed': 'Specialist task started', 'task.blocked': 'Specialist task blocked', 'task.result': 'Specialist result submitted', 'task.verification': 'Specialist file evidence checked' });
+        Object.assign(labels, {'execution.granted':'Isolated commands authorized for this run','execution.reserved':'Sandbox command reserved','execution.snapshot':'Private project copy captured','tool.executing':'Workspace operation executing','execution.completed':'Sandbox command result saved','execution.reconciled':'Interrupted command reconciled; inspect verification status','model.answer_requested':'Public answer requested; tools disabled for this continuation','diagnostic.inference.started':'Checking model tool support','diagnostic.inference.completed':'Model tool check response saved'});
         const reasons: Record<string,string> = {
+          model_no_public_answer: 'The model returned no public answer after one answer-only retry. Inspect the saved evidence; command results were not replayed.',
           saved_candidate_has_no_public_text: 'The saved response has no public candidate text. Inspect the evidence before starting a new objective.',
           context_budget_exceeded: 'The estimated request and output allowance do not fit the loaded context. Reduce input or the output limit, or load a larger context.',
           specialist_tasks_blocked: 'Specialist work is blocked and no candidate or ready task remains. Inspect the task plan before starting a new objective.',
@@ -119,6 +125,7 @@ function App() {
           const message = event.payload.message;
           if (message && typeof message === 'object' && 'content' in message && typeof message.content === 'string') setAnswer(message.content);
         }
+        if(event.event_type==='run.state_changed')setHistoryRefresh(value=>value+1);
         if (event.event_type.startsWith('run.')) {const saved=await client.getRun(next.id,controller.signal);if(!controller.signal.aborted)setRun(saved);}
       }
     } catch (failure) { if (!controller.signal.aborted) setError(String(failure)); }
@@ -134,9 +141,10 @@ function App() {
   }
   async function submit() {
     if (!client || !parsedLimits) return;
+    if(commandAllowed&&(!sandbox||sandbox.state!=='ready'||!sandbox.profile_sha256||mode!=='workspace'||Date.now()>=Date.parse(sandbox.expires_at))){setCommandAllowed(false);setError('Sandbox authorization expired. Check the sandbox and select the command permission again.');return;}
     setBusy(true); setError(''); setActivity([]); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
-    try { const next = await client.createRun({ objective, model, workspace, mode, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setProcedureTrial(undefined);setHistoryRefresh(value=>value+1); void watch(next); }
-    catch (failure) { setError(String(failure)); } finally { setBusy(false); }
+    try { const next = await client.createRun({ objective, model, workspace, mode, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setCommandAllowed(false);setProcedureTrial(undefined);setHistoryRefresh(value=>value+1); void watch(next); }
+    catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
   async function dispatchPlan() {
     if (!client || !run) return;
@@ -153,12 +161,12 @@ function App() {
     {!client ? <section><h2>Connect to the engine</h2><p>Start the local engine, then enter its API token. The token stays in this window’s memory.</p><label>Engine token<input type="password" value={token} onChange={event => setToken(event.target.value)} /></label><button onClick={connect} disabled={busy || token.length < 32}>Connect</button></section> : <>
       <section><details><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>
       <section><details><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={setProcedureTrial}/></details></section>
-      <ExecutionSetup client={client}/>
+      <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
       <section><h2>File check (optional)</h2><p>Compare a file with the exact contents you supply, including whitespace. A mismatch asks the agent to correct its work within the run budget.</p><label>File to verify<input value={checkPath} onChange={event => setCheckPath(event.target.value)} placeholder="config.txt" /></label><label htmlFor="expected-file-content">Expected file contents</label><textarea id="expected-file-content" value={expectedContent} onChange={event => setExpectedContent(event.target.value)} /></section>
       {procedureTrial&&<section aria-label="Selected procedure"><p>{procedureTrial.purpose==='active_use'?'Active procedure':'Unverified procedure trial'}: {procedureTrial.name} &middot; version {procedureTrial.version}. Its requirements must fit the selected workspace and mode.</p><button onClick={()=>setProcedureTrial(undefined)}>Remove selected procedure</button></section>}
-      <section><h2>New objective</h2><label>Local model<select value={model} onChange={event => setModel(event.target.value)}><option value="">Choose a local model</option>{models.map(id => <option key={id}>{id}</option>)}</select></label><button disabled={busy} onClick={()=>void refreshModels()}>Refresh models</button><label>Workspace path<input value={workspace} onChange={event => setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><label htmlFor="run-objective">Objective</label><textarea id="run-objective" value={objective} onChange={event => setObjective(event.target.value)} /><ResourceLimits inputs={limits} onChange={setLimits}/><p>Final answers await independent verification</p><button onClick={submit} disabled={busy || !parsedLimits || !objective.trim() || !model || !workspace.trim()}>Start objective</button></section>
+      <section><h2>New objective</h2><label>Local model<select value={model} onChange={event => setModel(event.target.value)}><option value="">Choose a local model</option>{models.map(id => <option key={id}>{id}</option>)}</select></label><button disabled={busy} onClick={()=>void refreshModels()}>Refresh models</button><label className="procedure-permission"><input type="checkbox" checked={commandAllowed} disabled={busy||mode!=='workspace'||!workspace.trim()||!sandbox} onChange={event=>setCommandAllowed(event.target.checked)}/>Allow isolated commands for this next run</label><p>Requires Workspace mode and a current sandbox check. Commands receive a copy of the selected project, without network access, for up to 30 seconds each. Command changes are discarded. This grant stays with the created run when paused or resumed; each new run requires a new selection.</p><label>Workspace path<input value={workspace} onChange={event => setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><label htmlFor="run-objective">Objective</label><textarea id="run-objective" value={objective} onChange={event => setObjective(event.target.value)} /><ResourceLimits inputs={limits} onChange={setLimits}/><p>Final answers await independent verification</p><button onClick={submit} disabled={busy || !parsedLimits || !objective.trim() || !model || !workspace.trim()}>Start objective</button></section>
       {run && <ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} onControl={action=>void control(action)}/>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
       {artifacts.length > 0 && <section><h2>Files and artifacts</h2><ul>{artifacts.map(item => <li key={item.id}><button onClick={async () => { try { setPreview(await client.artifactPreview(item.id)); } catch (failure) { setError(String(failure)); } }}>View {item.provenance}</button> {item.size_bytes} bytes</li>)}</ul>{preview && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{preview}</pre>}</section>}

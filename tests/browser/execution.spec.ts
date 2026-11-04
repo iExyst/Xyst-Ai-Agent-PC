@@ -17,6 +17,7 @@ test('sandbox selection checks controls without granting a run, including unavai
     }
     return route.fulfill({status:404,headers});
   });
+  await page.clock.install();
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByText('Command sandbox setup',{exact:true}).click();
@@ -31,6 +32,20 @@ test('sandbox selection checks controls without granting a run, including unavai
   modelsAvailable=true;await page.getByRole('button',{name:'Refresh models',exact:true}).click();
   await expect(page.getByRole('option',{name:'fixture/model',exact:true})).toHaveCount(1);
   await expect(page.getByLabel('Local model')).toHaveValue('');
+  const permission=page.getByLabel('Allow isolated commands for this next run');
+  await expect(permission).toBeDisabled();
+  await page.getByLabel('Workspace permissions').selectOption('workspace');
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await permission.check();await expect(permission).toBeChecked();
+  await page.getByLabel('Workspace path').fill('C:\\other');
+  await expect(permission).not.toBeChecked();
+  await permission.check();
+  await page.getByLabel('Workspace permissions').selectOption('observe');
+  await expect(permission).not.toBeChecked();await expect(permission).toBeDisabled();
+  await page.getByLabel('Workspace permissions').selectOption('workspace');await permission.check();
+  await page.clock.fastForward(61000);
+  await expect(permission).not.toBeChecked();await expect(permission).toBeDisabled();
+  await expect(page.getByText('Check expired. Check again to refresh status.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Find installed distributions'}).click();
   await expect(page.getByText('Sandbox check passed.',{exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Check sandbox',exact:true})).toBeDisabled();

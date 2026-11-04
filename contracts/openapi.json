@@ -72,6 +72,40 @@
         "title": "ChatRequest",
         "type": "object"
       },
+      "CommandGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "const": "wsl-bubblewrap-v1",
+            "default": "wsl-bubblewrap-v1",
+            "title": "Backend",
+            "type": "string"
+          },
+          "distribution": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "max_seconds": {
+            "default": 30,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Max Seconds",
+            "type": "integer"
+          },
+          "profile_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Profile Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "profile_sha256"
+        ],
+        "title": "CommandGrant",
+        "type": "object"
+      },
       "CreateRunRequest": {
         "additionalProperties": false,
         "properties": {
@@ -82,6 +116,16 @@
             "maxItems": 50,
             "title": "Acceptance Criteria",
             "type": "array"
+          },
+          "command_grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandGrant"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "file_checks": {
             "items": {
@@ -1084,6 +1128,16 @@
             },
             "title": "Acceptance Criteria",
             "type": "array"
+          },
+          "command_grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandGrant"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "format": "date-time",

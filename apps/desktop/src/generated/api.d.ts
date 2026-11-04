@@ -667,10 +667,29 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** CommandGrant */
+        CommandGrant: {
+            /**
+             * Backend
+             * @default wsl-bubblewrap-v1
+             * @constant
+             */
+            backend: "wsl-bubblewrap-v1";
+            /** Distribution */
+            distribution: string;
+            /**
+             * Max Seconds
+             * @default 30
+             */
+            max_seconds: number;
+            /** Profile Sha256 */
+            profile_sha256: string;
+        };
         /** CreateRunRequest */
         CreateRunRequest: {
             /** Acceptance Criteria */
             acceptance_criteria?: string[];
+            command_grant?: components["schemas"]["CommandGrant"] | null;
             /** File Checks */
             file_checks?: components["schemas"]["FileContentCheck"][];
             /**
@@ -1042,6 +1061,7 @@ export interface components {
         RunRecord: {
             /** Acceptance Criteria */
             acceptance_criteria: string[];
+            command_grant?: components["schemas"]["CommandGrant"] | null;
             /**
              * Created At
              * Format: date-time
