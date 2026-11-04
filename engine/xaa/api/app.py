@@ -37,6 +37,8 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.run_review import RunReviewDecision, review_run
 from xaa.runtime.states import RunState
 from xaa.runtime.supervisor import RunSupervisor
+from xaa.runtime.task_integration import IntegrationPreview
+from xaa.runtime.task_integration import preview as integration_preview
 from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
 from xaa.runtime.tool_worker import FilesystemWorkerError
 from xaa.runtime.verification import FileContentCheck
@@ -453,6 +455,10 @@ def create_app(
             return candidate_evidence(run_store, run_id, task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Task not found.") from exc
+        except (ValueError, OSError) as exc:
+            raise HTTPException(
+                status_code=409, detail="Private specialist evidence could not be verified."
+            ) from exc
 
     @app.post("/runs/{run_id}/plan/dispatch", response_model=RunRecord, status_code=202)
     async def dispatch_plan(run_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
@@ -482,6 +488,29 @@ def create_app(
             run_store.release_lease(run_id, token)
             raise
         return record
+
+    @app.post(
+        "/runs/{run_id}/tasks/{task_id}/integration-preview", response_model=IntegrationPreview
+    )
+    async def preview_task_integration(
+        run_id: str, task_id: str, _: None = Depends(authenticate)
+    ) -> IntegrationPreview:
+        token = run_store.acquire_lease(run_id, "local-user-integration-preview", seconds=180)
+        if token is None:
+            raise HTTPException(
+                status_code=409, detail="The run is still owned or is not awaiting review."
+            )
+        try:
+            return await integration_preview(run_store, run_id, task_id, token)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found.") from exc
+        except (ValueError, OSError, LeaseLost, FilesystemWorkerError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Integration preview could not be verified. Check the project and refresh the preview.",
+            ) from exc
+        finally:
+            run_store.release_lease(run_id, token)
 
     @app.post("/runs/{run_id}/tasks/{task_id}/review", response_model=PlanRecord)
     async def decide_candidate(

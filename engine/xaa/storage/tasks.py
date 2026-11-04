@@ -23,12 +23,12 @@ class TaskStore:
         parent_token: str,
         task_id: str,
         task_token: str,
-        kind: Literal["task.model.message", "task.tool.result"],
+        kind: Literal["task.model.message", "task.tool.result", "task.response_requested"],
         payload: dict[str, Any],
     ) -> None:
         """Fence read-only specialist output in the same transaction as its publication."""
         if (
-            kind not in {"task.model.message", "task.tool.result"}
+            kind not in {"task.model.message", "task.tool.result", "task.response_requested"}
             or payload.get("task_id") != task_id
         ):
             raise ValueError(

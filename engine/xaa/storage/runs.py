@@ -19,7 +19,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 4
+DATABASE_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -142,9 +142,14 @@ class RunStore:
         return dict(row) if row is not None else None
 
     def __init__(
-        self, path: Path | None = None, *, task_scope: TaskReadScope | None = None
+        self,
+        path: Path | None = None,
+        *,
+        task_scope: TaskReadScope | None = None,
+        internal_tools: bool = False,
     ) -> None:
         self.task_scope = task_scope
+        self.internal_tools = internal_tools
         self.path = path or default_database_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
@@ -833,7 +838,7 @@ class RunStore:
                 connection,
                 run_id,
                 "tool.intended",
-                {"call_id": call_id, "tool": tool, "internal": internal},
+                {"call_id": call_id, "tool": tool, "internal": internal or self.internal_tools},
             )
             return True
 
@@ -850,6 +855,16 @@ class RunStore:
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.require_lease(connection, run_id, token)
+            internal = (
+                internal
+                or self.internal_tools
+                or connection.execute(
+                    "SELECT 1 FROM run_events WHERE run_id=? AND event_type='tool.intended' "
+                    "AND json_extract(payload,'$.call_id')=? AND json_extract(payload,'$.internal')=1",
+                    (run_id, call_id),
+                ).fetchone()
+                is not None
+            )
             changed = connection.execute(
                 "UPDATE tool_calls SET state = 'completed', result = ?, updated_at = ? "
                 "WHERE provider_call_id = ? AND run_id = ? AND state = 'intended'",
@@ -888,7 +903,12 @@ class RunStore:
                 connection,
                 run_id,
                 "tool.failed",
-                {"call_id": call_id, "internal": False, "effect": "not_started", "code": code},
+                {
+                    "call_id": call_id,
+                    "internal": self.internal_tools,
+                    "effect": "not_started",
+                    "code": code,
+                },
             )
         return result
 

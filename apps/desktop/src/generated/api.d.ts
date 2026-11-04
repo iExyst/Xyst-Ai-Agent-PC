@@ -461,6 +461,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/tasks/{task_id}/integration-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Task Integration */
+        post: operations["preview_task_integration_runs__run_id__tasks__task_id__integration_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/tasks/{task_id}/review": {
         parameters: {
             query?: never;
@@ -850,6 +867,46 @@ export interface components {
             name: string;
             /** Supported By Profile */
             supported_by_profile: boolean;
+        };
+        /** IntegrationFile */
+        IntegrationFile: {
+            /** Base Sha256 */
+            base_sha256: string | null;
+            /** Conflict */
+            conflict: boolean;
+            /** Current Excerpt */
+            current_excerpt: string;
+            /** Current Excerpt Truncated */
+            current_excerpt_truncated: boolean;
+            /** Current Sha256 */
+            current_sha256: string | null;
+            /** Diff */
+            diff: string;
+            /** Diff Truncated */
+            diff_truncated: boolean;
+            /** Path */
+            path: string;
+            /** Proposed Sha256 */
+            proposed_sha256: string;
+        };
+        /** IntegrationPreview */
+        IntegrationPreview: {
+            /** Changes */
+            changes: components["schemas"]["IntegrationFile"][];
+            /** Task Id */
+            task_id: string;
+        };
+        /** IntegrationResolution */
+        IntegrationResolution: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "current" | "proposed";
+            /** Expected Current Sha256 */
+            expected_current_sha256: string | null;
+            /** Path */
+            path: string;
         };
         /** MemoryRecord */
         MemoryRecord: {
@@ -1359,6 +1416,8 @@ export interface components {
             status: "queued" | "running" | "verifying" | "completed" | "failed" | "blocked" | "cancelled";
             /** Task Id */
             task_id: string;
+            /** Workspace Changes */
+            workspace_changes?: components["schemas"]["TaskWorkspaceChange"][];
         };
         /** TaskEvidence */
         TaskEvidence: {
@@ -1375,6 +1434,11 @@ export interface components {
         };
         /** TaskReviewDecision */
         TaskReviewDecision: {
+            /**
+             * Changes Confirmed
+             * @default false
+             */
+            changes_confirmed: boolean;
             /** Confirmed Criteria */
             confirmed_criteria?: number[];
             /**
@@ -1386,6 +1450,21 @@ export interface components {
             evidence_call_ids?: string[];
             /** Rationale */
             rationale: string;
+            /** Resolutions */
+            resolutions?: components["schemas"]["IntegrationResolution"][];
+        };
+        /** TaskWorkspaceChange */
+        TaskWorkspaceChange: {
+            /** Base Sha256 */
+            base_sha256: string | null;
+            /** Diff */
+            diff: string;
+            /** Diff Truncated */
+            diff_truncated: boolean;
+            /** Path */
+            path: string;
+            /** Proposed Sha256 */
+            proposed_sha256: string;
         };
         /** ToolCall */
         ToolCall: {
@@ -2342,6 +2421,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskCandidate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_task_integration_runs__run_id__tasks__task_id__integration_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationPreview"];
                 };
             };
             /** @description Validation Error */

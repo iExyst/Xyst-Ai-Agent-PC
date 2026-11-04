@@ -1,0 +1,524 @@
+import asyncio
+import hashlib
+import json
+import time
+
+import pytest
+from xaa.providers.lm_studio import LMStudioProvider
+from xaa.runtime.specialists import SpecialistRunner
+from xaa.runtime.task_graph import TaskDefinition
+from xaa.runtime.task_review import candidate_evidence
+from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
+from xaa.storage.runs import RunStore
+from xaa.storage.task_workspaces import TaskWorkspaces
+from xaa.storage.tasks import TaskStore
+
+
+def setup(root):
+    project = root / "project"
+    project.mkdir()
+    (project / "shared.txt").write_bytes(b"original\n")
+    store = RunStore(root / "data" / "db.sqlite3")
+    run_id = store.create_run(
+        objective="Independent edits",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model="fixture",
+        max_iterations=10,
+    )["id"]
+    owner = store.acquire_lease(run_id, "parent", seconds=300)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [
+            TaskDefinition(
+                id=name,
+                objective=name,
+                permissions=["workspace.read", "workspace.write"],
+                max_iterations=3,
+            )
+            for name in ("a", "b")
+        ],
+    )
+    return store, run_id, owner, tasks, project
+
+
+async def test_real_workers_keep_each_private_edit_and_original_project_separate(
+    workspace_tmp_path,
+):
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+    claims = [tasks.claim_ready(run_id, owner) for _ in range(2)]
+
+    async def call(claim, identity, op, args):
+        return await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            identity,
+            op,
+            args,
+            idempotency_key=identity,
+            internal=True,
+            task_id=claim["task"]["local_id"],
+            task_token=claim["token"],
+        )
+
+    await asyncio.gather(
+        *(call(claim, "init-" + claim["task"]["local_id"], "branch_init", {}) for claim in claims)
+    )
+    digest = hashlib.sha256(b"original\n").hexdigest()
+    await asyncio.gather(
+        *(
+            call(
+                claim,
+                "edit-" + claim["task"]["local_id"],
+                "branch_write",
+                {
+                    "path": "shared.txt",
+                    "content": claim["task"]["local_id"] + " version\n",
+                    "expected_sha256": digest,
+                },
+            )
+            for claim in claims
+        )
+    )
+    for claim in claims:
+        name = claim["task"]["local_id"]
+        result = await call(claim, "read-" + name, "branch_read", {"path": "shared.txt"})
+        assert result["text"] == name + " version\n"
+        changes = TaskWorkspaces(store).changes(run_id, name)
+        assert len(changes) == 1 and changes[0]["base_sha256"] == digest
+        assert name + " version" in changes[0]["diff"]
+    assert (project / "shared.txt").read_bytes() == b"original\n"
+    assert store.conversation_messages(run_id) == []
+    assert not store.unresolved_tool_calls(run_id)
+    with pytest.raises(FilesystemWorkerError):
+        await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            "different-call-same-key",
+            "branch_read",
+            {"path": "shared.txt"},
+            idempotency_key="read-a",
+            internal=True,
+            task_id="a",
+            task_token=claims[0]["token"],
+        )
+    with pytest.raises(FilesystemWorkerError):
+        await call(
+            claims[0],
+            "edit-a",
+            "branch_write",
+            {"path": "shared.txt", "content": "duplicate", "expected_sha256": digest},
+        )
+    with pytest.raises(FilesystemWorkerError):
+        await call(claims[0], "escape", "branch_create", {"path": "../escape.txt", "content": "no"})
+    await call(
+        claims[0],
+        "newline-only",
+        "branch_write",
+        {
+            "path": "shared.txt",
+            "content": "a version",
+            "expected_sha256": hashlib.sha256(b"a version\n").hexdigest(),
+        },
+    )
+    newline_diff = TaskWorkspaces(store).changes(run_id, "a")[0]["diff"]
+    assert "+a version\n\\ No newline at end of file" in newline_diff
+    with store.connection() as c:
+        c.execute(
+            "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
+            (run_id + ":a",),
+        )
+    with pytest.raises(FilesystemWorkerError):
+        await call(
+            claims[0],
+            "stale",
+            "branch_write",
+            {
+                "path": "shared.txt",
+                "content": "stale",
+                "expected_sha256": hashlib.sha256(b"a version\n").hexdigest(),
+            },
+        )
+    assert not (project.parent / "escape.txt").exists()
+
+
+@pytest.mark.parametrize("failure", ["known_no_effect", "unknown_effect", "completed"])
+async def test_integration_recovery_never_replays_uncertain_or_completed_writes(
+    workspace_tmp_path, monkeypatch, failure
+):
+    from xaa.runtime import task_integration
+    from xaa.runtime.states import RunState
+
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+    claim = tasks.claim_ready(run_id, owner)
+    for identity, operation, arguments in [
+        ("init", "branch_init", {}),
+        (
+            "write",
+            "branch_write",
+            {
+                "path": "shared.txt",
+                "content": "approved\n",
+                "expected_sha256": hashlib.sha256(b"original\n").hexdigest(),
+            },
+        ),
+    ]:
+        await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            identity,
+            operation,
+            arguments,
+            idempotency_key=identity,
+            internal=True,
+            task_id="a",
+            task_token=claim["token"],
+        )
+    with store.connection() as connection:
+        connection.execute("UPDATE tasks SET status='verifying' WHERE id=?", (run_id + ":a",))
+    for state in (RunState.PLANNING, RunState.RUNNING, RunState.VERIFYING):
+        store.transition(run_id, state, owner=owner)
+    actual_execute = task_integration.execute_filesystem
+    attempts = []
+
+    async def interrupted(*args, **kwargs):
+        if args[4] != "integrate":
+            return await actual_execute(*args, **kwargs)
+        attempts.append(args[3])
+        if failure == "completed":
+            await actual_execute(*args, **kwargs)
+        else:
+            store.record_tool_intent(
+                run_id,
+                owner,
+                call_id=args[3],
+                tool="workspace.write_file",
+                version="1",
+                arguments={},
+                idempotency_key=args[3],
+                internal=True,
+            )
+            if failure == "known_no_effect":
+                store.record_tool_failure(
+                    run_id, owner, args[3], code="FixturePrecondition", message="No write started"
+                )
+        raise RuntimeError("Simulated interruption before review commitment")
+
+    monkeypatch.setattr(task_integration, "execute_filesystem", interrupted)
+    with pytest.raises(RuntimeError, match="Simulated interruption"):
+        await task_integration.integrate_changes(store, run_id, "a", owner, [])
+    monkeypatch.setattr(task_integration, "execute_filesystem", actual_execute)
+    if failure == "unknown_effect":
+        with pytest.raises(ValueError, match="reconciliation"):
+            await task_integration.integrate_changes(store, run_id, "a", owner, [])
+        assert (project / "shared.txt").read_bytes() == b"original\n"
+        assert len(store.unresolved_tool_calls(run_id)) == 1
+    else:
+        await task_integration.integrate_changes(store, run_id, "a", owner, [])
+        assert (project / "shared.txt").read_bytes() == b"approved\n"
+        assert not store.unresolved_tool_calls(run_id)
+        with store.connection() as connection:
+            writes = connection.execute(
+                "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? AND provider_call_id LIKE 'integrate-%'",
+                (run_id,),
+            ).fetchall()
+        assert len(writes) == (2 if failure == "known_no_effect" else 1)
+        assert sum(row["state"] == "completed" for row in writes) == 1
+        if failure == "known_no_effect":
+            assert writes[0]["provider_call_id"] != writes[1]["provider_call_id"]
+
+
+async def test_specialists_produce_real_private_changes_without_parent_history_pollution(
+    workspace_tmp_path,
+):
+    store, run_id, owner, _tasks, project = setup(workspace_tmp_path)
+
+    class Editor(LMStudioProvider):
+        async def chat(self, *, model, messages, tools=None, **kwargs):
+            objective = json.loads(messages[1]["content"])["objective"]
+            if messages[-1]["role"] == "user":
+                function = {
+                    "name": "workspace_read_file",
+                    "arguments": json.dumps({"path": "shared.txt"}),
+                }
+            elif messages[-1]["tool_call_id"] == "read":
+                result = json.loads(messages[-1]["content"])
+                function = {
+                    "name": "workspace_write_file",
+                    "arguments": json.dumps(
+                        {
+                            "path": "shared.txt",
+                            "content": objective + " version\n",
+                            "expected_sha256": result["sha256"],
+                        }
+                    ),
+                }
+            else:
+                assert json.loads(messages[-1]["content"])["effect"] == "private_copy_only"
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "Changed shared.txt in my private copy",
+                            }
+                        }
+                    ]
+                }
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "read"
+                                    if function["name"] == "workspace_read_file"
+                                    else "write",
+                                    "type": "function",
+                                    "function": function,
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+
+    provider = Editor()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, owner, deadline=time.monotonic() + 45
+        )
+        assert all(row["status"] == "verifying" for row in statuses)
+        for name in ("a", "b"):
+            candidate = candidate_evidence(store, run_id, name)
+            assert candidate["workspace_changes"][0]["path"] == "shared.txt"
+            assert candidate["evidence"][0]["sha256"] == hashlib.sha256(b"original\n").hexdigest()
+        assert (project / "shared.txt").read_bytes() == b"original\n"
+        assert store.conversation_messages(run_id) == []
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize("choice", ["current", "proposed"])
+async def test_review_integrates_only_approved_changes_and_requires_explicit_conflict_choice(
+    workspace_tmp_path,
+    choice,
+):
+    from xaa.runtime.states import RunState
+    from xaa.runtime.task_integration import IntegrationResolution, preview
+    from xaa.runtime.task_review import TaskReviewDecision, review_candidate
+
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+
+    class Editor(LMStudioProvider):
+        async def chat(self, *, model, messages, tools=None, **kwargs):
+            name = json.loads(messages[1]["content"])["objective"]
+            if messages[-1]["role"] == "user":
+                call = {
+                    "id": "read",
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_read_file",
+                        "arguments": json.dumps({"path": "shared.txt"}),
+                    },
+                }
+            elif messages[-1]["tool_call_id"] == "read":
+                call = {
+                    "id": "write",
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_write_file",
+                        "arguments": json.dumps(
+                            {
+                                "path": "shared.txt",
+                                "expected_sha256": json.loads(messages[-1]["content"])["sha256"],
+                                "content": name + " version\n",
+                            }
+                        ),
+                    },
+                }
+            else:
+                return {"choices": [{"message": {"role": "assistant", "content": "Proposed edit"}}]}
+            return {"choices": [{"message": {"role": "assistant", "tool_calls": [call]}}]}
+
+    provider = Editor()
+    try:
+        await SpecialistRunner(store, provider).run_ready(
+            run_id, owner, deadline=time.monotonic() + 45
+        )
+    finally:
+        await provider.close()
+    store.transition(run_id, RunState.PLANNING, owner=owner)
+    store.transition(run_id, RunState.RUNNING, owner=owner)
+    store.transition(run_id, RunState.VERIFYING, owner=owner)
+    store.release_lease(run_id, owner)
+    # Existing tasks have no acceptance criteria in this fixture; make explicit test criteria.
+    with store.connection() as c:
+        c.execute(
+            "UPDATE tasks SET acceptance_criteria='[\"Review the proposed file change\"]' WHERE run_id=?",
+            (run_id,),
+        )
+
+    def decision(name, **extra):
+        evidence = candidate_evidence(store, run_id, name)["evidence"]
+        return TaskReviewDecision(
+            decision="accept",
+            rationale="Automated fixture review after inspecting private diff",
+            confirmed_criteria=[0],
+            evidence_call_ids=[evidence[0]["call_id"]],
+            **extra,
+        )
+
+    with pytest.raises(ValueError, match="explicitly authorize"):
+        await review_candidate(store, run_id, "a", decision("a"))
+    assert (project / "shared.txt").read_bytes() == b"original\n"
+    await review_candidate(store, run_id, "a", decision("a", changes_confirmed=True))
+    assert (project / "shared.txt").read_bytes() == b"a version\n"
+    with pytest.raises(ValueError, match="conflict"):
+        await review_candidate(store, run_id, "b", decision("b", changes_confirmed=True))
+    assert (project / "shared.txt").read_bytes() == b"a version\n"
+    token = store.acquire_lease(run_id, "preview", seconds=180)
+    snapshot = await preview(store, run_id, "b", token)
+    store.release_lease(run_id, token)
+    assert snapshot.changes[0].conflict
+    (project / "shared.txt").write_bytes(b"external change\n")
+    with pytest.raises(ValueError, match="changed after conflict preview"):
+        await review_candidate(
+            store,
+            run_id,
+            "b",
+            decision(
+                "b",
+                changes_confirmed=True,
+                resolutions=[
+                    IntegrationResolution(
+                        path="shared.txt",
+                        expected_current_sha256=snapshot.changes[0].current_sha256,
+                        choice=choice,
+                    )
+                ],
+            ),
+        )
+    assert (project / "shared.txt").read_bytes() == b"external change\n"
+    (project / "shared.txt").write_bytes(b"a version\n")
+    await review_candidate(
+        store,
+        run_id,
+        "b",
+        decision(
+            "b",
+            changes_confirmed=True,
+            resolutions=[
+                IntegrationResolution(
+                    path="shared.txt",
+                    expected_current_sha256=snapshot.changes[0].current_sha256,
+                    choice=choice,
+                )
+            ],
+        ),
+    )
+    assert (project / "shared.txt").read_bytes() == (
+        b"b version\n" if choice == "proposed" else b"a version\n"
+    )
+    assert all(row["status"] == "completed" for row in tasks.records(run_id))
+    assert store.conversation_messages(run_id) == []
+    assert not store.unresolved_tool_calls(run_id)
+
+
+@pytest.mark.parametrize("next_response", ["write", "empty", "forbidden"])
+async def test_specialist_response_repair_preserves_only_its_saved_scope(
+    workspace_tmp_path, next_response
+):
+    store, run_id, owner, _tasks, project = setup(workspace_tmp_path)
+    # Keep one task so this fixture counts each actual inference precisely.
+    with store.connection() as c:
+        c.execute("DELETE FROM tasks WHERE id=?", (run_id + ":b",))
+        c.execute(
+            "UPDATE tasks SET budgets=? WHERE id=?",
+            (
+                json.dumps({"max_iterations": 5, "max_seconds": 120, "max_output_tokens": 256}),
+                run_id + ":a",
+            ),
+        )
+
+    class RepairingEditor(LMStudioProvider):
+        requests = 0
+
+        async def chat(self, *, model, messages, tools=None, **kwargs):
+            self.requests += 1
+            if self.requests == 1:
+                message = {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "read",
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": '{"path":"shared.txt"}',
+                            },
+                        }
+                    ],
+                }
+            elif self.requests == 2 or next_response == "empty":
+                message = {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "private reasoning must not be promoted",
+                }
+            elif self.requests == 3:
+                assert (
+                    messages[-1]["role"] == "user" and "saved progress" in messages[-1]["content"]
+                )
+                assert any(item["function"]["name"] == "workspace_write_file" for item in tools)
+                digest = hashlib.sha256(b"original\n").hexdigest()
+                function = (
+                    {
+                        "name": "workspace_write_file",
+                        "arguments": json.dumps(
+                            {
+                                "path": "shared.txt",
+                                "expected_sha256": digest,
+                                "content": "private edit\n",
+                            }
+                        ),
+                    }
+                    if next_response == "write"
+                    else {
+                        "name": "workspace_run_command",
+                        "arguments": '{"argv":["not-permitted"]}',
+                    }
+                )
+                message = {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "edit", "type": "function", "function": function}],
+                }
+            else:
+                message = {"role": "assistant", "content": "Proposed shared.txt edit"}
+            return {
+                "choices": [{"message": message}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+
+    provider = RepairingEditor()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, owner, deadline=time.monotonic() + 30
+        )
+        assert statuses[0]["status"] == ("verifying" if next_response == "write" else "failed")
+        assert provider.requests == (4 if next_response == "write" else 3)
+        events = store.list_events(run_id)
+        assert sum(item["event_type"] == "task.response_requested" for item in events) == 1
+        assert "private reasoning" not in json.dumps(events)
+        assert (project / "shared.txt").read_bytes() == b"original\n"
+        assert store.conversation_messages(run_id) == []
+        assert not store.unresolved_tool_calls(run_id)
+    finally:
+        await provider.close()

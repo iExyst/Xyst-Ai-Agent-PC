@@ -119,7 +119,7 @@ class Coordinator:
             history.append(feedback)
         return history
 
-    async def _diagnose(self, run_id: str, token: str, model: str) -> None:
+    async def diagnose_run_tools(self, run_id: str, token: str, model: str) -> None:
         async def request(
             selected: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
         ) -> dict[str, Any]:
@@ -328,7 +328,7 @@ class Coordinator:
                 return
             deadline = time.monotonic() + remaining
             async with asyncio.timeout(remaining):
-                await self._diagnose(run_id, token, run["model"])
+                await self.diagnose_run_tools(run_id, token, run["model"])
                 outcomes = await SpecialistRunner(self.store, self.provider).run_ready(
                     run_id, token, deadline=deadline
                 )
@@ -664,7 +664,7 @@ class Coordinator:
                 return
             if run["workspace"]:
                 async with asyncio.timeout(max(0, deadline - time.monotonic())):
-                    await self._diagnose(run_id, token, run["model"])
+                    await self.diagnose_run_tools(run_id, token, run["model"])
             messages = self._initial_messages(run_id, token, run)
             self.store.check_token_budget(run_id, token, before_inference=False)
             history = self._resume_history(run_id, token, recovered_commands)

@@ -489,6 +489,132 @@
         "title": "InstalledDistribution",
         "type": "object"
       },
+      "IntegrationFile": {
+        "properties": {
+          "base_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Sha256"
+          },
+          "conflict": {
+            "title": "Conflict",
+            "type": "boolean"
+          },
+          "current_excerpt": {
+            "title": "Current Excerpt",
+            "type": "string"
+          },
+          "current_excerpt_truncated": {
+            "title": "Current Excerpt Truncated",
+            "type": "boolean"
+          },
+          "current_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Sha256"
+          },
+          "diff": {
+            "title": "Diff",
+            "type": "string"
+          },
+          "diff_truncated": {
+            "title": "Diff Truncated",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "proposed_sha256": {
+            "title": "Proposed Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "base_sha256",
+          "proposed_sha256",
+          "current_sha256",
+          "current_excerpt",
+          "current_excerpt_truncated",
+          "conflict",
+          "diff",
+          "diff_truncated"
+        ],
+        "title": "IntegrationFile",
+        "type": "object"
+      },
+      "IntegrationPreview": {
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationFile"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "changes"
+        ],
+        "title": "IntegrationPreview",
+        "type": "object"
+      },
+      "IntegrationResolution": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "enum": [
+              "current",
+              "proposed"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "expected_current_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Current Sha256"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "expected_current_sha256",
+          "choice"
+        ],
+        "title": "IntegrationResolution",
+        "type": "object"
+      },
       "MemoryRecord": {
         "properties": {
           "confidence": {
@@ -1997,6 +2123,13 @@
           "task_id": {
             "title": "Task Id",
             "type": "string"
+          },
+          "workspace_changes": {
+            "items": {
+              "$ref": "#/components/schemas/TaskWorkspaceChange"
+            },
+            "title": "Workspace Changes",
+            "type": "array"
           }
         },
         "required": [
@@ -2045,6 +2178,11 @@
       "TaskReviewDecision": {
         "additionalProperties": false,
         "properties": {
+          "changes_confirmed": {
+            "default": false,
+            "title": "Changes Confirmed",
+            "type": "boolean"
+          },
           "confirmed_criteria": {
             "items": {
               "type": "integer"
@@ -2074,6 +2212,14 @@
             "minLength": 1,
             "title": "Rationale",
             "type": "string"
+          },
+          "resolutions": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationResolution"
+            },
+            "maxItems": 16,
+            "title": "Resolutions",
+            "type": "array"
           }
         },
         "required": [
@@ -2081,6 +2227,46 @@
           "rationale"
         ],
         "title": "TaskReviewDecision",
+        "type": "object"
+      },
+      "TaskWorkspaceChange": {
+        "properties": {
+          "base_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Sha256"
+          },
+          "diff": {
+            "title": "Diff",
+            "type": "string"
+          },
+          "diff_truncated": {
+            "title": "Diff Truncated",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "proposed_sha256": {
+            "title": "Proposed Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "base_sha256",
+          "proposed_sha256",
+          "diff",
+          "diff_truncated"
+        ],
+        "title": "TaskWorkspaceChange",
         "type": "object"
       },
       "ToolCall": {
@@ -3563,6 +3749,59 @@
           }
         ],
         "summary": "Get Candidate"
+      }
+    },
+    "/runs/{run_id}/tasks/{task_id}/integration-preview": {
+      "post": {
+        "operationId": "preview_task_integration_runs__run_id__tasks__task_id__integration_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Task Integration"
       }
     },
     "/runs/{run_id}/tasks/{task_id}/review": {

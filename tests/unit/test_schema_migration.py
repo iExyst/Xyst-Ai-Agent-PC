@@ -85,3 +85,50 @@ def test_newer_database_is_refused_without_resetting_version(workspace_tmp_path)
         assert (
             connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION + 1
         )
+
+
+def test_schema_four_records_are_preserved_when_enabling_private_workspace_semantics(
+    workspace_tmp_path,
+):
+    from xaa.runtime.task_graph import TaskDefinition
+    from xaa.storage.tasks import TaskStore
+
+    store = RunStore(workspace_tmp_path / "schema-four.sqlite3")
+    run_id = store.create_run(
+        objective="Existing read-only plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    TaskStore(store).save_plan(
+        run_id, owner, [TaskDefinition(id="reader", objective="Read existing evidence")]
+    )
+    store.release_lease(run_id, owner)
+    before = store.get_run(run_id)
+    events = store.list_events(run_id)
+    tasks = TaskStore(store).records(run_id)
+    with store.connection() as c:
+        c.execute("PRAGMA user_version=4")
+    reopened = RunStore(store.path)
+    assert reopened.get_run(run_id) == before
+    assert reopened.list_events(run_id) == events
+    assert TaskStore(reopened).records(run_id) == tasks
+    with reopened.connection() as c:
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+
+
+def test_schema_four_reader_limit_refuses_schema_five_before_access(
+    workspace_tmp_path, monkeypatch
+):
+    from xaa.storage import runs as module
+
+    store = RunStore(workspace_tmp_path / "private-workspaces.sqlite3")
+    with store.connection() as c:
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+    monkeypatch.setattr(module, "DATABASE_SCHEMA_VERSION", 4)
+    with pytest.raises(RuntimeError, match="newer"):
+        RunStore(store.path)
+    with store.connection() as c:
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 5

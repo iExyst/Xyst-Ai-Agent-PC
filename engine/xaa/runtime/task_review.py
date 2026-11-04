@@ -7,8 +7,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from xaa.runtime.task_integration import IntegrationResolution, integrate_changes
 from xaa.runtime.tool_worker import execute_filesystem
 from xaa.storage.runs import RunStore, utc_now
+from xaa.storage.task_workspaces import TaskWorkspaces
 from xaa.storage.tasks import TaskStore
 
 
@@ -18,6 +20,10 @@ class TaskReviewDecision(BaseModel):
     rationale: str = Field(min_length=1, max_length=4000)
     confirmed_criteria: list[int] = Field(default_factory=lambda: list[int](), max_length=50)
     evidence_call_ids: list[str] = Field(default_factory=list, max_length=16)
+    changes_confirmed: bool = False
+    resolutions: list[IntegrationResolution] = Field(
+        default_factory=lambda: list[IntegrationResolution](), max_length=16
+    )
 
 
 def candidate_evidence(store: RunStore, run_id: str, task_id: str) -> dict[str, Any]:
@@ -57,6 +63,7 @@ def candidate_evidence(store: RunStore, run_id: str, task_id: str) -> dict[str, 
         "candidate": result.get("candidate"),
         "acceptance_criteria": task["acceptance_criteria"],
         "evidence": evidence[-16:],
+        "workspace_changes": TaskWorkspaces(store).changes(run_id, task_id),
     }
 
 
@@ -70,7 +77,7 @@ async def review_candidate(
         raise KeyError(run_id)
     if run["state"] != "verifying":
         raise ValueError("The parent run must be awaiting review.")
-    token = store.acquire_lease(run_id, "local-user-review", seconds=30)
+    token = store.acquire_lease(run_id, "local-user-review", seconds=180)
     if token is None:
         raise ValueError("The run is still owned by an active worker.")
     try:
@@ -79,6 +86,8 @@ async def review_candidate(
             raise ValueError("Only a candidate awaiting review can be decided.")
         checked: list[dict[str, str]] = []
         if decision.decision == "accept":
+            if snapshot["workspace_changes"] and not decision.changes_confirmed:
+                raise ValueError("Review the private changes and explicitly authorize integration.")
             store.resolve_interrupted_reads(run_id, token)
             deadline = time.monotonic() + 10
             criteria = snapshot["acceptance_criteria"]
@@ -93,6 +102,11 @@ async def review_candidate(
                 if call_id not in evidence:
                     raise ValueError("Evidence does not belong to this task.")
                 item = evidence[call_id]
+                if snapshot["workspace_changes"]:
+                    checked.append(
+                        {"call_id": call_id, "path": item["path"], "sha256": item["sha256"]}
+                    )
+                    continue
                 identity = f"review-{uuid4()}"
                 current = await execute_filesystem(
                     store,
@@ -108,6 +122,11 @@ async def review_candidate(
                 if current["sha256"] != item["sha256"] or current["truncated"]:
                     raise ValueError("File evidence changed since the specialist read it.")
                 checked.append({"call_id": call_id, "path": item["path"], "sha256": item["sha256"]})
+        integrated: list[dict[str, Any]] = []
+        if decision.decision == "accept" and snapshot["workspace_changes"]:
+            integrated = await integrate_changes(
+                store, run_id, task_id, token, decision.resolutions
+            )
         state = "completed" if decision.decision == "accept" else "failed"
         with store.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -132,6 +151,7 @@ async def review_candidate(
                     "actor": "local-user",
                     **decision.model_dump(),
                     "checked_evidence": checked,
+                    "integrated_changes": integrated,
                     "state": state,
                 },
             )

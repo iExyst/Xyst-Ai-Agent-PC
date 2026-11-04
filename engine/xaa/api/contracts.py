@@ -125,9 +125,20 @@ class TaskEvidence(BaseModel):
     excerpt_truncated: bool
 
 
+class TaskWorkspaceChange(BaseModel):
+    path: str
+    base_sha256: str | None
+    proposed_sha256: str
+    diff: str
+    diff_truncated: bool
+
+
 class TaskCandidate(BaseModel):
     task_id: str
     status: TaskStatus
     candidate: str | None
     acceptance_criteria: list[str]
     evidence: list[TaskEvidence]
+    workspace_changes: list[TaskWorkspaceChange] = Field(
+        default_factory=lambda: list[TaskWorkspaceChange]()
+    )

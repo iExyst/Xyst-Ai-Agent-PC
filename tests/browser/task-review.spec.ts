@@ -17,7 +17,7 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
     if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});
     if(path.endsWith('/review')){
-      expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'Compared the actual file with the criterion.',confirmed_criteria:[0],evidence_call_ids:['evidence-1']});
+      expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'Compared the actual file with the criterion.',confirmed_criteria:[0],evidence_call_ids:['evidence-1'],changes_confirmed:false});
       reviewed=true;
       return route.fulfill({json:graph(),headers});
     }

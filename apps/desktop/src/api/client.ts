@@ -81,6 +81,10 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(runId)}/plan`, signal ? { signal } : {});
   }
 
+  integrationPreview(runId:string,taskId:string):Promise<components['schemas']['IntegrationPreview']> {
+    return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/integration-preview`,{method:'POST'});
+  }
+
   candidate(runId: string, taskId: string): Promise<Candidate> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/candidate`);
   }

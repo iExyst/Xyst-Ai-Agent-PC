@@ -1,0 +1,153 @@
+{
+  "date": "2026-11-04",
+  "passed": true,
+  "source_integration": {
+    "passed": true,
+    "model": "qwen/qwen3.5-9b",
+    "root": ".acceptance/a09fa6cd-db90-4abe-8a17-3c4b9b4b437c",
+    "run_id": "a34d9c57-f7bf-4d08-afad-fbcd381d4ecb",
+    "codes": {
+      "alpha": "alpha-a3c556017fef44e3bca49a3cc2e71941",
+      "beta": "beta-beb03510b3274409b0bd91c2292fbe3f"
+    },
+    "scope": "Real source model specialists with private snapshot working trees; scripted fixture plan and explicitly automated review, no autonomous reviewer/native inference claim",
+    "fixture_review_automated": true,
+    "prepare_only": false,
+    "statuses": [
+      {
+        "task_id": "alpha",
+        "status": "verifying"
+      },
+      {
+        "task_id": "beta",
+        "status": "verifying"
+      }
+    ],
+    "proposed_sha256": {
+      "alpha": "045064d1a31126173f5eb36629264ca3bef0534c099b0d7c5edda6e3394121e1",
+      "beta": "3754861c8445be54a6bc7f24357186dc41b5cf49c832617c43e30b59bc5076be"
+    },
+    "original_unchanged_before_review": true,
+    "private_variants_independently_validated": true,
+    "conflict_refused_without_choice": true,
+    "chosen_beta_integrated": true,
+    "final_module_static_validation_passed": true,
+    "task_statuses": [
+      {
+        "task_id": "alpha",
+        "status": "completed"
+      },
+      {
+        "task_id": "beta",
+        "status": "completed"
+      }
+    ],
+    "parent_completion_claimed": false,
+    "unresolved_calls": 0,
+    "parent_history_unchanged": true,
+    "usage": {
+      "prompt_tokens": 14532,
+      "completion_tokens": 2896,
+      "total_tokens": 17428,
+      "unmeasured_calls": 0
+    },
+    "owned_model_unloaded": true
+  },
+  "native_preparation": {
+    "passed": true,
+    "model": "qwen/qwen3.5-9b",
+    "root": ".acceptance/d4e96a5d-f515-4a94-a67c-7f0790ee191f",
+    "run_id": "867b0138-84e9-4b3d-802c-bb7fb7afce0e",
+    "codes": {
+      "alpha": "alpha-c29b6f57c61d46cc9579220b4dbdf57c",
+      "beta": "beta-1dc7c78d8c80400a8614d9dfbabc54da"
+    },
+    "scope": "Real source model specialists with private snapshot working trees; scripted fixture plan and explicitly automated review, no autonomous reviewer/native inference claim",
+    "fixture_review_automated": false,
+    "prepare_only": true,
+    "statuses": [
+      {
+        "task_id": "alpha",
+        "status": "verifying"
+      },
+      {
+        "task_id": "beta",
+        "status": "verifying"
+      }
+    ],
+    "proposed_sha256": {
+      "alpha": "6a68170a449be204a9dbeadcd2a0d37b63004f37d3d67bd913b0884aafccf704",
+      "beta": "6e119cc1affbfef3324a032be74e09019576954ceb729f3023c2590e12c9cf8f"
+    },
+    "original_unchanged_before_review": true,
+    "private_variants_independently_validated": true,
+    "parent_completion_claimed": false,
+    "unresolved_calls": 0,
+    "parent_history_unchanged": true,
+    "usage": {
+      "prompt_tokens": 12851,
+      "completion_tokens": 2838,
+      "total_tokens": 15689,
+      "unmeasured_calls": 0
+    },
+    "owned_model_unloaded": true
+  },
+  "native": {
+    "passed": true,
+    "run_id": "867b0138-84e9-4b3d-802c-bb7fb7afce0e",
+    "model": "qwen/qwen3.5-9b",
+    "build_sha256": {
+      "xaa-desktop.exe": "f058cfc3c5c37e30ea068f32999acc720c4f197503c62b874deac1188adb5bc6",
+      "xaa-engine.exe": "6439b16583c3467de93bf14b8fbc8b5296da3d1524023f5f21775c0b288a39b0"
+    },
+    "fixture_review_automated": true,
+    "scope": "Real source-model private variants; native Tauri IPC/WebView review and frozen integration workers under System32-only runtime PATH. Not native model inference, autonomous review or full parent completion.",
+    "native_integration_ui_verified": true,
+    "original_unchanged_before_review": true,
+    "private_variants_distinct": true,
+    "explicit_conflict_choice_verified": true,
+    "final_beta_sha256": "6e119cc1affbfef3324a032be74e09019576954ceb729f3023c2590e12c9cf8f",
+    "parent_completion_claimed": false,
+    "native_exit": true,
+    "engine_stopped": true,
+    "graceful_shutdown": true
+  },
+  "database_audit": {
+    "schema": 5,
+    "integrity": "ok",
+    "foreign_key_errors": 0
+  },
+  "loaded_instances_after_test": 0,
+  "screenshots": [
+    ".acceptance/d4e96a5d-f515-4a94-a67c-7f0790ee191f/native-conflict.png",
+    ".acceptance/d4e96a5d-f515-4a94-a67c-7f0790ee191f/native-integrated.png"
+  ],
+  "visual_review": "Conflict controls inspected in the earlier identical UI fixture; final integrated screenshot inspected with both tasks completed and parent verifying.",
+  "failed_attempts": [
+    {
+      "root": ".acceptance/1b5d88f7-1d3c-414b-a308-b01421a80936",
+      "reason": "Model wrote over-escaped source and one task exhausted its six-iteration budget. Original project unchanged; no integration. Clarified decoded-once text contract; fresh independent cases passed without increasing task budget or reinterpreting model arguments."
+    }
+  ],
+  "verification": {
+    "engine_tests": 447,
+    "targeted_final_workspace_tests": 10,
+    "browser_passed": 9,
+    "browser_live_skipped": 2,
+    "client_passed": 7,
+    "ruff": "passed",
+    "pyright": "passed",
+    "contracts": "passed",
+    "typescript": "passed",
+    "native_build": "passed"
+  },
+  "limitations": [
+    "Logical snapshot-backed trees, no physical Git worktrees",
+    "No specialist commands/tests or deletion tools",
+    "No automatic merge or autonomous reviewer",
+    "No task restart/adoption or artifact-retention UI",
+    "Fixture uses static AST validation and automated explicit user-review actions",
+    "No native model inference or full parent completion claim",
+    "No full Hermes parity or release-readiness claim"
+  ]
+}

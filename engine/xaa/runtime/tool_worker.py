@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -14,9 +14,23 @@ from xaa.runtime.executor import ToolPreconditionError, WorkspaceExecutor
 from xaa.runtime.processes import stop_owned_process
 from xaa.runtime.workspace_search import search_workspace
 from xaa.storage.runs import RunStore, TaskReadScope
+from xaa.storage.task_workspaces import BranchOperation, TaskWorkspaces
 
 FilesystemOperation = Literal[
-    "read", "write", "create", "replace", "patch", "list", "search", "reconcile"
+    "read",
+    "write",
+    "create",
+    "replace",
+    "patch",
+    "list",
+    "search",
+    "reconcile",
+    "branch_init",
+    "branch_read",
+    "branch_list",
+    "branch_write",
+    "branch_create",
+    "integrate",
 ]
 
 
@@ -34,15 +48,27 @@ class WorkerRequest(BaseModel):
     task_token: str | None = Field(default=None, min_length=1, max_length=256)
 
     @model_validator(mode="after")
-    def task_reader_only(self) -> "WorkerRequest":
+    def task_scope_only(self) -> "WorkerRequest":
         if (self.task_id is None) != (self.task_token is None):
             raise ValueError("Task worker scope needs both task identity and lease.")
         if self.task_id is not None and (
-            not self.internal or self.operation not in {"read", "list"}
+            not self.internal
+            or self.operation
+            not in {
+                "read",
+                "list",
+                "branch_init",
+                "branch_read",
+                "branch_list",
+                "branch_write",
+                "branch_create",
+            }
         ):
-            raise PermissionError(
-                "Task workers currently support only scoped internal reads/listing."
-            )
+            raise PermissionError("Task workers require scoped reads or private-copy operations.")
+        if self.operation.startswith("branch_") and self.task_id is None:
+            raise PermissionError("Private specialist operations require a saved task scope.")
+        if self.operation == "integrate" and not self.internal:
+            raise PermissionError("Integration is a private review operation.")
         return self
 
 
@@ -55,6 +81,10 @@ class WorkerResponse(BaseModel):
 
 class FilesystemWorkerError(RuntimeError):
     """A worker did not produce a validated result; inspect the durable journal."""
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class FilesystemWorkerTimeout(TimeoutError):
@@ -135,7 +165,8 @@ async def execute_filesystem(
                 ) from exc
             if not response.ok:
                 raise FilesystemWorkerError(
-                    f"Filesystem operation stopped ({response.error}); inspect its journal."
+                    f"Filesystem operation stopped ({response.error}); inspect its journal.",
+                    code=response.error,
                 )
             return response.result
     except TimeoutError as exc:
@@ -157,7 +188,13 @@ def main() -> None:
             if request.task_id is not None and request.task_token is not None
             else None
         )
-        executor = WorkspaceExecutor(RunStore(Path(request.database), task_scope=scope))
+        executor = WorkspaceExecutor(
+            RunStore(
+                Path(request.database),
+                task_scope=scope,
+                internal_tools=request.operation == "integrate",
+            )
+        )
         operations = {
             "read": executor.read_file,
             "write": executor.write_file,
@@ -166,7 +203,40 @@ def main() -> None:
             "patch": executor.apply_patch,
         }
         try:
-            if request.operation == "reconcile":
+            if request.operation == "integrate":
+                from xaa.runtime.task_integration import integrate_file
+
+                result = integrate_file(
+                    executor.store,
+                    request.run_id,
+                    request.token,
+                    request.call_id,
+                    request.arguments,
+                )
+            elif request.operation == "branch_init":
+                if request.arguments or request.task_id is None or request.task_token is None:
+                    raise ValueError("Private workspace capture accepts no model arguments.")
+                result = TaskWorkspaces(executor.store).initialize(
+                    request.run_id, request.token, request.task_id, request.task_token
+                )
+            elif request.operation in {
+                "branch_read",
+                "branch_list",
+                "branch_write",
+                "branch_create",
+            }:
+                assert request.task_id is not None and request.task_token is not None
+                result = TaskWorkspaces(executor.store).operate(
+                    request.run_id,
+                    request.token,
+                    request.task_id,
+                    request.task_token,
+                    request.call_id,
+                    cast(BranchOperation, request.operation),
+                    request.arguments,
+                    idempotency_key=request.idempotency_key,
+                )
+            elif request.operation == "reconcile":
                 if request.arguments or not request.internal:
                     raise ValueError("Reconciliation is an internal operation without arguments.")
                 result = dict(executor.reconcile_writes(request.run_id, request.token))

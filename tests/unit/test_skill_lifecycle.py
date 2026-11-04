@@ -6,7 +6,7 @@ from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.restore import restore_database
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
 from xaa.storage.skills import SkillConflict, SkillLifecycleDecision, SkillRevision, SkillStore
 
 
@@ -145,5 +145,5 @@ def test_schema_three_migrates_additive_lifecycle_history(workspace_tmp_path):
     assert SkillStore(migrated).get(skill["id"])["lifecycle_revision"] == 0
     assert SkillStore(migrated).lifecycle(skill["id"]) == []
     with migrated.connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
