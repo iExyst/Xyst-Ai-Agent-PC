@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
 
+from xaa.runtime.mutation_policy import require_mutable_destination
+
 
 @contextmanager
 def open_for_read(path: Path) -> Generator[BinaryIO]:
@@ -44,7 +46,7 @@ def open_for_read(path: Path) -> Generator[BinaryIO]:
 
 
 @contextmanager
-def open_existing_for_edit(path: Path) -> Generator[BinaryIO]:
+def open_existing_for_edit(path: Path, *, database: Path | None = None) -> Generator[BinaryIO]:
     """Hold exclusive access for the entire compare/write/flush interval."""
     if os.name == "nt":
         import msvcrt
@@ -73,6 +75,8 @@ def open_existing_for_edit(path: Path) -> Generator[BinaryIO]:
             close(handle)
             raise
         with os.fdopen(descriptor, "r+b") as destination:
+            if database is not None:
+                require_mutable_destination(opened_file_path(destination), database)
             if os.fstat(destination.fileno()).st_nlink != 1:
                 raise PermissionError("Workspace edits cannot modify files with hard-link aliases.")
             yield destination
@@ -82,6 +86,8 @@ def open_existing_for_edit(path: Path) -> Generator[BinaryIO]:
         with path.open("r+b") as destination:
             fcntl.flock(destination.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             try:
+                if database is not None:
+                    require_mutable_destination(opened_file_path(destination), database)
                 if os.fstat(destination.fileno()).st_nlink != 1:
                     raise PermissionError(
                         "Workspace edits cannot modify files with hard-link aliases."

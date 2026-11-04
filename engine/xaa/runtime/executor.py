@@ -204,7 +204,7 @@ class WorkspaceExecutor:
                     continue
                 if not target.is_relative_to(root):
                     raise PermissionError("Cannot reconcile creation outside workspace.")
-                with open_existing_for_edit(target) as source:
+                with open_existing_for_edit(target, database=self.store.path) as source:
                     if not opened_file_path(source).is_relative_to(root):
                         raise PermissionError("Opened creation target escaped workspace.")
                     current = source.read(65537)
@@ -235,7 +235,7 @@ class WorkspaceExecutor:
             target = (root / requested).resolve(strict=True)
             if not target.is_relative_to(root):
                 raise PermissionError("Cannot reconcile an edit outside the workspace.")
-            with open_existing_for_edit(target) as source:
+            with open_existing_for_edit(target, database=self.store.path) as source:
                 if not opened_file_path(source).is_relative_to(root):
                     raise PermissionError("Opened reconciliation target escaped the workspace.")
                 current = source.read(65537)
@@ -293,7 +293,9 @@ class WorkspaceExecutor:
             )
         with ExitStack() as stack:
             try:
-                destination = stack.enter_context(open_new_file(root, parts))
+                destination = stack.enter_context(
+                    open_new_file(root, parts, database=self.store.path)
+                )
             except (OSError, PermissionError) as exc:
                 raise ToolPreconditionError(
                     self.store.record_tool_failure(
@@ -481,7 +483,9 @@ class WorkspaceExecutor:
 
         with ExitStack() as stack:
             try:
-                destination = stack.enter_context(open_existing_for_edit(target))
+                destination = stack.enter_context(
+                    open_existing_for_edit(target, database=self.store.path)
+                )
             except OSError as exc:
                 raise reject(
                     "open_failed", "The file could not be opened for editing; no write started."

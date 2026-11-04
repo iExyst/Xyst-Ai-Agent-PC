@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 from typing import BinaryIO
 
+from xaa.runtime.mutation_policy import require_mutable_destination
+
 
 def creation_parts(path: str) -> tuple[str, ...]:
     requested = PureWindowsPath(path)
@@ -66,7 +68,9 @@ class _IoStatus(ctypes.Structure):
 
 
 @contextmanager
-def open_new_file(root: Path, parts: tuple[str, ...]) -> Generator[BinaryIO]:
+def open_new_file(
+    root: Path, parts: tuple[str, ...], *, database: Path | None = None
+) -> Generator[BinaryIO]:
     if os.name != "nt":
         raise PermissionError("Exclusive verified file creation currently requires Windows.")
     import msvcrt
@@ -165,6 +169,8 @@ def open_new_file(root: Path, parts: tuple[str, ...]) -> Generator[BinaryIO]:
             if attributes[0] & 1024:
                 raise PermissionError("Creation does not traverse directory links or junctions.")
             if index == len(parts) - 1:
+                if database is not None:
+                    require_mutable_destination(Path(actual) / parts[index], database)
                 new_handle = relative(parent, parts[index], directory=False)
                 try:
                     new_descriptor = msvcrt.open_osfhandle(new_handle, os.O_RDWR | os.O_BINARY)
