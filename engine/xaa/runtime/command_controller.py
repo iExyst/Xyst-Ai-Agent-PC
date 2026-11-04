@@ -1,4 +1,4 @@
-"""Owned private execution workflow; not a model tool or HTTP permission surface."""
+"""Owned execution workflow under persisted local-user grants and run leases."""
 
 import asyncio
 import base64

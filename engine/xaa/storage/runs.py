@@ -978,7 +978,11 @@ class RunStore:
             for event in self.list_events(run_id):
                 if event["event_type"] == "model.message":
                     messages.append(public_assistant_message(event["payload"]["message"]))
-                elif event["event_type"] in {"verification.feedback", "execution.resume_feedback"}:
+                elif event["event_type"] in {
+                    "verification.feedback",
+                    "execution.resume_feedback",
+                    "model.answer_requested",
+                }:
                     messages.append(event["payload"]["message"])
                 elif event["event_type"] in {"tool.completed", "tool.failed"}:
                     call_id = event["payload"]["call_id"]

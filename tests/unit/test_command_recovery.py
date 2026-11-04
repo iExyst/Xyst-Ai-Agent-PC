@@ -167,7 +167,9 @@ async def test_resume_recovers_tool_reply_before_provider_inference(
             assert reply["tool_call_id"] == "command"
             assert json.loads(reply["content"])["verification"] == "not_verified"
             assert messages[-1]["role"] == "user" and "not_verified" in messages[-1]["content"]
-            assert not any(tool["function"]["name"] == "workspace_run_command" for tool in tools)
+            # Explicit grants remain available after reconciliation; recovery itself
+            # never dispatches the tool or silently replays the previous call.
+            assert any(tool["function"]["name"] == "workspace_run_command" for tool in tools)
             return {
                 "choices": [
                     {

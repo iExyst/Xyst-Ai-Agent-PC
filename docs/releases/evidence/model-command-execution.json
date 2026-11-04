@@ -1,0 +1,106 @@
+{
+  "passed": true,
+  "scope": "Source coordinator and real LM Studio/WSL; internal user grant, no HTTP/native UI authorization acceptance",
+  "run_id": "28cfec6d-ec25-4907-a3ee-d54d39f158a8",
+  "model": "qwen/qwen3.5-9b",
+  "distribution": "Ubuntu-24.04",
+  "profile_sha256": "6cfb2f0b92851ba2fc38cf7f1f04a59af57f310f7cadbe474cfc513e83ebc712",
+  "state": "verifying",
+  "model_command_proposals": 1,
+  "launch_events": 1,
+  "command_results": 1,
+  "exact_stdout_reported": true,
+  "original_project_unchanged": true,
+  "unresolved_commands": 0,
+  "counts": [
+    {
+      "request_index": 1,
+      "sdk_prompt_tokens": 317,
+      "http_prompt_tokens": 317,
+      "match": true
+    },
+    {
+      "request_index": 2,
+      "sdk_prompt_tokens": 157,
+      "http_prompt_tokens": 157,
+      "match": true
+    },
+    {
+      "request_index": 3,
+      "sdk_prompt_tokens": 2617,
+      "http_prompt_tokens": 2617,
+      "match": true
+    },
+    {
+      "request_index": 4,
+      "sdk_prompt_tokens": 3332,
+      "http_prompt_tokens": 3332,
+      "match": true
+    },
+    {
+      "request_index": 5,
+      "sdk_prompt_tokens": 919,
+      "http_prompt_tokens": 919,
+      "match": true
+    }
+  ],
+  "response_metadata": [
+    {
+      "finish_reason": "tool_calls",
+      "public_content_length": 0,
+      "tool_calls": 1,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    },
+    {
+      "finish_reason": "stop",
+      "public_content_length": 32,
+      "tool_calls": 0,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    },
+    {
+      "finish_reason": "tool_calls",
+      "public_content_length": 0,
+      "tool_calls": 1,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    },
+    {
+      "finish_reason": "stop",
+      "public_content_length": 0,
+      "tool_calls": 0,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    },
+    {
+      "finish_reason": "stop",
+      "public_content_length": 45,
+      "tool_calls": 0,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    }
+  ],
+  "owned_model_unloaded": true,
+  "answer_only_retries": 1,
+  "loaded_instances_after_diagnostics": 0,
+  "failed_attempts": [
+    {
+      "evidence": ".acceptance/b8147ca2-46b6-4b92-8d1d-0d5adfef239e/",
+      "reason": "Command executed once; empty public continuation before answer-only repair"
+    },
+    {
+      "evidence": ".acceptance/11a24f11-d616-4fe1-a1fb-5591a7ee8c41/",
+      "reason": "Second independent fixture executed once; empty public continuation before repair"
+    },
+    {
+      "evidence": ".acceptance/e05bfa6e-55a5-467d-9dd1-8ce031bc9a11/",
+      "reason": "Nemotron 4B diagnostic SDK 317 / HTTP 318 mismatch; refused before project execution"
+    }
+  ]
+}

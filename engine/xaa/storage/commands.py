@@ -194,6 +194,14 @@ class CommandJournal:
             raise PermissionError("Command workspace changed after permission was recorded.")
         return grant, str(root)
 
+    def grant(self, run_id: str, *, owner: str | None = None) -> CommandGrant:
+        """Read saved authority; execution callers also prove current lease ownership."""
+        with self.store.connection() as connection:
+            if owner is not None:
+                self.store.require_lease(connection, run_id, owner)
+            grant, _ = self._grant(connection, run_id, self.store.path)
+            return grant
+
     def reserve(
         self,
         run_id: str,
