@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+  "cases": [
+    {
+      "local_stdout_removed": false,
+      "child_exit_code": 73,
+      "result": "recovered_success",
+      "launch_events": 1,
+      "unresolved_commands": 0
+    },
+    {
+      "local_stdout_removed": true,
+      "child_exit_code": 73,
+      "result": "not_verified",
+      "launch_events": 1,
+      "unresolved_commands": 0
+    }
+  ],
+  "original_project_unchanged": true,
+  "model_or_ui_tool_enabled": false,
+  "fault_actor": "automated_diagnostic_not_model",
+  "scope": "Controller subprocess crash; not full API/desktop restart or reboot",
+  "acceptance_directory": ".acceptance/6a3d3b68-9be3-4cf9-a017-fdec2a69beb5/",
+  "source_hashes": {
+    "engine/xaa/runtime/command_controller.py": "89a01cb3a08d163e72e0039e657ddfbbca3d50b156d3e24c3d9028b741099a84",
+    "engine/xaa/storage/commands.py": "6d12959c5efe1860b3aa2569ee620fffd50e76448e6ca4be872aa80484ba9d94",
+    "scripts/command_recovery_diagnostic.py": "c5612f70b5ea5d7e5ee8aa30fcab78801786ee063fcafc1c99d2d7d24e65d711"
+  }
+}

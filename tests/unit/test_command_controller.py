@@ -5,7 +5,7 @@ import time
 import pytest
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.states import RunState
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import LeaseLost, RunStore
 
 
 class FixtureTransport:
@@ -155,3 +155,84 @@ async def test_unproved_cleanup_retains_unresolved_admission(workspace_tmp_path)
     assert not any(
         event["event_type"] == "execution.reconciled" for event in store.list_events(run_id)
     )
+
+
+@pytest.mark.parametrize("damage", [None, "missing", "changed"])
+async def test_fresh_controller_recovers_only_valid_persisted_output(workspace_tmp_path, damage):
+    class Crash(BaseException):
+        pass
+
+    class DurableTransport(FixtureTransport):
+        executions = 0
+        observed = None
+
+        async def run(self, intent, snapshot, *, deadline):
+            self.executions += 1
+            self.observed = await super().run(intent, snapshot, deadline=deadline)
+            return self.observed
+
+        async def control(self, action, intent, *, deadline):
+            reply = await super().control(action, intent, deadline=deadline)
+            reply["outcome"] = {"state": "finished", "result": self.observed}
+            return reply
+
+    transport = DurableTransport()
+    controller, store, run_id, token, _ = setup(workspace_tmp_path, transport)
+
+    def crash(*args, **kwargs):
+        raise Crash()
+
+    controller.journal.complete = crash
+    with pytest.raises(Crash):
+        await controller.execute(
+            run_id,
+            token,
+            "command",
+            {"argv": ["fixture"]},
+            idempotency_key="command",
+            deadline=time.monotonic() + 15,
+        )
+    if damage:
+        metadata = next(
+            item
+            for item in store.list_artifacts(run_id)
+            if item["provenance"].startswith("execution.stdout:")
+        )
+        path = store.path.parent / "artifacts" / store.get_artifact(metadata["id"])["storage_key"]
+        if damage == "missing":
+            path.unlink()
+        else:
+            path.write_bytes(b"damaged")
+    store.release_lease(run_id, token)
+    reopened = RunStore(store.path)
+    replacement = reopened.acquire_lease(run_id, "restarted")
+    recovered = CommandController(reopened, transport)
+    with pytest.raises(LeaseLost):
+        await recovered.recover(run_id, token, "command")
+    result = await recovered.recover(run_id, replacement, "command")
+    assert transport.executions == 1 and not reopened.unresolved_tool_calls(run_id)
+    if damage:
+        assert result["verification"] == "not_verified" and "exit_code" not in result
+    else:
+        assert result["succeeded"] is True and result["result_reconciled"] is True
+
+
+@pytest.mark.parametrize("project_missing", [False, True])
+async def test_recovery_of_prelaunch_crash_never_executes(workspace_tmp_path, project_missing):
+    class NoLaunchTransport(FixtureTransport):
+        async def run(self, *args, **kwargs):
+            pytest.fail("Recovery must never execute the reserved command")
+
+    transport = NoLaunchTransport()
+    controller, store, run_id, token, project = setup(workspace_tmp_path, transport)
+    controller.journal.reserve(
+        run_id, token, "command", {"argv": ["fixture"]}, idempotency_key="command"
+    )
+    if project_missing:
+        (project / "fixture.txt").unlink()
+        project.rmdir()
+    store.release_lease(run_id, token)
+    replacement = store.acquire_lease(run_id, "recovery")
+    result = await controller.recover(run_id, replacement, "command")
+    assert result["verification"] == "not_verified" and "exit_code" not in result
+    assert not store.unresolved_tool_calls(run_id)

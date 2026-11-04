@@ -5,7 +5,7 @@ import base64
 import hashlib
 import os
 import time
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from xaa.runtime.cleanup import finish_cleanup
@@ -69,6 +69,49 @@ class CommandController:
         run = self.store.get_run(run_id)
         if run is not None and run["state"] in {"paused", "blocked", "failed", "cancelled"}:
             return self.journal.record_stopped_cleanup(run_id, run["revision"], call_id, proof)
+        artifact_id = self.artifact(
+            run_id, owner, intent.execution_id, "cleanup", proof.model_dump_json().encode()
+        )
+        return self.journal.close_interrupted(run_id, owner, call_id, artifact_id)
+
+    async def recover(self, run_id: str, owner: str, call_id: str) -> dict[str, Any]:
+        """Seal a saved identity, then recover only matching durable local output."""
+        intent = self.journal.recovery_intent(run_id, owner, call_id)
+        proof = await self.cleanup(intent)
+        status = await self.transport.control("status", intent, deadline=time.monotonic() + 10)
+        receipt = status.get("outcome")
+        if isinstance(receipt, dict) and cast(dict[str, Any], receipt).get("state") == "finished":
+            backend = cast(dict[str, Any], receipt).get("result")
+            if isinstance(backend, dict):
+                backend = cast(dict[str, Any], backend)
+                try:
+                    outputs: dict[str, str] = {}
+                    artifacts = self.store.list_artifacts(run_id)
+                    for stream in ("stdout", "stderr"):
+                        matches = [
+                            item
+                            for item in artifacts
+                            if item["provenance"] == f"execution.{stream}:{intent.execution_id}"
+                            and item["sha256"] == backend.get(stream + "_sha256")
+                            and item["size_bytes"] == backend.get(stream + "_bytes")
+                        ]
+                        if not matches:
+                            raise ValueError("Complete matching local output is unavailable.")
+                        outputs[stream + "_artifact_id"] = matches[0]["id"]
+                    outcome = CommandOutcome.model_validate(
+                        {
+                            **{
+                                key: backend[key]
+                                for key in CommandOutcome.model_fields
+                                if key in backend
+                            },
+                            **outputs,
+                        }
+                    )
+                    return self.journal.complete(run_id, owner, call_id, outcome)
+                except (ValueError, OSError):
+                    # Metadata, absence or damaged bytes never justify replay or success.
+                    pass
         artifact_id = self.artifact(
             run_id, owner, intent.execution_id, "cleanup", proof.model_dump_json().encode()
         )

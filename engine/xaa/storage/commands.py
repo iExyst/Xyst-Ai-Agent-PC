@@ -125,7 +125,9 @@ class CommandJournal:
         self.store = store
 
     @staticmethod
-    def _grant(connection: Any, run_id: str, database: Path) -> tuple[CommandGrant, str]:
+    def _grant(
+        connection: Any, run_id: str, database: Path, *, validate_workspace: bool = True
+    ) -> tuple[CommandGrant, str]:
         run = connection.execute("SELECT workspace,mode FROM runs WHERE id=?", (run_id,)).fetchone()
         rows = connection.execute(
             "SELECT payload FROM run_events WHERE run_id=? AND event_type='execution.granted'",
@@ -137,6 +139,16 @@ class CommandJournal:
         if selected.get("actor") != "local_user":
             raise PermissionError("Command grants must come from the local user.")
         grant = CommandGrant.model_validate(selected["grant"])
+        if not validate_workspace:
+            # Closing an already-reserved identity must work after project deletion/rename.
+            saved = selected.get("workspace")
+            if (
+                run["mode"] != "workspace"
+                or not isinstance(saved, str)
+                or not Path(saved).is_absolute()
+            ):
+                raise PermissionError("Saved recovery grant is invalid.")
+            return grant, saved
         root = command_workspace(run["workspace"], database, run["mode"])
         if str(root) != selected["workspace"]:
             raise PermissionError("Command workspace changed after permission was recorded.")
@@ -250,6 +262,22 @@ class CommandJournal:
             raise ReconciliationRequired(
                 "A new lease must reconcile the old command, never launch it."
             )
+
+    def recovery_intent(self, run_id: str, owner: str, call_id: str) -> CommandIntent:
+        """A replacement owner may inspect and close a saved identity, never relaunch it."""
+        with self.store.connection() as connection:
+            self.store.require_lease(connection, run_id, owner)
+            intent = self._intent(connection, run_id, call_id)
+            grant, workspace = self._grant(
+                connection, run_id, self.store.path, validate_workspace=False
+            )
+            if (intent.profile_sha256, intent.distribution, intent.workspace) != (
+                grant.profile_sha256,
+                grant.distribution,
+                workspace,
+            ):
+                raise PermissionError("Saved command recovery authority changed.")
+            return intent
 
     def snapshot_intent(self, run_id: str, owner: str, call_id: str) -> CommandIntent:
         """Read capture authority without authorizing execution or accepting a caller path."""
