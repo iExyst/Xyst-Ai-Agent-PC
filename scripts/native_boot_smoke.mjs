@@ -10,7 +10,7 @@ const logPath=path.join(process.env.LOCALAPPDATA,'dev.xyst.xaa','logs','engine.l
 const previous=await readFile(logPath,'utf8').catch(()=>'');
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH','PYTHONPATH','VIRTUAL_ENV'].includes(key.toUpperCase())));
 const started=Date.now();let stdout='',stderr='';
-const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),XAA_TEST_HIDDEN:'1',XAA_DATA_DIR:root,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),XAA_TEST_HIDDEN:'1',XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;
@@ -28,7 +28,7 @@ try{
       endpoint.hostname='127.0.0.1';
       browser=await chromium.connectOverCDP(endpoint.toString(),{timeout:Math.min(3000,Math.max(1,debuggingDeadline-Date.now()))});
       break;
-    }catch(error){lastDebuggingError=String(error);if(proc.exitCode!==null)throw new Error(`Packaged desktop exited during boot: ${lastDebuggingError}`);await new Promise(resolve=>setTimeout(resolve,250));}
+    }catch(error){lastDebuggingError=String(error)+(error?.cause?.code?` (${error.cause.code})`:'');if(proc.exitCode!==null)throw new Error(`Packaged desktop exited during boot: ${lastDebuggingError}`);await new Promise(resolve=>setTimeout(resolve,250));}
   }
   if(!browser)throw new Error(`Packaged debugging attachment failed: ${lastDebuggingError}`);
   const page=browser.contexts()[0].pages()[0];
