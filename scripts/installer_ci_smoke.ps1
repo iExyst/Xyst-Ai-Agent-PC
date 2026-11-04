@@ -27,8 +27,32 @@ try {
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
     if ((Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.desktop.sha256 -or (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.engine.sha256) { throw 'Installed binary checksums do not match the manifest.' }
     $xaaReport.installed_binary_hashes_match = $true
-    & node scripts/native_boot_smoke.mjs $xaaDesktop
-    if ($LASTEXITCODE -ne 0) { throw 'Installed application boot/shutdown test failed.' }
+    # WebView2 150+ ignores WEBVIEW2_* environment overrides in elevated hosts.
+    # Use the documented app-specific HKLM channel only on this disposable runner.
+    # https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
+    $xaaIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $xaaElevated = ([Security.Principal.WindowsPrincipal]::new($xaaIdentity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $xaaReport.runner_elevated = $xaaElevated
+    $xaaDebugPolicy = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+    $xaaDebugPolicyOwned = $false
+    try {
+        if ($xaaElevated) {
+            $xaaExistingPolicy = Get-Item -LiteralPath $xaaDebugPolicy -ErrorAction SilentlyContinue
+            if ($xaaExistingPolicy -and $xaaExistingPolicy.GetValueNames() -contains 'xaa-desktop.exe') { throw 'Refusing to replace existing app debugging configuration.' }
+            New-Item -Path $xaaDebugPolicy -Force | Out-Null
+            New-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe' -Value '--remote-debugging-port=19222' -PropertyType String | Out-Null
+            $xaaDebugPolicyOwned = $true
+        }
+        & node scripts/native_boot_smoke.mjs $xaaDesktop
+        $xaaBootExitCode = $LASTEXITCODE
+    } finally {
+        if ($xaaDebugPolicyOwned) {
+            Remove-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe'
+            $xaaReport.debugging_configuration_removed = -not ((Get-Item -LiteralPath $xaaDebugPolicy).GetValueNames() -contains 'xaa-desktop.exe')
+            if (-not $xaaReport.debugging_configuration_removed) { throw 'App debugging configuration cleanup failed.' }
+        }
+    }
+    if ($xaaBootExitCode -ne 0) { throw 'Installed application boot/shutdown test failed.' }
     $xaaReport.installed_binaries_present = $true
     $xaaReport.installed_boot_verified = $true
 } finally {
