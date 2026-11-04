@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+  "normal_result_verified": true,
+  "replay_refused": true,
+  "remaining_time_rejected_before_claim": true,
+  "launcher_cancellation_awaited": true,
+  "separate_remote_cleanup_confirmed": true,
+  "cancelled_manager_alive": false,
+  "cancelled_result_available": false,
+  "original_project_unchanged": true,
+  "model_or_ui_tool_enabled": false,
+  "acceptance_directory": ".acceptance/659260e3-b75d-49ee-9fa3-64898c2305fd/",
+  "source_hashes": {
+    "engine/xaa/runtime/owned_transport.py": "ba820f47a21bd101b4f4fc30416b0ee3d0775cdd0a6acca50fbcef9c56a27fc4",
+    "engine/xaa/runtime/wsl_transport.py": "6474fd8debca7ffc3fe1f70fa7de9c597a5f5062eb591841f3776d03dfe80c42",
+    "scripts/wsl_transport_diagnostic.py": "4f1374c142b204554a529fec642cfd87f759400b35955b298a6c285185794509"
+  }
+}
