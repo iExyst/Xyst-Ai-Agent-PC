@@ -2,6 +2,7 @@ import asyncio
 import sys
 
 import pytest
+from xaa.runtime import owned_transport
 from xaa.runtime.owned_transport import TransportError, request_process
 
 
@@ -65,3 +66,35 @@ async def test_expired_deadline_does_not_spawn(monkeypatch):
     monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden)
     with pytest.raises(TimeoutError):
         await request_process(["unused"], b"", timeout=0, output_limit=1)
+
+
+async def test_repeated_cancel_cannot_abandon_actual_child_shutdown(monkeypatch):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    child = []
+    original = owned_transport.stop_owned_process
+
+    async def controlled_shutdown(process):
+        child.append(process)
+        entered.set()
+        await release.wait()
+        await original(process)
+
+    monkeypatch.setattr(owned_transport, "stop_owned_process", controlled_shutdown)
+    task = asyncio.create_task(
+        request_process(
+            [sys.executable, "-I", "-c", "import time;time.sleep(60)"],
+            b"",
+            timeout=0.1,
+            output_limit=1024,
+        )
+    )
+    await entered.wait()
+    for _ in range(3):
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert child[0].returncode is not None

@@ -66,6 +66,16 @@ async def diagnose(distribution: str) -> None:
     assert capture_workspace(project).sha256 == snapshot.sha256
 
     interrupted, owner = run()
+    cleanup_entered = asyncio.Event()
+    release_cleanup = asyncio.Event()
+    original_reconcile = controller.reconcile_interrupted
+
+    async def controlled_reconcile(run_id: str, owner: str, call_id: str, intent: CommandIntent):
+        cleanup_entered.set()
+        await release_cleanup.wait()
+        return await original_reconcile(run_id, owner, call_id, intent)
+
+    controller.reconcile_interrupted = controlled_reconcile
     task = asyncio.create_task(
         controller.execute(
             interrupted,
@@ -96,11 +106,18 @@ async def diagnose(distribution: str) -> None:
             await asyncio.sleep(0.05)
         stopped = store.transition(interrupted, RunState.PAUSED)
         task.cancel()
+        await asyncio.wait_for(cleanup_entered.wait(), timeout=10)
+        for _ in range(3):
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+        release_cleanup.set()
         try:
             await task
         except asyncio.CancelledError:
             pass
     finally:
+        release_cleanup.set()
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -131,6 +148,7 @@ async def diagnose(distribution: str) -> None:
         "normal_artifact_count": 3,
         "run_pause_revoked_lease_before_cancellation": True,
         "stopped_revision_preserved": True,
+        "repeated_cancellation_waited_for_cleanup": True,
         "interrupted_command_reconciled_without_success_or_replay": True,
         "unresolved_commands": 0,
         "original_project_unchanged": True,

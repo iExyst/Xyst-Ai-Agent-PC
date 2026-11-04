@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from xaa.providers.contracts import ToolCall
 from xaa.providers.tool_schemas import ToolSchemaError, prepare_tools
+from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.processes import stop_owned_process
 
 
@@ -194,4 +195,4 @@ async def count_prompt(
     except (ValueError, TypeError, OSError):
         raise PromptCountError("Prompt counter returned an invalid result.") from None
     finally:
-        await stop_owned_process(process)
+        await finish_cleanup(stop_owned_process(process))

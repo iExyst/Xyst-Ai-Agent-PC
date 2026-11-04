@@ -8,6 +8,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.snapshot_worker import capture_command_snapshot
 from xaa.runtime.wsl_transport import WSLTransport
@@ -126,8 +127,5 @@ class CommandController:
             return self.journal.complete(run_id, owner, call_id, outcome)
         except (Exception, asyncio.CancelledError):
             # A distinct bounded cleanup allowance never becomes extra execution time.
-            cleanup = asyncio.create_task(
-                self.reconcile_interrupted(run_id, owner, call_id, intent)
-            )
-            await asyncio.shield(cleanup)
+            await finish_cleanup(self.reconcile_interrupted(run_id, owner, call_id, intent))
             raise

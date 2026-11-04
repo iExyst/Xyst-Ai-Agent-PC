@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.directory_listing import list_directory
 from xaa.runtime.executor import ToolPreconditionError, WorkspaceExecutor
 from xaa.runtime.processes import stop_owned_process
@@ -124,7 +125,7 @@ async def execute_filesystem(
             "Filesystem operation timed out; inspect its journal."
         ) from exc
     finally:
-        await stop_owned_process(process)
+        await finish_cleanup(stop_owned_process(process))
 
 
 def main() -> None:

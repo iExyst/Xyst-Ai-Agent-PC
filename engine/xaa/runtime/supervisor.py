@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
@@ -72,15 +73,14 @@ class RunSupervisor:
         task = self.tasks.get(run_id)
         if task is not None and not task.done():
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            await finish_cleanup(asyncio.gather(task, return_exceptions=True))
 
     async def close(self) -> None:
-        if self.recovery_task is not None:
-            self.recovery_task.cancel()
-            await asyncio.gather(self.recovery_task, return_exceptions=True)
-            self.recovery_task = None
         tasks = list(self.tasks.values())
+        if self.recovery_task is not None:
+            tasks.append(self.recovery_task)
+            self.recovery_task = None
         for task in tasks:
             task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await finish_cleanup(asyncio.gather(*tasks, return_exceptions=True))

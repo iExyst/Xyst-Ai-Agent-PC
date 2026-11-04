@@ -4,6 +4,7 @@ import asyncio
 import os
 from collections.abc import Sequence
 
+from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.processes import stop_owned_process
 
 
@@ -62,16 +63,21 @@ async def request_process(
             assert isinstance(output, bytes)
             return output
     finally:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
 
-        async def discard(stream: asyncio.StreamReader) -> None:
-            while await stream.read(16384):
-                pass
+        async def cleanup() -> None:
+            assert process.stdout is not None and process.stderr is not None
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Drain without retaining bytes while terminating, including a flooded pipe.
-        await asyncio.gather(
-            stop_owned_process(process), discard(process.stdout), discard(process.stderr)
-        )
+            async def discard(stream: asyncio.StreamReader) -> None:
+                while await stream.read(16384):
+                    pass
+
+            # Drain without retaining bytes while terminating, including a flooded pipe.
+            await asyncio.gather(
+                stop_owned_process(process), discard(process.stdout), discard(process.stderr)
+            )
+
+        await finish_cleanup(cleanup())
