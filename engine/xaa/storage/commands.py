@@ -19,7 +19,7 @@ from xaa.runtime.command_contracts import (
 from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.file_handles import open_for_read, opened_file_path
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
-from xaa.storage.runs import RunStore, utc_now
+from xaa.storage.runs import RunStore, TaskReadScope, utc_now
 
 TOOL = "workspace.run_command"
 ACTIVE_COMMAND_LIMIT = 2
@@ -121,8 +121,60 @@ class CommandCleanupEvidence(BaseModel):
 
 
 class CommandJournal:
-    def __init__(self, store: RunStore) -> None:
+    def __init__(self, store: RunStore, *, task_scope: TaskReadScope | None = None) -> None:
         self.store = store
+        self.task_scope = task_scope
+
+    @staticmethod
+    def _private_call(connection: Any, run_id: str, call_id: str) -> bool:
+        row = connection.execute(
+            "SELECT task_id FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+            (run_id, call_id),
+        ).fetchone()
+        return row is not None and row[0] is not None
+
+    def require_task(
+        self, connection: Any, run_id: str, owner: str, call_id: str | None = None
+    ) -> str | None:
+        """Bind command admission/capture/launch/results to a live private task, never model args."""
+        from xaa.storage.task_workspaces import TaskWorkspaces
+
+        scope = self.task_scope
+        saved_task = None
+        if call_id is not None:
+            row = connection.execute(
+                "SELECT task_id FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run_id, call_id),
+            ).fetchone()
+            saved_task = row[0] if row else None
+        if scope is None:
+            if saved_task is not None:
+                raise PermissionError("A private command requires its own live task scope.")
+            return None
+        if scope.run_id != run_id or scope.parent_token != owner:
+            raise PermissionError("Command task scope belongs to a different parent lease.")
+        task_key = f"{run_id}:{scope.task_id}"
+        if call_id is not None and saved_task != task_key:
+            raise PermissionError("Command belongs to a different task.")
+        TaskWorkspaces(self.store).require_writer(
+            connection, run_id, owner, scope.task_id, scope.task_token
+        )
+        row = connection.execute(
+            "SELECT permission_scope FROM tasks WHERE id=?", (task_key,)
+        ).fetchone()
+        if "workspace.command" not in json.loads(row[0]):
+            raise PermissionError("Specialist has no saved command permission.")
+        if call_id is not None:
+            binding = connection.execute(
+                "SELECT json_extract(payload,'$.task_token_sha256') FROM run_events WHERE run_id=? AND event_type='execution.reserved' AND json_extract(payload,'$.call_id')=?",
+                (run_id, call_id),
+            ).fetchone()
+            if (
+                binding is None
+                or binding[0] != hashlib.sha256(scope.task_token.encode()).hexdigest()
+            ):
+                raise PermissionError("A replacement task worker must reconcile, never relaunch.")
+        return task_key
 
     def stopped_candidates(self) -> list[dict[str, Any]]:
         with self.store.connection() as connection:
@@ -218,6 +270,7 @@ class CommandJournal:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
+            task_key = self.require_task(connection, run_id, owner)
             run = connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()
             if run[0] != "running":
                 raise PermissionError("Commands may start only while their run is running.")
@@ -228,6 +281,14 @@ class CommandJournal:
                 raise PermissionError(
                     "Command duration exceeds its saved grant or parent allowance."
                 )
+            if task_key is not None:
+                budgets = json.loads(
+                    connection.execute(
+                        "SELECT budgets FROM tasks WHERE id=?", (task_key,)
+                    ).fetchone()[0]
+                )
+                if parsed.max_seconds > budgets["max_seconds"]:
+                    raise PermissionError("Command duration exceeds the task allowance.")
             existing = connection.execute(
                 "SELECT arguments,idempotency_key FROM tool_calls WHERE run_id=? AND (idempotency_key=? OR provider_call_id=?)",
                 (run_id, idempotency_key, call_id),
@@ -253,9 +314,10 @@ class CommandJournal:
             )
             now = utc_now()
             connection.execute(
-                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,?,?, ?,?,'intended',NULL,NULL,?,?,?)",
+                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,?,?,?,?, ?,?,'intended',NULL,NULL,?,?,?)",
                 (
                     str(uuid4()),
+                    task_key,
                     run_id,
                     TOOL,
                     "1",
@@ -270,7 +332,7 @@ class CommandJournal:
                 connection,
                 run_id,
                 "tool.intended",
-                {"call_id": call_id, "tool": TOOL, "internal": False},
+                {"call_id": call_id, "tool": TOOL, "internal": task_key is not None},
             )
             self.store.record_event(
                 connection,
@@ -282,6 +344,12 @@ class CommandJournal:
                     "backend": intent.backend,
                     "profile_sha256": intent.profile_sha256,
                     "lease_binding_sha256": hashlib.sha256(owner.encode("utf-8")).hexdigest(),
+                    "task_id": self.task_scope.task_id if self.task_scope else None,
+                    "task_token_sha256": hashlib.sha256(
+                        self.task_scope.task_token.encode()
+                    ).hexdigest()
+                    if self.task_scope
+                    else None,
                 },
             )
         return intent
@@ -331,6 +399,7 @@ class CommandJournal:
         """Read capture authority without authorizing execution or accepting a caller path."""
         with self.store.connection() as connection:
             self.store.require_lease(connection, run_id, owner)
+            self.require_task(connection, run_id, owner, call_id)
             intent = self._intent(connection, run_id, call_id)
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
@@ -360,6 +429,7 @@ class CommandJournal:
         with self.store.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
+            self.require_task(connection, run_id, owner, call_id)
             intent = self._intent(connection, run_id, call_id)
             self._require_reservation_owner(connection, run_id, call_id, owner)
             if connection.execute(
@@ -395,6 +465,7 @@ class CommandJournal:
         with self.store.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
+            self.require_task(connection, run_id, owner, call_id)
             intent = self._intent(connection, run_id, call_id)
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
@@ -428,12 +499,20 @@ class CommandJournal:
         return intent
 
     def complete(
-        self, run_id: str, owner: str, call_id: str, outcome: CommandOutcome
+        self,
+        run_id: str,
+        owner: str,
+        call_id: str,
+        outcome: CommandOutcome,
+        *,
+        recovery: bool = False,
     ) -> dict[str, Any]:
         outcome = CommandOutcome.model_validate(outcome.model_dump())
         with self.store.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
+            if not recovery:
+                self.require_task(connection, run_id, owner, call_id)
             intent = self._intent(connection, run_id, call_id)
             if outcome.execution_id != intent.execution_id:
                 raise ValueError("Result belongs to another execution identity.")
@@ -453,7 +532,9 @@ class CommandJournal:
                 (run_id, call_id),
             ).fetchone()
             result["result_reconciled"] = (
-                binding is None or binding[0] != hashlib.sha256(owner.encode("utf-8")).hexdigest()
+                recovery
+                or binding is None
+                or binding[0] != hashlib.sha256(owner.encode("utf-8")).hexdigest()
             )
             for stream in ("stdout", "stderr"):
                 metadata = connection.execute(
@@ -498,7 +579,10 @@ class CommandJournal:
                 (json.dumps(result), utc_now(), run_id, call_id),
             )
             self.store.record_event(
-                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
+                connection,
+                run_id,
+                "tool.completed",
+                {"call_id": call_id, "internal": self._private_call(connection, run_id, call_id)},
             )
             self.store.record_event(
                 connection,
@@ -574,7 +658,7 @@ class CommandJournal:
                 "tool.failed",
                 {
                     "call_id": call_id,
-                    "internal": False,
+                    "internal": self._private_call(connection, run_id, call_id),
                     "effect": "interrupted_private_execution",
                     "code": "command_result_unavailable_locally",
                 },
@@ -690,7 +774,7 @@ class CommandJournal:
                 "tool.failed",
                 {
                     "call_id": call_id,
-                    "internal": False,
+                    "internal": self._private_call(connection, run_id, call_id),
                     "effect": "interrupted_private_execution",
                     "code": "command_result_unavailable_locally",
                 },

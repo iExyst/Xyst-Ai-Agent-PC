@@ -133,12 +133,30 @@ class TaskWorkspaceChange(BaseModel):
     diff_truncated: bool
 
 
+class TaskValidationEvidence(BaseModel):
+    call_id: str
+    argv: list[str]
+    snapshot_sha256: str
+    matches_current_private_tree: bool
+    succeeded: bool
+    exit_code: int | None
+    termination_reason: str
+    stdout_excerpt: str
+    stderr_excerpt: str
+    stdout_artifact_id: str
+    stderr_artifact_id: str
+
+
 class TaskCandidate(BaseModel):
     task_id: str
     status: TaskStatus
     candidate: str | None
     acceptance_criteria: list[str]
     evidence: list[TaskEvidence]
+    validation_required: bool = False
+    validation_evidence: list[TaskValidationEvidence] = Field(
+        default_factory=lambda: list[TaskValidationEvidence]()
+    )
     workspace_changes: list[TaskWorkspaceChange] = Field(
         default_factory=lambda: list[TaskWorkspaceChange]()
     )

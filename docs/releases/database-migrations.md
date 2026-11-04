@@ -1,12 +1,12 @@
 # Database migration procedure
 
-The current engine uses SQLite `user_version=5`. On startup it refuses databases with a newer version. Older executable builds refuse a migrated database beyond their supported version; downgrading an executable does not downgrade user data.
+The current engine uses SQLite `user_version=6`. On startup it refuses databases with a newer version. Older executable builds refuse a migrated database beyond their supported version; downgrading an executable does not downgrade user data.
 
 Before upgrading an existing installation, keep a consistent SQLite backup and its matching managed artifact directory. The current backup API snapshots the database only; it does not copy artifact contents. Do not copy a live WAL database's main file alone. Close the engine or use SQLite's backup API to capture committed WAL contents.
 
 Version 1 to 2 separates internal tool journal keys from provider call IDs. Existing primary keys and approval references stay unchanged. The migration backfills `provider_call_id`, creates a unique `(run_id, provider_call_id)` index and advances the database version in one transaction. New calls get UUID journal keys. Provider IDs remain unchanged in model messages and tool results, and may repeat across distinct runs. Reusing a provider ID for a different action in the same run is rejected.
 
-Offline restore accepts version-1 through version-5 snapshots and publishes into a new destination, refusing to overwrite an existing database. Opening a restored older snapshot with the current engine migrates it to version 5. Preserve the original snapshot if rollback to an older executable is required.
+Offline restore accepts version-1 through version-6 snapshots and publishes into a new destination, refusing to overwrite an existing database. Opening a restored older snapshot with the current engine migrates it to version 6. Preserve the original snapshot if rollback to an older executable is required.
 
 Automated tests cover legacy event replay, approval foreign-key preservation, migration of a restored backup, repeated provider IDs across runs, within-run ID rejection and refusal to reset a future database version. Installer upgrade and clean-machine recovery acceptance remain release work.
 
@@ -21,3 +21,5 @@ Native acceptance `.acceptance/8c97c942-2100-46e6-932e-5399c36dd3eb/` uses a con
 Version 3 to 4 adds skill_lifecycle_events, keyed by procedure ID and monotonic sequence, with a foreign key cascading on explicit library deletion. Existing procedure text, versions, evaluation records and run journals are unchanged. Older schema-3 executables refuse schema 4. The additive table creation is idempotent; the final user_version advances after initialization. Source tests migrate a prior schema-3 fixture and verify zero initial lifecycle events. Native `.acceptance/a9001e85-d469-4dbc-81a9-c07b6ea94447/migration-audit.json` proves actual schema 3 to 4, unchanged run journal rows, integrity ok and no foreign-key errors while the current app can still inspect and record evaluations.
 
 Version 4 to 5 is a compatibility barrier for private specialist proposals. It uses the existing task/artifact/tool/event tables without changing their layout. A version-4 reader would not understand the requirement to integrate private edits before accepting a task, so it must refuse these records. Migration tests preserve prior run/task/event content and verify that a version-4 reader rejects version 5 before access. Backups still require their matching managed artifact directory to recover private source snapshots.
+
+Version 5 to 6 is a compatibility barrier for specialist command authority and mandatory private validation review. Command tool rows now bind task ownership; scope is checked at reservation, capture, launch and ordinary completion. A schema-5 reader would not understand that scope or the validation selection required before accepting a command-enabled task. Existing table layouts and journals are preserved. Tests cover schema-4/5 record preservation and refusal by readers capped at either version. No older executable may open schema-6 data.

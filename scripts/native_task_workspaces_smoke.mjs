@@ -7,9 +7,10 @@ import {createServer} from 'node:net';
 import path from 'node:path';
 
 const model=process.env.XAA_NATIVE_TASK_MODEL;
+const distribution=process.env.XAA_NATIVE_TASK_DISTRIBUTION;
 if(!model)throw new Error('Explicit installed XAA_NATIVE_TASK_MODEL is required');
 const root=path.resolve('.acceptance',randomUUID());
-execFileSync(path.resolve('.venv/Scripts/python.exe'),['scripts/live_task_workspaces_diagnostic.py','--root',root,'--model',model,'--prepare-only'],{windowsHide:true,stdio:'inherit'});
+execFileSync(path.resolve('.venv/Scripts/python.exe'),['scripts/live_task_workspaces_diagnostic.py','--root',root,'--model',model,'--prepare-only',...(distribution?['--distribution',distribution]:[])],{windowsHide:true,stdio:'inherit'});
 const prepared=JSON.parse(await readFile(path.join(root,'report.json'),'utf8'));
 if(!prepared.passed||!prepared.prepare_only||!prepared.private_variants_independently_validated)throw new Error('Source specialists did not produce independently checked private variants');
 const sourceFile=path.join(root,'project','shared.py');
@@ -40,6 +41,7 @@ try{
     await panel.getByRole('button',{name:'Review candidate',exact:true}).click();
     await expect(panel.getByRole('region',{name:'Private specialist changes'})).toBeVisible();
     await expect(panel.getByText(prepared.codes[name],{exact:false}).first()).toBeVisible();
+    if(distribution){await expect(panel.getByText(/PRIVATE_VALIDATED/).first()).toBeVisible();await expect(panel.getByText(/Matches current private files/)).toBeVisible();await panel.getByRole('button',{name:'Inspect saved stdout',exact:true}).last().click();await expect(panel.getByText('Loading saved outputâ€¦',{exact:true})).toHaveCount(0);}
     expect(hash(await readFile(sourceFile))).toBe(name==='alpha'?originalHash:prepared.proposed_sha256.alpha);
     // The preparer statically validated the exact candidate bytes; review full native diff/evidence.
     for(const checkbox of await panel.getByRole('checkbox').all())await checkbox.check();
@@ -62,6 +64,7 @@ try{
   expect(events.filter(event=>event.event_type==='task.reviewed'&&event.payload.state==='completed')).toHaveLength(2);
   await page.screenshot({path:path.join(root,'native-integrated.png'),fullPage:true});
   report.native_integration_ui_verified=true;report.original_unchanged_before_review=true;report.private_variants_distinct=true;report.explicit_conflict_choice_verified=true;report.final_beta_sha256=hash(await readFile(sourceFile));report.parent_completion_claimed=false;
+  report.private_validation_ui_verified=!!distribution;report.validation_distribution=distribution??null;report.private_command_execution_verified=!!prepared.private_command_validation_verified;
   await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'})).catch(()=>{});
   for(let attempt=0;attempt<40&&proc.exitCode===null;attempt++)await new Promise(resolve=>setTimeout(resolve,250));
   if(proc.exitCode===null)throw new Error('Native window close did not stop app');

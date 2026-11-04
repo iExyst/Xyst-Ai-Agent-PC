@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from xaa.runtime.task_commands import command_evidence
 from xaa.runtime.task_integration import IntegrationResolution, integrate_changes
 from xaa.runtime.tool_worker import execute_filesystem
 from xaa.storage.runs import RunStore, utc_now
@@ -21,6 +22,7 @@ class TaskReviewDecision(BaseModel):
     confirmed_criteria: list[int] = Field(default_factory=lambda: list[int](), max_length=50)
     evidence_call_ids: list[str] = Field(default_factory=list, max_length=16)
     changes_confirmed: bool = False
+    validation_call_ids: list[str] = Field(default_factory=list, max_length=16)
     resolutions: list[IntegrationResolution] = Field(
         default_factory=lambda: list[IntegrationResolution](), max_length=16
     )
@@ -64,6 +66,8 @@ def candidate_evidence(store: RunStore, run_id: str, task_id: str) -> dict[str, 
         "acceptance_criteria": task["acceptance_criteria"],
         "evidence": evidence[-16:],
         "workspace_changes": TaskWorkspaces(store).changes(run_id, task_id),
+        "validation_required": "workspace.command" in task["permission_scope"],
+        "validation_evidence": command_evidence(store, run_id, task_id),
     }
 
 
@@ -86,6 +90,22 @@ async def review_candidate(
             raise ValueError("Only a candidate awaiting review can be decided.")
         checked: list[dict[str, str]] = []
         if decision.decision == "accept":
+            if snapshot["validation_required"]:
+                validations = {item["call_id"]: item for item in snapshot["validation_evidence"]}
+                selected = decision.validation_call_ids
+                if (
+                    not selected
+                    or len(set(selected)) != len(selected)
+                    or any(
+                        call_id not in validations
+                        or not validations[call_id]["succeeded"]
+                        or not validations[call_id]["matches_current_private_tree"]
+                        for call_id in selected
+                    )
+                ):
+                    raise ValueError(
+                        "Review successful validation evidence for the exact current private tree."
+                    )
             if snapshot["workspace_changes"] and not decision.changes_confirmed:
                 raise ValueError("Review the private changes and explicitly authorize integration.")
             store.resolve_interrupted_reads(run_id, token)

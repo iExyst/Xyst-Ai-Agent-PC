@@ -14,9 +14,11 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.states import RunState
+from xaa.runtime.task_commands import command_evidence
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.task_integration import IntegrationResolution, preview
 from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
+from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.runs import RunStore
 from xaa.storage.task_workspaces import TaskWorkspaces
 from xaa.storage.tasks import TaskStore
@@ -33,7 +35,9 @@ def verify_literal_module(data: bytes, value: str) -> None:
     )
 
 
-async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
+async def diagnose(
+    root: Path, model: str, prepare_only: bool, distribution: str | None = None
+) -> None:
     root = root.resolve()
     root.relative_to((Path.cwd() / ".acceptance").resolve())
     project = root / "project"
@@ -41,6 +45,12 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
     original = b'def value():\n    return "original"\n'
     (project / "shared.py").write_bytes(original)
     codes = {name: name + "-" + uuid4().hex for name in ("alpha", "beta")}
+    validator = b"import runpy, sys\nvalue = runpy.run_path('shared.py')['value']()\nassert value == sys.argv[1], repr(value)\nprint('PRIVATE_VALIDATED ' + value)\n"
+    grant = None
+    if distribution is not None:
+        transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 60)
+        grant = {"distribution": distribution, "profile_sha256": transport.profile_sha256}
+        (project / "validate.py").write_bytes(validator)
     store = RunStore(root / "data" / "XAA" / "xaa.sqlite3")
     run_id = store.create_run(
         objective="Compare alternative implementations in private specialist copies and explicitly choose which version to integrate.",
@@ -51,6 +61,7 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
         max_iterations=16,
         max_seconds=480,
         max_output_tokens=2048,
+        command_grant=grant,
     )["id"]
     parent = store.acquire_lease(run_id, "specialist-variant-fixture", seconds=300)
     assert parent is not None
@@ -61,12 +72,20 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
         [
             TaskDefinition(
                 id=name,
-                objective=f"Read shared.py, then use workspace_write_file to change value() so it returns exactly {code!r}. Keep only this one function in the module. Copy the sha256 from the read result. Your changes belong only in your private working tree. Supply the actual Python file text: after JSON decoding, content must have real line breaks and normal Python quotes, not literal backslash-n sequences or extra backslashes before quotes. After writing, read shared.py once to check the actual saved text, then submit a candidate naming shared.py and its new return value. Do not create other files or repeat completed writes.",
+                objective=f"Read shared.py, then use workspace_write_lines with separate source lines and final_newline true to change value() so it returns exactly {code!r}. Keep only this one function in the module. Copy the sha256 from the read result. Your changes belong only in your private working tree. Supply the actual Python file text: after JSON decoding, content must have real line breaks and normal Python quotes, not literal backslash-n sequences or extra backslashes before quotes. After writing, read shared.py once to check the actual saved text. "
+                + (
+                    f"Then call workspace_run_command with argv ['/usr/bin/python3', '-I', 'validate.py', '{code}'] and max_seconds 15 to run the provided validator against your private edits. The provided validate.py is already in your private tree; do not list directories, inspect it, or alter it. Inspect the actual exit code and output. On success, immediately submit the candidate answer with that evidence and no further tool calls. On failure, fix shared.py and rerun validation within the saved allowance. "
+                    if distribution
+                    else ""
+                )
+                + "Finally submit a candidate naming shared.py and its new return value. Do not create other files or repeat completed writes.",
                 acceptance_criteria=(
                     f"Private shared.py defines value() returning exactly {code}",
                 ),
                 role="developer",
-                permissions=("workspace.read", "workspace.write"),
+                permissions=("workspace.read", "workspace.write", "workspace.command")
+                if distribution
+                else ("workspace.read", "workspace.write"),
                 max_iterations=6,
                 max_seconds=180,
                 max_output_tokens=2048,
@@ -85,6 +104,7 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
         "scope": "Real source model specialists with private snapshot working trees; scripted fixture plan and explicitly automated review, no autonomous reviewer/native inference claim",
         "fixture_review_automated": not prepare_only,
         "prepare_only": prepare_only,
+        "validation_distribution": distribution,
     }
     try:
         if not any(item.id == model for item in await provider.models()):
@@ -103,9 +123,19 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
         for name, code in codes.items():
             with store.connection() as connection:
                 _, files = TaskWorkspaces(store).view(connection, run_id, name)
-            assert set(files) == {"shared.py"}
+            assert set(files) == ({"shared.py", "validate.py"} if distribution else {"shared.py"})
             verify_literal_module(files["shared.py"], code)
             proposed[name] = hashlib.sha256(files["shared.py"]).hexdigest()
+            if distribution:
+                assert files["validate.py"] == validator
+                evidence = command_evidence(store, run_id, name)
+                assert any(
+                    item["succeeded"]
+                    and item["matches_current_private_tree"]
+                    and item["argv"] == ["/usr/bin/python3", "-I", "validate.py", code]
+                    and "PRIVATE_VALIDATED " + code in item["stdout_excerpt"]
+                    for item in evidence
+                )
         assert (project / "shared.py").read_bytes() == original
         assert store.conversation_messages(run_id) == [] and not store.unresolved_tool_calls(run_id)
         store.transition(run_id, RunState.VERIFYING, owner=parent)
@@ -115,6 +145,7 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
             proposed_sha256=proposed,
             original_unchanged_before_review=True,
             private_variants_independently_validated=True,
+            private_command_validation_verified=distribution is not None,
         )
         if not prepare_only:
 
@@ -129,6 +160,13 @@ async def diagnose(root: Path, model: str, prepare_only: bool) -> None:
                     evidence_call_ids=[evidence[0]["call_id"]],
                     changes_confirmed=True,
                     resolutions=resolutions or [],
+                    validation_call_ids=[
+                        item["call_id"]
+                        for item in command_evidence(store, run_id, name)
+                        if item["succeeded"] and item["matches_current_private_tree"]
+                    ]
+                    if distribution
+                    else [],
                 )
 
             await review_candidate(store, run_id, "alpha", decision("alpha"))
@@ -197,5 +235,8 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=Path, default=Path(".acceptance") / str(uuid4()))
     parser.add_argument("--model", default="qwen/qwen3.5-9b")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument(
+        "--distribution", help="Explicit installed WSL distribution for private validation"
+    )
     args = parser.parse_args()
-    asyncio.run(diagnose(args.root, args.model, args.prepare_only))
+    asyncio.run(diagnose(args.root, args.model, args.prepare_only, args.distribution))

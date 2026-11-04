@@ -18,14 +18,16 @@ from xaa.storage.commands import (
     CommandOutcome,
     command_artifact_root,
 )
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import RunStore, TaskReadScope
 
 
 class CommandController:
-    def __init__(self, store: RunStore, transport: WSLTransport):
+    def __init__(
+        self, store: RunStore, transport: WSLTransport, *, task_scope: TaskReadScope | None = None
+    ):
         self.store = store
         self.transport = transport
-        self.journal = CommandJournal(store)
+        self.journal = CommandJournal(store, task_scope=task_scope)
 
     def artifact(self, run_id: str, owner: str, identity: str, kind: str, data: bytes) -> str:
         directory = command_artifact_root(self.store, create=True)
@@ -108,7 +110,7 @@ class CommandController:
                             **outputs,
                         }
                     )
-                    return self.journal.complete(run_id, owner, call_id, outcome)
+                    return self.journal.complete(run_id, owner, call_id, outcome, recovery=True)
                 except (ValueError, OSError):
                     # Metadata, absence or damaged bytes never justify replay or success.
                     pass
@@ -135,7 +137,12 @@ class CommandController:
         try:
             self.transport.require_intent(intent)
             snapshot = await capture_command_snapshot(
-                self.store, run_id, owner, call_id, deadline=deadline
+                self.store,
+                run_id,
+                owner,
+                call_id,
+                deadline=deadline,
+                task_scope=self.journal.task_scope,
             )
             manifest = self.artifact(
                 run_id, owner, intent.execution_id, "snapshot", snapshot.manifest_bytes()

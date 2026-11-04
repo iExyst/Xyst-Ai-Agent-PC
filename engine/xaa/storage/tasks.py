@@ -264,6 +264,8 @@ class TaskStore:
         permissions = {"workspace.read"}
         if run["mode"] == "workspace":
             permissions.add("workspace.write")
+            if run.get("command_grant") is not None:
+                permissions.add("workspace.command")
         return TaskGraph(
             tasks,
             parent_permissions=permissions,

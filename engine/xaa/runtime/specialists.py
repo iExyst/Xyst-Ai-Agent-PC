@@ -1,4 +1,4 @@
-"""Scoped read-only specialist execution under the parent coordinator."""
+"""Scoped specialist execution with private edits and explicitly delegated validation."""
 
 import asyncio
 import hashlib
@@ -12,11 +12,14 @@ from pydantic import BaseModel, ConfigDict
 
 from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import LMStudioProvider
+from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import CreateFileArguments, ReadFileArguments, WriteFileArguments
+from xaa.runtime.line_edit import WriteLinesArguments
+from xaa.runtime.task_commands import execute_task_command
 from xaa.runtime.task_review import candidate_evidence
 from xaa.runtime.tool_worker import FilesystemOperation, execute_filesystem
-from xaa.storage.runs import LeaseLost, RunStore
+from xaa.storage.runs import LeaseLost, RunStore, TaskReadScope
 from xaa.storage.tasks import TaskStore
 
 
@@ -69,7 +72,15 @@ class SpecialistRunner:
                 async with asyncio.TaskGroup() as group:
                     heartbeat = group.create_task(self._heartbeat(run_id, parent, identity, worker))
                     try:
-                        await self._execute(run_id, parent, task, worker)
+                        await self._execute(
+                            run_id,
+                            parent,
+                            task,
+                            worker,
+                            deadline=min(
+                                deadline, time.monotonic() + task["budgets"]["max_seconds"]
+                            ),
+                        )
                     finally:
                         heartbeat.cancel()
         except asyncio.CancelledError:
@@ -89,7 +100,9 @@ class SpecialistRunner:
                 result={"error": type(exc).__name__, "causes": _failure_types(exc)},
             )
 
-    async def _execute(self, run_id: str, parent: str, task: dict[str, Any], worker: str) -> None:
+    async def _execute(
+        self, run_id: str, parent: str, task: dict[str, Any], worker: str, *, deadline: float
+    ) -> None:
         identity = task["local_id"]
         run = self.store.get_run(run_id)
         assert run is not None
@@ -105,6 +118,7 @@ class SpecialistRunner:
         if "workspace.read" not in task["permission_scope"]:
             raise PermissionError("Specialist has no workspace read permission.")
         isolated = "workspace.write" in task["permission_scope"]
+        commands = isolated and "workspace.command" in task["permission_scope"]
         if isolated:
             await execute_filesystem(
                 self.store,
@@ -146,12 +160,17 @@ class SpecialistRunner:
                     {
                         "objective": task["objective"],
                         "acceptance_criteria": task["acceptance_criteria"],
+                        "budgets": task["budgets"],
                         "prerequisites_untrusted": prerequisites,
                         "prerequisites_omitted": len(task["dependencies"]) - len(prerequisites),
                     }
                 ),
             },
         ]
+        if commands:
+            messages[0]["content"] += (
+                " You may use workspace_run_command to validate the current private snapshot in the saved restricted WSL backend. It cannot access the host project or network. Each invocation starts from your current private files; command-generated changes are discarded. Report actual exit status and test output, never infer success from a proposed command."
+            )
         tools = [
             {
                 "type": "function",
@@ -191,7 +210,44 @@ class SpecialistRunner:
                     },
                 ]
             )
-        for _ in range(task["budgets"]["max_iterations"]):
+        if commands:
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_run_command",
+                        "description": "Run bounded structured argv in an isolated copy of your current private files using the saved local-user command grant. No network or host filesystem access; command file changes are discarded. Full stdout/stderr become artifacts, bounded excerpts and exact snapshot hash are returned. A nonzero exit is evidence of failure, not completion.",
+                        "parameters": CommandArguments.model_json_schema(),
+                    },
+                }
+            )
+        if isolated:
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_write_lines",
+                        "description": 'Write an existing private UTF-8 file from a list of exact source lines joined with LF. Each line excludes CR/LF; final_newline explicitly controls the last LF. Prefer this for multiline code. For example lines ["def value():", "    return \'text\'"] with final_newline true writes two Python lines. Preserve literal backslashes exactly; no escape decoding is performed. Read first and copy the CURRENT file\'s sha256, never a hash of proposed content. Uses the same 64 KiB compare-and-swap private write boundary.',
+                        "parameters": WriteLinesArguments.model_json_schema(),
+                    },
+                }
+            )
+        if commands:
+            messages[0]["content"] = messages[0]["content"].replace(
+                "You cannot run commands or grant permissions.", "You cannot grant permissions."
+            )
+        scope_instruction = messages[0]["content"]
+        for iteration in range(task["budgets"]["max_iterations"]):
+            remaining = task["budgets"]["max_iterations"] - iteration
+            messages[0]["content"] = (
+                scope_instruction
+                + f" Engine budget: {remaining} model request(s) remain, including this one. Submit the candidate once the requested work and available validation are ready; independent review follows afterward. "
+                + (
+                    "This is the last request. If work is ready, return the public candidate with actual evidence now. Otherwise report what is incomplete. Further tool calls cannot be followed by another model response within this allowance."
+                    if remaining == 1
+                    else "Avoid redundant reads or repeated completed checks."
+                )
+            )
             self.store.check_token_budget(run_id, parent, before_inference=True)
             self.tasks.check_token_budget(run_id, identity, before_inference=True)
             inference_id = self.tasks.reserve_inference(run_id, parent, identity, worker)
@@ -267,12 +323,42 @@ class SpecialistRunner:
                     else f"task-{uuid4()}"
                 )
                 operation: FilesystemOperation
+                if commands and name == "workspace_run_command":
+                    result = await execute_task_command(
+                        self.store,
+                        TaskReadScope(run_id, parent, identity, worker),
+                        journal_id,
+                        arguments,
+                        deadline=deadline,
+                    )
+                    self.tasks.record_read_worker_event(
+                        run_id,
+                        parent,
+                        identity,
+                        worker,
+                        "task.tool.result",
+                        {
+                            "task_id": identity,
+                            "call_id": call["id"],
+                            "journal_id": journal_id,
+                            "result": result,
+                        },
+                    )
+                    messages.append(
+                        {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)}
+                    )
+                    continue
                 if name == "workspace_read_file":
                     operation = "branch_read" if isolated else "read"
                 elif name == "workspace_list_directory":
                     operation = "branch_list" if isolated else "list"
                 elif isolated and name == "workspace_write_file":
                     operation = "branch_write"
+                elif isolated and name == "workspace_write_lines":
+                    operation = "branch_write"
+                    arguments = (
+                        WriteLinesArguments.model_validate(arguments).write_arguments().model_dump()
+                    )
                 elif isolated and name == "workspace_create_file":
                     operation = "branch_create"
                 else:

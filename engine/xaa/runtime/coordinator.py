@@ -414,7 +414,7 @@ class Coordinator:
                 "type": "function",
                 "function": {
                     "name": "plan_save",
-                    "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, permissions, max_iterations and max_seconds. Total reservations cannot exceed {run['limits']['max_iterations']} iterations and {run['limits']['max_seconds']} seconds. Permissions may include workspace.read{' and workspace.write' if run['mode'] == 'workspace' else ''}. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
+                    "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, permissions, max_iterations and max_seconds. Total reservations cannot exceed {run['limits']['max_iterations']} iterations and {run['limits']['max_seconds']} seconds. Permissions may include workspace.read{' and workspace.write' if run['mode'] == 'workspace' else ''}. Tasks with workspace.write use private working trees. Only when this run has a saved command grant may a private read/write task additionally receive workspace.command to validate its private files. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
                     "parameters": SavePlanArguments.model_json_schema(),
                 },
             },

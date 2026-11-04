@@ -1416,6 +1416,13 @@ export interface components {
             status: "queued" | "running" | "verifying" | "completed" | "failed" | "blocked" | "cancelled";
             /** Task Id */
             task_id: string;
+            /** Validation Evidence */
+            validation_evidence?: components["schemas"]["TaskValidationEvidence"][];
+            /**
+             * Validation Required
+             * @default false
+             */
+            validation_required: boolean;
             /** Workspace Changes */
             workspace_changes?: components["schemas"]["TaskWorkspaceChange"][];
         };
@@ -1452,6 +1459,33 @@ export interface components {
             rationale: string;
             /** Resolutions */
             resolutions?: components["schemas"]["IntegrationResolution"][];
+            /** Validation Call Ids */
+            validation_call_ids?: string[];
+        };
+        /** TaskValidationEvidence */
+        TaskValidationEvidence: {
+            /** Argv */
+            argv: string[];
+            /** Call Id */
+            call_id: string;
+            /** Exit Code */
+            exit_code: number | null;
+            /** Matches Current Private Tree */
+            matches_current_private_tree: boolean;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
+            /** Stderr Artifact Id */
+            stderr_artifact_id: string;
+            /** Stderr Excerpt */
+            stderr_excerpt: string;
+            /** Stdout Artifact Id */
+            stdout_artifact_id: string;
+            /** Stdout Excerpt */
+            stdout_excerpt: string;
+            /** Succeeded */
+            succeeded: boolean;
+            /** Termination Reason */
+            termination_reason: string;
         };
         /** TaskWorkspaceChange */
         TaskWorkspaceChange: {

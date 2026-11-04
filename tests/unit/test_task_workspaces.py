@@ -234,8 +234,10 @@ async def test_integration_recovery_never_replays_uncertain_or_completed_writes(
             assert writes[0]["provider_call_id"] != writes[1]["provider_call_id"]
 
 
+@pytest.mark.parametrize("edit_style", ["text", "lines"])
 async def test_specialists_produce_real_private_changes_without_parent_history_pollution(
     workspace_tmp_path,
+    edit_style,
 ):
     store, run_id, owner, _tasks, project = setup(workspace_tmp_path)
 
@@ -250,11 +252,17 @@ async def test_specialists_produce_real_private_changes_without_parent_history_p
             elif messages[-1]["tool_call_id"] == "read":
                 result = json.loads(messages[-1]["content"])
                 function = {
-                    "name": "workspace_write_file",
+                    "name": "workspace_write_lines"
+                    if edit_style == "lines"
+                    else "workspace_write_file",
                     "arguments": json.dumps(
                         {
                             "path": "shared.txt",
-                            "content": objective + " version\n",
+                            **(
+                                {"lines": [objective + " version"], "final_newline": True}
+                                if edit_style == "lines"
+                                else {"content": objective + " version\n"}
+                            ),
                             "expected_sha256": result["sha256"],
                         }
                     ),
@@ -300,6 +308,67 @@ async def test_specialists_produce_real_private_changes_without_parent_history_p
             candidate = candidate_evidence(store, run_id, name)
             assert candidate["workspace_changes"][0]["path"] == "shared.txt"
             assert candidate["evidence"][0]["sha256"] == hashlib.sha256(b"original\n").hexdigest()
+        assert (project / "shared.txt").read_bytes() == b"original\n"
+        assert store.conversation_messages(run_id) == []
+    finally:
+        await provider.close()
+
+
+async def test_last_request_budget_guidance_keeps_tools_and_never_grants_commands(
+    workspace_tmp_path,
+):
+    store, run_id, owner, _, project = setup(workspace_tmp_path)
+    with store.connection() as connection:
+        connection.execute("DELETE FROM tasks WHERE id=?", (run_id + ":b",))
+
+    class BudgetAware(LMStudioProvider):
+        requests = 0
+
+        async def chat(self, *, model, messages, tools=None, **kwargs):
+            self.requests += 1
+            assert json.loads(messages[1]["content"])["budgets"]["max_iterations"] == 3
+            assert f"{4 - self.requests} model request(s) remain" in messages[0]["content"]
+            names = {item["function"]["name"] for item in tools}
+            assert "workspace_write_lines" in names and "workspace_run_command" not in names
+            if self.requests == 3:
+                assert "This is the last request" in messages[0]["content"]
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "Candidate based on the saved file reads",
+                            }
+                        }
+                    ]
+                }
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": f"read-{self.requests}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "workspace_read_file",
+                                        "arguments": '{"path":"shared.txt"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+
+    provider = BudgetAware()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, owner, deadline=time.monotonic() + 30
+        )
+        assert statuses == [{"task_id": "a", "status": "verifying"}]
+        assert provider.requests == 3
         assert (project / "shared.txt").read_bytes() == b"original\n"
         assert store.conversation_messages(run_id) == []
     finally:

@@ -87,8 +87,10 @@ def test_newer_database_is_refused_without_resetting_version(workspace_tmp_path)
         )
 
 
-def test_schema_four_records_are_preserved_when_enabling_private_workspace_semantics(
+@pytest.mark.parametrize("old_version", [4, 5])
+def test_prior_records_are_preserved_when_enabling_private_workspace_semantics(
     workspace_tmp_path,
+    old_version,
 ):
     from xaa.runtime.task_graph import TaskDefinition
     from xaa.storage.tasks import TaskStore
@@ -110,25 +112,26 @@ def test_schema_four_records_are_preserved_when_enabling_private_workspace_seman
     events = store.list_events(run_id)
     tasks = TaskStore(store).records(run_id)
     with store.connection() as c:
-        c.execute("PRAGMA user_version=4")
+        c.execute(f"PRAGMA user_version={old_version}")
     reopened = RunStore(store.path)
     assert reopened.get_run(run_id) == before
     assert reopened.list_events(run_id) == events
     assert TaskStore(reopened).records(run_id) == tasks
     with reopened.connection() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert c.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
-def test_schema_four_reader_limit_refuses_schema_five_before_access(
-    workspace_tmp_path, monkeypatch
+@pytest.mark.parametrize("old_limit", [4, 5])
+def test_older_reader_limit_refuses_current_schema_before_access(
+    workspace_tmp_path, monkeypatch, old_limit
 ):
     from xaa.storage import runs as module
 
     store = RunStore(workspace_tmp_path / "private-workspaces.sqlite3")
     with store.connection() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 5
-    monkeypatch.setattr(module, "DATABASE_SCHEMA_VERSION", 4)
+        assert c.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+    monkeypatch.setattr(module, "DATABASE_SCHEMA_VERSION", old_limit)
     with pytest.raises(RuntimeError, match="newer"):
         RunStore(store.path)
     with store.connection() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert c.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

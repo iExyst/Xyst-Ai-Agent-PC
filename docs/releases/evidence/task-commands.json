@@ -1,0 +1,459 @@
+{
+  "date": "2026-11-04",
+  "status": "implemented; bounded real-model/private WSL validation and native review scenario verified",
+  "schema": 6,
+  "verification": {
+    "engine_tests": 462,
+    "browser_passed": 10,
+    "browser_live_skipped": 2,
+    "client_passed": 7,
+    "ruff": "passed",
+    "pyright": "passed",
+    "typescript": "passed",
+    "contracts": "passed",
+    "native_build": "passed"
+  },
+  "frozen_snapshot": {
+    "root": ".acceptance/c0eafe44-be07-4dab-a72e-b4cc581d218f",
+    "passed": true,
+    "engine_sha256": "7c175ed8e18b4b946b0be184878fdbe2fda11cd26a055db4bd37e7f27f3d19d0",
+    "private_unicode_snapshot_verified": true,
+    "wrong_missing_expired_task_refused": true,
+    "original_unchanged": true,
+    "snapshot_only_no_remote_launch": true,
+    "scope": "Actual frozen snapshot IPC with System32-only PATH; no WSL/model/integration execution claim",
+    "observed_at_epoch": 1793835912.8983974
+  },
+  "retained_failed_attempts": [
+    {
+      "root": ".acceptance/34ec134e-9363-4cce-9303-efcd11f6f3ff",
+      "model": "qwen/qwen3.5-9b",
+      "reason": "Both real private validators passed; alpha spent extra requests and hit its six-iteration cap before a candidate. No integration.",
+      "tasks": [
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "SpecialistIterationLimit"
+            ]
+          }
+        },
+        {
+          "status": "verifying",
+          "errors": {}
+        }
+      ],
+      "commands": [
+        {
+          "state": "completed",
+          "execution_id": "ad62dddffa054705ab7b6c24a7accd41",
+          "snapshot_sha256": "59ee92df30801968fc3880ad2f69c0af73f97205213e2a7d267bc62373cab041",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "276aad4692564c048aac0a68946b9b8f",
+          "snapshot_sha256": "628863c6dce1f4bb860e6231a3818fd634b179add219e0b772eda53cd4b6aba7",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        }
+      ],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/1f940241-63d0-4039-a5e2-985844908f6f",
+      "model": "qwen/qwen3.5-9b",
+      "reason": "Harmless tool-use diagnostic final reply truncated; autonomous tools remained disabled.",
+      "tasks": [
+        {
+          "status": "queued",
+          "errors": {}
+        },
+        {
+          "status": "queued",
+          "errors": {}
+        }
+      ],
+      "commands": [],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/5b125d7c-b7e9-4ad5-9774-9d62b5534333",
+      "model": "qwen/qwen3.5-9b",
+      "reason": "Alpha computed a hash of proposed content and used it as current-file CAS hash; private write refused. Beta produced a valid tested candidate. No integration.",
+      "tasks": [
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "FilesystemWorkerError"
+            ]
+          }
+        },
+        {
+          "status": "verifying",
+          "errors": {}
+        }
+      ],
+      "commands": [
+        {
+          "state": "completed",
+          "execution_id": "ff63464187944508a625b5e1bb68814c",
+          "snapshot_sha256": "87babd98fa8f723c700d3635089492f96c40d1c09e82dd82a08cc4081471f66b",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "59357d200b6149fcae089ebcf49cea5f",
+          "snapshot_sha256": "2860653cf8c887c83cfc4db9e5e26b445f254439dd04e4c1a97baf09b6cad70a",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        }
+      ],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/d61a4cf8-9d03-4a3a-b827-8fcd97e9e46d",
+      "model": "qwen/qwen3.5-9b",
+      "reason": "Harmless tool-use diagnostic final reply truncated; autonomous tools remained disabled.",
+      "tasks": [
+        {
+          "status": "queued",
+          "errors": {}
+        },
+        {
+          "status": "queued",
+          "errors": {}
+        }
+      ],
+      "commands": [],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/bfe2cffe-b3a2-40d0-9799-e1f295ed01e8",
+      "model": "qwen3-coder-30b-a3b-instruct",
+      "reason": "Both tasks wrote over-escaped source; actual validators failed and tasks exhausted their iteration caps. No integration.",
+      "tasks": [
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "SpecialistIterationLimit"
+            ]
+          }
+        },
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "SpecialistIterationLimit"
+            ]
+          }
+        }
+      ],
+      "commands": [
+        {
+          "state": "completed",
+          "execution_id": "7c327250621d44dfbf5cc8983133df67",
+          "snapshot_sha256": "df0281ad733329da6cbc99219b0b86f66089a8aa087b2a5b5673ba65ed463ef1",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "c9f313828dd041f2a009c16df8b89cb4",
+          "snapshot_sha256": "fed72cdcf94f536cdb613d15be1fb4fc6f2dfa5a456c637868da6316b27c53c5",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "b8e56b4727954ab0b333f7aa15965e50",
+          "snapshot_sha256": "df0281ad733329da6cbc99219b0b86f66089a8aa087b2a5b5673ba65ed463ef1",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "b063f23518e5491d86c00d9d7121b8e2",
+          "snapshot_sha256": "fed72cdcf94f536cdb613d15be1fb4fc6f2dfa5a456c637868da6316b27c53c5",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        }
+      ],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/5aa997f5-8992-4e30-a10c-cd6571eed4b5",
+      "model": "qwen3-coder-30b-a3b-instruct",
+      "reason": "Explicit line writing produced valid source and both validators passed, but redundant reads/checks exhausted both task allowances before candidates. No integration.",
+      "tasks": [
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "SpecialistIterationLimit"
+            ]
+          }
+        },
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "SpecialistIterationLimit"
+            ]
+          }
+        }
+      ],
+      "commands": [
+        {
+          "state": "completed",
+          "execution_id": "c0cfbb2fa54e4aeeabddf35fdfacf016",
+          "snapshot_sha256": "2469df5728f68dfb63894f84fa6f7fc07501e67a5eaf1987e998ca98bb2fbdea",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "c8a67e8d9bfb4e2e9886fe781bb3a10e",
+          "snapshot_sha256": "cb16e8c1af27a450e77c693b0dd5c44e30248460a9600e1dd0d080aa5db4dcf1",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "40cc9011d3624e44979101f7f2f81dea",
+          "snapshot_sha256": "2469df5728f68dfb63894f84fa6f7fc07501e67a5eaf1987e998ca98bb2fbdea",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        }
+      ],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/8192a70c-6e25-4753-a7ee-df92b2976da4",
+      "model": "qwen3-coder-30b-a3b-instruct",
+      "reason": "With visible remaining request budgets, beta produced a reviewable candidate; alpha still used the final request for another check and hit its cap. No integration.",
+      "tasks": [
+        {
+          "status": "failed",
+          "errors": {
+            "error": "ExceptionGroup",
+            "causes": [
+              "SpecialistIterationLimit"
+            ]
+          }
+        },
+        {
+          "status": "verifying",
+          "errors": {}
+        }
+      ],
+      "commands": [
+        {
+          "state": "completed",
+          "execution_id": "9f092acc674c460ebe0c4f247fb97941",
+          "snapshot_sha256": "fe3e0457a09555496bb82af8b78801a57481dbd75fdeacb33338440d06e1c203",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "38f1e953464d4a4f8c9e457b4c01f106",
+          "snapshot_sha256": "484879035170f5bd1e82f88930ee3475e3faad9cfb9f55ab7a596338bab049cc",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        },
+        {
+          "state": "completed",
+          "execution_id": "4637d8a1c0044b358f89b0e4bd8564e7",
+          "snapshot_sha256": "fe3e0457a09555496bb82af8b78801a57481dbd75fdeacb33338440d06e1c203",
+          "exit_code": 0,
+          "succeeded": true,
+          "cleanup_confirmed": true
+        }
+      ],
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    },
+    {
+      "root": ".acceptance/77791c2e-1bed-4193-b03c-90024ec618f7",
+      "model": "mistralai/devstral-small-2-2512",
+      "reason": "LM Studio diagnostic request hit its configured HTTP read timeout before enabling tools. No specialist tools or integration ran.",
+      "original_unchanged": true,
+      "owned_model_unloaded": true
+    }
+  ],
+  "limitations": [
+    "No default-model selection or representative completion-rate benchmark claim",
+    "Actual passing commands do not establish a completed task without a reviewable candidate",
+    "No autonomous reviewer or final integrated project validation",
+    "No native model inference claim",
+    "No full Hermes parity or release-readiness claim"
+  ],
+  "previous_checkpoint_ci": {
+    "commit": "25ebf6b",
+    "run_id": 41933017778,
+    "source": "success",
+    "installer": "success",
+    "url": "https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41933017778"
+  },
+  "scope": "Two real source-model specialists edit separate private copies and run actual restricted WSL validators. Native Tauri IPC/WebView inspects the stored validation output and integrates explicit conflict choices through frozen filesystem workers. Frozen private snapshot capture is tested separately. No native model inference or whole frozen task-command execution claim.",
+  "source_preparation": {
+    "passed": true,
+    "model": "qwen/qwen3.5-9b",
+    "root": ".acceptance/294a45bc-157b-45c1-b76f-b8644715e5f8",
+    "run_id": "f3c603e5-0185-43c1-8715-65909cef04fa",
+    "codes": {
+      "alpha": "alpha-ae1045fb6857461ea403d4c20d00d840",
+      "beta": "beta-32b37c46659d4474a3f6c0bf4c826e69"
+    },
+    "scope": "Real source model specialists with private snapshot working trees; scripted fixture plan and explicitly automated review, no autonomous reviewer/native inference claim",
+    "fixture_review_automated": false,
+    "prepare_only": true,
+    "validation_distribution": "Ubuntu-24.04",
+    "statuses": [
+      {
+        "task_id": "alpha",
+        "status": "verifying"
+      },
+      {
+        "task_id": "beta",
+        "status": "verifying"
+      }
+    ],
+    "proposed_sha256": {
+      "alpha": "439f0da160dad4d3668d66d9c030d64e006e3ca2f9ccf0aaaa3a84fedead2ca4",
+      "beta": "f1e58e808c9c3a53fdabd4495aa6f5136dc01d3c253ef82998bed080be7ddb62"
+    },
+    "original_unchanged_before_review": true,
+    "private_variants_independently_validated": true,
+    "private_command_validation_verified": true,
+    "parent_completion_claimed": false,
+    "unresolved_calls": 0,
+    "parent_history_unchanged": true,
+    "usage": {
+      "prompt_tokens": 25916,
+      "completion_tokens": 3552,
+      "total_tokens": 29468,
+      "unmeasured_calls": 0
+    },
+    "owned_model_unloaded": true
+  },
+  "native": {
+    "passed": true,
+    "run_id": "f3c603e5-0185-43c1-8715-65909cef04fa",
+    "model": "qwen/qwen3.5-9b",
+    "build_sha256": {
+      "xaa-desktop.exe": "519275b1416b6a8be368f2f02012535fe2665dbe3c25d5dcee2bd5c069d6a4e7",
+      "xaa-engine.exe": "7c175ed8e18b4b946b0be184878fdbe2fda11cd26a055db4bd37e7f27f3d19d0"
+    },
+    "fixture_review_automated": true,
+    "scope": "Real source-model private variants; native Tauri IPC/WebView review and frozen integration workers under System32-only runtime PATH. Not native model inference, autonomous review or full parent completion.",
+    "native_integration_ui_verified": true,
+    "original_unchanged_before_review": true,
+    "private_variants_distinct": true,
+    "explicit_conflict_choice_verified": true,
+    "final_beta_sha256": "f1e58e808c9c3a53fdabd4495aa6f5136dc01d3c253ef82998bed080be7ddb62",
+    "parent_completion_claimed": false,
+    "private_validation_ui_verified": true,
+    "validation_distribution": "Ubuntu-24.04",
+    "private_command_execution_verified": true,
+    "native_exit": true,
+    "engine_stopped": true,
+    "graceful_shutdown": true
+  },
+  "validation_evidence": {
+    "alpha": [
+      {
+        "call_id": "taskfs-637550375881198307430c3216000ec39c75794c239c1db9b4c4304cb9c7fe14",
+        "argv": [
+          "/usr/bin/python3",
+          "-I",
+          "validate.py",
+          "alpha-ae1045fb6857461ea403d4c20d00d840"
+        ],
+        "snapshot_sha256": "0446cd168ca7cae7a89ce3070357910ba0ec7d88fe5b6bffd2e6ff2c16fc869e",
+        "matches_current_private_tree": true,
+        "succeeded": true,
+        "exit_code": 0,
+        "termination_reason": "finished",
+        "stdout_excerpt": "PRIVATE_VALIDATED alpha-ae1045fb6857461ea403d4c20d00d840\n",
+        "stderr_excerpt": "Running as unit: xaa-exec-dae20a84117f451c80e15c4b4862476d.service; invocation ID: 41e94ac7446048ea881e04c1bfbcba7b\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 109ms\nCPU time consumed: 63ms\nMemory peak: 5.0M\nMemory swap peak: 0B\n",
+        "stdout_artifact_id": "11d7bcfc-3631-4ca9-b4e8-5e45a4020cf7",
+        "stderr_artifact_id": "d8a7153c-2002-425b-a231-717280e39218"
+      }
+    ],
+    "beta": [
+      {
+        "call_id": "taskfs-fcf6c7f02b281fedff103746d3f9426ac9eb7d09f6cdc87f79ad1d863d4762fa",
+        "argv": [
+          "/usr/bin/python3",
+          "-I",
+          "validate.py",
+          "beta-32b37c46659d4474a3f6c0bf4c826e69"
+        ],
+        "snapshot_sha256": "f02eb188efeb7511f0a45613c1f5cb982ee8635c998c6b9a0e45af0b422b5b01",
+        "matches_current_private_tree": true,
+        "succeeded": true,
+        "exit_code": 0,
+        "termination_reason": "finished",
+        "stdout_excerpt": "PRIVATE_VALIDATED beta-32b37c46659d4474a3f6c0bf4c826e69\n",
+        "stderr_excerpt": "Running as unit: xaa-exec-ba80b2a94cd149f8913c32bc50ed2ccf.service; invocation ID: 124ad89df6054d4494b36b592c75c175\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 116ms\nCPU time consumed: 69ms\nMemory peak: 5.0M\nMemory swap peak: 0B\n",
+        "stdout_artifact_id": "5b927fa8-56f3-4c60-97e1-95422d31739a",
+        "stderr_artifact_id": "d5a7cda8-a76f-44e2-bf5c-8882ea7f68bc"
+      }
+    ]
+  },
+  "database_audit": {
+    "schema": 6,
+    "integrity": "ok",
+    "foreign_key_errors": 0,
+    "parent_state": "verifying",
+    "tasks": [
+      {
+        "task_id": "alpha",
+        "status": "completed"
+      },
+      {
+        "task_id": "beta",
+        "status": "completed"
+      }
+    ]
+  },
+  "loaded_instances_after_test": 0,
+  "parent_history_unchanged": true,
+  "unresolved_calls": 0,
+  "screenshots": [
+    ".acceptance/294a45bc-157b-45c1-b76f-b8644715e5f8/native-conflict.png",
+    ".acceptance/294a45bc-157b-45c1-b76f-b8644715e5f8/native-integrated.png"
+  ],
+  "visual_review": "Native conflict screenshot inspected: real validation output, exact snapshot identity, reviewed evidence, explicit conflict control and disabled acceptance before choosing. Integrated result and shutdown verified by native diagnostic."
+}

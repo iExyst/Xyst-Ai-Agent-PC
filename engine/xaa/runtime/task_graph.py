@@ -60,6 +60,11 @@ class TaskGraph:
         ):
             raise ValueError("Declared task token allowances exceed the remaining shared budget.")
         for task in tasks:
+            if "workspace.command" in task.permissions and not {
+                "workspace.read",
+                "workspace.write",
+            }.issubset(task.permissions):
+                raise PermissionError("Specialist commands require a private read/write workspace.")
             if (
                 output_limit is not None
                 and task.max_output_tokens is not None
