@@ -36,6 +36,7 @@ class Backend:
             "output_complete": True,
             "workspace_changes_persisted": False,
             "limits": {
+                "max_active_executions": 2,
                 "memory_bytes": 1 if self.fault == "limits" else 134217728,
                 "cpu_percent": 50,
                 "tasks": 32,

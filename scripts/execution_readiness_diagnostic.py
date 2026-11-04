@@ -28,7 +28,10 @@ async def diagnose(distribution: str, engine: Path | None) -> None:
     command = (
         [str(engine.resolve(strict=True))] if engine else [sys.executable, "-I", "-m", "xaa.api"]
     )
+    temporary = root / "temporary \u96ea ${HOME} $HOME $%f %n %% folder"
     if engine:
+        temporary.mkdir()
+        environment.update(TEMP=str(temporary), TMP=str(temporary))
         environment["PATH"] = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32")
         environment.pop("PYTHONPATH", None)
         environment.pop("VIRTUAL_ENV", None)
@@ -57,6 +60,10 @@ async def diagnose(distribution: str, engine: Path | None) -> None:
                         raise TimeoutError("API startup deadline expired")
                     await asyncio.sleep(0.1)
                 body = {"distribution": distribution}
+                if engine:
+                    assert any(temporary.glob("_MEI*/xaa/runtime/cgroup_gate.py")), (
+                        "Frozen resources were not extracted under the selected special path"
+                    )
                 assert (await client.post("/execution/readiness", json=body)).status_code == 401
                 assert (
                     await client.post(
@@ -89,6 +96,7 @@ async def diagnose(distribution: str, engine: Path | None) -> None:
     report = {
         "passed": True,
         "frozen": engine is not None,
+        "frozen_extraction_special_path": engine is not None,
         "engine_sha256": hashlib.sha256(engine.read_bytes()).hexdigest() if engine else None,
         "distribution": distribution,
         "readiness": result,

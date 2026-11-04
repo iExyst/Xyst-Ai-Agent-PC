@@ -731,6 +731,12 @@ export interface components {
              */
             cpu_percent: 50;
             /**
+             * Max Active Executions Per Distribution
+             * @default 2
+             * @constant
+             */
+            max_active_executions_per_distribution: 2;
+            /**
              * Max Seconds
              * @default 30
              * @constant

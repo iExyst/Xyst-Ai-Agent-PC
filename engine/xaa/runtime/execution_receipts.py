@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 MAX_IDENTITIES = 4096
+MAX_ACTIVE_EXECUTIONS = 2
 
 
 def identity_value(value: str) -> str:
@@ -22,6 +23,10 @@ def identity_value(value: str) -> str:
 
 
 class ExecutionReceipts:
+    @property
+    def active_limit(self) -> int:
+        return MAX_ACTIVE_EXECUTIONS
+
     def __init__(self, directory: Path) -> None:
         self.directory = directory
         directory.mkdir(mode=0o700, exist_ok=True)
@@ -46,7 +51,7 @@ class ExecutionReceipts:
                 self._exclusive(schema, b'{"format":1}')
 
     def path(self, identity: str, suffix: str) -> Path:
-        if suffix not in {"lock", "claim.json", "outcome.json", "closed", "stop"}:
+        if suffix not in {"lock", "claim.json", "outcome.json", "closed", "stop", "active"}:
             raise ValueError("Invalid receipt kind.")
         return self.directory / f"{identity_value(identity)}.{suffix}"
 
@@ -125,6 +130,33 @@ class ExecutionReceipts:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def _check_active(path: Path) -> None:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            info = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != 0
+                or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_size != 8
+                or os.read(descriptor, 9) != b"reserved"
+            ):
+                raise PermissionError(
+                    "Invalid execution admission marker; operator maintenance required."
+                )
+        finally:
+            os.close(descriptor)
+
+    def release_active(self, identity: str) -> None:
+        """Caller holds the identity lock and has stopped its unit and removed staging."""
+        with self._file_lock(self.directory / "_admission.lock"):
+            path = self.path(identity, "active")
+            if path.exists() or path.is_symlink():
+                self._check_active(path)
+                path.unlink()
+                self._sync_directory()
+
     def marker(self, identity: str, *, stopped: bool = False) -> None:
         for suffix in ("closed", "stop") if stopped else ("closed",):
             target = self.path(identity, suffix)
@@ -152,12 +184,25 @@ class ExecutionReceipts:
                 json.dumps(request, sort_keys=True, separators=(",", ":")).encode("utf-8")
             ).hexdigest(),
         }
-        try:
-            self._exclusive(self.path(identity, "claim.json"), json.dumps(record).encode("utf-8"))
-        except FileExistsError:
-            raise RuntimeError(
-                "Execution identity was already used; reconcile instead of replaying."
-            ) from None
+        with self._file_lock(self.directory / "_admission.lock"):
+            active = list(self.directory.glob("*.active"))
+            for path in active:
+                identity_value(path.name.removesuffix(".active"))
+                self._check_active(path)
+            if len(active) >= MAX_ACTIVE_EXECUTIONS:
+                raise RuntimeError(
+                    "Private execution capacity is full; reconcile before another launch."
+                )
+            try:
+                self._exclusive(
+                    self.path(identity, "claim.json"), json.dumps(record).encode("utf-8")
+                )
+            except FileExistsError:
+                raise RuntimeError(
+                    "Execution identity was already used; reconcile instead of replaying."
+                ) from None
+            # A dead manager retains this slot until observed unit/staging cleanup.
+            self._exclusive(self.path(identity, "active"), b"reserved")
 
     def finished(self, identity: str, result: dict[str, Any]) -> None:
         metadata = {
@@ -178,6 +223,8 @@ class ExecutionReceipts:
             "stop_requested": self.path(identity, "stop").exists(),
             "claim": None,
             "outcome": None,
+            "admission_reserved": self.path(identity, "active").exists()
+            or self.path(identity, "active").is_symlink(),
         }
         for kind, name in (("claim.json", "claim"), ("outcome.json", "outcome")):
             path = self.path(identity, kind)

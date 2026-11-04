@@ -33,7 +33,7 @@ def main() -> None:
         encoding="utf-8",
     )
     wsl = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/wsl.exe")
-    prefix = [wsl, "--distribution", args.distribution, "--exec"]
+    prefix = [wsl, "--distribution", args.distribution, "--user", "root", "--exec"]
     modules = [
         Path("engine/xaa/runtime") / filename
         for filename in (
@@ -73,6 +73,30 @@ with tempfile.TemporaryDirectory(prefix='xaa-receipt-check-',dir='/tmp') as t:
   except RuntimeError as e: assert 'retention is full' in str(e)
   with registry.locked('a'*32): assert registry.status('a'*32)['closed']
  checks['quota_refused_new_identity_existing_control_allowed']=True
+ admission=R(root/'admission')
+ for identity in ('d'*32,'e'*32):
+  with admission.locked(identity): admission.claim(identity,{'fixture':True})
+ with admission.locked('f'*32):
+  try: admission.claim('f'*32,{'fixture':True})
+  except RuntimeError as e: assert 'capacity is full' in str(e)
+  else: raise AssertionError('Third admission was permitted')
+ assert not admission.path('f'*32,'claim.json').exists()
+ with admission.locked('d'*32): admission.release_active('d'*32)
+ with admission.locked('f'*32): admission.claim('f'*32,{'fixture':True})
+ checks['shared_active_slot_bound_and_release']=True
+ slot=admission.path('f'*32,'active');slot.unlink()
+ alias=root/'slot-target';alias.write_bytes(b'reserved');slot.symlink_to(alias)
+ with admission.locked('1'*32):
+  try: admission.claim('1'*32,{'fixture':True})
+  except OSError: pass
+  else: raise AssertionError('Symlink admission accepted')
+ assert alias.read_bytes()==b'reserved'
+ slot.unlink();slot.write_bytes(b'corrupt!');slot.chmod(0o600)
+ with admission.locked('2'*32):
+  try: admission.claim('2'*32,{'fixture':True})
+  except PermissionError: pass
+  else: raise AssertionError('Corrupt admission accepted')
+ checks['admission_symlink_and_corruption_refused']=True
  outside=root/'outside';outside.write_bytes(b'outside-fixture')
  with registry.locked('c'*32):
   registry.path('c'*32,'closed').symlink_to(outside)
@@ -150,6 +174,20 @@ print(json.dumps(checks))
         "def add(a, b):\n    return a + b\n", encoding="utf-8"
     )
     snapshot = capture_workspace(workspace)
+    literal = "$HOME ${PATH} $LANG ${LANG} $$ %f %n %% \u96ea"
+    literal_code = (
+        "import sys;d=chr(36);p=chr(37);"
+        "expected=d+'HOME '+d+'{PATH} '+d+'LANG '+d+'{LANG} '+d+d+' '+p+'f '+p+'n '+p+p+' '+chr(0x96ea);"
+        "assert sys.argv[1]==expected;print(sys.argv[1])"
+    )
+    literal_result = execute(
+        "literal_environment_arguments",
+        request(snapshot, ["/usr/bin/python3", "-I", "-c", literal_code, literal]),
+    )
+    assert literal_result["succeeded"]
+    assert (
+        root / "literal_environment_arguments.stdout.log"
+    ).read_bytes() == literal.encode() + b"\n"
     passed = execute("fixed", request(snapshot, validation))
     assert passed["exit_code"] == 0
     assert b"OK" in (root / "fixed.stderr.log").read_bytes()

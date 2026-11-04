@@ -294,6 +294,12 @@
             "title": "Cpu Percent",
             "type": "integer"
           },
+          "max_active_executions_per_distribution": {
+            "const": 2,
+            "default": 2,
+            "title": "Max Active Executions Per Distribution",
+            "type": "integer"
+          },
           "max_seconds": {
             "const": 30,
             "default": 30,

@@ -65,6 +65,7 @@ class ReadinessRequest(BaseModel):
 class ExecutionPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     max_seconds: Literal[30] = 30
+    max_active_executions_per_distribution: Literal[2] = 2
     memory_bytes: Literal[134217728] = 134217728
     tasks: Literal[32] = 32
     cpu_percent: Literal[50] = 50
@@ -157,6 +158,7 @@ class ExecutionReadiness:
                     result = await transport.run(intent, snapshot, deadline=time.monotonic() + 15)
                     encoded = result.get("stdout_b64")
                     expected_limits = {
+                        "max_active_executions": 2,
                         "memory_bytes": 134217728,
                         "cpu_percent": 50,
                         "tasks": 32,

@@ -72,6 +72,7 @@ def cleanup(identity: str, journal: Any) -> None:
         if stage.resolve().parent != BASE.resolve() or not shutil.rmtree.avoids_symlink_attacks:
             raise PermissionError("Safe execution staging cleanup is unavailable.")
         shutil.rmtree(stage)
+    journal.release_active(identity)
 
 
 def run(
@@ -119,12 +120,11 @@ def run(
                 unit,
                 "--wait",
                 "--pipe",
+                "--expand-environment=no",
                 f"--property=ConditionPathExists=!{journal.path(identity, 'closed')}",
                 "--property=ExecStartPre=/usr/bin/python3 -I "
                 + json.dumps(
-                    str(Path(__file__).with_name("cgroup_gate.py"))
-                    .replace("%", "%%")
-                    .replace("$", "$$"),
+                    str(Path(__file__).with_name("cgroup_gate.py")).replace("$", "$$"),
                     ensure_ascii=False,
                 ),
                 "--property=MemoryMax=128M",
@@ -202,6 +202,7 @@ def run(
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "workspace_changes_persisted": False,
             "limits": {
+                "max_active_executions": journal.active_limit,
                 "memory_bytes": 134217728,
                 "cpu_percent": 50,
                 "tasks": 32,
