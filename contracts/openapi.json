@@ -188,6 +188,33 @@
         "title": "CreateRunRequest",
         "type": "object"
       },
+      "DistributionInventory": {
+        "additionalProperties": false,
+        "properties": {
+          "distributions": {
+            "items": {
+              "$ref": "#/components/schemas/InstalledDistribution"
+            },
+            "title": "Distributions",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "distributions"
+        ],
+        "title": "DistributionInventory",
+        "type": "object"
+      },
       "EvaluationRecord": {
         "properties": {
           "actor": {
@@ -398,6 +425,24 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InstalledDistribution": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "supported_by_profile": {
+            "title": "Supported By Profile",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "supported_by_profile"
+        ],
+        "title": "InstalledDistribution",
         "type": "object"
       },
       "MemoryRecord": {
@@ -2253,6 +2298,29 @@
           }
         ],
         "summary": "Stream Chat"
+      }
+    },
+    "/execution/distributions": {
+      "get": {
+        "operationId": "execution_distributions_execution_distributions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributionInventory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execution Distributions"
       }
     },
     "/execution/readiness": {

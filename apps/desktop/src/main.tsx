@@ -11,6 +11,7 @@ import { PlanPanel } from './PlanPanel.tsx';
 import { RunReviewPanel } from './RunReviewPanel.tsx';
 import { SavedRunsPanel } from './SavedRunsPanel.tsx';
 import { ActiveRunPanel } from './ActiveRunPanel.tsx';
+import { ExecutionSetup } from './ExecutionSetup.tsx';
 
 function App() {
   const [token, setToken] = useState('');
@@ -48,8 +49,10 @@ function App() {
         const next = new EngineClient(connection.base_url, connection.token);
         for (let attempt = 0; attempt < 40 && !disposed; attempt++) {
           try {
-            const available = await next.models();
-            if (!disposed) { setModels(available.map(item => item.id)); setModel(''); setClient(next); }
+            await next.history();
+            if (!disposed) { setModel(''); setClient(next); }
+            const available = await next.models().catch(()=>undefined);
+            if (!disposed) { setModels(available?.map(item => item.id)??[]);if(!available)setError('The engine is connected, but LM Studio models are unavailable. Sandbox setup and saved data remain accessible.'); }
             return;
           } catch { await new Promise(resolve => setTimeout(resolve, 250)); }
         }
@@ -63,10 +66,19 @@ function App() {
     setBusy(true); setError('');
     try {
       const next = new EngineClient('http://127.0.0.1:8765', token);
-      const available = await next.models();
-      setModels(available.map(item => item.id)); setModel('');
+      await next.history();
       setClient(next); setToken('');
+      const available = await next.models().catch(()=>undefined);
+      setModels(available?.map(item => item.id)??[]); setModel('');
+      if(!available)setError('The engine is connected, but LM Studio models are unavailable. Sandbox setup and saved data remain accessible.');
     } catch (failure) { setError(String(failure)); } finally { setBusy(false); }
+  }
+  async function refreshModels() {
+    if(!client)return;
+    setBusy(true);setError('');
+    try {const available=await client.models();setModels(available.map(item=>item.id));setModel(current=>available.some(item=>item.id===current)?current:'');}
+    catch {setModels([]);setModel('');setError('LM Studio models are unavailable. Check the local provider, then refresh models.');}
+    finally {setBusy(false);}
   }
   async function watch(next: Run) {
     if (!client) return;
@@ -141,11 +153,12 @@ function App() {
     {!client ? <section><h2>Connect to the engine</h2><p>Start the local engine, then enter its API token. The token stays in this window’s memory.</p><label>Engine token<input type="password" value={token} onChange={event => setToken(event.target.value)} /></label><button onClick={connect} disabled={busy || token.length < 32}>Connect</button></section> : <>
       <section><details><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>
       <section><details><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={setProcedureTrial}/></details></section>
+      <ExecutionSetup client={client}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
       <section><h2>File check (optional)</h2><p>Compare a file with the exact contents you supply, including whitespace. A mismatch asks the agent to correct its work within the run budget.</p><label>File to verify<input value={checkPath} onChange={event => setCheckPath(event.target.value)} placeholder="config.txt" /></label><label htmlFor="expected-file-content">Expected file contents</label><textarea id="expected-file-content" value={expectedContent} onChange={event => setExpectedContent(event.target.value)} /></section>
       {procedureTrial&&<section aria-label="Selected procedure"><p>{procedureTrial.purpose==='active_use'?'Active procedure':'Unverified procedure trial'}: {procedureTrial.name} &middot; version {procedureTrial.version}. Its requirements must fit the selected workspace and mode.</p><button onClick={()=>setProcedureTrial(undefined)}>Remove selected procedure</button></section>}
-      <section><h2>New objective</h2><label>Local model<select value={model} onChange={event => setModel(event.target.value)}><option value="">Choose a local model</option>{models.map(id => <option key={id}>{id}</option>)}</select></label><label>Workspace path<input value={workspace} onChange={event => setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><label htmlFor="run-objective">Objective</label><textarea id="run-objective" value={objective} onChange={event => setObjective(event.target.value)} /><ResourceLimits inputs={limits} onChange={setLimits}/><p>Final answers await independent verification</p><button onClick={submit} disabled={busy || !parsedLimits || !objective.trim() || !model || !workspace.trim()}>Start objective</button></section>
+      <section><h2>New objective</h2><label>Local model<select value={model} onChange={event => setModel(event.target.value)}><option value="">Choose a local model</option>{models.map(id => <option key={id}>{id}</option>)}</select></label><button disabled={busy} onClick={()=>void refreshModels()}>Refresh models</button><label>Workspace path<input value={workspace} onChange={event => setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><label htmlFor="run-objective">Objective</label><textarea id="run-objective" value={objective} onChange={event => setObjective(event.target.value)} /><ResourceLimits inputs={limits} onChange={setLimits}/><p>Final answers await independent verification</p><button onClick={submit} disabled={busy || !parsedLimits || !objective.trim() || !model || !workspace.trim()}>Start objective</button></section>
       {run && <ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} onControl={action=>void control(action)}/>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
       {artifacts.length > 0 && <section><h2>Files and artifacts</h2><ul>{artifacts.map(item => <li key={item.id}><button onClick={async () => { try { setPreview(await client.artifactPreview(item.id)); } catch (failure) { setError(String(failure)); } }}>View {item.provenance}</button> {item.size_bytes} bytes</li>)}</ul>{preview && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{preview}</pre>}</section>}

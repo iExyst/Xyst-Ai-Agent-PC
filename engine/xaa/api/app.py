@@ -30,6 +30,7 @@ from xaa.api.contracts import (
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.run_review import RunReviewDecision, review_run
@@ -293,6 +294,10 @@ def create_app(
         request: ReadinessRequest, _: None = Depends(authenticate)
     ) -> ReadinessResult:
         return await execution_readiness.check(request)
+
+    @app.get("/execution/distributions", response_model=DistributionInventory)
+    async def execution_distributions(_: None = Depends(authenticate)) -> DistributionInventory:
+        return await installed_distributions()
 
     @app.get("/models", response_model=list[ModelInfo])
     async def models(_: None = Depends(authenticate)) -> list[dict[str, Any]]:

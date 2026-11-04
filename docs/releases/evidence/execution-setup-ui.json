@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "profile_sha256": "6cfb2f0b92851ba2fc38cf7f1f04a59af57f310f7cadbe474cfc513e83ebc712",
+  "checks": [
+    "private_input",
+    "unprivileged_identity",
+    "seccomp_and_capabilities",
+    "readonly_runtime",
+    "private_tmpfs",
+    "host_mounts_absent",
+    "credential_environment_absent",
+    "socket_families_denied",
+    "nested_namespaces_denied",
+    "kernel_resource_gate",
+    "cleanup_confirmed"
+  ],
+  "run_creates": 0,
+  "readiness_requests": 1,
+  "scope": "Edge UI with real source API/WSL; test connection shim, not native IPC; no permission grant"
+}

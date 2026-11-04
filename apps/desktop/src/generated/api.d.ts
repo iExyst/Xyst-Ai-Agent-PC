@@ -50,6 +50,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/execution/distributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Execution Distributions */
+        get: operations["execution_distributions_execution_distributions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/execution/readiness": {
         parameters: {
             query?: never;
@@ -684,6 +701,16 @@ export interface components {
             /** Workspace */
             workspace?: string | null;
         };
+        /** DistributionInventory */
+        DistributionInventory: {
+            /** Distributions */
+            distributions: components["schemas"]["InstalledDistribution"][];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "available" | "unsupported" | "unavailable";
+        };
         /** EvaluationRecord */
         EvaluationRecord: {
             /**
@@ -797,6 +824,13 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InstalledDistribution */
+        InstalledDistribution: {
+            /** Name */
+            name: string;
+            /** Supported By Profile */
+            supported_by_profile: boolean;
         };
         /** MemoryRecord */
         MemoryRecord: {
@@ -1475,6 +1509,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execution_distributions_execution_distributions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributionInventory"];
                 };
             };
         };

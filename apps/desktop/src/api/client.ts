@@ -63,6 +63,14 @@ export class EngineClient {
 
   models(): Promise<components['schemas']['ModelInfo'][]> { return this.#request('/models'); }
 
+  executionDistributions(signal?: AbortSignal): Promise<components['schemas']['DistributionInventory']> {
+    return this.#request('/execution/distributions', {signal});
+  }
+
+  executionReadiness(distribution: string, signal?: AbortSignal): Promise<components['schemas']['ReadinessResult']> {
+    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({distribution}),signal});
+  }
+
   history(query='',before?:string,signal?:AbortSignal,scope:'objective'|'conversation'='objective'): Promise<RunHistory> {
     const params=new URLSearchParams({q:query,limit:'20',scope});
     if(before)params.set('before',before);
