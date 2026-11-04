@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+  "owned_snapshot_to_registered_result": true,
+  "normal_artifact_count": 3,
+  "run_pause_revoked_lease_before_cancellation": true,
+  "stopped_revision_preserved": true,
+  "interrupted_command_reconciled_without_success_or_replay": true,
+  "unresolved_commands": 0,
+  "original_project_unchanged": true,
+  "fault_actor": "automated_diagnostic_not_model",
+  "model_or_ui_tool_enabled": false,
+  "acceptance_directory": ".acceptance/cd208958-8b70-44ab-8065-04cec00fd15a/",
+  "source_hashes": {
+    "engine/xaa/runtime/snapshot_worker.py": "6a118e4caf3c1d5673c795bce94f8ca5271f593bca9ef5e046d235b11438ec7c",
+    "engine/xaa/runtime/command_controller.py": "0d34a811e89be9a5e1d38d765abd7ef8a7b4819791fef422ead91f54f0aae770",
+    "engine/xaa/storage/commands.py": "172b40618c2e84c70c4f3e00efe5398b42fb1ec322dbffb0d7878305b34cf41e",
+    "scripts/command_controller_diagnostic.py": "b222c5dbcc34d9d61e368da61a911780a90b2ce3630ef5b2546f354a76443be1",
+    "scripts/engine_entry.py": "f4dd495d4c9254346db4db36ebf56f224fe2a6d18aeb56da7857251e5f5206c0"
+  }
+}

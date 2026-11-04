@@ -25,7 +25,7 @@ TOOL = "workspace.run_command"
 ACTIVE_COMMAND_LIMIT = 2
 
 
-def _artifact_root(store: RunStore, *, create: bool = False) -> Path:
+def command_artifact_root(store: RunStore, *, create: bool = False) -> Path:
     parent = store.path.parent.resolve(strict=True)
     if store.path.resolve(strict=True).parent != parent:
         raise PermissionError("Command storage cannot use a redirected database file.")
@@ -251,6 +251,33 @@ class CommandJournal:
                 "A new lease must reconcile the old command, never launch it."
             )
 
+    def snapshot_intent(self, run_id: str, owner: str, call_id: str) -> CommandIntent:
+        """Read capture authority without authorizing execution or accepting a caller path."""
+        with self.store.connection() as connection:
+            self.store.require_lease(connection, run_id, owner)
+            intent = self._intent(connection, run_id, call_id)
+            self._require_reservation_owner(connection, run_id, call_id, owner)
+            grant, workspace = self._grant(connection, run_id, self.store.path)
+            if (
+                connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()[0]
+                != "running"
+            ):
+                raise PermissionError("Snapshot capture requires a running run.")
+            if (intent.profile_sha256, intent.distribution, intent.workspace) != (
+                grant.profile_sha256,
+                grant.distribution,
+                workspace,
+            ):
+                raise PermissionError("Saved snapshot authority changed.")
+            if connection.execute(
+                "SELECT 1 FROM run_events WHERE run_id=? AND event_type IN ('execution.snapshot','tool.executing') AND json_extract(payload,'$.call_id')=?",
+                (run_id, call_id),
+            ).fetchone():
+                raise ReconciliationRequired(
+                    "Snapshot or launch is already recorded; reconcile it."
+                )
+            return intent
+
     def snapshot_ready(
         self, run_id: str, owner: str, call_id: str, snapshot: WorkspaceSnapshot, artifact_id: str
     ) -> None:
@@ -368,7 +395,7 @@ class CommandJournal:
                 ):
                     raise ValueError("Command output artifact identity or provenance mismatch.")
                 path = self.store.path.parent / "artifacts" / metadata["storage_key"]
-                root = _artifact_root(self.store)
+                root = command_artifact_root(self.store)
                 if Path(metadata["storage_key"]).name != metadata[
                     "storage_key"
                 ] or not path.resolve(strict=True).is_relative_to(root):
@@ -427,7 +454,7 @@ class CommandJournal:
                 or artifact["provenance"] != f"execution.cleanup:{intent.execution_id}"
             ):
                 raise ValueError("Recovery needs this execution's registered cleanup evidence.")
-            root = _artifact_root(self.store)
+            root = command_artifact_root(self.store)
             key = artifact["storage_key"]
             if Path(key).name != key:
                 raise PermissionError("Cleanup artifact escaped managed storage.")
@@ -524,7 +551,7 @@ class CommandJournal:
             ):
                 raise ValueError("Cleanup observation belongs to a different execution.")
             data = proof.model_dump_json().encode("utf-8")
-            directory = _artifact_root(self.store, create=True)
+            directory = command_artifact_root(self.store, create=True)
             filename = f"{uuid4()}.command-cleanup.json"
             with (directory / filename).open("xb") as target:
                 target.write(data)
