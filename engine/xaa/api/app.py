@@ -30,6 +30,7 @@ from xaa.api.contracts import (
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.run_review import RunReviewDecision, review_run
 from xaa.runtime.states import RunState
@@ -108,6 +109,7 @@ def create_app(
 ) -> FastAPI:
     """Create a fail-closed service; caller controls token and provider lifecycle."""
     expected = api_token.get_secret_value()
+    execution_readiness = ExecutionReadiness()
     if len(expected) < 32:
         raise ValueError("XAA API token must contain at least 32 characters.")
 
@@ -285,6 +287,12 @@ def create_app(
             return {"status": "ok", "provider": "lm-studio"}
         except ProviderError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/execution/readiness", response_model=ReadinessResult)
+    async def check_execution_readiness(
+        request: ReadinessRequest, _: None = Depends(authenticate)
+    ) -> ReadinessResult:
+        return await execution_readiness.check(request)
 
     @app.get("/models", response_model=list[ModelInfo])
     async def models(_: None = Depends(authenticate)) -> list[dict[str, Any]]:

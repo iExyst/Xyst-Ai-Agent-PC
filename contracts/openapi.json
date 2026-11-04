@@ -285,6 +285,61 @@
         "title": "EvaluationTrialRecord",
         "type": "object"
       },
+      "ExecutionPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu_percent": {
+            "const": 50,
+            "default": 50,
+            "title": "Cpu Percent",
+            "type": "integer"
+          },
+          "max_seconds": {
+            "const": 30,
+            "default": 30,
+            "title": "Max Seconds",
+            "type": "integer"
+          },
+          "memory_bytes": {
+            "const": 134217728,
+            "default": 134217728,
+            "title": "Memory Bytes",
+            "type": "integer"
+          },
+          "network": {
+            "const": "denied",
+            "default": "denied",
+            "title": "Network",
+            "type": "string"
+          },
+          "output_bytes": {
+            "const": 1048576,
+            "default": 1048576,
+            "title": "Output Bytes",
+            "type": "integer"
+          },
+          "private_workspace_bytes": {
+            "const": 33554432,
+            "default": 33554432,
+            "title": "Private Workspace Bytes",
+            "type": "integer"
+          },
+          "tasks": {
+            "const": 32,
+            "default": 32,
+            "title": "Tasks",
+            "type": "integer"
+          },
+          "workspace_changes": {
+            "const": "private_copy_only",
+            "default": "private_copy_only",
+            "title": "Workspace Changes",
+            "type": "string"
+          }
+        },
+        "title": "ExecutionPolicy",
+        "type": "object"
+      },
       "FileContentCheck": {
         "additionalProperties": false,
         "properties": {
@@ -762,6 +817,105 @@
           "role"
         ],
         "title": "PromptMessage",
+        "type": "object"
+      },
+      "ReadinessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "distribution": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+            "title": "Distribution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution"
+        ],
+        "title": "ReadinessRequest",
+        "type": "object"
+      },
+      "ReadinessResult": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "const": "wsl-bubblewrap-v1",
+            "default": "wsl-bubblewrap-v1",
+            "title": "Backend",
+            "type": "string"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "profile_unavailable",
+                  "unsupported_platform",
+                  "backend_probe_failed",
+                  "probe_busy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/ExecutionPolicy"
+          },
+          "profile_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Sha256"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "unavailable",
+              "unsupported",
+              "busy"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "profile_sha256",
+          "state",
+          "checked_at",
+          "expires_at",
+          "checks"
+        ],
+        "title": "ReadinessResult",
         "type": "object"
       },
       "RunEvent": {
@@ -2093,6 +2247,49 @@
           }
         ],
         "summary": "Stream Chat"
+      }
+    },
+    "/execution/readiness": {
+      "post": {
+        "operationId": "check_execution_readiness_execution_readiness_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadinessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Execution Readiness"
       }
     },
     "/health": {

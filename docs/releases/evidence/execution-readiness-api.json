@@ -1,0 +1,102 @@
+{
+  "source": {
+    "passed": true,
+    "frozen": false,
+    "engine_sha256": null,
+    "distribution": "Ubuntu-24.04",
+    "readiness": {
+      "backend": "wsl-bubblewrap-v1",
+      "distribution": "Ubuntu-24.04",
+      "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+      "state": "ready",
+      "checked_at": "2026-11-04T11:28:09.925510Z",
+      "expires_at": "2026-11-04T11:29:09.925510Z",
+      "checks": [
+        "private_input",
+        "unprivileged_identity",
+        "seccomp_and_capabilities",
+        "readonly_runtime",
+        "private_tmpfs",
+        "host_mounts_absent",
+        "credential_environment_absent",
+        "socket_families_denied",
+        "nested_namespaces_denied",
+        "kernel_resource_gate",
+        "cleanup_confirmed"
+      ],
+      "policy": {
+        "max_seconds": 30,
+        "memory_bytes": 134217728,
+        "tasks": 32,
+        "cpu_percent": 50,
+        "output_bytes": 1048576,
+        "private_workspace_bytes": 33554432,
+        "network": "denied",
+        "workspace_changes": "private_copy_only"
+      },
+      "error_code": null
+    },
+    "cached_check_reused": true,
+    "missing_distribution_state": "unavailable",
+    "unauthenticated_status": 401,
+    "arbitrary_command_rejected": 422,
+    "runs_created": 0,
+    "api_graceful_exit_code": 0,
+    "command_permission_granted": false,
+    "scope": "Fixed self-test API; no project code, inference or command grant",
+    "acceptance_directory": ".acceptance/7d1eef88-603b-40e2-898b-007cef19ba19/"
+  },
+  "frozen": {
+    "passed": true,
+    "frozen": true,
+    "engine_sha256": "b2640cc08f78ced53e525d42ebf57d5523ca69a01738c6a166637cd4970ff90e",
+    "distribution": "Ubuntu-24.04",
+    "readiness": {
+      "backend": "wsl-bubblewrap-v1",
+      "distribution": "Ubuntu-24.04",
+      "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+      "state": "ready",
+      "checked_at": "2026-11-04T11:28:09.841531Z",
+      "expires_at": "2026-11-04T11:29:09.841531Z",
+      "checks": [
+        "private_input",
+        "unprivileged_identity",
+        "seccomp_and_capabilities",
+        "readonly_runtime",
+        "private_tmpfs",
+        "host_mounts_absent",
+        "credential_environment_absent",
+        "socket_families_denied",
+        "nested_namespaces_denied",
+        "kernel_resource_gate",
+        "cleanup_confirmed"
+      ],
+      "policy": {
+        "max_seconds": 30,
+        "memory_bytes": 134217728,
+        "tasks": 32,
+        "cpu_percent": 50,
+        "output_bytes": 1048576,
+        "private_workspace_bytes": 33554432,
+        "network": "denied",
+        "workspace_changes": "private_copy_only"
+      },
+      "error_code": null
+    },
+    "cached_check_reused": true,
+    "missing_distribution_state": "unavailable",
+    "unauthenticated_status": 401,
+    "arbitrary_command_rejected": 422,
+    "runs_created": 0,
+    "api_graceful_exit_code": 0,
+    "command_permission_granted": false,
+    "scope": "Fixed self-test API; no project code, inference or command grant",
+    "acceptance_directory": ".acceptance/33c79b90-1c08-4807-bd2e-dc3bd9e739f6/"
+  },
+  "source_hashes": {
+    "engine/xaa/runtime/execution_readiness.py": "8c704b2494ffd750df9687dc13c988790331a1790c315d393f11e50f25978c66",
+    "engine/xaa/api/app.py": "6998bce91f8137b8d22f669d8e1baef9d7243afb1114654f530fbc719e6de35d",
+    "scripts/execution_readiness_diagnostic.py": "c156b760ecf13a5a4dfce6bae1d8dc84abcf7478351da604969992e940fb570a"
+  },
+  "initial_probe_calibration": "The first fixed self-test rejected Bubblewrap PWD. The final allowlist permits PWD only with the verified private value /workspace; no credential values are accepted."
+}

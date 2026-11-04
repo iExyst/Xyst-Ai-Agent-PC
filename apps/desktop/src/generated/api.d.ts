@@ -50,6 +50,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/execution/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Execution Readiness */
+        post: operations["check_execution_readiness_execution_readiness_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -705,6 +722,57 @@ export interface components {
             /** Run Revision */
             run_revision: number;
         };
+        /** ExecutionPolicy */
+        ExecutionPolicy: {
+            /**
+             * Cpu Percent
+             * @default 50
+             * @constant
+             */
+            cpu_percent: 50;
+            /**
+             * Max Seconds
+             * @default 30
+             * @constant
+             */
+            max_seconds: 30;
+            /**
+             * Memory Bytes
+             * @default 134217728
+             * @constant
+             */
+            memory_bytes: 134217728;
+            /**
+             * Network
+             * @default denied
+             * @constant
+             */
+            network: "denied";
+            /**
+             * Output Bytes
+             * @default 1048576
+             * @constant
+             */
+            output_bytes: 1048576;
+            /**
+             * Private Workspace Bytes
+             * @default 33554432
+             * @constant
+             */
+            private_workspace_bytes: 33554432;
+            /**
+             * Tasks
+             * @default 32
+             * @constant
+             */
+            tasks: 32;
+            /**
+             * Workspace Changes
+             * @default private_copy_only
+             * @constant
+             */
+            workspace_changes: "private_copy_only";
+        };
         /** FileContentCheck */
         FileContentCheck: {
             /** Expected Content */
@@ -857,6 +925,44 @@ export interface components {
             tool_call_id?: string | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ToolCall"][] | null;
+        };
+        /** ReadinessRequest */
+        ReadinessRequest: {
+            /** Distribution */
+            distribution: string;
+        };
+        /** ReadinessResult */
+        ReadinessResult: {
+            /**
+             * Backend
+             * @default wsl-bubblewrap-v1
+             * @constant
+             */
+            backend: "wsl-bubblewrap-v1";
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Checks */
+            checks: string[];
+            /** Distribution */
+            distribution: string;
+            /** Error Code */
+            error_code?: ("profile_unavailable" | "unsupported_platform" | "backend_probe_failed" | "probe_busy") | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            policy?: components["schemas"]["ExecutionPolicy"];
+            /** Profile Sha256 */
+            profile_sha256: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "unavailable" | "unsupported" | "busy";
         };
         /** RunEvent */
         RunEvent: {
@@ -1354,6 +1460,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_execution_readiness_execution_readiness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadinessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResult"];
                 };
             };
             /** @description Validation Error */
