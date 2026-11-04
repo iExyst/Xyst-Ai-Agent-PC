@@ -1,0 +1,40 @@
+$ErrorActionPreference = 'Stop'
+if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
+    throw 'This install/uninstall test is restricted to a disposable GitHub Actions runner.'
+}
+$xaaRunnerRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
+$xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-installer-test'))
+if (-not $xaaInstallDir.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaInstallDir)) {
+    throw 'Installer test destination must be a new directory under RUNNER_TEMP.'
+}
+$xaaInstaller = (Resolve-Path -LiteralPath 'build/installer/Xyst AI Agent_0.1.0_x64-setup.exe').Path
+$xaaDataDir = Join-Path $env:LOCALAPPDATA 'XAA'
+$xaaMarker = Join-Path $xaaDataDir 'installer-preservation-fixture.txt'
+if (Test-Path -LiteralPath $xaaMarker) { throw 'Data fixture already exists.' }
+New-Item -ItemType Directory -Path $xaaDataDir -Force | Out-Null
+[IO.File]::WriteAllText($xaaMarker, 'XAA installer preservation fixture')
+$xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
+$xaaReport = @{ passed = $false; environment = 'disposable hosted Windows runner'; unsigned = $true }
+try {
+    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
+    if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
+    $xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
+    $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
+    if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
+    & node scripts/native_boot_smoke.mjs $xaaDesktop
+    if ($LASTEXITCODE -ne 0) { throw 'Installed application boot/shutdown test failed.' }
+    $xaaReport.installed_binaries_present = $true
+    $xaaReport.installed_boot_verified = $true
+} finally {
+    $xaaUninstaller = Join-Path $xaaInstallDir 'uninstall.exe'
+    if (Test-Path -LiteralPath $xaaUninstaller) {
+        $xaaUninstall = Start-Process -FilePath $xaaUninstaller -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
+        $xaaReport.uninstaller_exit_code = $xaaUninstall.ExitCode
+        for ($xaaAttempt = 0; $xaaAttempt -lt 40 -and (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')); $xaaAttempt++) { Start-Sleep -Milliseconds 250 }
+        $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
+    }
+    $xaaReport.user_data_preserved = (Test-Path -LiteralPath $xaaMarker) -and (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash -eq $xaaMarkerHash
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0
+    $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
+}
+if (-not $xaaReport.passed) { throw 'Install/uninstall or data preservation verification failed.' }

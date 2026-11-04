@@ -11,10 +11,12 @@
     "contracts": "node scripts/generate-types.mjs",
     "contracts:check": "node scripts/generate-types.mjs --check",
     "typecheck": "tsc --noEmit",
-    "test:client": "node --test tests/client.mjs"
+    "test:client": "node --test tests/client.mjs",
+    "build:installer": "uv run python scripts/build_installer.py"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "@tauri-apps/cli": "2.12.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "openapi-typescript": "7.13.0",

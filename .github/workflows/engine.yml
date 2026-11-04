@@ -29,3 +29,42 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:client
       - run: uv run pytest -q
+
+  windows-installer:
+    needs: windows
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: uv sync --locked
+      - run: npm ci
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - run: rustup override set 1.99.1
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+      - run: npm run build:installer
+      - name: Install, boot and uninstall unsigned package
+        run: ./scripts/installer_ci_smoke.ps1
+        timeout-minutes: 5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xaa-windows-installer-unsigned
+          path: |
+            build/installer/*
+            .acceptance/**/report.json
+          if-no-files-found: error
+          retention-days: 14
