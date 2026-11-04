@@ -15,10 +15,22 @@ proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;
 try{
-  for(let attempt=0;attempt<240;attempt++){
-    try{browser=await chromium.connectOverCDP('http://127.0.0.1:19222');break;}catch{if(proc.exitCode!==null)throw new Error('Packaged desktop exited during boot');await new Promise(resolve=>setTimeout(resolve,250));}
+  const debuggingDeadline=Date.now()+60000;
+  let lastDebuggingError='Debugging endpoint unavailable';
+  while(Date.now()<debuggingDeadline){
+    try{
+      const response=await fetch('http://127.0.0.1:19222/json/version',{signal:AbortSignal.timeout(750)});
+      if(!response.ok)throw new Error(`Debugging metadata HTTP ${response.status}`);
+      const metadata=await response.json();
+      if(typeof metadata.webSocketDebuggerUrl!=='string')throw new Error('No WebSocket debugging URL');
+      const endpoint=new URL(metadata.webSocketDebuggerUrl);
+      if(endpoint.protocol!=='ws:'||!['localhost','127.0.0.1','[::1]'].includes(endpoint.hostname)||endpoint.port!=='19222')throw new Error('Unexpected debugging endpoint address');
+      endpoint.hostname='127.0.0.1';
+      browser=await chromium.connectOverCDP(endpoint.toString(),{timeout:Math.min(3000,Math.max(1,debuggingDeadline-Date.now()))});
+      break;
+    }catch(error){lastDebuggingError=String(error);if(proc.exitCode!==null)throw new Error(`Packaged desktop exited during boot: ${lastDebuggingError}`);await new Promise(resolve=>setTimeout(resolve,250));}
   }
-  if(!browser)throw new Error('Packaged WebView did not become ready');
+  if(!browser)throw new Error(`Packaged debugging attachment failed: ${lastDebuggingError}`);
   const page=browser.contexts()[0].pages()[0];
   await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));

@@ -1,0 +1,77 @@
+{
+  "reference_commit": "1e208b280deb18f01d015b0acdf3ef3552d08039",
+  "audit_date": "2026-11-04",
+  "scope": "selected pinned skill tool schemas and safety/lifecycle source; not every bundled or external skill package",
+  "files": [
+    {
+      "path": "tools/skills_tool.py",
+      "git_blob_sha256": "0b6fbd304a6fff74c3e1afee3e959985b2205dc1926c7474ca5cc7a8bd8ea107"
+    },
+    {
+      "path": "tools/skill_manager_tool.py",
+      "git_blob_sha256": "67df9575e2c22f7ac269e01404a2d6df6a5070d3633288dd00b479405c5bb853"
+    },
+    {
+      "path": "tools/skill_manager_guards.py",
+      "git_blob_sha256": "3ca2e672a39061f3e2d9f58e402d5fb582a77d002d2d743d476e21a5a335e866"
+    },
+    {
+      "path": "tools/skill_provenance.py",
+      "git_blob_sha256": "5c492a925cdde61c3257eb5db76568822d26be3d9a2c40d364a9997a3a7cb576"
+    },
+    {
+      "path": "tools/skill_ledger.py",
+      "git_blob_sha256": "56121bfa4e5daa57ca7f9eb1767817e06e0ad00fae2e4c7f72bcaaf299e43c27"
+    }
+  ],
+  "advertised_tools": [
+    {
+      "name": "skills_list",
+      "path": "tools/skills_tool.py",
+      "line": 718
+    },
+    {
+      "name": "skill_view",
+      "path": "tools/skills_tool.py",
+      "line": 733
+    },
+    {
+      "name": "skill_manage",
+      "path": "tools/skill_manager_tool.py",
+      "line": 877
+    }
+  ],
+  "manager_operation_shapes": [
+    {
+      "action": "create",
+      "line": 896
+    },
+    {
+      "action": "patch",
+      "line": 902
+    },
+    {
+      "action": "patch",
+      "line": 909
+    },
+    {
+      "action": "write_file",
+      "line": 913
+    },
+    {
+      "action": "remove_file",
+      "line": 917
+    },
+    {
+      "action": "delete",
+      "line": 923
+    }
+  ],
+  "distinct_manager_actions": [
+    "create",
+    "delete",
+    "patch",
+    "remove_file",
+    "write_file"
+  ]
+}
