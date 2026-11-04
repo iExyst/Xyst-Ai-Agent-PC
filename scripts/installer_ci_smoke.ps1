@@ -7,7 +7,11 @@ $xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-install
 if (-not $xaaInstallDir.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaInstallDir)) {
     throw 'Installer test destination must be a new directory under RUNNER_TEMP.'
 }
-$xaaInstaller = (Resolve-Path -LiteralPath 'build/installer/Xyst AI Agent_0.1.0_x64-setup.exe').Path
+$xaaManifest = Get-Content -LiteralPath 'build/installer/manifest.json' -Raw | ConvertFrom-Json
+$xaaInstallerName = $xaaManifest.artifacts.installer.filename
+if ([IO.Path]::GetFileName($xaaInstallerName) -ne $xaaInstallerName) { throw 'Installer manifest filename escaped its staging directory.' }
+$xaaInstaller = (Resolve-Path -LiteralPath (Join-Path 'build/installer' $xaaInstallerName)).Path
+if ((Get-FileHash -LiteralPath $xaaInstaller -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.installer.sha256) { throw 'Installer checksum mismatch.' }
 $xaaDataDir = Join-Path $env:LOCALAPPDATA 'XAA'
 $xaaMarker = Join-Path $xaaDataDir 'installer-preservation-fixture.txt'
 if (Test-Path -LiteralPath $xaaMarker) { throw 'Data fixture already exists.' }
@@ -21,6 +25,8 @@ try {
     $xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
+    if ((Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.desktop.sha256 -or (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.engine.sha256) { throw 'Installed binary checksums do not match the manifest.' }
+    $xaaReport.installed_binary_hashes_match = $true
     & node scripts/native_boot_smoke.mjs $xaaDesktop
     if ($LASTEXITCODE -ne 0) { throw 'Installed application boot/shutdown test failed.' }
     $xaaReport.installed_binaries_present = $true

@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -14,6 +15,7 @@ def main() -> None:
     npm = shutil.which("npm.cmd")
     if npm is None:
         raise SystemExit("npm.cmd is required for building the installer.")
+    started_ns = time.time_ns()
     subprocess.run([npm, "run", "build:desktop"], check=True)
     subprocess.run([sys.executable, "scripts/build_engine.py"], check=True)
     subprocess.run(
@@ -35,11 +37,14 @@ def main() -> None:
         cwd="apps/desktop",
         check=True,
     )
-    source = Path(
-        "apps/desktop/src-tauri/target/release/bundle/nsis/Xyst AI Agent_0.1.0_x64-setup.exe"
-    )
-    if not source.is_file():
-        raise RuntimeError("The expected NSIS installer was not produced.")
+    config = json.loads(Path("apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+    version, product_name = config["version"], config["productName"]
+    filename = f"{product_name}_{version}_x64-setup.exe"
+    if Path(filename).name != filename:
+        raise RuntimeError("Installer filename must remain within the bundle directory.")
+    source = Path("apps/desktop/src-tauri/target/release/bundle/nsis") / filename
+    if not source.is_file() or source.stat().st_mtime_ns < started_ns:
+        raise RuntimeError("The current-version NSIS installer was not produced by this build.")
     destination = Path("build/installer")
     destination.mkdir(parents=True, exist_ok=True)
     target = destination / source.name
@@ -50,7 +55,7 @@ def main() -> None:
         "engine": Path("apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe"),
     }
     manifest = {
-        "version": "0.1.0",
+        "version": version,
         "target": "x86_64-pc-windows-msvc",
         "signed": False,
         "artifacts": {
