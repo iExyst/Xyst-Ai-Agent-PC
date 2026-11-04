@@ -17,14 +17,16 @@ export function SkillsPanel({client,onTrial}:{client:EngineClient;onTrial:(selec
   const [trialOne,setTrialOne]=useState(''),[trialTwo,setTrialTwo]=useState('');
   const [caseOne,setCaseOne]=useState(''),[caseTwo,setCaseTwo]=useState('');
   const [criteria,setCriteria]=useState(''),[rationale,setRationale]=useState('');
+  const [lifecycle,setLifecycle]=useState<components['schemas']['SkillLifecycleEvent'][]>([]);
+  const [lifecycleReason,setLifecycleReason]=useState('');
   const [confirmed,setConfirmed]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   async function refresh(){const rows=await client.skills();if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');setItems(rows);}
   useEffect(()=>{let active=true;void client.skills().then(rows=>{if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');if(active)setItems(rows);}).catch(failure=>{if(active)setError(String(failure));});return()=>{active=false;};},[client]);
-  function reset(){setEvidence(undefined);setTrials([]);setSelected(undefined);setVersion(1);setName('');setContent('');setTools('');setRead(false);setWrite(false);setError('');}
+  function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setTrials([]);setSelected(undefined);setVersion(1);setName('');setContent('');setTools('');setRead(false);setWrite(false);setError('');}
   async function inspect(item:Summary,revision=item.latest_version){
     setBusy(true);setError('');
-    try{const data=await client.skillVersion(item.id,revision);setEvidence(data.evaluation_evidence);setTrials([]);setTrialOne('');setTrialTwo('');setConfirmed(false);setSelected(item);setVersion(revision);setName(item.name);setContent(data.content);setTools(data.required_tools.map(tool=>`${tool.name}@${tool.version}`).join('\n'));setRead(data.required_permissions.includes('workspace.read'));setWrite(data.required_permissions.includes('workspace.write'));}
+    try{const [data,actions]=await Promise.all([client.skillVersion(item.id,revision),client.skillLifecycle(item.id)]);if(!Array.isArray(actions))throw new Error('Procedure lifecycle unavailable.');setLifecycle(actions);setEvidence(data.evaluation_evidence);setTrials([]);setTrialOne('');setTrialTwo('');setConfirmed(false);setSelected(item);setVersion(revision);setName(item.name);setContent(data.content);setTools(data.required_tools.map(tool=>`${tool.name}@${tool.version}`).join('\n'));setRead(data.required_permissions.includes('workspace.read'));setWrite(data.required_permissions.includes('workspace.write'));}
     catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
   async function save(){
@@ -42,13 +44,19 @@ export function SkillsPanel({client,onTrial}:{client:EngineClient;onTrial:(selec
     await client.evaluateSkill(selected.id,version,{expected_evaluation_count:evidence.evaluations.length,trials:[{run_id:trialOne,case_description:caseOne},{run_id:trialTwo,case_description:caseTwo}],criteria:checks,confirmed_criteria:confirmed?checks.map((_,index)=>index):[],rationale});
     const rows=await client.skills();setItems(rows);const current=rows.find(item=>item.id===selected.id);if(current)await inspect(current,version);
   }catch(failure){setError(String(failure));}finally{setBusy(false);}}
+  async function decide(action:'activate'|'rollback'|'deprecate'){
+    if(!selected)return;setBusy(true);setError('');try{
+      const updated=await client.decideSkillLifecycle(selected.id,{action,target_version:action==='deprecate'?null:version,expected_active_version:selected.active_version,expected_latest_version:selected.latest_version,expected_lifecycle_revision:selected.lifecycle_revision,rationale:lifecycleReason});
+      await refresh();await inspect(updated,version);setLifecycleReason('');
+    }catch(failure){setError(String(failure));}finally{setBusy(false);}
+  }
   async function remove(){if(!selected)return;setBusy(true);setError('');try{await client.deleteSkill(selected.id);reset();await refresh();}catch(failure){setError(String(failure));}finally{setBusy(false);}}
   async function exportVersion(){if(!selected)return;setBusy(true);try{const data=await client.skillVersion(selected.id,version);const url=URL.createObjectURL(new Blob([JSON.stringify({name:selected.name,...data},null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`procedure-${selected.id}-v${version}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(failure){setError(String(failure));}finally{setBusy(false);}}
   return <section aria-label="Procedure candidates"><h2>Procedure candidates</h2>
     <p>Draft reusable procedures here. Candidates are unverified. Select a version explicitly for an evaluation trial; declared tools and permissions grant no authority.</p>
     <div className="controls"><button disabled={busy} onClick={reset}>New procedure</button>
     <button disabled={busy} onClick={()=>{setBusy(true);void refresh().then(()=>reset()).catch(failure=>setError(String(failure))).finally(()=>setBusy(false));}}>Refresh procedure list</button></div>
-    <ul>{items.map(item=><li key={item.id}><button disabled={busy} onClick={()=>void inspect(item)}>Inspect {item.name}</button> · {item.lifecycle_state} · version {item.latest_version}</li>)}</ul>
+    <ul>{items.map(item=><li key={item.id}><button disabled={busy} onClick={()=>void inspect(item)}>Inspect {item.name}</button> · {item.lifecycle_state} &middot; latest version {item.latest_version} &middot; active version {item.active_version??'none'}</li>)}</ul>
     {selected&&<label>Procedure version<select aria-label="Procedure version" value={version} disabled={busy} onChange={event=>void inspect(selected,Number(event.target.value))}>{Array.from({length:selected.latest_version},(_,i)=><option key={i+1} value={i+1}>{i+1}</option>)}</select></label>}
     <form onSubmit={event=>{event.preventDefault();void save();}}>
       <label>Procedure name<input aria-label="Procedure name" value={name} maxLength={80} disabled={busy} onChange={event=>setName(event.target.value)}/></label>
@@ -58,8 +66,16 @@ export function SkillsPanel({client,onTrial}:{client:EngineClient;onTrial:(selec
       <label className="procedure-permission"><input type="checkbox" checked={write} disabled={busy} onChange={event=>setWrite(event.target.checked)}/>Requires editing workspace files</label>
       <button disabled={busy||!name.trim()||!content.trim()||!!selected&&version!==selected.latest_version}>{selected?'Save new procedure version':'Save procedure candidate'}</button>
     </form>
-    {selected&&<div className="controls"><button disabled={busy} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name})}>Select version for trial run</button><button disabled={busy} onClick={()=>void exportVersion()}>Export procedure version</button><button disabled={busy} onClick={()=>void remove()}>Delete procedure and all versions</button></div>}
+    {selected&&<div className="controls"><button disabled={busy||selected.lifecycle_state==='deprecated'} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name,purpose:'evaluation_trial'})}>Select version for trial run</button>{selected.active_version===version&&selected.lifecycle_state==='active'&&<button disabled={busy} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name,purpose:'active_use'})}>Select active procedure for next run</button>}<button disabled={busy} onClick={()=>void exportVersion()}>Export procedure version</button><button disabled={busy||selected.active_version!==null} onClick={()=>void remove()}>Delete procedure and all versions</button></div>}
     {selected&&version!==selected.latest_version&&<p>Historical versions are preserved. Select the latest version to revise this procedure.</p>}
+    {selected&&<section aria-label="Procedure lifecycle"><h3>Activation and rollback</h3>
+      <p>Entry state: {selected.lifecycle_state}. Active version: {selected.active_version??'none'}. New runs use a procedure only when you explicitly select it.</p>
+      {selected.active_version!==null&&<p>Deprecate this procedure before deleting it. New draft versions preserve the active version.</p>}
+      <label>Lifecycle decision rationale<textarea aria-label="Lifecycle decision rationale" value={lifecycleReason} disabled={busy} maxLength={4000} onChange={event=>setLifecycleReason(event.target.value)}/></label>
+      <div className="controls">{evidence?.state==='evaluated'&&selected.active_version!==version&&<button disabled={busy||!lifecycleReason.trim()} onClick={()=>void decide(selected.active_version!==null&&version<selected.active_version?'rollback':'activate')}>{selected.active_version!==null&&version<selected.active_version?'Roll back to this evaluated version':'Activate this evaluated version'}</button>}
+      <button disabled={busy||!lifecycleReason.trim()||selected.lifecycle_state==='deprecated'} onClick={()=>void decide('deprecate')}>Deprecate procedure</button></div>
+      <ul>{lifecycle.map(action=><li key={action.sequence}>{action.action}: {action.from_version??'none'} to {action.to_version??'none'} &middot; {action.rationale}</li>)}</ul>
+    </section>}
     {selected&&evidence&&<section aria-label="Procedure evaluation"><h3>Version evaluation</h3>
       <p>Version {version}: {evidence.state}. Saved evaluations: {evidence.evaluations.length}. Recording a review does not activate this procedure.</p>
       {evidence.evaluations.map(entry=><details key={entry.id}><summary>Evaluation {new Date(entry.evaluated_at).toLocaleString()}</summary><p>{entry.rationale}</p><ul>{entry.trials.map(trial=><li key={trial.run_id}>{trial.case_description}: {trial.objective}</li>)}</ul><ul>{entry.criteria.map((criterion,index)=><li key={index}>{criterion}</li>)}</ul></details>)}

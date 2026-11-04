@@ -18,7 +18,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 3
+DATABASE_SCHEMA_VERSION = 4
 
 
 class InvalidTransition(ValueError):
@@ -296,6 +296,13 @@ class RunStore:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(skill_id, version)
                 );
+                CREATE TABLE IF NOT EXISTS skill_lifecycle_events (
+                    skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+                    sequence INTEGER NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(skill_id, sequence)
+                );
                 CREATE TABLE IF NOT EXISTS schedules (
                     id TEXT PRIMARY KEY,
                     objective TEXT NOT NULL,
@@ -502,7 +509,10 @@ class RunStore:
         record: dict[str, Any] = dict(row)
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (
-            {key: trial[key] for key in ("skill_id", "version", "name", "snapshot_sha256")}
+            {
+                key: trial[key]
+                for key in ("skill_id", "version", "name", "snapshot_sha256", "purpose")
+            }
             if trial
             else None
         )

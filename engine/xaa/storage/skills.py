@@ -45,6 +45,7 @@ class SkillTrial(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str = Field(min_length=1, max_length=128)
     version: int = Field(ge=1, le=128)
+    purpose: Literal["evaluation_trial", "active_use"] = "evaluation_trial"
 
 
 class SkillTrialRecord(SkillTrial):
@@ -76,13 +77,17 @@ def resolve_trial(
     if mode not in {"observe", "workspace", "authorized_automation"}:
         raise ValueError("Invalid procedure trial operating mode.")
     row = connection.execute(
-        "SELECT skill_versions.*,skills.name,skills.lifecycle_state FROM skill_versions JOIN skills ON skills.id=skill_versions.skill_id WHERE skill_id=? AND version=?",
+        "SELECT skill_versions.*,skills.name,skills.lifecycle_state,skills.active_version FROM skill_versions JOIN skills ON skills.id=skill_versions.skill_id WHERE skill_id=? AND version=?",
         (selection.skill_id, selection.version),
     ).fetchone()
     if row is None:
         raise ValueError("Selected procedure version no longer exists.")
-    if row["lifecycle_state"] not in {"candidate", "evaluated"}:
-        raise ValueError("Only candidate or evaluated procedures can be selected for a trial.")
+    if row["lifecycle_state"] == "deprecated":
+        raise ValueError("Deprecated procedures cannot be selected for new runs.")
+    if selection.purpose == "active_use" and (
+        row["lifecycle_state"] != "active" or row["active_version"] != selection.version
+    ):
+        raise ValueError("Normal procedure use requires the currently active version.")
     tools = json.loads(row["required_tools"])
     permissions = set(json.loads(row["required_permissions"]))
     granted: set[str] = (
@@ -104,7 +109,7 @@ def resolve_trial(
         "content": row["content"],
         "required_tools": tools,
         "required_permissions": sorted(permissions),
-        "purpose": "evaluation_trial",
+        "purpose": selection.purpose,
     }
     snapshot["snapshot_sha256"] = snapshot_digest(snapshot)
     return snapshot
@@ -117,8 +122,9 @@ class SkillRevision(SkillDraft):
 class SkillSummary(BaseModel):
     id: str
     name: str
-    lifecycle_state: Literal["candidate", "evaluated"]
-    active_version: None
+    lifecycle_state: Literal["candidate", "evaluated", "active", "deprecated"]
+    active_version: int | None
+    lifecycle_revision: int
     latest_version: int
     created_at: datetime
     updated_at: datetime
@@ -194,6 +200,35 @@ class SkillTrialRun(BaseModel):
     created_at: datetime
 
 
+class SkillLifecycleDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    action: Literal["activate", "rollback", "deprecate"]
+    target_version: int | None = Field(default=None, ge=1, le=128)
+    expected_active_version: int | None = Field(ge=1, le=128)
+    expected_latest_version: int = Field(ge=1, le=128)
+    expected_lifecycle_revision: int = Field(ge=0, le=255)
+    rationale: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def explicit_action(self) -> "SkillLifecycleDecision":
+        if not self.rationale.strip():
+            raise ValueError("Explain the procedure lifecycle decision.")
+        if (self.action == "deprecate") != (self.target_version is None):
+            raise ValueError("Activation/rollback need a target; deprecation does not.")
+        return self
+
+
+class SkillLifecycleEvent(BaseModel):
+    sequence: int
+    action: Literal["activate", "rollback", "deprecate"]
+    actor: Literal["local-user"]
+    from_version: int | None
+    to_version: int | None
+    rationale: str
+    snapshot_sha256: str | None
+    created_at: datetime
+
+
 class SkillConflict(ValueError):
     """A concurrent edit or duplicate name must be resolved explicitly."""
 
@@ -239,19 +274,24 @@ class SkillStore:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT lifecycle_state FROM skills WHERE id=?", (identity,)
+                "SELECT lifecycle_state,active_version FROM skills WHERE id=?", (identity,)
             ).fetchone()
             if row is None:
                 raise KeyError(identity)
             latest = connection.execute(
                 "SELECT MAX(version) FROM skill_versions WHERE skill_id=?", (identity,)
             ).fetchone()[0]
-            if latest != draft.expected_version or row[0] not in {"candidate", "evaluated"}:
+            if latest != draft.expected_version:
                 raise SkillConflict("Procedure changed; reload its latest candidate version.")
             try:
                 connection.execute(
-                    "UPDATE skills SET name=?,updated_at=?,lifecycle_state='candidate' WHERE id=?",
-                    (draft.name.strip(), utc_now(), identity),
+                    "UPDATE skills SET name=?,updated_at=?,lifecycle_state=? WHERE id=?",
+                    (
+                        draft.name.strip(),
+                        utc_now(),
+                        "active" if row["active_version"] is not None else "candidate",
+                        identity,
+                    ),
                 )
             except sqlite3.IntegrityError:
                 raise SkillConflict("A procedure with that name already exists.") from None
@@ -263,7 +303,7 @@ class SkillStore:
             return [
                 dict(row)
                 for row in connection.execute(
-                    "SELECT skills.*,MAX(skill_versions.version) AS latest_version FROM skills JOIN skill_versions ON skills.id=skill_versions.skill_id GROUP BY skills.id ORDER BY skills.updated_at DESC,skills.id LIMIT 100"
+                    "SELECT skills.*,MAX(skill_versions.version) AS latest_version,(SELECT COALESCE(MAX(sequence),0) FROM skill_lifecycle_events WHERE skill_id=skills.id) AS lifecycle_revision FROM skills JOIN skill_versions ON skills.id=skill_versions.skill_id GROUP BY skills.id ORDER BY skills.updated_at DESC,skills.id LIMIT 100"
                 )
             ]
 
@@ -414,17 +454,111 @@ class SkillStore:
             ).fetchone()[0]
             if latest == version:
                 connection.execute(
-                    "UPDATE skills SET lifecycle_state='evaluated',updated_at=? WHERE id=?",
+                    "UPDATE skills SET lifecycle_state='evaluated',updated_at=? WHERE id=? AND active_version IS NULL AND lifecycle_state!='deprecated'",
                     (utc_now(), identity),
                 )
         return self.version(identity, version)
 
+    def lifecycle(self, identity: str) -> builtins.list[dict[str, Any]]:
+        self.get(identity)
+        with self.runs.connection() as connection:
+            return [
+                {
+                    "sequence": row["sequence"],
+                    "created_at": row["created_at"],
+                    **json.loads(row["payload"]),
+                }
+                for row in connection.execute(
+                    "SELECT * FROM skill_lifecycle_events WHERE skill_id=? ORDER BY sequence",
+                    (identity,),
+                )
+            ]
+
+    def decide_lifecycle(self, identity: str, decision: SkillLifecycleDecision) -> dict[str, Any]:
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM skills WHERE id=?", (identity,)).fetchone()
+            if row is None:
+                raise KeyError(identity)
+            latest = connection.execute(
+                "SELECT MAX(version) FROM skill_versions WHERE skill_id=?", (identity,)
+            ).fetchone()[0]
+            revision = connection.execute(
+                "SELECT COALESCE(MAX(sequence),0) FROM skill_lifecycle_events WHERE skill_id=?",
+                (identity,),
+            ).fetchone()[0]
+            current = row["active_version"]
+            if (current, latest, revision) != (
+                decision.expected_active_version,
+                decision.expected_latest_version,
+                decision.expected_lifecycle_revision,
+            ):
+                raise SkillConflict("Procedure changed; reload before deciding its lifecycle.")
+            digest = None
+            target = decision.target_version
+            if decision.action == "deprecate":
+                if row["lifecycle_state"] == "deprecated":
+                    raise SkillConflict("Procedure is already deprecated.")
+                state = "deprecated"
+            else:
+                selected = connection.execute(
+                    "SELECT * FROM skill_versions WHERE skill_id=? AND version=?",
+                    (identity, target),
+                ).fetchone()
+                if selected is None:
+                    raise SkillConflict("Target procedure version does not exist.")
+                evidence = json.loads(selected["evaluation_evidence"])
+                manifest = {
+                    key: json.loads(selected[key]) if key != "content" else selected[key]
+                    for key in ("content", "required_tools", "required_permissions")
+                }
+                manifest["required_permissions"] = sorted(manifest["required_permissions"])
+                digest = snapshot_digest(manifest)
+                if evidence.get("state") != "evaluated" or not any(
+                    record.get("snapshot_sha256") == digest
+                    for record in evidence.get("evaluations", [])
+                ):
+                    raise SkillConflict("Only an explicitly evaluated version can become active.")
+                assert target is not None
+                if decision.action == "rollback":
+                    if current is None or target >= current:
+                        raise SkillConflict(
+                            "Rollback requires an older evaluated version and a current active version."
+                        )
+                elif current is not None and target <= current:
+                    raise SkillConflict(
+                        "Use rollback to select an older version; this version may already be active."
+                    )
+                state = "active"
+            connection.execute(
+                "UPDATE skills SET active_version=?,lifecycle_state=?,updated_at=? WHERE id=?",
+                (target, state, utc_now(), identity),
+            )
+            payload = {
+                "action": decision.action,
+                "actor": "local-user",
+                "from_version": current,
+                "to_version": target,
+                "rationale": decision.rationale,
+                "snapshot_sha256": digest,
+            }
+            connection.execute(
+                "INSERT INTO skill_lifecycle_events VALUES (?,?,?,?)",
+                (identity, revision + 1, json.dumps(payload), utc_now()),
+            )
+        return self.get(identity)
+
     def delete(self, identity: str) -> None:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            active = connection.execute(
+                "SELECT active_version FROM skills WHERE id=?", (identity,)
+            ).fetchone()
+            if active is not None and active[0] is not None:
+                raise SkillConflict("Deprecate the procedure before deleting its active version.")
             if (
                 connection.execute(
-                    "DELETE FROM skills WHERE id=? AND lifecycle_state IN ('candidate','evaluated')",
+                    "DELETE FROM skills WHERE id=? AND active_version IS NULL",
                     (identity,),
                 ).rowcount
                 != 1

@@ -19,7 +19,7 @@ export function RunResources({client, run, refresh}: {client: EngineClient; run:
     return () => controller.abort();
   }, [client, run.id, run.revision, run.state, refresh, retry]);
   return <section aria-label="Run resources"><h2>Run resources</h2><p>Model: {run.model ?? 'Not selected'}</p>
-    {run.procedure_trial&&<p>Procedure trial: {run.procedure_trial.name} &middot; version {run.procedure_trial.version}. This run does not activate or independently evaluate the procedure.</p>}
+    {run.procedure_trial&&<p>{run.procedure_trial.purpose==='active_use'?'Active procedure':'Procedure trial'}: {run.procedure_trial.name} &middot; version {run.procedure_trial.version}. This run does not activate or independently evaluate the procedure.</p>}
     {run.limits && <><p>{run.limits.max_iterations} iterations · {run.limits.max_seconds} seconds</p>
       <p>Reported token threshold: {run.limits.max_total_tokens ?? 'Not set'} · Output tokens per request: {run.limits.max_output_tokens ?? 'Server default'}</p></>}
     {usage ? <p>Measured tokens: {usage.total_tokens} ({usage.prompt_tokens} input, {usage.completion_tokens} output). Calls without measured usage: {usage.unmeasured_calls}.</p> : <p>{unavailable ? 'Token usage unavailable.' : 'Loading token usage…'}</p>}

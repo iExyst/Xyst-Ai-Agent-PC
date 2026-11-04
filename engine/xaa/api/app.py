@@ -44,6 +44,8 @@ from xaa.storage.skills import (
     SkillConflict,
     SkillDraft,
     SkillEvaluation,
+    SkillLifecycleDecision,
+    SkillLifecycleEvent,
     SkillRevision,
     SkillStore,
     SkillSummary,
@@ -214,10 +216,30 @@ def create_app(
         except SkillConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @app.get("/skills/{skill_id}/lifecycle", response_model=list[SkillLifecycleEvent])
+    def skill_lifecycle(skill_id: str, _: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        try:
+            return skill_store.lifecycle(skill_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure not found.") from None
+
+    @app.post("/skills/{skill_id}/lifecycle", response_model=SkillSummary)
+    def decide_skill_lifecycle(
+        skill_id: str, payload: SkillLifecycleDecision, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            return skill_store.decide_lifecycle(skill_id, payload)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure not found.") from None
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.delete("/skills/{skill_id}", status_code=204)
     def delete_skill(skill_id: str, _: None = Depends(authenticate)) -> Response:
         try:
             skill_store.delete(skill_id)
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError:
             raise HTTPException(status_code=404, detail="Candidate procedure not found.") from None
         return Response(status_code=204)

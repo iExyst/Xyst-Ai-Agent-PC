@@ -25,3 +25,5 @@ Tool journals distinguish completed results, known failed preconditions and unre
 Large artifact bodies are held in managed storage; SQLite stores metadata. Secrets belong in the OS credential store, never in these records.
 
 Schema version 3 adds `conversation_fts`, a derived FTS5 index synchronized with run objectives and public assistant text in run events. See `../releases/database-migrations.md` for backfill, deletion, privacy boundaries and downgrade behavior.
+
+Schema version 4 adds skill_lifecycle_events for explicit activation/upgrade/rollback/deprecation decisions. Monotonic revisions prevent stale decisions after an active pointer returns to an earlier version. The active pointer remains on the skills entry; immutable run snapshots remain independent of future library actions.

@@ -12,6 +12,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path.startsWith('/skills')){
+      if(path.endsWith('/lifecycle'))return route.fulfill({json:[],headers});
       if(path.endsWith('/trials'))return route.fulfill({json:[{id:'trial-a',objective:'ASCII case',created_at:'2026-11-04T00:00:00Z'},{id:'trial-b',objective:'Unicode case',created_at:'2026-11-04T00:00:00Z'}],headers});
       if(path.endsWith('/evaluations')){
         const body=request.postDataJSON();expect(body.expected_evaluation_count).toBe(0);expect(body.confirmed_criteria).toEqual([0]);
@@ -25,7 +26,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
         const body=request.postDataJSON();
         if(summary)expect(body.expected_version).toBe(versions.length);
         versions.push({skill_id:'procedure-1',version:versions.length+1,content:body.content,required_tools:body.required_tools,required_permissions:body.required_permissions,evaluation_evidence:{state:'candidate',provenance:'user',evaluations:[]},created_at:'2026-11-04T00:00:00Z'});
-        summary={id:'procedure-1',name:body.name,lifecycle_state:'candidate',active_version:null,latest_version:versions.length,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
+        summary={id:'procedure-1',name:body.name,lifecycle_state:'candidate',active_version:null,lifecycle_revision:0,latest_version:versions.length,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
         return route.fulfill({status:201,json:summary,headers});
       }
       if(path.includes('/versions/'))return route.fulfill({json:versions[Number(path.split('/').at(-1))-1],headers});
@@ -52,9 +53,9 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(panel.getByLabel('Procedure text',{exact:true})).toHaveValue('Read files and preserve evidence.');
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeDisabled();
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
-  await expect(page.getByRole('region',{name:'Selected procedure trial',exact:true})).toContainText('Inspect safely \u00b7 version 1');
-  await page.getByRole('button',{name:'Remove procedure trial',exact:true}).click();
-  await expect(page.getByRole('region',{name:'Selected procedure trial',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toContainText('Inspect safely \u00b7 version 1');
+  await page.getByRole('button',{name:'Remove selected procedure',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toHaveCount(0);
   const download=page.waitForEvent('download');await panel.getByRole('button',{name:'Export procedure version',exact:true}).click();
   expect((await download).suggestedFilename()).toBe('procedure-procedure-1-v1.json');
   await panel.getByRole('button',{name:'Find completed procedure trials',exact:true}).click();

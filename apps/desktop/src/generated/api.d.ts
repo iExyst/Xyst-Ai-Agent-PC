@@ -514,6 +514,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skill Lifecycle */
+        get: operations["skill_lifecycle_skills__skill_id__lifecycle_get"];
+        put?: never;
+        /** Decide Skill Lifecycle */
+        post: operations["decide_skill_lifecycle_skills__skill_id__lifecycle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions": {
         parameters: {
             query?: never;
@@ -994,6 +1012,52 @@ export interface components {
              */
             state: "candidate" | "evaluated";
         };
+        /** SkillLifecycleDecision */
+        SkillLifecycleDecision: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "activate" | "rollback" | "deprecate";
+            /** Expected Active Version */
+            expected_active_version: number | null;
+            /** Expected Latest Version */
+            expected_latest_version: number;
+            /** Expected Lifecycle Revision */
+            expected_lifecycle_revision: number;
+            /** Rationale */
+            rationale: string;
+            /** Target Version */
+            target_version?: number | null;
+        };
+        /** SkillLifecycleEvent */
+        SkillLifecycleEvent: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "activate" | "rollback" | "deprecate";
+            /**
+             * Actor
+             * @constant
+             */
+            actor: "local-user";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** From Version */
+            from_version: number | null;
+            /** Rationale */
+            rationale: string;
+            /** Sequence */
+            sequence: number;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string | null;
+            /** To Version */
+            to_version: number | null;
+        };
         /** SkillRevision */
         SkillRevision: {
             /** Content */
@@ -1010,7 +1074,7 @@ export interface components {
         /** SkillSummary */
         SkillSummary: {
             /** Active Version */
-            active_version: null;
+            active_version: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1020,11 +1084,13 @@ export interface components {
             id: string;
             /** Latest Version */
             latest_version: number;
+            /** Lifecycle Revision */
+            lifecycle_revision: number;
             /**
              * Lifecycle State
              * @enum {string}
              */
-            lifecycle_state: "candidate" | "evaluated";
+            lifecycle_state: "candidate" | "evaluated" | "active" | "deprecated";
             /** Name */
             name: string;
             /**
@@ -1042,6 +1108,12 @@ export interface components {
         };
         /** SkillTrial */
         SkillTrial: {
+            /**
+             * Purpose
+             * @default evaluation_trial
+             * @enum {string}
+             */
+            purpose: "evaluation_trial" | "active_use";
             /** Skill Id */
             skill_id: string;
             /** Version */
@@ -1051,6 +1123,12 @@ export interface components {
         SkillTrialRecord: {
             /** Name */
             name: string;
+            /**
+             * Purpose
+             * @default evaluation_trial
+             * @enum {string}
+             */
+            purpose: "evaluation_trial" | "active_use";
             /** Skill Id */
             skill_id: string;
             /** Snapshot Sha256 */
@@ -2248,6 +2326,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_lifecycle_skills__skill_id__lifecycle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillLifecycleEvent"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_skill_lifecycle_skills__skill_id__lifecycle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillLifecycleDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"];
+                };
             };
             /** @description Validation Error */
             422: {

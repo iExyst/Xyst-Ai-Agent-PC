@@ -1221,6 +1221,149 @@
         "title": "SkillEvidence",
         "type": "object"
       },
+      "SkillLifecycleDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "activate",
+              "rollback",
+              "deprecate"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "expected_active_version": {
+            "anyOf": [
+              {
+                "maximum": 128.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Active Version"
+          },
+          "expected_latest_version": {
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Expected Latest Version",
+            "type": "integer"
+          },
+          "expected_lifecycle_revision": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Expected Lifecycle Revision",
+            "type": "integer"
+          },
+          "rationale": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "target_version": {
+            "anyOf": [
+              {
+                "maximum": 128.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Version"
+          }
+        },
+        "required": [
+          "action",
+          "expected_active_version",
+          "expected_latest_version",
+          "expected_lifecycle_revision",
+          "rationale"
+        ],
+        "title": "SkillLifecycleDecision",
+        "type": "object"
+      },
+      "SkillLifecycleEvent": {
+        "properties": {
+          "action": {
+            "enum": [
+              "activate",
+              "rollback",
+              "deprecate"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "const": "local-user",
+            "title": "Actor",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Version"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "snapshot_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Sha256"
+          },
+          "to_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Version"
+          }
+        },
+        "required": [
+          "sequence",
+          "action",
+          "actor",
+          "from_version",
+          "to_version",
+          "rationale",
+          "snapshot_sha256",
+          "created_at"
+        ],
+        "title": "SkillLifecycleEvent",
+        "type": "object"
+      },
       "SkillRevision": {
         "additionalProperties": false,
         "properties": {
@@ -1276,8 +1419,15 @@
       "SkillSummary": {
         "properties": {
           "active_version": {
-            "title": "Active Version",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
           },
           "created_at": {
             "format": "date-time",
@@ -1292,10 +1442,16 @@
             "title": "Latest Version",
             "type": "integer"
           },
+          "lifecycle_revision": {
+            "title": "Lifecycle Revision",
+            "type": "integer"
+          },
           "lifecycle_state": {
             "enum": [
               "candidate",
-              "evaluated"
+              "evaluated",
+              "active",
+              "deprecated"
             ],
             "title": "Lifecycle State",
             "type": "string"
@@ -1315,6 +1471,7 @@
           "name",
           "lifecycle_state",
           "active_version",
+          "lifecycle_revision",
           "latest_version",
           "created_at",
           "updated_at"
@@ -1346,6 +1503,15 @@
       "SkillTrial": {
         "additionalProperties": false,
         "properties": {
+          "purpose": {
+            "default": "evaluation_trial",
+            "enum": [
+              "evaluation_trial",
+              "active_use"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
           "skill_id": {
             "maxLength": 128,
             "minLength": 1,
@@ -1371,6 +1537,15 @@
         "properties": {
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "purpose": {
+            "default": "evaluation_trial",
+            "enum": [
+              "evaluation_trial",
+              "active_use"
+            ],
+            "title": "Purpose",
             "type": "string"
           },
           "skill_id": {
@@ -3344,6 +3519,106 @@
           }
         ],
         "summary": "Get Skill"
+      }
+    },
+    "/skills/{skill_id}/lifecycle": {
+      "get": {
+        "operationId": "skill_lifecycle_skills__skill_id__lifecycle_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillLifecycleEvent"
+                  },
+                  "title": "Response Skill Lifecycle Skills  Skill Id  Lifecycle Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Skill Lifecycle"
+      },
+      "post": {
+        "operationId": "decide_skill_lifecycle_skills__skill_id__lifecycle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillLifecycleDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Decide Skill Lifecycle"
       }
     },
     "/skills/{skill_id}/versions": {
