@@ -1,0 +1,93 @@
+{
+  "snapshot_only": {
+    "passed": true,
+    "engine_sha256": "87c2bda119e80afc3a4192276cb1257d1910cb35bcff1be299f142376a6fb55a",
+    "resource_sha256": {
+      "wsl_manager.py": "099f140f5577c9d6e10f1bf62e7d661b32e575bc01c52a2d752d4155f9a5f475",
+      "workspace_snapshot.py": "7b53d3b464ae969677066835de62da14426ba5012bc68f911b155d767defd707",
+      "sandbox_profile.py": "20e2752eaa4417be1378c449c2b34540b18f0c74fd6a7f2ac4d576debbfd0412",
+      "execution_receipts.py": "fe2f7778b24592ceb0c7067da559ffaf9af83cfd2dd166626edb77f4ef3b4a7c",
+      "cgroup_gate.py": "1352479edd343876e9472265e96e5393264b1dddc2ab0f34e36a3f3498ab06cf"
+    },
+    "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+    "frozen_snapshot_matches": true,
+    "binary_bytes": 2097152,
+    "path_system32_only": true,
+    "project_import_shadow_ignored": true,
+    "no_execution_dispatched": true,
+    "original_project_unchanged": true,
+    "extraction_path_spaces_unicode_dollar_percent": true,
+    "scope": "Frozen snapshot IPC only; no WSL launch",
+    "fixture_reservation": "cancelled run, undispatched intention retained in diagnostic-only database",
+    "acceptance_directory": ".acceptance/1246f3c2-eed4-426f-bab5-842efc351247/"
+  },
+  "completed_receipt": {
+    "passed": true,
+    "engine_sha256": "87c2bda119e80afc3a4192276cb1257d1910cb35bcff1be299f142376a6fb55a",
+    "resource_sha256": {
+      "wsl_manager.py": "099f140f5577c9d6e10f1bf62e7d661b32e575bc01c52a2d752d4155f9a5f475",
+      "workspace_snapshot.py": "7b53d3b464ae969677066835de62da14426ba5012bc68f911b155d767defd707",
+      "sandbox_profile.py": "20e2752eaa4417be1378c449c2b34540b18f0c74fd6a7f2ac4d576debbfd0412",
+      "execution_receipts.py": "fe2f7778b24592ceb0c7067da559ffaf9af83cfd2dd166626edb77f4ef3b4a7c",
+      "cgroup_gate.py": "1352479edd343876e9472265e96e5393264b1dddc2ab0f34e36a3f3498ab06cf"
+    },
+    "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+    "frozen_snapshot_matches": true,
+    "binary_bytes": 2097152,
+    "project_import_shadow_ignored": true,
+    "path_system32_only": true,
+    "frozen_api_authenticated": true,
+    "unauthenticated_status": 401,
+    "frozen_startup_cleanup_observed": true,
+    "active_orphan_case": false,
+    "run_kept_blocked": true,
+    "graceful_exit_code": 0,
+    "original_project_unchanged": true,
+    "extraction_path_spaces_unicode_dollar_percent": true,
+    "unresolved_after_explicit_source_review": 0,
+    "scope": "Frozen sidecar, not installed GUI; injected expiry after observed controller exit",
+    "ui_or_model_command_tool_enabled": false,
+    "acceptance_directory": ".acceptance/09107b03-b300-4a50-bf84-11268fad031d/"
+  },
+  "active_orphan": {
+    "passed": true,
+    "engine_sha256": "87c2bda119e80afc3a4192276cb1257d1910cb35bcff1be299f142376a6fb55a",
+    "resource_sha256": {
+      "wsl_manager.py": "099f140f5577c9d6e10f1bf62e7d661b32e575bc01c52a2d752d4155f9a5f475",
+      "workspace_snapshot.py": "7b53d3b464ae969677066835de62da14426ba5012bc68f911b155d767defd707",
+      "sandbox_profile.py": "20e2752eaa4417be1378c449c2b34540b18f0c74fd6a7f2ac4d576debbfd0412",
+      "execution_receipts.py": "fe2f7778b24592ceb0c7067da559ffaf9af83cfd2dd166626edb77f4ef3b4a7c",
+      "cgroup_gate.py": "1352479edd343876e9472265e96e5393264b1dddc2ab0f34e36a3f3498ab06cf"
+    },
+    "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+    "frozen_snapshot_matches": true,
+    "binary_bytes": 2097152,
+    "project_import_shadow_ignored": true,
+    "path_system32_only": true,
+    "frozen_api_authenticated": true,
+    "unauthenticated_status": 401,
+    "frozen_startup_cleanup_observed": true,
+    "active_orphan_case": true,
+    "run_kept_blocked": true,
+    "graceful_exit_code": 0,
+    "original_project_unchanged": true,
+    "extraction_path_spaces_unicode_dollar_percent": true,
+    "unresolved_after_explicit_source_review": 0,
+    "scope": "Frozen sidecar, not installed GUI; injected expiry after observed controller exit",
+    "ui_or_model_command_tool_enabled": false,
+    "acceptance_directory": ".acceptance/42b8b10d-1356-496e-84f8-8ed731f2d32e/"
+  },
+  "source_hashes": {
+    "scripts/build_engine.py": "d5e3401970ae7bcb0b3dbb656ab034bbe30f249dcf7677526e66a49486d7d407",
+    "scripts/frozen_command_diagnostic.py": "88c0ac92d88a0ac513cde68a9b340f93d22f18103c330adcc6af50f7e1a97be7",
+    "scripts/engine_entry.py": "f4dd495d4c9254346db4db36ebf56f224fe2a6d18aeb56da7857251e5f5206c0",
+    "engine/xaa/runtime/snapshot_worker.py": "6a118e4caf3c1d5673c795bce94f8ca5271f593bca9ef5e046d235b11438ec7c",
+    "engine/xaa/runtime/command_recovery.py": "d0ed4755c3f1c34e151b8568f221de85b311f3e149d0d909a0398c704e58bf07"
+  },
+  "scope": "Local frozen sidecar and API; not installed GUI or full reboot; hosted snapshot gate newly configured, not yet claimed passed.",
+  "negative_archive_probe": {
+    "artifact_sha256": "4e6364315098626d0434e5a1eb390b204ad81232c9d694ed1e81edae1cac0f38",
+    "rejected": true,
+    "reason": "Missing execution resource wsl_manager.py in older sidecar"
+  }
+}

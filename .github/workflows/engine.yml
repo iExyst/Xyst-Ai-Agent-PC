@@ -61,6 +61,9 @@ jobs:
             apps/desktop/src-tauri/target
           key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - run: npm run build:installer
+      - name: Verify frozen snapshot worker and packaged execution resources
+        run: uv run python scripts/frozen_command_diagnostic.py --snapshot-only
+        timeout-minutes: 2
       - name: Install, boot and uninstall unsigned package
         run: ./scripts/installer_ci_smoke.ps1
         timeout-minutes: 5
