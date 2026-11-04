@@ -92,6 +92,9 @@ async def diagnose(distribution: str, model: str) -> None:
             answer_only_retries=sum(
                 event["event_type"] == "model.answer_requested" for event in events
             ),
+            response_repair_requests=sum(
+                event["event_type"] == "model.response_requested" for event in events
+            ),
             exact_stdout_reported=True,
             original_project_unchanged=True,
             unresolved_commands=0,

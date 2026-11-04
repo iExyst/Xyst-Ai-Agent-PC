@@ -1,0 +1,48 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "model": "qwen/qwen3.5-9b",
+  "build_sha256": {
+    "xaa-desktop.exe": "92f3c2221c76dd91f680064150b1d3f83081c34939b4f684d2b1cf24b0b535a1",
+    "xaa-engine.exe": "017cd940f85b67fbb77b356a02077613a7b095a3e47b822a9b7d49a769a420ef"
+  },
+  "scope": "Native development Tauri WebView + bundled frozen engine + real LM Studio/WSL; no connection shim; not installed/clean-machine/upgrade/reboot acceptance",
+  "fixture_review_automated": true,
+  "profile_sha256": "6cfb2f0b92851ba2fc38cf7f1f04a59af57f310f7cadbe474cfc513e83ebc712",
+  "checks": [
+    "private_input",
+    "unprivileged_identity",
+    "seccomp_and_capabilities",
+    "readonly_runtime",
+    "private_tmpfs",
+    "host_mounts_absent",
+    "credential_environment_absent",
+    "socket_families_denied",
+    "nested_namespaces_denied",
+    "kernel_resource_gate",
+    "cleanup_confirmed"
+  ],
+  "run_id": "a903df8f-02c9-4268-a458-768aa99a3fda",
+  "owned_model_unloaded": true,
+  "command_proposals": 1,
+  "launch_events": 1,
+  "completed_commands": 1,
+  "exact_stdout_artifact_verified": true,
+  "original_project_unchanged": true,
+  "state": "completed",
+  "native_grant_ui_verified": true,
+  "restricted_runtime_path": true,
+  "native_exit": true,
+  "engine_stopped": true,
+  "graceful_shutdown": true,
+  "unresolved_commands": 0,
+  "saved_command_grants": 1,
+  "screenshot_visually_reviewed": true,
+  "loaded_model_instances_after_acceptance": 0,
+  "failed_attempts": [
+    {
+      "evidence": ".acceptance/358bf1af-c28f-4784-b70f-d8e852a068cf/",
+      "reason": "Native command reached candidate; broad permission-summary text locator also matched the new activity label. Corrected selector, then reran same binary hashes."
+    }
+  ]
+}

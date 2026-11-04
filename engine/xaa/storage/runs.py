@@ -731,6 +731,15 @@ class RunStore:
     def public_events(self, run_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
         return [public_run_event(event) for event in self.list_events(run_id, after_sequence)]
 
+    def require_new_tool_call(self, run_id: str, token: str, call_id: str) -> None:
+        """Reject reused provider IDs before dispatch; intent insertion remains atomic."""
+        with self.connection() as connection:
+            self.require_lease(connection, run_id, token)
+            if connection.execute(
+                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?", (run_id, call_id)
+            ).fetchone():
+                raise ValueError("Tool call ID already belongs to another action in this run.")
+
     def record_tool_intent(
         self,
         run_id: str,
@@ -988,6 +997,7 @@ class RunStore:
                     "verification.feedback",
                     "execution.resume_feedback",
                     "model.answer_requested",
+                    "model.response_requested",
                 }:
                     messages.append(event["payload"]["message"])
                 elif event["event_type"] in {"tool.completed", "tool.failed"}:

@@ -1,0 +1,126 @@
+{
+  "run_id": 41831327578,
+  "commit": "a80ff23ca427680d1e49b1d5957a5b947444c91e",
+  "url": "https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41831327578",
+  "scope": "Hosted Windows source and unsigned installer/snapshot/install lifecycle gates; not hosted WSL/model command acceptance",
+  "jobs": [
+    {
+      "name": "windows",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv run ruff check engine scripts tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv run ruff format --check engine scripts tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv run pyright engine scripts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv run python scripts/export_api_contract.py --check",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run contracts:check",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run typecheck",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run test:client",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv run pytest -q",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "windows-installer",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run rustup toolchain install 1.99.1 --profile minimal",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run rustup override set 1.99.1",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache/restore@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run build:installer",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify frozen snapshot worker and packaged execution resources",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install, boot and uninstall unsigned package",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/cache/save@v4",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

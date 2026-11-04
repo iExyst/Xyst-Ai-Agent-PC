@@ -1,0 +1,70 @@
+{
+  "passed": true,
+  "distribution": "Ubuntu-24.04",
+  "model": "qwen/qwen3.5-9b",
+  "build_sha256": {
+    "xaa-desktop.exe": "0914486e6badf5448f1c521a8ee7d83b0684752302cab86805ea976b50019d72",
+    "xaa-engine.exe": "589bb06cdf6341c48e79d729b4cac57b420295e5fc49392eba3a9b07693f7d98"
+  },
+  "scope": "Native development Tauri WebView + bundled frozen engine + real LM Studio/WSL; no connection shim; not installed/clean-machine/upgrade/reboot acceptance",
+  "fixture_review_automated": true,
+  "project_fix_requested": true,
+  "profile_sha256": "6cfb2f0b92851ba2fc38cf7f1f04a59af57f310f7cadbe474cfc513e83ebc712",
+  "checks": [
+    "private_input",
+    "unprivileged_identity",
+    "seccomp_and_capabilities",
+    "readonly_runtime",
+    "private_tmpfs",
+    "host_mounts_absent",
+    "credential_environment_absent",
+    "socket_families_denied",
+    "nested_namespaces_denied",
+    "kernel_resource_gate",
+    "cleanup_confirmed"
+  ],
+  "run_id": "2854ad68-82d7-4069-a6a8-d7c1be5d60ea",
+  "project_fix_verified": true,
+  "changed_files": [
+    "calculator.py"
+  ],
+  "corrected_sha256": "f2a2983c6af68f718a0b67086091544702019a82af4051e4c61d7f5e17df64cb",
+  "tested_snapshot_matches_retained_file": true,
+  "project_test_cases": 5,
+  "owned_model_unloaded": true,
+  "command_proposals": 1,
+  "launch_events": 1,
+  "completed_commands": 1,
+  "exact_stdout_artifact_verified": true,
+  "original_project_unchanged": false,
+  "state": "completed",
+  "native_grant_ui_verified": true,
+  "restricted_runtime_path": true,
+  "native_exit": true,
+  "engine_stopped": true,
+  "graceful_shutdown": true,
+  "unresolved_commands": 0,
+  "response_repair_requests": 1,
+  "recorded_operations": [
+    "workspace.read_file",
+    "workspace.read_file",
+    "workspace.read_file",
+    "workspace.write_file",
+    "workspace.read_file",
+    "workspace.run_command"
+  ],
+  "screenshot_visually_reviewed": true,
+  "corrected_source_independently_reviewed": true,
+  "check_file_unchanged": true,
+  "loaded_model_instances_after_acceptance": 0,
+  "failed_attempts": [
+    {
+      "evidence": ".acceptance/57cfe87a-f004-4522-b2f9-697c9be12c4e/",
+      "reason": "Old answer-only clarification disabled remaining edit/test tools; model emitted XML-looking prose, which was correctly not executed. Project remained unfixed and no review was accepted."
+    },
+    {
+      "evidence": ".acceptance/b1c09d7a-ae17-40ae-909c-376917d4e43f/",
+      "reason": "After continuation fix, real model tool-use diagnostic hit its unchanged 512-token cap; blocked before any project action. Fresh independent attempt passed the same gate."
+    }
+  ]
+}

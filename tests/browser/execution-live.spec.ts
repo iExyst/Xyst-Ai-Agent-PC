@@ -53,7 +53,7 @@ test('real sandbox setup selects installed distro and runs fixed controls check'
       const created=await(await creation).json();expect(created.command_grant.distribution).toBe(distribution);
       await expect(page.getByRole('article')).toContainText(code,{timeout:150000});
       await expect(page.getByRole('heading',{name:'Active run verifying',exact:true})).toBeVisible();
-      await expect(page.getByText(/Isolated commands authorized for this run/)).toBeVisible();
+      await expect(page.getByText(/Isolated commands authorized for this run in /)).toBeVisible();
       await expect(page.getByLabel('Allow isolated commands for this next run')).not.toBeChecked();
       const events=await(await request.get(base+'/runs/'+created.id+'/events',{headers})).json();
       expect(events.filter((event:{event_type:string})=>event.event_type==='execution.completed')).toHaveLength(1);

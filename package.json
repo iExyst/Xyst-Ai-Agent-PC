@@ -6,6 +6,7 @@
   "scripts": {
     "build:native:dev": "npm run build:desktop && uv run python scripts/build_engine.py && cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol && uv run python scripts/stage_native.py",
     "test:browser": "playwright test",
+    "test:native:commands": "node scripts/native_command_smoke.mjs",
     "dev:desktop": "vite apps/desktop --host 127.0.0.1",
     "build:desktop": "npm run typecheck && vite build apps/desktop",
     "contracts": "node scripts/generate-types.mjs",
