@@ -1,0 +1,4520 @@
+{
+  "reference_commit": "1e208b280deb18f01d015b0acdf3ef3552d08039",
+  "audit_date": "2026-11-03",
+  "manifest_count": 27,
+  "registered_platform_count": 28,
+  "core_transport_count": 3,
+  "manifests": [
+    {
+      "manifest": "plugins/platforms/a2a/plugin.yaml",
+      "sha256": "e629badc3e93a8291098742112ffde0a8d351f5f946129a4f89d81b88b44da71",
+      "name": "a2a-platform",
+      "label": "A2A",
+      "version": "1.0.0",
+      "declared_required_environment": [],
+      "declared_optional_environment": [
+        {
+          "name": "A2A_PEER_TOKENS",
+          "secret": true
+        },
+        {
+          "name": "A2A_BEARER_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "A2A_PUSH_SECRET",
+          "secret": true
+        },
+        {
+          "name": "A2A_HOST",
+          "secret": false
+        },
+        {
+          "name": "A2A_PORT",
+          "secret": false
+        },
+        {
+          "name": "A2A_AGENT_NAME",
+          "secret": false
+        },
+        {
+          "name": "A2A_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "A2A_HOME_CHANNEL",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "a2a"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/a2a/adapter.py",
+          "sha256": "a97d93fbe32d26694aadd8eb08c581778642c53b5697029f3e1de5855d6be5d4",
+          "classes": [
+            {
+              "name": "A2AAdapter",
+              "line": 277,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 331
+                },
+                {
+                  "name": "disconnect",
+                  "line": 355
+                },
+                {
+                  "name": "send",
+                  "line": 866
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/bluebubbles/plugin.yaml",
+      "sha256": "8f791db05e0acd1697535ca5b518d4b90fc8896c9cc09a558a1a0577b7e25169",
+      "name": "bluebubbles-platform",
+      "label": "BlueBubbles (iMessage)",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "BLUEBUBBLES_SERVER_URL",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_PASSWORD",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "BLUEBUBBLES_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_WEBHOOK_HOST",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_WEBHOOK_PORT",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_WEBHOOK_PATH",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_SEND_READ_RECEIPTS",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_REQUIRE_MENTION",
+          "secret": false
+        },
+        {
+          "name": "BLUEBUBBLES_MENTION_PATTERNS",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "bluebubbles"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/bluebubbles/adapter.py",
+          "sha256": "bfdf5aea2d2685fb693d941568cf5a4d3e0232157b8358e5fe86ff024a2dcb13",
+          "classes": [
+            {
+              "name": "BlueBubblesAdapter",
+              "line": 106,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 196
+                },
+                {
+                  "name": "disconnect",
+                  "line": 245
+                },
+                {
+                  "name": "send",
+                  "line": 363
+                },
+                {
+                  "name": "send_image",
+                  "line": 420
+                },
+                {
+                  "name": "send_voice",
+                  "line": 431
+                },
+                {
+                  "name": "send_video",
+                  "line": 436
+                },
+                {
+                  "name": "send_document",
+                  "line": 439
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/buzz/plugin.yaml",
+      "sha256": "e539bc196e9aaea05138f0b057ac3976ac970bf0fba07e40c1074e2f9a8bf422",
+      "name": "buzz-platform",
+      "label": "Buzz",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "BUZZ_RELAY_URL",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_PRIVATE_KEY",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "BUZZ_TRANSPORT",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_AUTH_TAG",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_CHANNELS",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_POLL_INTERVAL",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_CLI_PATH",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_CREDENTIALS_FILE",
+          "secret": false
+        },
+        {
+          "name": "BUZZ_REPLY_IN_THREAD",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "buzz"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/buzz/adapter.py",
+          "sha256": "b206c732ee034f314425f0d72916633c3234b8802ece4560ca63ec72d4d56e8e",
+          "classes": [
+            {
+              "name": "BuzzAdapter",
+              "line": 511,
+              "bases": [
+                "BuzzCursorMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 616
+                },
+                {
+                  "name": "disconnect",
+                  "line": 705
+                },
+                {
+                  "name": "send",
+                  "line": 822
+                },
+                {
+                  "name": "edit_message",
+                  "line": 869
+                },
+                {
+                  "name": "send_image",
+                  "line": 903
+                },
+                {
+                  "name": "send_document",
+                  "line": 943
+                },
+                {
+                  "name": "send_video",
+                  "line": 949
+                },
+                {
+                  "name": "send_voice",
+                  "line": 955
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/dingtalk/plugin.yaml",
+      "sha256": "a48510c9180dbe86a2c9aa676d9545e1c0e56b9fafb38e494a9813615e4bf439",
+      "name": "dingtalk-platform",
+      "label": "DingTalk",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "DINGTALK_CLIENT_ID",
+          "secret": false
+        },
+        {
+          "name": "DINGTALK_CLIENT_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "DINGTALK_WEBHOOK_URL",
+          "secret": false
+        },
+        {
+          "name": "DINGTALK_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "DINGTALK_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "DINGTALK_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "dingtalk"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/dingtalk/adapter.py",
+          "sha256": "20c9d7863c75557bd4ab30097c0244a9e396ff53ef186767580f00a1ee527d33",
+          "classes": [
+            {
+              "name": "DingTalkAdapter",
+              "line": 193,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 225
+                },
+                {
+                  "name": "disconnect",
+                  "line": 347
+                },
+                {
+                  "name": "send",
+                  "line": 503
+                },
+                {
+                  "name": "send_image",
+                  "line": 547
+                },
+                {
+                  "name": "send_document",
+                  "line": 556
+                },
+                {
+                  "name": "edit_message",
+                  "line": 605
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/discord/plugin.yaml",
+      "sha256": "f24c0ead17df4acd6804542bf8e640ef5a57a2b1cd53b70efd4a9b5bc71b478d",
+      "name": "discord-platform",
+      "label": "Discord",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "DISCORD_BOT_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "DISCORD_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "DISCORD_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "DISCORD_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "DISCORD_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "discord"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/discord/adapter.py",
+          "sha256": "3fec9074e8559ea6960d6ce4b45f0b60d8e2e2365156c55c53fc6c6a55ccb81e",
+          "classes": [
+            {
+              "name": "DiscordAdapter",
+              "line": 1179,
+              "bases": [
+                "DiscordAuthorizationMixin",
+                "DiscordMediaMixin",
+                "DiscordThreadTitlesMixin",
+                "DiscordVoiceInfoMixin",
+                "DiscordSlashAuthMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 1400
+                },
+                {
+                  "name": "disconnect",
+                  "line": 2111
+                },
+                {
+                  "name": "send",
+                  "line": 3205
+                },
+                {
+                  "name": "edit_message",
+                  "line": 3385
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/email/plugin.yaml",
+      "sha256": "0d6bb587f7de944378549c0460990fd79e3e2e24c01bfe96cc5fa375ddf61b8b",
+      "name": "email-platform",
+      "label": "Email",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "EMAIL_ADDRESS",
+          "secret": false
+        },
+        {
+          "name": "EMAIL_PASSWORD",
+          "secret": true
+        },
+        {
+          "name": "EMAIL_SMTP_HOST",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "EMAIL_SMTP_PORT",
+          "secret": false
+        },
+        {
+          "name": "EMAIL_IMAP_HOST",
+          "secret": false
+        },
+        {
+          "name": "EMAIL_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "EMAIL_HOME_ADDRESS",
+          "secret": false
+        },
+        {
+          "name": "EMAIL_AUTHSERV_ID",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "email"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/email/adapter.py",
+          "sha256": "fa69bb8fd75f348f30f8f1cb926745e45db59c2936b8066971ff61d799755508",
+          "classes": [
+            {
+              "name": "EmailAdapter",
+              "line": 450,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 605
+                },
+                {
+                  "name": "disconnect",
+                  "line": 624
+                },
+                {
+                  "name": "send",
+                  "line": 854
+                },
+                {
+                  "name": "send_image",
+                  "line": 913
+                },
+                {
+                  "name": "send_document",
+                  "line": 949
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/feishu/plugin.yaml",
+      "sha256": "8ca22e6ee0c4d5be222706b7c6ff8eea9ef6aa1bd527814add6387b98d65fbba",
+      "name": "feishu-platform",
+      "label": "Feishu / Lark",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "FEISHU_APP_ID",
+          "secret": false
+        },
+        {
+          "name": "FEISHU_APP_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "FEISHU_DOMAIN",
+          "secret": false
+        },
+        {
+          "name": "FEISHU_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "FEISHU_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "FEISHU_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "FEISHU_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "feishu"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/feishu/adapter.py",
+          "sha256": "3525af4876e9b9725d5752721357d2c669d858338c83b8c50d44c0c422e844fb",
+          "classes": [
+            {
+              "name": "FeishuAdapter",
+              "line": 1287,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 1495
+                },
+                {
+                  "name": "disconnect",
+                  "line": 1547
+                },
+                {
+                  "name": "send",
+                  "line": 1654
+                },
+                {
+                  "name": "edit_message",
+                  "line": 1706
+                },
+                {
+                  "name": "send_voice",
+                  "line": 1867
+                },
+                {
+                  "name": "send_document",
+                  "line": 1897
+                },
+                {
+                  "name": "send_video",
+                  "line": 1907
+                },
+                {
+                  "name": "send_image",
+                  "line": 1953
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/google_chat/plugin.yaml",
+      "sha256": "0a22220def4525ab3c57595a6c906c36e85d8ce658789cead351bff250437e2e",
+      "name": "google_chat-platform",
+      "label": "Google Chat",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "GOOGLE_CHAT_HTTP_EVENTS_URL",
+          "secret": false
+        },
+        {
+          "name": "GOOGLE_CHAT_HTTP_EVENTS_AUDIENCE",
+          "secret": false
+        },
+        {
+          "name": "GOOGLE_CHAT_HTTP_EVENTS_SERVICE_ACCOUNT_EMAIL",
+          "secret": false
+        },
+        {
+          "name": "GOOGLE_CHAT_PROJECT_ID",
+          "secret": false
+        },
+        {
+          "name": "GOOGLE_CHAT_SUBSCRIPTION_NAME",
+          "secret": false
+        },
+        {
+          "name": "GOOGLE_CHAT_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "GOOGLE_CHAT_HOME_CHANNEL",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "google_chat"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/google_chat/adapter.py",
+          "sha256": "916fa120bd0a1aeea34dee9c0c0e93c7591282a1a25c72d92c139492c6b7a81a",
+          "classes": [
+            {
+              "name": "GoogleChatAdapter",
+              "line": 382,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 630
+                },
+                {
+                  "name": "disconnect",
+                  "line": 678
+                },
+                {
+                  "name": "send",
+                  "line": 1064
+                },
+                {
+                  "name": "edit_message",
+                  "line": 1164
+                },
+                {
+                  "name": "send_image",
+                  "line": 1381
+                },
+                {
+                  "name": "send_document",
+                  "line": 1408
+                },
+                {
+                  "name": "send_voice",
+                  "line": 1414
+                },
+                {
+                  "name": "send_video",
+                  "line": 1418
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/irc/plugin.yaml",
+      "sha256": "7b6562d7c4f80682e4e8707ef147cab12129f32d2b78bc1a3ba1c4f76a314327",
+      "name": "irc-platform",
+      "label": "IRC",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "IRC_SERVER",
+          "secret": false
+        },
+        {
+          "name": "IRC_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "IRC_NICKNAME",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "IRC_PORT",
+          "secret": false
+        },
+        {
+          "name": "IRC_USE_TLS",
+          "secret": false
+        },
+        {
+          "name": "IRC_SERVER_PASSWORD",
+          "secret": true
+        },
+        {
+          "name": "IRC_NICKSERV_PASSWORD",
+          "secret": true
+        },
+        {
+          "name": "IRC_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "IRC_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "IRC_HOME_CHANNEL",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "irc"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/irc/adapter.py",
+          "sha256": "35abadd787abef2b844ab0c2e4f01e6a097d093c67f0dc231723165de741f285",
+          "classes": [
+            {
+              "name": "IRCAdapter",
+              "line": 122,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 162
+                },
+                {
+                  "name": "disconnect",
+                  "line": 196
+                },
+                {
+                  "name": "send",
+                  "line": 214
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/line/plugin.yaml",
+      "sha256": "df99d02d3dd73adf0343b955828628fbab30567bd835115ecd9feee0f4bf184d",
+      "name": "line-platform",
+      "label": "LINE",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "LINE_CHANNEL_ACCESS_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "LINE_CHANNEL_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "LINE_PORT",
+          "secret": false
+        },
+        {
+          "name": "LINE_HOST",
+          "secret": false
+        },
+        {
+          "name": "LINE_PUBLIC_URL",
+          "secret": false
+        },
+        {
+          "name": "LINE_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "LINE_ALLOWED_GROUPS",
+          "secret": false
+        },
+        {
+          "name": "LINE_ALLOWED_ROOMS",
+          "secret": false
+        },
+        {
+          "name": "LINE_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "LINE_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "LINE_SLOW_RESPONSE_THRESHOLD",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "line"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/line/adapter.py",
+          "sha256": "f40e1a3dec29a244e43762f26c2ffac19c439a1cc4d5ff5819ba39d87b9e0c5f",
+          "classes": [
+            {
+              "name": "LineAdapter",
+              "line": 378,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 432
+                },
+                {
+                  "name": "disconnect",
+                  "line": 479
+                },
+                {
+                  "name": "send",
+                  "line": 649
+                },
+                {
+                  "name": "send_voice",
+                  "line": 830
+                },
+                {
+                  "name": "send_video",
+                  "line": 840
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/matrix/plugin.yaml",
+      "sha256": "5378110b5815934ea640610376ac9c082fbeea441214114a67fe4be3edb4e09b",
+      "name": "matrix-platform",
+      "label": "Matrix",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "MATRIX_HOMESERVER",
+          "secret": false
+        },
+        {
+          "name": "MATRIX_ACCESS_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "MATRIX_PASSWORD",
+          "secret": true
+        },
+        {
+          "name": "MATRIX_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "MATRIX_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "MATRIX_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "MATRIX_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "matrix"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/matrix/adapter.py",
+          "sha256": "2a48bc2713c7b6007450e26bd4e4343928e697c3ee60cf979741b4eeb9ee1693",
+          "classes": [
+            {
+              "name": "MatrixAdapter",
+              "line": 794,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 1309
+                },
+                {
+                  "name": "disconnect",
+                  "line": 1356
+                },
+                {
+                  "name": "send",
+                  "line": 1384
+                },
+                {
+                  "name": "edit_message",
+                  "line": 1474
+                },
+                {
+                  "name": "send_image",
+                  "line": 1500
+                },
+                {
+                  "name": "send_document",
+                  "line": 1604
+                },
+                {
+                  "name": "send_voice",
+                  "line": 1609
+                },
+                {
+                  "name": "send_video",
+                  "line": 1636
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/mattermost/plugin.yaml",
+      "sha256": "b59fdf94212172a108cc670683a59a3637db83a1a7f5d8e1d44686e781f62682",
+      "name": "mattermost-platform",
+      "label": "Mattermost",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "MATTERMOST_URL",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "MATTERMOST_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_REPLY_MODE",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_REQUIRE_MENTION",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_FREE_RESPONSE_CHANNELS",
+          "secret": false
+        },
+        {
+          "name": "MATTERMOST_ALLOWED_CHANNELS",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "mattermost"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/mattermost/adapter.py",
+          "sha256": "45756954f9d959ea7583fa8c8240102d59eb5802ef9500405e9d54973c5308a6",
+          "classes": [
+            {
+              "name": "MattermostAdapter",
+              "line": 104,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 233
+                },
+                {
+                  "name": "disconnect",
+                  "line": 254
+                },
+                {
+                  "name": "send",
+                  "line": 273
+                },
+                {
+                  "name": "edit_message",
+                  "line": 297
+                },
+                {
+                  "name": "send_image",
+                  "line": 301
+                },
+                {
+                  "name": "send_document",
+                  "line": 309
+                },
+                {
+                  "name": "send_voice",
+                  "line": 314
+                },
+                {
+                  "name": "send_video",
+                  "line": 318
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/ntfy/plugin.yaml",
+      "sha256": "0c55a5c418a9949f7281a7bec9d5db0dc73dbbb741d11450437ae441524340b1",
+      "name": "ntfy-platform",
+      "label": "ntfy",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "NTFY_TOPIC",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "NTFY_SERVER_URL",
+          "secret": false
+        },
+        {
+          "name": "NTFY_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "NTFY_PUBLISH_TOPIC",
+          "secret": false
+        },
+        {
+          "name": "NTFY_MARKDOWN",
+          "secret": false
+        },
+        {
+          "name": "NTFY_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "NTFY_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "NTFY_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "NTFY_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "ntfy"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/ntfy/adapter.py",
+          "sha256": "f035549471f53b5745de3f256c64028b17a10ddc8988780263348009fa5f12c6",
+          "classes": [
+            {
+              "name": "NtfyAdapter",
+              "line": 118,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 137
+                },
+                {
+                  "name": "disconnect",
+                  "line": 224
+                },
+                {
+                  "name": "send",
+                  "line": 274
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/photon/plugin.yaml",
+      "sha256": "e88341a92a54d9619de6570ec1d41c04b77d88ed641f12c1f4b97ef67f68bbce",
+      "name": "photon-platform",
+      "label": "iMessage via Photon",
+      "version": "0.3.0",
+      "declared_required_environment": [
+        {
+          "name": "PHOTON_PROJECT_ID",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_PROJECT_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "PHOTON_SIDECAR_PORT",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_SIDECAR_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "PHOTON_SIDECAR_AUTOSTART",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_NODE_BIN",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_DASHBOARD_HOST",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_SPECTRUM_HOST",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_READ_RECEIPTS",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_REQUIRE_MENTION",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_MENTION_PATTERNS",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_TELEMETRY",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_MARKDOWN",
+          "secret": false
+        },
+        {
+          "name": "PHOTON_REACTIONS",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "photon"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/photon/adapter.py",
+          "sha256": "ed9eca08e37feb619ce01d74bc772569e6004f31ddc8ba7d62e8aa180fec8dd8",
+          "classes": [
+            {
+              "name": "PhotonAdapter",
+              "line": 576,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 665
+                },
+                {
+                  "name": "disconnect",
+                  "line": 708
+                },
+                {
+                  "name": "send",
+                  "line": 1276
+                },
+                {
+                  "name": "send_image",
+                  "line": 1300
+                },
+                {
+                  "name": "send_voice",
+                  "line": 1314
+                },
+                {
+                  "name": "send_video",
+                  "line": 1319
+                },
+                {
+                  "name": "send_document",
+                  "line": 1324
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/qqbot/plugin.yaml",
+      "sha256": "12db2752657da784e1e74d57719232492071004690a7b02e93b4d53f74e425ef",
+      "name": "qqbot-platform",
+      "label": "QQ Bot",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "QQ_APP_ID",
+          "secret": false
+        },
+        {
+          "name": "QQ_CLIENT_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "QQ_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "QQ_GROUP_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "QQ_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "QQBOT_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "QQBOT_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "QQBOT_HOME_CHANNEL_THREAD_ID",
+          "secret": false
+        },
+        {
+          "name": "QQ_MARKDOWN_SUPPORT",
+          "secret": false
+        },
+        {
+          "name": "QQ_SANDBOX",
+          "secret": false
+        },
+        {
+          "name": "QQ_PORTAL_HOST",
+          "secret": false
+        },
+        {
+          "name": "QQ_STT_API_KEY",
+          "secret": true
+        },
+        {
+          "name": "QQ_STT_BASE_URL",
+          "secret": false
+        },
+        {
+          "name": "QQ_STT_MODEL",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "qqbot"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/qqbot/adapter.py",
+          "sha256": "725904c6affa34d490717b75e69f24e1f605ae38603fdfa1f2707c09901af2e3",
+          "classes": [
+            {
+              "name": "QQAdapter",
+              "line": 100,
+              "bases": [
+                "OwnAccessPolicyMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 188
+                },
+                {
+                  "name": "disconnect",
+                  "line": 226
+                },
+                {
+                  "name": "send",
+                  "line": 1355
+                },
+                {
+                  "name": "send_image",
+                  "line": 1519
+                },
+                {
+                  "name": "send_voice",
+                  "line": 1534
+                },
+                {
+                  "name": "send_video",
+                  "line": 1537
+                },
+                {
+                  "name": "send_document",
+                  "line": 1540
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/raft/plugin.yaml",
+      "sha256": "522b5f1d3cea058656e7b6286f668cdb92c06a2c159d83bed46d820c166fd66a",
+      "name": "raft-platform",
+      "label": "Raft",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "RAFT_PROFILE",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [],
+      "registered_names": [
+        "raft"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/raft/adapter.py",
+          "sha256": "89a696aa160fbd9b65728dd23f4328783854951dde3d008d029bbdd0aa3b18be",
+          "classes": [
+            {
+              "name": "RaftAdapter",
+              "line": 307,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 325
+                },
+                {
+                  "name": "disconnect",
+                  "line": 360
+                },
+                {
+                  "name": "send",
+                  "line": 411
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/signal/plugin.yaml",
+      "sha256": "8d061364275d85de86298914281667e1e332049318d1e6bf18a41c45f4e1be02",
+      "name": "signal-platform",
+      "label": "Signal",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "SIGNAL_HTTP_URL",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_ACCOUNT",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "SIGNAL_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_GROUP_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_REQUIRE_MENTION",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_IGNORE_STORIES",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "SIGNAL_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "signal"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/signal/adapter.py",
+          "sha256": "027eaaf06669f78bb843d484a67f8668696c83067de1ae6c160d01fed9d7d60a",
+          "classes": [
+            {
+              "name": "SignalAdapter",
+              "line": 177,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 228
+                },
+                {
+                  "name": "disconnect",
+                  "line": 272
+                },
+                {
+                  "name": "send",
+                  "line": 706
+                },
+                {
+                  "name": "send_image",
+                  "line": 868
+                },
+                {
+                  "name": "send_document",
+                  "line": 899
+                },
+                {
+                  "name": "send_voice",
+                  "line": 906
+                },
+                {
+                  "name": "send_video",
+                  "line": 910
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/simplex/plugin.yaml",
+      "sha256": "dd9866383ef4c08ae1b47260416e605f40a17f4453834fd9cf88b362d59bdf8a",
+      "name": "simplex-platform",
+      "label": "SimpleX Chat",
+      "version": "1.1.0",
+      "declared_required_environment": [
+        {
+          "name": "SIMPLEX_WS_URL",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "SIMPLEX_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "SIMPLEX_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "SIMPLEX_AUTO_ACCEPT",
+          "secret": false
+        },
+        {
+          "name": "SIMPLEX_GROUP_ALLOWED",
+          "secret": false
+        },
+        {
+          "name": "SIMPLEX_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "SIMPLEX_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "HERMES_SIMPLEX_TEXT_BATCH_DELAY",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "simplex"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/simplex/adapter.py",
+          "sha256": "612b1753d8f256a4f2d04d61b13ed057b52abdf86cb9e1c128f1a968ad345796",
+          "classes": [
+            {
+              "name": "SimplexAdapter",
+              "line": 115,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 154
+                },
+                {
+                  "name": "disconnect",
+                  "line": 179
+                },
+                {
+                  "name": "send",
+                  "line": 454
+                },
+                {
+                  "name": "send_image",
+                  "line": 554
+                },
+                {
+                  "name": "send_video",
+                  "line": 579
+                },
+                {
+                  "name": "send_document",
+                  "line": 584
+                },
+                {
+                  "name": "send_voice",
+                  "line": 591
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/slack/plugin.yaml",
+      "sha256": "4c6ce9b5ed9d3869d16d3b02ceeb181967369e1ae6d9c97ebc6466d541c4fcae",
+      "name": "slack-platform",
+      "label": "Slack",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "SLACK_APP_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "SLACK_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "SLACK_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "SLACK_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "SLACK_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "SLACK_THREAD_REQUIRE_MENTION",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "slack"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/slack/adapter.py",
+          "sha256": "0f658a0db64f81f4cfacde86c2ae618a4c4c9135fe35c10c69b163e4f9ed7299",
+          "classes": [
+            {
+              "name": "SlackAdapter",
+              "line": 993,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 1765
+                },
+                {
+                  "name": "disconnect",
+                  "line": 1889
+                },
+                {
+                  "name": "send",
+                  "line": 2209
+                },
+                {
+                  "name": "edit_message",
+                  "line": 2376
+                },
+                {
+                  "name": "send_draft",
+                  "line": 2464
+                },
+                {
+                  "name": "send_image",
+                  "line": 3452
+                },
+                {
+                  "name": "send_voice",
+                  "line": 3492
+                },
+                {
+                  "name": "send_video",
+                  "line": 3505
+                },
+                {
+                  "name": "send_document",
+                  "line": 3513
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/sms/plugin.yaml",
+      "sha256": "b43f70f39354bfe13d03005e777896dbdf8a8dcc4c18239bfca3c8e31e119faa",
+      "name": "sms-platform",
+      "label": "SMS (Twilio)",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "TWILIO_ACCOUNT_SID",
+          "secret": false
+        },
+        {
+          "name": "TWILIO_AUTH_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "TWILIO_PHONE_NUMBER",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "SMS_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "SMS_HOME_CHANNEL",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "sms"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/sms/adapter.py",
+          "sha256": "c02db8d78eb04cde517166218b1b2ec27e33976158a7dc52e703c44b01d4a250",
+          "classes": [
+            {
+              "name": "SmsAdapter",
+              "line": 86,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 111
+                },
+                {
+                  "name": "disconnect",
+                  "line": 151
+                },
+                {
+                  "name": "send",
+                  "line": 163
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/teams/plugin.yaml",
+      "sha256": "6eceacbeec8aadb37e16229e49a923d06eb9b0f1a5d137bdcb6c25f5ab1f2715",
+      "name": "teams-platform",
+      "label": "Microsoft Teams",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "TEAMS_CLIENT_ID",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_CLIENT_SECRET",
+          "secret": true
+        },
+        {
+          "name": "TEAMS_TENANT_ID",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "TEAMS_PORT",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_HOST",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_REQUIRE_MENTION",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "TEAMS_INCOMING_WEBHOOK_URL",
+          "secret": true
+        },
+        {
+          "name": "TEAMS_GRAPH_ACCESS_TOKEN",
+          "secret": true
+        }
+      ],
+      "registered_names": [
+        "teams"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/teams/adapter.py",
+          "sha256": "0907587f25b8cee4ca72f8f82d7f589af9a2967a8e166bc3181e6511b8985bc1",
+          "classes": [
+            {
+              "name": "TeamsAdapter",
+              "line": 347,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 390
+                },
+                {
+                  "name": "disconnect",
+                  "line": 444
+                },
+                {
+                  "name": "send",
+                  "line": 717
+                },
+                {
+                  "name": "send_image",
+                  "line": 775
+                },
+                {
+                  "name": "send_video",
+                  "line": 783
+                },
+                {
+                  "name": "send_voice",
+                  "line": 787
+                },
+                {
+                  "name": "send_document",
+                  "line": 791
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/telegram/plugin.yaml",
+      "sha256": "4fbcc679a842d890332c822610a1ba0e2ef7db24467e1046be075addc1d3a558",
+      "name": "telegram-platform",
+      "label": "Telegram",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "TELEGRAM_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "TELEGRAM_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "TELEGRAM_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "TELEGRAM_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "TELEGRAM_WEBHOOK_SECRET",
+          "secret": true
+        }
+      ],
+      "registered_names": [
+        "telegram"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/telegram/adapter.py",
+          "sha256": "5e247fbbd3a2c4a66adda439717d5283c237af4ccad589004d64244316a49c2f",
+          "classes": [
+            {
+              "name": "TelegramAdapter",
+              "line": 519,
+              "bases": [
+                "TelegramHeldInboundMixin",
+                "TelegramTopicRoutingMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 3173
+                },
+                {
+                  "name": "disconnect",
+                  "line": 3384
+                },
+                {
+                  "name": "send",
+                  "line": 3638
+                },
+                {
+                  "name": "edit_message",
+                  "line": 3839
+                },
+                {
+                  "name": "send_draft",
+                  "line": 4092
+                },
+                {
+                  "name": "send_voice",
+                  "line": 5200
+                },
+                {
+                  "name": "send_document",
+                  "line": 5383
+                },
+                {
+                  "name": "send_video",
+                  "line": 5395
+                },
+                {
+                  "name": "send_image",
+                  "line": 5429
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/wecom/plugin.yaml",
+      "sha256": "4e769b5c97d363dce3c2f88e7f5d9d3bcb7d9075c7295064d178ed7931745bd3",
+      "name": "wecom-platform",
+      "label": "WeCom (Enterprise WeChat)",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "WECOM_BOT_ID",
+          "secret": false
+        },
+        {
+          "name": "WECOM_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "WECOM_WEBSOCKET_URL",
+          "secret": false
+        },
+        {
+          "name": "WECOM_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "WECOM_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "WECOM_CALLBACK_CORP_ID",
+          "secret": false
+        },
+        {
+          "name": "WECOM_CALLBACK_CORP_SECRET",
+          "secret": true
+        },
+        {
+          "name": "WECOM_CALLBACK_AGENT_ID",
+          "secret": false
+        },
+        {
+          "name": "WECOM_CALLBACK_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "WECOM_CALLBACK_ENCODING_AES_KEY",
+          "secret": true
+        }
+      ],
+      "registered_names": [
+        "wecom",
+        "wecom_callback"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/wecom/adapter.py",
+          "sha256": "474920ab35390ab1875a4816c7cb5020843bfef06326f43e0ad0877df576af6e",
+          "classes": [
+            {
+              "name": "WeComAdapter",
+              "line": 103,
+              "bases": [
+                "WeComStreamMixin",
+                "WeComMediaMixin",
+                "ChatSendQueueMixin",
+                "OwnAccessPolicyMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 163
+                },
+                {
+                  "name": "disconnect",
+                  "line": 186
+                },
+                {
+                  "name": "send",
+                  "line": 592
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "source": "plugins/platforms/wecom/callback_adapter.py",
+          "sha256": "779e7b2c40a3071f852c58ed643ccb4ba71772e96c9e1cc85713af5ac02d8553",
+          "classes": [
+            {
+              "name": "WecomCallbackAdapter",
+              "line": 90,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 124
+                },
+                {
+                  "name": "disconnect",
+                  "line": 168
+                },
+                {
+                  "name": "send",
+                  "line": 190
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/weixin/plugin.yaml",
+      "sha256": "d849cd4a1b52076ca03275592cf33dbd729b25de15beb09eea0ea4317c16380b",
+      "name": "weixin-platform",
+      "label": "Weixin / WeChat",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "WEIXIN_ACCOUNT_ID",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "WEIXIN_BASE_URL",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_CDN_BASE_URL",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_DM_POLICY",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_GROUP_POLICY",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_GROUP_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_HOME_CHANNEL_NAME",
+          "secret": false
+        },
+        {
+          "name": "WEIXIN_SPLIT_MULTILINE_MESSAGES",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "weixin"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/weixin/adapter.py",
+          "sha256": "7393c7ef0d979dfd53305d5de117628aaacb4efff4bbd23a68204669ebc02f50",
+          "classes": [
+            {
+              "name": "WeixinAdapter",
+              "line": 700,
+              "bases": [
+                "OwnAccessPolicyMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 752
+                },
+                {
+                  "name": "disconnect",
+                  "line": 786
+                },
+                {
+                  "name": "send",
+                  "line": 1037
+                },
+                {
+                  "name": "send_image",
+                  "line": 1095
+                },
+                {
+                  "name": "send_document",
+                  "line": 1119
+                },
+                {
+                  "name": "send_video",
+                  "line": 1125
+                },
+                {
+                  "name": "send_voice",
+                  "line": 1128
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/whatsapp/plugin.yaml",
+      "sha256": "074b8bc74bc7fb037c4847dd31814aea43836911f7c97e17e158783c45bcdd02",
+      "name": "whatsapp-platform",
+      "label": "WhatsApp",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "WHATSAPP_ENABLED",
+          "secret": false
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "WHATSAPP_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "whatsapp"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/whatsapp/adapter.py",
+          "sha256": "7167dd46c71e115e5e8288d8cb12e1af0294211e851ca913bb4c51eb0588598f",
+          "classes": [
+            {
+              "name": "WhatsAppAdapter",
+              "line": 419,
+              "bases": [
+                "WhatsAppBehaviorMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 682
+                },
+                {
+                  "name": "disconnect",
+                  "line": 850
+                },
+                {
+                  "name": "send",
+                  "line": 897
+                },
+                {
+                  "name": "edit_message",
+                  "line": 924
+                },
+                {
+                  "name": "send_image",
+                  "line": 974
+                },
+                {
+                  "name": "send_video",
+                  "line": 986
+                },
+                {
+                  "name": "send_voice",
+                  "line": 989
+                },
+                {
+                  "name": "send_document",
+                  "line": 997
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/whatsapp_cloud/plugin.yaml",
+      "sha256": "9d3866dab2ae6554f98b1506cff41698731d6fa937423203d36ce5c424c70353",
+      "name": "whatsapp_cloud-platform",
+      "label": "WhatsApp Business (Cloud)",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "WHATSAPP_CLOUD_PHONE_NUMBER_ID",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_ACCESS_TOKEN",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "WHATSAPP_CLOUD_APP_SECRET",
+          "secret": true
+        },
+        {
+          "name": "WHATSAPP_CLOUD_VERIFY_TOKEN",
+          "secret": true
+        },
+        {
+          "name": "WHATSAPP_CLOUD_APP_ID",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_WABA_ID",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_WEBHOOK_HOST",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_WEBHOOK_PORT",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_WEBHOOK_PATH",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_API_VERSION",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_DM_POLICY",
+          "secret": false
+        },
+        {
+          "name": "WHATSAPP_CLOUD_HOME_CHANNEL",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "whatsapp_cloud"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/whatsapp_cloud/adapter.py",
+          "sha256": "2ab0ac2937efc54d6add3def830b1143100439f27e91691fa484b0f232aaa38b",
+          "classes": [
+            {
+              "name": "WhatsAppCloudAdapter",
+              "line": 165,
+              "bases": [
+                "WhatsAppBehaviorMixin",
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 268
+                },
+                {
+                  "name": "disconnect",
+                  "line": 308
+                },
+                {
+                  "name": "send",
+                  "line": 365
+                },
+                {
+                  "name": "send_image",
+                  "line": 599
+                },
+                {
+                  "name": "send_video",
+                  "line": 605
+                },
+                {
+                  "name": "send_document",
+                  "line": 608
+                },
+                {
+                  "name": "send_voice",
+                  "line": 615
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "manifest": "plugins/platforms/yuanbao/plugin.yaml",
+      "sha256": "0598733d3ec5e4b3252f484f689bb06de053446d38644a424a149d8b6d26022e",
+      "name": "yuanbao-platform",
+      "label": "Yuanbao",
+      "version": "1.0.0",
+      "declared_required_environment": [
+        {
+          "name": "YUANBAO_APP_ID",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_APP_SECRET",
+          "secret": true
+        }
+      ],
+      "declared_optional_environment": [
+        {
+          "name": "YUANBAO_BOT_ID",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_WS_URL",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_API_DOMAIN",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_ROUTE_ENV",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_DM_POLICY",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_DM_ALLOW_FROM",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_GROUP_POLICY",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_GROUP_ALLOW_FROM",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_ALLOWED_USERS",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_ALLOW_ALL_USERS",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_HOME_CHANNEL",
+          "secret": false
+        },
+        {
+          "name": "YUANBAO_HOME_CHANNEL_NAME",
+          "secret": false
+        }
+      ],
+      "registered_names": [
+        "yuanbao"
+      ],
+      "adapter_declarations": [
+        {
+          "source": "plugins/platforms/yuanbao/adapter.py",
+          "sha256": "b39dccd15bf88b1ca3e9973f3950e0866ffbb22fd9a8d3717fba8d33c3044702",
+          "classes": [
+            {
+              "name": "YuanbaoAdapter",
+              "line": 2594,
+              "bases": [
+                "BasePlatformAdapter"
+              ],
+              "declared_direct_methods": [
+                {
+                  "name": "connect",
+                  "line": 2700
+                },
+                {
+                  "name": "disconnect",
+                  "line": 2706
+                },
+                {
+                  "name": "send",
+                  "line": 2725
+                },
+                {
+                  "name": "send_image",
+                  "line": 2800
+                },
+                {
+                  "name": "send_document",
+                  "line": 2812
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "registrations": [
+    {
+      "name": "a2a",
+      "manifest": "plugins/platforms/a2a/plugin.yaml",
+      "source": "plugins/platforms/a2a/__init__.py",
+      "line": 97,
+      "factory_expression": "lambda cfg: A2AAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": []
+        },
+        "allowed_users_env": {
+          "literal": "A2A_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "A2A_ALLOW_ALL_USERS"
+        }
+      }
+    },
+    {
+      "name": "bluebubbles",
+      "manifest": "plugins/platforms/bluebubbles/plugin.yaml",
+      "source": "plugins/platforms/bluebubbles/adapter.py",
+      "line": 706,
+      "factory_expression": "BlueBubblesAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "BLUEBUBBLES_SERVER_URL",
+            "BLUEBUBBLES_PASSWORD"
+          ]
+        },
+        "max_message_length": {
+          "literal": 0
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "buzz",
+      "manifest": "plugins/platforms/buzz/plugin.yaml",
+      "source": "plugins/platforms/buzz/adapter.py",
+      "line": 1948,
+      "factory_expression": "lambda cfg: BuzzAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "BUZZ_RELAY_URL",
+            "BUZZ_PRIVATE_KEY"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "BUZZ_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "BUZZ_ALLOW_ALL_USERS"
+        }
+      }
+    },
+    {
+      "name": "dingtalk",
+      "manifest": "plugins/platforms/dingtalk/plugin.yaml",
+      "source": "plugins/platforms/dingtalk/adapter.py",
+      "line": 853,
+      "factory_expression": "DingTalkAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "DINGTALK_CLIENT_ID",
+            "DINGTALK_CLIENT_SECRET"
+          ]
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "discord",
+      "manifest": "plugins/platforms/discord/plugin.yaml",
+      "source": "plugins/platforms/discord/adapter.py",
+      "line": 7277,
+      "factory_expression": "DiscordAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "DISCORD_BOT_TOKEN"
+          ]
+        },
+        "max_message_length": {
+          "literal": 2000
+        },
+        "display_overrides": {
+          "literal": {
+            "reasoning_style": "subtext"
+          }
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "email",
+      "manifest": "plugins/platforms/email/plugin.yaml",
+      "source": "plugins/platforms/email/adapter.py",
+      "line": 1016,
+      "factory_expression": "EmailAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "EMAIL_ADDRESS",
+            "EMAIL_PASSWORD",
+            "EMAIL_SMTP_HOST"
+          ]
+        },
+        "max_message_length": {
+          "literal": 50000
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "feishu",
+      "manifest": "plugins/platforms/feishu/plugin.yaml",
+      "source": "plugins/platforms/feishu/adapter.py",
+      "line": 4519,
+      "factory_expression": "FeishuAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "FEISHU_APP_ID",
+            "FEISHU_APP_SECRET"
+          ]
+        },
+        "max_message_length": {
+          "literal": 8000
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "google_chat",
+      "manifest": "plugins/platforms/google_chat/plugin.yaml",
+      "source": "plugins/platforms/google_chat/adapter.py",
+      "line": 1776,
+      "factory_expression": "lambda cfg: GoogleChatAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "GOOGLE_CHAT_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "GOOGLE_CHAT_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "literal": 4000
+        }
+      }
+    },
+    {
+      "name": "irc",
+      "manifest": "plugins/platforms/irc/plugin.yaml",
+      "source": "plugins/platforms/irc/adapter.py",
+      "line": 591,
+      "factory_expression": "IRCAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "IRC_SERVER",
+            "IRC_CHANNEL",
+            "IRC_NICKNAME"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "IRC_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "IRC_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "literal": 450
+        }
+      }
+    },
+    {
+      "name": "line",
+      "manifest": "plugins/platforms/line/plugin.yaml",
+      "source": "plugins/platforms/line/adapter.py",
+      "line": 979,
+      "factory_expression": "lambda cfg: LineAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "LINE_CHANNEL_ACCESS_TOKEN",
+            "LINE_CHANNEL_SECRET"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "LINE_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "LINE_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "expression": "LINE_SAFE_BUBBLE_CHARS"
+        }
+      }
+    },
+    {
+      "name": "matrix",
+      "manifest": "plugins/platforms/matrix/plugin.yaml",
+      "source": "plugins/platforms/matrix/adapter.py",
+      "line": 3267,
+      "factory_expression": "MatrixAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "MATRIX_HOMESERVER",
+            "MATRIX_ACCESS_TOKEN"
+          ]
+        },
+        "max_message_length": {
+          "expression": "DEFAULT_MAX_MESSAGE_LENGTH"
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "mattermost",
+      "manifest": "plugins/platforms/mattermost/plugin.yaml",
+      "source": "plugins/platforms/mattermost/adapter.py",
+      "line": 735,
+      "factory_expression": "MattermostAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "MATTERMOST_URL",
+            "MATTERMOST_TOKEN"
+          ]
+        },
+        "max_message_length": {
+          "expression": "MAX_POST_LENGTH"
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "ntfy",
+      "manifest": "plugins/platforms/ntfy/plugin.yaml",
+      "source": "plugins/platforms/ntfy/adapter.py",
+      "line": 361,
+      "factory_expression": "lambda cfg: NtfyAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "NTFY_TOPIC"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "NTFY_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "NTFY_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "expression": "MAX_MESSAGE_LENGTH"
+        }
+      }
+    },
+    {
+      "name": "photon",
+      "manifest": "plugins/platforms/photon/plugin.yaml",
+      "source": "plugins/platforms/photon/adapter.py",
+      "line": 1721,
+      "factory_expression": "lambda cfg: PhotonAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "PHOTON_PROJECT_ID",
+            "PHOTON_PROJECT_SECRET"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "PHOTON_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "PHOTON_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "expression": "_MAX_MESSAGE_LENGTH"
+        }
+      }
+    },
+    {
+      "name": "qqbot",
+      "manifest": "plugins/platforms/qqbot/plugin.yaml",
+      "source": "plugins/platforms/qqbot/register.py",
+      "line": 137,
+      "factory_expression": "QQAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "QQ_APP_ID",
+            "QQ_CLIENT_SECRET"
+          ]
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "raft",
+      "manifest": "plugins/platforms/raft/plugin.yaml",
+      "source": "plugins/platforms/raft/adapter.py",
+      "line": 562,
+      "factory_expression": "RaftAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "RAFT_PROFILE"
+          ]
+        }
+      }
+    },
+    {
+      "name": "signal",
+      "manifest": "plugins/platforms/signal/plugin.yaml",
+      "source": "plugins/platforms/signal/register.py",
+      "line": 55,
+      "factory_expression": "SignalAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "SIGNAL_HTTP_URL",
+            "SIGNAL_ACCOUNT"
+          ]
+        },
+        "max_message_length": {
+          "expression": "MAX_MESSAGE_LENGTH"
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "simplex",
+      "manifest": "plugins/platforms/simplex/plugin.yaml",
+      "source": "plugins/platforms/simplex/adapter.py",
+      "line": 699,
+      "factory_expression": "lambda cfg: SimplexAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "SIMPLEX_WS_URL"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "SIMPLEX_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "SIMPLEX_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "expression": "MAX_MESSAGE_LENGTH"
+        }
+      }
+    },
+    {
+      "name": "slack",
+      "manifest": "plugins/platforms/slack/plugin.yaml",
+      "source": "plugins/platforms/slack/adapter.py",
+      "line": 6916,
+      "factory_expression": "SlackAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "SLACK_BOT_TOKEN",
+            "SLACK_APP_TOKEN"
+          ]
+        },
+        "max_message_length": {
+          "literal": 39000
+        },
+        "display_overrides": {
+          "literal": {
+            "tool_progress": "off",
+            "long_running_notifications": false,
+            "busy_ack_detail": false
+          }
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "sms",
+      "manifest": "plugins/platforms/sms/plugin.yaml",
+      "source": "plugins/platforms/sms/adapter.py",
+      "line": 343,
+      "factory_expression": "SmsAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "TWILIO_ACCOUNT_SID",
+            "TWILIO_AUTH_TOKEN",
+            "TWILIO_PHONE_NUMBER"
+          ]
+        },
+        "max_message_length": {
+          "expression": "MAX_SMS_LENGTH"
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "teams",
+      "manifest": "plugins/platforms/teams/plugin.yaml",
+      "source": "plugins/platforms/teams/adapter.py",
+      "line": 849,
+      "factory_expression": "lambda cfg: TeamsAdapter(cfg)",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "TEAMS_CLIENT_ID",
+            "TEAMS_CLIENT_SECRET",
+            "TEAMS_TENANT_ID"
+          ]
+        },
+        "allowed_users_env": {
+          "literal": "TEAMS_ALLOWED_USERS"
+        },
+        "allow_all_env": {
+          "literal": "TEAMS_ALLOW_ALL_USERS"
+        },
+        "max_message_length": {
+          "literal": 28000
+        }
+      }
+    },
+    {
+      "name": "telegram",
+      "manifest": "plugins/platforms/telegram/plugin.yaml",
+      "source": "plugins/platforms/telegram/adapter.py",
+      "line": 7367,
+      "factory_expression": "_build_adapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "TELEGRAM_BOT_TOKEN"
+          ]
+        },
+        "max_message_length": {
+          "literal": 4096
+        },
+        "display_overrides": {
+          "literal": {
+            "tool_progress": "off",
+            "busy_ack_detail": false
+          }
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "wecom",
+      "manifest": "plugins/platforms/wecom/plugin.yaml",
+      "source": "plugins/platforms/wecom/adapter.py",
+      "line": 849,
+      "factory_expression": "WeComAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "WECOM_BOT_ID",
+            "WECOM_SECRET"
+          ]
+        },
+        "max_message_length": {
+          "literal": 4000
+        },
+        "display_overrides": {
+          "literal": {
+            "streaming": true
+          }
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "wecom_callback",
+      "manifest": "plugins/platforms/wecom/plugin.yaml",
+      "source": "plugins/platforms/wecom/adapter.py",
+      "line": 869,
+      "factory_expression": "_build_callback_adapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "WECOM_CALLBACK_CORP_ID",
+            "WECOM_CALLBACK_CORP_SECRET"
+          ]
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.CALLBACK_ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "weixin",
+      "manifest": "plugins/platforms/weixin/plugin.yaml",
+      "source": "plugins/platforms/weixin/adapter.py",
+      "line": 1415,
+      "factory_expression": "WeixinAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "WEIXIN_ACCOUNT_ID",
+            "WEIXIN_TOKEN"
+          ]
+        },
+        "max_message_length": {
+          "literal": 0
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "whatsapp",
+      "manifest": "plugins/platforms/whatsapp/plugin.yaml",
+      "source": "plugins/platforms/whatsapp/adapter.py",
+      "line": 1383,
+      "factory_expression": "WhatsAppAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "WHATSAPP_ENABLED"
+          ]
+        },
+        "max_message_length": {
+          "literal": 4096
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "whatsapp_cloud",
+      "manifest": "plugins/platforms/whatsapp_cloud/plugin.yaml",
+      "source": "plugins/platforms/whatsapp_cloud/adapter.py",
+      "line": 1113,
+      "factory_expression": "WhatsAppCloudAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "WHATSAPP_CLOUD_PHONE_NUMBER_ID",
+            "WHATSAPP_CLOUD_ACCESS_TOKEN"
+          ]
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    },
+    {
+      "name": "yuanbao",
+      "manifest": "plugins/platforms/yuanbao/plugin.yaml",
+      "source": "plugins/platforms/yuanbao/register.py",
+      "line": 96,
+      "factory_expression": "YuanbaoAdapter",
+      "declared_registration_settings": {
+        "required_env": {
+          "literal": [
+            "YUANBAO_APP_ID",
+            "YUANBAO_APP_SECRET"
+          ]
+        },
+        "env_enable_credentials": {
+          "expression": "gateway_env.ENV_ENABLE_CREDENTIALS"
+        }
+      }
+    }
+  ],
+  "channels": [
+    {
+      "id": "a2a",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/a2a (not implemented)",
+      "transport_observation": "HTTP JSON-RPC and SSE; stdlib server",
+      "acceptance_id": "CHANNEL-A2A",
+      "acceptance": "Agent Card discovery, authenticated task submission, streamed result/cancel and restart deduplication; outbound peers need separate authorization.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "bluebubbles",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/bluebubbles (not implemented)",
+      "transport_observation": "macOS BlueBubbles REST and inbound webhook",
+      "acceptance_id": "CHANNEL-BLUEBUBBLES",
+      "acceptance": "Authorize the server/callback, retain iMessage chat identity and attachment boundaries, and prove exactly one reply after callback replay.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "buzz",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/buzz (not implemented)",
+      "transport_observation": "Nostr relay WebSocket with CLI polling/send path",
+      "acceptance_id": "CHANNEL-BUZZ",
+      "acceptance": "Authenticate the relay identity, preserve channel/thread routing, bound and supervise CLI calls, and deduplicate WebSocket/poll overlap.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "dingtalk",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/dingtalk (not implemented)",
+      "transport_observation": "DingTalk Stream SDK; session webhook/AI-card replies",
+      "acceptance_id": "CHANNEL-DINGTALK",
+      "acceptance": "Validate application identity, session reply lifetime and reconnect behavior; retain group/user scope and reject forged callbacks.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "discord",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/discord (not implemented)",
+      "transport_observation": "discord.py gateway; guild/DM/thread routing",
+      "acceptance_id": "CHANNEL-DISCORD",
+      "acceptance": "Verify bot permissions, allowed users/roles, guild/DM/thread separation and reconnect deduplication; voice/media need separate evidence.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "email",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/email (not implemented)",
+      "transport_observation": "Polled IMAP receive and SMTP send",
+      "acceptance_id": "CHANNEL-EMAIL",
+      "acceptance": "Verify TLS/authentication, mailbox UID/message-ID deduplication, sender authorization, thread headers and automated-mail loop prevention.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "feishu",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/feishu (not implemented)",
+      "transport_observation": "Feishu/Lark WebSocket or HTTP webhook",
+      "acceptance_id": "CHANNEL-FEISHU",
+      "acceptance": "Test each configured transport, authenticated callbacks, DM/group mention gates, user allowlists, media and thread/session isolation.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "google_chat",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/google_chat (not implemented)",
+      "transport_observation": "Authenticated HTTP callbacks or Pub/Sub pull; Chat REST outbound",
+      "acceptance_id": "CHANNEL-GOOGLE_CHAT",
+      "acceptance": "Verify audience/account authentication, space/thread identity, Pub/Sub acknowledgement/replay and one authorized reply.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "irc",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/irc (not implemented)",
+      "transport_observation": "asyncio IRC connection, configurable TLS",
+      "acceptance_id": "CHANNEL-IRC",
+      "acceptance": "Verify server/TLS identity, user authorization beyond spoofable display text, channel/DM scope, line splitting, reconnect and loop suppression.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "line",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/line (not implemented)",
+      "transport_observation": "Signed LINE webhook; reply token or push send",
+      "acceptance_id": "CHANNEL-LINE",
+      "acceptance": "Reject invalid signatures and duplicate event IDs; handle single-use/expired reply tokens without duplicate or unauthorized billable push.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "matrix",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/matrix (not implemented)",
+      "transport_observation": "mautrix homeserver adapter; optional encryption",
+      "acceptance_id": "CHANNEL-MATRIX",
+      "acceptance": "Verify account/room/device scope, event replay and thread routing; encrypted-room claims require real E2EE key/device tests.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "mattermost",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/mattermost (not implemented)",
+      "transport_observation": "REST v4 plus WebSocket via aiohttp",
+      "acceptance_id": "CHANNEL-MATTERMOST",
+      "acceptance": "Verify server/account/team/channel/thread identities, token scope, replay after reconnect and bounded media delivery.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "ntfy",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/ntfy (not implemented)",
+      "transport_observation": "HTTP streaming topic subscription and POST publish",
+      "acceptance_id": "CHANNEL-NTFY",
+      "acceptance": "Treat the protected topic as the trust boundary: publisher-controlled title is not authenticated identity. Test read-token protection and topic isolation.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "photon",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/photon (not implemented)",
+      "transport_observation": "Supervised Node Spectrum sidecar; NDJSON and gRPC SDK stream",
+      "acceptance_id": "CHANNEL-PHOTON",
+      "acceptance": "Validate sidecar protocol, startup/crash/cancellation, chat identity and attachment scope; no sidecar command may gain coordinator permissions.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "qqbot",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/qqbot (not implemented)",
+      "transport_observation": "Official QQ Bot v2 WebSocket receive and REST send",
+      "acceptance_id": "CHANNEL-QQBOT",
+      "acceptance": "Verify application credentials, channel/group/DM identity, token refresh, event replay, send sequence and media upload authorization.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "raft",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/raft (not implemented)",
+      "transport_observation": "Local wake endpoint plus raft agent bridge process",
+      "acceptance_id": "CHANNEL-RAFT",
+      "acceptance": "Authenticate wake hints, fetch actual bounded messages through the bridge, isolate session identity and stop/join the owned bridge on disconnect.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "signal",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/signal (not implemented)",
+      "transport_observation": "signal-cli HTTP daemon SSE receive and JSON-RPC send",
+      "acceptance_id": "CHANNEL-SIGNAL",
+      "acceptance": "Verify configured account and daemon boundary, source/group identity, SSE reconnect, attachment scoping and no duplicate reply.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "simplex",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/simplex (not implemented)",
+      "transport_observation": "Persistent WebSocket to simplex-chat daemon",
+      "acceptance_id": "CHANNEL-SIMPLEX",
+      "acceptance": "Verify daemon ownership, contact/group identifiers, reconnect event replay, command/result correlation and scoped media transfer.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "slack",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/slack (not implemented)",
+      "transport_observation": "slack-bolt Socket Mode; messages/slash commands/threads",
+      "acceptance_id": "CHANNEL-SLACK",
+      "acceptance": "Verify bot/app-token scopes, workspace/channel/thread/user isolation, event retries and slash acknowledgements; no cross-workspace memory leak.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "sms",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/sms (not implemented)",
+      "transport_observation": "Twilio REST send and inbound HTTP webhook",
+      "acceptance_id": "CHANNEL-SMS",
+      "acceptance": "Verify webhook signature and configured number/account, E.164 sender policy, duplicate message SID handling and authorized SMS spending.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "teams",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/teams (not implemented)",
+      "transport_observation": "Teams SDK auth/activity processing and HTTP webhook",
+      "acceptance_id": "CHANNEL-TEAMS",
+      "acceptance": "Verify tenant/application/activity identity, conversation references, replay and proactive-send authorization; never route across tenants by display name.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "telegram",
+      "kind": "registered_platform",
+      "phase": 8,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "initial authenticated text path",
+      "xaa_module": "engine/xaa/channels/telegram (not implemented)",
+      "transport_observation": "python-telegram-bot inbound updates and outbound replies",
+      "acceptance_id": "CHANNEL-TELEGRAM",
+      "acceptance": "Verify bot identity, sender allowlist, DM/group/topic separation, update replay after restart and one authorized text reply; test media independently.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "wecom",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/wecom (not implemented)",
+      "transport_observation": "Smart Robot WebSocket with streaming/media mixins",
+      "acceptance_id": "CHANNEL-WECOM",
+      "acceptance": "Verify robot credentials, user/group authorization, reconnect deduplication and scoped native streaming/send behavior.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "wecom_callback",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/wecom_callback (not implemented)",
+      "transport_observation": "Encrypted HTTP/XML callback; proactive message/send replies",
+      "acceptance_id": "CHANNEL-WECOM_CALLBACK",
+      "acceptance": "Verify callback crypto and receiver identity, reject malformed XML, isolate corp_id:user_id, acknowledge promptly and deliver one authorized reply.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "weixin",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/weixin (not implemented)",
+      "transport_observation": "Tencent iLink getupdates long poll; encrypted CDN media",
+      "acceptance_id": "CHANNEL-WEIXIN",
+      "acceptance": "Verify account/peer identity and latest peer context_token routing, restart cursor handling and media encryption/size boundaries.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "whatsapp",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/whatsapp (not implemented)",
+      "transport_observation": "Owned Baileys Node bridge with local HTTP polling/send",
+      "acceptance_id": "CHANNEL-WHATSAPP",
+      "acceptance": "Verify linked account, bridge ownership, normalized user/group identifiers, replay/loop suppression and process-tree shutdown.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "whatsapp_cloud",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/whatsapp_cloud (not implemented)",
+      "transport_observation": "Meta Graph API plus webhook",
+      "acceptance_id": "CHANNEL-WHATSAPP_CLOUD",
+      "acceptance": "Verify challenge/signature/account identifiers, duplicate delivery IDs, token scope, approved recipient and outbound policy.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "yuanbao",
+      "kind": "registered_platform",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/yuanbao (not implemented)",
+      "transport_observation": "WebSocket AUTH_BIND/heartbeat and text/media sender",
+      "acceptance_id": "CHANNEL-YUANBAO",
+      "acceptance": "Verify application/bot identity, authenticated reconnect, inbound/outbound sequence mapping, replay and chat/user isolation.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
+    },
+    {
+      "id": "api_server",
+      "kind": "core_transport",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/api_server (not implemented)",
+      "transport_observation": "aiohttp OpenAI-compatible API and session/job routes",
+      "acceptance_id": "CHANNEL-API_SERVER",
+      "acceptance": "Verify bearer authentication, allowed origins, profile/session isolation, streamed runs and cancellation across every claimed compatibility route.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8",
+      "source": "gateway/platforms/api_server.py",
+      "sha256": "73175d668c0c683209ad047191921fe899e84b8a429470081a718ae7d163d3f6",
+      "adapter_declarations": [
+        {
+          "name": "APIServerAdapter",
+          "line": 1034,
+          "bases": [
+            "OpenAICompatRoutesMixin",
+            "BasePlatformAdapter"
+          ],
+          "declared_direct_methods": [
+            {
+              "name": "connect",
+              "line": 3937
+            },
+            {
+              "name": "disconnect",
+              "line": 4062
+            },
+            {
+              "name": "send",
+              "line": 4097
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "webhook",
+      "kind": "core_transport",
+      "phase": 8,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "initial authenticated text path",
+      "xaa_module": "engine/xaa/channels/webhook (not implemented)",
+      "transport_observation": "HMAC-authenticated generic/provider HTTP ingress",
+      "acceptance_id": "CHANNEL-WEBHOOK",
+      "acceptance": "Verify signatures/timestamps, body limits, route allowlists, duplicate IDs and explicit delivery targets; payload text cannot grant tool permissions.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8",
+      "source": "gateway/platforms/webhook.py",
+      "sha256": "31e8fcc00d4649ad760aaeba8fe0bfda47e97dc4587622d74b8e1674285907f8",
+      "adapter_declarations": [
+        {
+          "name": "WebhookAdapter",
+          "line": 204,
+          "bases": [
+            "BasePlatformAdapter"
+          ],
+          "declared_direct_methods": [
+            {
+              "name": "connect",
+              "line": 278
+            },
+            {
+              "name": "disconnect",
+              "line": 309
+            },
+            {
+              "name": "send",
+              "line": 317
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "msgraph_webhook",
+      "kind": "core_transport",
+      "phase": 9,
+      "status": "planned",
+      "full_parity_phase": 9,
+      "phase_scope": "parity expansion",
+      "xaa_module": "engine/xaa/channels/msgraph_webhook (not implemented)",
+      "transport_observation": "Microsoft Graph change-notification HTTP ingress",
+      "acceptance_id": "CHANNEL-MSGRAPH_WEBHOOK",
+      "acceptance": "Verify subscription validation, client_state, tenant/resource identity, notification replay and authorization before fetching protected content.",
+      "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8",
+      "source": "gateway/platforms/msgraph_webhook.py",
+      "sha256": "e9d3666ed3781abc47e9e91c614c837d8c080b611f76ecce1b751e8bf3c18d25",
+      "adapter_declarations": [
+        {
+          "name": "MSGraphWebhookAdapter",
+          "line": 100,
+          "bases": [
+            "BasePlatformAdapter"
+          ],
+          "declared_direct_methods": [
+            {
+              "name": "connect",
+              "line": 134
+            },
+            {
+              "name": "disconnect",
+              "line": 157
+            },
+            {
+              "name": "send",
+              "line": 163
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "registration_sources": {
+    "plugins/platforms/a2a/__init__.py": {
+      "sha256": "b7fe7e351fced59a0917b77024076cbf12d46133c9d161a4a48b53baa5e83e3d",
+      "registrations": 1
+    },
+    "plugins/platforms/bluebubbles/adapter.py": {
+      "sha256": "bfdf5aea2d2685fb693d941568cf5a4d3e0232157b8358e5fe86ff024a2dcb13",
+      "registrations": 1
+    },
+    "plugins/platforms/buzz/adapter.py": {
+      "sha256": "b206c732ee034f314425f0d72916633c3234b8802ece4560ca63ec72d4d56e8e",
+      "registrations": 1
+    },
+    "plugins/platforms/dingtalk/adapter.py": {
+      "sha256": "20c9d7863c75557bd4ab30097c0244a9e396ff53ef186767580f00a1ee527d33",
+      "registrations": 1
+    },
+    "plugins/platforms/discord/adapter.py": {
+      "sha256": "3fec9074e8559ea6960d6ce4b45f0b60d8e2e2365156c55c53fc6c6a55ccb81e",
+      "registrations": 1
+    },
+    "plugins/platforms/email/adapter.py": {
+      "sha256": "fa69bb8fd75f348f30f8f1cb926745e45db59c2936b8066971ff61d799755508",
+      "registrations": 1
+    },
+    "plugins/platforms/feishu/adapter.py": {
+      "sha256": "3525af4876e9b9725d5752721357d2c669d858338c83b8c50d44c0c422e844fb",
+      "registrations": 1
+    },
+    "plugins/platforms/google_chat/adapter.py": {
+      "sha256": "916fa120bd0a1aeea34dee9c0c0e93c7591282a1a25c72d92c139492c6b7a81a",
+      "registrations": 1
+    },
+    "plugins/platforms/irc/adapter.py": {
+      "sha256": "35abadd787abef2b844ab0c2e4f01e6a097d093c67f0dc231723165de741f285",
+      "registrations": 1
+    },
+    "plugins/platforms/line/adapter.py": {
+      "sha256": "f40e1a3dec29a244e43762f26c2ffac19c439a1cc4d5ff5819ba39d87b9e0c5f",
+      "registrations": 1
+    },
+    "plugins/platforms/matrix/adapter.py": {
+      "sha256": "2a48bc2713c7b6007450e26bd4e4343928e697c3ee60cf979741b4eeb9ee1693",
+      "registrations": 1
+    },
+    "plugins/platforms/mattermost/adapter.py": {
+      "sha256": "45756954f9d959ea7583fa8c8240102d59eb5802ef9500405e9d54973c5308a6",
+      "registrations": 1
+    },
+    "plugins/platforms/ntfy/adapter.py": {
+      "sha256": "f035549471f53b5745de3f256c64028b17a10ddc8988780263348009fa5f12c6",
+      "registrations": 1
+    },
+    "plugins/platforms/photon/adapter.py": {
+      "sha256": "ed9eca08e37feb619ce01d74bc772569e6004f31ddc8ba7d62e8aa180fec8dd8",
+      "registrations": 1
+    },
+    "plugins/platforms/qqbot/register.py": {
+      "sha256": "22d6a9446f365c137730e93f19dcbc457721283eac4f3821fdf5b62fa8bc9849",
+      "registrations": 1
+    },
+    "plugins/platforms/raft/adapter.py": {
+      "sha256": "89a696aa160fbd9b65728dd23f4328783854951dde3d008d029bbdd0aa3b18be",
+      "registrations": 1
+    },
+    "plugins/platforms/signal/register.py": {
+      "sha256": "b598e352bd51f6c167c4cb4e9e6480bafba1849e22c9617cf282c59896be6e0b",
+      "registrations": 1
+    },
+    "plugins/platforms/simplex/adapter.py": {
+      "sha256": "612b1753d8f256a4f2d04d61b13ed057b52abdf86cb9e1c128f1a968ad345796",
+      "registrations": 1
+    },
+    "plugins/platforms/slack/adapter.py": {
+      "sha256": "0f658a0db64f81f4cfacde86c2ae618a4c4c9135fe35c10c69b163e4f9ed7299",
+      "registrations": 1
+    },
+    "plugins/platforms/sms/adapter.py": {
+      "sha256": "c02db8d78eb04cde517166218b1b2ec27e33976158a7dc52e703c44b01d4a250",
+      "registrations": 1
+    },
+    "plugins/platforms/teams/adapter.py": {
+      "sha256": "0907587f25b8cee4ca72f8f82d7f589af9a2967a8e166bc3181e6511b8985bc1",
+      "registrations": 1
+    },
+    "plugins/platforms/telegram/adapter.py": {
+      "sha256": "5e247fbbd3a2c4a66adda439717d5283c237af4ccad589004d64244316a49c2f",
+      "registrations": 1
+    },
+    "plugins/platforms/wecom/adapter.py": {
+      "sha256": "474920ab35390ab1875a4816c7cb5020843bfef06326f43e0ad0877df576af6e",
+      "registrations": 2
+    },
+    "plugins/platforms/weixin/adapter.py": {
+      "sha256": "7393c7ef0d979dfd53305d5de117628aaacb4efff4bbd23a68204669ebc02f50",
+      "registrations": 1
+    },
+    "plugins/platforms/whatsapp/adapter.py": {
+      "sha256": "7167dd46c71e115e5e8288d8cb12e1af0294211e851ca913bb4c51eb0588598f",
+      "registrations": 1
+    },
+    "plugins/platforms/whatsapp_cloud/adapter.py": {
+      "sha256": "2ab0ac2937efc54d6add3def830b1143100439f27e91691fa484b0f232aaa38b",
+      "registrations": 1
+    },
+    "plugins/platforms/yuanbao/register.py": {
+      "sha256": "52959adbdedb551208f7d2ca1e317df3935e8b6626d0697f9b1acacbf3e7e0e6",
+      "registrations": 1
+    }
+  },
+  "supporting_sources": [
+    {
+      "path": "gateway/config.py",
+      "sha256": "05dfec0b2d6d24b69ef7052beb8378da901264911ed8a973294cdef4c899f368"
+    },
+    {
+      "path": "gateway/platforms/base.py",
+      "sha256": "25bce7af7473b6eb1289dc6e83570062d04fe4338620832889a28d9f598f6229"
+    },
+    {
+      "path": "gateway/platforms/event.py",
+      "sha256": "3030bcc12551de4fa1ac1a8ebb5e82426556a8ea2171341e29cab51305cf24c4"
+    },
+    {
+      "path": "gateway/session.py",
+      "sha256": "ea2e48b1313fcb24054dccbbdc631321c7cad5526097588b65d20ab86346a870"
+    },
+    {
+      "path": "gateway/platform_registry.py",
+      "sha256": "8f3175906ff8f8f503f98ff05d82977307096e308d8ea899283cccef2f52e96e"
+    }
+  ],
+  "external_platform_category_candidates": [
+    {
+      "id": "agentchat",
+      "manifest": "plugin-catalog/agentchat.yaml",
+      "sha256": "086d9abfae806ee7c3ece0c2f7811ac297bd36cf3f38a2331b7fea2ae3bff3ce",
+      "repository": "https://github.com/agentchatme/agentchat-hermes",
+      "reference_commit": "8322d5c97fc81b1493c2ccfc83c19cee03173196",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "aichipmunk",
+      "manifest": "plugin-catalog/aichipmunk.yaml",
+      "sha256": "fc6694d3e37b8986dfddaa9594598e8beda3e33d7df40818a1e93747893009c6",
+      "repository": "https://github.com/Pacific-Cloud-Solutions/hermes-plugins",
+      "reference_commit": "d565d7698a28f4364f819446e5f7ae2b67c57352",
+      "subdirectory": "plugins/aichipmunk",
+      "version": "0.1.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "ando-platform",
+      "manifest": "plugin-catalog/ando-platform.yaml",
+      "sha256": "b1bf8550fc09ff548203cfba1d0e6633e711b482b44599d4d4029f95aabf8b43",
+      "repository": "https://github.com/Ando-Corporation/hermes-ando",
+      "reference_commit": "1bfde877e1ed194ebf461d64e0468605d7e21a87",
+      "subdirectory": "",
+      "version": "0.2.4",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "artil",
+      "manifest": "plugin-catalog/artil.yaml",
+      "sha256": "d380bb5bbb77eee4c725cb1506a8f892d39e9a5f7af4e4df5d0360d7f7179cb6",
+      "repository": "https://github.com/artilai/plugins",
+      "reference_commit": "8dce90c47a7b0d9e9c5edcb3dd2dd09227fe6fea",
+      "subdirectory": "plugins/hermes",
+      "version": "0.4.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "bridge-adapter",
+      "manifest": "plugin-catalog/bridge-adapter.yaml",
+      "sha256": "c0d864ecf9bff931ebc9b0a57a3e833c0eb4125065c39ec44c6ee4bccd954660",
+      "repository": "https://github.com/Kesuek/hermes-bridge-adapter",
+      "reference_commit": "c095d54bdecd4a6080e3166bd6c95552ac69ae65",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "BRIDGE_DIR"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "bunny_space-platform",
+      "manifest": "plugin-catalog/bunny_space-platform.yaml",
+      "sha256": "a1dd01d84380ed9248af0dc24ce86b7a44b6b6aaca1c0cb152a026bce72ae877",
+      "repository": "https://github.com/jasm001/hermes-plugin-bunny-space",
+      "reference_commit": "c28e7985599c03a323ebb06f8ca28ac7cd5b05d6",
+      "subdirectory": "",
+      "version": "1.0.7",
+      "required_environment_names": [
+        "BUNNY_SPACE_BOT_KEY",
+        "BUNNY_SPACE_SLUG"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "call-me",
+      "manifest": "plugin-catalog/call-me.yaml",
+      "sha256": "3f83630cac9c1f4f6cac62f34d05a10a273fc6394f811a7199848603242214e1",
+      "repository": "https://github.com/radres/hermes-plugin-call-me",
+      "reference_commit": "970952e72d633ebdbed20d8c60c327cc45475140",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "required_environment_names": [
+        "CALLME_ALLOWED_USERS"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "carbonvoice-platform",
+      "manifest": "plugin-catalog/carbonvoice-platform.yaml",
+      "sha256": "53b86bb0f001639345e199aa152017cd07ae229f2577b48f320220bbc9b0b634",
+      "repository": "https://github.com/PhononX/hermes-plugin-carbonvoice",
+      "reference_commit": "55867dba9c6645ce493fd955970302e59a4548ea",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "name"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "chatto-platform",
+      "manifest": "plugin-catalog/chatto-platform.yaml",
+      "sha256": "eb0a1755fbe62b40baea03faf453fd5064650607dd27adc2987cbe816e2b02eb",
+      "repository": "https://github.com/jrimmer/hermes-chatto-plugin",
+      "reference_commit": "aab0a20635cb578253a8014bc8d93e1b32f020fc",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "name"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "deepinfra-sandbox",
+      "manifest": "plugin-catalog/deepinfra-sandbox.yaml",
+      "sha256": "f3833e4f7cfcd82530ff401bd689fd8cd94bf2e8dbf01c61cee1ded8fd68f5d4",
+      "repository": "https://github.com/deepinfra/deepinfra-hermes-sandbox",
+      "reference_commit": "259a477548f1862071c9e2462fda6a7bb9de68c8",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "required_environment_names": [
+        "DEEPINFRA_API_KEY"
+      ],
+      "classification": "not a messaging adapter (terminal backend)",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "discord-tps",
+      "manifest": "plugin-catalog/discord-tps.yaml",
+      "sha256": "cd6cbf3e420307c04950050c2c8bf3db405b58737c862bd1360a078ac10bb60f",
+      "repository": "https://github.com/tuancookiez-hub/hermes-discord-tokenpersec",
+      "reference_commit": "056fcd331d9be03c287f293854b715b17b637203",
+      "subdirectory": "discord-tps",
+      "version": "1.0.3",
+      "required_environment_names": [],
+      "classification": "not a messaging adapter (presence hook)",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "fluxer-platform",
+      "manifest": "plugin-catalog/fluxer-platform.yaml",
+      "sha256": "fbfa4d02a82798e84882fa622186963f08dd6869466e6dcebf775eace9cd4629",
+      "repository": "https://github.com/elkimek/hermes-fluxer-plugin",
+      "reference_commit": "6d2ef9767d0a0811a3ae26a76290b9b1e4636d4c",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "name"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "fmsg-platform",
+      "manifest": "plugin-catalog/fmsg-platform.yaml",
+      "sha256": "8e6a26e1b920a97aba14ed07de487d1edac3efbce32ef1db381da577fa6c1e41",
+      "repository": "https://github.com/markmnl/hermes-fmsg",
+      "reference_commit": "562f45a48a6b10504c8d6ff5c677f1ec990e6b7b",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "name"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "gadget",
+      "manifest": "plugin-catalog/gadget.yaml",
+      "sha256": "f38efacd623cc0b004bdc0669e61040a90c337d9051c36aed11e93707ca5ae58",
+      "repository": "https://github.com/Adolanium/hermes-gadget-sdk",
+      "reference_commit": "0b957aae2f7f11904a9daab031f1378a45de21dc",
+      "subdirectory": "plugin",
+      "version": "0.3.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "hermes-fleet-connector",
+      "manifest": "plugin-catalog/hermes-fleet-connector.yaml",
+      "sha256": "66fbac3bd624fc28ca22a5ec0b8ab9273330462550bb9c521a9bb13ebd137387",
+      "repository": "https://github.com/tony-simons-aiowa/hermes-fleet-connector",
+      "reference_commit": "1ef5b46c3312d8a3ee5c16c1999862a5d1c2fd4a",
+      "subdirectory": "",
+      "version": "0.3.1",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "hermes-github-mentions",
+      "manifest": "plugin-catalog/hermes-github-mentions.yaml",
+      "sha256": "f2961530fe089b35f1b666fdbe8a3315e8788f473da9bb177953cef7a8e53de7",
+      "repository": "https://github.com/luantak/hermes-github-mentions",
+      "reference_commit": "d8a88220a547180663fcec76a069c8fbbf63bff9",
+      "subdirectory": "",
+      "version": "0.4.3",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "hermes-jetstream",
+      "manifest": "plugin-catalog/hermes-jetstream.yaml",
+      "sha256": "9fb9a9d87e7c9889a1cc095e0a214ced1e88a187f2f4c4002f37b8e93fa6f028",
+      "repository": "https://github.com/atbrace/hermes-jetstream",
+      "reference_commit": "4508957d1889ddb625c8bfb1eef7c822f2761349",
+      "subdirectory": "plugin/hermes_jetstream",
+      "version": "1.2.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "hermes-mobile",
+      "manifest": "plugin-catalog/hermes-mobile.yaml",
+      "sha256": "a44e0142199d3cf119e3b4bbd63ec5280aff1b8510044204b0070b718bc1b53d",
+      "repository": "https://github.com/geniok1980/hermes-mobile-adapter",
+      "reference_commit": "91bdca089770c3ad83f157e2932d8c3d9ed55a6a",
+      "subdirectory": "adapter/hermes_mobile",
+      "version": "1.1.1",
+      "required_environment_names": [
+        "MOBILE_TOKEN"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "hermes-rustpush-imessage",
+      "manifest": "plugin-catalog/hermes-rustpush-imessage.yaml",
+      "sha256": "335b60a8ae62619a2c02dba1f888273f77941eb1296e3fb346d13c731105eba2",
+      "repository": "https://github.com/boobutler/hermes-rustpush-imessage",
+      "reference_commit": "695f74755cbcdbcd742baa51021fdb96a78ac10e",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "hermes-telegram-business",
+      "manifest": "plugin-catalog/hermes-telegram-business.yaml",
+      "sha256": "25cc39b26ef8f9de16a984392a16515cb89cd6dc7ce4e823cbd86c863f84f528",
+      "repository": "https://github.com/NousResearch/hermes-labs-plugins",
+      "reference_commit": "0480b2e2947276b55b302d3288b30597d238ba51",
+      "subdirectory": "telegram-business",
+      "version": "",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "homeassistant",
+      "manifest": "plugin-catalog/homeassistant.yaml",
+      "sha256": "2b341b3d31ceb639136f4d53c199fdcb05f9fb6ee802c0922f8a958062885ea1",
+      "repository": "https://github.com/NousResearch/hermes-official-plugins",
+      "reference_commit": "4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072",
+      "subdirectory": "homeassistant",
+      "version": "2.0.1",
+      "required_environment_names": [
+        "HASS_TOKEN"
+      ],
+      "classification": "catalog-declared gateway and toolset",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "Verify configured service identity, authorized entity/state-change ingress and exactly-once notification delivery; separate read-only entity queries from explicitly granted service actions. Audit pinned external source before freezing protocol/feature claims."
+    },
+    {
+      "id": "inkbox",
+      "manifest": "plugin-catalog/inkbox.yaml",
+      "sha256": "6c09ba2750d5a6e459e03a806361ce796fc60ddc96c47074d5cb4fbe7f2b800d",
+      "repository": "https://github.com/inkbox-ai/hermes-agent-plugin",
+      "reference_commit": "0948a16679f09fcfc78ed3d9171604b2c853402c",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "inline-platform",
+      "manifest": "plugin-catalog/inline-platform.yaml",
+      "sha256": "97eea1b19fbcb8bd76e3c45b28c2407c6d9332221c6e79c7b8a7583175d660d4",
+      "repository": "https://github.com/inline-chat/inline",
+      "reference_commit": "2d3b360da0430684eabab2d946eca0e725c08aa5",
+      "subdirectory": "plugins/hermes-agent/plugin/inline",
+      "version": "0.0.21",
+      "required_environment_names": [
+        "INLINE_TOKEN"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "iris-chat-channel",
+      "manifest": "plugin-catalog/iris-chat-channel.yaml",
+      "sha256": "58823138572a36a1258db3db0f9fe189a1afa3db9579d5e612c6faacc5bb27d2",
+      "repository": "https://github.com/irislib/iris-chat-channels",
+      "reference_commit": "202a422c81eec3246bf19cb45657fc3513c2ac9a",
+      "subdirectory": "hermes",
+      "version": "0.1.1",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "jp-chatwork",
+      "manifest": "plugin-catalog/jp-chatwork.yaml",
+      "sha256": "925c9d32f1162e2e5e28f120333417bbcbe89c20e60305319c6e839920ecdd6e",
+      "repository": "https://github.com/TakeshiTGAL/hermes-plugin-chatwork",
+      "reference_commit": "8dbdff609b3c99768420a19a7ca646b6daad3dbe",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "required_environment_names": [
+        "CHATWORK_API_TOKEN",
+        "CHATWORK_ROOMS"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "max-platform",
+      "manifest": "plugin-catalog/max-platform.yaml",
+      "sha256": "459f8ec9ed38f9141c386b09db3abdeb1057e16fd126b9be82ab667508368257",
+      "repository": "https://github.com/Realmagnum/hermes-max-integration",
+      "reference_commit": "50c7a9a7c16b6207a079b7b883718dd863e9e951",
+      "subdirectory": "",
+      "version": "2.11.0",
+      "required_environment_names": [
+        "MAX_BOT_TOKEN"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "mermail",
+      "manifest": "plugin-catalog/mermail.yaml",
+      "sha256": "2345f4bf89b55c3c1776a5508f1b8e49b3af43c9870498dc4160ed329dd29fb5",
+      "repository": "https://github.com/Nudgen-Marketing/mermail-skills",
+      "reference_commit": "269a711bf683845d75009df4984bf25eee83b0bd",
+      "subdirectory": "",
+      "version": "1.5.5",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "microsoft365",
+      "manifest": "plugin-catalog/microsoft365.yaml",
+      "sha256": "ee2810ed7145126cc634edd26a363cb69a2b9c641fd993c4f53bfb0de5de857a",
+      "repository": "https://github.com/fabiomotta0311/hermes-microsoft365-plugin",
+      "reference_commit": "4fdc64c02c92e155df570c030f6d3c53d5361e23",
+      "subdirectory": "microsoft365",
+      "version": "0.1.0a4",
+      "required_environment_names": [
+        "MICROSOFT365_CLIENT_SECRET"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "minecraft-platform",
+      "manifest": "plugin-catalog/minecraft-platform.yaml",
+      "sha256": "04b0e4c8670ddfb9793fe52019a11db9322f18d75fc5eafb1511c6e82034dca7",
+      "repository": "https://github.com/kyssta-exe/hermes-minecraft-gateway",
+      "reference_commit": "8ff37a626439caecb9ceb724b5da7718eb77a8b1",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "name"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "mqtt",
+      "manifest": "plugin-catalog/mqtt.yaml",
+      "sha256": "ef1ced9a69b1da11a6b5a7064708e82b618cd26971d3ed4c934c12ac79bf53e1",
+      "repository": "https://github.com/JasonSwindle/hermes-mqtt",
+      "reference_commit": "103ec28e9e2f68b080fd8e8074d0e5a98750e06e",
+      "subdirectory": "",
+      "version": "0.7.0",
+      "required_environment_names": [
+        "MQTT_HERMES_URL",
+        "MQTT_HERMES_PASSWORD"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "nextcloud-talk-platform",
+      "manifest": "plugin-catalog/nextcloud-talk-platform.yaml",
+      "sha256": "e6b04b308c5689d41ce8beef081908debdfd27a09562346b5804723983e89c92",
+      "repository": "https://github.com/smilinTux/hermes-nextcloud-talk",
+      "reference_commit": "03f27203fd983d4714891302c49f06b404c4b02f",
+      "subdirectory": "",
+      "version": "1.4.3",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "nextcloud-talk",
+      "manifest": "plugin-catalog/nextcloud-talk.yaml",
+      "sha256": "dec495073eba3918023b5514df2303b0a4c16e1fab40a9da591247edba72de6e",
+      "repository": "https://github.com/Cliff3c/hermes-nextcloud-talk",
+      "reference_commit": "0df0679d1ed28c2087774fea9ae646a858e7ed70",
+      "subdirectory": "plugin",
+      "version": "0.2.1",
+      "required_environment_names": [
+        "NC_TALK_BASE_URL",
+        "NC_TALK_BOT_SECRET"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "onebot-platform",
+      "manifest": "plugin-catalog/onebot-platform.yaml",
+      "sha256": "a1ab23f78b0df3d4029bd88ae9867f2ede549b350a7a8170c976bb399cf459c3",
+      "repository": "https://github.com/mario841859784/hermes-plugin-onebot",
+      "reference_commit": "086dd7e5c13004e41301f5cea1f352c46b0f3c50",
+      "subdirectory": "",
+      "version": "1.3.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "openmail",
+      "manifest": "plugin-catalog/openmail.yaml",
+      "sha256": "e89a41f15ed04abbe2ade2980fe57e79b9dfeb8a3aa6dd356c9df183c860f90b",
+      "repository": "https://github.com/openmailsh/hermes-plugin",
+      "reference_commit": "4035b7d1f8775304443f60f67bcd636acb1a325d",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "OPENMAIL_API_KEY"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "pidgeon",
+      "manifest": "plugin-catalog/pidgeon.yaml",
+      "sha256": "b8841528e42cb29838e2da0d994d65f55b53c2bf81bf15a71c24e1c16178415f",
+      "repository": "https://github.com/pidgeon-ai/pidgeon-python",
+      "reference_commit": "d4448663b39ae0280a247bb3ea4cab7ef0a4e080",
+      "subdirectory": "hermes/pidgeon",
+      "version": "0.1.1",
+      "required_environment_names": [
+        "PIDGEON_API_KEY"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "pushover-hermes-plugin",
+      "manifest": "plugin-catalog/pushover-hermes-plugin.yaml",
+      "sha256": "c864400e197527f173c914c7d4371e3fd80c7e24ae92d6fd680dbff4f66b6350",
+      "repository": "https://github.com/lightx/pushover-hermes-plugin",
+      "reference_commit": "967fe2d476b384d51773529a7b34ab52e3fdebf1",
+      "subdirectory": "",
+      "version": "1.2.0",
+      "required_environment_names": [
+        "PUSHOVER_APP_TOKEN",
+        "PUSHOVER_USER_KEY"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "radio-dm-gateway",
+      "manifest": "plugin-catalog/radio-dm-gateway.yaml",
+      "sha256": "ad0326a6d07d038decb113b25176a561c94c0c11d5dbeea4a877c5d9cb3a732d",
+      "repository": "https://github.com/TakeshiTGAL/hermes-plugin-radio-dm-gateway",
+      "reference_commit": "cc543e3fcd331bb3aeb995d8176947593134e7a3",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "required_environment_names": [
+        "MESHTASTIC_URL"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "render-platform",
+      "manifest": "plugin-catalog/render-platform.yaml",
+      "sha256": "f74d83d9d859d62c5c1fadb9600683b64f69b8a33c43e087e5f6d148f5f78705",
+      "repository": "https://github.com/ojusave/render-hermes-plugin",
+      "reference_commit": "1d343332142c27e1b97281ff03e2811f8a083750",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "required_environment_names": [
+        "RENDER_API_KEY"
+      ],
+      "classification": "not a messaging adapter (deployment MCP/skills)",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "rocketchat-platform",
+      "manifest": "plugin-catalog/rocketchat-platform.yaml",
+      "sha256": "1612707dccb75192987b24950b4f335ba13637b524339629a92e68d53513718b",
+      "repository": "https://github.com/HalfbitStudio/hermes-plugin-rocketchat",
+      "reference_commit": "989a04cd5f09e57bdd88997940cd18e4d58415b2",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [
+        "name"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "rply-platform",
+      "manifest": "plugin-catalog/rply-platform.yaml",
+      "sha256": "6f0eeaf406aa82191bbc38ac306dd1036636f21d61b6930e997c71bbb27d0e58",
+      "repository": "https://github.com/joshuaKnauber/rply",
+      "reference_commit": "932926e7f209e2d41b985b51a73867e7b050ab57",
+      "subdirectory": "integrations/hermes",
+      "version": "0.7.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "salesforce-chatter",
+      "manifest": "plugin-catalog/salesforce-chatter.yaml",
+      "sha256": "52fb957e27974074b0faceb0f04ea640df545e4a4dc726580a4578c44489e98a",
+      "repository": "https://github.com/zenplace-system/hermes-plugin-salesforce-chatter",
+      "reference_commit": "16ff469ffb1484e37053315e799846d3c4d7c9d8",
+      "subdirectory": "salesforce_chatter",
+      "version": "0.2.1",
+      "required_environment_names": [
+        "SF_CHATTER_LOGIN_URL",
+        "SF_CHATTER_CLIENT_ID",
+        "SF_CHATTER_USERNAME",
+        "SF_CHATTER_PRIVATE_KEY_PATH",
+        "SF_CHATTER_BOT_USER_ID"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "sendblue",
+      "manifest": "plugin-catalog/sendblue.yaml",
+      "sha256": "f00f57e1dccc3a3284df67adb2b6bc757ae3dc52c3b0ed605895fbdea44fdea5",
+      "repository": "https://github.com/duoi/hermes-sendblue-plugin",
+      "reference_commit": "3318aaa4402769ce440d43e0445ea2151ad5e73e",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "session-mirror",
+      "manifest": "plugin-catalog/session-mirror.yaml",
+      "sha256": "ae830f96f092c9def7e3f9ae4fc66f7e27e039058398c7a30d14d82b2a1e2bb2",
+      "repository": "https://github.com/rrrrnmtsu/hermes-session-mirror",
+      "reference_commit": "02a923f04b414f30286d31b278a3177892dd5f9f",
+      "subdirectory": "",
+      "version": "0.5.0",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "vector-platform",
+      "manifest": "plugin-catalog/vector-platform.yaml",
+      "sha256": "5574068d7f9f4a2ff83229ba8486152ded3f439c829fbf3f6b63b3c89c89bc1c",
+      "repository": "https://github.com/BonesGit/hermes-vector-platform",
+      "reference_commit": "94e1af49a2dcbce4952cb3d17b8591b8e3e10bed",
+      "subdirectory": "",
+      "version": "0.5.3",
+      "required_environment_names": [
+        "VECTOR_NPUB"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "vk-platform",
+      "manifest": "plugin-catalog/vk-platform.yaml",
+      "sha256": "f176ecb7e74dc9f78b5760f0e10588ba05451bcb194f76d91d0dbe7ffcb3fc43",
+      "repository": "https://github.com/web3blind/hermes-vk-platform",
+      "reference_commit": "2443f32b38a944f17889fba3efc5243af3b8e875",
+      "subdirectory": "",
+      "version": "0.2.8",
+      "required_environment_names": [
+        "VK_GROUP_TOKEN",
+        "VK_GROUP_ID"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "watchline",
+      "manifest": "plugin-catalog/watchline.yaml",
+      "sha256": "d5b4a0225722b1040c623548a0ec2f6b5c2de6558cfe9e07c0e6630e5f72f3d6",
+      "repository": "https://github.com/qordinate-ai/watchline-hermes-plugin",
+      "reference_commit": "d3d2424336af16cae94e4bbcb47e6edd07a88062",
+      "subdirectory": "",
+      "version": "",
+      "required_environment_names": [],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "whatsapp-agent-platform",
+      "manifest": "plugin-catalog/whatsapp-agent-platform.yaml",
+      "sha256": "4fd2bb5e2bd8232b1e840ef7914665a75922a114fc6f13496b37395437745856",
+      "repository": "https://github.com/ahtishamdilawar/hermes-whatsapp-agent-platform",
+      "reference_commit": "3a57b1da04499279d1af6c7d979c9c2d8b658ce0",
+      "subdirectory": "",
+      "version": "0.2.1",
+      "required_environment_names": [
+        "WHATSAPP_AGENT_PLATFORM_API_KEY"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "xchat",
+      "manifest": "plugin-catalog/xchat.yaml",
+      "sha256": "efb690052120cbb50a10ba6a76dd5322fc4c32b62bfcceab4e926f2dc6f3749b",
+      "repository": "https://github.com/NousResearch/hermes-official-plugins",
+      "reference_commit": "f98c0999c6dd4e59680addc8f3480208018ab5b0",
+      "subdirectory": "xchat",
+      "version": "0.1.0",
+      "required_environment_names": [
+        "XCHAT_ACCESS_TOKEN"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    },
+    {
+      "id": "zalo-platform",
+      "manifest": "plugin-catalog/zalo-platform.yaml",
+      "sha256": "cea64e8e9423b9272954af32fc6aa434749b9f80bf122422a409c113f346d8c0",
+      "repository": "https://github.com/moken627-hub/hermes-plugin-zalo",
+      "reference_commit": "5a989368d0877c930e76fcc75ea125e7af7ea872",
+      "subdirectory": "",
+      "version": "2.1.3",
+      "required_environment_names": [
+        "ZALO_BOT_TOKEN"
+      ],
+      "classification": "unclassified platform-category discovery candidate",
+      "external_source_inspected": false,
+      "status": "planned",
+      "phase": 9
+    }
+  ],
+  "limitations": [
+    "Method declarations and mixin names do not prove supported behavior; inherited methods may be stubs or fallbacks.",
+    "Transport observations come from source declarations and selected paths; adapters have not been executed.",
+    "Home Assistant is an external catalog-declared gateway/toolset, not an in-tree registration; external source/runtime remains uninspected.",
+    "Catalog category platform includes non-channel features and can omit other categories that register channels; candidates are not an exhaustive channel count.",
+    "No X.A.A. messaging adapter or authorized external delivery is claimed implemented."
+  ]
+}

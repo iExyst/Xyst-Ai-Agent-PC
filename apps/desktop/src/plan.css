@@ -1,0 +1,11 @@
+.plan-tasks { display: grid; gap: 16px; }
+.plan-tasks article { background: #101824; border: 1px solid #4a5d76; border-radius: 8px; padding: 20px; overflow-wrap: anywhere; }
+.plan-tasks h3 { margin-top: 0; }
+.plan-tasks dl { display: grid; grid-template-columns: minmax(90px, 120px) minmax(0, 1fr); gap: 8px 16px; }
+.plan-tasks dt { color: #aebbd0; }
+.plan-tasks dd { margin: 0; }
+.plan-tasks li { font-family: inherit; }
+.task-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.task-review input[type=checkbox] { width: auto; display: inline-block; margin: 0 10px 0 0; }
+.task-review fieldset { border: 1px solid #697b94; margin-top: 16px; min-width: 0; }
+@media (max-width: 480px) { .plan-tasks dl { grid-template-columns: 1fr; gap: 4px; } .plan-tasks dd { margin-bottom: 12px; } }

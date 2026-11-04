@@ -1,0 +1,401 @@
+{
+  "reference_commit": "1e208b280deb18f01d015b0acdf3ef3552d08039",
+  "audit_date": "2026-11-03",
+  "platform_manifests": [
+    {
+      "channel": "a2a",
+      "label": "A2A",
+      "manifest": "plugins/platforms/a2a/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-A2A plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "bluebubbles",
+      "label": "BlueBubbles (iMessage)",
+      "manifest": "plugins/platforms/bluebubbles/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "BLUEBUBBLES_SERVER_URL",
+        "BLUEBUBBLES_PASSWORD"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-BLUEBUBBLES plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "buzz",
+      "label": "Buzz",
+      "manifest": "plugins/platforms/buzz/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "BUZZ_RELAY_URL",
+        "BUZZ_PRIVATE_KEY"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-BUZZ plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "dingtalk",
+      "label": "DingTalk",
+      "manifest": "plugins/platforms/dingtalk/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "DINGTALK_CLIENT_ID",
+        "DINGTALK_CLIENT_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-DINGTALK plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "discord",
+      "label": "Discord",
+      "manifest": "plugins/platforms/discord/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "DISCORD_BOT_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-DISCORD plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "email",
+      "label": "Email",
+      "manifest": "plugins/platforms/email/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "EMAIL_ADDRESS",
+        "EMAIL_PASSWORD",
+        "EMAIL_SMTP_HOST"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-EMAIL plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "feishu",
+      "label": "Feishu / Lark",
+      "manifest": "plugins/platforms/feishu/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "FEISHU_APP_ID",
+        "FEISHU_APP_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-FEISHU plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "google_chat",
+      "label": "Google Chat",
+      "manifest": "plugins/platforms/google_chat/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-GOOGLE_CHAT plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "irc",
+      "label": "IRC",
+      "manifest": "plugins/platforms/irc/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "IRC_SERVER",
+        "IRC_CHANNEL",
+        "IRC_NICKNAME"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-IRC plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "line",
+      "label": "LINE",
+      "manifest": "plugins/platforms/line/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "LINE_CHANNEL_ACCESS_TOKEN",
+        "LINE_CHANNEL_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-LINE plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "matrix",
+      "label": "Matrix",
+      "manifest": "plugins/platforms/matrix/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "MATRIX_HOMESERVER",
+        "MATRIX_ACCESS_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-MATRIX plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "mattermost",
+      "label": "Mattermost",
+      "manifest": "plugins/platforms/mattermost/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "MATTERMOST_URL",
+        "MATTERMOST_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-MATTERMOST plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "ntfy",
+      "label": "ntfy",
+      "manifest": "plugins/platforms/ntfy/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "NTFY_TOPIC"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-NTFY plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "photon",
+      "label": "iMessage via Photon",
+      "manifest": "plugins/platforms/photon/plugin.yaml",
+      "version": "0.3.0",
+      "required_configuration": [
+        "PHOTON_PROJECT_ID",
+        "PHOTON_PROJECT_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-PHOTON plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "qqbot",
+      "label": "QQ Bot",
+      "manifest": "plugins/platforms/qqbot/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "QQ_APP_ID",
+        "QQ_CLIENT_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-QQBOT plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "raft",
+      "label": "Raft",
+      "manifest": "plugins/platforms/raft/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "RAFT_PROFILE"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-RAFT plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "signal",
+      "label": "Signal",
+      "manifest": "plugins/platforms/signal/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "SIGNAL_HTTP_URL",
+        "SIGNAL_ACCOUNT"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-SIGNAL plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "simplex",
+      "label": "SimpleX Chat",
+      "manifest": "plugins/platforms/simplex/plugin.yaml",
+      "version": "1.1.0",
+      "required_configuration": [
+        "SIMPLEX_WS_URL"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-SIMPLEX plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "slack",
+      "label": "Slack",
+      "manifest": "plugins/platforms/slack/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "SLACK_BOT_TOKEN",
+        "SLACK_APP_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-SLACK plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "sms",
+      "label": "SMS (Twilio)",
+      "manifest": "plugins/platforms/sms/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_PHONE_NUMBER"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-SMS plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "teams",
+      "label": "Microsoft Teams",
+      "manifest": "plugins/platforms/teams/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "TEAMS_CLIENT_ID",
+        "TEAMS_CLIENT_SECRET",
+        "TEAMS_TENANT_ID"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-TEAMS plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "telegram",
+      "label": "Telegram",
+      "manifest": "plugins/platforms/telegram/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "TELEGRAM_BOT_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 8,
+      "acceptance": "CHANNEL-TELEGRAM plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "wecom",
+      "label": "WeCom (Enterprise WeChat)",
+      "manifest": "plugins/platforms/wecom/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "WECOM_BOT_ID",
+        "WECOM_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-WECOM and CHANNEL-WECOM_CALLBACK plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "weixin",
+      "label": "Weixin / WeChat",
+      "manifest": "plugins/platforms/weixin/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "WEIXIN_ACCOUNT_ID",
+        "WEIXIN_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-WEIXIN plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "whatsapp",
+      "label": "WhatsApp",
+      "manifest": "plugins/platforms/whatsapp/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "WHATSAPP_ENABLED"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-WHATSAPP plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "whatsapp_cloud",
+      "label": "WhatsApp Business (Cloud)",
+      "manifest": "plugins/platforms/whatsapp_cloud/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "WHATSAPP_CLOUD_PHONE_NUMBER_ID",
+        "WHATSAPP_CLOUD_ACCESS_TOKEN"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-WHATSAPP_CLOUD plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    },
+    {
+      "channel": "yuanbao",
+      "label": "Yuanbao",
+      "manifest": "plugins/platforms/yuanbao/plugin.yaml",
+      "version": "1.0.0",
+      "required_configuration": [
+        "YUANBAO_APP_ID",
+        "YUANBAO_APP_SECRET"
+      ],
+      "status": "planned",
+      "phase": 9,
+      "acceptance": "CHANNEL-YUANBAO plus CHANNEL-COMMON-1 through CHANNEL-COMMON-8; see channel-requirements.md."
+    }
+  ],
+  "core_gateway_transports": [
+    "api_server",
+    "webhook",
+    "msgraph_webhook"
+  ],
+  "built_in_terminal_backends": [
+    "local",
+    "docker",
+    "modal",
+    "managed_modal",
+    "daytona",
+    "vercel_sandbox",
+    "ssh"
+  ],
+  "sources": [
+    "gateway/config.py",
+    "agent/terminal_env_registry.py"
+  ],
+  "limitations": "Manifest declarations only; channel-inventory.json adds 28 registrations, 3 core transports, source declarations and external catalog candidates. Adapters and media behavior have not been executed; external pinned-source inspection and broader discovery remain open.",
+  "registered_platform_names": [
+    "a2a",
+    "bluebubbles",
+    "buzz",
+    "dingtalk",
+    "discord",
+    "email",
+    "feishu",
+    "google_chat",
+    "irc",
+    "line",
+    "matrix",
+    "mattermost",
+    "ntfy",
+    "photon",
+    "qqbot",
+    "raft",
+    "signal",
+    "simplex",
+    "slack",
+    "sms",
+    "teams",
+    "telegram",
+    "wecom",
+    "wecom_callback",
+    "weixin",
+    "whatsapp",
+    "whatsapp_cloud",
+    "yuanbao"
+  ],
+  "detailed_channel_inventory": "channel-inventory.json"
+}

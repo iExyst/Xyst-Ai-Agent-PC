@@ -1,0 +1,401 @@
+{
+  "reference_commit": "1e208b280deb18f01d015b0acdf3ef3552d08039",
+  "audit_date": "2026-11-03",
+  "built_in_families": 6,
+  "reserved_names": [
+    "daytona",
+    "docker",
+    "local",
+    "managed_modal",
+    "modal",
+    "ssh",
+    "vercel_sandbox"
+  ],
+  "built_ins": [
+    {
+      "id": "local",
+      "family": "local",
+      "kind": "built_in",
+      "source": "tools/environments/local.py",
+      "line": 1039,
+      "sha256": "ac64fb633b337697a5f17267aebfb0c05b5d3c79797b28196ab2866d0ecb4f97",
+      "phase": 3,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "Host runtime plus an implemented restricted execution boundary; the current fixed filesystem worker is not that boundary.",
+      "acceptance": "EXEC-LOCAL plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    },
+    {
+      "id": "docker",
+      "family": "docker",
+      "kind": "built_in",
+      "source": "tools/environments/docker.py",
+      "line": 644,
+      "sha256": "59ecf3dd7b1f9a1df66b6834d9100763075f7e58b9de41d031d80d638d046410",
+      "phase": 3,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "Docker executable, live daemon, explicitly selected image and verified host mount/resource policy.",
+      "acceptance": "EXEC-DOCKER plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    },
+    {
+      "id": "ssh",
+      "family": "ssh",
+      "kind": "built_in",
+      "source": "tools/environments/ssh.py",
+      "line": 45,
+      "sha256": "0f6380cb90a23a1f04fe9a41558d78ff84f3b160270230fc3f459893a4373138",
+      "phase": 9,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "SSH client, explicit host/user/host-key policy, OS-vault authentication and a restricted remote workspace.",
+      "acceptance": "EXEC-SSH plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    },
+    {
+      "id": "modal",
+      "family": "modal",
+      "kind": "built_in",
+      "source": "tools/environments/modal.py",
+      "line": 131,
+      "sha256": "9f3aa848e5fcba2b493ddc8ddfc0076da010fc4da2bcbee0dfef6d410e0322de",
+      "phase": 9,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "Explicit Modal account/SDK authorization and selected image; remote use must be configured.",
+      "acceptance": "EXEC-MODAL plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    },
+    {
+      "id": "managed_modal",
+      "family": "modal",
+      "kind": "internal_mode",
+      "source": "tools/environments/managed_modal.py",
+      "line": 45,
+      "sha256": "3af09a28085ac029ef0370d5ec6d7266f190dc90e25b2c65ba2de35599dc2964",
+      "phase": 9,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "Configured tool gateway and user token; upstream refuses host credential-file passthrough in this mode.",
+      "acceptance": "EXEC-MANAGED_MODAL plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    },
+    {
+      "id": "daytona",
+      "family": "daytona",
+      "kind": "built_in",
+      "source": "tools/environments/daytona.py",
+      "line": 24,
+      "sha256": "e9a668485eaf20cf484a2f614b774c290a248e8494e9e869c93d7723d94d5136",
+      "phase": 9,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "Daytona SDK/account/API credential and explicit remote image/resource settings.",
+      "acceptance": "EXEC-DAYTONA plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    },
+    {
+      "id": "vercel_sandbox",
+      "family": "vercel_sandbox",
+      "kind": "built_in",
+      "source": "tools/environments/vercel_sandbox.py",
+      "line": 179,
+      "sha256": "b9f2c64c8b2c46dd05d18b0ae2260740c9086875ad2eb5ced937c65bb15356f4",
+      "phase": 9,
+      "status": "planned",
+      "evidence_level": "registry/factory/class declarations and selected lifecycle code inspected; runtime not verified",
+      "xaa_module": "engine/xaa/runtime/execution (not implemented)",
+      "dependencies": "Vercel SDK plus configured token/project/team, or supported development OIDC authentication; explicit runtime/image.",
+      "acceptance": "EXEC-VERCEL_SANDBOX plus EXEC-COMMON-1 through EXEC-COMMON-8"
+    }
+  ],
+  "catalog_manifests_scanned": 976,
+  "catalog_candidate_rule": "Description contains terminal and either backend or environment",
+  "catalog_candidates": [
+    "account-pool",
+    "advanced-delegation",
+    "alans-way",
+    "bubblewrap",
+    "cli-session-tabs",
+    "crew",
+    "cua-spaces",
+    "deepinfra-sandbox",
+    "hermes-cloud-file-manager",
+    "hermes-gemini-live",
+    "hermes-seo",
+    "hermes-talk",
+    "hermes-wsl-terminal",
+    "hermes-wslc-sandbox",
+    "jev-judge",
+    "meshy",
+    "office-3d",
+    "omh",
+    "opencode-free-acp",
+    "progress-squash",
+    "rtk-rewrite-docker",
+    "singularity",
+    "smolmachines",
+    "telegram_dashboard_probe",
+    "upstash-box"
+  ],
+  "external_declarations": [
+    {
+      "id": "bubblewrap",
+      "catalog_manifest": "plugin-catalog/bubblewrap.yaml",
+      "manifest_sha256": "1a1e6c5b7aa6c97b60182e10d9dcbd92d19f21ee3a732804c3016ee95de67a4e",
+      "repository": "https://github.com/NousResearch/hermes-official-plugins",
+      "reference_commit": "a50b0fea59d10f9a51b488206f587d9cb6ca6163",
+      "subdirectory": "bubblewrap",
+      "version": "1.3.0",
+      "declared_platforms": [
+        "linux"
+      ],
+      "declared_selector": "bubblewrap",
+      "required_environment_names": [],
+      "dependencies_and_limits": "Linux bwrap/prlimit; profile-specific network and filesystem policy must be verified.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "cua-spaces",
+      "catalog_manifest": "plugin-catalog/cua-spaces.yaml",
+      "manifest_sha256": "8953a3f862a021fb3e70898dc4c9f6721f70fa9b21e8972c93c867b7737ed77a",
+      "repository": "https://github.com/trycua/hermes-cua-spaces",
+      "reference_commit": "82bb8d31517d2d1b8f1ef7f64701558dcac8aea9",
+      "subdirectory": "",
+      "version": "0.4.0",
+      "declared_platforms": [],
+      "declared_selector": "cua",
+      "required_environment_names": [],
+      "dependencies_and_limits": "Configured Cua SDK/Space and explicit authorization for remote commands/files/screens.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "deepinfra-sandbox",
+      "catalog_manifest": "plugin-catalog/deepinfra-sandbox.yaml",
+      "manifest_sha256": "f3833e4f7cfcd82530ff401bd689fd8cd94bf2e8dbf01c61cee1ded8fd68f5d4",
+      "repository": "https://github.com/deepinfra/deepinfra-hermes-sandbox",
+      "reference_commit": "259a477548f1862071c9e2462fda6a7bb9de68c8",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "declared_platforms": null,
+      "declared_selector": null,
+      "required_environment_names": [
+        "DEEPINFRA_API_KEY"
+      ],
+      "dependencies_and_limits": "DeepInfra credential and explicit billable sandbox/credential-upload policy.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "hermes-wsl-terminal",
+      "catalog_manifest": "plugin-catalog/hermes-wsl-terminal.yaml",
+      "manifest_sha256": "297680ca48b20e1da84d312b45a456044c637835109e964939c67a452fdbda08",
+      "repository": "https://github.com/Yicheng-Mark/hermes-windows-plugins",
+      "reference_commit": "5bad3fb2baf04ce6befecfefce6d14f4c9c98934",
+      "subdirectory": "wsl-terminal",
+      "version": "0.1.0",
+      "declared_platforms": [
+        "windows"
+      ],
+      "declared_selector": null,
+      "required_environment_names": [],
+      "dependencies_and_limits": "Windows WSL distro/user. Manifest explicitly describes full access, not a restricted sandbox.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "hermes-wslc-sandbox",
+      "catalog_manifest": "plugin-catalog/hermes-wslc-sandbox.yaml",
+      "manifest_sha256": "17e194612f0016df7956686166ab72cc18e335ab445a04bcc1e31ca00cf1ca5c",
+      "repository": "https://github.com/Yicheng-Mark/hermes-windows-plugins",
+      "reference_commit": "5bad3fb2baf04ce6befecfefce6d14f4c9c98934",
+      "subdirectory": "wslc-sandbox",
+      "version": "0.1.0",
+      "declared_platforms": [
+        "windows"
+      ],
+      "declared_selector": null,
+      "required_environment_names": [],
+      "dependencies_and_limits": "Windows wslc runtime; manifest discloses no capability dropping and no enforced disk quota.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "singularity",
+      "catalog_manifest": "plugin-catalog/singularity.yaml",
+      "manifest_sha256": "7d65f9c7f7b4d55a8b56787befb03c9e4a8d55fb9b82c69fd1ba334b139172d1",
+      "repository": "https://github.com/NousResearch/hermes-official-plugins",
+      "reference_commit": "d46aced3031a8f533fdbf0806bc4cf0d0b28be07",
+      "subdirectory": "singularity",
+      "version": "1.0.0",
+      "declared_platforms": [
+        "linux"
+      ],
+      "declared_selector": "singularity",
+      "required_environment_names": [],
+      "dependencies_and_limits": "Linux Apptainer/Singularity executable, selected image and overlay/resource policy.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "smolmachines",
+      "catalog_manifest": "plugin-catalog/smolmachines.yaml",
+      "manifest_sha256": "22fbb7146f9be50405207ab96234fb56a0bfbbc085fd88a25e030fc325d5c0d2",
+      "repository": "https://github.com/smol-machines/hermes-smolmachines",
+      "reference_commit": "093371b13c99685e992e0621aa8e36e2b71645be",
+      "subdirectory": "",
+      "version": "0.1.0",
+      "declared_platforms": [
+        "linux",
+        "macos"
+      ],
+      "declared_selector": "smolmachines",
+      "required_environment_names": [],
+      "dependencies_and_limits": "Supported Apple Silicon macOS or Linux/KVM host and local microVM SDK.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    },
+    {
+      "id": "upstash-box",
+      "catalog_manifest": "plugin-catalog/upstash-box.yaml",
+      "manifest_sha256": "6fd8002279cc63df3c398b015c71fc8aad0123caa3bd446b03bab9418d803340",
+      "repository": "https://github.com/upstash/box",
+      "reference_commit": "da7d85ac0cb4e114a5d8adc79cfb24bfff084bfb",
+      "subdirectory": "packages/hermes-box",
+      "version": "0.1.0",
+      "declared_platforms": [],
+      "declared_selector": null,
+      "required_environment_names": [
+        "UPSTASH_BOX_API_KEY"
+      ],
+      "dependencies_and_limits": "Upstash Box credential and explicit cloud, persistence, upload and credential-exposure policy.",
+      "phase": 9,
+      "status": "planned",
+      "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
+      "evidence_level": "catalog declaration only; external source/runtime not inspected",
+      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+    }
+  ],
+  "excluded_candidates": [
+    {
+      "id": "account-pool",
+      "reason": "Provider-account scheduling/usage, not a terminal environment provider."
+    },
+    {
+      "id": "advanced-delegation",
+      "reason": "Model/profile routing for delegation, not terminal execution routing."
+    },
+    {
+      "id": "alans-way",
+      "reason": "Gateway proactivity and desktop workflow integration."
+    },
+    {
+      "id": "cli-session-tabs",
+      "reason": "TUI/tmux session presentation, not a terminal execution environment."
+    },
+    {
+      "id": "crew",
+      "reason": "Task coordination and verification workflow."
+    },
+    {
+      "id": "hermes-cloud-file-manager",
+      "reason": "Desktop file transport into an existing agent environment."
+    },
+    {
+      "id": "hermes-gemini-live",
+      "reason": "Realtime voice and task delegation."
+    },
+    {
+      "id": "hermes-seo",
+      "reason": "Domain tool subprocess runtime, not a registered terminal environment."
+    },
+    {
+      "id": "hermes-talk",
+      "reason": "Realtime voice integration."
+    },
+    {
+      "id": "jev-judge",
+      "reason": "Pre-tool judgment/approval policy integration."
+    },
+    {
+      "id": "meshy",
+      "reason": "Media-generation MCP integration."
+    },
+    {
+      "id": "office-3d",
+      "reason": "Desktop profile activity visualization."
+    },
+    {
+      "id": "omh",
+      "reason": "Delegation/memory/evidence workflow with host subprocess probes."
+    },
+    {
+      "id": "opencode-free-acp",
+      "reason": "Inference provider transport; Hermes retains tool execution."
+    },
+    {
+      "id": "progress-squash",
+      "reason": "Terminal output transform hook."
+    },
+    {
+      "id": "rtk-rewrite-docker",
+      "reason": "Command rewrite hook applied to existing backends."
+    },
+    {
+      "id": "telegram_dashboard_probe",
+      "reason": "Gateway status and monitoring integration."
+    }
+  ],
+  "supporting_sources": [
+    {
+      "path": "agent/terminal_env_registry.py",
+      "sha256": "d7a749519ede6e2718a53fe4a3d70384fd1f6ed8ae588eb1cfde0c324c86e7da"
+    },
+    {
+      "path": "agent/terminal_env_provider.py",
+      "sha256": "865fb0cd9c3c64c081276281f7501cd54c6e8927386a9099ae213e5511857e5c"
+    },
+    {
+      "path": "tools/terminal_tool_backends.py",
+      "sha256": "8467cebf8086ed8b8786637d74d172b826aab43ec35db5f055be7a44c771a574"
+    },
+    {
+      "path": "tools/environments/base.py",
+      "sha256": "aa081d39e706ee6e9ae2fd97b16e68af838307e613846c8c4d281b8677c76384"
+    },
+    {
+      "path": "tools/environments/docker_egress.py",
+      "sha256": "d8983bfbb64f61dede8cb0b0602f619bff46773cded12ebefb2db6946ba00c2d"
+    }
+  ],
+  "limitations": [
+    "Keyword candidate discovery is not proof of exhaustive external capability coverage.",
+    "External repository pins are recorded but have not been fetched or executed.",
+    "No execution backend parity is established; X.A.A. fixed filesystem workers are lifecycle containment, not generated-code isolation."
+  ]
+}

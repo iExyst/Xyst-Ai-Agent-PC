@@ -1,0 +1,47 @@
+[project]
+name = "xaa-engine"
+version = "0.1.0"
+description = "Xyst AI Agent engine"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.120,<1",
+    "httpx>=0.28,<1",
+    "pydantic>=2.12,<3",
+    "uvicorn[standard]>=0.38,<1",
+    "keyring>=25,<27",
+    "lmstudio==1.6.0b1",
+]
+
+[project.scripts]
+xaa = "xaa.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<9",
+    "pytest-asyncio>=1.2,<2",
+    "ruff>=0.14,<1",
+    "pyright>=1.1.407,<2",
+    "pyinstaller>=6,<7",
+]
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+where = ["engine"]
+include = ["xaa*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["engine"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+include = ["engine"]
+executionEnvironments = [{ root = "scripts", extraPaths = ["engine"] }]
