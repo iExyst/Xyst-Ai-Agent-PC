@@ -5,6 +5,7 @@ and profile paths are command-line parameters; request data is bounded JSON stdi
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -59,8 +60,9 @@ def stop_unit(identity: str) -> None:
         raise RuntimeError("Cannot confirm the exact owned execution unit is inactive.")
 
 
-def cleanup(identity: str) -> None:
+def cleanup(identity: str, journal: Any) -> None:
     identity = execution_id(identity)
+    journal.marker(identity)
     stop_unit(identity)
     stage = BASE / identity
     if stage.exists() or stage.is_symlink():
@@ -70,10 +72,11 @@ def cleanup(identity: str) -> None:
         if stage.resolve().parent != BASE.resolve() or not shutil.rmtree.avoids_symlink_attacks:
             raise PermissionError("Safe execution staging cleanup is unavailable.")
         shutil.rmtree(stage)
-    (BASE / (identity + ".cancelled")).unlink(missing_ok=True)
 
 
-def run(request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+def run(
+    request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any], journal: Any
+) -> dict[str, Any]:
     if set(request) != {"action", "execution_id", "argv", "max_seconds", "snapshot_b64"}:
         raise ValueError("Invalid execution request fields.")
     identity = execution_id(request["execution_id"])
@@ -99,40 +102,47 @@ def run(request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any])
     )
     bpf = profile["syscall_filter"]()
     stage = BASE / identity
-    stage.mkdir(mode=0o700, exist_ok=False)
     process: subprocess.Popen[bytes] | None = None
     result: dict[str, Any] = {}
+    claimed = False
     try:
-        source = stage / "input"
-        codec["materialize_snapshot"](snapshot, source)
-        unit = f"xaa-exec-{identity}.service"
-        command = [
-            "/usr/bin/systemd-run",
-            "--unit",
-            unit,
-            "--wait",
-            "--pipe",
-            "--property=MemoryMax=128M",
-            "--property=MemorySwapMax=0",
-            "--property=CPUQuota=50%",
-            "--property=TasksMax=32",
-            f"--property=RuntimeMaxSec={seconds}s",
-            "--property=TimeoutStopSec=1s",
-            "--property=KillMode=control-group",
-        ] + profile["bubblewrap_arguments"](source, arguments)
-        started = time.monotonic()
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
-        )
-        assert (
-            process.stdin is not None and process.stdout is not None and process.stderr is not None
-        )
-        process.stdin.write(bpf)
-        process.stdin.close()
+        with journal.locked(identity):
+            journal.claim(identity, request)
+            claimed = True
+            stage.mkdir(mode=0o700, exist_ok=False)
+            source = stage / "input"
+            codec["materialize_snapshot"](snapshot, source)
+            unit = f"xaa-exec-{identity}.service"
+            command = [
+                "/usr/bin/systemd-run",
+                "--unit",
+                unit,
+                "--wait",
+                "--pipe",
+                f"--property=ConditionPathExists=!{journal.path(identity, 'closed')}",
+                "--property=MemoryMax=128M",
+                "--property=MemorySwapMax=0",
+                "--property=CPUQuota=50%",
+                "--property=TasksMax=32",
+                f"--property=RuntimeMaxSec={seconds}s",
+                "--property=TimeoutStopSec=1s",
+                "--property=KillMode=control-group",
+            ] + profile["bubblewrap_arguments"](source, arguments)
+            started = time.monotonic()
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+            )
+            assert (
+                process.stdin is not None
+                and process.stdout is not None
+                and process.stderr is not None
+            )
+            process.stdin.write(bpf)
+            process.stdin.close()
         output = {"stdout": bytearray(), "stderr": bytearray()}
         reason = "finished"
         total = 0
@@ -143,7 +153,8 @@ def run(request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any])
             while selector.get_map():
                 if time.monotonic() - started > seconds + 5 and reason == "finished":
                     reason = "manager_deadline"
-                    cleanup(identity)
+                    with journal.locked(identity):
+                        cleanup(identity, journal)
                 for key, _ in selector.select(timeout=0.1):
                     chunk = os.read(key.fd, 16384)
                     if not chunk:
@@ -154,7 +165,8 @@ def run(request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any])
                     total += min(len(chunk), remaining)
                     if len(chunk) > remaining and reason == "finished":
                         reason = "output_limit"
-                        cleanup(identity)
+                        with journal.locked(identity):
+                            cleanup(identity, journal)
         exit_code = process.wait(timeout=5)
         unit_state = subprocess.run(
             ["/usr/bin/systemctl", "show", unit, "--property=Result", "--property=ExecMainStatus"],
@@ -167,11 +179,10 @@ def run(request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any])
         unit_result = metadata.get("Result", "success" if exit_code == 0 else "unknown")
         if reason == "finished" and unit_result in {"timeout", "oom-kill", "signal", "resources"}:
             reason = unit_result
-        if (BASE / (identity + ".cancelled")).exists():
-            reason = "cancelled"
         result = {
             "execution_id": identity,
             "backend": "wsl-bubblewrap-v1",
+            "filter_sha256": hashlib.sha256(bpf).hexdigest(),
             "snapshot_sha256": snapshot.sha256,
             "exit_code": exit_code if reason == "finished" else None,
             "succeeded": reason == "finished" and exit_code == 0,
@@ -196,12 +207,22 @@ def run(request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any])
             "trust": "untrusted_command_output",
         }
     finally:
-        cleanup(identity)
-        if process is not None:
-            if process.poll() is None:
-                process.kill()
-            process.wait(timeout=5)
-        result["cleanup_confirmed"] = True
+        if claimed:
+            with journal.locked(identity):
+                if result and journal.status(identity)["stop_requested"]:
+                    result.update(termination_reason="cancelled", succeeded=False, exit_code=None)
+                cleanup(identity, journal)
+                if process is not None:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=5)
+                if result:
+                    result["cleanup_confirmed"] = True
+                    for name in ("stdout", "stderr"):
+                        data = base64.b64decode(result[name + "_b64"])
+                        result[name + "_bytes"] = len(data)
+                        result[name + "_sha256"] = hashlib.sha256(data).hexdigest()
+                journal.finished(identity, result)
     return result
 
 
@@ -231,26 +252,37 @@ def main() -> None:
     raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
     request = decode_request(raw)
     prepare_base()
-    if request.get("action") == "stop" and set(request) == {"action", "execution_id"}:
+    receipts = runpy.run_path(sys.argv[3])
+    journal = receipts["ExecutionReceipts"](Path("/var/lib/xaa-execution-manager"))
+    if request.get("action") in {"stop", "cleanup", "status"} and set(request) == {
+        "action",
+        "execution_id",
+    }:
         identity = execution_id(request["execution_id"])
-        receipt = BASE / (identity + ".cancelled")
-        try:
-            with receipt.open("xb") as target:
-                target.write(b"cancelled")
-                target.flush()
-                os.fsync(target.fileno())
-        except FileExistsError:
-            if receipt.is_symlink() or receipt.read_bytes() != b"cancelled":
-                raise PermissionError("Invalid cancellation receipt.")
-        stop_unit(identity)
-        print(
-            json.dumps({"execution_id": identity, "unit_stopped": True, "cleanup_confirmed": False})
-        )
-    elif request.get("action") == "cleanup" and set(request) == {"action", "execution_id"}:
-        cleanup(execution_id(request["execution_id"]))
-        print(json.dumps({"execution_id": request["execution_id"], "cleanup_confirmed": True}))
+        if request["action"] == "status":
+            print(json.dumps(journal.status(identity)))
+            return
+        with journal.locked(identity):
+            state = journal.status(identity)
+            if state["outcome"] is None:
+                journal.marker(identity, stopped=True)
+            if request["action"] == "stop":
+                stop_unit(identity)
+                print(
+                    json.dumps(
+                        {
+                            "execution_id": identity,
+                            "unit_stopped": True,
+                            "cleanup_confirmed": False,
+                            "already_finished": state["outcome"] is not None,
+                        }
+                    )
+                )
+            else:
+                cleanup(identity, journal)
+                print(json.dumps({"execution_id": identity, "cleanup_confirmed": True}))
     elif request.get("action") == "run":
-        result = run(request, runpy.run_path(sys.argv[1]), runpy.run_path(sys.argv[2]))
+        result = run(request, runpy.run_path(sys.argv[1]), runpy.run_path(sys.argv[2]), journal)
         print(json.dumps(result))
     else:
         raise ValueError("Unsupported execution manager operation.")

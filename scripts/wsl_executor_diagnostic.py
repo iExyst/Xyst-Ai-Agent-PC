@@ -36,7 +36,12 @@ def main() -> None:
     prefix = [wsl, "--distribution", args.distribution, "--exec"]
     modules = [
         Path("engine/xaa/runtime") / filename
-        for filename in ("wsl_manager.py", "workspace_snapshot.py", "sandbox_profile.py")
+        for filename in (
+            "wsl_manager.py",
+            "workspace_snapshot.py",
+            "sandbox_profile.py",
+            "execution_receipts.py",
+        )
     ]
     paths = [
         subprocess.run(
@@ -52,6 +57,50 @@ def main() -> None:
     ]
     invocation = [*prefix, "/usr/bin/python3", "-I", *paths]
     results: dict[str, Any] = {}
+    receipt_code = """
+import json,pathlib,runpy,sys,tempfile
+from unittest.mock import patch
+R=runpy.run_path(sys.argv[1])['ExecutionReceipts']
+checks={}
+with tempfile.TemporaryDirectory(prefix='xaa-receipt-check-',dir='/tmp') as t:
+ root=pathlib.Path(t);registry=R(root/'private')
+ with patch.dict(R.locked.__wrapped__.__globals__,{'MAX_IDENTITIES':2}):
+  for identity in ('a'*32,'b'*32):
+   with registry.locked(identity): registry.marker(identity)
+  try:
+   with registry.locked('c'*32): raise AssertionError('Quota admitted another identity')
+  except RuntimeError as e: assert 'retention is full' in str(e)
+  with registry.locked('a'*32): assert registry.status('a'*32)['closed']
+ checks['quota_refused_new_identity_existing_control_allowed']=True
+ outside=root/'outside';outside.write_bytes(b'outside-fixture')
+ with registry.locked('c'*32):
+  registry.path('c'*32,'closed').symlink_to(outside)
+  try: registry.marker('c'*32)
+  except PermissionError: pass
+  else: raise AssertionError('Symlink marker accepted')
+ assert outside.read_bytes()==b'outside-fixture'
+ checks['marker_symlink_refused']=True
+ exposed=root/'exposed';exposed.mkdir(mode=0o755)
+ try: R(exposed)
+ except PermissionError: pass
+ else: raise AssertionError('Non-private receipt root accepted')
+ checks['nonprivate_root_refused']=True
+ future=root/'future';future.mkdir(mode=0o700);(future/'_schema.json').write_bytes(b'{"format":2}')
+ try: R(future)
+ except ValueError: pass
+ else: raise AssertionError('Unknown receipt schema accepted')
+ assert (future/'_schema.json').read_bytes()==b'{"format":2}'
+ checks['future_schema_refused_unchanged']=True
+print(json.dumps(checks))
+"""
+    receipt_check = subprocess.run(
+        [*prefix, "/usr/bin/python3", "-I", "-c", receipt_code, paths[-1]],
+        check=True,
+        capture_output=True,
+        timeout=15,
+        creationflags=0x08000000,
+    )
+    receipt_checks = json.loads(receipt_check.stdout)
 
     def request(snapshot: WorkspaceSnapshot, argv: list[str], seconds: int = 10) -> dict[str, Any]:
         return {
@@ -279,6 +328,192 @@ finally:
             )
             process.kill()
             process.wait(timeout=5)
+
+    def control(action: str, identity: str) -> dict[str, Any]:
+        response = subprocess.run(
+            invocation,
+            input=json.dumps({"action": action, "execution_id": identity}).encode(),
+            check=True,
+            capture_output=True,
+            timeout=15,
+            creationflags=0x08000000,
+        )
+        return json.loads(response.stdout)
+
+    def refused(label: str, payload: dict[str, Any]) -> None:
+        response = subprocess.run(
+            invocation,
+            input=json.dumps(payload).encode(),
+            check=False,
+            capture_output=True,
+            timeout=15,
+            creationflags=0x08000000,
+        )
+        (root / f"{label}.stderr.log").write_bytes(response.stderr)
+        assert response.returncode != 0
+        assert (
+            b"identity is closed" in response.stderr
+            or b"identity was already used" in response.stderr
+        )
+
+    once_payload = request(snapshot, ["/usr/bin/python3", "-I", "-c", "print('ONCE')"])
+    once = execute("once", once_payload)
+    assert once["succeeded"]
+    before = control("status", once_payload["execution_id"])
+    refused("replay", once_payload)
+    assert control("status", once_payload["execution_id"]) == before
+    results["replay"] = {"refused": True, "receipt_unchanged": True}
+    preclosed = request(snapshot, ["/usr/bin/python3", "-I", "-c", "print('MUST-NOT-RUN')"])
+    control("stop", preclosed["execution_id"])
+    control("cleanup", preclosed["execution_id"])
+    refused("prelaunch-stop", preclosed)
+    condition = "/var/lib/xaa-execution-manager/" + preclosed["execution_id"] + ".closed"
+    delayed = subprocess.run(
+        [
+            *prefix,
+            "/usr/bin/systemd-run",
+            "--unit",
+            "xaa-exec-" + preclosed["execution_id"],
+            "--wait",
+            "--pipe",
+            "--collect",
+            "--property=ConditionPathExists=!" + condition,
+            "/usr/bin/printf",
+            "MUST-NOT-RUN",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=10,
+        creationflags=0x08000000,
+    )
+    assert delayed.stdout == b""
+    results["prelaunch_stop"] = {
+        "delayed_launch_refused": True,
+        "condition_prevented_command": True,
+        "closed": control("status", preclosed["execution_id"])["closed"],
+    }
+    concurrent = request(
+        snapshot,
+        ["/usr/bin/python3", "-I", "-c", "import time;time.sleep(0.5);print('ONE-WINNER')"],
+    )
+    contenders: list[subprocess.Popen[bytes]] = []
+    try:
+        for _ in range(2):
+            child = subprocess.Popen(
+                invocation,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=0x08000000,
+            )
+            assert child.stdin is not None
+            child.stdin.write(json.dumps(concurrent).encode())
+            child.stdin.close()
+            contenders.append(child)
+        codes: list[int] = []
+        for index, child in enumerate(contenders):
+            assert child.stdout is not None and child.stderr is not None
+            out = child.stdout.read()
+            err = child.stderr.read()
+            child.wait(timeout=15)
+            (root / f"concurrent-{index}.stdout.log").write_bytes(out)
+            (root / f"concurrent-{index}.stderr.log").write_bytes(err)
+            assert child.returncode is not None
+            codes.append(child.returncode)
+            if child.returncode == 0:
+                assert json.loads(out)["succeeded"]
+            else:
+                assert b"identity was already used" in err or b"identity is closed" in err
+        assert codes.count(0) == 1
+        results["concurrent"] = {"one_winner": True, "return_codes": codes}
+    finally:
+        for child in contenders:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+        control("cleanup", concurrent["execution_id"])
+    crash = request(
+        snapshot,
+        [
+            "/usr/bin/python3",
+            "-I",
+            "-c",
+            "import subprocess,time;subprocess.Popen(['/usr/bin/python3','-c','import time;time.sleep(30)']);time.sleep(30)",
+        ],
+        30,
+    )
+    child = subprocess.Popen(
+        invocation,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=0x08000000,
+    )
+    assert child.stdin is not None
+    child.stdin.write(json.dumps(crash).encode())
+    child.stdin.close()
+    try:
+        unit = "xaa-exec-" + crash["execution_id"] + ".service"
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            state = control("status", crash["execution_id"])
+            query = subprocess.run(
+                [
+                    *prefix,
+                    "/usr/bin/python3",
+                    "-I",
+                    "-c",
+                    "import json,pathlib,subprocess,sys;g=subprocess.run(['/usr/bin/systemctl','show',sys.argv[1],'--property=ControlGroup','--value'],capture_output=True,text=True).stdout.strip();p=pathlib.Path('/sys/fs/cgroup')/g.lstrip('/')/'cgroup.procs';ids=p.read_text().split() if g and p.exists() else [];print(json.dumps([int(i) for i in ids if pathlib.Path('/proc',i,'comm').exists() and pathlib.Path('/proc',i,'comm').read_text().strip()=='python3']))",
+                    unit,
+                ],
+                check=True,
+                capture_output=True,
+                timeout=3,
+                creationflags=0x08000000,
+            )
+            workload = json.loads(query.stdout)
+            if state["claim"] is not None and len(workload) >= 2:
+                break
+            time.sleep(0.1)
+        else:
+            raise RuntimeError("Crash fixture workload did not start")
+        claim = state["claim"]
+        subprocess.run(
+            [
+                *prefix,
+                "/usr/bin/python3",
+                "-I",
+                "-c",
+                "import os,pathlib,signal,sys;pid=int(sys.argv[1]);actual=pathlib.Path('/proc',str(pid),'stat').read_text().rsplit(')',1)[1].split()[19];assert actual==sys.argv[2];assert pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()==sys.argv[3];os.kill(pid,signal.SIGKILL)",
+                str(claim["manager_pid"]),
+                claim["manager_start"],
+                claim["manager_boot_id"],
+            ],
+            check=True,
+            capture_output=True,
+            timeout=5,
+            creationflags=0x08000000,
+        )
+        child.wait(timeout=10)
+        assert child.returncode != 0
+        refused("crash-replay-before-cleanup", crash)
+        control("cleanup", crash["execution_id"])
+        refused("crash-replay-after-cleanup", crash)
+        recovered = control("status", crash["execution_id"])
+        assert recovered["claim"] == claim and recovered["closed"] and recovered["outcome"] is None
+        assert not recovered["manager_alive"]
+        results["manager_crash"] = {
+            "observed_workload_pids": workload,
+            "closed": True,
+            "result_not_fabricated": True,
+            "replay_refused": True,
+        }
+        (root / "crash.receipt.json").write_text(json.dumps(recovered, indent=2), encoding="utf-8")
+    finally:
+        control("cleanup", crash["execution_id"])
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
     assert capture_workspace(workspace).sha256 == snapshot.sha256
     report = {
         "passed": True,
@@ -289,6 +524,7 @@ finally:
             str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in modules
         },
         "results": results,
+        "receipt_negative_checks": receipt_checks,
         "product_tool_enabled": False,
     }
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

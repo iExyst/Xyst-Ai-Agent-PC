@@ -39,7 +39,7 @@ def test_invalid_requests_cannot_reach_execution(key, value):
 
     with pytest.raises((ValueError, TypeError)):
         wsl_manager.run(
-            request, {"WorkspaceSnapshot": WorkspaceSnapshot}, {"syscall_filter": forbidden}
+            request, {"WorkspaceSnapshot": WorkspaceSnapshot}, {"syscall_filter": forbidden}, None
         )
 
 
