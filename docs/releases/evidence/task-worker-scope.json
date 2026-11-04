@@ -1,0 +1,44 @@
+{
+  "passed": true,
+  "model": "qwen/qwen3.5-9b",
+  "run_id": "bc3ee41d-7585-4e47-9c5b-6239ddc627f3",
+  "statuses": [
+    {
+      "task_id": "alpha",
+      "status": "verifying"
+    },
+    {
+      "task_id": "beta",
+      "status": "verifying"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2329,
+    "completion_tokens": 454,
+    "total_tokens": 2783,
+    "unmeasured_calls": 0
+  },
+  "scope": "Two real source specialists through task-scoped owned filesystem workers; candidates await independent review; no isolated edit/integration claim",
+  "parent_history_unchanged": true,
+  "unresolved_calls": 0,
+  "owned_model_unloaded": true,
+  "loaded_instances_after_test": 0,
+  "failed_attempts": [
+    {
+      "evidence": ".acceptance/1eb4bc01-e55e-4871-a48b-b93a10e27e98/",
+      "reason": "One real-model specialist repeated harmless reads until its unchanged three-iteration cap; other specialist produced the correct candidate. Clarified single-read fixture instructions, then fresh independent test passed both tasks."
+    }
+  ],
+  "frozen_worker": {
+    "passed": true,
+    "engine_sha256": "d0f3f1c87dda45b66487f2436bda3dba0b6a0b22d7c188ca5b62b09e3b3e1e64",
+    "scope": "Actual frozen --tool-worker with System32-only runtime PATH; no model/UI or isolated specialist edit claim",
+    "unicode_read_verified": true,
+    "parent_write_not_inherited": true,
+    "expired_task_refused": true,
+    "parent_lease_retained": true,
+    "project_unchanged": true,
+    "intents": 1,
+    "unresolved_calls": 0
+  }
+}

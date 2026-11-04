@@ -9,6 +9,7 @@ import sqlite3
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,14 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
 DATABASE_SCHEMA_VERSION = 4
+
+
+@dataclass(frozen=True)
+class TaskReadScope:
+    run_id: str
+    parent_token: str
+    task_id: str
+    task_token: str
 
 
 class InvalidTransition(ValueError):
@@ -132,7 +141,10 @@ class RunStore:
             ).fetchone()
         return dict(row) if row is not None else None
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self, path: Path | None = None, *, task_scope: TaskReadScope | None = None
+    ) -> None:
+        self.task_scope = task_scope
         self.path = path or default_database_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
@@ -516,6 +528,9 @@ class RunStore:
         return json.loads(row[0]) if row else None
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
+        if self.task_scope is not None:
+            with self._connection() as connection:
+                self.require_lease(connection, run_id, self.task_scope.parent_token)
         with self._connection() as connection:
             row = connection.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         if row is None:
@@ -562,6 +577,9 @@ class RunStore:
                 "SELECT checks FROM run_checks WHERE run_id = ?", (run_id,)
             ).fetchone()
         record["file_checks"] = json.loads(checks["checks"]) if checks is not None else []
+        if self.task_scope is not None:
+            record["mode"] = "observe"
+            record["command_grant"] = None
         return record
 
     def acquire_lease(self, run_id: str, owner: str, *, seconds: int = 30) -> str | None:
@@ -696,8 +714,7 @@ class RunStore:
         assert result is not None
         return result
 
-    @staticmethod
-    def require_lease(connection: sqlite3.Connection, run_id: str, owner: str) -> None:
+    def require_lease(self, connection: sqlite3.Connection, run_id: str, owner: str) -> None:
         row = connection.execute(
             "SELECT lease_owner, lease_expires_at, state FROM runs WHERE id = ?", (run_id,)
         ).fetchone()
@@ -709,6 +726,28 @@ class RunStore:
             or row["state"] not in {"queued", "planning", "running", "verifying"}
         ):
             raise LeaseLost("Run lease expired, changed owner, or execution was stopped.")
+        if self.task_scope is not None:
+            scope = self.task_scope
+            if run_id != scope.run_id or owner != scope.parent_token:
+                raise PermissionError("Task reader cannot use another run or parent lease.")
+            self.require_task_read_scope(connection, run_id, scope.task_id, scope.task_token)
+
+    @staticmethod
+    def require_task_read_scope(
+        connection: sqlite3.Connection, run_id: str, task_id: str, task_token: str
+    ) -> None:
+        row = connection.execute(
+            "SELECT t.permission_scope,t.workspace,r.workspace AS parent_workspace "
+            "FROM tasks t JOIN task_leases l ON l.task_id=t.id JOIN runs r ON r.id=t.run_id "
+            "WHERE t.id=? AND t.run_id=? AND t.status='running' AND l.token=? AND l.expires_at>?",
+            (f"{run_id}:{task_id}", run_id, task_token, utc_now()),
+        ).fetchone()
+        if (
+            row is None
+            or "workspace.read" not in json.loads(row["permission_scope"])
+            or row["workspace"] != row["parent_workspace"]
+        ):
+            raise PermissionError("Task reader no longer holds its saved workspace/read authority.")
 
     def append_worker_event(
         self, run_id: str, owner: str, kind: str, payload: dict[str, Any]

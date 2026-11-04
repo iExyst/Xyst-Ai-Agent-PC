@@ -182,9 +182,11 @@ class SpecialistRunner:
             )
             message = choice.message.model_dump(exclude_none=True)
             self.tasks.renew_worker(run_id, parent, identity, worker)
-            self.store.append_worker_event(
+            self.tasks.record_read_worker_event(
                 run_id,
                 parent,
+                identity,
+                worker,
                 "task.model.message",
                 {
                     "task_id": identity,
@@ -235,10 +237,14 @@ class SpecialistRunner:
                     arguments,
                     idempotency_key=journal_id,
                     internal=True,
+                    task_id=identity,
+                    task_token=worker,
                 )
-                self.store.append_worker_event(
+                self.tasks.record_read_worker_event(
                     run_id,
                     parent,
+                    identity,
+                    worker,
                     "task.tool.result",
                     {
                         "task_id": identity,

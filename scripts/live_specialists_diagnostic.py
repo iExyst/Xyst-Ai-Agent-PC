@@ -39,7 +39,7 @@ async def main() -> None:
         [
             TaskDefinition(
                 id=name,
-                objective=f"Read {name}.txt using workspace_read_file. Return its exact code, without inventing it.",
+                objective=f"Use workspace_read_file exactly once on {name}.txt. After the result, return its full text as your final candidate answer. Do not call more tools or repeat the read. Do not invent the code.",
                 acceptance_criteria=("Candidate contains the code read from the actual file.",),
                 role="researcher",
                 max_iterations=3,

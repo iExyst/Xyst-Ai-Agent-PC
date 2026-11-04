@@ -6,14 +6,14 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.directory_listing import list_directory
 from xaa.runtime.executor import ToolPreconditionError, WorkspaceExecutor
 from xaa.runtime.processes import stop_owned_process
 from xaa.runtime.workspace_search import search_workspace
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import RunStore, TaskReadScope
 
 FilesystemOperation = Literal[
     "read", "write", "create", "replace", "patch", "list", "search", "reconcile"
@@ -30,6 +30,20 @@ class WorkerRequest(BaseModel):
     arguments: dict[str, Any]
     idempotency_key: str
     internal: bool = False
+    task_id: str | None = Field(default=None, min_length=1, max_length=128)
+    task_token: str | None = Field(default=None, min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def task_reader_only(self) -> "WorkerRequest":
+        if (self.task_id is None) != (self.task_token is None):
+            raise ValueError("Task worker scope needs both task identity and lease.")
+        if self.task_id is not None and (
+            not self.internal or self.operation not in {"read", "list"}
+        ):
+            raise PermissionError(
+                "Task workers currently support only scoped internal reads/listing."
+            )
+        return self
 
 
 class WorkerResponse(BaseModel):
@@ -58,6 +72,8 @@ async def execute_filesystem(
     idempotency_key: str,
     timeout: float = 10,
     internal: bool = False,
+    task_id: str | None = None,
+    task_token: str | None = None,
 ) -> dict[str, Any]:
     if timeout <= 0:
         raise FilesystemWorkerTimeout("No filesystem operation budget remains.")
@@ -70,6 +86,8 @@ async def execute_filesystem(
         arguments=arguments,
         idempotency_key=idempotency_key,
         internal=internal,
+        task_id=task_id,
+        task_token=task_token,
     )
     payload = request.model_dump_json().encode()
     if len(payload) > 1_048_576:
@@ -134,7 +152,12 @@ def main() -> None:
         if len(raw) > 1_048_576:
             raise ValueError("Worker input limit.")
         request = WorkerRequest.model_validate_json(raw)
-        executor = WorkspaceExecutor(RunStore(Path(request.database)))
+        scope = (
+            TaskReadScope(request.run_id, request.token, request.task_id, request.task_token)
+            if request.task_id is not None and request.task_token is not None
+            else None
+        )
+        executor = WorkspaceExecutor(RunStore(Path(request.database), task_scope=scope))
         operations = {
             "read": executor.read_file,
             "write": executor.write_file,

@@ -2,7 +2,7 @@
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from xaa.runtime.task_graph import TaskDefinition, TaskGraph, TaskStatus
@@ -16,6 +16,29 @@ class TaskTokenBudgetExceeded(TokenBudgetExceeded):
 class TaskStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
+
+    def record_read_worker_event(
+        self,
+        run_id: str,
+        parent_token: str,
+        task_id: str,
+        task_token: str,
+        kind: Literal["task.model.message", "task.tool.result"],
+        payload: dict[str, Any],
+    ) -> None:
+        """Fence read-only specialist output in the same transaction as its publication."""
+        if (
+            kind not in {"task.model.message", "task.tool.result"}
+            or payload.get("task_id") != task_id
+        ):
+            raise ValueError(
+                "Specialist output must identify its own task and supported event kind."
+            )
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, parent_token)
+            self.runs.require_task_read_scope(connection, run_id, task_id, task_token)
+            self.runs.record_event(connection, run_id, kind, payload)
 
     def check_token_budget(self, run_id: str, task_id: str, *, before_inference: bool) -> None:
         task = next(row for row in self.records(run_id) if row["local_id"] == task_id)
