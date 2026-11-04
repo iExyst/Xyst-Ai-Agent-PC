@@ -1,0 +1,45 @@
+{
+  "completed": {
+    "passed": true,
+    "distribution": "Ubuntu-24.04",
+    "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+    "child_exit_code": 73,
+    "active_manager_and_unit_observed_before_crash": false,
+    "fixture_lease_expiry_injected_after_observed_exit": true,
+    "supervisor_discovered_and_cleaned": true,
+    "run_remained_blocked_for_review": true,
+    "available_result_preserved_then_verified": true,
+    "unresolved_after_explicit_review": 0,
+    "coordinator_tasks_dispatched": 0,
+    "launch_events": 1,
+    "original_project_unchanged": true,
+    "model_or_ui_tool_enabled": false,
+    "fault_actor": "automated_diagnostic_not_model",
+    "acceptance_directory": ".acceptance/87ba170c-5262-4e4e-a28a-d69a4c726553/"
+  },
+  "orphan_active": {
+    "passed": true,
+    "distribution": "Ubuntu-24.04",
+    "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+    "child_exit_code": 74,
+    "active_manager_and_unit_observed_before_crash": true,
+    "fixture_lease_expiry_injected_after_observed_exit": true,
+    "supervisor_discovered_and_cleaned": true,
+    "run_remained_blocked_for_review": true,
+    "available_result_preserved_then_verified": false,
+    "unresolved_after_explicit_review": 0,
+    "coordinator_tasks_dispatched": 0,
+    "launch_events": 1,
+    "original_project_unchanged": true,
+    "model_or_ui_tool_enabled": false,
+    "fault_actor": "automated_diagnostic_not_model",
+    "acceptance_directory": ".acceptance/c97f56c9-9eec-431b-bcdd-10e784dab435/"
+  },
+  "source_hashes": {
+    "engine/xaa/runtime/command_recovery.py": "d0ed4755c3f1c34e151b8568f221de85b311f3e149d0d909a0398c704e58bf07",
+    "engine/xaa/runtime/supervisor.py": "8c116f5d8f42a19f3006bbcdfa94d5f3dc4e14b4928a46cd669023f2e6faabfa",
+    "engine/xaa/storage/commands.py": "90acd34917394304b963a14725d55b4da5be0340983032cbb7ed13261c8f11b8",
+    "scripts/command_startup_diagnostic.py": "33adda31bf1c9affce9158e21538fd269cd07c5d33c5e831f1b810cee7f197e9",
+    "scripts/command_recovery_diagnostic.py": "c5612f70b5ea5d7e5ee8aa30fcab78801786ee063fcafc1c99d2d7d24e65d711"
+  }
+}

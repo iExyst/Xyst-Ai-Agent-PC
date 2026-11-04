@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from xaa.runtime.cleanup import finish_cleanup
+from xaa.runtime.command_recovery import StoppedCommandRecovery
 from xaa.runtime.coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,11 @@ class RunSupervisor:
             self.recovery_task = asyncio.create_task(self._recover(), name="run-recovery")
 
     async def _recover(self) -> None:
+        commands = StoppedCommandRecovery(self.coordinator.store)
         while True:
             for run_id in self.coordinator.store.recover_abandoned_runs():
                 self.submit(run_id)
+            await commands.run_once()
             await asyncio.sleep(2)
 
     def submit(self, run_id: str) -> None:

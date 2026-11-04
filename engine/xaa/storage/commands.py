@@ -124,6 +124,46 @@ class CommandJournal:
     def __init__(self, store: RunStore) -> None:
         self.store = store
 
+    def stopped_candidates(self) -> list[dict[str, Any]]:
+        with self.store.connection() as connection:
+            rows = connection.execute(
+                "SELECT r.id AS run_id,r.revision,t.provider_call_id AS call_id "
+                "FROM runs r JOIN tool_calls t ON t.run_id=r.id "
+                "WHERE r.state IN ('paused','blocked','failed','cancelled') AND r.lease_owner IS NULL "
+                "AND t.state='intended' AND t.tool_name=? AND t.tool_version='1' "
+                "AND NOT EXISTS (SELECT 1 FROM run_events e WHERE e.run_id=r.id "
+                "AND e.event_type='execution.cleanup_observed' "
+                "AND json_extract(e.payload,'$.call_id')=t.provider_call_id "
+                "AND json_extract(e.payload,'$.stopped_revision')=r.revision) "
+                "ORDER BY t.updated_at LIMIT ?",
+                (TOOL, ACTIVE_COMMAND_LIMIT),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def stopped_intent(self, run_id: str, revision: int, call_id: str) -> CommandIntent:
+        with self.store.connection() as connection:
+            run = connection.execute(
+                "SELECT state,revision,lease_owner FROM runs WHERE id=?", (run_id,)
+            ).fetchone()
+            if (
+                run is None
+                or run["revision"] != revision
+                or run["lease_owner"] is not None
+                or run["state"] not in {"paused", "blocked", "failed", "cancelled"}
+            ):
+                raise ReconciliationRequired("Stopped command changed before cleanup discovery.")
+            intent = self._intent(connection, run_id, call_id)
+            grant, workspace = self._grant(
+                connection, run_id, self.store.path, validate_workspace=False
+            )
+            if (intent.distribution, intent.profile_sha256, intent.workspace) != (
+                grant.distribution,
+                grant.profile_sha256,
+                workspace,
+            ):
+                raise PermissionError("Stopped command recovery authority changed.")
+            return intent
+
     @staticmethod
     def _grant(
         connection: Any, run_id: str, database: Path, *, validate_workspace: bool = True
@@ -546,7 +586,13 @@ class CommandJournal:
         return result
 
     def record_stopped_cleanup(
-        self, run_id: str, expected_revision: int, call_id: str, proof: CommandCleanupEvidence
+        self,
+        run_id: str,
+        expected_revision: int,
+        call_id: str,
+        proof: CommandCleanupEvidence,
+        *,
+        preserve_available: bool = False,
     ) -> dict[str, Any]:
         """Application cleanup after user stop revoked the worker lease.
 
@@ -599,6 +645,21 @@ class CommandJournal:
                     utc_now(),
                 ),
             )
+            if preserve_available and proof.manager_outcome_available:
+                observation = {
+                    "call_id": call_id,
+                    "execution_id": intent.execution_id,
+                    "cleanup_confirmed": True,
+                    "manager_outcome_available": True,
+                    "evidence_artifact_id": artifact_id,
+                    "stopped_revision": expected_revision,
+                    "verification": "pending_local_result_review",
+                    "actor": "application_cleanup",
+                }
+                self.store.record_event(
+                    connection, run_id, "execution.cleanup_observed", observation
+                )
+                return observation
             result = {
                 "ok": False,
                 "execution_id": intent.execution_id,
