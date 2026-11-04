@@ -1,0 +1,33 @@
+# Restricted WSL command executor development slice
+
+`engine/xaa/runtime/wsl_manager.py` is a standard-library Linux-side manager for one command in an explicitly selected existing WSL distro. `sandbox_profile.py` constructs the fixed execution profile. The source diagnostic launches the manager with Python isolated mode (`-I`); the manager clears its own environment and passes only PATH/LANG onward. Codec/profile source paths come from application code, not command arguments proposed by a model. The manager accepts bounded JSON stdin and never treats project content or argument strings as host-side Python/shell source.
+
+The command has 1..64 structured arguments, a 16 KiB aggregate argument limit and an application-generated lowercase UUID identity. Requests cannot alter profile mounts, network access, environment or resources; unknown/duplicate fields and invalid types/limits are rejected. The selected Linux host needs root service-management access, Bubblewrap, Python 3, systemd with memory/cpu/pids controllers and libseccomp. Missing requirements fail; direct host execution is not a fallback. No software or distro setting is installed/changed by the diagnostic.
+
+The manager validates the bounded snapshot, materializes it under private root-owned `/tmp/xaa-executions/<id>/input`, then launches a uniquely named systemd unit. Bubblewrap provides separate user/mount/process/network/IPC/UTS/cgroup namespaces, no capabilities, no-new-privileges, disabled further user namespaces, read-only runtime/root/dev/input mounts and separate 32 MiB scratch/workspace tmpfs mounts. A fixed isolated Python bootstrap copies the regular-file input snapshot into the private writable workspace, then calls execvpe with the decoded argument array. Workspace writes are ephemeral; original Windows files are never mounted or modified by the command.
+
+The profile enforces 128 MiB aggregate memory, no swap, half-CPU quota, 32 tasks, 1..30 seconds of runtime and a combined 1 MiB stdout/stderr capture limit. On capture overflow the manager stops its exact owned unit rather than reading indefinitely. Captured bytes use base64 transport and remain untrusted. systemd status is obtained separately from the command output; model-controlled log text is not parsed as authoritative unit state.
+
+A native-architecture libseccomp BPF filter is supplied to Bubblewrap through its stdin descriptor and applied to the child after namespace setup. The profile rejects mount/namespace/ptrace/process-memory/keyring/kernel-management/handle-based filesystem/io_uring calls. clone3 returns ENOSYS to permit libc's ordinary process-creation fallback. Socket creation/use is denied, including Unix and VM/VSOCK families; commands needing sockets are unsupported by this profile even for local test IPC. Missing syscall definitions/export failures reject launch. This is a concrete tested policy, not a claim of complete kernel escape resistance or an exhaustive security audit.
+
+## Results and cancellation
+
+The supervised process exit status and command outcome are separate. `exit_code` is available on normal termination; stopped/timed-out/OOM/truncated/cancelled operations use null, `succeeded=false` and an explicit termination reason. `supervisor_exit_code` is retained because systemd can consider explicit SIGTERM cleanup a successful service stop. It must not be used as a successful project-validation result by itself.
+
+A trusted stop request writes/fsyncs a cancellation receipt outside sandbox-visible mounts before stopping the unit. The active manager preserves that cancellation reason when collecting the result. A stop acknowledgment identifies unit shutdown; staging cleanup is a separate operation. Final cleanup stops/resets only the exact UUID unit, confirms inactive state and removes only its private checked staging directory/receipt. An existing staging destination is refused rather than overwritten.
+
+This source slice does not yet bind identities to durable Windows run/tool leases or persist a replay-proof application intent. Startup-stop races, abrupt manager/engine death, pending unit registration, duplicate/replayed requests and cross-restart recovery still require the Windows controller/journal handshake and adversarial acceptance. No application/model tool is exposed until those controls, per-run explicit grants, packaged manager resources, artifact registration and end-to-end model/native acceptance are integrated. A passed development diagnostic is not the completed Phase 3 gate.
+
+## Actual acceptance
+
+Run `uv run python scripts/wsl_executor_diagnostic.py --distribution Ubuntu-24.04`. Evidence `.acceptance/564029d7-dd0b-4d0e-a37a-740406934669/` and `../releases/evidence/wsl-executor.json` covers:
+
+- A small Python fixture's unittest fails with the defect (exit 1), then passes after an explicitly automated diagnostic patch (exit 0). The patch actor is the diagnostic, not a local model; this is not autonomous defect-repair acceptance.
+- The command changes its private copy while the original snapshot/Windows fixture remain unchanged. Literal shell punctuation and Unicode travel as a single argument.
+- Seccomp is active, clone3 receives ENOSYS and nested namespace creation plus IPv4/Unix/VM socket creation are denied.
+- A million-byte output flood is bounded/stopped; a sleeping parent/child hit the one-second runtime limit; a 256 MiB allocation is killed under the 128 MiB memory cap; both writable mounts hit ENOSPC; task creation hits EAGAIN; explicit exit 7 is preserved.
+- Cancellation occurs only after observing two actual Python workload PIDs in the exact unit cgroup. The result retains cancellation, every accepted operation confirms owned-unit/staging cleanup, and original project bytes remain unchanged.
+
+Fourteen negative unit cases reject malformed identities, argument types/NUL/size, runtime escalation, invalid snapshot encoding, unauthorized network fields, duplicate/oversized envelopes and missing libseccomp without falling back. Complete engine suite: 323 passed with the existing Starlette/httpx deprecation warning. Full Ruff/format and strict engine/scripts typing pass.
+
+Failed diagnostic runs remain separately retained: `.acceptance/49d5bb18-497f-4b71-bf43-96d8301d6a28/` exposed failed-unit cleanup; reset-failed was added before checking inactive state. Subsequent early cancellation fixtures either ran before the workload was observed or lacked the intended child. They were not counted as cancellation passes; the final fixture observes both actual processes and uses a trusted cancellation receipt so a clean service-stop status cannot be mistaken for command success.
