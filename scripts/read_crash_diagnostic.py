@@ -123,7 +123,8 @@ async def main() -> None:
         if remaining > 0:
             await asyncio.sleep(min(remaining + 0.05, 2))
         store.recover_abandoned_runs()
-        assert store.get_run(run["id"])["state"] == "blocked"
+        recovered = store.get_run(run["id"])
+        assert recovered is not None and recovered["state"] == "blocked"
         store.transition(run["id"], RunState.QUEUED, reason="operator_requested_resume")
         instance = await provider.load_model(model, context_length=16384)
         await Coordinator(store, provider).execute(run["id"])
@@ -146,12 +147,14 @@ async def main() -> None:
             if e["event_type"] == "tool.completed" and e["payload"]["call_id"] in fresh_ids
         ]
         history = store.conversation_messages(run["id"])
-        answer = history[-1].get("content", "")
+        answer = history[-1].get("content") or ""
+        final_run = store.get_run(run["id"])
+        assert final_run is not None
         passed = bool(
             len(failures) == 1
-            and fresh
+            and len(fresh) > 0
             and code in answer
-            and store.get_run(run["id"])["state"] == "verifying"
+            and final_run["state"] == "verifying"
             and not store.unresolved_tool_calls(run["id"])
             and target.read_bytes() == code.encode()
             and target.stat().st_mtime_ns == stamp
@@ -164,7 +167,7 @@ async def main() -> None:
             fresh_read_results=len(fresh),
             fixture_unchanged=target.read_bytes() == code.encode(),
             mtime_unchanged=target.stat().st_mtime_ns == stamp,
-            state=store.get_run(run["id"])["state"],
+            state=final_run["state"],
         )
         if not passed:
             raise RuntimeError("Read-crash recovery acceptance failed.")

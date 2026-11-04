@@ -22,15 +22,15 @@ from xaa.storage.runs import RunStore
 
 class InterruptedStore(RunStore):
     def append_worker_event(
-        self, run_id: str, token: str, event_type: str, payload: dict[str, Any]
+        self, run_id: str, owner: str, kind: str, payload: dict[str, Any]
     ) -> None:
-        if event_type == "tool.executing" and os.environ.get("XAA_CRASH_BOUNDARY") == "created":
+        if kind == "tool.executing" and os.environ.get("XAA_CRASH_BOUNDARY") == "created":
             (self.path.parent / "flushed.marker").write_text(
                 "file created; content and execution event not committed", encoding="utf-8"
             )
             time.sleep(60)
             raise RuntimeError("Parent should kill this worker before the wait ends.")
-        return super().append_worker_event(run_id, token, event_type, payload)
+        return super().append_worker_event(run_id, owner, kind, payload)
 
     def record_tool_result(
         self,

@@ -6,6 +6,7 @@ import os
 import sqlite3
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -51,7 +52,7 @@ async def main() -> None:
     launched = asyncio.Event()
     processes: list[asyncio.subprocess.Process] = []
 
-    async def spawn(*command, **kwargs):
+    async def spawn(*command: str, **kwargs: Any) -> asyncio.subprocess.Process:
         process = await original(*command, **kwargs)
         if "--tool-worker" in command:
             processes.append(process)

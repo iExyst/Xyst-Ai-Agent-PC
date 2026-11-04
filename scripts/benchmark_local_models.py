@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 from xaa.providers.contracts import TokenUsage, validate_completion
-from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.lm_studio import AdmissionCallback, LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import (
@@ -67,11 +67,16 @@ class MeasuredProvider(LMStudioProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
+        on_admission: AdmissionCallback | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
         try:
             response = await super().chat(
-                model=model, messages=messages, tools=tools, max_output_tokens=max_output_tokens
+                model=model,
+                messages=messages,
+                tools=tools,
+                max_output_tokens=max_output_tokens,
+                on_admission=on_admission,
             )
             try:
                 choice = validate_completion(response)
