@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "run_id": "3598824d-20b3-4b1b-a329-ac98d8c9b6ab",
+  "profile_sha256": "2f7f288cbf7f8e0f905b1d8446b4c61e12f3bbb4547f6b625f88dc611a001027",
+  "source_hashes": {
+    "wsl_manager.py": "099f140f5577c9d6e10f1bf62e7d661b32e575bc01c52a2d752d4155f9a5f475",
+    "workspace_snapshot.py": "7b53d3b464ae969677066835de62da14426ba5012bc68f911b155d767defd707",
+    "sandbox_profile.py": "20e2752eaa4417be1378c449c2b34540b18f0c74fd6a7f2ac4d576debbfd0412",
+    "execution_receipts.py": "fe2f7778b24592ceb0c7067da559ffaf9af83cfd2dd166626edb77f4ef3b4a7c",
+    "cgroup_gate.py": "1352479edd343876e9472265e96e5393264b1dddc2ab0f34e36a3f3498ab06cf"
+  },
+  "known_result_reconciled_without_relaunch": true,
+  "stale_lease_rejected": true,
+  "stopped_revision_cleanup_verified": true,
+  "delayed_request_refused": true,
+  "missing_result_not_fabricated": true,
+  "observed_crash_workload_pids": [
+    473,
+    474
+  ],
+  "unresolved_commands": 0,
+  "original_project_unchanged": true,
+  "artifact_count": 9,
+  "fault_actor": "automated_diagnostic_not_model",
+  "ui_or_model_command_tool_enabled": false,
+  "prelaunch_unverified_result": {
+    "ok": false,
+    "execution_id": "0fa624b5ec144e30acfab95ce354fcaa",
+    "verification": "not_verified",
+    "cleanup_confirmed": true,
+    "manager_outcome_available": false,
+    "evidence_artifact_id": "9d054e3f-8a7e-49d0-8394-05de7364be05",
+    "error": {
+      "code": "command_result_unavailable_locally",
+      "message": "The private command was sealed and cleaned up. Its complete result was not recorded; it has not been replayed."
+    }
+  },
+  "acceptance_directory": ".acceptance/3873133b-83bd-4547-aea1-15279b27f717/",
+  "scope": "Development SQLite journal plus actual WSL backend; no model or desktop command tool enabled."
+}

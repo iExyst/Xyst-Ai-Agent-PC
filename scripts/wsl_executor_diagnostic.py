@@ -41,6 +41,7 @@ def main() -> None:
             "workspace_snapshot.py",
             "sandbox_profile.py",
             "execution_receipts.py",
+            "cgroup_gate.py",
         )
     ]
     paths = [
@@ -55,7 +56,7 @@ def main() -> None:
         .strip()
         for path in modules
     ]
-    invocation = [*prefix, "/usr/bin/python3", "-I", *paths]
+    invocation = [*prefix, "/usr/bin/python3", "-I", *paths[:4]]
     results: dict[str, Any] = {}
     receipt_code = """
 import json,pathlib,runpy,sys,tempfile
@@ -94,7 +95,7 @@ with tempfile.TemporaryDirectory(prefix='xaa-receipt-check-',dir='/tmp') as t:
 print(json.dumps(checks))
 """
     receipt_check = subprocess.run(
-        [*prefix, "/usr/bin/python3", "-I", "-c", receipt_code, paths[-1]],
+        [*prefix, "/usr/bin/python3", "-I", "-c", receipt_code, paths[3]],
         check=True,
         capture_output=True,
         timeout=15,

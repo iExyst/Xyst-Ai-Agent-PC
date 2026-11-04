@@ -101,10 +101,12 @@ class WorkspaceSnapshot:
             ],
         }
 
+    def manifest_bytes(self) -> bytes:
+        return json.dumps(self._metadata(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+
     @property
     def sha256(self) -> str:
-        canonical = json.dumps(self._metadata(), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return hashlib.sha256(self.manifest_bytes()).hexdigest()
 
     def to_bytes(self) -> bytes:
         data = self._metadata()

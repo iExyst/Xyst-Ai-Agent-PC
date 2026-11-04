@@ -73,6 +73,8 @@ def open_existing_for_edit(path: Path) -> Generator[BinaryIO]:
             close(handle)
             raise
         with os.fdopen(descriptor, "r+b") as destination:
+            if os.fstat(destination.fileno()).st_nlink != 1:
+                raise PermissionError("Workspace edits cannot modify files with hard-link aliases.")
             yield destination
     else:
         import fcntl
@@ -80,6 +82,10 @@ def open_existing_for_edit(path: Path) -> Generator[BinaryIO]:
         with path.open("r+b") as destination:
             fcntl.flock(destination.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             try:
+                if os.fstat(destination.fileno()).st_nlink != 1:
+                    raise PermissionError(
+                        "Workspace edits cannot modify files with hard-link aliases."
+                    )
                 yield destination
             finally:
                 fcntl.flock(destination.fileno(), fcntl.LOCK_UN)

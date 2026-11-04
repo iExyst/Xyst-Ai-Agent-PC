@@ -48,3 +48,43 @@ def test_expired_worker_is_fenced_after_takeover(workspace_tmp_path):
     assert not store.release_lease(run_id, old_token)
     assert store.list_events(run_id) == before
     store.transition(run_id, RunState.PLANNING, owner=new_token)
+
+
+@pytest.mark.parametrize("stop", [RunState.PAUSED, RunState.BLOCKED])
+def test_stop_resume_does_not_revive_an_old_lease(workspace_tmp_path, stop):
+    store = RunStore(workspace_tmp_path / "resume.sqlite3")
+    run = store.create_run(
+        objective="Task", acceptance_criteria=[], workspace=None, mode="observe", model=None
+    )["id"]
+    old = store.acquire_lease(run, "worker")
+    store.transition(run, RunState.PLANNING, owner=old)
+    store.transition(run, RunState.RUNNING, owner=old)
+    store.transition(run, stop)
+    assert store.get_run(run)["lease_owner"] is None
+    store.transition(run, RunState.QUEUED)
+    with pytest.raises(LeaseLost):
+        store.append_worker_event(run, old, "stale.callback", {})
+    with pytest.raises(LeaseLost):
+        store.renew_lease(run, old)
+    new = store.acquire_lease(run, "worker")
+    assert new and new != old
+    assert not store.release_lease(run, old)
+
+
+def test_legacy_stopped_token_is_revoked_when_resumed(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "legacy.sqlite3")
+    run = store.create_run(
+        objective="Task", acceptance_criteria=[], workspace=None, mode="observe", model=None
+    )["id"]
+    old = store.acquire_lease(run, "worker")
+    store.transition(run, RunState.PLANNING, owner=old)
+    store.transition(run, RunState.PAUSED)
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET lease_owner=?,lease_expires_at=? WHERE id=?",
+            (old, "2099-01-01T00:00:00+00:00", run),
+        )
+    store.transition(run, RunState.QUEUED)
+    with pytest.raises(LeaseLost):
+        store.renew_lease(run, old)
+    assert store.get_run(run)["lease_owner"] is None

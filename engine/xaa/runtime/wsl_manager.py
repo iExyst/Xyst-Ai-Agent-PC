@@ -120,6 +120,13 @@ def run(
                 "--wait",
                 "--pipe",
                 f"--property=ConditionPathExists=!{journal.path(identity, 'closed')}",
+                "--property=ExecStartPre=/usr/bin/python3 -I "
+                + json.dumps(
+                    str(Path(__file__).with_name("cgroup_gate.py"))
+                    .replace("%", "%%")
+                    .replace("$", "$$"),
+                    ensure_ascii=False,
+                ),
                 "--property=MemoryMax=128M",
                 "--property=MemorySwapMax=0",
                 "--property=CPUQuota=50%",

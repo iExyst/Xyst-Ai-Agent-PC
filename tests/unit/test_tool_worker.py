@@ -54,8 +54,15 @@ async def test_expired_budget_and_oversized_request_do_not_spawn(workspace_tmp_p
         )
 
 
-async def test_real_worker_journals_create_read_and_collision(workspace_tmp_path):
+async def test_real_worker_journals_create_read_and_collision(workspace_tmp_path, monkeypatch):
     store, run_id, token = owned_run(workspace_tmp_path)
+    shadow = workspace_tmp_path / "xaa"
+    shadow.mkdir()
+    (shadow / "__init__.py").write_text(
+        "raise RuntimeError('project import must never run')", encoding="utf-8"
+    )
+    monkeypatch.setenv("PYTHONPATH", str(workspace_tmp_path))
+    monkeypatch.chdir(workspace_tmp_path)
     result = await execute_filesystem(
         store,
         run_id,

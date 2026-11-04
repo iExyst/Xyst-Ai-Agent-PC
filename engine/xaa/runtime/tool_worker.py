@@ -76,7 +76,7 @@ async def execute_filesystem(
     command = (
         [sys.executable, "--tool-worker"]
         if getattr(sys, "frozen", False)
-        else [sys.executable, "-m", "xaa.runtime.tool_worker"]
+        else [sys.executable, "-I", "-m", "xaa.runtime.tool_worker"]
     )
     # Engine API/provider credentials are not required by a filesystem worker.
     environment = {

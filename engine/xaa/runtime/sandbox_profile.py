@@ -101,7 +101,13 @@ def syscall_filter() -> bytes:
 def bubblewrap_arguments(source: Path, argv: list[str]) -> list[str]:
     """stdin is the BPF descriptor and is consumed before the command starts."""
     bootstrap = (
-        "import json,os,shutil,sys;"
+        "import json,os,pathlib,shutil,sys;"
+        "status=pathlib.Path('/proc/self/status').read_text();"
+        "fields=dict(line.split(':',1) for line in status.splitlines() if ':' in line);"
+        "assert os.getuid()==65534 and os.getgid()==65534;"
+        "assert fields['NoNewPrivs'].strip()=='1' and fields['Seccomp'].strip()=='2';"
+        "assert int(fields['CapEff'].strip(),16)==0;"
+        "assert all(os.statvfs(p).f_blocks*os.statvfs(p).f_frsize<=33554432 for p in ('/tmp','/workspace'));"
         "shutil.copytree('/input','/workspace',dirs_exist_ok=True);"
         "os.chdir('/workspace');"
         "args=json.loads(sys.argv[1]);"

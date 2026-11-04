@@ -434,6 +434,7 @@ class RunStore:
         max_output_tokens: int | None = None,
         file_checks: list[dict[str, Any]] | None = None,
         procedure_trial: dict[str, Any] | None = None,
+        command_grant: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
@@ -443,6 +444,17 @@ class RunStore:
             type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 1_000_000
         ):
             raise ValueError("Output token limit must be an integer from 1 to 1000000.")
+        granted_command = None
+        if command_grant is not None:
+            from xaa.runtime.command_contracts import CommandGrant, command_workspace
+
+            grant = CommandGrant.model_validate(command_grant)
+            selected = command_workspace(workspace, self.path, mode)
+            granted_command = {
+                "grant": grant.model_dump(),
+                "workspace": str(selected),
+                "actor": "local_user",
+            }
         run_id = str(uuid.uuid4())
         now = utc_now()
         with self._connection() as connection:
@@ -483,6 +495,8 @@ class RunStore:
             )
             if trial_snapshot is not None:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
+            if granted_command is not None:
+                self.record_event(connection, run_id, "execution.granted", granted_command)
             connection.execute(
                 "INSERT INTO run_limits VALUES (?, ?, ?)", (run_id, max_iterations, max_seconds)
             )
@@ -658,6 +672,13 @@ class RunStore:
                     run_id,
                     f"parent_{destination.value}",
                     cancel=destination == RunState.CANCELLED,
+                )
+                connection.execute(
+                    "UPDATE runs SET lease_owner=NULL,lease_expires_at=NULL WHERE id=?", (run_id,)
+                )
+            if destination == RunState.QUEUED:
+                connection.execute(
+                    "UPDATE runs SET lease_owner=NULL,lease_expires_at=NULL WHERE id=?", (run_id,)
                 )
             self.record_event(
                 connection,

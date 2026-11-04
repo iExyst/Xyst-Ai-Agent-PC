@@ -1,8 +1,31 @@
 import asyncio
+import os
 import subprocess
 
-from xaa.runtime.git_tools import inspect_git
+import pytest
+from xaa.runtime.git_tools import git_executable, inspect_git
 from xaa.storage.runs import RunStore
+
+
+def test_git_discovery_ignores_project_relative_and_batch_candidates(
+    workspace_tmp_path, monkeypatch
+):
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    trusted = workspace_tmp_path / "installed"
+    trusted.mkdir()
+    name = "git.exe" if os.name == "nt" else "git"
+    for directory in (project, trusted):
+        target = directory / name
+        target.write_bytes(b"fixture executable identity")
+        target.chmod(0o755)
+    (trusted / "git.cmd").write_text("@exit /b 99", encoding="utf-8")
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("PATH", os.pathsep.join(("", ".", str(project), str(trusted))))
+    assert git_executable(project) == str((trusted / name).resolve())
+    (trusted / name).unlink()
+    with pytest.raises(RuntimeError, match="outside the workspace"):
+        git_executable(project)
 
 
 def test_git_inspection_reports_real_changes(workspace_tmp_path):

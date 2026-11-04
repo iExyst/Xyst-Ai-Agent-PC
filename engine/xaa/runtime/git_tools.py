@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Literal
@@ -46,6 +45,30 @@ GIT_TOOL: dict[str, Any] = {
 }
 
 
+def git_executable(workspace: Path) -> str:
+    """Never discover executable code through the project or a relative PATH entry."""
+    root = workspace.resolve(strict=True)
+    name = "git.exe" if os.name == "nt" else "git"
+    for entry in os.get_exec_path():
+        directory = Path(entry)
+        if not directory.is_absolute():
+            continue
+        try:
+            candidate = (directory / name).resolve(strict=True)
+            if (
+                candidate.is_relative_to(root)
+                or not candidate.is_file()
+                or not os.access(candidate, os.X_OK)
+            ):
+                continue
+            return str(candidate)
+        except OSError:
+            continue
+    raise RuntimeError(
+        "Git is unavailable outside the workspace. Install Git and restart the engine."
+    )
+
+
 async def inspect_git(
     store: RunStore, run_id: str, token: str, call_id: str, operation: Literal["status", "diff"]
 ) -> dict[str, Any]:
@@ -56,10 +79,8 @@ async def inspect_git(
         raise PermissionError("Run does not permit workspace inspection.")
     if operation not in {"status", "diff"}:
         raise ValueError("Only status and diff inspection are supported.")
-    executable = shutil.which("git")
-    if executable is None:
-        raise RuntimeError("Git is unavailable. Install Git and restart the engine.")
     root = Path(run["workspace"]).resolve(strict=True)
+    executable = git_executable(root)
     arguments = [
         executable,
         "--no-pager",
