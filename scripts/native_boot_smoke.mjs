@@ -53,8 +53,10 @@ try{
   const report={passed:true,executable,startup_milliseconds:startupMilliseconds,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:true,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
+  let processDiagnostics;
+  try{processDiagnostics=JSON.parse(execFileSync('pwsh.exe',['-NoProfile','-NonInteractive','-File',path.resolve('scripts/native_boot_diagnostics.ps1'),'-DesktopProcessId',String(proc.pid)],{windowsHide:true,encoding:'utf8',timeout:15000,maxBuffer:65536}));}catch(diagnosticError){processDiagnostics={error:String(diagnosticError)};}
   await writeFile(path.join(root,'desktop-stdout.log'),stdout);await writeFile(path.join(root,'desktop-stderr.log'),stderr);
   const engineLog=(await readFile(logPath,'utf8').catch(()=>''));await writeFile(path.join(root,'engine-startup.log'),engineLog.slice(previous.length));
-  await writeFile(path.join(root,'report.json'),JSON.stringify({passed:false,error:String(error),desktop_exit_code:proc.exitCode,desktop_signal:proc.signalCode,elapsed_milliseconds:Date.now()-started},null,2));throw error;
+  await writeFile(path.join(root,'report.json'),JSON.stringify({passed:false,error:String(error),desktop_exit_code:proc.exitCode,desktop_signal:proc.signalCode,process_diagnostics:processDiagnostics,elapsed_milliseconds:Date.now()-started},null,2));throw error;
 }
 finally{await browser?.close().catch(()=>{});if(proc.exitCode===null)execFileSync('taskkill',['/PID',String(proc.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}
