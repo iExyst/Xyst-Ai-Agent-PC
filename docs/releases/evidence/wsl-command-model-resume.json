@@ -1,0 +1,90 @@
+{
+  "passed": true,
+  "model": "qwen/qwen3.5-9b",
+  "distribution": "Ubuntu-24.04",
+  "run_id": "fb3a060c-d60d-464c-a803-a8de5dd885c7",
+  "state": "verifying",
+  "exact_recovered_code_reported": true,
+  "tool_replies": 1,
+  "launch_events": 1,
+  "unresolved_commands": 0,
+  "recovered_before_provider_diagnostics": true,
+  "counts": [
+    {
+      "request_index": 1,
+      "sdk_prompt_tokens": 313,
+      "http_prompt_tokens": 313,
+      "match": true
+    },
+    {
+      "request_index": 2,
+      "sdk_prompt_tokens": 145,
+      "http_prompt_tokens": 145,
+      "match": true
+    },
+    {
+      "request_index": 3,
+      "sdk_prompt_tokens": 3119,
+      "http_prompt_tokens": 3119,
+      "match": true
+    }
+  ],
+  "response_metadata": [
+    {
+      "finish_reason": "tool_calls",
+      "public_content_length": 0,
+      "tool_calls": 1,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    },
+    {
+      "finish_reason": "stop",
+      "public_content_length": 32,
+      "tool_calls": 0,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    },
+    {
+      "finish_reason": "stop",
+      "public_content_length": 47,
+      "tool_calls": 0,
+      "extra_field_names": [
+        "reasoning_content"
+      ]
+    }
+  ],
+  "initial_tool_proposal_actor": "scripted_recovery_fixture_not_model_generated",
+  "continuation_actor": "real_local_model",
+  "ui_or_model_command_tool_enabled": false,
+  "scope": "Source coordinator resume; no native UI or autonomous command-generation claim",
+  "acceptance_directory": ".acceptance/59f5f8a5-a87a-45be-8fa2-f63809c759f1/",
+  "post_run_entire_stdout_line_matches_final": true,
+  "post_run_loaded_instances_remaining": 0,
+  "source_hashes": {
+    "engine/xaa/runtime/coordinator.py": "b667c9b868cf52e3774040e91d7f37d2a15c5a6f65d6ebe533526238c0bfc7d7",
+    "engine/xaa/storage/runs.py": "a619b500c23087a90596332bd59680e37a0be0eefb18fbe151fa0722046103a2",
+    "scripts/command_resume_diagnostic.py": "9fdb82a8728a4da8f904e12845637f615ea3af665855d2766e0108f8480da910",
+    "scripts/command_recovery_diagnostic.py": "c5612f70b5ea5d7e5ee8aa30fcab78801786ee063fcafc1c99d2d7d24e65d711",
+    "scripts/canonical_context_diagnostic.py": "31717dd61611a252d47dfa2ad2ea2669b4d599fcb9a80af1112a1e81a4f01411"
+  },
+  "earlier_failed_attempts": [
+    {
+      "directory": ".acceptance/d8a71258-c879-431e-a64d-338f3e39670f/",
+      "reason": "Scripted history omitted usage metadata; conservative unmeasured-token guard blocked inference."
+    },
+    {
+      "directory": ".acceptance/3b99cd61-4bd1-4da7-8110-a68a39935b19/",
+      "reason": "Resume response had no public answer/tool call despite only 67 completion tokens; no output-cap diagnosis is supported."
+    },
+    {
+      "directory": ".acceptance/37fa09b6-8b22-44d4-bbb0-5eacf891ad01/",
+      "reason": "Repeated empty public response with stop finish reason; SDK/HTTP prompt counts matched."
+    },
+    {
+      "directory": ".acceptance/91d6a631-51ef-4fd5-8744-c29df8ccf62c/",
+      "reason": "After resume feedback, model reported the code suffix; fixture instruction did not explicitly require the label prefix."
+    }
+  ]
+}

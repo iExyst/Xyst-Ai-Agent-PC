@@ -1,11 +1,16 @@
+import json
+
 import pytest
+from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.command_recovery import StoppedCommandRecovery
+from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.states import RunState
+from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore
 
 
-def stopped(root):
+def stopped(root, *, model=None, proposal=False):
     project = root / "project"
     project.mkdir()
     store = RunStore(root / "data" / "db.sqlite3")
@@ -14,12 +19,33 @@ def stopped(root):
         acceptance_criteria=[],
         workspace=str(project),
         mode="workspace",
-        model=None,
+        model=model,
         command_grant={"distribution": "Ubuntu", "profile_sha256": "a" * 64},
     )
     token = store.acquire_lease(run["id"], "lost-worker")
     store.transition(run["id"], RunState.PLANNING, owner=token)
     store.transition(run["id"], RunState.RUNNING, owner=token)
+    if proposal:
+        store.append_worker_event(
+            run["id"],
+            token,
+            "model.message",
+            {
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "command",
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_run_command",
+                                "arguments": '{"argv":["fixture"]}',
+                            },
+                        }
+                    ],
+                }
+            },
+        )
     CommandJournal(store).reserve(
         run["id"], token, "command", {"argv": ["fixture"]}, idempotency_key="command"
     )
@@ -110,3 +136,75 @@ def test_resumed_or_owned_run_is_not_a_stopped_candidate(workspace_tmp_path):
     assert CommandJournal(store).stopped_candidates() == []
     with pytest.raises(RuntimeError):
         CommandJournal(store).stopped_intent(run_id, prior["revision"], "command")
+
+
+@pytest.mark.parametrize("unavailable", [False, True])
+async def test_resume_recovers_tool_reply_before_provider_inference(
+    workspace_tmp_path, monkeypatch, unavailable
+):
+    store, run_id = stopped(workspace_tmp_path, model="fixture", proposal=True)
+    store.transition(run_id, RunState.QUEUED)
+    backend = Backend()
+
+    async def discover(distribution, *, deadline):
+        if unavailable:
+            raise OSError("fixture backend unavailable")
+        return backend
+
+    monkeypatch.setattr(WSLTransport, "discover", discover)
+
+    class Provider(LMStudioProvider):
+        diagnosed = 0
+        requests = 0
+
+        async def diagnose_tools(self, model, *, request=None):
+            self.diagnosed += 1
+            return True
+
+        async def chat(self, *, model, messages, tools=None, **kwargs):
+            self.requests += 1
+            reply = next(message for message in messages if message["role"] == "tool")
+            assert reply["tool_call_id"] == "command"
+            assert json.loads(reply["content"])["verification"] == "not_verified"
+            assert messages[-1]["role"] == "user" and "not_verified" in messages[-1]["content"]
+            assert not any(tool["function"]["name"] == "workspace_run_command" for tool in tools)
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "The interrupted command was not verified.",
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+
+    provider = Provider()
+    try:
+        await Coordinator(RunStore(store.path), provider).execute(run_id)
+    finally:
+        await provider.close()
+    if unavailable:
+        assert store.get_run(run_id)["state"] == "blocked"
+        assert provider.diagnosed == provider.requests == 0
+        assert len(store.unresolved_tool_calls(run_id)) == 1
+    else:
+        assert store.get_run(run_id)["state"] == "verifying"
+        assert provider.requests == 1
+        replies = [
+            message for message in store.conversation_messages(run_id) if message["role"] == "tool"
+        ]
+        assert len(replies) == 1
+        assert not store.unresolved_tool_calls(run_id)
+        store.transition(run_id, RunState.PAUSED)
+        store.transition(run_id, RunState.QUEUED)
+        await Coordinator(store, provider).execute(run_id)
+        assert provider.requests == 1
+        assert (
+            sum(
+                event["event_type"] == "execution.resume_feedback"
+                for event in store.list_events(run_id)
+            )
+            == 1
+        )
