@@ -31,6 +31,7 @@ def main() -> None:
             "--bundles",
             "nsis",
             "--no-sign",
+            "--no-binary-patching",
             "--",
             "--locked",
         ],
@@ -58,6 +59,7 @@ def main() -> None:
         "version": version,
         "target": "x86_64-pc-windows-msvc",
         "signed": False,
+        "binary_patching": False,
         "artifacts": {
             name: {
                 "filename": path.name,
