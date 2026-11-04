@@ -1,0 +1,81 @@
+{
+  "passed": true,
+  "versions": {
+    "bubblewrap": "bubblewrap 0.9.0",
+    "systemd": "systemd 255 (255.4-1ubuntu8.18)\n+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2"
+  },
+  "probes": {
+    "isolation": {
+      "unit": "xaa-sandbox-probe-4bd12d7e263f4620a06ec676b3f0797e.service",
+      "exit_code": 0,
+      "stdout": "{\"uid\": 65534, \"host_sentinel_hidden\": true, \"host_network_denied\": true, \"credential_hidden\": true, \"capabilities_zero\": true, \"no_new_privileges\": true, \"readonly_input\": true, \"writable_scratch\": true}\n",
+      "stderr": "Running as unit: xaa-sandbox-probe-4bd12d7e263f4620a06ec676b3f0797e.service\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 1.035s\nCPU time consumed: 34ms\nMemory peak: 3.2M\nMemory swap peak: 0B\n",
+      "elapsed_seconds": 1.068,
+      "limits": {
+        "memory.max": "134217728",
+        "memory.swap.max": "0",
+        "pids.max": "32",
+        "cpu.max": "50000 100000"
+      },
+      "cleanup_confirmed": true
+    },
+    "storage": {
+      "unit": "xaa-sandbox-probe-8b2e6dfcd1454959b38c7eedb235d76a.service",
+      "exit_code": 0,
+      "stdout": "{\"storage_limit_enforced\": true, \"bytes_written\": 33554432}\n",
+      "stderr": "Running as unit: xaa-sandbox-probe-8b2e6dfcd1454959b38c7eedb235d76a.service; invocation ID: 05020bf8bff443ee9696993cde000c55\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 50ms\nCPU time consumed: 50ms\nMemory peak: 38.2M\nMemory swap peak: 0B\n",
+      "elapsed_seconds": 0.097,
+      "limits": {},
+      "cleanup_confirmed": true
+    },
+    "processes": {
+      "unit": "xaa-sandbox-probe-5c52f79439bb4a12b4dde113720304d9.service",
+      "exit_code": 0,
+      "stdout": "{\"process_limit_enforced\": true, \"children_started\": 29}\n",
+      "stderr": "Running as unit: xaa-sandbox-probe-5c52f79439bb4a12b4dde113720304d9.service; invocation ID: 57deda4b408b4b8481f6f56473876e00\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 594ms\nCPU time consumed: 313ms\nMemory peak: 1.5M\nMemory swap peak: 0B\n",
+      "elapsed_seconds": 0.602,
+      "limits": {},
+      "cleanup_confirmed": true
+    },
+    "cpu": {
+      "unit": "xaa-sandbox-probe-cd453ebb1d5a4c268f6423a87bdb242a.service",
+      "exit_code": 0,
+      "stdout": "{\"cpu_seconds\": 1.0228635830000001, \"wall_seconds\": 2.000031961000005, \"ratio\": 0.5114236186948603}\n",
+      "stderr": "Running as unit: xaa-sandbox-probe-cd453ebb1d5a4c268f6423a87bdb242a.service; invocation ID: f908a6525d874ad28ff55163aaeca5b4\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 2.023s\nCPU time consumed: 1.046s\nMemory peak: 1.5M\nMemory swap peak: 0B\n",
+      "elapsed_seconds": 2.058,
+      "limits": {},
+      "cleanup_confirmed": true
+    },
+    "memory": {
+      "unit": "xaa-sandbox-probe-220dfe4c91874bba8135d5f278962e96.service",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Running as unit: xaa-sandbox-probe-220dfe4c91874bba8135d5f278962e96.service; invocation ID: 700d96894503423aa45f7a7c72b5ccc6\nFinished with result: oom-kill\nMain processes terminated with: code=killed/status=TERM\nService runtime: 209ms\nCPU time consumed: 113ms\nMemory peak: 128.0M\nMemory swap peak: 0B\n",
+      "elapsed_seconds": 0.256,
+      "limits": {},
+      "cleanup_confirmed": true
+    },
+    "runtime": {
+      "unit": "xaa-sandbox-probe-cdd2be98e92f46b6bfa9ac232a466bfb.service",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Running as unit: xaa-sandbox-probe-cdd2be98e92f46b6bfa9ac232a466bfb.service; invocation ID: ba3fb4b31f664c80a6f5727b12615418\nFinished with result: timeout\nMain processes terminated with: code=killed/status=TERM\nService runtime: 2.159s\nCPU time consumed: 29ms\nMemory peak: 9.5M\nMemory swap peak: 0B\n",
+      "elapsed_seconds": 2.202,
+      "limits": {},
+      "cleanup_confirmed": true
+    }
+  },
+  "product_execution_enabled": false,
+  "snapshot_sha256": "a25dd221ed56605aebca81cc788131c6f2d70575b96ce625535d63a58168ca94",
+  "snapshot_files": 2,
+  "malformed_snapshot_rejected": true,
+  "original_windows_project_unchanged": true,
+  "distribution": "Ubuntu-24.04",
+  "source_hashes": {
+    "engine/xaa/runtime/workspace_snapshot.py": "9c28238b8e6b6b8849b2a38e15900d9bb8f6bff79a658e295e65940239fd5b19",
+    "scripts/wsl_sandbox_probe.py": "eb9c86a6928151f615b9a14743747ed041db82a76da912911908595094c0abaf",
+    "scripts/wsl_sandbox_probe_host.py": "7619f1b9dd00c1a54ecc4d9bdad081c2d5411e7f93645f9fae6a3550eae0fe5f"
+  },
+  "scope": "Actual Windows fixture capture, Linux decoding/materialization and read-only sandbox use; no product execution tool enabled."
+}
