@@ -125,6 +125,11 @@
             "title": "Approved Web Hosts",
             "type": "array"
           },
+          "approved_web_search": {
+            "default": false,
+            "title": "Approved Web Search",
+            "type": "boolean"
+          },
           "command_grant": {
             "anyOf": [
               {
@@ -1655,6 +1660,11 @@
             },
             "title": "Approved Web Hosts",
             "type": "array"
+          },
+          "approved_web_search": {
+            "default": false,
+            "title": "Approved Web Search",
+            "type": "boolean"
           },
           "command_grant": {
             "anyOf": [
@@ -3220,6 +3230,24 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WebSearchCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "WebSearchCredentialRequest",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -3951,6 +3979,91 @@
           }
         ],
         "summary": "Providers"
+      }
+    },
+    "/providers/brave-search/credential": {
+      "delete": {
+        "operationId": "delete_brave_search_credential_providers_brave_search_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Brave Search Credential"
+      },
+      "get": {
+        "operationId": "brave_search_credential_status_providers_brave_search_credential_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Brave Search Credential Status"
+      },
+      "put": {
+        "operationId": "set_brave_search_credential_providers_brave_search_credential_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebSearchCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Brave Search Credential"
       }
     },
     "/providers/lm-studio/config": {

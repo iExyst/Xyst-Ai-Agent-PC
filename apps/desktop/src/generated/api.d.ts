@@ -308,6 +308,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/brave-search/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Brave Search Credential Status */
+        get: operations["brave_search_credential_status_providers_brave_search_credential_get"];
+        /** Set Brave Search Credential */
+        put: operations["set_brave_search_credential_providers_brave_search_credential_put"];
+        post?: never;
+        /** Delete Brave Search Credential */
+        delete: operations["delete_brave_search_credential_providers_brave_search_credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/lm-studio/config": {
         parameters: {
             query?: never;
@@ -918,6 +937,11 @@ export interface components {
             acceptance_criteria?: string[];
             /** Approved Web Hosts */
             approved_web_hosts?: string[];
+            /**
+             * Approved Web Search
+             * @default false
+             */
+            approved_web_search: boolean;
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /** File Checks */
             file_checks?: components["schemas"]["FileContentCheck"][];
@@ -1458,6 +1482,11 @@ export interface components {
             acceptance_criteria: string[];
             /** Approved Web Hosts */
             approved_web_hosts?: string[];
+            /**
+             * Approved Web Search
+             * @default false
+             */
+            approved_web_search: boolean;
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /**
              * Created At
@@ -1989,6 +2018,14 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WebSearchCredentialRequest */
+        WebSearchCredentialRequest: {
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
         };
     };
     responses: never;
@@ -2549,6 +2586,79 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    brave_search_credential_status_providers_brave_search_credential_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+        };
+    };
+    set_brave_search_credential_providers_brave_search_credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebSearchCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_brave_search_credential_providers_brave_search_credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
                 };
             };
         };

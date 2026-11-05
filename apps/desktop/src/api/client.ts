@@ -22,6 +22,7 @@ export type ProjectValidation = components['schemas']['ProjectValidationSummary'
 export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
 export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
+export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -65,6 +66,9 @@ export class EngineClient {
   }
 
   models(): Promise<components['schemas']['ModelInfo'][]> { return this.#request('/models'); }
+  braveSearchStatus(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential'); }
+  setBraveSearchKey(token:string): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'PUT',body:JSON.stringify({token})}); }
+  clearBraveSearchKey(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'DELETE'}); }
 
   lmStudioConfig(): Promise<components['schemas']['LMStudioConfigRecord']> {
     return this.#request('/providers/lm-studio/config');

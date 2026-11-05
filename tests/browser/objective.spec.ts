@@ -4,15 +4,22 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const errors: string[] = [];
   let planReads = 0;
   let usageUnavailable = true;
+  let braveSearchConfigured = false;
+  let braveSearchSecret = '';
   let memories: {id: string; content: string; provenance: string}[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const run = { id: 'browser-run', objective: 'Read input.txt', state: 'verifying', acceptance_criteria:[], revision:3, model:'fixture/model', limits:{max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256} };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
-    const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+    const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     expect(request.headers()['authorization']).toBe(`Bearer ${'x'.repeat(32)}`);
     const path = new URL(request.url()).pathname;
+    if(path==='/providers/brave-search/credential') {
+      if(request.method()==='PUT') {braveSearchSecret=request.postDataJSON().token;braveSearchConfigured=true;return route.fulfill({json:{configured:true},headers});}
+      if(request.method()==='DELETE') {braveSearchSecret='';braveSearchConfigured=false;return route.fulfill({json:{configured:false},headers});}
+      return route.fulfill({json:{configured:braveSearchConfigured},headers});
+    }
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if (path.startsWith('/memory')) {
       if (request.method() === 'DELETE') { memories=[]; return route.fulfill({status:204,headers}); }
@@ -33,6 +40,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
+      expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().file_checks).toEqual([{path: 'input.txt', expected_content: 'fixture\n'}]);
       return route.fulfill({ json: run, headers });
     }
@@ -48,6 +56,15 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(page.getByLabel('Local model')).toHaveValue('');
+  await page.getByText('Web search integration',{exact:true}).click();
+  await page.getByLabel('Brave Search API key').fill('brave-key-test-secret');
+  await page.getByRole('button',{name:'Save search key'}).click();
+  await expect(page.getByText('Brave Search is configured',{exact:true})).toBeVisible();
+  expect(braveSearchSecret).toBe('brave-key-test-secret');
+  await page.getByRole('button',{name:'Clear saved key'}).click();
+  await expect(page.getByText('Brave Search is not configured',{exact:true})).toBeVisible();
+  expect(braveSearchSecret).toBe('');
+  await page.getByText('Web search integration',{exact:true}).click();
   await page.getByLabel('Local model').selectOption('fixture/model');
   await page.getByText('Memory preferences', {exact:true}).click();
   await page.getByLabel('Preference', {exact:true}).fill('Use concise examples');
@@ -65,6 +82,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByText('Memory preferences', {exact:true}).click();
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
+  await page.getByLabel('Allow Brave web search for this next run').check();
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');

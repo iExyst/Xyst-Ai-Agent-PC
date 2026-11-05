@@ -13,7 +13,7 @@ import httpcore
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import LeaseLost, RunStore
 
 MAX_RESPONSE_BYTES = 512 * 1024
 MAX_TEXT_CHARS = 20_000
@@ -32,7 +32,7 @@ class WebFetchOutput(BaseModel):
     content: str | None = None
     truncated: bool = False
     trust: Literal["untrusted_web_content"] = "untrusted_web_content"
-    status: Literal["ok", "read_failed"]
+    status: Literal["ok", "read_failed", "cancelled"]
     error: str | None = None
 
 
@@ -299,6 +299,19 @@ async def fetch_approved_web_page(
         async with asyncio.timeout(min(FETCH_TIMEOUT_SECONDS, max(0, deadline - time.monotonic()))):
             result = await _read_url(parsed.url, hosts)
     except asyncio.CancelledError:
+        try:
+            store.record_tool_result(
+                run_id,
+                token,
+                call_id,
+                {
+                    "status": "cancelled",
+                    "trust": "untrusted_web_content",
+                    "error": "The web read was cancelled before a result was received.",
+                },
+            )
+        except LeaseLost:
+            pass
         raise
     except (httpx.HTTPError, OSError, ValueError, PermissionError, TimeoutError) as exc:
         result = {

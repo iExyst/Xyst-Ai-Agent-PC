@@ -181,3 +181,45 @@ def test_lm_studio_credential_is_saved_and_never_returned(workspace_tmp_path):
         assert cleared.json() == {"configured": False}
         assert credentials.get() is None
         assert provider._credential is None
+
+
+def test_brave_search_credential_uses_named_os_vault_profile(workspace_tmp_path):
+    class ProfileCredentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    credentials = ProfileCredentials()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(
+            AvailableProvider(),
+            SecretStr(TOKEN),
+            store=RunStore(workspace_tmp_path / "brave-search-credential.sqlite3"),
+            credential_store=credentials,
+        )
+    ) as client:
+        assert client.get("/providers/brave-search/credential", headers=headers).json() == {
+            "configured": False
+        }
+        secret = "brave-search-secret-test-value"
+        saved = client.put(
+            "/providers/brave-search/credential", headers=headers, json={"token": secret}
+        )
+        assert saved.status_code == 200
+        assert secret not in saved.text
+        assert credentials.get("brave-search") == secret
+        assert client.get("/providers/brave-search/credential", headers=headers).json() == {
+            "configured": True
+        }
+        assert client.delete("/providers/brave-search/credential", headers=headers).json() == {
+            "configured": False
+        }

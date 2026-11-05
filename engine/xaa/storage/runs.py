@@ -514,6 +514,7 @@ class RunStore:
         procedure_trial: dict[str, Any] | None = None,
         command_grant: dict[str, Any] | None = None,
         approved_web_hosts: list[str] | None = None,
+        approved_web_search: bool = False,
     ) -> dict[str, Any]:
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
@@ -580,12 +581,16 @@ class RunStore:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
             if granted_command is not None:
                 self.record_event(connection, run_id, "execution.granted", granted_command)
-            if approved_web_hosts:
+            if approved_web_hosts or approved_web_search:
                 self.record_event(
                     connection,
                     run_id,
                     "web.access_granted",
-                    {"hosts": approved_web_hosts, "actor": "local_user"},
+                    {
+                        "hosts": approved_web_hosts,
+                        "search": approved_web_search,
+                        "actor": "local_user",
+                    },
                 )
             connection.execute(
                 "INSERT INTO run_limits VALUES (?, ?, ?)", (run_id, max_iterations, max_seconds)
@@ -627,6 +632,11 @@ class RunStore:
             ).fetchall()
         record["approved_web_hosts"] = (
             json.loads(web_grants[0][0])["hosts"] if len(web_grants) == 1 else []
+        )
+        record["approved_web_search"] = (
+            bool(json.loads(web_grants[0][0]).get("search", False))
+            if len(web_grants) == 1
+            else False
         )
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (

@@ -179,6 +179,53 @@ async def test_web_fetch_deadline_saves_a_bounded_failure_result(
 
 
 @pytest.mark.asyncio
+async def test_web_fetch_cancellation_is_journaled_before_propagation(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(workspace_tmp_path / "web-fetch-cancel.sqlite3")
+    run = store.create_run(
+        objective="Read docs",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture/model",
+        approved_web_hosts=["docs.example.com"],
+    )
+    token = store.acquire_lease(run["id"], "web-cancel-test")
+    assert token is not None
+    started = asyncio.Event()
+
+    async def slow_read(url: str, hosts: set[str]) -> dict[str, object]:
+        del url, hosts
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(web_fetch, "_read_url", slow_read)
+    task = asyncio.create_task(
+        fetch_approved_web_page(
+            store,
+            run["id"],
+            token,
+            "web-cancel-call",
+            "https://docs.example.com/guide",
+            run["approved_web_hosts"],
+            deadline=time.monotonic() + 5,
+        )
+    )
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert store.unresolved_tool_calls(run["id"]) == []
+    with store.connection() as connection:
+        saved = connection.execute(
+            "SELECT result FROM tool_calls WHERE provider_call_id=?", ("web-cancel-call",)
+        ).fetchone()
+    assert '"status": "cancelled"' in saved["result"]
+    store.release_lease(run["id"], token)
+
+
+@pytest.mark.asyncio
 async def test_coordinator_exposes_and_executes_only_the_user_approved_web_tool(
     workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

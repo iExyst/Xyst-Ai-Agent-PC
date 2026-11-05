@@ -104,6 +104,7 @@ class CreateRunRequest(BaseModel):
     procedure_trial: SkillTrial | None = None
     command_grant: CommandGrant | None = None
     approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
+    approved_web_search: bool = False
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
@@ -154,6 +155,11 @@ class LMStudioCredentialRequest(BaseModel):
 class LMStudioCredentialStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     configured: bool
+
+
+class WebSearchCredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: SecretStr = Field(min_length=1, max_length=512)
 
 
 class CreateScheduleRequest(BaseModel):
@@ -267,7 +273,14 @@ def create_app(
     run_store = store or RunStore()
     memory_store = MemoryStore(run_store)
     skill_store = SkillStore(run_store)
-    supervisor = RunSupervisor(Coordinator(run_store, provider, stream_responses=stream_responses))
+    supervisor = RunSupervisor(
+        Coordinator(
+            run_store,
+            provider,
+            stream_responses=stream_responses,
+            credential_store=credential_store,
+        )
+    )
     schedule_store = ScheduleStore(run_store)
     schedule_service = ScheduleService(run_store, supervisor.submit)
     telegram_store = TelegramStore(run_store)
@@ -577,6 +590,60 @@ def create_app(
             ) from exc
         return LMStudioCredentialStatus(configured=False)
 
+    @app.get("/providers/brave-search/credential", response_model=LMStudioCredentialStatus)
+    def brave_search_credential_status(
+        _: None = Depends(authenticate),
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        return LMStudioCredentialStatus(configured=credential_store.get("brave-search") is not None)
+
+    @app.put("/providers/brave-search/credential", response_model=LMStudioCredentialStatus)
+    def set_brave_search_credential(
+        payload: WebSearchCredentialRequest, _: None = Depends(authenticate)
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing search credentials.",
+            )
+        try:
+            credential_store.set(payload.token.get_secret_value(), "brave-search")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
+        return LMStudioCredentialStatus(configured=True)
+
+    @app.delete("/providers/brave-search/credential", response_model=LMStudioCredentialStatus)
+    def delete_brave_search_credential(
+        _: None = Depends(authenticate),
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing search credentials.",
+            )
+        try:
+            credential_store.delete("brave-search")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return LMStudioCredentialStatus(configured=False)
+
     @app.put("/providers/lm-studio/selection")
     async def set_lm_studio_model(
         payload: LMStudioSelectionRequest, _: None = Depends(authenticate)
@@ -869,6 +936,7 @@ def create_app(
                 else None,
                 command_grant=payload.command_grant.model_dump() if payload.command_grant else None,
                 approved_web_hosts=payload.approved_web_hosts,
+                approved_web_search=payload.approved_web_search,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc

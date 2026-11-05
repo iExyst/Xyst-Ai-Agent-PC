@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from xaa.credentials import CredentialStore
 from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import (
     DIAGNOSTIC_OUTPUT_TOKENS,
@@ -45,6 +46,7 @@ from xaa.runtime.tool_worker import (
 )
 from xaa.runtime.verification import FileContentCheck, verify_files_owned
 from xaa.runtime.web_fetch import WEB_FETCH_TOOL, fetch_approved_web_page
+from xaa.runtime.web_search import WEB_SEARCH_TOOL, search_web
 from xaa.runtime.workspace_search import SEARCH_TOOL
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import TOOL as COMMAND_TOOL
@@ -57,12 +59,18 @@ from xaa.storage.tasks import TaskStore
 
 class Coordinator:
     def __init__(
-        self, store: RunStore, provider: LMStudioProvider, *, stream_responses: bool = False
+        self,
+        store: RunStore,
+        provider: LMStudioProvider,
+        *,
+        stream_responses: bool = False,
+        credential_store: CredentialStore | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
         self.memory = MemoryStore(store)
         self.stream_responses = stream_responses
+        self.credential_store = credential_store
 
     async def _recover_commands(self, run_id: str, token: str) -> list[str] | None:
         recovered: list[str] = []
@@ -250,6 +258,24 @@ class Coordinator:
                 call["id"],
                 arguments.get("url", ""),
                 run["approved_web_hosts"],
+                deadline=deadline,
+            )
+        if name == "web_search":
+            if not run.get("approved_web_search"):
+                raise PermissionError("This run has no user-approved web search permission.")
+            api_key = (
+                self.credential_store.get("brave-search")
+                if self.credential_store is not None
+                else None
+            )
+            return await search_web(
+                self.store,
+                run_id,
+                token,
+                call["id"],
+                arguments.get("query", ""),
+                arguments.get("count", 5),
+                api_key,
                 deadline=deadline,
             )
         if name == "plan_save":
@@ -491,6 +517,8 @@ class Coordinator:
             )
         tools.append(SEARCH_TOOL)
         approved_web_hosts = run.get("approved_web_hosts", [])
+        if run.get("approved_web_search"):
+            tools.append(json.loads(json.dumps(WEB_SEARCH_TOOL)))
         if approved_web_hosts:
             web_tool = json.loads(json.dumps(WEB_FETCH_TOOL))
             web_tool["function"]["description"] += (

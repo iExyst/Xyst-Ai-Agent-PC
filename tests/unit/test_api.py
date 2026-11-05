@@ -215,15 +215,21 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
         created = client.post(
             "/runs",
             headers=headers,
-            json={"objective": "Read the docs", "approved_web_hosts": ["Docs.Example.com."]},
+            json={
+                "objective": "Read the docs",
+                "approved_web_hosts": ["Docs.Example.com."],
+                "approved_web_search": True,
+            },
         )
         assert created.status_code == 201
         run_id = created.json()["id"]
         assert created.json()["approved_web_hosts"] == ["docs.example.com"]
+        assert created.json()["approved_web_search"] is True
         events = client.get(f"/runs/{run_id}/events", headers=headers).json()
         assert events[-1]["event_type"] == "web.access_granted"
         assert events[-1]["payload"] == {
             "hosts": ["docs.example.com"],
+            "search": True,
             "actor": "local_user",
         }
         invalid = client.post(
@@ -237,6 +243,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
     recovered = RunStore(database).get_run(run_id)
     assert recovered is not None
     assert recovered["approved_web_hosts"] == ["docs.example.com"]
+    assert recovered["approved_web_search"] is True
 
 
 def test_failed_tool_diagnostic_is_reported_without_enabling_tools(workspace_tmp_path):
