@@ -1,0 +1,25 @@
+{
+  "source_commit": "3d4790e9cebd87d43fe3c49607a3da3c2ef2dc2c",
+  "run_id": 42003096507,
+  "url": "https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42003096507",
+  "scope": "Read-only GitHub workflow and step metadata; no downloaded installer artifact hash claim",
+  "jobs": [
+    {
+      "id": 127163000601,
+      "name": "windows",
+      "conclusion": "success"
+    },
+    {
+      "id": 127164364703,
+      "name": "windows-installer",
+      "conclusion": "success"
+    }
+  ],
+  "verified_installer_steps": {
+    "Run npm run build:installer": "success",
+    "Verify frozen snapshot worker and packaged execution resources": "success",
+    "Verify task-scoped frozen filesystem workers": "success",
+    "Verify private task command snapshot scopes": "success",
+    "Install, boot and uninstall unsigned package": "success"
+  }
+}
