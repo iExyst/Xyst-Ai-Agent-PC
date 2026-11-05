@@ -164,6 +164,51 @@ def test_schema_eight_adds_schedule_delivery_outbox_without_losing_history(works
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_schema_nine_adds_bounded_delivery_retry_fields_without_losing_outbox(
+    workspace_tmp_path,
+):
+    database = workspace_tmp_path / "schema-nine.sqlite3"
+    store = RunStore(database)
+    now = utc_now()
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO schedules VALUES ('schedule-1','Preserve schedule','{}','UTC','skip','skip',NULL,'telegram:42:123',0,?,?)",
+            (now, now),
+        )
+        connection.execute(
+            "INSERT INTO schedule_executions VALUES ('execution-1','schedule-1','occurrence-1',NULL,'completed','pending',?,?)",
+            (now, now),
+        )
+        connection.execute("ALTER TABLE schedule_deliveries RENAME TO schedule_deliveries_v10")
+        connection.execute(
+            "CREATE TABLE schedule_deliveries (execution_id TEXT PRIMARY KEY REFERENCES schedule_executions(id) ON DELETE CASCADE, account_id TEXT NOT NULL, external_identity TEXT NOT NULL, chat_id TEXT NOT NULL, state TEXT NOT NULL, message_id INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO schedule_deliveries VALUES ('execution-1','42','123','123','pending',NULL,?,?)",
+            (now, now),
+        )
+        connection.execute("DROP TABLE schedule_deliveries_v10")
+        connection.execute("PRAGMA user_version=9")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(schedule_deliveries)")
+        }
+        delivery = connection.execute("SELECT * FROM schedule_deliveries").fetchone()
+        indexes = {
+            row["name"] for row in connection.execute("PRAGMA index_list(schedule_deliveries)")
+        }
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert {"attempt_count", "next_attempt_at"}.issubset(columns)
+        assert "schedule_deliveries_retry" in indexes
+        assert delivery["state"] == "pending"
+        assert delivery["attempt_count"] == 0
+        assert delivery["next_attempt_at"] is None
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 @pytest.mark.parametrize("old_version", [4, 5, 6])
 def test_prior_records_are_preserved_when_enabling_private_workspace_semantics(
     workspace_tmp_path,

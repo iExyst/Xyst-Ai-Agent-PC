@@ -342,6 +342,123 @@ def test_scheduled_telegram_delivery_waits_until_local_quiet_hours_end(
     assert delivery["execution_id"]
 
 
+def test_scheduled_delivery_retries_only_explicit_rate_limits_with_bounded_attempts(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-delivery-rate-limit.sqlite3")
+    store, _schedule_id = queued_scheduled_delivery(runs)
+    first_at = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+
+    first = store.claim_schedule_delivery(IDENTITY.account_id, now=first_at)
+    assert first is not None
+    store.finish_schedule_delivery(
+        first["execution_id"],
+        state="failed",
+        retry_after_seconds=10,
+        now=first_at,
+    )
+    assert (
+        store.claim_schedule_delivery(IDENTITY.account_id, now=first_at + timedelta(seconds=9))
+        is None
+    )
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT state,attempt_count,next_attempt_at FROM schedule_deliveries"
+        ).fetchone()
+        assert row["state"] == "pending"
+        assert row["attempt_count"] == 1
+        assert row["next_attempt_at"] == (first_at + timedelta(seconds=10)).isoformat()
+        assert (
+            connection.execute("SELECT delivery_evidence FROM schedule_executions").fetchone()[0]
+            == "retrying"
+        )
+
+    second = store.claim_schedule_delivery(
+        IDENTITY.account_id, now=first_at + timedelta(seconds=10)
+    )
+    assert second is not None
+    store.finish_schedule_delivery(
+        second["execution_id"],
+        state="failed",
+        retry_after_seconds=10,
+        now=first_at + timedelta(seconds=10),
+    )
+    third = store.claim_schedule_delivery(IDENTITY.account_id, now=first_at + timedelta(seconds=20))
+    assert third is not None
+    store.finish_schedule_delivery(
+        third["execution_id"],
+        state="failed",
+        retry_after_seconds=10,
+        now=first_at + timedelta(seconds=20),
+    )
+    assert (
+        store.claim_schedule_delivery(IDENTITY.account_id, now=first_at + timedelta(seconds=40))
+        is None
+    )
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT state,attempt_count,next_attempt_at FROM schedule_deliveries"
+        ).fetchone()
+        assert row["state"] == "failed"
+        assert row["attempt_count"] == 3
+        assert row["next_attempt_at"] is None
+
+
+def test_telegram_rate_limit_exposes_only_bounded_retry_delay() -> None:
+    async def scenario() -> None:
+        async def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                json={
+                    "ok": False,
+                    "error_code": 429,
+                    "description": "Too Many Requests",
+                    "parameters": {"retry_after": 3},
+                },
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            api = TelegramBotApi("fixture-token", client=client)
+            try:
+                await api.send_message("123", "Scheduled result")
+            except TelegramApiError as failure:
+                assert failure.definitive
+                assert failure.retry_after_seconds == 3
+            else:
+                raise AssertionError("Telegram rate limit was accepted as a successful send")
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_telegram_rate_limit_above_policy_bound_is_not_retryable() -> None:
+    async def scenario() -> None:
+        async def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                json={
+                    "ok": False,
+                    "error_code": 429,
+                    "parameters": {"retry_after": 301},
+                },
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            api = TelegramBotApi("fixture-token", client=client)
+            try:
+                await api.send_message("123", "Scheduled result")
+            except TelegramApiError as failure:
+                assert failure.definitive
+                assert failure.retry_after_seconds is None
+            else:
+                raise AssertionError("Telegram rate limit was accepted as a successful send")
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
 def test_failed_scheduled_run_sends_generic_notice(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "scheduled-delivery-failed.sqlite3")
     store, _schedule_id = queued_scheduled_delivery(runs)

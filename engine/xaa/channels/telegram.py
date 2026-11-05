@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 PAIR_COMMAND = re.compile(r"^/pair(?:@[A-Za-z0-9_]+)?\s+([A-Za-z0-9_-]{24,128})$")
 MAX_TEXT_CHARS = 4096
 OFFSET_RESET_AFTER = timedelta(days=6)
+MAX_SCHEDULE_DELIVERY_ATTEMPTS = 3
+MAX_TELEGRAM_RETRY_AFTER_SECONDS = 300
 
 
 def as_mapping(value: object) -> Mapping[str, Any] | None:
@@ -31,9 +33,12 @@ def as_mapping(value: object) -> Mapping[str, Any] | None:
 
 
 class TelegramApiError(RuntimeError):
-    def __init__(self, message: str, *, definitive: bool) -> None:
+    def __init__(
+        self, message: str, *, definitive: bool, retry_after_seconds: int | None = None
+    ) -> None:
         super().__init__(message)
         self.definitive = definitive
+        self.retry_after_seconds = retry_after_seconds
 
 
 @dataclass(frozen=True)
@@ -81,8 +86,22 @@ class TelegramBotApi:
             raise TelegramApiError(
                 "Telegram returned an invalid response.", definitive=False
             ) from exc
-        if response.status_code >= 500:
+        error_code = body.get("error_code") if body is not None else None
+        if response.status_code >= 500 or (type(error_code) is int and error_code >= 500):
             raise TelegramApiError("Telegram service returned a server error.", definitive=False)
+        if response.status_code == 429 or error_code == 429:
+            parameters = as_mapping(body.get("parameters")) if body is not None else None
+            retry_after = parameters.get("retry_after") if parameters is not None else None
+            delay = (
+                retry_after
+                if type(retry_after) is int and 1 <= retry_after <= MAX_TELEGRAM_RETRY_AFTER_SECONDS
+                else None
+            )
+            raise TelegramApiError(
+                "Telegram rate limited the request.",
+                definitive=True,
+                retry_after_seconds=delay,
+            )
         if body is None or body.get("ok") is not True:
             raise TelegramApiError("Telegram rejected the request.", definitive=True)
         return body.get("result")
@@ -498,6 +517,10 @@ class TelegramStore:
     def claim_schedule_delivery(
         self, account_id: str, *, now: datetime | None = None
     ) -> dict[str, Any] | None:
+        current = now or datetime.now(UTC)
+        if current.tzinfo is None:
+            raise ValueError("Delivery clock must be timezone-aware.")
+        current = current.astimezone(UTC)
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             revoked = connection.execute(
@@ -514,16 +537,16 @@ class TelegramStore:
                     (row["execution_id"],),
                 )
             rows = connection.execute(
-                "SELECT d.execution_id,d.chat_id,e.run_id,r.state,s.quiet_hours,s.timezone FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id JOIN runs r ON r.id=e.run_id JOIN schedules s ON s.id=e.schedule_id WHERE d.account_id=? AND d.state='pending' AND r.state IN (?,?,?,?) AND EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1) ORDER BY d.created_at",
+                "SELECT d.execution_id,d.chat_id,e.run_id,r.state,s.quiet_hours,s.timezone FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id JOIN runs r ON r.id=e.run_id JOIN schedules s ON s.id=e.schedule_id WHERE d.account_id=? AND d.state='pending' AND COALESCE(d.next_attempt_at,'')<=? AND r.state IN (?,?,?,?) AND EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1) ORDER BY d.created_at",
                 (
                     account_id,
+                    current.isoformat(),
                     RunState.COMPLETED.value,
                     RunState.FAILED.value,
                     RunState.BLOCKED.value,
                     RunState.CANCELLED.value,
                 ),
             ).fetchall()
-            current = now or datetime.now(UTC)
             row = next(
                 (
                     candidate
@@ -562,8 +585,8 @@ class TelegramStore:
             else:
                 text = "X.A.A. could not complete this scheduled objective. Open the desktop app to review the saved run status."
             changed = connection.execute(
-                "UPDATE schedule_deliveries SET state='sending',updated_at=? WHERE execution_id=? AND state='pending'",
-                (utc_now(), row["execution_id"]),
+                "UPDATE schedule_deliveries SET state='sending',attempt_count=attempt_count+1,next_attempt_at=NULL,updated_at=? WHERE execution_id=? AND state='pending'",
+                (current.isoformat(), row["execution_id"]),
             ).rowcount
             if changed != 1:
                 return None
@@ -583,13 +606,44 @@ class TelegramStore:
         *,
         state: str,
         message_id: int | None = None,
+        retry_after_seconds: int | None = None,
+        now: datetime | None = None,
     ) -> None:
         if state not in {"sent", "failed", "unknown"}:
             raise ValueError("Invalid Telegram schedule delivery state.")
+        if (
+            retry_after_seconds is not None
+            and not 1 <= retry_after_seconds <= MAX_TELEGRAM_RETRY_AFTER_SECONDS
+        ):
+            raise ValueError("Telegram retry delay is outside the bounded policy.")
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT attempt_count FROM schedule_deliveries WHERE execution_id=? AND state='sending'",
+                (execution_id,),
+            ).fetchone()
+            if current is None:
+                return
+            if (
+                state == "failed"
+                and retry_after_seconds is not None
+                and current["attempt_count"] < MAX_SCHEDULE_DELIVERY_ATTEMPTS
+            ):
+                current_time = now or datetime.now(UTC)
+                if current_time.tzinfo is None:
+                    raise ValueError("Delivery clock must be timezone-aware.")
+                retry_at = current_time.astimezone(UTC) + timedelta(seconds=retry_after_seconds)
+                connection.execute(
+                    "UPDATE schedule_deliveries SET state='pending',next_attempt_at=?,updated_at=? WHERE execution_id=? AND state='sending'",
+                    (retry_at.isoformat(), utc_now(), execution_id),
+                )
+                connection.execute(
+                    "UPDATE schedule_executions SET delivery_evidence='retrying' WHERE id=?",
+                    (execution_id,),
+                )
+                return
             changed = connection.execute(
-                "UPDATE schedule_deliveries SET state=?,message_id=?,updated_at=? WHERE execution_id=? AND state='sending'",
+                "UPDATE schedule_deliveries SET state=?,message_id=?,next_attempt_at=NULL,updated_at=? WHERE execution_id=? AND state='sending'",
                 (state, message_id, utc_now(), execution_id),
             ).rowcount
             if changed == 1:
@@ -709,6 +763,7 @@ class TelegramService:
                     self.store.finish_schedule_delivery(
                         delivery["execution_id"],
                         state="failed" if exc.definitive else "unknown",
+                        retry_after_seconds=(exc.retry_after_seconds if exc.definitive else None),
                     )
                 except httpx.HTTPError as exc:
                     self.store.finish_schedule_delivery(delivery["execution_id"], state="unknown")

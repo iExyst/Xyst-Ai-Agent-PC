@@ -19,7 +19,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 9
+DATABASE_SCHEMA_VERSION = 10
 
 
 @dataclass(frozen=True)
@@ -350,6 +350,8 @@ class RunStore:
                     chat_id TEXT NOT NULL,
                     state TEXT NOT NULL,
                     message_id INTEGER,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -421,6 +423,20 @@ class RunStore:
             )
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS tool_calls_run_provider_idx ON tool_calls(run_id,provider_call_id)"
+            )
+            delivery_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(schedule_deliveries)")
+            }
+            if "attempt_count" not in delivery_columns:
+                connection.execute(
+                    "ALTER TABLE schedule_deliveries ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"
+                )
+            if "next_attempt_at" not in delivery_columns:
+                connection.execute(
+                    "ALTER TABLE schedule_deliveries ADD COLUMN next_attempt_at TEXT"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS schedule_deliveries_retry ON schedule_deliveries(account_id,state,next_attempt_at,created_at)"
             )
             if connection.execute("PRAGMA user_version").fetchone()[0] < 3:
                 install_index(connection)
