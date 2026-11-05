@@ -20,7 +20,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 13
+DATABASE_SCHEMA_VERSION = 14
 
 
 @dataclass(frozen=True)
@@ -226,6 +226,12 @@ class RunStore:
                     content TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     UNIQUE(session_id, sequence)
+                );
+                CREATE TABLE IF NOT EXISTS cli_chat_config (
+                    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                    model TEXT NOT NULL,
+                    workspace TEXT,
+                    mode TEXT NOT NULL CHECK(mode IN ('observe','workspace'))
                 );
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY,

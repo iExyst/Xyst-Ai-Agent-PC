@@ -1,6 +1,6 @@
 # Database migration procedure
 
-The current engine uses SQLite `user_version=10`. On startup it refuses databases with a newer version. Older executable builds refuse a migrated database beyond their supported version; downgrading an executable does not downgrade user data.
+The current engine uses SQLite `user_version=14`. On startup it refuses databases with a newer version. Older executable builds refuse a migrated database beyond their supported version; downgrading an executable does not downgrade user data.
 
 Before upgrading an existing installation, create and verify a portable `.xaa-backup` bundle so the SQLite snapshot and referenced managed artifact bytes stay together. The legacy database-only restore is metadata-only and still requires its matching artifact directory. Do not copy a live WAL database's main file alone; close the engine or use SQLite's backup API to capture committed WAL contents.
 
@@ -26,12 +26,18 @@ Version 5 to 6 is a compatibility barrier for specialist command authority and m
 
 Version 6 to 7 is a compatibility barrier for final integrated-project validation. A schema-6 reader could accept a command-authorized project after specialist conflict choices without validating the resulting integrated bytes. Version 7 uses the existing tables and requires saved-purpose command identities during verification, fresh root snapshot evidence and selected successful validation outputs before acceptance. Tests preserve schema-6 records and confirm older readers refuse version 7. The validation command runs against a fresh copy captured from the saved workspace grant; ambiguous executions can be reconciled by their existing identity without relaunch.
 
-Version 6 to 7 is a compatibility barrier for final integrated-project validation. A schema-6 reader could accept a command-authorized project after specialist conflict choices without validating the resulting integrated bytes. This version requires saved-purpose command identities during verification, fresh root snapshot evidence and selected successful validation outputs before acceptance. Existing tables are preserved. Migration tests and acceptance evidence must confirm schema-6 records survive and older readers refuse version 7.
-
 Version 7 to 8 adds Telegram pairing-code hashes, bot identities, update/delivery journal entries and per-bot polling offsets. Existing run, message, session, channel-binding and event records are unchanged. Table creation is idempotent and the schema version advances after initialization; migration tests drop the four new tables from a schema-7 fixture, reopen the database, and verify prior run events, SQLite integrity, foreign keys and recreated channel tables.
 
 Version 8 to 9 adds `schedule_deliveries`, a durable per-execution Telegram outbox with account/user/chat identity, send state, optional message ID and timestamps. Existing schedules and executions are preserved. The table and pending lookup index are created idempotently; the migration test removes the new table from a schema-8 database, reopens it, and verifies prior schedule/execution history, integrity and foreign keys.
 
 Version 9 to 10 adds `attempt_count` and `next_attempt_at` to scheduled Telegram delivery rows plus an index for due retries. Existing pending, sent, failed and unknown records are preserved; the migration initializes old attempts to zero and no retry deadline. Only Telegram's explicit 429 rejection with a valid `retry_after` schedules another attempt; total sends are capped at three and each wait at five minutes. Timeouts, server errors and interrupted sends remain unknown and are never replayed. The migration test verifies a pending schema-9 outbox item and database integrity survive the upgrade.
 
-Bundled native boot acceptance `.acceptance/4a66d3a0-ab22-418f-9b53-7983002fc94d/report.json` starts and cleanly stops the development desktop and frozen engine under a restricted PATH. That earlier fresh database was inspected at `user_version=9`. The version-10 addition has fixture migration coverage; packaged schema-10 boot and populated-user upgrade acceptance remain to be captured.
+Version 10 to 11 adds MCP server configuration and discovered-tool tables. Tool rows cascade with their configured server, while run/tool journals remain unchanged. The DDL is idempotent; startup recreates missing tables for the schema-10 migration path.
+
+Version 11 to 12 adds six seeded `specialist_profiles` records for durable role/model routing. Existing runs, tasks and journals remain unchanged. Migration tests remove the table from a schema-11 fixture, reopen it, and verify all six profiles are recreated.
+
+Version 12 to 13 adds `system_instructions` to specialist profiles and `identity_instructions` to task rows. Profile instructions are seeded with role defaults and are copied into each newly saved plan, so existing tasks retain their original identity context. The migration test removes both columns from a schema-12 fixture and verifies route data survives and the new columns are restored.
+
+Version 13 to 14 adds `cli_chat_config`, linked to the existing `sessions` table. CLI conversation messages continue to use the existing `messages` table and remain linked to their durable run IDs. The schema-13 migration test verifies the new configuration table is added without foreign-key damage. Session-context CRUD, run linkage, settings isolation, bounded history and restart persistence are covered by `tests/unit/test_cli_chat.py`.
+
+Bundled native boot acceptance `.acceptance/4a66d3a0-ab22-418f-9b53-7983002fc94d/report.json` starts and cleanly stops the development desktop and frozen engine under a restricted PATH; that historical fresh database was inspected at `user_version=9`. The current schema-14 migration and session persistence have source fixture coverage. Packaged populated-user upgrade acceptance remains open.

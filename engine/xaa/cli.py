@@ -17,6 +17,15 @@ from xaa.storage.backup_bundle import restore_backup_bundle
 from xaa.storage.restore import restore_database
 
 
+def _session_name(value: str) -> str:
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+    if not value or len(value) > 64 or any(char not in allowed for char in value):
+        raise argparse.ArgumentTypeError(
+            "session name must use 1–64 letters, numbers, dots, underscores or hyphens"
+        )
+    return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="xaa", description="Xyst AI Agent API client")
     parser.add_argument("--api-url", default=os.environ.get("XAA_API_URL", "http://127.0.0.1:8765"))
@@ -68,6 +77,13 @@ def main() -> None:
     chat.add_argument("--model", required=True)
     chat.add_argument("--workspace")
     chat.add_argument("--mode", choices=["observe", "workspace"], default="observe")
+    chat.add_argument(
+        "--session",
+        type=_session_name,
+        default="default",
+        help="Persistent session name (letters, numbers, dot, underscore, hyphen)",
+    )
+    chat.add_argument("--reset", action="store_true", help="Clear saved context before starting")
     for name in ("status", "pause", "resume", "cancel", "events"):
         command = commands.add_parser(name)
         command.add_argument("run_id")
@@ -181,8 +197,39 @@ def main() -> None:
 
 def _interactive_chat(client: httpx.Client, args: argparse.Namespace) -> None:
     """Run each terminal turn through the normal durable run coordinator."""
-    transcript: list[tuple[str, str]] = []
-    print("Xyst AI Agent chat · /reset clears this session · /quit exits")
+    session_path = f"/chat/sessions/{quote(args.session, safe='')}"
+    if args.reset:
+        try:
+            client.delete(session_path).raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+        transcript: list[tuple[str, str]] = []
+    else:
+        try:
+            saved_response = client.get(session_path)
+            saved_response.raise_for_status()
+            saved: object = saved_response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+            saved = None
+        transcript = []
+        if isinstance(saved, dict):
+            saved_record = cast(dict[str, object], saved)
+            if (
+                saved_record.get("model") != args.model
+                or saved_record.get("workspace") != args.workspace
+                or saved_record.get("mode") != args.mode
+            ):
+                print(
+                    "Saved session settings differ. Use --reset or choose another --session name."
+                )
+                return
+            transcript = _chat_transcript(saved_record)
+    print(
+        f"Xyst AI Agent chat · session {args.session} · /reset clears saved context · /quit exits"
+    )
     while True:
         try:
             user_text = input("you> ").strip()
@@ -198,19 +245,28 @@ def _interactive_chat(client: httpx.Client, args: argparse.Namespace) -> None:
         if command in {"/quit", "/exit"}:
             return
         if command == "/reset":
+            try:
+                client.delete(session_path).raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 404:
+                    print(f"Could not reset session (HTTP {exc.response.status_code}).")
+                    continue
+            except httpx.HTTPError:
+                print("Could not reach the engine to reset this session.")
+                continue
             transcript.clear()
             print("Conversation context cleared. Saved runs remain in history.")
             continue
         if command == "/help":
             print("Enter a message, /reset to clear in-session context, or /quit to exit.")
             continue
-        if len(user_text) > 2000 or any(
+        if len(user_text.encode("utf-8")) > 2000 or any(
             ord(char) < 32 and char not in "\n\r\t" for char in user_text
         ):
             print("Message is too long or contains unsupported control characters.")
             continue
 
-        previous = list(transcript)
+        previous: list[tuple[str, str]] = list(transcript)
         while previous and len(json.dumps(previous, ensure_ascii=False).encode("utf-8")) > 5000:
             if len(previous) >= 2:
                 del previous[:2]
@@ -287,9 +343,19 @@ def _interactive_chat(client: httpx.Client, args: argparse.Namespace) -> None:
                 time.sleep(0.5)
             if answer and state in {"verifying", "completed"}:
                 print(f"agent [{state}]> {answer}\n")
-                transcript.extend((("user", user_text), ("assistant", answer)))
-                if len(transcript) > 12:
-                    del transcript[:-12]
+                session_response = client.post(
+                    f"{session_path}/turn",
+                    json={
+                        "run_id": run_id,
+                        "model": args.model,
+                        "workspace": args.workspace,
+                        "mode": args.mode,
+                        "user_message": user_text,
+                        "assistant_message": answer[:16000],
+                    },
+                )
+                session_response.raise_for_status()
+                transcript = _chat_transcript(session_response.json())
             else:
                 print(
                     f"run {run_id} ended in state {state}; inspect it with 'xaa status {run_id}'."
@@ -307,6 +373,24 @@ def _interactive_chat(client: httpx.Client, args: argparse.Namespace) -> None:
             print(f"Engine rejected this turn (HTTP {exc.response.status_code}).")
         except httpx.HTTPError:
             print("Lost connection to the engine; the saved run can be inspected with xaa history.")
+
+
+def _chat_transcript(value: object) -> list[tuple[str, str]]:
+    if not isinstance(value, dict):
+        return []
+    raw_messages = cast(dict[str, object], value).get("messages", [])
+    message_list: list[object] = (
+        cast(list[object], raw_messages) if isinstance(raw_messages, list) else []
+    )
+    transcript: list[tuple[str, str]] = []
+    for item in message_list:
+        if not isinstance(item, dict):
+            continue
+        message = cast(dict[str, object], item)
+        role, content = message.get("role"), message.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            transcript.append((cast(str, role), content))
+    return transcript
 
 
 if __name__ == "__main__":

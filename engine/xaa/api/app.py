@@ -24,6 +24,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from xaa.api.contracts import (
     ArtifactRecord,
+    CLIChatSessionRecord,
     MemoryRecord,
     PlanRecord,
     ProjectValidationSummary,
@@ -63,6 +64,7 @@ from xaa.runtime.web_fetch import normalize_approved_hosts
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import create_backup_bundle
+from xaa.storage.cli_chat import CLIChatStore
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
@@ -136,6 +138,16 @@ class UnloadRequest(BaseModel):
 class PreferenceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     content: str = Field(min_length=1, max_length=16384)
+
+
+class CLIChatTurnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    run_id: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=256)
+    workspace: str | None = Field(default=None, max_length=4096)
+    mode: Literal["observe", "workspace"]
+    user_message: str = Field(min_length=1, max_length=2000)
+    assistant_message: str = Field(min_length=1, max_length=16000)
 
 
 class LMStudioEndpointRequest(BaseModel):
@@ -341,6 +353,7 @@ def create_app(
             )
 
     run_store = store or RunStore()
+    cli_chat_store = CLIChatStore(run_store)
     specialist_profiles = SpecialistProfileStore(run_store)
     mcp_manager = MCPManager(run_store, credential_store)
     memory_store = MemoryStore(run_store)
@@ -1169,6 +1182,50 @@ def create_app(
             raise HTTPException(status_code=404, detail="Specialist role not found.")
         if not memory_store.delete(f"specialist:{role}", memory_id):
             raise HTTPException(status_code=404, detail="Specialist memory not found.")
+        return Response(status_code=204)
+
+    @app.get("/chat/sessions/{session_id}", response_model=CLIChatSessionRecord)
+    def get_cli_chat_session(session_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
+        try:
+            record = cli_chat_store.get(session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Chat session not found.")
+        return record
+
+    @app.post(
+        "/chat/sessions/{session_id}/turn",
+        response_model=CLIChatSessionRecord,
+    )
+    def append_cli_chat_turn(
+        session_id: str,
+        payload: CLIChatTurnRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return cli_chat_store.append_turn(
+                session_id,
+                run_id=payload.run_id,
+                model=payload.model,
+                workspace=payload.workspace,
+                mode=payload.mode,
+                user_message=payload.user_message,
+                assistant_message=payload.assistant_message,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Chat run not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.delete("/chat/sessions/{session_id}", status_code=204)
+    def delete_cli_chat_session(session_id: str, _: None = Depends(authenticate)) -> Response:
+        try:
+            deleted = cli_chat_store.delete(session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Chat session not found.")
         return Response(status_code=204)
 
     @app.post("/runs", status_code=status.HTTP_201_CREATED, response_model=RunRecord)

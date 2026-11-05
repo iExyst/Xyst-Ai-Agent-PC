@@ -46,6 +46,138 @@
         "title": "ArtifactRecord",
         "type": "object"
       },
+      "CLIChatMessageRecord": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content",
+          "run_id"
+        ],
+        "title": "CLIChatMessageRecord",
+        "type": "object"
+      },
+      "CLIChatSessionRecord": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/CLIChatMessageRecord"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "observe",
+              "workspace"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace"
+          }
+        },
+        "required": [
+          "session_id",
+          "model",
+          "workspace",
+          "mode",
+          "messages"
+        ],
+        "title": "CLIChatSessionRecord",
+        "type": "object"
+      },
+      "CLIChatTurnRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "assistant_message": {
+            "maxLength": 16000,
+            "minLength": 1,
+            "title": "Assistant Message",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "observe",
+              "workspace"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "user_message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "User Message",
+            "type": "string"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace"
+          }
+        },
+        "required": [
+          "run_id",
+          "model",
+          "mode",
+          "user_message",
+          "assistant_message"
+        ],
+        "title": "CLIChatTurnRequest",
+        "type": "object"
+      },
       "ChatRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3893,6 +4025,139 @@
           }
         ],
         "summary": "Create Telegram Pairing"
+      }
+    },
+    "/chat/sessions/{session_id}": {
+      "delete": {
+        "operationId": "delete_cli_chat_session_chat_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Cli Chat Session"
+      },
+      "get": {
+        "operationId": "get_cli_chat_session_chat_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIChatSessionRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Cli Chat Session"
+      }
+    },
+    "/chat/sessions/{session_id}/turn": {
+      "post": {
+        "operationId": "append_cli_chat_turn_chat_sessions__session_id__turn_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIChatTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIChatSessionRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Append Cli Chat Turn"
       }
     },
     "/chat/stream": {

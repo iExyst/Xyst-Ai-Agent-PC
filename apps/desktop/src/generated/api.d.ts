@@ -119,6 +119,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cli Chat Session */
+        get: operations["get_cli_chat_session_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Cli Chat Session */
+        delete: operations["delete_cli_chat_session_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/sessions/{session_id}/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append Cli Chat Turn */
+        post: operations["append_cli_chat_turn_chat_sessions__session_id__turn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/stream": {
         parameters: {
             query?: never;
@@ -1110,6 +1145,52 @@ export interface components {
             sha256: string;
             /** Size Bytes */
             size_bytes: number;
+        };
+        /** CLIChatMessageRecord */
+        CLIChatMessageRecord: {
+            /** Content */
+            content: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Run Id */
+            run_id: string;
+        };
+        /** CLIChatSessionRecord */
+        CLIChatSessionRecord: {
+            /** Messages */
+            messages: components["schemas"]["CLIChatMessageRecord"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "workspace";
+            /** Model */
+            model: string;
+            /** Session Id */
+            session_id: string;
+            /** Workspace */
+            workspace: string | null;
+        };
+        /** CLIChatTurnRequest */
+        CLIChatTurnRequest: {
+            /** Assistant Message */
+            assistant_message: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "workspace";
+            /** Model */
+            model: string;
+            /** Run Id */
+            run_id: string;
+            /** User Message */
+            user_message: string;
+            /** Workspace */
+            workspace?: string | null;
         };
         /** ChatRequest */
         ChatRequest: {
@@ -2565,6 +2646,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramPairingCode"];
+                };
+            };
+        };
+    };
+    get_cli_chat_session_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIChatSessionRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_cli_chat_session_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    append_cli_chat_turn_chat_sessions__session_id__turn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIChatTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIChatSessionRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

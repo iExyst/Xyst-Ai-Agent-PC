@@ -87,6 +87,25 @@ def test_newer_database_is_refused_without_resetting_version(workspace_tmp_path)
         )
 
 
+def test_schema_thirteen_adds_durable_cli_chat_session_configuration(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-thirteen.sqlite3"
+    store = RunStore(database)
+    with store.connection() as connection:
+        connection.execute("DROP TABLE cli_chat_config")
+        connection.execute("PRAGMA user_version=13")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert (
+            connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='cli_chat_config'"
+            ).fetchone()[0]
+            == "cli_chat_config"
+        )
+
+
 def test_schema_seven_migrates_additive_telegram_tables_without_losing_runs(
     workspace_tmp_path,
 ):
@@ -281,6 +300,33 @@ def test_schema_eleven_adds_durable_specialist_profiles(workspace_tmp_path):
     with migrated.connection() as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_schema_ten_adds_mcp_configuration_tables_without_losing_run_history(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-ten-mcp.sqlite3"
+    store = RunStore(database)
+    run_id = store.create_run(
+        objective="Preserve MCP-era history",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )["id"]
+    events = store.list_events(run_id)
+    with store.connection() as connection:
+        connection.execute("DROP TABLE mcp_server_tools")
+        connection.execute("DROP TABLE mcp_servers")
+        connection.execute("PRAGMA user_version=10")
+
+    migrated = RunStore(database)
+    assert migrated.list_events(run_id) == events
+    with migrated.connection() as connection:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert {"mcp_servers", "mcp_server_tools"}.issubset(tables)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_schema_twelve_adds_snapshotted_specialist_instructions(workspace_tmp_path):

@@ -66,6 +66,20 @@ class RunHistory(BaseModel):
     next_cursor: str | None
 
 
+class CLIChatMessageRecord(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    run_id: str
+
+
+class CLIChatSessionRecord(BaseModel):
+    session_id: str
+    model: str
+    workspace: str | None
+    mode: Literal["observe", "workspace"]
+    messages: list[CLIChatMessageRecord]
+
+
 class UsageReport(BaseModel):
     prompt_tokens: int = Field(ge=0)
     completion_tokens: int = Field(ge=0)
