@@ -16,6 +16,8 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [diagnostic,setDiagnostic]=useState<'passed'|'failed'|'unknown'>('unknown');
+  const [credential,setCredential]=useState('');
+  const [credentialConfigured,setCredentialConfigured]=useState(false);
 
   useEffect(()=>{
     let live=true;
@@ -24,6 +26,8 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
         const config=await client.lmStudioConfig();
         if(!live)return;
         if(typeof config.endpoint==='string'&&config.endpoint.trim())setEndpoint(config.endpoint);
+        const credentialStatus=await client.lmStudioCredentialStatus();
+        if(live)setCredentialConfigured(credentialStatus.configured);
         const provider=await client.providers();
         if(!live)return;
         const current=provider.find(item=>item.id==='lm-studio');
@@ -55,6 +59,31 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     } catch (failure) {
       setStatus('LM Studio is unavailable.');
       setError(failure instanceof Error?failure.message:'Could not discover local models.');
+    } finally {setBusy(false);}
+  }
+
+  async function saveCredential() {
+    if(!credential)return;
+    setBusy(true);setError('');setDiagnostic('unknown');
+    try {
+      const result=await client.setLMStudioCredential(credential);
+      setCredential('');setCredentialConfigured(result.configured);
+      onDiagnosticPassed(false);
+      setStatus('API token saved in Windows Credential Manager. Run the tool-use diagnostic again.');
+    } catch(failure) {
+      setError(failure instanceof Error?failure.message:'Could not save the LM Studio API token.');
+    } finally {setBusy(false);}
+  }
+
+  async function clearCredential() {
+    setBusy(true);setError('');setDiagnostic('unknown');
+    try {
+      const result=await client.clearLMStudioCredential();
+      setCredentialConfigured(result.configured);
+      onDiagnosticPassed(false);
+      setStatus('Saved API token cleared. Run the tool-use diagnostic again.');
+    } catch(failure) {
+      setError(failure instanceof Error?failure.message:'Could not clear the LM Studio API token.');
     } finally {setBusy(false);}
   }
 
@@ -110,6 +139,11 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     <p>Use an HTTP loopback address. The default is http://127.0.0.1:1234. In LM Studio, open Developer → Local Server and start the server if it is unavailable.</p>
     <button type="button" disabled={busy||!endpoint.trim()} onClick={()=>void saveEndpoint()}>Save address and connect</button>
     <button type="button" disabled={busy} onClick={()=>void refresh()}>Refresh models</button>
+    <label htmlFor="lm-studio-token">Optional LM Studio API token</label>
+    <input id="lm-studio-token" type="password" autoComplete="new-password" value={credential} onChange={event=>setCredential(event.target.value)} disabled={busy} maxLength={512} />
+    <p>{credentialConfigured?'A token is saved in Windows Credential Manager.':'No API token is saved.'} The token is never shown after saving.</p>
+    <button type="button" disabled={busy||!credential} onClick={()=>void saveCredential()}>Save API token securely</button>
+    {credentialConfigured&&<button type="button" disabled={busy} onClick={()=>void clearCredential()}>Clear saved API token</button>}
     <label htmlFor="local-model">Local model</label>
     <select id="local-model" value={model} disabled={busy} onChange={event=>void select(event.target.value)}>
       <option value="">Choose a discovered model</option>

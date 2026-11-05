@@ -27,6 +27,20 @@ class AvailableProvider(LMStudioProvider):
         return None
 
 
+class MemoryCredentialStore:
+    def __init__(self) -> None:
+        self.value: str | None = None
+
+    def get(self, profile: str = "lm-studio") -> str | None:
+        return self.value
+
+    def set(self, token: str, profile: str = "lm-studio") -> None:
+        self.value = token
+
+    def delete(self, profile: str = "lm-studio") -> None:
+        self.value = None
+
+
 @pytest.mark.parametrize(
     "endpoint",
     [
@@ -135,3 +149,35 @@ def test_provider_configuration_put_allows_browser_preflight(workspace_tmp_path)
         )
     assert response.status_code == 200
     assert "PUT" in response.headers["access-control-allow-methods"]
+
+
+def test_lm_studio_credential_is_saved_and_never_returned(workspace_tmp_path):
+    credentials = MemoryCredentialStore()
+    provider = AvailableProvider()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(
+            provider,
+            SecretStr(TOKEN),
+            store=RunStore(workspace_tmp_path / "credential.sqlite3"),
+            credential_store=credentials,
+        )
+    ) as client:
+        assert client.get("/providers/lm-studio/credential", headers=headers).json() == {
+            "configured": False
+        }
+        secret = "lm-studio-secret-test-value"
+        saved = client.put(
+            "/providers/lm-studio/credential", headers=headers, json={"token": secret}
+        )
+        assert saved.status_code == 200
+        assert saved.json() == {"configured": True}
+        assert secret not in saved.text
+        assert credentials.get() == secret
+        assert provider._credential is not None
+        assert provider._credential.get_secret_value() == secret
+        cleared = client.delete("/providers/lm-studio/credential", headers=headers)
+        assert cleared.status_code == 200
+        assert cleared.json() == {"configured": False}
+        assert credentials.get() is None
+        assert provider._credential is None

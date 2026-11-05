@@ -72,6 +72,18 @@ export class EngineClient {
     return this.#request('/providers/lm-studio/config', {method:'PUT',body:JSON.stringify({endpoint})});
   }
 
+  lmStudioCredentialStatus(): Promise<components['schemas']['LMStudioCredentialStatus']> {
+    return this.#request('/providers/lm-studio/credential');
+  }
+
+  setLMStudioCredential(token: string): Promise<components['schemas']['LMStudioCredentialStatus']> {
+    return this.#request('/providers/lm-studio/credential', {method:'PUT',body:JSON.stringify({token})});
+  }
+
+  clearLMStudioCredential(): Promise<components['schemas']['LMStudioCredentialStatus']> {
+    return this.#request('/providers/lm-studio/credential', {method:'DELETE'});
+  }
+
   selectLMStudioModel(model: string | null): Promise<{model:string|null}> {
     return this.#request('/providers/lm-studio/selection', {method:'PUT',body:JSON.stringify({model})});
   }

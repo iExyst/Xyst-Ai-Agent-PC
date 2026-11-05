@@ -29,6 +29,7 @@ from xaa.api.contracts import (
     TaskCandidate,
     UsageReport,
 )
+from xaa.credentials import CredentialStore
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
@@ -132,6 +133,16 @@ class LMStudioSelectionRequest(BaseModel):
     model: str | None = Field(default=None, max_length=256)
 
 
+class LMStudioCredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: SecretStr = Field(min_length=1, max_length=512)
+
+
+class LMStudioCredentialStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configured: bool
+
+
 def create_app(
     provider: LMStudioProvider,
     api_token: SecretStr,
@@ -140,6 +151,7 @@ def create_app(
     store: RunStore | None = None,
     shutdown_callback: Callable[[], None] | None = None,
     stream_responses: bool = False,
+    credential_store: CredentialStore | None = None,
 ) -> FastAPI:
     """Create a fail-closed service; caller controls token and provider lifecycle."""
     expected = api_token.get_secret_value()
@@ -399,6 +411,59 @@ def create_app(
                 (endpoint_value, now),
             )
         return LMStudioConfigRecord(endpoint=endpoint_value, selected_model=None)
+
+    @app.get("/providers/lm-studio/credential", response_model=LMStudioCredentialStatus)
+    def lm_studio_credential_status(
+        _: None = Depends(authenticate),
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        return LMStudioCredentialStatus(configured=credential_store.get() is not None)
+
+    @app.put("/providers/lm-studio/credential", response_model=LMStudioCredentialStatus)
+    async def set_lm_studio_credential(
+        payload: LMStudioCredentialRequest, _: None = Depends(authenticate)
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            owned_runs = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if owned_runs:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing the LM Studio credential.",
+            )
+        token_value = payload.token.get_secret_value()
+        try:
+            credential_store.set(token_value)
+            await provider.configure_credential(token_value)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Could not save the OS credential.") from exc
+        return LMStudioCredentialStatus(configured=True)
+
+    @app.delete("/providers/lm-studio/credential", response_model=LMStudioCredentialStatus)
+    async def delete_lm_studio_credential(
+        _: None = Depends(authenticate),
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            owned_runs = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if owned_runs:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing the LM Studio credential.",
+            )
+        try:
+            credential_store.delete()
+            await provider.configure_credential(None)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Could not clear the OS credential.") from exc
+        return LMStudioCredentialStatus(configured=False)
 
     @app.put("/providers/lm-studio/selection")
     async def set_lm_studio_model(

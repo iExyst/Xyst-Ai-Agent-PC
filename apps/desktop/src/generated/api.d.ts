@@ -240,6 +240,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/lm-studio/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lm Studio Credential Status */
+        get: operations["lm_studio_credential_status_providers_lm_studio_credential_get"];
+        /** Set Lm Studio Credential */
+        put: operations["set_lm_studio_credential_providers_lm_studio_credential_put"];
+        post?: never;
+        /** Delete Lm Studio Credential */
+        delete: operations["delete_lm_studio_credential_providers_lm_studio_credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/lm-studio/diagnostics": {
         parameters: {
             query?: never;
@@ -984,6 +1003,19 @@ export interface components {
             endpoint: string;
             /** Selected Model */
             selected_model: string | null;
+        };
+        /** LMStudioCredentialRequest */
+        LMStudioCredentialRequest: {
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
+        };
+        /** LMStudioCredentialStatus */
+        LMStudioCredentialStatus: {
+            /** Configured */
+            configured: boolean;
         };
         /** LMStudioEndpointRequest */
         LMStudioEndpointRequest: {
@@ -2171,6 +2203,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lm_studio_credential_status_providers_lm_studio_credential_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+        };
+    };
+    set_lm_studio_credential_providers_lm_studio_credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LMStudioCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_lm_studio_credential_providers_lm_studio_credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
                 };
             };
         };

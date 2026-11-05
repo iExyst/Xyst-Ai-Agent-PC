@@ -127,6 +127,21 @@ class LMStudioProvider:
             await previous.aclose()
         return normalized
 
+    async def configure_credential(self, token: str | None) -> None:
+        """Replace the optional API credential without exposing it in provider state."""
+        credential = SecretStr(token) if token else None
+        async with self._inference_lock:
+            previous = self._client
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                headers={"Authorization": f"Bearer {token}"} if token else {},
+                timeout=httpx.Timeout(60.0, connect=3.0),
+            )
+            self._credential = credential
+            self._diagnosed_models.clear()
+            self._context_limits.clear()
+            await previous.aclose()
+
     async def count_prompt(self, request: PromptCountRequest, *, timeout: float = 5) -> PromptCount:
         from xaa.providers.tokenization import PromptCountError, count_prompt
 

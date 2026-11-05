@@ -641,6 +641,38 @@
         "title": "LMStudioConfigRecord",
         "type": "object"
       },
+      "LMStudioCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "LMStudioCredentialRequest",
+        "type": "object"
+      },
+      "LMStudioCredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "LMStudioCredentialStatus",
+        "type": "object"
+      },
       "LMStudioEndpointRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3368,6 +3400,91 @@
           }
         ],
         "summary": "Set Lm Studio Endpoint"
+      }
+    },
+    "/providers/lm-studio/credential": {
+      "delete": {
+        "operationId": "delete_lm_studio_credential_providers_lm_studio_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Lm Studio Credential"
+      },
+      "get": {
+        "operationId": "lm_studio_credential_status_providers_lm_studio_credential_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Lm Studio Credential Status"
+      },
+      "put": {
+        "operationId": "set_lm_studio_credential_providers_lm_studio_credential_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LMStudioCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Lm Studio Credential"
       }
     },
     "/providers/lm-studio/diagnostics": {

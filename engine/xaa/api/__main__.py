@@ -16,6 +16,7 @@ if len(token) < 32:
     raise SystemExit("Set XAA_API_TOKEN to a random value of at least 32 characters.")
 
 server: uvicorn.Server
+credential_store = CredentialStore()
 
 
 def request_shutdown() -> None:
@@ -25,11 +26,12 @@ def request_shutdown() -> None:
 app = create_app(
     LMStudioProvider(
         os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234"),
-        CredentialStore().get(),
+        credential_store.get(),
         exact_context=os.environ.get("XAA_EXACT_CONTEXT") == "1",
     ),
     SecretStr(token),
     shutdown_callback=request_shutdown,
+    credential_store=credential_store,
     stream_responses=os.environ.get("XAA_STREAM_RESPONSES") == "1",
     trusted_origins=("http://tauri.localhost", "https://tauri.localhost")
     + ((os.environ["XAA_UI_ORIGIN"],) if os.environ.get("XAA_UI_ORIGIN") else ()),

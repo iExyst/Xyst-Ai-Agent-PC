@@ -3,15 +3,24 @@ import {test,expect} from '@playwright/test';
 test('LM Studio address, discovered model and tool diagnostic are configured before use',async({page})=>{
   let endpoint='http://127.0.0.1:1234';
   let selectedModel:string|null=null;
+  let credentialConfigured=false;
   let diagnostics=0;
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const req=route.request();const path=new URL(req.url()).pathname;
-    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,PUT,OPTIONS'};
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/config'&&req.method()==='GET')return route.fulfill({json:{endpoint,selected_model:selectedModel},headers});
+    if(path==='/providers/lm-studio/credential'&&req.method()==='GET')return route.fulfill({json:{configured:credentialConfigured},headers});
+    if(path==='/providers/lm-studio/credential'&&req.method()==='PUT'){
+      expect(req.postDataJSON().token).toBe('test-api-token');credentialConfigured=true;
+      return route.fulfill({json:{configured:true},headers});
+    }
+    if(path==='/providers/lm-studio/credential'&&req.method()==='DELETE'){
+      credentialConfigured=false;return route.fulfill({json:{configured:false},headers});
+    }
     if(path==='/providers/lm-studio/config'&&req.method()==='PUT'){
       endpoint=req.postDataJSON().endpoint==='http://localhost:1234'?'http://127.0.0.1:1234':req.postDataJSON().endpoint;selectedModel=null;
       return route.fulfill({json:{endpoint,selected_model:null},headers});
@@ -32,6 +41,12 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await expect(page.getByRole('status').filter({hasText:'LM Studio is connected'})).toBeVisible();
   await expect(page.getByRole('option',{name:'fixture/model',exact:true})).toHaveCount(1);
+  await page.getByLabel('Optional LM Studio API token').fill('test-api-token');
+  await page.getByRole('button',{name:'Save API token securely'}).click();
+  await expect(page.getByText('A token is saved in Windows Credential Manager. The token is never shown after saving.')).toBeVisible();
+  await expect(page.getByLabel('Optional LM Studio API token')).toHaveValue('');
+  await page.getByRole('button',{name:'Clear saved API token'}).click();
+  await expect(page.getByText('No API token is saved. The token is never shown after saving.')).toBeVisible();
   await page.getByLabel('LM Studio server address').fill('http://localhost:1234');
   await page.getByRole('button',{name:'Save address and connect'}).click();
   await expect.poll(()=>endpoint).toBe('http://127.0.0.1:1234');
