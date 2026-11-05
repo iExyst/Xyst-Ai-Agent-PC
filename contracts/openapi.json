@@ -2967,6 +2967,63 @@
         "title": "SkillVersion",
         "type": "object"
       },
+      "SpecialistProfileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model_route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Route"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "display_name",
+          "model_route",
+          "updated_at"
+        ],
+        "title": "SpecialistProfileResponse",
+        "type": "object"
+      },
+      "SpecialistRouteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model_route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Route"
+          }
+        },
+        "required": [
+          "model_route"
+        ],
+        "title": "SpecialistRouteRequest",
+        "type": "object"
+      },
       "TaskBudgets": {
         "properties": {
           "max_iterations": {
@@ -6712,6 +6769,87 @@
           }
         ],
         "summary": "Eligible Skill Trials"
+      }
+    },
+    "/specialists/profiles": {
+      "get": {
+        "operationId": "list_specialist_profiles_specialists_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SpecialistProfileResponse"
+                  },
+                  "title": "Response List Specialist Profiles Specialists Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Specialist Profiles"
+      }
+    },
+    "/specialists/profiles/{role}/route": {
+      "put": {
+        "operationId": "set_specialist_route_specialists_profiles__role__route_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialistRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpecialistProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Specialist Route"
       }
     }
   }

@@ -257,3 +257,27 @@ def test_older_reader_limit_refuses_current_schema_before_access(
         RunStore(store.path)
     with store.connection() as c:
         assert c.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_eleven_adds_durable_specialist_profiles(workspace_tmp_path):
+    from xaa.storage.specialist_profiles import SpecialistProfileStore
+
+    store = RunStore(workspace_tmp_path / "specialist-profile-migration.sqlite3")
+    with store.connection() as connection:
+        connection.execute("DROP TABLE specialist_profiles")
+        connection.execute("PRAGMA user_version=11")
+
+    migrated = RunStore(store.path)
+    roles = SpecialistProfileStore(migrated).list()
+    assert {row["role"] for row in roles} == {
+        "planner",
+        "researcher",
+        "developer",
+        "reviewer",
+        "tester",
+        "executor",
+    }
+    assert all(row["model_route"] is None for row in roles)
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

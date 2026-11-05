@@ -82,6 +82,7 @@ from xaa.storage.skills import (
     SkillTrialRun,
     SkillVersion,
 )
+from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 from xaa.storage.trajectory import export_trajectory
 
@@ -293,6 +294,19 @@ class TelegramLinkedUser(BaseModel):
     user_id: str
 
 
+class SpecialistRouteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    model_route: str | None
+
+
+class SpecialistProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    role: str
+    display_name: str
+    model_route: str | None
+    updated_at: str
+
+
 def create_app(
     provider: LMStudioProvider,
     api_token: SecretStr,
@@ -321,6 +335,7 @@ def create_app(
             )
 
     run_store = store or RunStore()
+    specialist_profiles = SpecialistProfileStore(run_store)
     mcp_manager = MCPManager(run_store, credential_store)
     memory_store = MemoryStore(run_store)
     skill_store = SkillStore(run_store)
@@ -1086,6 +1101,29 @@ def create_app(
             return list_runs(run_store, limit=limit, before=before, query=q, scope=scope)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/specialists/profiles", response_model=list[SpecialistProfileResponse])
+    def list_specialist_profiles(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        return specialist_profiles.list()
+
+    @app.put("/specialists/profiles/{role}/route", response_model=SpecialistProfileResponse)
+    async def set_specialist_route(
+        role: str,
+        payload: SpecialistRouteRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if role not in {"planner", "researcher", "developer", "reviewer", "tester", "executor"}:
+            raise HTTPException(status_code=404, detail="Specialist role not found.")
+        if payload.model_route is not None:
+            try:
+                models = await provider.models()
+            except ProviderError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            if payload.model_route not in {model.id for model in models}:
+                raise HTTPException(
+                    status_code=409, detail="Specialist model is not currently available."
+                )
+        return specialist_profiles.set_route(role, payload.model_route)
 
     @app.post("/runs", status_code=status.HTTP_201_CREATED, response_model=RunRecord)
     async def create_run(

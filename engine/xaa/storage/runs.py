@@ -20,7 +20,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 11
+DATABASE_SCHEMA_VERSION = 12
 
 
 @dataclass(frozen=True)
@@ -251,6 +251,12 @@ class RunStore:
                     PRIMARY KEY(task_id, depends_on_task_id),
                     CHECK(task_id != depends_on_task_id)
                 );
+                CREATE TABLE IF NOT EXISTS specialist_profiles (
+                    role TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    model_route TEXT,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS task_leases (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
                     token TEXT NOT NULL UNIQUE,
@@ -445,6 +451,18 @@ class RunStore:
                 """
             )
             connection.execute("BEGIN IMMEDIATE")
+            for role, display_name in (
+                ("planner", "Planner"),
+                ("researcher", "Researcher"),
+                ("developer", "Developer"),
+                ("reviewer", "Reviewer"),
+                ("tester", "Tester"),
+                ("executor", "Executor"),
+            ):
+                connection.execute(
+                    "INSERT OR IGNORE INTO specialist_profiles (role,display_name,model_route,updated_at) VALUES (?,?,NULL,?)",
+                    (role, display_name, utc_now()),
+                )
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(tool_calls)")}
             if "provider_call_id" not in columns:
                 connection.execute("ALTER TABLE tool_calls ADD COLUMN provider_call_id TEXT")
