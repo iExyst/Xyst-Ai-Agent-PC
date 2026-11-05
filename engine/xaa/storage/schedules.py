@@ -188,7 +188,7 @@ class ScheduleStore:
         if outcome == "run" and self.active_run_exists(connection, str(schedule["id"])):
             outcome = "overlap_skipped"
         run_id: str | None = None
-        state = outcome
+        state = "queued" if outcome == "run" else outcome
         if outcome == "run":
             run_id = str(uuid.uuid4())
             now = utc_now()

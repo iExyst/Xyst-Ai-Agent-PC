@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn[standard]>=0.38,<1",
     "keyring>=25,<27",
     "lmstudio==1.6.0b1",
+    "tzdata>=2026.6",
 ]
 
 [project.scripts]
