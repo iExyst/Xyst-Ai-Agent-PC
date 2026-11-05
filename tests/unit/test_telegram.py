@@ -421,6 +421,32 @@ def test_scheduled_delivery_retries_only_explicit_rate_limits_with_bounded_attem
         assert row["next_attempt_at"] is None
 
 
+def test_revoking_telegram_identity_suppresses_a_pending_rate_limit_retry(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-delivery-retry-revoked.sqlite3")
+    store, _schedule_id = queued_scheduled_delivery(runs)
+    first_at = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+    first = store.claim_schedule_delivery(IDENTITY.account_id, now=first_at)
+    assert first is not None
+    store.finish_schedule_delivery(
+        first["execution_id"],
+        state="failed",
+        retry_after_seconds=10,
+        now=first_at,
+    )
+
+    assert store.revoke_users(IDENTITY.account_id) == 1
+    assert (
+        store.claim_schedule_delivery(IDENTITY.account_id, now=first_at + timedelta(seconds=10))
+        is None
+    )
+    with runs.connection() as connection:
+        row = connection.execute("SELECT state,attempt_count FROM schedule_deliveries").fetchone()
+        assert row["state"] == "revoked"
+        assert row["attempt_count"] == 1
+
+
 def test_telegram_rate_limit_exposes_only_bounded_retry_delay() -> None:
     async def scenario() -> None:
         async def handler(_request: httpx.Request) -> httpx.Response:
