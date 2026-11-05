@@ -278,7 +278,7 @@ class MCPManager:
                 "The MCP server disconnected during the call; its external effect is unknown.",
                 status="unknown_outcome",
             ) from error
-        return _result_payload(result)
+        return _result_payload(result, write=record.permission == "write")
 
     async def _drop_failed_connection(self, server_id: str, connection: _ConnectedServer) -> None:
         async with self._lock:
@@ -416,20 +416,32 @@ def _discard_stdio_output() -> Generator[TextIO]:
         yield stream
 
 
-def _result_payload(result: CallToolResult) -> dict[str, Any]:
+def _result_payload(result: CallToolResult, *, write: bool) -> dict[str, Any]:
     payload = {
-        "status": "tool_error" if result.isError else "ok",
+        "status": "unknown_outcome"
+        if write and result.isError
+        else "tool_error"
+        if result.isError
+        else "ok",
         "trust": "untrusted_mcp_output",
         "content": [block.model_dump(mode="json", by_alias=True) for block in result.content],
         "structured_content": result.structuredContent,
     }
+    if write and result.isError:
+        payload["error"] = (
+            "The MCP server reported a write error; reconcile its external effect before retrying."
+        )
     encoded = json.dumps(payload, separators=(",", ":")).encode()
     if len(encoded) > MCP_RESULT_BYTES:
         return {
-            "status": "output_limit",
+            "status": "unknown_outcome" if write else "output_limit",
             "trust": "untrusted_mcp_output",
             "content": [],
             "structured_content": None,
-            "error": "MCP result exceeded the 256 KiB output limit.",
+            "error": (
+                "MCP write output exceeded 256 KiB; reconcile its external effect before retrying."
+                if write
+                else "MCP result exceeded the 256 KiB output limit."
+            ),
         }
     return payload

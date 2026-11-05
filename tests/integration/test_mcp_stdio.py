@@ -5,10 +5,16 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from mcp.types import CallToolResult, TextContent
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
-from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
+from xaa.runtime.mcp_manager import (
+    MCP_RESULT_BYTES,
+    MCPInvocationError,
+    MCPManager,
+    _result_payload,
+)
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
 
@@ -28,6 +34,21 @@ class MemoryCredentials:
 
     def delete(self, profile: str = "lm-studio") -> None:
         self.values.pop(profile, None)
+
+
+def test_write_error_and_output_overflow_are_unknown_outcomes():
+    server_error = _result_payload(
+        CallToolResult(content=[TextContent(type="text", text="partial failure")], isError=True),
+        write=True,
+    )
+    assert server_error["status"] == "unknown_outcome"
+    assert "reconcile" in server_error["error"]
+
+    oversized = CallToolResult(
+        content=[TextContent(type="text", text="x" * MCP_RESULT_BYTES)], isError=False
+    )
+    assert _result_payload(oversized, write=True)["status"] == "unknown_outcome"
+    assert _result_payload(oversized, write=False)["status"] == "output_limit"
 
 
 @pytest.mark.asyncio
