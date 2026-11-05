@@ -1904,6 +1904,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "delivery_attempt_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Attempt Count"
+          },
           "delivery_evidence": {
             "anyOf": [
               {
@@ -1914,6 +1925,17 @@
               }
             ],
             "title": "Delivery Evidence"
+          },
+          "delivery_next_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Next Attempt At"
           },
           "id": {
             "title": "Id",
@@ -1945,6 +1967,8 @@
           "run_id",
           "state",
           "delivery_evidence",
+          "delivery_attempt_count",
+          "delivery_next_attempt_at",
           "created_at",
           "completed_at"
         ],

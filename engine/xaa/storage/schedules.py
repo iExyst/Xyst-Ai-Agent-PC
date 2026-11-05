@@ -140,7 +140,7 @@ class ScheduleStore:
             if schedule is None:
                 return None
             executions = connection.execute(
-                "SELECT id,occurrence_id,run_id,state,delivery_evidence,created_at,completed_at FROM schedule_executions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20",
+                "SELECT e.id,e.occurrence_id,e.run_id,e.state,e.delivery_evidence,e.created_at,e.completed_at,d.attempt_count AS delivery_attempt_count,d.next_attempt_at AS delivery_next_attempt_at FROM schedule_executions e LEFT JOIN schedule_deliveries d ON d.execution_id=e.id WHERE e.schedule_id=? ORDER BY e.created_at DESC LIMIT 20",
                 (schedule_id,),
             ).fetchall()
         result = dict(schedule)

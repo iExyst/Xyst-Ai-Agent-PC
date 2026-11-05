@@ -21,7 +21,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
     if(path==='/channels/telegram/linked-users')return route.fulfill({json:[{user_id:'123456'}],headers});
     if(path==='/schedules'&&request.method()==='POST'){
       const body=request.postDataJSON();requests.push(body);
-      const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:body.quiet_hours??null,delivery_destination:body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[]};
+      const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:body.quiet_hours??null,delivery_destination:body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[{id:'execution-1',occurrence_id:'schedule-1:2026-11-05T12:00',run_id:'run-1',state:'completed',delivery_evidence:'retrying',delivery_attempt_count:2,delivery_next_attempt_at:'2026-11-05T12:00:10+00:00',created_at:'2026-11-05T12:00:00Z',completed_at:'2026-11-05T12:00:01Z'}]};
       schedules.unshift(saved);return route.fulfill({status:201,json:saved,headers});
     }
     if(path==='/schedules/schedule-1/enabled'&&request.method()==='PUT'){
@@ -46,6 +46,8 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByLabel('Telegram result destination (optional)',{exact:true}).selectOption('123456');
   await panel.getByRole('button',{name:'Create schedule',exact:true}).click();
   await expect(panel.getByText('Review repository health',{exact:true})).toBeVisible();
+  await panel.getByText('Execution history',{exact:true}).click();
+  await expect(panel.getByText(/send attempts 2\/3 · retry after 2026-11-05T12:00:10\+00:00/)).toBeVisible();
   expect(requests).toHaveLength(1);
   const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
   expect(requests[0]).toMatchObject({objective:'Review repository health',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456',quiet_hours:'22:00-07:00'});

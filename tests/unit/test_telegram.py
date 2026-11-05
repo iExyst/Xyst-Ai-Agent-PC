@@ -346,7 +346,9 @@ def test_scheduled_delivery_retries_only_explicit_rate_limits_with_bounded_attem
     workspace_tmp_path: Path,
 ) -> None:
     runs = RunStore(workspace_tmp_path / "scheduled-delivery-rate-limit.sqlite3")
-    store, _schedule_id = queued_scheduled_delivery(runs)
+    from xaa.storage.schedules import ScheduleStore
+
+    store, schedule_id = queued_scheduled_delivery(runs)
     first_at = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 
     first = store.claim_schedule_delivery(IDENTITY.account_id, now=first_at)
@@ -372,6 +374,13 @@ def test_scheduled_delivery_retries_only_explicit_rate_limits_with_bounded_attem
             connection.execute("SELECT delivery_evidence FROM schedule_executions").fetchone()[0]
             == "retrying"
         )
+    history = ScheduleStore(runs).get(schedule_id)
+    assert history is not None
+    assert history["executions"][0]["delivery_attempt_count"] == 1
+    assert (
+        history["executions"][0]["delivery_next_attempt_at"]
+        == (first_at + timedelta(seconds=10)).isoformat()
+    )
 
     second = store.claim_schedule_delivery(
         IDENTITY.account_id, now=first_at + timedelta(seconds=10)

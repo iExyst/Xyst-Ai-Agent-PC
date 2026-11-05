@@ -1545,8 +1545,12 @@ export interface components {
             completed_at: string | null;
             /** Created At */
             created_at: string;
+            /** Delivery Attempt Count */
+            delivery_attempt_count: number | null;
             /** Delivery Evidence */
             delivery_evidence: string | null;
+            /** Delivery Next Attempt At */
+            delivery_next_attempt_at: string | null;
             /** Id */
             id: string;
             /** Occurrence Id */
