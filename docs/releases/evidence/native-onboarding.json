@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "model": "qwen/qwen3.5-9b",
+  "diagnostic_passed": true,
+  "diagnostic_attempts": 1,
+  "workspace_selected": true,
+  "native_folder_picker_verified": true,
+  "folder_picker_selection_reflected_in_workspace_field": true,
+  "mode": "observe",
+  "run_state": "completed",
+  "final_review_accepted": true,
+  "actual_workspace_read": true,
+  "public_answer_contains_project_identity": true,
+  "source_unchanged": true,
+  "write_tools_proposed": false,
+  "elapsed_ms": 10921,
+  "run_id": "2db2cd3d-26da-43fc-9607-465e456b18d3",
+  "discovered_models": 29,
+  "native_build_sha256": {
+    "xaa-desktop.exe": "39f0e05bda64b3fae864fbc63acc15c245bcff083352e5cefcb6e8dcb2899dd4",
+    "xaa-engine.exe": "8ac392e49a45335399f347bbb385aa64566fc9e5b9eecf94ab6f60f237c47845"
+  },
+  "graceful_shutdown": true
+}

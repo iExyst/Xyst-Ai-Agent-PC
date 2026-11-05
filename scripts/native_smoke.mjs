@@ -42,6 +42,8 @@ const tokenCountRequested=process.env.XAA_NATIVE_TOKEN_COUNT==='1';
 let tokenCountVerified=false;
 const providerSetupRequested=process.env.XAA_NATIVE_PROVIDER_SETUP==='1';
 let providerSetupVerified=false;
+const onboardingRequested=process.env.XAA_NATIVE_ONBOARDING==='1';
+let onboardingVerified=false;
 const limitsRequested=process.env.XAA_NATIVE_LIMITS==='1';
 let limitsVerified=false;
 const edit = process.env.XAA_NATIVE_EDIT === '1' || finalReview || patchRequested || createRequested;
@@ -82,6 +84,58 @@ try {
     await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBeNull();
     providerSetupVerified=true;
     await writeFile(path.join(root,'provider-setup.json'),JSON.stringify({passed:true,initial_endpoint:initial.endpoint,saved_endpoint:saved.endpoint,discovered_model_count:count,selected_model_during_diagnostic:'qwen3-0.6b',real_tool_round_trip:true,selection_cleared:true},null,2));
+  }
+  if(onboardingRequested){
+    const model='qwen/qwen3.5-9b';
+    let diagnosticAttempts=0;
+    let demoRequest;
+    page.on('request',request=>{if(request.url()===`${connection.base_url}/runs`&&request.method()==='POST')demoRequest=JSON.parse(request.postData()||'{}');});
+    const available=(await (await fetch(`${connection.base_url}/models`,{headers})).json()).map(item=>item.id);
+    if(!available.includes(model))throw new Error(`Required real onboarding fixture is not installed: ${model}`);
+    const workspace=path.join(root,'onboarding-project');
+    await mkdir(workspace,{recursive:true});
+    await writeFile(path.join(workspace,'README.md'),'# Aurora Ledger\n\nA desktop ledger for community gardens.\n\n## Setup\nInstall Python 3.12, then run the documented app entry point.\n\n## Development\nThe project currently has no automated test instructions.\n');
+    const load=await fetch(`${connection.base_url}/models/load`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({model,context_length:16384})});
+    if(!load.ok)throw new Error(`Could not load installed onboarding model: ${await load.text()}`);
+    instance=(await load.json()).instance_id;
+    await page.getByLabel('Local model').selectOption(model);
+    await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBe(model);
+    for(diagnosticAttempts=1;diagnosticAttempts<=2;diagnosticAttempts++){
+      await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click();
+      try{await page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true}).waitFor({timeout:120000});break;}
+      catch(error){if(diagnosticAttempts===2)throw error;}
+    }
+    await page.getByLabel('Workspace path').fill(workspace);
+    const started=Date.now();
+    await page.getByRole('button',{name:'Start read-only onboarding demonstration',exact:true}).click();
+    await expect(page.getByRole('heading',{name:/Active run/})).toBeVisible({timeout:30000});
+    let savedRun;
+    for(let attempt=0;attempt<180;attempt++){
+      const history=await (await fetch(`${connection.base_url}/runs?limit=1`,{headers})).json();
+      savedRun=history.items?.[0];
+      if(savedRun&&['verifying','completed','failed','blocked'].includes(savedRun.state))break;
+      await new Promise(resolve=>setTimeout(resolve,1000));
+    }
+    if(!savedRun||savedRun.objective.indexOf('Do not modify files or run commands')<0||savedRun.workspace!==workspace||savedRun.state!=='verifying'||demoRequest?.mode!=='observe'||demoRequest?.command_grant!==null)throw new Error(`Read-only demonstration did not reach independent review in Observe mode: ${JSON.stringify({savedRun,demoRequest})}`);
+    const events=await (await fetch(`${connection.base_url}/runs/${savedRun.id}/events`,{headers})).json();
+    const readIntent=events.find(event=>event.event_type==='tool.intended'&&event.payload.tool==='workspace.read_file');
+    const read=readIntent&&events.find(event=>event.event_type==='tool.completed'&&event.payload.call_id===readIntent.payload.call_id);
+    const final=events.filter(event=>event.event_type==='model.message').map(event=>event.payload.message?.content).filter(value=>typeof value==='string').at(-1);
+    const unchanged=(await readFile(path.join(workspace,'README.md'),'utf8')).startsWith('# Aurora Ledger');
+    const readOnlyTools=new Set(['workspace.read_file','workspace.list_directory','workspace.search']);
+    const writes=events.some(event=>event.event_type==='tool.intended'&&!readOnlyTools.has(event.payload.tool));
+    if(!read||!final?.includes('Aurora Ledger')||!unchanged||writes)throw new Error('Demonstration lacks real README evidence, an accurate public answer or read-only source preservation');
+    await page.getByLabel('I reviewed the objective, result, and available evidence').check();
+    await page.getByLabel('Final review rationale').fill('Confirmed that the summary matches README.md and that the project files were not changed.');
+    await page.getByRole('button',{name:'Accept and complete run',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'Active run completed'})).toBeVisible({timeout:30000});
+    const completed=await (await fetch(`${connection.base_url}/runs/${savedRun.id}`,{headers})).json();
+    if(completed.state!=='completed')throw new Error('The reviewed onboarding demonstration did not complete');
+    onboardingVerified=true;
+    await writeFile(path.join(root,'onboarding.json'),JSON.stringify({passed:true,model,diagnostic_passed:true,diagnostic_attempts:diagnosticAttempts,workspace_selected:true,mode:'observe',run_state:completed.state,final_review_accepted:true,actual_workspace_read:true,public_answer_contains_project_identity:true,source_unchanged:unchanged,write_tools_proposed:false,elapsed_ms:Date.now()-started,run_id:savedRun.id},null,2));
+    const unload=await fetch(`${connection.base_url}/models/unload`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({instance_id:instance})});
+    if(!unload.ok)throw new Error('Could not unload onboarding model');
+    instance=undefined;
   }
   if(skillLifecycleRequested){
     if(!process.env.XAA_NATIVE_SNAPSHOT)throw new Error('Lifecycle acceptance requires a real evaluated-version snapshot');
@@ -518,6 +572,7 @@ try {
   report.native_skill_lifecycle_verified=skillLifecycleVerified;
   report.native_token_count_verified=tokenCountVerified;
   report.native_provider_setup_verified=providerSetupVerified;
+  report.native_onboarding_verified=onboardingVerified;
   await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
   console.log(report, root);
 } catch (error) {

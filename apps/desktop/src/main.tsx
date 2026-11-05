@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type Artifact, type Plan } from './api/client.ts';
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import { SkillsPanel, type ProcedureTrialSelection } from './SkillsPanel.tsx';
 import { MemoryPanel } from './MemoryPanel.tsx';
 import { PlanPanel } from './PlanPanel.tsx';
@@ -20,6 +21,7 @@ function App() {
   const [client, setClient] = useState<EngineClient>();
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState('');
+  const [diagnosticPassed, setDiagnosticPassed] = useState(false);
   const [workspace, setWorkspace] = useState('');
   const [sandbox,setSandbox]=useState<components['schemas']['ReadinessResult']>();
   const [commandAllowed,setCommandAllowed]=useState(false);
@@ -141,6 +143,23 @@ function App() {
     try { const next = await client.createRun({ objective, model, workspace, mode, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setCommandAllowed(false);setProcedureTrial(undefined);setHistoryRefresh(value=>value+1); void watch(next); }
     catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
+  async function selectWorkspace() {
+    try {
+      const selected = await open({ directory: true, multiple: false, title: 'Choose a project workspace' });
+      if (typeof selected === 'string') setWorkspace(selected);
+    } catch (failure) { setError(`Could not open the workspace picker: ${String(failure)}`); }
+  }
+  async function startDemonstration() {
+    if (!client || !workspace.trim() || !model || !parsedLimits) return;
+    const demoObjective = 'Read the project overview and setup documentation in the selected workspace. Do not modify files or run commands. Summarize what the project does, how a developer starts it, and one useful next step. Cite the file paths you read.';
+    setMode('observe');
+    setBusy(true); setError(''); setActivity([]); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
+    try {
+      const next = await client.createRun({ objective: demoObjective, model, workspace, mode: 'observe', command_grant: null, ...parsedLimits, file_checks: [] });
+      setObjective(demoObjective); setRun(next); setCommandAllowed(false); setHistoryRefresh(value => value + 1); void watch(next);
+    } catch (failure) { setError(String(failure)); }
+    finally { setBusy(false); }
+  }
   async function dispatchPlan() {
     if (!client || !run) return;
     setBusy(true); setError('');
@@ -154,7 +173,8 @@ function App() {
   }
   return <main><header><span>X.A.A.</span><h1>Xyst AI Agent</h1><p>Local objectives. Visible execution.</p></header>
     {!client ? <section><h2>Connect to the engine</h2><p>Start the local engine, then enter its API token. The token stays in this window’s memory.</p><label>Engine token<input type="password" value={token} onChange={event => setToken(event.target.value)} /></label><button onClick={connect} disabled={busy || token.length < 32}>Connect</button></section> : <>
-      <ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel}/>
+      <ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/>
+      <section aria-labelledby="onboarding-title"><h2 id="onboarding-title">Get started</h2><ol><li>Connect LM Studio, choose a discovered model, and complete the harmless tool diagnostic above. {diagnosticPassed?'Tool support verified.':'The demonstration unlocks after a successful diagnostic.'}</li><li>{workspace ? <>Workspace selected: <code>{workspace}</code></> : 'Choose a project folder below.'}</li><li>Run a read-only demonstration to see the agent inspect and explain that project.</li></ol><button type="button" onClick={()=>void startDemonstration()} disabled={busy||!diagnosticPassed||!model||!workspace.trim()}>Start read-only onboarding demonstration</button></section>
       <section><details><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>
       <section><details><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={setProcedureTrial}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
@@ -162,7 +182,7 @@ function App() {
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
       <section><h2>File check (optional)</h2><p>Compare a file with the exact contents you supply, including whitespace. A mismatch asks the agent to correct its work within the run budget.</p><label>File to verify<input value={checkPath} onChange={event => setCheckPath(event.target.value)} placeholder="config.txt" /></label><label htmlFor="expected-file-content">Expected file contents</label><textarea id="expected-file-content" value={expectedContent} onChange={event => setExpectedContent(event.target.value)} /></section>
       {procedureTrial&&<section aria-label="Selected procedure"><p>{procedureTrial.purpose==='active_use'?'Active procedure':'Unverified procedure trial'}: {procedureTrial.name} &middot; version {procedureTrial.version}. Its requirements must fit the selected workspace and mode.</p><button onClick={()=>setProcedureTrial(undefined)}>Remove selected procedure</button></section>}
-      <section><h2>New objective</h2><label className="procedure-permission"><input type="checkbox" checked={commandAllowed} disabled={busy||mode!=='workspace'||!workspace.trim()||!sandbox} onChange={event=>setCommandAllowed(event.target.checked)}/>Allow isolated commands for this next run</label><p>Requires Workspace mode and a current sandbox check. Commands receive a copy of the selected project, without network access, for up to 30 seconds each. Command changes are discarded. This grant stays with the created run when paused or resumed; each new run requires a new selection.</p><label>Workspace path<input value={workspace} onChange={event => setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><label htmlFor="run-objective">Objective</label><textarea id="run-objective" value={objective} onChange={event => setObjective(event.target.value)} /><ResourceLimits inputs={limits} onChange={setLimits}/><p>Final answers await independent verification</p><button onClick={submit} disabled={busy || !parsedLimits || !objective.trim() || !model || !workspace.trim()}>Start objective</button></section>
+      <section><h2>New objective</h2><label className="procedure-permission"><input type="checkbox" checked={commandAllowed} disabled={busy||mode!=='workspace'||!workspace.trim()||!sandbox} onChange={event=>setCommandAllowed(event.target.checked)}/>Allow isolated commands for this next run</label><p>Requires Workspace mode and a current sandbox check. Commands receive a copy of the selected project, without network access, for up to 30 seconds each. Command changes are discarded. This grant stays with the created run when paused or resumed; each new run requires a new selection.</p><label>Workspace path<input value={workspace} onChange={event => setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><button type="button" onClick={()=>void selectWorkspace()} disabled={busy}>Browse for project folder</button><label htmlFor="run-objective">Objective</label><textarea id="run-objective" value={objective} onChange={event => setObjective(event.target.value)} /><ResourceLimits inputs={limits} onChange={setLimits}/><p>Final answers await independent verification</p><button onClick={submit} disabled={busy || !parsedLimits || !objective.trim() || !model || !workspace.trim()}>Start objective</button></section>
       {run && <ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} onControl={action=>void control(action)}/>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
       {artifacts.length > 0 && <section><h2>Files and artifacts</h2><ul>{artifacts.map(item => <li key={item.id}><button onClick={async () => { try { setPreview(await client.artifactPreview(item.id)); } catch (failure) { setError(String(failure)); } }}>View {item.provenance}</button> {item.size_bytes} bytes</li>)}</ul>{preview && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{preview}</pre>}</section>}

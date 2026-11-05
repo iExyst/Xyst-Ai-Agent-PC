@@ -7,9 +7,10 @@ type Props = {
   model: string;
   onModelsChanged: (models: string[]) => void;
   onModelChanged: (model: string) => void;
+  onDiagnosticPassed: (passed: boolean) => void;
 };
 
-export function ProviderSetup({client,models,model,onModelsChanged,onModelChanged}:Props) {
+export function ProviderSetup({client,models,model,onModelsChanged,onModelChanged,onDiagnosticPassed}:Props) {
   const [endpoint,setEndpoint]=useState('http://127.0.0.1:1234');
   const [status,setStatus]=useState('Checking the local model server…');
   const [busy,setBusy]=useState(false);
@@ -62,6 +63,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     try {
       const saved=await client.setLMStudioEndpoint(endpoint);
       setEndpoint(saved.endpoint);
+      onDiagnosticPassed(false);
       onModelChanged('');
       onModelsChanged([]);
       setStatus('Address saved. Checking the selected LM Studio server…');
@@ -78,6 +80,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
 
   async function select(value:string) {
     onModelChanged(value);
+    onDiagnosticPassed(false);
     setDiagnostic('unknown');setError('');
     try { await client.selectLMStudioModel(value||null); }
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not save the selected model.');}
@@ -89,9 +92,11 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     try {
       const result=await client.diagnoseLMStudioModel(model);
       setDiagnostic(result.tool_round_trip_verified?'passed':'failed');
+      onDiagnosticPassed(result.tool_round_trip_verified);
       setStatus(result.tool_round_trip_verified?'Tool-use diagnostic passed. Workspace tools are supported by this model.':'Tool-use diagnostic did not pass.');
     } catch(failure) {
       setDiagnostic('failed');
+      onDiagnosticPassed(false);
       setError(failure instanceof Error?failure.message:'Tool-use diagnostic failed.');
       setStatus('Tool-use diagnostic failed. Choose another model or check the LM Studio server.');
     } finally {setBusy(false);}

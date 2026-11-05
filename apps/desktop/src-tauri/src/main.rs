@@ -84,6 +84,7 @@ fn main() {
     let _process_job =
         confinement::contain_process_tree().expect("Cannot contain the desktop process tree");
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let port = listener.local_addr()?.port();
