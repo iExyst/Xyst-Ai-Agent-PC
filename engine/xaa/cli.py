@@ -11,6 +11,7 @@ from urllib.parse import quote
 import httpx
 
 from xaa.credentials import CredentialStore
+from xaa.storage.backup_bundle import restore_backup_bundle
 from xaa.storage.restore import restore_database
 
 
@@ -25,12 +26,18 @@ def main() -> None:
     )
     tokens.add_argument("message")
     tokens.add_argument("--model", required=True)
-    commands.add_parser("backup", help="Create a verified database snapshot")
+    commands.add_parser("backup", help="Create a verified database and artifact bundle")
     restore = commands.add_parser(
-        "restore", help="Restore a database snapshot to a new offline destination"
+        "restore", help="Restore a database-only snapshot to a new offline destination"
     )
     restore.add_argument("snapshot", type=Path)
     restore.add_argument("--destination", type=Path, required=True)
+    bundle_restore = commands.add_parser(
+        "restore-bundle",
+        help="Restore a verified database and artifact backup to a new data directory",
+    )
+    bundle_restore.add_argument("bundle", type=Path)
+    bundle_restore.add_argument("--destination", type=Path, required=True)
     credentials = commands.add_parser(
         "credentials", help="Manage the LM Studio token in Windows Credential Manager"
     )
@@ -56,9 +63,16 @@ def main() -> None:
     if args.command == "restore":
         try:
             restored = restore_database(args.snapshot, args.destination)
-        except (OSError, ValueError, sqlite3.Error) as exc:
+        except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
             parser.exit(1, f"Restore failed: {exc}\n")
         print(f"Restored database: {restored}")
+        return
+    if args.command == "restore-bundle":
+        try:
+            restored = restore_backup_bundle(args.bundle, args.destination)
+        except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+            parser.exit(1, f"Restore failed: {exc}\n")
+        print(f"Restored database and artifacts: {restored}")
         return
     if args.command == "credentials":
         store = CredentialStore()

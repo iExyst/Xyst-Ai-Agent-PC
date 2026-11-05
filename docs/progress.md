@@ -1,14 +1,16 @@
 # Progress
 
-Updated 2026-11-04.
+Updated 2026-11-05.
 
 ## Current release status
 
 Approximately 13% of the complete objective. This is a rough release-scope estimate, not a claim that any broad phase or Hermes parity gate is complete. Entries below record historical milestones and retain their original test counts/limitations; later evidence supersedes earlier pending statements only for the specific checks it proves.
 
-Working verified slices include real LM Studio discovery/tool use/streaming, durable permission-scoped workspace file operations and recovery, bounded specialist graphs with private edits and explicit conflict integration, restricted WSL commands, exact-snapshot integrated-project validation, explicit preference recall/deletion, conversation FTS and controlled versioned procedure evaluation/activation/rollback. Source verification passes 469 engine tests plus strict typing, formatting, generated contracts, TypeScript, twelve browser checks and seven client checks. Real-model and native evidence is indexed in the architecture/evaluation/release documents.
+Working verified slices include real LM Studio discovery/tool use/streaming, durable permission-scoped workspace file operations and recovery, bounded specialist graphs with private edits and explicit conflict integration, restricted WSL commands, exact-snapshot integrated-project validation, explicit preference recall/deletion, conversation FTS and controlled versioned procedure evaluation/activation/rollback. Source verification most recently passes 472 engine tests plus strict typing, formatting, generated contracts, TypeScript, twelve browser checks and seven client checks. The focused backup/API/migration set passes 26 tests. Real-model and native evidence is indexed in the architecture/evaluation/release documents.
 
 Packaging produces an unsigned installer with a bundled engine; installed hashes, uninstall and data-marker preservation pass on disposable hosted Windows. Hosted run 41795825037 now passes installed GUI boot, authenticated engine readiness, graceful shutdown, uninstall, binary hashes and data-marker preservation. The test applies and removes an app-specific debugging argument on its elevated runner, as required by modern WebView2. Evidence: `docs/releases/evidence/windows-install-13075bf.json`. This is a test-transport diagnosis, not a completed clean-user release gate.
+
+Hosted run 42000075898 attempt 2 passes source checks, installer build, all three frozen-worker checks, and installed boot/uninstall on commit `6db195a78df45c8b32086b67370054f9b5fa89d9`. The step-level metadata is recorded in `docs/releases/evidence/windows-installer-rerun-6db195a.json`; new backup/restore source changes still need their own hosted run.
 
 Major remaining work includes autonomous artifact/test review, broader merge recovery, durable agent identities/routing, complete skill-package discovery/drafting, full onboarding/settings, web/MCP, schedules/channels/media/backends, the remaining pinned capability audit, upgrades/recovery/install coverage, signing/notices and complete user documentation. Existing narrow tests do not prove those requirements.
 
@@ -34,6 +36,10 @@ Private editing milestone: write-enabled specialists use immutable snapshot arti
 - Added transactional run lease acquisition/renewal and owner-checked release. A two-store test proves a second worker cannot steal a live lease or release another worker's lease. All 7 tests and static checks pass. Lease expiry recovery and stale-worker fencing still require verification and coordinator integration; the Phase 2 gate remains incomplete.
 
 ## Overall
+
+### Portable database and artifact recovery (2026-11-05)
+
+Authenticated API backups now produce an atomic `.xaa-backup` bundle containing the consistent SQLite snapshot and every managed artifact referenced by that snapshot. Creation verifies stored artifact bytes against the database size and SHA-256 metadata and refuses unsafe links, paths, or oversized bundles. New offline `xaa restore-bundle` validates archive membership, schema, SQLite integrity/foreign keys and every artifact before atomically publishing a new data directory; it refuses overwrite. The prior database-only restore remains available and explicitly documented as metadata-only. Four targeted backup tests pass, including real artifact recovery, overwrite refusal, traversal refusal, and snapshot behavior. Clean-machine disaster recovery, retention, and automated backup scheduling remain open. See [backup and restore](releases/backup-restore.md).
 
 First unsigned NSIS Windows installer now builds with pinned CLI, release Tauri desktop and bundled frozen engine. A real release boot/authentication/shutdown smoke check passes under restricted PATH. A disposable hosted installer job now builds, installs, boots, uninstalls and checks default data preservation; hosted install execution remains pending. Scope and reproducible commands are in `docs/releases/windows-installer.md`. Signing, notices, upgrade/clean-end-user acceptance and full release gates remain unfinished; estimated completion remains approximately 10%.
 

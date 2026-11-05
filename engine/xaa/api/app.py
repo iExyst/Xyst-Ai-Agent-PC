@@ -53,6 +53,7 @@ from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, revi
 from xaa.runtime.tool_worker import FilesystemWorkerError
 from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.wsl_transport import WSLTransport
+from xaa.storage.backup_bundle import create_backup_bundle
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
 from xaa.storage.memory import MemoryStore
@@ -332,7 +333,7 @@ def create_app(
 
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:
-        return {"path": str(run_store.backup()), "status": "verified"}
+        return {"path": str(create_backup_bundle(run_store)), "status": "verified"}
 
     @app.post("/providers/lm-studio/diagnostics")
     async def diagnose_model(

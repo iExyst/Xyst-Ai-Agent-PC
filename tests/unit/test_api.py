@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import zipfile
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -77,6 +78,19 @@ def test_api_requires_authentication(workspace_tmp_path) -> None:
         client.get("/models", headers={"Authorization": f"Bearer {TOKEN}"}).json()[0]["id"]
         == "fixture/model"
     )
+
+
+def test_authenticated_backup_endpoint_returns_verified_artifact_bundle(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "backup.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post("/backups", headers=headers)
+    assert response.status_code == 201
+    bundle = response.json()["path"]
+    assert bundle.endswith(".xaa-backup")
+    with zipfile.ZipFile(bundle) as archive:
+        assert archive.testzip() is None
+        assert {"manifest.json", "xaa.sqlite3"}.issubset(archive.namelist())
 
 
 def test_stream_emits_ordered_events(workspace_tmp_path) -> None:
