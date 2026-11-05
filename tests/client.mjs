@@ -73,3 +73,10 @@ test('artifact preview stops at its byte limit and cancels the stream', async ()
   assert.match(preview, /Preview limited/);
   assert.equal(cancelled, true);
 });
+
+test('PNG artifacts are returned as bounded inline image previews', async () => {
+  const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () =>
+    new Response(bytes, {headers: {'content-type': 'image/png'}}));
+  assert.equal(await client.artifactPreview('screenshot-1'), `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`);
+});

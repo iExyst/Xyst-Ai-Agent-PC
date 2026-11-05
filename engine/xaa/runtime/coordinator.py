@@ -19,6 +19,7 @@ from xaa.providers.lm_studio import (
     LMStudioProvider,
 )
 from xaa.providers.streaming import StreamAssemblyError
+from xaa.runtime.browser import BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.directory_listing import ListDirectoryArguments
@@ -278,6 +279,20 @@ class Coordinator:
                 api_key,
                 deadline=deadline,
             )
+        if name == "browser_run":
+            if not run.get("approved_browser") or not run.get("approved_web_hosts"):
+                raise PermissionError(
+                    "This run has no user-approved browser permission and hostnames."
+                )
+            return await run_approved_browser(
+                self.store,
+                run_id,
+                token,
+                call["id"],
+                arguments,
+                run["approved_web_hosts"],
+                deadline=deadline,
+            )
         if name == "plan_save":
             return self._propose_plan(run_id, token, call["id"], function["arguments"], tools)
         if name == "plan_run_ready":
@@ -525,6 +540,12 @@ class Coordinator:
                 " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
             )
             tools.append(web_tool)
+        if run.get("approved_browser") and approved_web_hosts:
+            browser_tool = json.loads(json.dumps(BROWSER_TOOL))
+            browser_tool["function"]["description"] += (
+                " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
+            )
+            tools.append(browser_tool)
         tools.append(
             {
                 "type": "function",

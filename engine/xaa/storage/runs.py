@@ -85,8 +85,16 @@ class RunStore:
             return identity
 
     def register_artifact(
-        self, run_id: str, token: str, filename: str, *, provenance: str
+        self,
+        run_id: str,
+        token: str,
+        filename: str,
+        *,
+        provenance: str,
+        media_type: str = "text/plain",
     ) -> dict[str, Any]:
+        if media_type not in {"text/plain", "image/png"}:
+            raise ValueError("Managed artifacts support only plain text and PNG images.")
         root = (self.path.parent / "artifacts").resolve(strict=True)
         if Path(filename).name != filename:
             raise ValueError("Artifact name must not contain a path.")
@@ -108,7 +116,7 @@ class RunStore:
             self.require_lease(connection, run_id, token)
             connection.execute(
                 "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
-                (identity, run_id, "text/plain", filename, size, digest, provenance, created),
+                (identity, run_id, media_type, filename, size, digest, provenance, created),
             )
             self.record_event(
                 connection,
@@ -119,7 +127,7 @@ class RunStore:
         return {
             "id": identity,
             "run_id": run_id,
-            "media_type": "text/plain",
+            "media_type": media_type,
             "size_bytes": size,
             "sha256": digest,
             "provenance": provenance,
@@ -515,6 +523,7 @@ class RunStore:
         command_grant: dict[str, Any] | None = None,
         approved_web_hosts: list[str] | None = None,
         approved_web_search: bool = False,
+        approved_browser: bool = False,
     ) -> dict[str, Any]:
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
@@ -581,7 +590,7 @@ class RunStore:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
             if granted_command is not None:
                 self.record_event(connection, run_id, "execution.granted", granted_command)
-            if approved_web_hosts or approved_web_search:
+            if approved_web_hosts or approved_web_search or approved_browser:
                 self.record_event(
                     connection,
                     run_id,
@@ -589,6 +598,7 @@ class RunStore:
                     {
                         "hosts": approved_web_hosts,
                         "search": approved_web_search,
+                        "browser": approved_browser,
                         "actor": "local_user",
                     },
                 )
@@ -635,6 +645,11 @@ class RunStore:
         )
         record["approved_web_search"] = (
             bool(json.loads(web_grants[0][0]).get("search", False))
+            if len(web_grants) == 1
+            else False
+        )
+        record["approved_browser"] = (
+            bool(json.loads(web_grants[0][0]).get("browser", False))
             if len(web_grants) == 1
             else False
         )

@@ -935,6 +935,11 @@ export interface components {
         CreateRunRequest: {
             /** Acceptance Criteria */
             acceptance_criteria?: string[];
+            /**
+             * Approved Browser
+             * @default false
+             */
+            approved_browser: boolean;
             /** Approved Web Hosts */
             approved_web_hosts?: string[];
             /**
@@ -1480,6 +1485,11 @@ export interface components {
         RunRecord: {
             /** Acceptance Criteria */
             acceptance_criteria: string[];
+            /**
+             * Approved Browser
+             * @default false
+             */
+            approved_browser: boolean;
             /** Approved Web Hosts */
             approved_web_hosts?: string[];
             /**

@@ -117,6 +117,11 @@
             "title": "Acceptance Criteria",
             "type": "array"
           },
+          "approved_browser": {
+            "default": false,
+            "title": "Approved Browser",
+            "type": "boolean"
+          },
           "approved_web_hosts": {
             "items": {
               "type": "string"
@@ -1653,6 +1658,11 @@
             },
             "title": "Acceptance Criteria",
             "type": "array"
+          },
+          "approved_browser": {
+            "default": false,
+            "title": "Approved Browser",
+            "type": "boolean"
           },
           "approved_web_hosts": {
             "items": {

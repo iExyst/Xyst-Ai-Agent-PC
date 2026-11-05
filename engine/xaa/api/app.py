@@ -105,6 +105,7 @@ class CreateRunRequest(BaseModel):
     command_grant: CommandGrant | None = None
     approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
     approved_web_search: bool = False
+    approved_browser: bool = False
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
@@ -937,6 +938,7 @@ def create_app(
                 command_grant=payload.command_grant.model_dump() if payload.command_grant else None,
                 approved_web_hosts=payload.approved_web_hosts,
                 approved_web_search=payload.approved_web_search,
+                approved_browser=payload.approved_browser,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -1193,10 +1195,11 @@ def create_app(
             or hashlib.sha256(content).hexdigest() != metadata["sha256"]
         ):
             raise HTTPException(status_code=409, detail="Artifact integrity verification failed.")
+        extension = "png" if metadata["media_type"] == "image/png" else "txt"
         return Response(
             content=content,
             media_type=metadata["media_type"],
-            headers={"Content-Disposition": f'attachment; filename="{artifact_id}.txt"'},
+            headers={"Content-Disposition": f'attachment; filename="{artifact_id}.{extension}"'},
         )
 
     @app.get("/runs/{run_id}/events/stream")

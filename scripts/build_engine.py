@@ -54,6 +54,8 @@ def main() -> None:
             "uvicorn",
             "--collect-all",
             "lmstudio",
+            "--collect-all",
+            "playwright",
             "--hidden-import",
             "keyring.backends.Windows",
             *[

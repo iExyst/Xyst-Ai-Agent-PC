@@ -198,6 +198,27 @@ export class EngineClient {
     const response = await this.#fetch(new URL(`/artifacts/${encodeURIComponent(id)}`, this.#base), { headers: { Authorization: `Bearer ${this.#token}` }, redirect: 'error', ...(signal ? { signal } : {}) });
     if (!response.ok || !response.body) throw new EngineRequestError(response.status, 'Cannot read artifact.');
     const reader = response.body.getReader();
+    if (response.headers.get('content-type')?.split(';', 1)[0] === 'image/png') {
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          size += chunk.value.byteLength;
+          if (size > 512 * 1024) throw new Error('Screenshot exceeds the preview limit.');
+          chunks.push(chunk.value);
+        }
+      } finally { await reader.cancel(); reader.releaseLock(); }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      let binary = '';
+      for (let index = 0; index < bytes.length; index += 32768) {
+        binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + 32768, bytes.length)));
+      }
+      return `data:image/png;base64,${btoa(binary)}`;
+    }
     const decoder = new TextDecoder();
     let text = ''; let bytes = 0;
     try {

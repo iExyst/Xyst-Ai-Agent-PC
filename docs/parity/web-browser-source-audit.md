@@ -28,12 +28,12 @@ Scope: source-level behavior for web search/extraction, browser control, and MCP
 
 ## Release scope and present gap
 
-These upstream source paths establish that Hermes browser/MCP support includes connection lifecycle and network/security policy, not just a tool schema. X.A.A. now has a bounded public HTTPS fetcher and a configured Brave Search adapter, but no managed browser runtime or MCP client integration. The matrix records these as partial slices; this audit does not establish parity.
+These upstream source paths establish that Hermes browser/MCP support includes connection lifecycle and network/security policy, not just a tool schema. X.A.A. has a bounded public HTTPS fetcher, a configured Brave Search adapter, and an initial managed read-only Playwright/Edge browser slice. Browser forms, downloads, persistent sessions, MCP, and full parity remain unimplemented. The matrix records these as partial slices; this audit does not establish parity.
 
 Implementation order derived from this source review:
 
 1. Build bounded web search/extraction behind explicitly configured providers, with SSRF-safe URL handling and untrusted provenance. A fetch slice and Brave Search slice now exist; exact per-run host/query approval, result bounds, durable outcomes and untrusted labels are implemented. Live Brave API acceptance requires an explicitly configured key.
-2. Add a managed Playwright browser worker with a disposable profile, cancellation, and URL policy.
+2. Expand the managed Playwright browser worker beyond its current disposable-context navigation, link, snapshot, and screenshot slice; verify all browser lifecycle and network policy cases.
 3. Add MCP server configuration and lifecycle, then expose only namespaced tools whose permissions are independently granted and whose outputs are marked untrusted.
 
 Each item needs its own source tests and live dependency acceptance. No provider credentials, browser runtime acceptance, or MCP server acceptance is claimed by this audit.

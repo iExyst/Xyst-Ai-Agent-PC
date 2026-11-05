@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import socket
+from typing import Any
+
+import pytest
+from xaa.runtime import browser_worker
+from xaa.runtime.browser import BrowserArguments, _worker_environment
+from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.web_fetch import validate_web_target
+from xaa.storage.runs import RunStore
+
+
+def test_browser_arguments_reject_unbounded_or_empty_link_actions() -> None:
+    with pytest.raises(ValueError):
+        BrowserArguments(url="https://docs.example.com", links=[""])
+    with pytest.raises(ValueError):
+        BrowserArguments(url="https://docs.example.com", links=["x"] * 6)
+
+
+def test_browser_worker_receives_only_os_runtime_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XAA_TEST_BROWSER_SECRET", "must-not-be-inherited")
+    assert "XAA_TEST_BROWSER_SECRET" not in _worker_environment()
+
+
+def test_browser_url_uses_exact_approved_hosts_and_web_url_policy() -> None:
+    hosts = {"docs.example.com"}
+    assert browser_worker.validate_url("https://docs.example.com/guide", hosts)
+    for url in (
+        "http://docs.example.com/guide",
+        "https://sub.docs.example.com/guide",
+        "https://docs.example.com/?access_token=secret",
+        "https://docs.example.com:444/guide",
+    ):
+        with pytest.raises((PermissionError, ValueError)):
+            browser_worker.validate_url(url, hosts)
+    with pytest.raises(PermissionError):
+        validate_web_target("https://other.example.com/", hosts)
+
+
+@pytest.mark.asyncio
+async def test_browser_dns_rejects_mixed_public_and_private_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeLoop:
+        async def getaddrinfo(self, host: str, port: int, *, type: int) -> list[Any]:
+            del host, port, type
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443)),
+            ]
+
+    monkeypatch.setattr(browser_worker.asyncio, "get_running_loop", lambda: FakeLoop())
+    with pytest.raises(PermissionError, match="private or non-public"):
+        await browser_worker.resolve_public("docs.example.com")
+
+
+def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) -> None:
+    store = RunStore(workspace_tmp_path / "browser-grant.sqlite3")
+    coordinator = Coordinator(store, object())  # type: ignore[arg-type]
+    run = store.create_run(
+        objective="Read docs",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        approved_web_hosts=["docs.example.com"],
+    )
+    names = {tool["function"]["name"] for tool in coordinator._tools(run["id"], run)}
+    assert "browser_run" not in names
+    browser_run = dict(run, approved_browser=True)
+    assert "browser_run" in {
+        tool["function"]["name"] for tool in coordinator._tools(run["id"], browser_run)
+    }

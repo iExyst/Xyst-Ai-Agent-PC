@@ -155,7 +155,7 @@ class _PinnedHTTPTransport(httpx.AsyncHTTPTransport):
         self._pool._network_backend = _PinnedBackend(hostname, address)  # pyright: ignore[reportPrivateUsage]
 
 
-def _validate_target(url: str, approved_hosts: set[str]) -> tuple[SplitResult, str]:
+def validate_web_target(url: str, approved_hosts: set[str]) -> tuple[SplitResult, str]:
     parsed = urlsplit(url)
     hostname = (parsed.hostname or "").rstrip(".").encode("idna").decode("ascii").lower()
     if (
@@ -188,6 +188,9 @@ def _validate_target(url: str, approved_hosts: set[str]) -> tuple[SplitResult, s
     if any(key.lower() in sensitive and value for key, value in parse_qsl(parsed.query)):
         raise PermissionError("Web URLs containing credential query parameters are blocked.")
     return parsed, hostname
+
+
+_validate_target = validate_web_target
 
 
 async def _read_url(url: str, approved_hosts: set[str]) -> dict[str, Any]:

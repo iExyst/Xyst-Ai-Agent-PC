@@ -34,13 +34,18 @@ test('connect, submit an objective and render its saved events', async ({ page }
       {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},status:'queued'},
       {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
     ],ready:['inspect'],blocked:[]},headers});
-    if (path.endsWith('/artifacts')) return route.fulfill({ json: [{ id: 'artifact-1', provenance: 'git.diff', size_bytes: 40 }], headers });
+    if (path.endsWith('/artifacts')) return route.fulfill({ json: [
+      { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain' },
+      { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png' }
+    ], headers });
     if (path === '/artifacts/artifact-1') return route.fulfill({ body: '<script>window.artifactExecuted=true</script>', contentType: 'text/plain', headers });
+    if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
     if (path === '/runs' && request.method() === 'POST') {
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().approved_web_search).toBe(true);
+      expect(request.postDataJSON().approved_browser).toBe(true);
       expect(request.postDataJSON().file_checks).toEqual([{path: 'input.txt', expected_content: 'fixture\n'}]);
       return route.fulfill({ json: run, headers });
     }
@@ -83,6 +88,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('Allow Brave web search for this next run').check();
+  await page.getByLabel('Allow managed browser reads for this next run').check();
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');
@@ -121,6 +127,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByRole('button', { name: 'View git.diff' }).click();
   await expect(page.locator('pre')).toContainText('<script>');
   expect(await page.evaluate(() => 'artifactExecuted' in window)).toBe(false);
+  await page.getByRole('button', { name: 'View browser.screenshot:untrusted_web_content' }).click();
+  await expect(page.getByRole('img', { name: 'Untrusted browser screenshot' })).toBeVisible();
   await page.getByLabel('Objective', {exact:true}).fill('Read another file', {timeout:2000});
   await expect(page.getByLabel('Objective', {exact:true})).toHaveValue('Read another file');
   await page.getByLabel('Expected file contents', {exact:true}).fill('second fixture\n', {timeout:2000});

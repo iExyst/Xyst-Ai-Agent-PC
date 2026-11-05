@@ -1,0 +1,13 @@
+{
+  "checked_at_utc": "2026-11-05T15:26:22.588343+00:00",
+  "frozen_engine_sha256": "83c6d544d9766b9a5f847c2887588984c9c25f7fa09b9eff2604a934c34db5bf",
+  "browser": "Microsoft Edge via packaged Playwright worker",
+  "result": {
+    "status": "ok",
+    "title": "Example Domain",
+    "trust": "untrusted_web_content",
+    "content_characters": 917,
+    "screenshot_bytes": 45368,
+    "screenshot_sha256": "b1b3ed9e15bdab1237f3b29268f1937bde2a4e506ceb5f4735aa01359eadc846"
+  }
+}

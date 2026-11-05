@@ -9,6 +9,8 @@ if __name__ == "__main__":
         from xaa.runtime.snapshot_worker import main
     elif sys.argv[1:] == ["--tokenizer-worker"]:
         from xaa.providers.tokenizer_worker import main
+    elif sys.argv[1:] == ["--browser-worker"]:
+        from xaa.runtime.browser_worker import main
     else:
         from xaa.api.__main__ import main
     main()

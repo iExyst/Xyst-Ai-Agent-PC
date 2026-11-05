@@ -1,0 +1,21 @@
+{
+  "checked_at_utc": "2026-11-05T15:24:56.152750+00:00",
+  "browser": "Microsoft Edge via Playwright channel=msedge",
+  "approved_hosts": [
+    "example.com"
+  ],
+  "result": {
+    "status": "ok",
+    "url": "https://example.com/",
+    "title": "Example Domain",
+    "trust": "untrusted_web_content",
+    "content_characters": 917,
+    "screenshot_artifact": {
+      "media_type": "image/png",
+      "size_bytes": 45560,
+      "sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240"
+    }
+  },
+  "elapsed_ms": 1604,
+  "source_sha256": "a155a0c6d7fb07fa6dce2498c62f360667db80722b9269d6e4dff4f4e95c3449"
+}

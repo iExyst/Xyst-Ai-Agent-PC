@@ -167,6 +167,15 @@ def test_artifact_download_requires_auth_and_rejects_tampering(workspace_tmp_pat
             client.get(f"/runs/{run_id}/artifacts", headers=headers).json()[0]["id"]
             == metadata["id"]
         )
+        png = root / "screenshot.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+        image = store.register_artifact(
+            run_id, token, png.name, provenance="browser.screenshot", media_type="image/png"
+        )
+        image_response = client.get(f"/artifacts/{image['id']}", headers=headers)
+        assert image_response.content == png.read_bytes()
+        assert image_response.headers["content-type"] == "image/png"
+        assert image["media_type"] == "image/png"
         artifact.write_bytes(b"tampered")
         assert client.get(route, headers=headers).status_code == 409
 
@@ -219,17 +228,20 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
                 "objective": "Read the docs",
                 "approved_web_hosts": ["Docs.Example.com."],
                 "approved_web_search": True,
+                "approved_browser": True,
             },
         )
         assert created.status_code == 201
         run_id = created.json()["id"]
         assert created.json()["approved_web_hosts"] == ["docs.example.com"]
         assert created.json()["approved_web_search"] is True
+        assert created.json()["approved_browser"] is True
         events = client.get(f"/runs/{run_id}/events", headers=headers).json()
         assert events[-1]["event_type"] == "web.access_granted"
         assert events[-1]["payload"] == {
             "hosts": ["docs.example.com"],
             "search": True,
+            "browser": True,
             "actor": "local_user",
         }
         invalid = client.post(
@@ -244,6 +256,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
     assert recovered is not None
     assert recovered["approved_web_hosts"] == ["docs.example.com"]
     assert recovered["approved_web_search"] is True
+    assert recovered["approved_browser"] is True
 
 
 def test_failed_tool_diagnostic_is_reported_without_enabling_tools(workspace_tmp_path):
