@@ -35,6 +35,8 @@ Source inventory follow-up: `pinned-inventory.json` records all 27 in-tree platf
 
 Channel source follow-up: `channel-inventory.json` identifies WeCom's second registration (`wecom_callback`) and separates declarations from actual media/runtime support. `channel-requirements.md` covers all 31 inspected in-tree/core routes and defines separate service/topic trust boundaries. It resolves the Home Assistant README lead to an externally pinned official catalog plugin and records platform-category discovery candidates without counting them all as supported channels. External source inspection and full registration/mixin behavior remain open.
 
+Web/browser/MCP source follow-up: [`web-browser-source-audit.md`](web-browser-source-audit.md) inspects the pinned search/extraction, SSRF, browser/CDP, MCP lifecycle, and plug-in configuration/security modules. It clarifies that the release target includes URL policy, process/session lifecycle, tool-schema registration, and disconnect recovery, and maps those behaviors to acceptance requirements. X.A.A. has not implemented these capabilities yet; the rows above remain planned/partial.
+
 The pinned commit is the audit target. Any feature first added upstream after this pin belongs in a separately dated upstream-delta backlog, not in the pinned parity verdict.
 
 Resource accounting follow-up: optional run-tree reported-token stop thresholds now gate parent/specialist inference and proposals against durable usage. Tests and real local-model evidence are in `../architecture/token-thresholds.md`. This remains partial: requests can overshoot, diagnostic usage is excluded and request reservations/output caps/per-task token allowances remain open. No resource-control parity claim is established.
