@@ -16,7 +16,7 @@ When a run completes, its saved public answer is sent to the paired private chat
 
 ## Scheduled result messages
 
-The Automations screen lists currently linked private Telegram accounts as optional destinations. Selecting one explicitly authorizes one message for each scheduled occurrence to that account. The destination is bound to the bot account and Telegram user ID; the server rejects a destination that is no longer linked. Revoking links also cancels pending scheduled messages for those users. A send already in progress cannot be recalled.
+The Automations screen lists currently linked private Telegram accounts as optional destinations. Selecting one explicitly authorizes one message for each scheduled occurrence to that account. The destination is bound to the bot account and Telegram user ID; the server rejects a destination that is no longer linked. Revoking links also cancels pending scheduled messages for those users. A send already in progress cannot be recalled. Optional quiet hours use `HH:MM-HH:MM` in the schedule's IANA timezone, including overnight ranges such as `22:00-07:00`. Scheduled work still runs at its configured time; only its result message waits until the quiet window ends. Repeated local times follow the timezone's normal conversion, and the message becomes eligible at the next poll after the configured end time.
 
 Scheduled messages use a durable per-occurrence outbox. The execution history records `sent`, `failed`, `unknown`, or `revoked`. The adapter saves send intent before calling Telegram and does not retry an ambiguous outcome after a timeout or restart. Runs without a selected destination do not create a delivery record or send a message.
 

@@ -64,7 +64,7 @@ from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
-from xaa.storage.schedules import ScheduleStore, parse_local_time
+from xaa.storage.schedules import ScheduleStore, parse_local_time, validate_quiet_hours
 from xaa.storage.skills import (
     SkillConflict,
     SkillDraft,
@@ -159,6 +159,7 @@ class CreateScheduleRequest(BaseModel):
     frequency: Literal["once", "daily", "weekly"]
     timezone: str = Field(min_length=1, max_length=128)
     missed_run_policy: Literal["skip", "run_once"] = "skip"
+    quiet_hours: str | None = Field(default=None, max_length=11)
     max_iterations: int = Field(default=8, ge=1, le=100)
     max_seconds: int = Field(default=900, ge=1, le=86400)
     telegram_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
@@ -767,6 +768,7 @@ def create_app(
                 max_iterations=payload.max_iterations,
                 max_seconds=payload.max_seconds,
                 delivery_destination=delivery_destination,
+                quiet_hours=validate_quiet_hours(payload.quiet_hours),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

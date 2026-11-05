@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from datetime import UTC, datetime
@@ -14,6 +15,34 @@ from xaa.storage.runs import RunStore, utc_now
 
 ScheduleFrequency = Literal["once", "daily", "weekly"]
 OccurrenceOutcome = Literal["run", "missed", "overlap_skipped", "dst_skipped"]
+_QUIET_HOURS = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]-(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+
+
+def validate_quiet_hours(value: str | None) -> str | None:
+    """Validate a local daily notification quiet window in HH:MM-HH:MM form."""
+    if value is None:
+        return None
+    if not _QUIET_HOURS.fullmatch(value):
+        raise ValueError("Quiet hours must use HH:MM-HH:MM in the schedule timezone.")
+    start, end = value.split("-")
+    if start == end:
+        raise ValueError("Quiet hours must have different start and end times.")
+    return value
+
+
+def quiet_hours_active(value: str | None, timezone: str, now: datetime) -> bool:
+    """Whether a notification is currently inside its local quiet window."""
+    if value is None:
+        return False
+    validate_quiet_hours(value)
+    local = now.astimezone(ZoneInfo(timezone))
+    minute = local.hour * 60 + local.minute
+    start_text, end_text = value.split("-")
+    start_hour, start_minute = (int(part) for part in start_text.split(":"))
+    end_hour, end_minute = (int(part) for part in end_text.split(":"))
+    start = start_hour * 60 + start_minute
+    end = end_hour * 60 + end_minute
+    return start <= minute < end if start < end else minute >= start or minute < end
 
 
 def parse_local_time(value: str) -> datetime:
@@ -67,8 +96,10 @@ class ScheduleStore:
         max_iterations: int,
         max_seconds: int,
         delivery_destination: str | None = None,
+        quiet_hours: str | None = None,
     ) -> dict[str, Any]:
         ZoneInfo(timezone)
+        quiet_hours = validate_quiet_hours(quiet_hours)
         if local_instant(start_at, timezone) is None:
             raise ValueError("This local time does not exist because of a daylight-saving change.")
         identity = str(uuid.uuid4())
@@ -91,7 +122,7 @@ class ScheduleStore:
                     json.dumps(recurrence),
                     timezone,
                     missed_run_policy,
-                    None,
+                    quiet_hours,
                     delivery_destination,
                     now,
                     now,

@@ -287,6 +287,18 @@
             "title": "Objective",
             "type": "string"
           },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "maxLength": 11,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Hours"
+          },
           "start_at": {
             "maxLength": 16,
             "minLength": 16,

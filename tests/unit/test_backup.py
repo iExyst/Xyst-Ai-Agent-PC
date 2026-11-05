@@ -1,4 +1,5 @@
 import hashlib
+import os
 import zipfile
 
 import pytest
@@ -93,3 +94,28 @@ def test_bundle_restore_rejects_archive_path_traversal(workspace_tmp_path):
     with pytest.raises(ValueError, match="entries do not match"):
         restore_backup_bundle(malicious, workspace_tmp_path / "recovered")
     assert not (workspace_tmp_path / "escape.txt").exists()
+
+
+def test_bundle_publication_retries_transient_windows_directory_lock(
+    workspace_tmp_path, monkeypatch
+):
+    if os.name != "nt":
+        pytest.skip("Windows directory publication lock behavior")
+    store = RunStore(workspace_tmp_path / "live.sqlite3")
+    bundle = create_backup_bundle(store)
+    real_rename = os.rename
+    attempts = 0
+
+    def rename_with_transient_lock(source, destination):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            failure = PermissionError(5, "Access is denied")
+            failure.winerror = 5
+            raise failure
+        real_rename(source, destination)
+
+    monkeypatch.setattr(os, "rename", rename_with_transient_lock)
+    result = restore_backup_bundle(bundle, workspace_tmp_path / "recovered")
+    assert result.is_file()
+    assert attempts == 2

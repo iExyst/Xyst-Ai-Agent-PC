@@ -9,7 +9,13 @@ from xaa.channels.telegram import TelegramIdentity, TelegramStore
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.scheduler.service import ScheduleService, due_occurrence
 from xaa.storage.runs import RunStore
-from xaa.storage.schedules import ScheduleStore, local_instant, parse_local_time
+from xaa.storage.schedules import (
+    ScheduleStore,
+    local_instant,
+    parse_local_time,
+    quiet_hours_active,
+    validate_quiet_hours,
+)
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
@@ -52,6 +58,27 @@ def test_local_timezone_resolves_dst_gap_and_ambiguous_time() -> None:
     assert local_instant(datetime(2025, 11, 2, 1, 30), "America/New_York") == datetime(
         2025, 11, 2, 5, 30, tzinfo=UTC
     )
+
+
+def test_quiet_hours_support_local_day_and_overnight_windows() -> None:
+    assert quiet_hours_active(
+        "22:00-07:00", "America/New_York", datetime(2026, 11, 5, 4, tzinfo=UTC)
+    )
+    assert not quiet_hours_active(
+        "22:00-07:00", "America/New_York", datetime(2026, 11, 5, 13, tzinfo=UTC)
+    )
+    assert quiet_hours_active("12:00-13:00", "UTC", datetime(2026, 1, 1, 12, 30, tzinfo=UTC))
+    assert not quiet_hours_active("12:00-13:00", "UTC", datetime(2026, 1, 1, 13, 0, tzinfo=UTC))
+
+
+def test_quiet_hours_reject_invalid_or_empty_ranges() -> None:
+    for value in ("22:00", "24:00-07:00", "22:00-22:00", "12:00-13:00-extra"):
+        try:
+            validate_quiet_hours(value)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"Invalid quiet hours accepted: {value}")
 
 
 def test_daily_schedule_skips_nonexistent_wall_time_and_advances() -> None:
@@ -233,6 +260,19 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
         assert record["recurrence"]["workspace"] == str(workspace_tmp_path.resolve())
         assert record["missed_run_policy"] == "run_once"
         assert record["delivery_destination"] is None
+        with_quiet_hours = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "quiet_hours": "22:00-07:00"},
+        )
+        assert with_quiet_hours.status_code == 201, with_quiet_hours.text
+        assert with_quiet_hours.json()["quiet_hours"] == "22:00-07:00"
+        invalid_quiet_hours = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "quiet_hours": "24:00-07:00"},
+        )
+        assert invalid_quiet_hours.status_code == 422
         delivery = client.post(
             "/schedules",
             headers=HEADERS,

@@ -976,6 +976,8 @@ export interface components {
             model: string;
             /** Objective */
             objective: string;
+            /** Quiet Hours */
+            quiet_hours?: string | null;
             /** Start At */
             start_at: string;
             /** Telegram User Id */

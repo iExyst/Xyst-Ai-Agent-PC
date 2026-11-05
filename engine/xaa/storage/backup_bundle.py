@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import stat
+import time
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -211,7 +212,18 @@ def restore_backup_bundle(bundle: Path, destination: Path) -> Path:
                 raise ValueError("Backup is missing one or more database-referenced artifacts.")
             (staging / "xaa.sqlite3").write_bytes(database)
             schema_db.unlink()
-        os.rename(staging, destination)
+        for attempt in range(5):
+            try:
+                os.rename(staging, destination)
+                break
+            except PermissionError as exc:
+                if os.name != "nt" or getattr(exc, "winerror", None) not in {5, 32, 33}:
+                    raise
+                if not staging.exists() and destination.exists():
+                    break
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (2**attempt))
         return destination / "xaa.sqlite3"
     finally:
         if staging.exists():

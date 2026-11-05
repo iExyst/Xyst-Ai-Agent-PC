@@ -18,6 +18,7 @@ import httpx
 
 from xaa.credentials import CredentialStore
 from xaa.storage.runs import RunState, RunStore, utc_now
+from xaa.storage.schedules import quiet_hours_active
 
 logger = logging.getLogger(__name__)
 PAIR_COMMAND = re.compile(r"^/pair(?:@[A-Za-z0-9_]+)?\s+([A-Za-z0-9_-]{24,128})$")
@@ -494,7 +495,9 @@ class TelegramStore:
                     "UPDATE sessions SET updated_at=? WHERE id=?", (utc_now(), session_id)
                 )
 
-    def claim_schedule_delivery(self, account_id: str) -> dict[str, Any] | None:
+    def claim_schedule_delivery(
+        self, account_id: str, *, now: datetime | None = None
+    ) -> dict[str, Any] | None:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             revoked = connection.execute(
@@ -510,8 +513,8 @@ class TelegramStore:
                     "UPDATE schedule_executions SET delivery_evidence='revoked' WHERE id=?",
                     (row["execution_id"],),
                 )
-            row = connection.execute(
-                "SELECT d.execution_id,d.chat_id,e.run_id,r.state FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id JOIN runs r ON r.id=e.run_id WHERE d.account_id=? AND d.state='pending' AND r.state IN (?,?,?,?) AND EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1) ORDER BY d.created_at LIMIT 1",
+            rows = connection.execute(
+                "SELECT d.execution_id,d.chat_id,e.run_id,r.state,s.quiet_hours,s.timezone FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id JOIN runs r ON r.id=e.run_id JOIN schedules s ON s.id=e.schedule_id WHERE d.account_id=? AND d.state='pending' AND r.state IN (?,?,?,?) AND EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1) ORDER BY d.created_at",
                 (
                     account_id,
                     RunState.COMPLETED.value,
@@ -519,7 +522,18 @@ class TelegramStore:
                     RunState.BLOCKED.value,
                     RunState.CANCELLED.value,
                 ),
-            ).fetchone()
+            ).fetchall()
+            current = now or datetime.now(UTC)
+            row = next(
+                (
+                    candidate
+                    for candidate in rows
+                    if not quiet_hours_active(
+                        candidate["quiet_hours"], str(candidate["timezone"]), current
+                    )
+                ),
+                None,
+            )
             if row is None:
                 return None
             text: str | None = None

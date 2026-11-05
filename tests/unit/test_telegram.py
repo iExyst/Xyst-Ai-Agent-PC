@@ -311,6 +311,37 @@ def test_revoked_telegram_identity_cannot_receive_scheduled_delivery(
         )
 
 
+def test_scheduled_telegram_delivery_waits_until_local_quiet_hours_end(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-delivery-quiet-hours.sqlite3")
+    store, schedule_id = queued_scheduled_delivery(runs)
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE schedules SET quiet_hours='22:00-07:00',timezone='America/New_York' WHERE id=?",
+            (schedule_id,),
+        )
+
+    # 23:00 local is quiet; the outbox remains pending and no send intent is written.
+    assert (
+        store.claim_schedule_delivery(
+            IDENTITY.account_id, now=datetime(2026, 11, 5, 4, 0, tzinfo=UTC)
+        )
+        is None
+    )
+    with runs.connection() as connection:
+        assert (
+            connection.execute("SELECT state FROM schedule_deliveries").fetchone()[0] == "pending"
+        )
+
+    # 08:00 local is outside the window and the same occurrence becomes deliverable.
+    delivery = store.claim_schedule_delivery(
+        IDENTITY.account_id, now=datetime(2026, 11, 5, 13, 0, tzinfo=UTC)
+    )
+    assert delivery is not None
+    assert delivery["execution_id"]
+
+
 def test_failed_scheduled_run_sends_generic_notice(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "scheduled-delivery-failed.sqlite3")
     store, _schedule_id = queued_scheduled_delivery(runs)

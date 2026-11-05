@@ -13,6 +13,8 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [frequency,setFrequency]=useState<'once'|'daily'|'weekly'>('once');
   const [timezone,setTimezone]=useState(()=>Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC');
   const [missedRunPolicy,setMissedRunPolicy]=useState<'skip'|'run_once'>('skip');
+  const [quietStart,setQuietStart]=useState('');
+  const [quietEnd,setQuietEnd]=useState('');
   const [telegramUsers,setTelegramUsers]=useState<string[]>([]);
   const [telegramDeliveryUser,setTelegramDeliveryUser]=useState('');
   const [busy,setBusy]=useState(false);
@@ -31,7 +33,10 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   async function create() {
     setBusy(true);setError('');
     try {
-      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{})});
+      if(Boolean(quietStart)!==Boolean(quietEnd))throw new Error('Set both quiet-hours times or leave both empty.');
+      if(quietStart&&quietStart===quietEnd)throw new Error('Quiet hours must have different start and end times.');
+      const quietHours=quietStart&&quietEnd?`${quietStart}-${quietEnd}`:undefined;
+      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{})});
       setItems(current=>[schedule,...current]);setObjective('');
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the schedule.');}
     finally {setBusy(false);}
@@ -61,16 +66,20 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <select id="schedule-missed" value={missedRunPolicy} onChange={event=>setMissedRunPolicy(event.target.value as 'skip'|'run_once')} disabled={busy}>
       <option value="skip">Skip missed work</option><option value="run_once">Run the latest missed occurrence once</option>
     </select>
+    <label htmlFor="quiet-hours-start">Telegram quiet hours start (optional, local schedule time)</label>
+    <input id="quiet-hours-start" type="time" value={quietStart} onChange={event=>setQuietStart(event.target.value)} disabled={busy}/>
+    <label htmlFor="quiet-hours-end">Telegram quiet hours end</label>
+    <input id="quiet-hours-end" type="time" value={quietEnd} onChange={event=>setQuietEnd(event.target.value)} disabled={busy}/>
     <label htmlFor="schedule-telegram-destination">Telegram result destination (optional)</label>
     <select id="schedule-telegram-destination" value={telegramDeliveryUser} onChange={event=>setTelegramDeliveryUser(event.target.value)} disabled={busy}>
       <option value="">Do not send Telegram messages</option>
       {telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
     </select>
-    <p>Daylight-saving gaps are skipped; repeated wall-clock times run once at the earlier offset. Overlapping runs are skipped. Choose a local model above before scheduling.</p>
+    <p>Quiet hours defer authorized Telegram result messages; they do not delay the scheduled run. Set a start and end to cover a local daily window, including overnight windows. Daylight-saving gaps are skipped; repeated wall-clock times run once at the earlier offset. Overlapping runs are skipped. Choose a local model above before scheduling.</p>
     <button type="button" onClick={()=>void create()} disabled={busy||!objective.trim()||!model||!startAt||!timezone.trim()}>Create schedule</button>
     {items.length>0&&<ul>{items.map(item=><li key={item.id}>
       <p>{item.objective}</p>
-      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}) · {item.enabled?'Enabled':'Disabled'}</p>
+      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
       {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>{execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''} · {execution.created_at}</li>)}</ul></details>}
     </li>)}</ul>}
