@@ -26,6 +26,7 @@ export type CredentialStatus = components['schemas']['LMStudioCredentialStatus']
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
+export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -111,6 +112,14 @@ export class EngineClient {
   }
 
   providers(): Promise<{id:string;status:string;error?:string}[]> { return this.#request('/providers'); }
+
+  specialistProfiles(): Promise<SpecialistProfile[]> { return this.#request('/specialists/profiles'); }
+
+  setSpecialistRoute(role: string, model_route: string | null): Promise<SpecialistProfile> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/route`, {
+      method: 'PUT', body: JSON.stringify({model_route}),
+    });
+  }
 
   executionDistributions(signal?: AbortSignal): Promise<components['schemas']['DistributionInventory']> {
     return this.#request('/execution/distributions', {signal});

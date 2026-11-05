@@ -2,3 +2,5 @@
 
 .procedure-permission { display: flex; align-items: center; gap: .6rem; }
 .procedure-permission input { width: auto; margin: 0; }
+.specialist-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 16px; }
+.specialist-profile label { margin-bottom: 0; }
