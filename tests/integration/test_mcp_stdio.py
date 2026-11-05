@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -63,8 +64,8 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
     manager = MCPManager(store, None)
     try:
         tools = await manager.connect_server(server.id)
-        assert [tool.name for tool in tools] == ["add"]
-        tool = tools[0]
+        assert {tool.name for tool in tools} == {"add", "slow"}
+        tool = next(item for item in tools if item.name == "add")
         assert tool.permission == "none"
         assert manager.tools_for_run(set()) == []
 
@@ -100,7 +101,7 @@ async def test_coordinator_journals_disconnected_call_without_corrupting_run(
     )
     manager = MCPManager(store, None)
     await manager.connect_server(server.id)
-    tool = registry.list_tools(server.id)[0]
+    tool = next(item for item in registry.list_tools(server.id) if item.name == "add")
     registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
     qualified = registry.list_tools(server.id)[0].qualified_name
     run = store.create_run(
@@ -145,6 +146,69 @@ async def test_coordinator_journals_disconnected_call_without_corrupting_run(
         await manager.close()
 
 
+@pytest.mark.asyncio
+async def test_cancelled_write_drops_connection_and_journals_unknown_outcome(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-cancel.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(name="Fixture", command=sys.executable, args=[str(FIXTURE)])
+    )
+    manager = MCPManager(store, None)
+    await manager.connect_server(server.id)
+    tool = next(item for item in registry.list_tools(server.id) if item.name == "slow")
+    registry.set_permission(server.id, tool.name, "write", tool.schema_sha256)
+    qualified = registry.list_tools(server.id)
+    slow_name = next(item.qualified_name for item in qualified if item.name == "slow")
+    run = store.create_run(
+        objective="Run and cancel a configured MCP write",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        approved_mcp_tools=[slow_name],
+    )
+    lease = store.acquire_lease(run["id"], "mcp-cancel-test")
+    assert lease is not None
+    coordinator = Coordinator(store, LMStudioProvider(), mcp_manager=manager)
+    advertised = manager.tools_for_run({slow_name})
+    call_task = asyncio.create_task(
+        coordinator._execute_tool(
+            run["id"],
+            lease,
+            run,
+            1,
+            time.monotonic() + 10,
+            {
+                "id": "mcp-cancel-call",
+                "function": {"name": slow_name, "arguments": '{"seconds": 5}'},
+            },
+            advertised,
+        )
+    )
+    try:
+        await asyncio.sleep(0.25)
+        call_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await call_task
+        assert manager.tools_for_run({slow_name}) == []
+        assert store.unresolved_tool_calls(run["id"]) == []
+        with store.connection() as connection:
+            saved = connection.execute(
+                "SELECT state,result FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run["id"], "mcp-cancel-call"),
+            ).fetchone()
+        assert saved["state"] == "completed"
+        assert '"status": "cancelled_unknown_outcome"' in saved["result"]
+    finally:
+        if not call_task.done():
+            call_task.cancel()
+            await asyncio.gather(call_task, return_exceptions=True)
+        store.release_lease(run["id"], lease)
+        await manager.close()
+
+
 def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
     store = RunStore(workspace_tmp_path / "mcp-api.sqlite3")
     provider = LMStudioProvider()
@@ -176,7 +240,7 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
         assert saved_secret.json() == {"configured": True}
         connected = client.post(f"/mcp/servers/{server_id}/connect", headers=headers)
         assert connected.status_code == 200
-        tool = connected.json()["tools"][0]
+        tool = next(item for item in connected.json()["tools"] if item["name"] == "add")
         denied = client.put(
             f"/mcp/servers/{server_id}/tools/add/permission",
             headers=headers,

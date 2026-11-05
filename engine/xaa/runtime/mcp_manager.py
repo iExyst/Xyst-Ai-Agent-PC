@@ -276,6 +276,7 @@ class MCPManager:
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
                     result = await connection.session.call_tool(record.name, arguments)
         except asyncio.CancelledError:
+            await self._drop_failed_connection(record.server_id, connection)
             raise
         except TimeoutError as error:
             await self._drop_failed_connection(record.server_id, connection)
