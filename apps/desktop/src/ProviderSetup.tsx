@@ -1,5 +1,8 @@
 import {useEffect, useState} from 'react';
 import type {EngineClient} from './api/client.ts';
+import type {components} from './generated/api.js';
+
+type ModelInfo = components['schemas']['ModelInfo'];
 
 type Props = {
   client: EngineClient;
@@ -18,6 +21,8 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [diagnostic,setDiagnostic]=useState<'passed'|'failed'|'unknown'>('unknown');
   const [credential,setCredential]=useState('');
   const [credentialConfigured,setCredentialConfigured]=useState(false);
+  const [modelDetails,setModelDetails]=useState<ModelInfo[]>([]);
+  const selectedDetails=modelDetails.find(item=>item.id===model);
 
   useEffect(()=>{
     let live=true;
@@ -35,6 +40,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
         else setStatus(current?.error??'LM Studio is unavailable. Start its Local Server and retry.');
         const available=await client.models();
         if(live) {
+          setModelDetails(available);
           const ids=available.map(item=>item.id);
           onModelsChanged(ids);
           if(typeof config.selected_model==='string'&&ids.includes(config.selected_model))onModelChanged(config.selected_model);
@@ -54,6 +60,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
       const current=provider.find(item=>item.id==='lm-studio');
       if(current?.status!=='connected')throw new Error(current?.error??'LM Studio is unavailable.');
       const available=await client.models();
+      setModelDetails(available);
       onModelsChanged(available.map(item=>item.id));
       setStatus(`Connected. Found ${available.length} model${available.length===1?'':'s'}.`);
     } catch (failure) {
@@ -100,6 +107,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
       const current=provider.find(item=>item.id==='lm-studio');
       if(current?.status!=='connected')throw new Error(current?.error??'Server not reachable at this address.');
       const available=await client.models();
+      setModelDetails(available);
       onModelsChanged(available.map(item=>item.id));
       setStatus(`Connected. Found ${available.length} model${available.length===1?'':'s'}.`);
     } catch (failure) {
@@ -149,6 +157,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
       <option value="">Choose a discovered model</option>
       {models.map(id=><option key={id} value={id}>{id}</option>)}
     </select>
+    {selectedDetails&&<p role="status">{selectedDetails.size_bytes!==null&&selectedDetails.size_bytes!==undefined?`Installed model files: ${(selectedDetails.size_bytes/1_000_000_000).toFixed(1)} GB. `:''}{selectedDetails.loaded===null||selectedDetails.loaded===undefined?'Load status unavailable from this LM Studio server.':selectedDetails.loaded?'Model is loaded.':'Model is installed and not loaded.'}</p>}
     <button type="button" disabled={busy||!model} onClick={()=>void runDiagnostic()}>Run harmless tool-use diagnostic</button>
     {diagnostic==='passed'&&<p role="status">The selected model completed a validated harmless tool round trip.</p>}
     {diagnostic==='failed'&&<p role="alert">Tool use remains unverified for this model. Try a different model or review the error.</p>}

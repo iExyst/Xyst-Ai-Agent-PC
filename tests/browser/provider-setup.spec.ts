@@ -10,7 +10,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
-    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model',context_length:8192,size_bytes:2500000000,loaded:false,capabilities:{vision:false,trained_for_tool_use:true}}],headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/config'&&req.method()==='GET')return route.fulfill({json:{endpoint,selected_model:selectedModel},headers});
     if(path==='/providers/lm-studio/credential'&&req.method()==='GET')return route.fulfill({json:{configured:credentialConfigured},headers});
@@ -52,6 +52,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect.poll(()=>endpoint).toBe('http://127.0.0.1:1234');
   await page.getByLabel('Local model').selectOption('fixture/model');
   await expect.poll(()=>selectedModel).toBe('fixture/model');
+  await expect(page.getByRole('status').filter({hasText:'Installed model files: 2.5 GB. Model is installed and not loaded.'})).toBeVisible();
   await page.getByRole('button',{name:'Run harmless tool-use diagnostic'}).click();
   await expect(page.getByText('The selected model completed a validated harmless tool round trip.')).toBeVisible();
   expect(diagnostics).toBe(1);

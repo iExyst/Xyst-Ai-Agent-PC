@@ -1074,6 +1074,10 @@ export interface components {
             context_length?: number | null;
             /** Id */
             id: string;
+            /** Loaded */
+            loaded?: boolean | null;
+            /** Size Bytes */
+            size_bytes?: number | null;
         };
         /** ModelRequest */
         ModelRequest: {

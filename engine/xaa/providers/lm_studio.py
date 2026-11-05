@@ -6,7 +6,7 @@ import asyncio
 import ipaddress
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -54,6 +54,8 @@ class ModelInfo(BaseModel):
 
     id: str
     context_length: int | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    loaded: bool | None = None
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
 
 
@@ -263,13 +265,31 @@ class LMStudioProvider:
                 for model in result:
                     details = metadata.get(model.id, {})
                     model.context_length = details.get("max_context_length")
+                    size_bytes = details.get("size_bytes")
+                    model.size_bytes = size_bytes if type(size_bytes) is int else None
                     model.capabilities = ModelCapabilities.model_validate(
                         details.get("capabilities", {})
                     )
-                    for instance in details.get("loaded_instances", []):
-                        limit = instance.get("config", {}).get("context_length")
-                        if isinstance(limit, int) and limit > 0:
-                            self._context_limits[instance["id"]] = limit
+                    raw_instances = details.get("loaded_instances")
+                    instances = (
+                        cast(list[object], raw_instances)
+                        if isinstance(raw_instances, list)
+                        else None
+                    )
+                    model.loaded = bool(instances) if instances is not None else None
+                    for raw_instance in instances or []:
+                        if not isinstance(raw_instance, dict):
+                            continue
+                        instance = cast(dict[str, Any], raw_instance)
+                        raw_config: object = instance.get("config")
+                        config = (
+                            cast(dict[str, Any], raw_config) if isinstance(raw_config, dict) else {}
+                        )
+                        limit: object = config.get("context_length")
+                        if type(limit) is int and limit > 0:
+                            instance_id: object = instance.get("id")
+                            if isinstance(instance_id, str):
+                                self._context_limits[instance_id] = limit
                             self._context_limits[model.id] = limit
             except (httpx.HTTPError, ValueError, KeyError):
                 # Older LM Studio servers may only expose the OpenAI-compatible endpoint.

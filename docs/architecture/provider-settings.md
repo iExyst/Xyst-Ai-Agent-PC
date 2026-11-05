@@ -6,4 +6,6 @@ Model discovery uses the configured server. The selected model identifier is per
 
 The optional LM Studio API token can be saved or cleared from the desktop panel. The loopback API sends it only to the Windows OS credential store and reports only whether a token is configured. It is not included in the endpoint profile or returned by the settings API. Saving updates the active provider client under its inference lock and clears prior tool diagnostics. Credential changes are refused while a worker owns a run. Selecting another loopback address retains the credential. If the server is unavailable, the panel explains how to start Developer → Local Server in LM Studio.
 
+When LM Studio's native model-list response provides `size_bytes` and `loaded_instances`, model discovery returns those values and the desktop shows the selected model's installed size and loaded/not-loaded state. Older servers show load state as unavailable. X.A.A. does not start a model download. References: [LM Studio model listing](https://lmstudio.ai/docs/developer/rest/list) and [model download](https://lmstudio.ai/docs/developer/rest/download).
+
 This setting does not make the LM Studio release gate complete: full onboarding still needs workspace selection and a reviewed demonstration task. It also does not configure cloud providers or remote access.
