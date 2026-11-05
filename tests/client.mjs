@@ -74,9 +74,40 @@ test('artifact preview stops at its byte limit and cancels the stream', async ()
   assert.equal(cancelled, true);
 });
 
-test('PNG artifacts are returned as bounded inline image previews', async () => {
-  const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+test('PNG and JPEG artifacts are returned as bounded inline image previews', async () => {
+  for (const mediaType of ['image/png', 'image/jpeg']) {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () =>
+      new Response(bytes, {headers: {'content-type': mediaType}}));
+    assert.equal(await client.artifactPreview('image-1'), `data:${mediaType};base64,${Buffer.from(bytes).toString('base64')}`);
+  }
+});
+
+test('PDF preview avoids decoding binary and directs the user to extracted text', async () => {
+  let cancelled = false;
+  const body = new ReadableStream({start(controller) { controller.enqueue(new Uint8Array([37, 80, 68, 70])); }, cancel() { cancelled = true; }});
   const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () =>
-    new Response(bytes, {headers: {'content-type': 'image/png'}}));
-  assert.equal(await client.artifactPreview('screenshot-1'), `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`);
+    new Response(body, {headers: {'content-type': 'application/pdf'}}));
+  assert.match(await client.artifactPreview('document-1'), /extracted document text/);
+  assert.equal(cancelled, true);
+});
+
+test('PDF download preserves the media type and enforces the artifact byte limit', async () => {
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () =>
+    new Response(new Uint8Array([37, 80, 68, 70]), {headers: {'content-type': 'application/pdf'}}));
+  const blob = await client.artifactDownload('document-1');
+  assert.equal(blob.type, 'application/pdf');
+  assert.equal(blob.size, 4);
+});
+
+test('artifact download cancels oversized responses at the configured limit', async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(8 * 1024 * 1024 + 1)); },
+    cancel() { cancelled = true; },
+  });
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () =>
+    new Response(body, {headers: {'content-type': 'application/pdf'}}));
+  await assert.rejects(client.artifactDownload('large-document'), /download limit/);
+  assert.equal(cancelled, true);
 });

@@ -1238,6 +1238,8 @@ export interface components {
              */
             approved_web_search: boolean;
             command_grant?: components["schemas"]["CommandGrant"] | null;
+            /** Document */
+            document?: string | null;
             /** File Checks */
             file_checks?: components["schemas"]["FileContentCheck"][];
             /** Image */

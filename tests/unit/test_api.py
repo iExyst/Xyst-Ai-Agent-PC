@@ -236,6 +236,40 @@ def test_run_image_is_validated_stored_as_artifact_and_reconstructed(workspace_t
         assert rejected.status_code == 409
 
 
+def test_run_text_document_is_extracted_and_persisted_for_recovery(workspace_tmp_path):
+    import base64
+
+    store = RunStore(workspace_tmp_path / "run-document.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    source = b"# Field notes\nThe sample valve is marked blue."
+    encoded = "data:text/markdown;base64," + base64.b64encode(source).decode("ascii")
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Summarize this attachment", "document": encoded},
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert store.document_text(run_id) == source.decode("utf-8")
+        artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
+        assert {item["provenance"] for item in artifacts} == {
+            "user.input_document",
+            "user.input_document_text",
+        }
+        original = next(item for item in artifacts if item["provenance"] == "user.input_document")
+        downloaded = client.get(f"/artifacts/{original['id']}", headers=headers)
+        assert downloaded.content == source
+        assert downloaded.headers["content-type"].split(";", 1)[0] == "text/markdown"
+        with store._connection() as connection:
+            connection.execute(
+                "UPDATE artifacts SET sha256=? WHERE run_id=? AND provenance='user.input_document_text'",
+                ("0" * 64, run_id),
+            )
+        with pytest.raises(ValueError, match="integrity"):
+            store.document_text(run_id)
+
+
 def test_shutdown_pauses_worker_before_signalling_server(workspace_tmp_path):
     provider = WaitingProvider()
     store = RunStore(workspace_tmp_path / "shutdown.sqlite3")

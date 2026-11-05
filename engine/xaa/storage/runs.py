@@ -619,6 +619,9 @@ class RunStore:
         approved_mcp_tools: list[str] | None = None,
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
+        document_bytes: bytes | None = None,
+        document_media_type: str | None = None,
+        document_text: str | None = None,
     ) -> dict[str, Any]:
         if (image_bytes is None) != (image_media_type is None):
             raise ValueError("Image bytes and media type must be supplied together.")
@@ -626,6 +629,22 @@ class RunStore:
             raise ValueError("Run images must be PNG or JPEG.")
         if image_bytes is not None and (not image_bytes or len(image_bytes) > 3 * 1024 * 1024):
             raise ValueError("Run images must be between 1 byte and 3 MiB.")
+        document_values = (document_bytes, document_media_type, document_text)
+        if any(value is not None for value in document_values) and not all(
+            value is not None for value in document_values
+        ):
+            raise ValueError(
+                "Document bytes, media type and extracted text must be supplied together."
+            )
+        if document_bytes is not None:
+            if image_bytes is not None:
+                raise ValueError("A run can attach one image or one document, not both.")
+            if document_media_type not in {"application/pdf", "text/plain", "text/markdown"}:
+                raise ValueError("Unsupported document media type.")
+            if not document_bytes or len(document_bytes) > 4 * 1024 * 1024:
+                raise ValueError("Documents must be between 1 byte and 4 MiB.")
+            if not document_text or len(document_text) > 49_000:
+                raise ValueError("Extracted document text is empty or exceeds its storage limit.")
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
         ):
@@ -657,18 +676,34 @@ class RunStore:
             }
         run_id = str(uuid.uuid4())
         now = utc_now()
-        image_filename: str | None = None
-        image_id: str | None = None
-        if image_bytes is not None and image_media_type is not None:
-            image_filename = (
-                f"{uuid.uuid4().hex}.{'png' if image_media_type == 'image/png' else 'jpg'}"
-            )
+        staged_artifacts: list[tuple[str, str, str, bytes, str]] = []
+
+        def stage_artifact(data: bytes, media_type: str, provenance: str) -> str:
+            extension = {
+                "image/png": "png",
+                "image/jpeg": "jpg",
+                "application/pdf": "pdf",
+                "text/plain": "txt",
+                "text/markdown": "md",
+            }[media_type]
+            filename = f"{uuid.uuid4().hex}.{extension}"
             artifact_directory = self.path.parent / "artifacts"
             artifact_directory.mkdir(parents=True, exist_ok=True)
-            image_path = artifact_directory / image_filename
-            with image_path.open("xb") as image_file:
-                image_file.write(image_bytes)
-            image_id = str(uuid.uuid4())
+            with (artifact_directory / filename).open("xb") as artifact_file:
+                artifact_file.write(data)
+            artifact_id = str(uuid.uuid4())
+            staged_artifacts.append((artifact_id, filename, media_type, data, provenance))
+            return artifact_id
+
+        if image_bytes is not None and image_media_type is not None:
+            stage_artifact(image_bytes, image_media_type, "user.input_image")
+        if (
+            document_bytes is not None
+            and document_media_type is not None
+            and document_text is not None
+        ):
+            stage_artifact(document_bytes, document_media_type, "user.input_document")
+            stage_artifact(document_text.encode("utf-8"), "text/plain", "user.input_document_text")
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             trial_snapshot = None
@@ -705,25 +740,40 @@ class RunStore:
                     "max_output_tokens": max_output_tokens,
                 },
             )
-            if image_filename is not None and image_id is not None and image_bytes is not None:
+            for artifact_id, filename, media_type, content, provenance in staged_artifacts:
                 connection.execute(
                     "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
                     (
-                        image_id,
+                        artifact_id,
                         run_id,
-                        image_media_type,
-                        image_filename,
-                        len(image_bytes),
-                        hashlib.sha256(image_bytes).hexdigest(),
-                        "user.input_image",
+                        media_type,
+                        filename,
+                        len(content),
+                        hashlib.sha256(content).hexdigest(),
+                        provenance,
                         now,
                     ),
                 )
+            if image_bytes is not None and staged_artifacts:
                 self.record_event(
                     connection,
                     run_id,
                     "run.image_attached",
-                    {"artifact_id": image_id, "media_type": image_media_type},
+                    {
+                        "artifact_id": staged_artifacts[0][0],
+                        "media_type": staged_artifacts[0][2],
+                    },
+                )
+            if document_bytes is not None and len(staged_artifacts) == 2:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "run.document_attached",
+                    {
+                        "artifact_id": staged_artifacts[0][0],
+                        "extracted_text_artifact_id": staged_artifacts[1][0],
+                        "media_type": staged_artifacts[0][2],
+                    },
                 )
             if trial_snapshot is not None:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
@@ -781,6 +831,33 @@ class RunStore:
         ):
             raise ValueError("Run image failed artifact integrity verification.")
         return f"data:{row['media_type']};base64," + base64.b64encode(content).decode("ascii")
+
+    def document_text(self, run_id: str) -> str | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT storage_key, size_bytes, sha256 FROM artifacts "
+                "WHERE run_id=? AND provenance='user.input_document_text' ORDER BY created_at LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        root = (self.path.parent / "artifacts").resolve(strict=True)
+        target = (root / row["storage_key"]).resolve(strict=True)
+        if not target.is_relative_to(root):
+            raise PermissionError("Extracted document escaped managed artifact storage.")
+        with target.open("rb") as source:
+            if not opened_file_path(source).is_relative_to(root):
+                raise PermissionError("Opened extracted document escaped managed storage.")
+            content = source.read(200_000)
+        if (
+            len(content) != row["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != row["sha256"]
+        ):
+            raise ValueError("Extracted document failed artifact integrity verification.")
+        try:
+            return content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            raise ValueError("Extracted document artifact is not valid UTF-8.") from None
 
     def procedure_trial(self, run_id: str) -> dict[str, Any] | None:
         with self.connection() as connection:

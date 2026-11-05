@@ -285,6 +285,18 @@
               }
             ]
           },
+          "document": {
+            "anyOf": [
+              {
+                "maxLength": 5600000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
           "file_checks": {
             "items": {
               "$ref": "#/components/schemas/FileContentCheck"

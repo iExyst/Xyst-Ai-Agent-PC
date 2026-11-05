@@ -43,6 +43,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path === '/runs' && request.method() === 'POST') {
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
+      expect(request.postDataJSON().document).toBe(`data:text/markdown;base64,${Buffer.from('# Field notes\n').toString('base64')}`);
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().approved_browser).toBe(true);
@@ -92,6 +93,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');
+  await page.getByLabel(/Text document/).setInputFiles({name:'notes.md',mimeType:'text/markdown',buffer:Buffer.from('# Field notes\n')});
+  await expect(page.getByText('Attached: notes.md.',{exact:false})).toBeVisible();
   await page.getByText('Run limits',{exact:true}).click();
   await page.getByLabel('Iteration limit',{exact:true}).fill('0');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
@@ -128,7 +131,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.locator('pre')).toContainText('<script>');
   expect(await page.evaluate(() => 'artifactExecuted' in window)).toBe(false);
   await page.getByRole('button', { name: 'View browser.screenshot:untrusted_web_content' }).click();
-  await expect(page.getByRole('img', { name: 'Untrusted browser screenshot' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Untrusted image content' })).toBeVisible();
   await page.getByLabel('Objective', {exact:true}).fill('Read another file', {timeout:2000});
   await expect(page.getByLabel('Objective', {exact:true})).toHaveValue('Read another file');
   await page.getByLabel('Expected file contents', {exact:true}).fill('second fixture\n', {timeout:2000});

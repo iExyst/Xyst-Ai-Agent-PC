@@ -103,6 +103,7 @@ class CreateRunRequest(BaseModel):
 
     objective: str = Field(min_length=1, max_length=10_000)
     image: str | None = Field(default=None, max_length=4_200_000)
+    document: str | None = Field(default=None, max_length=5_600_000)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
     mode: Literal["observe", "workspace", "authorized_automation"] = "observe"
@@ -1238,6 +1239,11 @@ def create_app(
         try:
             image_bytes: bytes | None = None
             image_type: str | None = None
+            document_bytes: bytes | None = None
+            document_type: str | None = None
+            document_text: str | None = None
+            if payload.image is not None and payload.document is not None:
+                raise ValueError("Attach one image or one document per run.")
             if payload.image is not None:
                 if not payload.model:
                     raise ValueError("Select a vision-capable model before attaching an image.")
@@ -1264,6 +1270,25 @@ def create_app(
                 signature = b"\x89PNG\r\n\x1a\n" if image_type == "image/png" else b"\xff\xd8\xff"
                 if not image_bytes.startswith(signature):
                     raise ValueError("Run image content does not match its declared type.")
+            if payload.document is not None:
+                from xaa.runtime.document_input import extract_document_text
+
+                prefix = "data:application/pdf;base64,"
+                if payload.document.startswith(prefix):
+                    document_type = "application/pdf"
+                elif payload.document.startswith("data:text/plain;base64,"):
+                    document_type = "text/plain"
+                elif payload.document.startswith("data:text/markdown;base64,"):
+                    document_type = "text/markdown"
+                else:
+                    raise ValueError("Document must be a PDF, UTF-8 text file or Markdown file.")
+                try:
+                    document_bytes = base64.b64decode(
+                        payload.document.split(",", 1)[1], validate=True
+                    )
+                except (ValueError, binascii.Error):
+                    raise ValueError("Document data is invalid.") from None
+                document_text = extract_document_text(document_bytes, document_type)
             if payload.command_grant is not None:
                 execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(
@@ -1287,6 +1312,9 @@ def create_app(
                 approved_mcp_tools=payload.approved_mcp_tools,
                 image_bytes=image_bytes,
                 image_media_type=image_type,
+                document_bytes=document_bytes,
+                document_media_type=document_type,
+                document_text=document_text,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -1571,7 +1599,12 @@ def create_app(
             or hashlib.sha256(content).hexdigest() != metadata["sha256"]
         ):
             raise HTTPException(status_code=409, detail="Artifact integrity verification failed.")
-        extension = {"image/png": "png", "image/jpeg": "jpg"}.get(metadata["media_type"], "txt")
+        extension = {
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "application/pdf": "pdf",
+            "text/markdown": "md",
+        }.get(metadata["media_type"], "txt")
         return Response(
             content=content,
             media_type=metadata["media_type"],

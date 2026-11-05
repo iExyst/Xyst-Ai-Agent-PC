@@ -13,6 +13,7 @@ dependencies = [
     "tzdata>=2026.6",
     "playwright>=1.52,<2",
     "mcp>=1.26,<2",
+    "pypdf>=6.21.4,<7",
 ]
 
 [project.scripts]

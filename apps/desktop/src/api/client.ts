@@ -241,7 +241,13 @@ export class EngineClient {
     const response = await this.#fetch(new URL(`/artifacts/${encodeURIComponent(id)}`, this.#base), { headers: { Authorization: `Bearer ${this.#token}` }, redirect: 'error', ...(signal ? { signal } : {}) });
     if (!response.ok || !response.body) throw new EngineRequestError(response.status, 'Cannot read artifact.');
     const reader = response.body.getReader();
-    if (response.headers.get('content-type')?.split(';', 1)[0] === 'image/png') {
+    const mediaType = response.headers.get('content-type')?.split(';', 1)[0];
+    if (mediaType === 'application/pdf') {
+      await reader.cancel();
+      reader.releaseLock();
+      return 'Original PDF is retained with this run. View the adjacent extracted document text artifact for its model input.';
+    }
+    if (mediaType === 'image/png' || mediaType === 'image/jpeg') {
       const chunks: Uint8Array[] = [];
       let size = 0;
       try {
@@ -249,7 +255,7 @@ export class EngineClient {
           const chunk = await reader.read();
           if (chunk.done) break;
           size += chunk.value.byteLength;
-          if (size > 512 * 1024) throw new Error('Screenshot exceeds the preview limit.');
+          if (size > 3 * 1024 * 1024) throw new Error('Image exceeds the preview limit.');
           chunks.push(chunk.value);
         }
       } finally { await reader.cancel(); reader.releaseLock(); }
@@ -260,7 +266,7 @@ export class EngineClient {
       for (let index = 0; index < bytes.length; index += 32768) {
         binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + 32768, bytes.length)));
       }
-      return `data:image/png;base64,${btoa(binary)}`;
+      return `data:${mediaType};base64,${btoa(binary)}`;
     }
     const decoder = new TextDecoder();
     let text = ''; let bytes = 0;
@@ -274,6 +280,27 @@ export class EngineClient {
         if (bytes >= 65536) return text + decoder.decode() + '\n[Preview limited to 64 KiB]';
       }
     } finally { await reader.cancel(); reader.releaseLock(); }
+  }
+
+  async artifactDownload(id: string, signal?: AbortSignal): Promise<Blob> {
+    const response = await this.#fetch(new URL(`/artifacts/${encodeURIComponent(id)}`, this.#base), { headers: { Authorization: `Bearer ${this.#token}` }, redirect: 'error', ...(signal ? { signal } : {}) });
+    if (!response.ok || !response.body) throw new EngineRequestError(response.status, 'Cannot download artifact.');
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > 8 * 1024 * 1024) throw new Error('Artifact exceeds the download limit.');
+        chunks.push(chunk.value);
+      }
+    } finally { await reader.cancel(); reader.releaseLock(); }
+    const content = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { content.set(chunk, offset); offset += chunk.byteLength; }
+    return new Blob([content], {type: response.headers.get('content-type')?.split(';', 1)[0] ?? 'application/octet-stream'});
   }
 
   getRun(id: string, signal?: AbortSignal): Promise<Run> {
