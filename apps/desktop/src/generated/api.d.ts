@@ -601,6 +601,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Schedules */
+        get: operations["schedules_schedules_get"];
+        put?: never;
+        /** Create Schedule */
+        post: operations["create_schedule_schedules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules/{schedule_id}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Schedule Enabled */
+        put: operations["set_schedule_enabled_schedules__schedule_id__enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shutdown": {
         parameters: {
             query?: never;
@@ -823,6 +858,42 @@ export interface components {
             /** Objective */
             objective: string;
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
+            /** Workspace */
+            workspace?: string | null;
+        };
+        /** CreateScheduleRequest */
+        CreateScheduleRequest: {
+            /** Acceptance Criteria */
+            acceptance_criteria?: string[];
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "once" | "daily" | "weekly";
+            /**
+             * Max Iterations
+             * @default 8
+             */
+            max_iterations: number;
+            /**
+             * Max Seconds
+             * @default 900
+             */
+            max_seconds: number;
+            /**
+             * Missed Run Policy
+             * @default skip
+             * @enum {string}
+             */
+            missed_run_policy: "skip" | "run_once";
+            /** Model */
+            model: string;
+            /** Objective */
+            objective: string;
+            /** Start At */
+            start_at: string;
+            /** Timezone */
+            timezone: string;
             /** Workspace */
             workspace?: string | null;
         };
@@ -1372,6 +1443,57 @@ export interface components {
             updated_at: string;
             /** Workspace */
             workspace: string | null;
+        };
+        /** ScheduleEnabledRequest */
+        ScheduleEnabledRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** ScheduleExecutionRecord */
+        ScheduleExecutionRecord: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Created At */
+            created_at: string;
+            /** Delivery Evidence */
+            delivery_evidence: string | null;
+            /** Id */
+            id: string;
+            /** Occurrence Id */
+            occurrence_id: string;
+            /** Run Id */
+            run_id: string | null;
+            /** State */
+            state: string;
+        };
+        /** ScheduleRecord */
+        ScheduleRecord: {
+            /** Created At */
+            created_at: string;
+            /** Delivery Destination */
+            delivery_destination: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Executions */
+            executions: components["schemas"]["ScheduleExecutionRecord"][];
+            /** Id */
+            id: string;
+            /** Missed Run Policy */
+            missed_run_policy: string;
+            /** Objective */
+            objective: string;
+            /** Overlap Policy */
+            overlap_policy: string;
+            /** Quiet Hours */
+            quiet_hours: string | null;
+            /** Recurrence */
+            recurrence: {
+                [key: string]: unknown;
+            };
+            /** Timezone */
+            timezone: string;
+            /** Updated At */
+            updated_at: string;
         };
         /** SkillDraft */
         SkillDraft: {
@@ -2990,6 +3112,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectValidationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schedules_schedules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleRecord"][];
+                };
+            };
+        };
+    };
+    create_schedule_schedules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_schedule_enabled_schedules__schedule_id__enabled_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleEnabledRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleRecord"];
                 };
             };
             /** @description Validation Error */

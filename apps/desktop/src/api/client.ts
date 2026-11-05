@@ -20,6 +20,7 @@ export type ReviewDecision = components['schemas']['TaskReviewDecision'];
 export type RunReviewDecision = components['schemas']['RunReviewDecision'];
 export type ProjectValidation = components['schemas']['ProjectValidationSummary'];
 export type RunHistory = components['schemas']['RunHistory'];
+export type Schedule = components['schemas']['ScheduleRecord'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -100,6 +101,16 @@ export class EngineClient {
 
   executionReadiness(distribution: string, signal?: AbortSignal): Promise<components['schemas']['ReadinessResult']> {
     return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({distribution}),signal});
+  }
+
+  schedules(): Promise<Schedule[]> { return this.#request('/schedules'); }
+
+  createSchedule(input: components['schemas']['CreateScheduleRequest']): Promise<Schedule> {
+    return this.#request('/schedules', {method:'POST',body:JSON.stringify(input)});
+  }
+
+  setScheduleEnabled(id: string, enabled: boolean): Promise<Schedule> {
+    return this.#request(`/schedules/${encodeURIComponent(id)}/enabled`, {method:'PUT',body:JSON.stringify({enabled})});
   }
 
   history(query='',before?:string,signal?:AbortSignal,scope:'objective'|'conversation'='objective'): Promise<RunHistory> {

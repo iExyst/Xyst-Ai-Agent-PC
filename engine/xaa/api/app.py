@@ -9,7 +9,9 @@ import json
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi import Path as PathParameter
@@ -54,11 +56,13 @@ from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, revi
 from xaa.runtime.tool_worker import FilesystemWorkerError
 from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.wsl_transport import WSLTransport
+from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import create_backup_bundle
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
+from xaa.storage.schedules import ScheduleStore, parse_local_time
 from xaa.storage.skills import (
     SkillConflict,
     SkillDraft,
@@ -143,6 +147,52 @@ class LMStudioCredentialStatus(BaseModel):
     configured: bool
 
 
+class CreateScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    objective: str = Field(min_length=1, max_length=10_000)
+    acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
+    workspace: str | None = Field(default=None, max_length=2_048)
+    model: str = Field(min_length=1, max_length=256)
+    start_at: str = Field(min_length=16, max_length=16)
+    frequency: Literal["once", "daily", "weekly"]
+    timezone: str = Field(min_length=1, max_length=128)
+    missed_run_policy: Literal["skip", "run_once"] = "skip"
+    max_iterations: int = Field(default=8, ge=1, le=100)
+    max_seconds: int = Field(default=900, ge=1, le=86400)
+
+
+class ScheduleExecutionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    occurrence_id: str
+    run_id: str | None
+    state: str
+    delivery_evidence: str | None
+    created_at: str
+    completed_at: str | None
+
+
+class ScheduleRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    objective: str
+    recurrence: dict[str, Any]
+    timezone: str
+    missed_run_policy: str
+    overlap_policy: str
+    quiet_hours: str | None
+    delivery_destination: str | None
+    enabled: bool
+    created_at: str
+    updated_at: str
+    executions: list[ScheduleExecutionRecord]
+
+
+class ScheduleEnabledRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = Field(strict=True)
+
+
 def create_app(
     provider: LMStudioProvider,
     api_token: SecretStr,
@@ -174,6 +224,8 @@ def create_app(
     memory_store = MemoryStore(run_store)
     skill_store = SkillStore(run_store)
     supervisor = RunSupervisor(Coordinator(run_store, provider, stream_responses=stream_responses))
+    schedule_store = ScheduleStore(run_store)
+    schedule_service = ScheduleService(run_store, supervisor.submit)
 
     with run_store.connection() as connection:
         profile = connection.execute(
@@ -193,7 +245,9 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         await provider.configure_endpoint(endpoint)
         supervisor.start()
+        schedule_service.start()
         yield
+        await schedule_service.close()
         await supervisor.close()
         await provider.close()
 
@@ -492,6 +546,71 @@ def create_app(
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:
         return {"path": str(create_backup_bundle(run_store)), "status": "verified"}
+
+    @app.get("/schedules", response_model=list[ScheduleRecord])
+    def schedules(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        return schedule_store.list()
+
+    @app.post("/schedules", status_code=status.HTTP_201_CREATED, response_model=ScheduleRecord)
+    def create_schedule(
+        payload: CreateScheduleRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            start_at = parse_local_time(payload.start_at)
+            ZoneInfo(payload.timezone)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(
+                status_code=422, detail="Choose a valid local time and timezone."
+            ) from exc
+        workspace = payload.workspace
+        selected_workspace: Path | None = None
+        if workspace is not None:
+            try:
+                selected_workspace = Path(workspace).resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise HTTPException(
+                    status_code=409, detail="Scheduled workspace is unavailable."
+                ) from exc
+            if not selected_workspace.is_dir():
+                raise HTTPException(
+                    status_code=422, detail="Scheduled workspace must be an existing directory."
+                )
+        with run_store.connection() as connection:
+            profile = connection.execute(
+                "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
+            ).fetchone()
+        if profile is None or profile["selected_model"] != payload.model:
+            raise HTTPException(
+                status_code=409,
+                detail="Select this model in LM Studio setup before scheduling work.",
+            )
+        try:
+            return schedule_store.create(
+                objective=payload.objective,
+                acceptance_criteria=payload.acceptance_criteria,
+                workspace=str(selected_workspace) if selected_workspace is not None else None,
+                model=payload.model,
+                start_at=start_at,
+                frequency=payload.frequency,
+                timezone=payload.timezone,
+                missed_run_policy=payload.missed_run_policy,
+                max_iterations=payload.max_iterations,
+                max_seconds=payload.max_seconds,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.put("/schedules/{schedule_id}/enabled", response_model=ScheduleRecord)
+    def set_schedule_enabled(
+        schedule_id: str,
+        payload: ScheduleEnabledRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if not schedule_store.set_enabled(schedule_id, payload.enabled):
+            raise HTTPException(status_code=404, detail="Schedule not found.")
+        result = schedule_store.get(schedule_id)
+        assert result is not None
+        return result
 
     @app.post("/providers/lm-studio/diagnostics")
     async def diagnose_model(

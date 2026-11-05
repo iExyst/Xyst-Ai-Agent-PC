@@ -1,0 +1,243 @@
+"""Durable schedules and transactionally claimed run occurrences."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import uuid
+from datetime import UTC, datetime
+from typing import Any, Literal
+from zoneinfo import ZoneInfo
+
+from xaa.runtime.states import RunState
+from xaa.storage.runs import RunStore, utc_now
+
+ScheduleFrequency = Literal["once", "daily", "weekly"]
+OccurrenceOutcome = Literal["run", "missed", "overlap_skipped", "dst_skipped"]
+
+
+def parse_local_time(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Schedule time must be an ISO local date and time.") from exc
+    if parsed.tzinfo is not None:
+        raise ValueError("Schedule time must be local to its named timezone, without an offset.")
+    return parsed.replace(second=0, microsecond=0)
+
+
+def local_instant(value: datetime, timezone: str) -> datetime | None:
+    """Resolve a local time, choosing the earlier occurrence when clocks move back.
+
+    Nonexistent spring-forward wall times return None and are recorded as skipped.
+    """
+    zone = ZoneInfo(timezone)
+    candidate = value.replace(tzinfo=zone, fold=0)
+    roundtrip = candidate.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
+    return candidate.astimezone(UTC) if roundtrip == value else None
+
+
+def advance_local(value: datetime, frequency: ScheduleFrequency) -> datetime:
+    if frequency == "daily":
+        from datetime import timedelta
+
+        return value + timedelta(days=1)
+    if frequency == "weekly":
+        from datetime import timedelta
+
+        return value + timedelta(weeks=1)
+    return value
+
+
+class ScheduleStore:
+    def __init__(self, runs: RunStore) -> None:
+        self.runs = runs
+
+    def create(
+        self,
+        *,
+        objective: str,
+        acceptance_criteria: list[str],
+        workspace: str | None,
+        model: str,
+        start_at: datetime,
+        frequency: ScheduleFrequency,
+        timezone: str,
+        missed_run_policy: Literal["skip", "run_once"],
+        max_iterations: int,
+        max_seconds: int,
+    ) -> dict[str, Any]:
+        ZoneInfo(timezone)
+        if local_instant(start_at, timezone) is None:
+            raise ValueError("This local time does not exist because of a daylight-saving change.")
+        identity = str(uuid.uuid4())
+        now = utc_now()
+        recurrence = {
+            "frequency": frequency,
+            "next_at": start_at.isoformat(timespec="minutes"),
+            "acceptance_criteria": acceptance_criteria,
+            "workspace": workspace,
+            "model": model,
+            "max_iterations": max_iterations,
+            "max_seconds": max_seconds,
+        }
+        with self.runs.connection() as connection:
+            connection.execute(
+                "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,'skip',NULL,NULL,1,?,?)",
+                (
+                    identity,
+                    objective,
+                    json.dumps(recurrence),
+                    timezone,
+                    missed_run_policy,
+                    now,
+                    now,
+                ),
+            )
+        result = self.get(identity)
+        assert result is not None
+        return result
+
+    def get(self, schedule_id: str) -> dict[str, Any] | None:
+        with self.runs.connection() as connection:
+            schedule = connection.execute(
+                "SELECT * FROM schedules WHERE id=?", (schedule_id,)
+            ).fetchone()
+            if schedule is None:
+                return None
+            executions = connection.execute(
+                "SELECT id,occurrence_id,run_id,state,delivery_evidence,created_at,completed_at FROM schedule_executions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20",
+                (schedule_id,),
+            ).fetchall()
+        result = dict(schedule)
+        result["recurrence"] = json.loads(result["recurrence"])
+        result["enabled"] = bool(result["enabled"])
+        result["executions"] = [dict(item) for item in executions]
+        return result
+
+    def list(self) -> list[dict[str, Any]]:
+        with self.runs.connection() as connection:
+            ids = [
+                row[0]
+                for row in connection.execute("SELECT id FROM schedules ORDER BY created_at DESC")
+            ]
+        return [schedule for identity in ids if (schedule := self.get(identity)) is not None]
+
+    def delete(self, schedule_id: str) -> bool:
+        with self.runs.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE schedules SET enabled=0,updated_at=? WHERE id=?",
+                (utc_now(), schedule_id),
+            )
+        return cursor.rowcount == 1
+
+    def set_enabled(self, schedule_id: str, enabled: bool) -> bool:
+        with self.runs.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE schedules SET enabled=?,updated_at=? WHERE id=?",
+                (int(enabled), utc_now(), schedule_id),
+            )
+        return cursor.rowcount == 1
+
+    def update_execution_states(self) -> None:
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT e.id,e.run_id,r.state FROM schedule_executions e JOIN runs r ON r.id=e.run_id WHERE e.state IN ('queued','running')"
+            ).fetchall()
+            for row in rows:
+                run_state = str(row["state"])
+                if run_state in {"queued", "planning", "running", "verifying"}:
+                    state = "running" if run_state != "queued" else "queued"
+                    completed_at = None
+                elif run_state == "completed":
+                    state, completed_at = "completed", utc_now()
+                elif run_state in {"failed", "cancelled", "blocked"}:
+                    state, completed_at = "failed", utc_now()
+                else:
+                    continue
+                connection.execute(
+                    "UPDATE schedule_executions SET state=?,completed_at=COALESCE(completed_at,?) WHERE id=?",
+                    (state, completed_at, row["id"]),
+                )
+
+    def active_run_exists(self, connection: sqlite3.Connection, schedule_id: str) -> bool:
+        return (
+            connection.execute(
+                "SELECT 1 FROM schedule_executions e JOIN runs r ON r.id=e.run_id WHERE e.schedule_id=? AND r.state IN ('queued','planning','running','verifying','waiting_for_approval','paused') LIMIT 1",
+                (schedule_id,),
+            ).fetchone()
+            is not None
+        )
+
+    def claim_occurrence(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        schedule: sqlite3.Row,
+        recurrence: dict[str, Any],
+        occurrence_id: str,
+        outcome: OccurrenceOutcome,
+        next_at: datetime | None,
+    ) -> str | None:
+        """Persist one unique occurrence and any resulting queued run atomically."""
+        existing = connection.execute(
+            "SELECT 1 FROM schedule_executions WHERE occurrence_id=?", (occurrence_id,)
+        ).fetchone()
+        if existing is not None:
+            return None
+        if outcome == "run" and self.active_run_exists(connection, str(schedule["id"])):
+            outcome = "overlap_skipped"
+        run_id: str | None = None
+        state = outcome
+        if outcome == "run":
+            run_id = str(uuid.uuid4())
+            now = utc_now()
+            connection.execute(
+                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,0,NULL,NULL)",
+                (
+                    run_id,
+                    str(schedule["objective"]),
+                    json.dumps(recurrence["acceptance_criteria"]),
+                    recurrence.get("workspace"),
+                    "observe",
+                    recurrence["model"],
+                    RunState.QUEUED.value,
+                    now,
+                    now,
+                ),
+            )
+            RunStore.record_event(
+                connection,
+                run_id,
+                "run.queued",
+                {"state": RunState.QUEUED.value, "schedule_id": schedule["id"]},
+            )
+            connection.execute(
+                "INSERT INTO run_limits VALUES (?,?,?)",
+                (run_id, recurrence["max_iterations"], recurrence["max_seconds"]),
+            )
+            connection.execute("INSERT INTO run_checks VALUES (?, '[]')", (run_id,))
+        connection.execute(
+            "INSERT INTO schedule_executions (id,schedule_id,occurrence_id,run_id,state,delivery_evidence,created_at,completed_at) VALUES (?,?,?,?,?,NULL,?,?)",
+            (
+                str(uuid.uuid4()),
+                schedule["id"],
+                occurrence_id,
+                run_id,
+                state,
+                utc_now(),
+                utc_now() if outcome != "run" else None,
+            ),
+        )
+        if next_at is None:
+            connection.execute(
+                "UPDATE schedules SET enabled=0,updated_at=? WHERE id=?",
+                (utc_now(), schedule["id"]),
+            )
+        else:
+            recurrence["next_at"] = next_at.isoformat(timespec="minutes")
+            connection.execute(
+                "UPDATE schedules SET recurrence=?,updated_at=? WHERE id=?",
+                (json.dumps(recurrence), utc_now(), schedule["id"]),
+            )
+        return run_id

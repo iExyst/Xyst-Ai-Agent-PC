@@ -232,6 +232,96 @@
         "title": "CreateRunRequest",
         "type": "object"
       },
+      "CreateScheduleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "frequency": {
+            "enum": [
+              "once",
+              "daily",
+              "weekly"
+            ],
+            "title": "Frequency",
+            "type": "string"
+          },
+          "max_iterations": {
+            "default": 8,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "max_seconds": {
+            "default": 900,
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Max Seconds",
+            "type": "integer"
+          },
+          "missed_run_policy": {
+            "default": "skip",
+            "enum": [
+              "skip",
+              "run_once"
+            ],
+            "title": "Missed Run Policy",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "objective": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "start_at": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Start At",
+            "type": "string"
+          },
+          "timezone": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace"
+          }
+        },
+        "required": [
+          "objective",
+          "model",
+          "start_at",
+          "frequency",
+          "timezone"
+        ],
+        "title": "CreateScheduleRequest",
+        "type": "object"
+      },
       "DistributionInventory": {
         "additionalProperties": false,
         "properties": {
@@ -1756,6 +1846,172 @@
           "updated_at"
         ],
         "title": "RunSummary",
+        "type": "object"
+      },
+      "ScheduleEnabledRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ScheduleEnabledRequest",
+        "type": "object"
+      },
+      "ScheduleExecutionRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery_evidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Evidence"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "occurrence_id": {
+            "title": "Occurrence Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "occurrence_id",
+          "run_id",
+          "state",
+          "delivery_evidence",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "ScheduleExecutionRecord",
+        "type": "object"
+      },
+      "ScheduleRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Destination"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "executions": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleExecutionRecord"
+            },
+            "title": "Executions",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "missed_run_policy": {
+            "title": "Missed Run Policy",
+            "type": "string"
+          },
+          "objective": {
+            "title": "Objective",
+            "type": "string"
+          },
+          "overlap_policy": {
+            "title": "Overlap Policy",
+            "type": "string"
+          },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Hours"
+          },
+          "recurrence": {
+            "additionalProperties": true,
+            "title": "Recurrence",
+            "type": "object"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "objective",
+          "recurrence",
+          "timezone",
+          "missed_run_policy",
+          "overlap_policy",
+          "quiet_hours",
+          "delivery_destination",
+          "enabled",
+          "created_at",
+          "updated_at",
+          "executions"
+        ],
+        "title": "ScheduleRecord",
         "type": "object"
       },
       "SkillDraft": {
@@ -4634,6 +4890,128 @@
           }
         ],
         "summary": "Reconcile Project Validation"
+      }
+    },
+    "/schedules": {
+      "get": {
+        "operationId": "schedules_schedules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScheduleRecord"
+                  },
+                  "title": "Response Schedules Schedules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Schedules"
+      },
+      "post": {
+        "operationId": "create_schedule_schedules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Schedule"
+      }
+    },
+    "/schedules/{schedule_id}/enabled": {
+      "put": {
+        "operationId": "set_schedule_enabled_schedules__schedule_id__enabled_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleEnabledRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Schedule Enabled"
       }
     },
     "/shutdown": {
