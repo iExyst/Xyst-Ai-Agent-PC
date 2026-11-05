@@ -21,6 +21,11 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("models", help="Discover local models")
     commands.add_parser("providers", help="Inspect provider status")
+    history = commands.add_parser("history", help="Search saved runs and conversations")
+    history.add_argument("--query", default="", help="Literal text to search")
+    history.add_argument("--scope", choices=["objective", "conversation"], default="objective")
+    history.add_argument("--limit", type=int, choices=range(1, 51), default=20)
+    history.add_argument("--before", help="Opaque cursor returned by the previous page")
     tokens = commands.add_parser(
         "tokens", help="Count a prompt against an already-loaded local model"
     )
@@ -94,6 +99,16 @@ def main() -> None:
         ) as client:
             if args.command in {"models", "providers"}:
                 response = client.get(f"/{args.command}")
+            elif args.command == "history":
+                response = client.get(
+                    "/runs",
+                    params={
+                        "q": args.query,
+                        "scope": args.scope,
+                        "limit": args.limit,
+                        **({"before": args.before} if args.before else {}),
+                    },
+                )
             elif args.command == "tokens":
                 response = client.post(
                     "/providers/lm-studio/token-count",
