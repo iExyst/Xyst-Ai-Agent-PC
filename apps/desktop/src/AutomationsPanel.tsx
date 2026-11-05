@@ -13,16 +13,25 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [frequency,setFrequency]=useState<'once'|'daily'|'weekly'>('once');
   const [timezone,setTimezone]=useState(()=>Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC');
   const [missedRunPolicy,setMissedRunPolicy]=useState<'skip'|'run_once'>('skip');
+  const [telegramUsers,setTelegramUsers]=useState<string[]>([]);
+  const [telegramDeliveryUser,setTelegramDeliveryUser]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
 
-  async function refresh() { setItems(await client.schedules()); }
-  useEffect(()=>{let live=true;void client.schedules().then(value=>{if(live)setItems(value);}).catch(failure=>{if(live)setError(String(failure));});return()=>{live=false;};},[client]);
+  async function refresh() {
+    setError('');
+    try {
+      const [schedules,users]=await Promise.all([client.schedules(),client.telegramLinkedUsers()]);
+      setItems(schedules);setTelegramUsers(users.map(user=>user.user_id));
+      if(!users.some(user=>user.user_id===telegramDeliveryUser))setTelegramDeliveryUser('');
+    } catch(failure) {setError(failure instanceof Error?failure.message:'Could not refresh schedules or Telegram destinations.');}
+  }
+  useEffect(()=>{let live=true;void Promise.all([client.schedules(),client.telegramLinkedUsers()]).then(([schedules,users])=>{if(live){setItems(schedules);setTelegramUsers(users.map(user=>user.user_id));}}).catch(failure=>{if(live)setError(String(failure));});return()=>{live=false;};},[client]);
 
   async function create() {
     setBusy(true);setError('');
     try {
-      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900});
+      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{})});
       setItems(current=>[schedule,...current]);setObjective('');
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the schedule.');}
     finally {setBusy(false);}
@@ -37,7 +46,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
 
   return <section aria-labelledby="automations-title">
     <h2 id="automations-title">Automations</h2>
-    <p>Scheduled objectives run in Observe mode through the same coordinator and appear in run history. They do not send messages or make workspace changes.</p>
+    <p>Scheduled objectives run in Observe mode through the same coordinator and appear in run history. They do not make workspace changes. Telegram delivery is optional and authorizes one result message per occurrence to the linked private account you select.</p>
     <label htmlFor="schedule-objective">Scheduled objective</label>
     <textarea id="schedule-objective" value={objective} onChange={event=>setObjective(event.target.value)} maxLength={10000} disabled={busy}/>
     <label htmlFor="schedule-start">First occurrence (local time)</label>
@@ -52,13 +61,18 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <select id="schedule-missed" value={missedRunPolicy} onChange={event=>setMissedRunPolicy(event.target.value as 'skip'|'run_once')} disabled={busy}>
       <option value="skip">Skip missed work</option><option value="run_once">Run the latest missed occurrence once</option>
     </select>
+    <label htmlFor="schedule-telegram-destination">Telegram result destination (optional)</label>
+    <select id="schedule-telegram-destination" value={telegramDeliveryUser} onChange={event=>setTelegramDeliveryUser(event.target.value)} disabled={busy}>
+      <option value="">Do not send Telegram messages</option>
+      {telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
+    </select>
     <p>Daylight-saving gaps are skipped; repeated wall-clock times run once at the earlier offset. Overlapping runs are skipped. Choose a local model above before scheduling.</p>
     <button type="button" onClick={()=>void create()} disabled={busy||!objective.trim()||!model||!startAt||!timezone.trim()}>Create schedule</button>
     {items.length>0&&<ul>{items.map(item=><li key={item.id}>
       <p>{item.objective}</p>
       <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}) · {item.enabled?'Enabled':'Disabled'}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
-      {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>{execution.state}{execution.run_id?` · run ${execution.run_id}`:''} · {execution.created_at}</li>)}</ul></details>}
+      {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>{execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''} · {execution.created_at}</li>)}</ul></details>}
     </li>)}</ul>}
     <button type="button" disabled={busy} onClick={()=>void refresh()}>Refresh schedules</button>
     {error&&<p role="alert">{error}</p>}

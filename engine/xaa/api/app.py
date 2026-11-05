@@ -161,6 +161,7 @@ class CreateScheduleRequest(BaseModel):
     missed_run_policy: Literal["skip", "run_once"] = "skip"
     max_iterations: int = Field(default=8, ge=1, le=100)
     max_seconds: int = Field(default=900, ge=1, le=86400)
+    telegram_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
 
 
 class ScheduleExecutionRecord(BaseModel):
@@ -219,6 +220,11 @@ class TelegramLinkRevocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     revoked_users: int
     linked_users: int
+
+
+class TelegramLinkedUser(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: str
 
 
 def create_app(
@@ -586,7 +592,9 @@ def create_app(
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
         configured = credential_store.get("telegram-bot") is not None
-        account_id = credential_store.get("telegram-bot-account")
+        account_id = (
+            credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+        )
         profile = telegram_store.profile(account_id)
         return {
             "configured": configured,
@@ -626,7 +634,9 @@ def create_app(
     def clear_telegram_credential(_: None = Depends(authenticate)) -> dict[str, Any]:
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
-        account_id = credential_store.get("telegram-bot-account")
+        account_id = (
+            credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+        )
         try:
             credential_store.delete("telegram-bot")
         except (OSError, RuntimeError, ValueError) as exc:
@@ -646,7 +656,9 @@ def create_app(
     def revoke_telegram_links(_: None = Depends(authenticate)) -> dict[str, int]:
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
-        account_id = credential_store.get("telegram-bot-account")
+        account_id = (
+            credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+        )
         if account_id is None:
             return {
                 "revoked_users": 0,
@@ -657,6 +669,19 @@ def create_app(
             "revoked_users": revoked,
             "linked_users": telegram_store.profile(account_id)["linked_users"],
         }
+
+    @app.get("/channels/telegram/linked-users", response_model=list[TelegramLinkedUser])
+    def list_telegram_linked_users(
+        _: None = Depends(authenticate),
+    ) -> list[dict[str, str]]:
+        if credential_store is None or credential_store.get("telegram-bot") is None:
+            return []
+        account_id = (
+            credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+        )
+        if account_id is None:
+            return []
+        return [{"user_id": user_id} for user_id in telegram_store.linked_users(account_id)]
 
     @app.post(
         "/channels/telegram/pairing",
@@ -711,6 +736,24 @@ def create_app(
                 status_code=409,
                 detail="Select this model in LM Studio setup before scheduling work.",
             )
+        delivery_destination: str | None = None
+        if payload.telegram_user_id is not None:
+            if credential_store is None or credential_store.get("telegram-bot") is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Configure a Telegram bot before selecting a delivery destination.",
+                )
+            account_id = (
+                credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+            )
+            if account_id is None or payload.telegram_user_id not in telegram_store.linked_users(
+                account_id
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Choose a user currently linked to the configured Telegram bot.",
+                )
+            delivery_destination = f"telegram:{account_id}:{payload.telegram_user_id}"
         try:
             return schedule_store.create(
                 objective=payload.objective,
@@ -723,6 +766,7 @@ def create_app(
                 missed_run_policy=payload.missed_run_policy,
                 max_iterations=payload.max_iterations,
                 max_seconds=payload.max_seconds,
+                delivery_destination=delivery_destination,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

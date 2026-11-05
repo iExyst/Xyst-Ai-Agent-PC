@@ -17,7 +17,7 @@ from xaa.storage.runs import RunStore, utc_now
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
-IDENTITY = TelegramIdentity("bot-42", "xaa_test_bot")
+IDENTITY = TelegramIdentity("42", "xaa_test_bot")
 PAIR_CODE = "A_very_long_secure_pairing_code_987654321"
 
 
@@ -72,6 +72,41 @@ def pair_user(store: TelegramStore, user_id: int = 123) -> str:
     )
     assert result["state"] == "paired"
     return str(user_id)
+
+
+def queued_scheduled_delivery(runs: RunStore) -> tuple[TelegramStore, str]:
+    from xaa.scheduler.service import ScheduleService
+    from xaa.storage.schedules import ScheduleStore
+
+    store = TelegramStore(runs)
+    pair_user(store, 123)
+    current = datetime.now(UTC)
+    schedule = ScheduleStore(runs).create(
+        objective="Scheduled report",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=current.replace(second=0, microsecond=0, tzinfo=None),
+        frequency="once",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+        delivery_destination="telegram:42:123",
+    )
+    run_id = ScheduleService(runs, lambda _run_id: None).tick(current)[0]
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET state='completed',updated_at=? WHERE id=?", (utc_now(), run_id)
+        )
+        RunStore.record_event(
+            connection,
+            run_id,
+            "model.message",
+            {"message": {"role": "assistant", "content": "Scheduled report complete."}},
+        )
+    assert schedule["delivery_destination"] == "telegram:42:123"
+    return store, schedule["id"]
 
 
 def test_pairing_authorizes_private_user_and_duplicate_updates_create_one_run(
@@ -238,6 +273,59 @@ def test_abandoned_send_intent_becomes_unknown_after_restart(workspace_tmp_path:
     assert reopened.profile(IDENTITY.account_id)["deliveries"] == {"unknown": 1}
 
 
+def test_scheduled_delivery_unknown_after_restart_is_never_retried(
+    workspace_tmp_path: Path,
+) -> None:
+    from xaa.storage.schedules import ScheduleStore
+
+    database = workspace_tmp_path / "scheduled-delivery-recovery.sqlite3"
+    runs = RunStore(database)
+    store, schedule_id = queued_scheduled_delivery(runs)
+    claimed = store.claim_schedule_delivery(IDENTITY.account_id)
+    assert claimed is not None
+    assert claimed["text"] == "Scheduled report complete."
+
+    reopened = RunStore(database)
+    recovered = TelegramStore(reopened)
+    assert recovered.reconcile_abandoned_sends() == 1
+    assert recovered.claim_schedule_delivery(IDENTITY.account_id) is None
+    schedule = ScheduleStore(reopened).get(schedule_id)
+    assert schedule is not None
+    assert schedule["executions"][0]["delivery_evidence"] == "unknown"
+    with reopened.connection() as connection:
+        assert (
+            connection.execute("SELECT state FROM schedule_deliveries").fetchone()[0] == "unknown"
+        )
+
+
+def test_revoked_telegram_identity_cannot_receive_scheduled_delivery(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-delivery-revoked.sqlite3")
+    store, _schedule_id = queued_scheduled_delivery(runs)
+    assert store.revoke_users(IDENTITY.account_id) == 1
+    assert store.claim_schedule_delivery(IDENTITY.account_id) is None
+    with runs.connection() as connection:
+        assert (
+            connection.execute("SELECT state FROM schedule_deliveries").fetchone()[0] == "revoked"
+        )
+
+
+def test_failed_scheduled_run_sends_generic_notice(workspace_tmp_path: Path) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-delivery-failed.sqlite3")
+    store, _schedule_id = queued_scheduled_delivery(runs)
+    with runs.connection() as connection:
+        run_id = connection.execute("SELECT run_id FROM schedule_executions").fetchone()[0]
+        connection.execute("UPDATE runs SET state='failed' WHERE id=?", (run_id,))
+    delivery = store.claim_schedule_delivery(IDENTITY.account_id)
+    assert delivery is not None
+    assert delivery["text"] == (
+        "X.A.A. could not complete this scheduled objective. "
+        "Open the desktop app to review the saved run status."
+    )
+    store.finish_schedule_delivery(delivery["execution_id"], state="sent", message_id=73)
+
+
 def test_old_poll_cursor_resets_before_telegram_randomizes_update_ids(
     workspace_tmp_path: Path,
 ) -> None:
@@ -359,11 +447,49 @@ def test_telegram_service_routes_paired_input_through_coordinator_and_delivers_o
         await service.cycle()
         await service.cycle()
 
+        from xaa.storage.schedules import ScheduleStore
+
+        current = datetime.now(UTC)
+        schedule = ScheduleStore(runs).create(
+            objective="Scheduled report",
+            acceptance_criteria=[],
+            workspace=None,
+            model="fixture/model",
+            start_at=current.replace(second=0, microsecond=0, tzinfo=None),
+            frequency="once",
+            timezone="UTC",
+            missed_run_policy="skip",
+            max_iterations=4,
+            max_seconds=60,
+            delivery_destination="telegram:42:123",
+        )
+        from xaa.scheduler.service import ScheduleService
+
+        scheduled_runs = ScheduleService(runs, submitted.append).tick(current)
+        assert len(scheduled_runs) == 1
+        queued_schedule = ScheduleStore(runs).get(schedule["id"])
+        assert queued_schedule["executions"][0]["delivery_evidence"] == "pending"
+        scheduled_run = scheduled_runs[0]
+        with runs.connection() as connection:
+            connection.execute(
+                "UPDATE runs SET state='completed',updated_at=? WHERE id=?",
+                (utc_now(), scheduled_run),
+            )
+            RunStore.record_event(
+                connection,
+                scheduled_run,
+                "model.message",
+                {"message": {"role": "assistant", "content": "Scheduled report complete."}},
+            )
+        await service.cycle()
+        saved_schedule = ScheduleStore(runs).get(schedule["id"])
+        assert saved_schedule["executions"][0]["delivery_evidence"] == "sent"
+
     asyncio.run(scenario())
-    assert sent == [("123", "Project summary.")]
+    assert sent == [("123", "Project summary."), ("123", "Scheduled report complete.")]
     assert store.profile(IDENTITY.account_id)["deliveries"] == {"sent": 1}
     with runs.connection() as connection:
-        assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 2
         assistant_messages = connection.execute(
             "SELECT role,content FROM messages WHERE role='assistant'"
         ).fetchall()
@@ -405,6 +531,9 @@ def test_telegram_credential_and_pairing_api_never_returns_saved_token(
         model="fixture/model",
     )
     assert client.get("/channels/telegram", headers=HEADERS).json()["linked_users"] == 1
+    assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == [
+        {"user_id": "456"}
+    ]
     revoked = client.delete("/channels/telegram/links", headers=HEADERS)
     assert revoked.json() == {"revoked_users": 1, "linked_users": 0}
     assert (

@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/telegram/linked-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Telegram Linked Users */
+        get: operations["list_telegram_linked_users_channels_telegram_linked_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram/links": {
         parameters: {
             query?: never;
@@ -961,6 +978,8 @@ export interface components {
             objective: string;
             /** Start At */
             start_at: string;
+            /** Telegram User Id */
+            telegram_user_id?: string | null;
             /** Timezone */
             timezone: string;
             /** Workspace */
@@ -1898,6 +1917,11 @@ export interface components {
             /** Revoked Users */
             revoked_users: number;
         };
+        /** TelegramLinkedUser */
+        TelegramLinkedUser: {
+            /** User Id */
+            user_id: string;
+        };
         /** TelegramPairingCode */
         TelegramPairingCode: {
             /** Code */
@@ -2087,6 +2111,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+        };
+    };
+    list_telegram_linked_users_channels_telegram_linked_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramLinkedUser"][];
                 };
             };
         };

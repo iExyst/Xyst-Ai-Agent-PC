@@ -19,7 +19,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 8
+DATABASE_SCHEMA_VERSION = 9
 
 
 @dataclass(frozen=True)
@@ -343,6 +343,18 @@ class RunStore:
                     created_at TEXT NOT NULL,
                     completed_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS schedule_deliveries (
+                    execution_id TEXT PRIMARY KEY REFERENCES schedule_executions(id) ON DELETE CASCADE,
+                    account_id TEXT NOT NULL,
+                    external_identity TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    message_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS schedule_deliveries_pending
+                    ON schedule_deliveries(account_id,state,created_at);
                 CREATE TABLE IF NOT EXISTS channel_bindings (
                     id TEXT PRIMARY KEY,
                     channel TEXT NOT NULL,

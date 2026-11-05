@@ -128,6 +128,10 @@ export class EngineClient {
     return this.#request('/channels/telegram/pairing',{method:'POST',body:JSON.stringify({})});
   }
 
+  telegramLinkedUsers(): Promise<components['schemas']['TelegramLinkedUser'][]> {
+    return this.#request('/channels/telegram/linked-users');
+  }
+
   revokeTelegramLinks(): Promise<components['schemas']['TelegramLinkRevocation']> {
     return this.#request('/channels/telegram/links',{method:'DELETE'});
   }

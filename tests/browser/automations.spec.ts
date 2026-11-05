@@ -18,9 +18,10 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
     if(path==='/memory'||path==='/memory/export')return route.fulfill({json:[],headers});
     if(path.startsWith('/execution/'))return route.fulfill({json:[],headers});
     if(path==='/schedules'&&request.method()==='GET')return route.fulfill({json:schedules,headers});
+    if(path==='/channels/telegram/linked-users')return route.fulfill({json:[{user_id:'123456'}],headers});
     if(path==='/schedules'&&request.method()==='POST'){
       const body=request.postDataJSON();requests.push(body);
-      const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:null,delivery_destination:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[]};
+      const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:null,delivery_destination:body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[]};
       schedules.unshift(saved);return route.fulfill({status:201,json:saved,headers});
     }
     if(path==='/schedules/schedule-1/enabled'&&request.method()==='PUT'){
@@ -40,11 +41,12 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByLabel('Scheduled objective',{exact:true}).fill('Review repository health');
   await panel.getByLabel('Repeat',{exact:true}).selectOption('weekly');
   await panel.getByLabel('If the engine was closed at the scheduled time',{exact:true}).selectOption('run_once');
+  await panel.getByLabel('Telegram result destination (optional)',{exact:true}).selectOption('123456');
   await panel.getByRole('button',{name:'Create schedule',exact:true}).click();
   await expect(panel.getByText('Review repository health',{exact:true})).toBeVisible();
   expect(requests).toHaveLength(1);
   const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
-  expect(requests[0]).toMatchObject({objective:'Review repository health',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone});
+  expect(requests[0]).toMatchObject({objective:'Review repository health',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456'});
   await panel.getByRole('button',{name:'Pause schedule',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Resume schedule',exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Resume schedule',exact:true}).click();

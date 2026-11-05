@@ -57,7 +57,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     {status?.configured&&<>
       <button type="button" onClick={()=>void makePairing()} disabled={busy}>Generate one-time pairing code</button>
       {status.linked_users>0&&<div className="controls">
-        {confirmRevoke?<><span>This prevents {status.linked_users} linked user(s) from submitting new objectives. Saved runs remain available.</span><button type="button" onClick={()=>void revokeLinks()} disabled={busy}>Confirm revoke links</button><button type="button" onClick={()=>setConfirmRevoke(false)} disabled={busy}>Keep links</button></>:<button type="button" onClick={()=>setConfirmRevoke(true)} disabled={busy}>Revoke all linked users</button>}
+        {confirmRevoke?<><span>This prevents {status.linked_users} linked user(s) from submitting new objectives and cancels queued scheduled messages. A send already in progress cannot be recalled; saved runs remain available.</span><button type="button" onClick={()=>void revokeLinks()} disabled={busy}>Confirm revoke links</button><button type="button" onClick={()=>setConfirmRevoke(false)} disabled={busy}>Keep links</button></>:<button type="button" onClick={()=>setConfirmRevoke(true)} disabled={busy}>Revoke all linked users</button>}
       </div>}
       {pairing&&<div aria-label="Telegram pairing instructions"><p>Within five minutes, send this exact command in a private chat with @{status.bot_username??'your bot'}:</p><code>/pair {pairing.code}</code><p>Expires {new Date(pairing.expires_at).toLocaleString()}.</p></div>}
       {status.deliveries&&Object.keys(status.deliveries).length>0&&<p>Delivery records: {Object.entries(status.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}</p>}

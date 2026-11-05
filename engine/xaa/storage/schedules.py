@@ -66,6 +66,7 @@ class ScheduleStore:
         missed_run_policy: Literal["skip", "run_once"],
         max_iterations: int,
         max_seconds: int,
+        delivery_destination: str | None = None,
     ) -> dict[str, Any]:
         ZoneInfo(timezone)
         if local_instant(start_at, timezone) is None:
@@ -83,13 +84,15 @@ class ScheduleStore:
         }
         with self.runs.connection() as connection:
             connection.execute(
-                "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,'skip',NULL,NULL,1,?,?)",
+                "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,'skip',?,?,1,?,?)",
                 (
                     identity,
                     objective,
                     json.dumps(recurrence),
                     timezone,
                     missed_run_policy,
+                    None,
+                    delivery_destination,
                     now,
                     now,
                 ),
@@ -217,10 +220,11 @@ class ScheduleStore:
                 (run_id, recurrence["max_iterations"], recurrence["max_seconds"]),
             )
             connection.execute("INSERT INTO run_checks VALUES (?, '[]')", (run_id,))
+        execution_id = str(uuid.uuid4())
         connection.execute(
             "INSERT INTO schedule_executions (id,schedule_id,occurrence_id,run_id,state,delivery_evidence,created_at,completed_at) VALUES (?,?,?,?,?,NULL,?,?)",
             (
-                str(uuid.uuid4()),
+                execution_id,
                 schedule["id"],
                 occurrence_id,
                 run_id,
@@ -229,6 +233,30 @@ class ScheduleStore:
                 utc_now() if outcome != "run" else None,
             ),
         )
+        destination = schedule["delivery_destination"]
+        if outcome == "run" and destination is not None:
+            parts = str(destination).split(":")
+            if (
+                len(parts) != 3
+                or parts[0] != "telegram"
+                or not all(part.isdecimal() for part in parts[1:])
+            ):
+                raise ValueError("Saved schedule delivery destination is malformed.")
+            connection.execute(
+                "INSERT INTO schedule_deliveries (execution_id,account_id,external_identity,chat_id,state,message_id,created_at,updated_at) VALUES (?,?,?,?, 'pending',NULL,?,?)",
+                (
+                    execution_id,
+                    parts[1],
+                    parts[2],
+                    parts[2],
+                    utc_now(),
+                    utc_now(),
+                ),
+            )
+            connection.execute(
+                "UPDATE schedule_executions SET delivery_evidence='pending' WHERE id=?",
+                (execution_id,),
+            )
         if next_at is None:
             connection.execute(
                 "UPDATE schedules SET enabled=0,updated_at=? WHERE id=?",

@@ -150,10 +150,39 @@ class TelegramStore:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM telegram_pairing_codes")
-            return connection.execute(
+            revoked = connection.execute(
                 "UPDATE channel_bindings SET authorized=0 WHERE channel='telegram' AND account_id=? AND authorized=1",
                 (account_id,),
             ).rowcount
+            pending = connection.execute(
+                "SELECT execution_id FROM schedule_deliveries WHERE account_id=? AND state='pending' AND external_identity IN (SELECT external_identity FROM channel_bindings WHERE channel='telegram' AND account_id=? AND authorized=0)",
+                (account_id, account_id),
+            ).fetchall()
+            connection.execute(
+                "UPDATE schedule_deliveries SET state='revoked',updated_at=? WHERE account_id=? AND state='pending' AND external_identity IN (SELECT external_identity FROM channel_bindings WHERE channel='telegram' AND account_id=? AND authorized=0)",
+                (utc_now(), account_id, account_id),
+            )
+            for row in pending:
+                connection.execute(
+                    "UPDATE schedule_executions SET delivery_evidence='revoked' WHERE id=?",
+                    (row["execution_id"],),
+                )
+            return revoked
+
+    def linked_users(self, account_id: str) -> list[str]:
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT external_identity FROM channel_bindings WHERE channel='telegram' AND account_id=? AND authorized=1 ORDER BY external_identity",
+                (account_id,),
+            ).fetchall()
+        return [str(row["external_identity"]) for row in rows]
+
+    def latest_account_id(self) -> str | None:
+        with self.runs.connection() as connection:
+            row = connection.execute(
+                "SELECT account_id FROM telegram_bots ORDER BY updated_at DESC LIMIT 1"
+            ).fetchone()
+        return str(row["account_id"]) if row is not None else None
 
     def profile(self, account_id: str | None = None) -> dict[str, Any]:
         with self.runs.connection() as connection:
@@ -465,13 +494,116 @@ class TelegramStore:
                     "UPDATE sessions SET updated_at=? WHERE id=?", (utc_now(), session_id)
                 )
 
+    def claim_schedule_delivery(self, account_id: str) -> dict[str, Any] | None:
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            revoked = connection.execute(
+                "SELECT execution_id FROM schedule_deliveries d WHERE account_id=? AND state='pending' AND NOT EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1)",
+                (account_id,),
+            ).fetchall()
+            for row in revoked:
+                connection.execute(
+                    "UPDATE schedule_deliveries SET state='revoked',updated_at=? WHERE execution_id=? AND state='pending'",
+                    (utc_now(), row["execution_id"]),
+                )
+                connection.execute(
+                    "UPDATE schedule_executions SET delivery_evidence='revoked' WHERE id=?",
+                    (row["execution_id"],),
+                )
+            row = connection.execute(
+                "SELECT d.execution_id,d.chat_id,e.run_id,r.state FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id JOIN runs r ON r.id=e.run_id WHERE d.account_id=? AND d.state='pending' AND r.state IN (?,?,?,?) AND EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1) ORDER BY d.created_at LIMIT 1",
+                (
+                    account_id,
+                    RunState.COMPLETED.value,
+                    RunState.FAILED.value,
+                    RunState.BLOCKED.value,
+                    RunState.CANCELLED.value,
+                ),
+            ).fetchone()
+            if row is None:
+                return None
+            text: str | None = None
+            if str(row["state"]) == RunState.COMPLETED.value:
+                events = connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? AND event_type='model.message' ORDER BY sequence DESC",
+                    (row["run_id"],),
+                ).fetchall()
+                for event in events:
+                    payload = as_mapping(json.loads(event["payload"]))
+                    message = as_mapping(payload.get("message")) if payload else None
+                    candidate = message.get("content") if message else None
+                    if isinstance(candidate, str) and candidate.strip():
+                        text = candidate.strip()
+                        break
+                if text is None:
+                    connection.execute(
+                        "UPDATE schedule_deliveries SET state='failed',updated_at=? WHERE execution_id=? AND state='pending'",
+                        (utc_now(), row["execution_id"]),
+                    )
+                    connection.execute(
+                        "UPDATE schedule_executions SET delivery_evidence='failed' WHERE id=?",
+                        (row["execution_id"],),
+                    )
+                    return None
+            else:
+                text = "X.A.A. could not complete this scheduled objective. Open the desktop app to review the saved run status."
+            changed = connection.execute(
+                "UPDATE schedule_deliveries SET state='sending',updated_at=? WHERE execution_id=? AND state='pending'",
+                (utc_now(), row["execution_id"]),
+            ).rowcount
+            if changed != 1:
+                return None
+            connection.execute(
+                "UPDATE schedule_executions SET delivery_evidence='sending' WHERE id=?",
+                (row["execution_id"],),
+            )
+            return {
+                "execution_id": str(row["execution_id"]),
+                "chat_id": str(row["chat_id"]),
+                "text": text[:MAX_TEXT_CHARS],
+            }
+
+    def finish_schedule_delivery(
+        self,
+        execution_id: str,
+        *,
+        state: str,
+        message_id: int | None = None,
+    ) -> None:
+        if state not in {"sent", "failed", "unknown"}:
+            raise ValueError("Invalid Telegram schedule delivery state.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            changed = connection.execute(
+                "UPDATE schedule_deliveries SET state=?,message_id=?,updated_at=? WHERE execution_id=? AND state='sending'",
+                (state, message_id, utc_now(), execution_id),
+            ).rowcount
+            if changed == 1:
+                connection.execute(
+                    "UPDATE schedule_executions SET delivery_evidence=? WHERE id=?",
+                    (state, execution_id),
+                )
+
     def reconcile_abandoned_sends(self) -> int:
         """Fence requests interrupted after send intent; never replay an ambiguous send."""
         with self.runs.connection() as connection:
-            return connection.execute(
+            changed = connection.execute(
                 "UPDATE telegram_updates SET delivery_state='unknown',updated_at=? WHERE delivery_state='sending'",
                 (utc_now(),),
             ).rowcount
+            executions = connection.execute(
+                "SELECT execution_id FROM schedule_deliveries WHERE state='sending'"
+            ).fetchall()
+            connection.execute(
+                "UPDATE schedule_deliveries SET state='unknown',updated_at=? WHERE state='sending'",
+                (utc_now(),),
+            )
+            for row in executions:
+                connection.execute(
+                    "UPDATE schedule_executions SET delivery_evidence='unknown' WHERE id=?",
+                    (row["execution_id"],),
+                )
+            return changed + len(executions)
 
 
 class TelegramService:
@@ -555,4 +687,22 @@ class TelegramService:
                         state="sent",
                         message_id=message_id,
                         text=delivery["text"],
+                    )
+            while (delivery := self.store.claim_schedule_delivery(identity.account_id)) is not None:
+                try:
+                    message_id = await api.send_message(delivery["chat_id"], delivery["text"])
+                except TelegramApiError as exc:
+                    self.store.finish_schedule_delivery(
+                        delivery["execution_id"],
+                        state="failed" if exc.definitive else "unknown",
+                    )
+                except httpx.HTTPError as exc:
+                    self.store.finish_schedule_delivery(delivery["execution_id"], state="unknown")
+                    logger.error(
+                        "Telegram schedule delivery outcome is unknown (%s)",
+                        type(exc).__name__,
+                    )
+                else:
+                    self.store.finish_schedule_delivery(
+                        delivery["execution_id"], state="sent", message_id=message_id
                     )

@@ -14,6 +14,12 @@ Only the private account that proves possession of the local one-time code is li
 
 When a run completes, its saved public answer is sent to the paired private chat. Failed, blocked, and cancelled runs send a generic notice directing the user to review the saved run in the desktop app. Delivery status and Telegram message ID are recorded locally.
 
+## Scheduled result messages
+
+The Automations screen lists currently linked private Telegram accounts as optional destinations. Selecting one explicitly authorizes one message for each scheduled occurrence to that account. The destination is bound to the bot account and Telegram user ID; the server rejects a destination that is no longer linked. Revoking links also cancels pending scheduled messages for those users. A send already in progress cannot be recalled.
+
+Scheduled messages use a durable per-occurrence outbox. The execution history records `sent`, `failed`, `unknown`, or `revoked`. The adapter saves send intent before calling Telegram and does not retry an ambiguous outcome after a timeout or restart. Runs without a selected destination do not create a delivery record or send a message.
+
 ## Delivery and recovery behavior
 
 Telegram update IDs are stored with the input run in one SQLite transaction before the next polling offset advances. Repeated updates therefore resolve to the same saved event and do not create another run. The adapter uses one offset per bot. It drops an offset after six days without an update because Telegram may randomize the next update ID after a week without updates; Telegram retains incoming updates for at most 24 hours.

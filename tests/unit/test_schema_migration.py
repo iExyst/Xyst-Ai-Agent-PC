@@ -125,6 +125,45 @@ def test_schema_seven_migrates_additive_telegram_tables_without_losing_runs(
     }.issubset(tables)
 
 
+def test_schema_eight_adds_schedule_delivery_outbox_without_losing_history(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-eight.sqlite3"
+    store = RunStore(database)
+    run = store.create_run(
+        objective="Keep scheduled result",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture/model",
+    )
+    now = utc_now()
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO schedules VALUES ('schedule-1','Preserve schedule','{}','UTC','skip','skip',NULL,NULL,0,?,?)",
+            (now, now),
+        )
+        connection.execute(
+            "INSERT INTO schedule_executions VALUES ('execution-1','schedule-1','occurrence-1',?,'completed','sent',?,?)",
+            (run["id"], now, now),
+        )
+        connection.execute("DROP TABLE schedule_deliveries")
+        connection.execute("PRAGMA user_version=8")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert (
+            connection.execute("SELECT objective FROM schedules").fetchone()[0]
+            == "Preserve schedule"
+        )
+        assert (
+            connection.execute("SELECT delivery_evidence FROM schedule_executions").fetchone()[0]
+            == "sent"
+        )
+        assert connection.execute("SELECT count(*) FROM schedule_deliveries").fetchone()[0] == 0
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 @pytest.mark.parametrize("old_version", [4, 5, 6])
 def test_prior_records_are_preserved_when_enabling_private_workspace_semantics(
     workspace_tmp_path,

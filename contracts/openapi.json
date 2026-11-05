@@ -293,6 +293,18 @@
             "title": "Start At",
             "type": "string"
           },
+          "telegram_user_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,20}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram User Id"
+          },
           "timezone": {
             "maxLength": 128,
             "minLength": 1,
@@ -2978,6 +2990,20 @@
         "title": "TelegramLinkRevocation",
         "type": "object"
       },
+      "TelegramLinkedUser": {
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "TelegramLinkedUser",
+        "type": "object"
+      },
       "TelegramPairingCode": {
         "additionalProperties": false,
         "properties": {
@@ -3312,6 +3338,33 @@
           }
         ],
         "summary": "Set Telegram Credential"
+      }
+    },
+    "/channels/telegram/linked-users": {
+      "get": {
+        "operationId": "list_telegram_linked_users_channels_telegram_linked_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TelegramLinkedUser"
+                  },
+                  "title": "Response List Telegram Linked Users Channels Telegram Linked Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Telegram Linked Users"
       }
     },
     "/channels/telegram/links": {

@@ -5,6 +5,7 @@ from typing import Any, Literal
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.channels.telegram import TelegramIdentity, TelegramStore
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.scheduler.service import ScheduleService, due_occurrence
 from xaa.storage.runs import RunStore
@@ -149,9 +150,64 @@ def test_missed_daily_occurrences_are_recorded_once_without_duplicate_runs(
         assert connection.execute("SELECT count(*) FROM schedule_executions").fetchone()[0] == 1
 
 
-def test_schedule_api_auth_model_selection_workspace_and_pause(workspace_tmp_path: Path) -> None:
+def test_schedule_api_auth_model_selection_workspace_and_pause(
+    workspace_tmp_path: Path, monkeypatch
+) -> None:
+    import xaa.api.app as app_module
+
+    class FakeTelegramApi:
+        def __init__(self, _token):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get_me(self):
+            return TelegramIdentity("42", "fixture_bot")
+
+        async def get_updates(self, _offset):
+            return []
+
+        async def send_message(self, _chat_id, _text):
+            return 1
+
+    monkeypatch.setattr(app_module, "TelegramBotApi", FakeTelegramApi)
     store = RunStore(workspace_tmp_path / "schedule-api.sqlite3")
-    app = create_app(ScheduleProvider(), SecretStr(TOKEN), store=store)
+
+    class Credentials:
+        def __init__(self):
+            self.values = {"telegram-bot": "fixture-token", "telegram-bot-account": "42"}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    telegram = TelegramStore(store)
+    telegram.save_bot(TelegramIdentity("42", "fixture_bot"))
+    telegram.create_pairing("A_test_pairing_code_that_is_long_enough")
+    telegram.process_update(
+        TelegramIdentity("42", "fixture_bot"),
+        {
+            "update_id": 1,
+            "message": {
+                "text": "/pair A_test_pairing_code_that_is_long_enough",
+                "from": {"id": 123, "is_bot": False},
+                "chat": {"id": 123, "type": "private"},
+            },
+        },
+        model="fixture/model",
+    )
+    app = create_app(
+        ScheduleProvider(), SecretStr(TOKEN), store=store, credential_store=Credentials()
+    )
     with store.connection() as connection:
         connection.execute(
             "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
@@ -176,12 +232,31 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(workspace_tmp_pat
         assert record["recurrence"]["frequency"] == "weekly"
         assert record["recurrence"]["workspace"] == str(workspace_tmp_path.resolve())
         assert record["missed_run_policy"] == "run_once"
+        assert record["delivery_destination"] is None
+        delivery = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "telegram_user_id": "123"},
+        )
+        assert delivery.status_code == 201, delivery.text
+        assert delivery.json()["delivery_destination"] == "telegram:42:123"
+        assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == [
+            {"user_id": "123"}
+        ]
+        unauthorized_destination = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "telegram_user_id": "999"},
+        )
+        assert unauthorized_destination.status_code == 409
         paused = client.put(
             f"/schedules/{record['id']}/enabled", headers=HEADERS, json={"enabled": False}
         )
         assert paused.status_code == 200
         assert paused.json()["enabled"] is False
-        assert client.get("/schedules", headers=HEADERS).json()[0]["id"] == record["id"]
+        assert record["id"] in {
+            item["id"] for item in client.get("/schedules", headers=HEADERS).json()
+        }
         bad_workspace = {**payload, "workspace": str(workspace_tmp_path / "missing")}
         assert client.post("/schedules", headers=HEADERS, json=bad_workspace).status_code == 409
         bad_model = {**payload, "model": "other/model"}
