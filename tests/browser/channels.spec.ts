@@ -26,7 +26,14 @@ test('save Telegram token securely, pair an account and clear the credential',as
       status={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{}};
       return route.fulfill({json:status,headers});
     }
-    if(path==='/channels/telegram/pairing'&&request.method()==='POST')return route.fulfill({status:201,json:{code:'one-time-pair-code',expires_at:'2030-01-01T12:05:00Z'},headers});
+    if(path==='/channels/telegram/pairing'&&request.method()==='POST'){
+      status={...status,linked_users:1};
+      return route.fulfill({status:201,json:{code:'one-time-pair-code',expires_at:'2030-01-01T12:05:00Z'},headers});
+    }
+    if(path==='/channels/telegram/links'&&request.method()==='DELETE'){
+      status={...status,linked_users:0};
+      return route.fulfill({json:{revoked_users:1,linked_users:0},headers});
+    }
     return route.fulfill({json:{status:'ok'},headers});
   });
   await page.goto('/');
@@ -41,6 +48,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   expect(requests).toHaveLength(1);
   await panel.getByRole('button',{name:'Generate one-time pairing code',exact:true}).click();
   await expect(panel.getByLabel('Telegram pairing instructions')).toContainText('/pair one-time-pair-code');
+  await panel.getByRole('button',{name:'Refresh channel status',exact:true}).click();
+  await panel.getByRole('button',{name:'Revoke all linked users',exact:true}).click();
+  await panel.getByRole('button',{name:'Confirm revoke links',exact:true}).click();
+  await expect(panel.getByText(/0 linked user/)).toBeVisible();
   await panel.getByRole('button',{name:'Clear saved token',exact:true}).click();
   await expect(panel.getByText('Telegram bot is not configured')).toBeVisible();
   expect(errors).toEqual([]);

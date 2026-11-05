@@ -128,6 +128,10 @@ export class EngineClient {
     return this.#request('/channels/telegram/pairing',{method:'POST',body:JSON.stringify({})});
   }
 
+  revokeTelegramLinks(): Promise<components['schemas']['TelegramLinkRevocation']> {
+    return this.#request('/channels/telegram/links',{method:'DELETE'});
+  }
+
   history(query='',before?:string,signal?:AbortSignal,scope:'objective'|'conversation'='objective'): Promise<RunHistory> {
     const params=new URLSearchParams({q:query,limit:'20',scope});
     if(before)params.set('before',before);

@@ -6,6 +6,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [token,setToken]=useState('');
   const [pairing,setPairing]=useState<{code:string;expires_at:string}>();
   const [busy,setBusy]=useState(false);
+  const [confirmRevoke,setConfirmRevoke]=useState(false);
   const [error,setError]=useState('');
 
   async function refresh() {
@@ -33,6 +34,13 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function revokeLinks() {
+    setBusy(true);setError('');
+    try {await client.revokeTelegramLinks();setStatus(await client.telegramStatus());setPairing(undefined);setConfirmRevoke(false);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not revoke Telegram links.');}
+    finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
     <h3>Telegram (private chats)</h3>
@@ -48,6 +56,9 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     {status&&<p role="status">{status.configured?<>Connected bot: @{status.bot_username??'username unavailable'}</>:'Telegram bot is not configured'} · {status.linked_users} linked user(s) · {status.processed_updates} processed update(s)</p>}
     {status?.configured&&<>
       <button type="button" onClick={()=>void makePairing()} disabled={busy}>Generate one-time pairing code</button>
+      {status.linked_users>0&&<div className="controls">
+        {confirmRevoke?<><span>This prevents {status.linked_users} linked user(s) from submitting new objectives. Saved runs remain available.</span><button type="button" onClick={()=>void revokeLinks()} disabled={busy}>Confirm revoke links</button><button type="button" onClick={()=>setConfirmRevoke(false)} disabled={busy}>Keep links</button></>:<button type="button" onClick={()=>setConfirmRevoke(true)} disabled={busy}>Revoke all linked users</button>}
+      </div>}
       {pairing&&<div aria-label="Telegram pairing instructions"><p>Within five minutes, send this exact command in a private chat with @{status.bot_username??'your bot'}:</p><code>/pair {pairing.code}</code><p>Expires {new Date(pairing.expires_at).toLocaleString()}.</p></div>}
       {status.deliveries&&Object.keys(status.deliveries).length>0&&<p>Delivery records: {Object.entries(status.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}</p>}
     </>}

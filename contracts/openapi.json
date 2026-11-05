@@ -2959,6 +2959,25 @@
         "title": "TelegramCredentialStatus",
         "type": "object"
       },
+      "TelegramLinkRevocation": {
+        "additionalProperties": false,
+        "properties": {
+          "linked_users": {
+            "title": "Linked Users",
+            "type": "integer"
+          },
+          "revoked_users": {
+            "title": "Revoked Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revoked_users",
+          "linked_users"
+        ],
+        "title": "TelegramLinkRevocation",
+        "type": "object"
+      },
       "TelegramPairingCode": {
         "additionalProperties": false,
         "properties": {
@@ -3293,6 +3312,29 @@
           }
         ],
         "summary": "Set Telegram Credential"
+      }
+    },
+    "/channels/telegram/links": {
+      "delete": {
+        "operationId": "revoke_telegram_links_channels_telegram_links_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramLinkRevocation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Telegram Links"
       }
     },
     "/channels/telegram/pairing": {

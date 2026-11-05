@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/telegram/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Telegram Links */
+        delete: operations["revoke_telegram_links_channels_telegram_links_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram/pairing": {
         parameters: {
             query?: never;
@@ -1874,6 +1891,13 @@ export interface components {
             /** Processed Updates */
             processed_updates: number;
         };
+        /** TelegramLinkRevocation */
+        TelegramLinkRevocation: {
+            /** Linked Users */
+            linked_users: number;
+            /** Revoked Users */
+            revoked_users: number;
+        };
         /** TelegramPairingCode */
         TelegramPairingCode: {
             /** Code */
@@ -2063,6 +2087,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+        };
+    };
+    revoke_telegram_links_channels_telegram_links_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramLinkRevocation"];
                 };
             };
         };

@@ -145,6 +145,16 @@ class TelegramStore:
                 (identity.account_id, identity.username, now, now),
             )
 
+    def revoke_users(self, account_id: str) -> int:
+        """Remove authorization for every user paired to this bot account."""
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM telegram_pairing_codes")
+            return connection.execute(
+                "UPDATE channel_bindings SET authorized=0 WHERE channel='telegram' AND account_id=? AND authorized=1",
+                (account_id,),
+            ).rowcount
+
     def profile(self, account_id: str | None = None) -> dict[str, Any]:
         with self.runs.connection() as connection:
             if account_id is None:

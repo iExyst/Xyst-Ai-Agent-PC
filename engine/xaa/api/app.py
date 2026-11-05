@@ -215,6 +215,12 @@ class TelegramPairingCode(BaseModel):
     expires_at: str
 
 
+class TelegramLinkRevocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revoked_users: int
+    linked_users: int
+
+
 def create_app(
     provider: LMStudioProvider,
     api_token: SecretStr,
@@ -580,7 +586,8 @@ def create_app(
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
         configured = credential_store.get("telegram-bot") is not None
-        profile = telegram_store.profile()
+        account_id = credential_store.get("telegram-bot-account")
+        profile = telegram_store.profile(account_id)
         return {
             "configured": configured,
             "bot_username": profile["username"] if configured else None,
@@ -600,6 +607,7 @@ def create_app(
             async with TelegramBotApi(token) as api:
                 identity = await api.get_me()
             credential_store.set(token, profile="telegram-bot")
+            credential_store.set(identity.account_id, profile="telegram-bot-account")
             telegram_store.save_bot(identity)
         except (TelegramApiError, OSError, RuntimeError, ValueError) as exc:
             raise HTTPException(
@@ -618,19 +626,36 @@ def create_app(
     def clear_telegram_credential(_: None = Depends(authenticate)) -> dict[str, Any]:
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        account_id = credential_store.get("telegram-bot-account")
         try:
             credential_store.delete("telegram-bot")
         except (OSError, RuntimeError, ValueError) as exc:
             raise HTTPException(
                 status_code=503, detail="Could not clear the OS credential."
             ) from exc
-        profile = telegram_store.profile()
+        profile = telegram_store.profile(account_id)
         return {
             "configured": False,
             "bot_username": None,
             "linked_users": profile["linked_users"],
             "processed_updates": profile["processed_updates"],
             "deliveries": profile["deliveries"],
+        }
+
+    @app.delete("/channels/telegram/links", response_model=TelegramLinkRevocation)
+    def revoke_telegram_links(_: None = Depends(authenticate)) -> dict[str, int]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        account_id = credential_store.get("telegram-bot-account")
+        if account_id is None:
+            return {
+                "revoked_users": 0,
+                "linked_users": 0,
+            }
+        revoked = telegram_store.revoke_users(account_id)
+        return {
+            "revoked_users": revoked,
+            "linked_users": telegram_store.profile(account_id)["linked_users"],
         }
 
     @app.post(

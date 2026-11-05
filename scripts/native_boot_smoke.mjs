@@ -31,7 +31,15 @@ try{
     }catch(error){lastDebuggingError=String(error)+(error?.cause?.code?` (${error.cause.code})`:'');if(proc.exitCode!==null)throw new Error(`Packaged desktop exited during boot: ${lastDebuggingError}`);await new Promise(resolve=>setTimeout(resolve,250));}
   }
   if(!browser)throw new Error(`Packaged debugging attachment failed: ${lastDebuggingError}`);
-  const page=browser.contexts()[0].pages()[0];
+  let page;
+  const pageDeadline=Date.now()+20000;
+  while(Date.now()<pageDeadline){
+    page=browser.contexts().flatMap(context=>context.pages())[0];
+    if(page)break;
+    if(proc.exitCode!==null)throw new Error('Packaged desktop exited before its WebView page appeared');
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  if(!page)throw new Error('Packaged WebView debugging endpoint did not expose a page');
   await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   let ready=false;

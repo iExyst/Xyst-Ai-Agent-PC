@@ -377,10 +377,12 @@ def test_telegram_credential_and_pairing_api_never_returns_saved_token(
 
     credentials = MemoryCredentials()
     monkeypatch.setattr(app_module, "TelegramBotApi", FakeTelegramBotApi)
+    runs = RunStore(workspace_tmp_path / "telegram-api.sqlite3")
+    telegram_store = TelegramStore(runs)
     app = create_app(
         QuietProvider(),
         SecretStr(TOKEN),
-        store=RunStore(workspace_tmp_path / "telegram-api.sqlite3"),
+        store=runs,
         credential_store=credentials,
     )
     client = TestClient(app)
@@ -397,6 +399,20 @@ def test_telegram_credential_and_pairing_api_never_returns_saved_token(
     pairing = client.post("/channels/telegram/pairing", headers=HEADERS)
     assert pairing.status_code == 201
     assert pairing.json()["code"]
+    telegram_store.process_update(
+        IDENTITY,
+        private_update(10, 456, f"/pair {pairing.json()['code']}"),
+        model="fixture/model",
+    )
+    assert client.get("/channels/telegram", headers=HEADERS).json()["linked_users"] == 1
+    revoked = client.delete("/channels/telegram/links", headers=HEADERS)
+    assert revoked.json() == {"revoked_users": 1, "linked_users": 0}
+    assert (
+        telegram_store.process_update(
+            IDENTITY, private_update(11, 456, "new request"), model="fixture/model"
+        )["state"]
+        == "ignored"
+    )
     cleared = client.delete("/channels/telegram/credential", headers=HEADERS)
     assert cleared.json()["configured"] is False
     assert credentials.get("telegram-bot") is None
