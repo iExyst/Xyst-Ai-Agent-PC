@@ -7,6 +7,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
   const [profiles, setProfiles] = useState<SpecialistProfile[]>([]);
   const [models, setModels] = useState<{ id: string }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [instructionDrafts, setInstructionDrafts] = useState<Record<string, string>>({});
   const [busyRole, setBusyRole] = useState('');
   const [error, setError] = useState('');
 
@@ -21,6 +22,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
     setProfiles(nextProfiles);
     setModels(nextModels.map(model => ({ id: model.id })));
     setDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.model_route ?? ''])));
+    setInstructionDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.system_instructions])));
   };
 
   useEffect(() => { void refresh().catch(failure => setError(String(failure))); }, [client]);
@@ -39,9 +41,23 @@ export function SpecialistProfilesPanel({ client }: Props) {
     }
   };
 
+  const saveInstructions = async (profile: SpecialistProfile) => {
+    setBusyRole(profile.role);
+    setError('');
+    try {
+      const saved = await client.setSpecialistInstructions(profile.role, instructionDrafts[profile.role] ?? '');
+      setProfiles(current => current.map(item => item.role === saved.role ? saved : item));
+      setInstructionDrafts(current => ({ ...current, [saved.role]: saved.system_instructions }));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusyRole('');
+    }
+  };
+
   return <section aria-label="Specialist profiles">
     <h3>Specialist identities and model routes</h3>
-    <p>Choose a discovered local model for each role, or inherit the model selected for the parent run. Routes are saved with each task plan and do not change when you edit these settings later.</p>
+    <p>Choose a discovered local model for each role, or inherit the model selected for the parent run. Role instructions and routes are snapshotted when a task plan is saved, so edits only affect future plans. Tool permissions remain controlled by the application.</p>
     {error && <p role="alert">{error}</p>}
     {profiles.map(profile => <div key={profile.role} className="specialist-profile">
       <label>{profile.display_name} model
@@ -60,6 +76,20 @@ export function SpecialistProfilesPanel({ client }: Props) {
         disabled={busyRole === profile.role || (drafts[profile.role] ?? '') === (profile.model_route ?? '')}
         onClick={() => void save(profile)}
       >Save route</button>
+      <label>{profile.display_name} role instructions
+        <textarea
+          aria-label={`${profile.display_name} role instructions`}
+          maxLength={4000}
+          value={instructionDrafts[profile.role] ?? ''}
+          disabled={busyRole === profile.role}
+          onChange={event => setInstructionDrafts(current => ({ ...current, [profile.role]: event.target.value }))}
+        />
+      </label>
+      <button
+        type="button"
+        disabled={busyRole === profile.role || (instructionDrafts[profile.role] ?? '') === profile.system_instructions}
+        onClick={() => void saveInstructions(profile)}
+      >Save role instructions</button>
     </div>)}
   </section>;
 }

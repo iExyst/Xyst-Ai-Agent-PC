@@ -121,6 +121,12 @@ export class EngineClient {
     });
   }
 
+  setSpecialistInstructions(role: string, system_instructions: string): Promise<SpecialistProfile> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/instructions`, {
+      method: 'PUT', body: JSON.stringify({system_instructions}),
+    });
+  }
+
   executionDistributions(signal?: AbortSignal): Promise<components['schemas']['DistributionInventory']> {
     return this.#request('/execution/distributions', {signal});
   }

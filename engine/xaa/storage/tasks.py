@@ -305,22 +305,27 @@ class TaskStore:
                 "SELECT 1 FROM tasks WHERE run_id=? LIMIT 1", (run_id,)
             ).fetchone():
                 raise ValueError("A saved plan cannot be silently replaced.")
-            specialist_routes = {
-                str(row["role"]): str(row["model_route"])
+            specialist_profiles = {
+                str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,model_route FROM specialist_profiles WHERE model_route IS NOT NULL"
+                    "SELECT role,model_route,system_instructions FROM specialist_profiles"
                 ).fetchall()
+            }
+            profile_instructions = {
+                str(role): str(row["system_instructions"])
+                for role, row in specialist_profiles.items()
             }
             for task in graph.tasks.values():
                 connection.execute(
-                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,assigned_role,model_route,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,assigned_role,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
                     (
                         f"{run_id}:{task.id}",
                         run_id,
                         task.objective,
                         json.dumps(task.acceptance_criteria),
                         task.role,
-                        specialist_routes.get(task.role, run["model"]),
+                        specialist_profiles.get(task.role, {}).get("model_route") or run["model"],
+                        profile_instructions.get(task.role, ""),
                         run["workspace"],
                         json.dumps(task.permissions),
                         json.dumps(

@@ -281,3 +281,26 @@ def test_schema_eleven_adds_durable_specialist_profiles(workspace_tmp_path):
     with migrated.connection() as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_schema_twelve_adds_snapshotted_specialist_instructions(workspace_tmp_path):
+    from xaa.storage.specialist_profiles import SpecialistProfileStore
+
+    store = RunStore(workspace_tmp_path / "specialist-instructions-migration.sqlite3")
+    SpecialistProfileStore(store).set_route("researcher", "saved/model")
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE specialist_profiles DROP COLUMN system_instructions")
+        connection.execute("ALTER TABLE tasks DROP COLUMN identity_instructions")
+        connection.execute("PRAGMA user_version=12")
+
+    migrated = RunStore(store.path)
+    researcher = next(
+        row for row in SpecialistProfileStore(migrated).list() if row["role"] == "researcher"
+    )
+    assert researcher["model_route"] == "saved/model"
+    assert "evidence" in researcher["system_instructions"]
+    with migrated.connection() as connection:
+        assert "identity_instructions" in {
+            row["name"] for row in connection.execute("PRAGMA table_info(tasks)")
+        }
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

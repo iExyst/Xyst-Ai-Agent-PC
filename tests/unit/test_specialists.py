@@ -8,6 +8,7 @@ from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
+from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
@@ -206,8 +207,13 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
         model="fixture",
     )["id"]
     parent = store.acquire_lease(run_id, "planner")
+    SpecialistProfileStore(store).set_instructions(
+        "researcher", "Prefer primary sources and cite file paths."
+    )
     TaskStore(store).save_plan(
-        run_id, parent, [TaskDefinition(id="research", objective="Inspect", max_iterations=1)]
+        run_id,
+        parent,
+        [TaskDefinition(id="research", objective="Inspect", role="researcher", max_iterations=1)],
     )
     store.release_lease(run_id, parent)
 
@@ -217,6 +223,7 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
 
         async def chat(self, *, model, messages, tools=None):
             if messages[0]["content"].startswith("You are the"):
+                assert "Prefer primary sources and cite file paths." in messages[0]["content"]
                 message = {"role": "assistant", "content": "Specialist candidate awaiting review"}
             elif messages[-1]["role"] == "user":
                 assert any(tool["function"]["name"] == "plan_run_ready" for tool in tools)

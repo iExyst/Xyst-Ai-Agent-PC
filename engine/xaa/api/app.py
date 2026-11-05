@@ -299,11 +299,17 @@ class SpecialistRouteRequest(BaseModel):
     model_route: str | None
 
 
+class SpecialistInstructionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    system_instructions: str = Field(max_length=4000)
+
+
 class SpecialistProfileResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     role: str
     display_name: str
     model_route: str | None
+    system_instructions: str
     updated_at: str
 
 
@@ -1124,6 +1130,19 @@ def create_app(
                     status_code=409, detail="Specialist model is not currently available."
                 )
         return specialist_profiles.set_route(role, payload.model_route)
+
+    @app.put("/specialists/profiles/{role}/instructions", response_model=SpecialistProfileResponse)
+    def set_specialist_instructions(
+        role: str,
+        payload: SpecialistInstructionsRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return specialist_profiles.set_instructions(role, payload.system_instructions)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Specialist role not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/runs", status_code=status.HTTP_201_CREATED, response_model=RunRecord)
     async def create_run(

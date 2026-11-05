@@ -20,7 +20,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 12
+DATABASE_SCHEMA_VERSION = 13
 
 
 @dataclass(frozen=True)
@@ -235,6 +235,7 @@ class RunStore:
                     acceptance_criteria TEXT NOT NULL,
                     assigned_role TEXT NOT NULL,
                     model_route TEXT,
+                    identity_instructions TEXT NOT NULL DEFAULT '',
                     workspace TEXT,
                     permission_scope TEXT NOT NULL,
                     budgets TEXT NOT NULL,
@@ -255,6 +256,7 @@ class RunStore:
                     role TEXT PRIMARY KEY,
                     display_name TEXT NOT NULL,
                     model_route TEXT,
+                    system_instructions TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS task_leases (
@@ -451,17 +453,59 @@ class RunStore:
                 """
             )
             connection.execute("BEGIN IMMEDIATE")
-            for role, display_name in (
-                ("planner", "Planner"),
-                ("researcher", "Researcher"),
-                ("developer", "Developer"),
-                ("reviewer", "Reviewer"),
-                ("tester", "Tester"),
-                ("executor", "Executor"),
-            ):
+            default_profiles = (
+                (
+                    "planner",
+                    "Planner",
+                    "Decompose the objective into bounded tasks with clear dependencies and observable acceptance criteria.",
+                ),
+                (
+                    "researcher",
+                    "Researcher",
+                    "Gather relevant evidence and distinguish direct observations from assumptions.",
+                ),
+                (
+                    "developer",
+                    "Developer",
+                    "Make the smallest scoped implementation change that satisfies the assigned acceptance criteria.",
+                ),
+                (
+                    "reviewer",
+                    "Reviewer",
+                    "Independently inspect the proposed result and report concrete defects or supporting evidence.",
+                ),
+                (
+                    "tester",
+                    "Tester",
+                    "Select checks that directly exercise the assigned behavior and report their actual outcomes.",
+                ),
+                (
+                    "executor",
+                    "Executor",
+                    "Carry out the assigned task within its saved permissions and report only observed results.",
+                ),
+            )
+            profile_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")
+            }
+            if "system_instructions" not in profile_columns:
                 connection.execute(
-                    "INSERT OR IGNORE INTO specialist_profiles (role,display_name,model_route,updated_at) VALUES (?,?,NULL,?)",
-                    (role, display_name, utc_now()),
+                    "ALTER TABLE specialist_profiles ADD COLUMN system_instructions TEXT NOT NULL DEFAULT ''"
+                )
+                for role, _display_name, instructions in default_profiles:
+                    connection.execute(
+                        "UPDATE specialist_profiles SET system_instructions=? WHERE role=?",
+                        (instructions, role),
+                    )
+            for role, display_name, instructions in default_profiles:
+                connection.execute(
+                    "INSERT OR IGNORE INTO specialist_profiles (role,display_name,model_route,system_instructions,updated_at) VALUES (?,?,NULL,?,?)",
+                    (role, display_name, instructions, utc_now()),
+                )
+            task_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+            if "identity_instructions" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN identity_instructions TEXT NOT NULL DEFAULT ''"
                 )
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(tool_calls)")}
             if "provider_call_id" not in columns:

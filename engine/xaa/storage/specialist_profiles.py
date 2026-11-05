@@ -24,7 +24,7 @@ class SpecialistProfileStore:
     def list(self) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:
             rows = connection.execute(
-                "SELECT role,display_name,model_route,updated_at FROM specialist_profiles ORDER BY role"
+                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles ORDER BY role"
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -39,7 +39,25 @@ class SpecialistProfileStore:
                 (model_route, utc_now(), role),
             )
             row = connection.execute(
-                "SELECT role,display_name,model_route,updated_at FROM specialist_profiles WHERE role=?",
+                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles WHERE role=?",
+                (role,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(role)
+        return dict(row)
+
+    def set_instructions(self, role: str, instructions: str) -> dict[str, Any]:
+        if role not in ROLES:
+            raise KeyError(role)
+        if len(instructions) > 4000 or "\x00" in instructions:
+            raise ValueError("Specialist instructions exceed the allowed limit.")
+        with self.runs.connection() as connection:
+            connection.execute(
+                "UPDATE specialist_profiles SET system_instructions=?,updated_at=? WHERE role=?",
+                (instructions.strip(), utc_now(), role),
+            )
+            row = connection.execute(
+                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles WHERE role=?",
                 (role,),
             ).fetchone()
         if row is None:
