@@ -5,7 +5,7 @@ Windows-first desktop agent under development. The native app, local engine and 
 ## Status
 
 - Current work: durable execution, workspace tools and desktop workflows; several phase gates remain incomplete
-- Completion estimate: approximately 10% of the full release objective
+- Completion estimate: approximately 16% of the full release objective
 - Hermes audit pin: `1e208b280deb18f01d015b0acdf3ef3552d08039` (official `NousResearch/hermes-agent`, audited 2026-11-03)
 - See `docs/progress.md` for evidence and next gates.
 
@@ -22,6 +22,8 @@ After connecting, explicitly choose a discovered local model; the app does not s
 Run `uv sync`. Set `XAA_API_TOKEN` to a randomly generated secret of at least 32 characters in both engine and client environments. Start the engine with `uv run python -m xaa.api` (loopback port 8765).
 
 Use `uv run xaa models`, then submit `uv run xaa run "Read evidence.txt and report its contents" --model MODEL_ID --workspace C:\path\to\project`. Inspect the returned run ID with `uv run xaa status RUN_ID` or `uv run xaa events RUN_ID`. Pause, resume and cancel commands operate on that same run. Observe mode permits reads; workspace mode permits existing-file edits. Final candidates await explicit review in the desktop. Saved runs can be reopened without repeating execution.
+
+For an interactive terminal conversation, run `uv run xaa chat --model MODEL_ID`. Each turn is a separate durable coordinator run. The current process carries up to six recent turns as bounded context; `/reset` clears that in-memory context while preserving saved runs, and `/quit` exits. Ctrl+C requests cancellation of the active turn. Context does not carry over after exiting the CLI; use saved run history to inspect prior turns.
 
 Optional coordinator response streaming: set `$env:XAA_STREAM_RESPONSES='1'` before starting the engine or launching a freshly rebuilt native bundle. Partial text is shown separately from final candidates. Streamed tool arguments must assemble and validate completely before execution. This remains opt-in: real-model checks have included both a successful search/read/answer and an empty final-answer failure. Specialist responses currently use non-streaming inference. The protocol follows [LM Studio's streamed tool-call format](https://lmstudio.ai/docs/developer/openai-compat/tools#streaming).
 
