@@ -21,6 +21,7 @@ export type RunReviewDecision = components['schemas']['RunReviewDecision'];
 export type ProjectValidation = components['schemas']['ProjectValidationSummary'];
 export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
+export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -111,6 +112,20 @@ export class EngineClient {
 
   setScheduleEnabled(id: string, enabled: boolean): Promise<Schedule> {
     return this.#request(`/schedules/${encodeURIComponent(id)}/enabled`, {method:'PUT',body:JSON.stringify({enabled})});
+  }
+
+  telegramStatus(): Promise<TelegramChannelStatus> { return this.#request('/channels/telegram'); }
+
+  setTelegramToken(token: string): Promise<TelegramChannelStatus> {
+    return this.#request('/channels/telegram/credential',{method:'PUT',body:JSON.stringify({token})});
+  }
+
+  clearTelegramToken(): Promise<TelegramChannelStatus> {
+    return this.#request('/channels/telegram/credential',{method:'DELETE'});
+  }
+
+  telegramPairing(): Promise<components['schemas']['TelegramPairingCode']> {
+    return this.#request('/channels/telegram/pairing',{method:'POST',body:JSON.stringify({})});
   }
 
   history(query='',before?:string,signal?:AbortSignal,scope:'objective'|'conversation'='objective'): Promise<RunHistory> {

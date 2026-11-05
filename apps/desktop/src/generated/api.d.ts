@@ -33,6 +33,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Telegram Status */
+        get: operations["telegram_status_channels_telegram_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/telegram/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Telegram Credential */
+        put: operations["set_telegram_credential_channels_telegram_credential_put"];
+        post?: never;
+        /** Clear Telegram Credential */
+        delete: operations["clear_telegram_credential_channels_telegram_credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/telegram/pairing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Telegram Pairing */
+        post: operations["create_telegram_pairing_channels_telegram_pairing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/stream": {
         parameters: {
             query?: never;
@@ -1799,6 +1851,36 @@ export interface components {
             /** Proposed Sha256 */
             proposed_sha256: string;
         };
+        /** TelegramCredentialRequest */
+        TelegramCredentialRequest: {
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
+        };
+        /** TelegramCredentialStatus */
+        TelegramCredentialStatus: {
+            /** Bot Username */
+            bot_username?: string | null;
+            /** Configured */
+            configured: boolean;
+            /** Deliveries */
+            deliveries: {
+                [key: string]: number;
+            };
+            /** Linked Users */
+            linked_users: number;
+            /** Processed Updates */
+            processed_updates: number;
+        };
+        /** TelegramPairingCode */
+        TelegramPairingCode: {
+            /** Code */
+            code: string;
+            /** Expires At */
+            expires_at: string;
+        };
         /** ToolCall */
         ToolCall: {
             function: components["schemas"]["FunctionCall"];
@@ -1908,6 +1990,99 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    telegram_status_channels_telegram_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+        };
+    };
+    set_telegram_credential_channels_telegram_credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_telegram_credential_channels_telegram_credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+        };
+    };
+    create_telegram_pairing_channels_telegram_pairing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramPairingCode"];
                 };
             };
         };

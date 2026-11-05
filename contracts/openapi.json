@@ -2898,6 +2898,86 @@
         "title": "TaskWorkspaceChange",
         "type": "object"
       },
+      "TelegramCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TelegramCredentialRequest",
+        "type": "object"
+      },
+      "TelegramCredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "bot_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Username"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "deliveries": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Deliveries",
+            "type": "object"
+          },
+          "linked_users": {
+            "title": "Linked Users",
+            "type": "integer"
+          },
+          "processed_updates": {
+            "title": "Processed Updates",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "linked_users",
+          "processed_updates",
+          "deliveries"
+        ],
+        "title": "TelegramCredentialStatus",
+        "type": "object"
+      },
+      "TelegramPairingCode": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "expires_at"
+        ],
+        "title": "TelegramPairingCode",
+        "type": "object"
+      },
       "ToolCall": {
         "properties": {
           "function": {
@@ -3126,6 +3206,116 @@
           }
         ],
         "summary": "Create Backup"
+      }
+    },
+    "/channels/telegram": {
+      "get": {
+        "operationId": "telegram_status_channels_telegram_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Telegram Status"
+      }
+    },
+    "/channels/telegram/credential": {
+      "delete": {
+        "operationId": "clear_telegram_credential_channels_telegram_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear Telegram Credential"
+      },
+      "put": {
+        "operationId": "set_telegram_credential_channels_telegram_credential_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Telegram Credential"
+      }
+    },
+    "/channels/telegram/pairing": {
+      "post": {
+        "operationId": "create_telegram_pairing_channels_telegram_pairing_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramPairingCode"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Telegram Pairing"
       }
     },
     "/chat/stream": {

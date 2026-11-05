@@ -19,7 +19,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 7
+DATABASE_SCHEMA_VERSION = 8
 
 
 @dataclass(frozen=True)
@@ -353,6 +353,39 @@ class RunStore:
                     authorized INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     UNIQUE(channel, account_id, external_identity)
+                );
+                CREATE TABLE IF NOT EXISTS telegram_pairing_codes (
+                    code_hash TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS telegram_bots (
+                    account_id TEXT PRIMARY KEY,
+                    username TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS telegram_updates (
+                    account_id TEXT NOT NULL,
+                    update_id INTEGER NOT NULL,
+                    user_id TEXT,
+                    chat_id TEXT,
+                    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+                    run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+                    state TEXT NOT NULL,
+                    delivery_state TEXT,
+                    delivery_message_id INTEGER,
+                    received_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(account_id, update_id)
+                );
+                CREATE INDEX IF NOT EXISTS telegram_updates_delivery
+                    ON telegram_updates(delivery_state, updated_at);
+                CREATE TABLE IF NOT EXISTS telegram_offsets (
+                    account_id TEXT PRIMARY KEY,
+                    next_offset INTEGER NOT NULL,
+                    last_update_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS provider_profiles (
                     id TEXT PRIMARY KEY,

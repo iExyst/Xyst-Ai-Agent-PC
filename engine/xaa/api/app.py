@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -31,6 +32,7 @@ from xaa.api.contracts import (
     TaskCandidate,
     UsageReport,
 )
+from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.credentials import CredentialStore
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
@@ -193,6 +195,26 @@ class ScheduleEnabledRequest(BaseModel):
     enabled: bool = Field(strict=True)
 
 
+class TelegramCredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: SecretStr = Field(min_length=1, max_length=512)
+
+
+class TelegramCredentialStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configured: bool
+    bot_username: str | None = None
+    linked_users: int
+    processed_updates: int
+    deliveries: dict[str, int]
+
+
+class TelegramPairingCode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    expires_at: str
+
+
 def create_app(
     provider: LMStudioProvider,
     api_token: SecretStr,
@@ -226,6 +248,12 @@ def create_app(
     supervisor = RunSupervisor(Coordinator(run_store, provider, stream_responses=stream_responses))
     schedule_store = ScheduleStore(run_store)
     schedule_service = ScheduleService(run_store, supervisor.submit)
+    telegram_store = TelegramStore(run_store)
+    telegram_service = (
+        TelegramService(run_store, credential_store, supervisor.submit)
+        if credential_store is not None
+        else None
+    )
 
     with run_store.connection() as connection:
         profile = connection.execute(
@@ -246,7 +274,11 @@ def create_app(
         await provider.configure_endpoint(endpoint)
         supervisor.start()
         schedule_service.start()
+        if telegram_service is not None:
+            telegram_service.start()
         yield
+        if telegram_service is not None:
+            await telegram_service.close()
         await schedule_service.close()
         await supervisor.close()
         await provider.close()
@@ -542,6 +574,76 @@ def create_app(
                 (payload.model, utc_now()),
             )
         return {"model": payload.model}
+
+    @app.get("/channels/telegram", response_model=TelegramCredentialStatus)
+    def telegram_status(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        configured = credential_store.get("telegram-bot") is not None
+        profile = telegram_store.profile()
+        return {
+            "configured": configured,
+            "bot_username": profile["username"] if configured else None,
+            "linked_users": profile["linked_users"],
+            "processed_updates": profile["processed_updates"],
+            "deliveries": profile["deliveries"],
+        }
+
+    @app.put("/channels/telegram/credential", response_model=TelegramCredentialStatus)
+    async def set_telegram_credential(
+        payload: TelegramCredentialRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        token = payload.token.get_secret_value()
+        try:
+            async with TelegramBotApi(token) as api:
+                identity = await api.get_me()
+            credential_store.set(token, profile="telegram-bot")
+            telegram_store.save_bot(identity)
+        except (TelegramApiError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="Telegram rejected the bot token or is unavailable."
+            ) from exc
+        profile = telegram_store.profile(identity.account_id)
+        return {
+            "configured": True,
+            "bot_username": profile["username"],
+            "linked_users": profile["linked_users"],
+            "processed_updates": profile["processed_updates"],
+            "deliveries": profile["deliveries"],
+        }
+
+    @app.delete("/channels/telegram/credential", response_model=TelegramCredentialStatus)
+    def clear_telegram_credential(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            credential_store.delete("telegram-bot")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        profile = telegram_store.profile()
+        return {
+            "configured": False,
+            "bot_username": None,
+            "linked_users": profile["linked_users"],
+            "processed_updates": profile["processed_updates"],
+            "deliveries": profile["deliveries"],
+        }
+
+    @app.post(
+        "/channels/telegram/pairing",
+        status_code=status.HTTP_201_CREATED,
+        response_model=TelegramPairingCode,
+    )
+    def create_telegram_pairing(_: None = Depends(authenticate)) -> dict[str, str]:
+        if credential_store is None or credential_store.get("telegram-bot") is None:
+            raise HTTPException(status_code=409, detail="Configure a Telegram bot token first.")
+        code = secrets.token_urlsafe(32)
+        expires_at = telegram_store.create_pairing(code)
+        return {"code": code, "expires_at": expires_at}
 
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:

@@ -87,6 +87,44 @@ def test_newer_database_is_refused_without_resetting_version(workspace_tmp_path)
         )
 
 
+def test_schema_seven_migrates_additive_telegram_tables_without_losing_runs(
+    workspace_tmp_path,
+):
+    database = workspace_tmp_path / "schema-seven.sqlite3"
+    store = RunStore(database)
+    run_id = store.create_run(
+        objective="Preserve this run",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )["id"]
+    events = store.list_events(run_id)
+    with store.connection() as connection:
+        connection.execute("DROP TABLE telegram_offsets")
+        connection.execute("DROP TABLE telegram_updates")
+        connection.execute("DROP TABLE telegram_bots")
+        connection.execute("DROP TABLE telegram_pairing_codes")
+        connection.execute("PRAGMA user_version=7")
+
+    migrated = RunStore(database)
+    assert migrated.list_events(run_id) == events
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    assert {
+        "telegram_pairing_codes",
+        "telegram_bots",
+        "telegram_updates",
+        "telegram_offsets",
+    }.issubset(tables)
+
+
 @pytest.mark.parametrize("old_version", [4, 5, 6])
 def test_prior_records_are_preserved_when_enabling_private_workspace_semantics(
     workspace_tmp_path,

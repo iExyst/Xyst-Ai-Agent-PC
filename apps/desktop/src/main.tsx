@@ -12,6 +12,7 @@ import { PlanPanel } from './PlanPanel.tsx';
 import { RunReviewPanel } from './RunReviewPanel.tsx';
 import { SavedRunsPanel } from './SavedRunsPanel.tsx';
 import { AutomationsPanel } from './AutomationsPanel.tsx';
+import { ChannelsPanel } from './ChannelsPanel.tsx';
 import { ActiveRunPanel } from './ActiveRunPanel.tsx';
 import { ExecutionSetup } from './ExecutionSetup.tsx';
 import { ProviderSetup } from './ProviderSetup.tsx';
@@ -179,6 +180,7 @@ function App() {
       <section><details><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>
       <section><details><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={setProcedureTrial}/></details></section>
       <section><details><summary>Automations</summary><AutomationsPanel client={client} model={model} workspace={workspace}/></details></section>
+      <section><details><summary>Messaging channels</summary><ChannelsPanel client={client}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
