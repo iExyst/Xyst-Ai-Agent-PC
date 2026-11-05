@@ -87,7 +87,7 @@ def test_newer_database_is_refused_without_resetting_version(workspace_tmp_path)
         )
 
 
-@pytest.mark.parametrize("old_version", [4, 5])
+@pytest.mark.parametrize("old_version", [4, 5, 6])
 def test_prior_records_are_preserved_when_enabling_private_workspace_semantics(
     workspace_tmp_path,
     old_version,
@@ -121,7 +121,7 @@ def test_prior_records_are_preserved_when_enabling_private_workspace_semantics(
         assert c.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
-@pytest.mark.parametrize("old_limit", [4, 5])
+@pytest.mark.parametrize("old_limit", [4, 5, 6])
 def test_older_reader_limit_refuses_current_schema_before_access(
     workspace_tmp_path, monkeypatch, old_limit
 ):

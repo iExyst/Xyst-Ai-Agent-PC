@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from xaa.runtime.project_validation import summary as project_validation_summary
+from xaa.runtime.project_validation import validation_required
 from xaa.runtime.verification import FileContentCheck, verify_files_owned
 from xaa.storage.runs import RunStore
 
@@ -15,6 +17,7 @@ class RunReviewDecision(BaseModel):
     rationale: str = Field(min_length=1, max_length=4000)
     objective_confirmed: bool = False
     confirmed_criteria: list[int] = Field(default_factory=lambda: list[int](), max_length=50)
+    validation_call_ids: list[str] = Field(default_factory=list, max_length=16)
 
 
 async def review_run(store: RunStore, run_id: str, decision: RunReviewDecision) -> dict[str, Any]:
@@ -25,11 +28,12 @@ async def review_run(store: RunStore, run_id: str, decision: RunReviewDecision) 
         raise ValueError("Run changed or is not awaiting review.")
     if not decision.rationale.strip():
         raise ValueError("Explain the final review decision.")
-    token = store.acquire_lease(run_id, "local-user-final-review", seconds=30)
+    token = store.acquire_lease(run_id, "local-user-final-review", seconds=180)
     if token is None:
         raise ValueError("An active worker still owns this run.")
     try:
         checked = 0
+        validation_record: dict[str, Any] = {}
         if decision.decision == "accept":
             store.resolve_interrupted_reads(run_id, token)
             if not decision.objective_confirmed or sorted(decision.confirmed_criteria) != list(
@@ -54,12 +58,33 @@ async def review_run(store: RunStore, run_id: str, decision: RunReviewDecision) 
                     "Independent file checks failed; inspect the current files before accepting."
                 )
             checked = len(checks)
+            if validation_required(store, run_id):
+                selected = decision.validation_call_ids
+                if not selected or len(set(selected)) != len(selected):
+                    raise ValueError(
+                        "Select successful validation evidence for the current project."
+                    )
+                current = await project_validation_summary(store, run_id, token)
+                evidence = {item.call_id: item for item in current.evidence}
+                if any(
+                    call_id not in evidence
+                    or not evidence[call_id].succeeded
+                    or not evidence[call_id].matches_current_project
+                    for call_id in selected
+                ):
+                    raise ValueError(
+                        "Selected validation evidence is failed, stale, or unavailable."
+                    )
+                validation_record = {
+                    "validation_call_ids": selected,
+                    "validation_snapshot_sha256": current.current_snapshot_sha256,
+                }
         return store.commit_run_review(
             run_id,
             token,
             revision=decision.expected_revision,
             accepted=decision.decision == "accept",
-            review={**decision.model_dump(), "file_checks_passed": checked},
+            review={**decision.model_dump(), **validation_record, "file_checks_passed": checked},
         )
     finally:
         store.release_lease(run_id, token)

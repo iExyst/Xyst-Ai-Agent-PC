@@ -121,9 +121,41 @@ class CommandCleanupEvidence(BaseModel):
 
 
 class CommandJournal:
-    def __init__(self, store: RunStore, *, task_scope: TaskReadScope | None = None) -> None:
+    def __init__(
+        self,
+        store: RunStore,
+        *,
+        task_scope: TaskReadScope | None = None,
+        purpose: Literal["agent", "project_validation"] = "agent",
+    ) -> None:
         self.store = store
         self.task_scope = task_scope
+        self.purpose: Literal["agent", "project_validation"] = purpose
+        if purpose == "project_validation" and task_scope is not None:
+            raise PermissionError("Final project validation cannot use a specialist scope.")
+
+    def require_state(self, connection: Any, run_id: str, call_id: str | None = None) -> None:
+        state = connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()[0]
+        if state != ("verifying" if self.purpose == "project_validation" else "running"):
+            raise PermissionError("Command purpose does not match the current run state.")
+        if (
+            self.purpose == "project_validation"
+            and connection.execute(
+                "SELECT 1 FROM tasks WHERE run_id=? AND status!='completed' LIMIT 1", (run_id,)
+            ).fetchone()
+        ):
+            raise PermissionError(
+                "Complete specialist integration before final project validation."
+            )
+        if call_id is not None:
+            row = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='execution.reserved' AND json_extract(payload,'$.call_id')=?",
+                (run_id, call_id),
+            ).fetchone()
+            if row is None or json.loads(row[0]).get("purpose", "agent") != self.purpose:
+                raise PermissionError(
+                    "Saved command purpose changed; never launch it under a different purpose."
+                )
 
     @staticmethod
     def _private_call(connection: Any, run_id: str, call_id: str) -> bool:
@@ -131,7 +163,10 @@ class CommandJournal:
             "SELECT task_id FROM tool_calls WHERE run_id=? AND provider_call_id=?",
             (run_id, call_id),
         ).fetchone()
-        return row is not None and row[0] is not None
+        return (row is not None and row[0] is not None) or connection.execute(
+            "SELECT 1 FROM run_events WHERE run_id=? AND event_type='tool.intended' AND json_extract(payload,'$.call_id')=? AND json_extract(payload,'$.internal')=1",
+            (run_id, call_id),
+        ).fetchone() is not None
 
     def require_task(
         self, connection: Any, run_id: str, owner: str, call_id: str | None = None
@@ -271,9 +306,17 @@ class CommandJournal:
             self.store.require_lease(connection, run_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
             task_key = self.require_task(connection, run_id, owner)
-            run = connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()
-            if run[0] != "running":
-                raise PermissionError("Commands may start only while their run is running.")
+            self.require_state(connection, run_id)
+            if (
+                self.purpose == "project_validation"
+                and connection.execute(
+                    "SELECT 1 FROM tool_calls WHERE run_id=? AND state='intended' LIMIT 1",
+                    (run_id,),
+                ).fetchone()
+            ):
+                raise ReconciliationRequired(
+                    "Reconcile unresolved actions before another validation."
+                )
             parent_limit = connection.execute(
                 "SELECT max_seconds FROM run_limits WHERE run_id=?", (run_id,)
             ).fetchone()[0]
@@ -332,7 +375,11 @@ class CommandJournal:
                 connection,
                 run_id,
                 "tool.intended",
-                {"call_id": call_id, "tool": TOOL, "internal": task_key is not None},
+                {
+                    "call_id": call_id,
+                    "tool": TOOL,
+                    "internal": task_key is not None or self.purpose == "project_validation",
+                },
             )
             self.store.record_event(
                 connection,
@@ -342,6 +389,7 @@ class CommandJournal:
                     "call_id": call_id,
                     "execution_id": intent.execution_id,
                     "backend": intent.backend,
+                    "purpose": self.purpose,
                     "profile_sha256": intent.profile_sha256,
                     "lease_binding_sha256": hashlib.sha256(owner.encode("utf-8")).hexdigest(),
                     "task_id": self.task_scope.task_id if self.task_scope else None,
@@ -384,6 +432,15 @@ class CommandJournal:
         with self.store.connection() as connection:
             self.store.require_lease(connection, run_id, owner)
             intent = self._intent(connection, run_id, call_id)
+            reservation = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='execution.reserved' AND json_extract(payload,'$.call_id')=?",
+                (run_id, call_id),
+            ).fetchone()
+            saved_purpose = (
+                json.loads(reservation[0]).get("purpose", "agent") if reservation else "agent"
+            )
+            if saved_purpose != self.purpose:
+                raise PermissionError("Saved command purpose changed; recovery cannot relaunch it.")
             grant, workspace = self._grant(
                 connection, run_id, self.store.path, validate_workspace=False
             )
@@ -403,11 +460,7 @@ class CommandJournal:
             intent = self._intent(connection, run_id, call_id)
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
-            if (
-                connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()[0]
-                != "running"
-            ):
-                raise PermissionError("Snapshot capture requires a running run.")
+            self.require_state(connection, run_id, call_id)
             if (intent.profile_sha256, intent.distribution, intent.workspace) != (
                 grant.profile_sha256,
                 grant.distribution,
@@ -430,6 +483,7 @@ class CommandJournal:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
             self.require_task(connection, run_id, owner, call_id)
+            self.require_state(connection, run_id, call_id)
             intent = self._intent(connection, run_id, call_id)
             self._require_reservation_owner(connection, run_id, call_id, owner)
             if connection.execute(
@@ -466,14 +520,11 @@ class CommandJournal:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
             self.require_task(connection, run_id, owner, call_id)
+            self.require_state(connection, run_id, call_id)
             intent = self._intent(connection, run_id, call_id)
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
-            if (
-                connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()[0]
-                != "running"
-            ):
-                raise PermissionError("Command launch requires a running run.")
+            self.require_state(connection, run_id, call_id)
             if (intent.profile_sha256, intent.distribution, intent.workspace) != (
                 grant.profile_sha256,
                 grant.distribution,
@@ -513,6 +564,7 @@ class CommandJournal:
             self.store.require_lease(connection, run_id, owner)
             if not recovery:
                 self.require_task(connection, run_id, owner, call_id)
+            self.require_state(connection, run_id, call_id)
             intent = self._intent(connection, run_id, call_id)
             if outcome.execution_id != intent.execution_id:
                 raise ValueError("Result belongs to another execution identity.")

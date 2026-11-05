@@ -19,7 +19,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 6
+DATABASE_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -1006,6 +1006,35 @@ class RunStore:
                     raise ValueError(
                         "Uncertain tool actions require reconciliation before acceptance."
                     )
+                from xaa.runtime.project_validation import validation_required
+
+                if validation_required(self, run_id):
+                    selected = review.get("validation_call_ids", [])
+                    validation_hash = review.get("validation_snapshot_sha256")
+                    if (
+                        not selected
+                        or not validation_hash
+                        or any(not isinstance(item, str) for item in selected)
+                    ):
+                        raise ValueError("Current integrated-project validation is required.")
+                    validated_ids = {
+                        row["provider_call_id"]: json.loads(row["result"])
+                        for row in connection.execute(
+                            "SELECT tc.provider_call_id,tc.result FROM tool_calls tc JOIN run_events e ON e.run_id=tc.run_id AND e.event_type='execution.reserved' AND json_extract(e.payload,'$.call_id')=tc.provider_call_id WHERE tc.run_id=? AND tc.task_id IS NULL AND tc.state='completed' AND tc.tool_name='workspace.run_command' AND tc.tool_version='1' AND json_extract(e.payload,'$.purpose')='project_validation'",
+                            (run_id,),
+                        )
+                    }
+                    if any(
+                        item not in validated_ids
+                        or not validated_ids[item].get("succeeded")
+                        or validated_ids[item].get("snapshot_sha256") != validation_hash
+                        for item in selected
+                    ):
+                        raise ValueError("Selected project validation is unavailable or stale.")
+                    from xaa.runtime.task_commands import verify_command_output
+
+                    for item in selected:
+                        verify_command_output(self, run_id, validated_ids[item])
             else:
                 self._stop_specialists(connection, run_id, "parent_rejected", cancel=True)
             state = "completed" if accepted else "failed"

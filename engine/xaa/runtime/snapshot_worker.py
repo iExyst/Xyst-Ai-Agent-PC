@@ -3,6 +3,7 @@
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +21,7 @@ class SnapshotRequest(BaseModel):
     call_id: str = Field(min_length=1, max_length=256)
     task_id: str | None = Field(default=None, min_length=1, max_length=128)
     task_token: str | None = Field(default=None, min_length=1, max_length=256)
+    purpose: Literal["agent", "project_validation"] = "agent"
 
     def scope(self) -> TaskReadScope | None:
         if (self.task_id is None) != (self.task_token is None):
@@ -39,8 +41,9 @@ async def capture_command_snapshot(
     *,
     deadline: float,
     task_scope: TaskReadScope | None = None,
+    purpose: Literal["agent", "project_validation"] = "agent",
 ) -> WorkspaceSnapshot:
-    journal = CommandJournal(store, task_scope=task_scope)
+    journal = CommandJournal(store, task_scope=task_scope, purpose=purpose)
     journal.snapshot_intent(run_id, owner, call_id)
     request = SnapshotRequest(
         database=str(store.path.resolve()),
@@ -49,6 +52,7 @@ async def capture_command_snapshot(
         call_id=call_id,
         task_id=task_scope.task_id if task_scope else None,
         task_token=task_scope.task_token if task_scope else None,
+        purpose=purpose,
     )
     command = (
         [sys.executable, "--snapshot-worker"]
@@ -75,7 +79,7 @@ def main() -> None:
     request = SnapshotRequest.model_validate_json(raw)
     store = RunStore(Path(request.database))
     scope = request.scope()
-    journal = CommandJournal(store, task_scope=scope)
+    journal = CommandJournal(store, task_scope=scope, purpose=request.purpose)
     intent = journal.snapshot_intent(request.run_id, request.owner, request.call_id)
     if scope is None:
         snapshot = capture_workspace(Path(intent.workspace))

@@ -5,7 +5,7 @@ import base64
 import hashlib
 import os
 import time
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from xaa.runtime.cleanup import finish_cleanup
@@ -23,11 +23,16 @@ from xaa.storage.runs import RunStore, TaskReadScope
 
 class CommandController:
     def __init__(
-        self, store: RunStore, transport: WSLTransport, *, task_scope: TaskReadScope | None = None
+        self,
+        store: RunStore,
+        transport: WSLTransport,
+        *,
+        task_scope: TaskReadScope | None = None,
+        purpose: Literal["agent", "project_validation"] = "agent",
     ):
         self.store = store
         self.transport = transport
-        self.journal = CommandJournal(store, task_scope=task_scope)
+        self.journal = CommandJournal(store, task_scope=task_scope, purpose=purpose)
 
     def artifact(self, run_id: str, owner: str, identity: str, kind: str, data: bytes) -> str:
         directory = command_artifact_root(self.store, create=True)
@@ -143,6 +148,7 @@ class CommandController:
                 call_id,
                 deadline=deadline,
                 task_scope=self.journal.task_scope,
+                purpose=self.journal.purpose,
             )
             manifest = self.artifact(
                 run_id, owner, intent.execution_id, "snapshot", snapshot.manifest_bytes()

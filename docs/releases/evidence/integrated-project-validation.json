@@ -1,0 +1,47 @@
+{
+  "scope": "source engine with actual Ubuntu-24.04 WSL restricted execution",
+  "native_app": false,
+  "run_id": "94647b5c-e329-4252-a84d-5c98d0ad80da",
+  "state": "completed",
+  "validation": {
+    "execution_id": "f07318560b5548a88360819c581acb09",
+    "snapshot_sha256": "7a9c20fd09a628c9cd6cbc6361a621ffa8489a9bc8dd76efa642b118592d8013",
+    "filter_sha256": "435a622057455af4c09d40a88bdeb1960e399a54705df9b5c32d8a803b76ee41",
+    "termination_reason": "finished",
+    "exit_code": 0,
+    "supervisor_exit_code": 0,
+    "succeeded": true,
+    "output_complete": true,
+    "cleanup_confirmed": true,
+    "workspace_changes_persisted": false,
+    "stdout_artifact_id": "fa9fb60b-0991-45a4-972f-d7f78b306b5a",
+    "stderr_artifact_id": "b74820fe-0094-42be-903e-f792f8f0cb1a",
+    "stdout_sha256": "90478af1456ebf5112516009657ed75ae4e7616fa500d3603842e033b6b6f04f",
+    "stderr_sha256": "c3319962e795b7bbb7f2a34cbe931bd9d96513827b2769e6c3fa119094a1a456",
+    "stdout_bytes": 21,
+    "stderr_bytes": 284,
+    "elapsed_seconds": 0.133,
+    "result_reconciled": false,
+    "stdout_excerpt": "INTEGRATED_ANSWER 42\n",
+    "stderr_excerpt": "Running as unit: xaa-exec-f07318560b5548a88360819c581acb09.service; invocation ID: dba776fac325490cb7d8bdba2b7ed17b\nFinished with result: success\nMain processes terminated with: code=exited/status=0\nService runtime: 78ms\nCPU time consumed: 67ms\nMemory peak: 5.3M\nMemory swap peak: 0B\n",
+    "trust": "untrusted_command_output"
+  },
+  "review_event": {
+    "actor": "local-user",
+    "decision": "accept",
+    "expected_revision": 3,
+    "rationale": "The restricted WSL check passed on the current integrated file.",
+    "objective_confirmed": true,
+    "confirmed_criteria": [
+      0
+    ],
+    "validation_call_ids": [
+      "project-validation-12345678-abcd-4321-abcd-1234567890ab"
+    ],
+    "validation_snapshot_sha256": "7a9c20fd09a628c9cd6cbc6361a621ffa8489a9bc8dd76efa642b118592d8013",
+    "file_checks_passed": 0,
+    "state": "completed"
+  },
+  "sqlite_integrity": "ok",
+  "foreign_key_errors": 0
+}

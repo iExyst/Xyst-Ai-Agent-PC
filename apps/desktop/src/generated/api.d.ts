@@ -512,6 +512,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/validation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Validation */
+        get: operations["get_project_validation_runs__run_id__validation_get"];
+        put?: never;
+        /** Run Project Validation */
+        post: operations["run_project_validation_runs__run_id__validation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/validation/{call_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Project Validation */
+        post: operations["reconcile_project_validation_runs__run_id__validation__call_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shutdown": {
         parameters: {
             query?: never;
@@ -1006,6 +1041,58 @@ export interface components {
             /** Content */
             content: string;
         };
+        /** ProjectValidationEvidence */
+        ProjectValidationEvidence: {
+            /** Argv */
+            argv: string[];
+            /** Call Id */
+            call_id: string;
+            /** Exit Code */
+            exit_code: number | null;
+            /** Matches Current Project */
+            matches_current_project: boolean;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
+            /** Stderr Artifact Id */
+            stderr_artifact_id: string;
+            /** Stderr Excerpt */
+            stderr_excerpt: string;
+            /** Stdout Artifact Id */
+            stdout_artifact_id: string;
+            /** Stdout Excerpt */
+            stdout_excerpt: string;
+            /** Succeeded */
+            succeeded: boolean;
+            /** Termination Reason */
+            termination_reason: string;
+        };
+        /** ProjectValidationRequest */
+        ProjectValidationRequest: {
+            /** Argv */
+            argv: string[];
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Max Seconds
+             * @default 10
+             */
+            max_seconds: number;
+            /** Request Id */
+            request_id: string;
+        };
+        /** ProjectValidationSummary */
+        ProjectValidationSummary: {
+            /** Available */
+            available: boolean;
+            /** Current Snapshot Sha256 */
+            current_snapshot_sha256: string | null;
+            /** Evidence */
+            evidence: components["schemas"]["ProjectValidationEvidence"][];
+            /** Required */
+            required: boolean;
+            /** Unresolved Call Ids */
+            unresolved_call_ids?: string[];
+        };
         /** PromptCount */
         PromptCount: {
             /** Context Length */
@@ -1168,6 +1255,8 @@ export interface components {
             objective_confirmed: boolean;
             /** Rationale */
             rationale: string;
+            /** Validation Call Ids */
+            validation_call_ids?: string[];
         };
         /**
          * RunState
@@ -2554,6 +2643,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_validation_runs__run_id__validation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectValidationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_project_validation_runs__run_id__validation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectValidationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectValidationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_project_validation_runs__run_id__validation__call_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectValidationSummary"];
                 };
             };
             /** @description Validation Error */

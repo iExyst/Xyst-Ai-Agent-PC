@@ -147,6 +147,28 @@ class TaskValidationEvidence(BaseModel):
     stderr_artifact_id: str
 
 
+class ProjectValidationEvidence(BaseModel):
+    call_id: str
+    argv: list[str]
+    snapshot_sha256: str
+    matches_current_project: bool
+    succeeded: bool
+    exit_code: int | None
+    termination_reason: str
+    stdout_excerpt: str
+    stderr_excerpt: str
+    stdout_artifact_id: str
+    stderr_artifact_id: str
+
+
+class ProjectValidationSummary(BaseModel):
+    available: bool
+    required: bool
+    current_snapshot_sha256: str | None
+    evidence: list[ProjectValidationEvidence]
+    unresolved_call_ids: list[str] = Field(default_factory=list)
+
+
 class TaskCandidate(BaseModel):
     task_id: str
     status: TaskStatus

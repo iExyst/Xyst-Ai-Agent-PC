@@ -16,6 +16,27 @@ from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.task_workspaces import TaskWorkspaces
 
 
+def verify_command_output(store: RunStore, run_id: str, result: dict[str, Any]) -> None:
+    root = command_artifact_root(store)
+    for stream in ("stdout", "stderr"):
+        artifact = store.get_artifact(result[stream + "_artifact_id"])
+        if (
+            artifact is None
+            or artifact["run_id"] != run_id
+            or Path(artifact["storage_key"]).name != artifact["storage_key"]
+        ):
+            raise ValueError("Task command output artifact is unavailable.")
+        with open_for_read(root / artifact["storage_key"]) as source:
+            if not opened_file_path(source).is_relative_to(root):
+                raise PermissionError("Task output escaped managed storage.")
+            data = source.read(1048577)
+        if (
+            len(data) != result[stream + "_bytes"]
+            or hashlib.sha256(data).hexdigest() != result[stream + "_sha256"]
+        ):
+            raise ValueError("Task validation output changed after execution.")
+
+
 def command_evidence(store: RunStore, run_id: str, task_id: str) -> list[dict[str, Any]]:
     """Expose only task-owned durable outcomes with intact output and exact snapshot identity."""
     with store.connection() as connection:
@@ -31,28 +52,11 @@ def command_evidence(store: RunStore, run_id: str, task_id: str) -> list[dict[st
             base.directories,
             base.excluded,
         ).sha256
-    root = command_artifact_root(store)
     evidence: list[dict[str, Any]] = []
     for row in reversed(rows):
         result = json.loads(row["result"])
         intent = json.loads(row["arguments"])
-        for stream in ("stdout", "stderr"):
-            artifact = store.get_artifact(result[stream + "_artifact_id"])
-            if (
-                artifact is None
-                or artifact["run_id"] != run_id
-                or Path(artifact["storage_key"]).name != artifact["storage_key"]
-            ):
-                raise ValueError("Task command output artifact is unavailable.")
-            with open_for_read(root / artifact["storage_key"]) as source:
-                if not opened_file_path(source).is_relative_to(root):
-                    raise PermissionError("Task output escaped managed storage.")
-                data = source.read(1048577)
-            if (
-                len(data) != result[stream + "_bytes"]
-                or hashlib.sha256(data).hexdigest() != result[stream + "_sha256"]
-            ):
-                raise ValueError("Task validation output changed after execution.")
+        verify_command_output(store, run_id, result)
         evidence.append(
             {
                 "call_id": row["provider_call_id"],

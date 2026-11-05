@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Literal
@@ -21,6 +22,7 @@ from xaa.api.contracts import (
     ArtifactRecord,
     MemoryRecord,
     PlanRecord,
+    ProjectValidationSummary,
     RunEvent,
     RunHistory,
     RunRecord,
@@ -30,10 +32,18 @@ from xaa.api.contracts import (
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
+from xaa.runtime.command_controller import CommandController
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
 from xaa.runtime.file_handles import opened_file_path
+from xaa.runtime.project_validation import (
+    ProjectValidationRequest,
+    validate_project,
+)
+from xaa.runtime.project_validation import (
+    summary as project_validation_summary,
+)
 from xaa.runtime.run_review import RunReviewDecision, review_run
 from xaa.runtime.states import RunState
 from xaa.runtime.supervisor import RunSupervisor
@@ -42,6 +52,8 @@ from xaa.runtime.task_integration import preview as integration_preview
 from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
 from xaa.runtime.tool_worker import FilesystemWorkerError
 from xaa.runtime.verification import FileContentCheck
+from xaa.runtime.wsl_transport import WSLTransport
+from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore
@@ -544,6 +556,87 @@ def create_app(
             raise HTTPException(status_code=404, detail="Run not found.") from exc
         except (ValueError, OSError, LeaseLost) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/runs/{run_id}/validation", response_model=ProjectValidationSummary)
+    async def get_project_validation(
+        run_id: str, _: None = Depends(authenticate)
+    ) -> ProjectValidationSummary:
+        token = run_store.acquire_lease(run_id, "local-user-project-validation-read", seconds=180)
+        if token is None:
+            raise HTTPException(status_code=409, detail="The run is currently owned by a worker.")
+        try:
+            return await project_validation_summary(run_store, run_id, token)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found.") from exc
+        except (ValueError, OSError, LeaseLost, FilesystemWorkerError) as exc:
+            raise HTTPException(
+                status_code=409, detail="Current project evidence is unavailable."
+            ) from exc
+        finally:
+            run_store.release_lease(run_id, token)
+
+    @app.post("/runs/{run_id}/validation", response_model=ProjectValidationSummary)
+    async def run_project_validation(
+        run_id: str, payload: ProjectValidationRequest, _: None = Depends(authenticate)
+    ) -> ProjectValidationSummary:
+        try:
+            await validate_project(run_store, run_id, payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found.") from exc
+        except (ValueError, OSError, PermissionError, LeaseLost, FilesystemWorkerError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        token = run_store.acquire_lease(run_id, "local-user-project-validation-read", seconds=180)
+        if token is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Refresh validation evidence after the run releases its lease.",
+            )
+        try:
+            return await project_validation_summary(run_store, run_id, token)
+        finally:
+            run_store.release_lease(run_id, token)
+
+    @app.post(
+        "/runs/{run_id}/validation/{call_id}/reconcile", response_model=ProjectValidationSummary
+    )
+    async def reconcile_project_validation(
+        run_id: str, call_id: str, _: None = Depends(authenticate)
+    ) -> ProjectValidationSummary:
+        owner = run_store.acquire_lease(
+            run_id, "local-user-project-validation-recovery", seconds=180
+        )
+        if owner is None:
+            raise HTTPException(status_code=409, detail="The run is currently owned by a worker.")
+        try:
+            journal = CommandJournal(run_store, purpose="project_validation")
+            intent = journal.recovery_intent(run_id, owner, call_id)
+            transport = await WSLTransport.discover(
+                intent.distribution, deadline=time.monotonic() + 30
+            )
+            if transport.profile_sha256 != intent.profile_sha256:
+                raise PermissionError("Execution profile changed; reconciliation is unavailable.")
+            await CommandController(run_store, transport, purpose="project_validation").recover(
+                run_id, owner, call_id
+            )
+            return await project_validation_summary(run_store, run_id, owner)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Run or validation call not found."
+            ) from exc
+        except (
+            ValueError,
+            OSError,
+            PermissionError,
+            LeaseLost,
+            FilesystemWorkerError,
+            TimeoutError,
+        ) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Validation reconciliation could not confirm a result; refresh and inspect the run.",
+            ) from exc
+        finally:
+            run_store.release_lease(run_id, owner)
 
     @app.get("/runs/{run_id}/artifacts", response_model=list[ArtifactRecord])
     def artifacts(run_id: str, _: None = Depends(authenticate)) -> list[dict[str, Any]]:

@@ -5,6 +5,7 @@ import time
 import pytest
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.states import RunState
+from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import LeaseLost, RunStore
 
 
@@ -80,6 +81,32 @@ async def test_controller_commits_only_registered_matching_output(workspace_tmp_
     assert result["succeeded"] is True
     assert len(store.list_artifacts(run_id)) == 3
     assert not store.unresolved_tool_calls(run_id)
+
+
+async def test_final_validation_purpose_is_saved_and_model_commands_are_denied(workspace_tmp_path):
+    transport = FixtureTransport()
+    _controller, store, run_id, token, _ = setup(workspace_tmp_path, transport)
+    store.transition(run_id, RunState.VERIFYING, owner=token)
+    validation = CommandController(store, transport, purpose="project_validation")
+    result = await validation.execute(
+        run_id,
+        token,
+        "final-check",
+        {"argv": ["fixture"]},
+        idempotency_key="final-check",
+        deadline=time.monotonic() + 15,
+    )
+    assert result["succeeded"] is True
+    reserved = next(
+        event["payload"]
+        for event in store.list_events(run_id)
+        if event["event_type"] == "execution.reserved"
+    )
+    assert reserved["purpose"] == "project_validation"
+    with pytest.raises(PermissionError, match="current run state"):
+        CommandJournal(store).reserve(
+            run_id, token, "agent-check", {"argv": ["fixture"]}, idempotency_key="agent-check"
+        )
 
 
 async def test_mismatched_output_never_becomes_success(workspace_tmp_path):

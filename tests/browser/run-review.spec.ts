@@ -42,3 +42,25 @@ test('explicit final review completes a run after objective and criterion confir
   await expect(panel).toHaveCount(0);
   expect(accepted).toBe(true);
 });
+
+test('final review requires selected validation for the current integrated project',async({page})=>{
+  const run={id:'integrated-validation-run',objective:'Validate the integrated project',state:'verifying',revision:7,acceptance_criteria:['The project check passes']};
+  const evidence={call_id:'check-1',argv:['/usr/bin/python3','-m','pytest','-q'],snapshot_sha256:'a'.repeat(64),matches_current_project:true,succeeded:true,exit_code:0,termination_reason:'finished',stdout_excerpt:'3 passed',stderr_excerpt:'',stdout_artifact_id:'out',stderr_artifact_id:'err'};
+  let accepted=false;
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    const path=new URL(request.url()).pathname;
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path.endsWith('/validation'))return route.fulfill({json:{available:true,required:true,current_snapshot_sha256:'a'.repeat(64),evidence:[evidence]},headers});
+    if(path.endsWith('/review')){expect(request.postDataJSON()).toEqual({decision:'accept',expected_revision:7,rationale:'The integrated check passed on the current project.',objective_confirmed:true,confirmed_criteria:[0],validation_call_ids:['check-1']});accepted=true;run.state='completed';run.revision=8;return route.fulfill({json:run,headers});}
+    if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'The integrated project passed.'}},created_at:'2026-11-03T00:00:00Z'})}\n\nevent: done\ndata: {}\n\n`});
+    return route.fulfill({json:run,headers});
+  });
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByLabel('Local model').selectOption('fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
+  const panel=page.getByRole('region',{name:'Final run review'});await page.getByText('The integrated project passed.',{exact:true}).waitFor();await panel.getByLabel('I reviewed the objective, result, and available evidence',{exact:true}).check();await panel.getByLabel('Confirm criterion: The project check passes',{exact:true}).check();await panel.getByLabel('Final review rationale').fill('The integrated check passed on the current project.');
+  const accept=panel.getByRole('button',{name:'Accept and complete run',exact:true});await expect(accept).toBeDisabled();await panel.getByLabel('Reviewed successful current validation check-1').check();await expect(accept).toBeEnabled();await accept.click();await expect(page.getByRole('heading',{name:'Active run completed'})).toBeVisible();expect(accepted).toBe(true);
+});

@@ -31,6 +31,7 @@ FilesystemOperation = Literal[
     "branch_write",
     "branch_create",
     "integrate",
+    "project_hash",
 ]
 
 
@@ -69,6 +70,12 @@ class WorkerRequest(BaseModel):
             raise PermissionError("Private specialist operations require a saved task scope.")
         if self.operation == "integrate" and not self.internal:
             raise PermissionError("Integration is a private review operation.")
+        if self.operation == "project_hash" and (
+            not self.internal or self.arguments or self.task_id is not None
+        ):
+            raise PermissionError(
+                "Project verification capture is an internal operation without arguments."
+            )
         return self
 
 
@@ -203,7 +210,19 @@ def main() -> None:
             "patch": executor.apply_patch,
         }
         try:
-            if request.operation == "integrate":
+            if request.operation == "project_hash":
+                from xaa.runtime.command_contracts import command_workspace
+                from xaa.runtime.workspace_snapshot import capture_workspace
+                from xaa.storage.commands import CommandJournal
+
+                CommandJournal(executor.store).grant(request.run_id, owner=request.token)
+                run = executor.store.get_run(request.run_id)
+                assert run is not None
+                root = command_workspace(run["workspace"], executor.store.path, run["mode"])
+                snapshot = capture_workspace(root)
+                CommandJournal(executor.store).grant(request.run_id, owner=request.token)
+                result = {"sha256": snapshot.sha256, "files": len(snapshot.files)}
+            elif request.operation == "integrate":
                 from xaa.runtime.task_integration import integrate_file
 
                 result = integrate_file(

@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,17 +15,23 @@ from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
 
-def candidate(root, *, pending_task=False, uncertain=False):
-    target = root / "result.txt"
-    target.write_bytes(b"expected")
+def candidate(root, *, pending_task=False, uncertain=False, command_grant=None):
+    import tempfile
+
+    project = (
+        Path(tempfile.mkdtemp(prefix="xaa-review-project-")) if command_grant else root / "project"
+    )
+    project.mkdir(exist_ok=True)
+    (project / "result.txt").write_bytes(b"expected")
     store = RunStore(root / "review.sqlite3")
     run_id = store.create_run(
         objective="Produce expected result",
         acceptance_criteria=["File contains expected"],
-        workspace=str(root),
-        mode="observe",
+        workspace=str(project),
+        mode="workspace" if command_grant is not None else "observe",
         model="fixture",
         file_checks=[{"path": "result.txt", "expected_content": "expected"}],
+        command_grant=command_grant,
     )["id"]
     token = store.acquire_lease(run_id, "coordinator")
     store.transition(run_id, RunState.PLANNING, owner=token)
@@ -55,7 +63,7 @@ def candidate(root, *, pending_task=False, uncertain=False):
     store.transition(run_id, RunState.RUNNING, owner=token)
     store.transition(run_id, RunState.VERIFYING, owner=token)
     store.release_lease(run_id, token)
-    return store, run_id, target
+    return store, run_id, project / "result.txt"
 
 
 def decision(store, run_id):
@@ -155,6 +163,126 @@ def test_user_review_rechecks_files_and_commits_terminal_state_atomically(worksp
     ]
     assert len(reviews) == 1 and reviews[0]["actor"] == "local-user"
     assert reviews[0]["file_checks_passed"] == 1
+
+
+@pytest.mark.parametrize("evidence", ["missing", "failed", "stale"])
+async def test_integrated_validation_selection_must_be_successful_current_root_evidence(
+    workspace_tmp_path, monkeypatch, evidence
+):
+    grant = {
+        "backend": "wsl-bubblewrap-v1",
+        "distribution": "Ubuntu-24.04",
+        "profile_sha256": "a" * 64,
+        "max_seconds": 20,
+    }
+    store, run_id, _ = candidate(workspace_tmp_path, command_grant=grant)
+    lease = store.acquire_lease(run_id, "fixture")
+    with store.connection() as connection:
+        store.record_tool_intent(
+            run_id,
+            lease,
+            call_id="edit",
+            tool="workspace.write_file",
+            version="1",
+            arguments={"path": "result.txt"},
+            idempotency_key="edit",
+        )
+        connection.execute(
+            "UPDATE tool_calls SET state='completed',result=? WHERE run_id=? AND provider_call_id='edit'",
+            (json.dumps({"sha256": "b" * 64}), run_id),
+        )
+    store.release_lease(run_id, lease)
+    item = {
+        "call_id": "valid",
+        "argv": ["check"],
+        "snapshot_sha256": "c" * 64,
+        "matches_current_project": True,
+        "succeeded": True,
+        "exit_code": 0,
+        "termination_reason": "finished",
+        "stdout_excerpt": "ok",
+        "stderr_excerpt": "",
+        "stdout_artifact_id": "out",
+        "stderr_artifact_id": "err",
+    }
+
+    async def summary(*_args, **_kwargs):
+        from xaa.api.contracts import ProjectValidationSummary
+
+        return ProjectValidationSummary(
+            available=True,
+            required=True,
+            current_snapshot_sha256="c" * 64,
+            evidence=[]
+            if evidence == "missing"
+            else [
+                {
+                    **item,
+                    "succeeded": evidence != "failed",
+                    "matches_current_project": evidence != "stale",
+                }
+            ],
+        )
+
+    async def verified(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("xaa.runtime.run_review.project_validation_summary", summary)
+    monkeypatch.setattr("xaa.runtime.run_review.verify_files_owned", verified)
+    with pytest.raises(ValueError, match="Selected .*validation"):
+        await review_run(
+            store,
+            run_id,
+            RunReviewDecision.model_validate(
+                {**decision(store, run_id), "validation_call_ids": ["valid"]}
+            ),
+        )
+    assert store.get_run(run_id)["state"] == "verifying"
+
+
+def test_schema_six_reader_cannot_accept_integrated_project_review(workspace_tmp_path):
+    grant = {
+        "backend": "wsl-bubblewrap-v1",
+        "distribution": "Ubuntu-24.04",
+        "profile_sha256": "a" * 64,
+        "max_seconds": 20,
+    }
+    store, run_id, _ = candidate(workspace_tmp_path, command_grant=grant)
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO tool_calls(run_id,provider_call_id,tool_name,tool_version,arguments,idempotency_key,state,result,created_at,updated_at) VALUES(?,?,?,?,?,?,'completed',?,?,?)",
+            (
+                run_id,
+                "edit",
+                "workspace.write_file",
+                "1",
+                "{}",
+                "edit",
+                json.dumps({"sha256": "b" * 64}),
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+    payload = decision(store, run_id)
+    owner = store.acquire_lease(run_id, "direct-commit")
+    with pytest.raises(ValueError, match="Current integrated-project validation"):
+        store.commit_run_review(
+            run_id,
+            owner,
+            revision=payload["expected_revision"],
+            accepted=True,
+            review={**payload, "validation_call_ids": [], "validation_snapshot_sha256": None},
+        )
+    store.release_lease(run_id, owner)
+    with pytest.raises(RuntimeError, match="newer"):
+        from xaa.storage import runs as module
+
+        old_limit = module.DATABASE_SCHEMA_VERSION
+        try:
+            module.DATABASE_SCHEMA_VERSION = 6
+            RunStore(store.path)
+        finally:
+            module.DATABASE_SCHEMA_VERSION = old_limit
 
 
 def test_final_review_can_retry_an_interrupted_internal_read(workspace_tmp_path):

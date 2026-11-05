@@ -1,0 +1,73 @@
+{
+  "passed": true,
+  "scope": "Frozen development Tauri app and bundled engine, actual Ubuntu-24.04 WSL command; no model inference; not installer acceptance",
+  "native_app": true,
+  "model_inference": false,
+  "build_sha256": {
+    "xaa-desktop.exe": "d09dfe0446ba1f64ccaa3d9af73e8d2fbc401531c64287cef03170cc674920e1",
+    "xaa-engine.exe": "b26383d2df3a3ced5fce4e4bf1697e1371687cfbc012ab66703bd1d99d56cc9e"
+  },
+  "run": {
+    "id": "e169154d-f8bc-4eee-9e2d-3e77a5a40a01",
+    "state": "completed",
+    "revision": 4
+  },
+  "commands": [
+    {
+      "call_id": "project-validation-dcf58c31-cfb7-478a-bad8-8fec487ea7ef",
+      "argv": [
+        "/usr/bin/python3",
+        "-I",
+        "-c",
+        "import runpy; value=runpy.run_path('answer.py')['answer'](); assert value == 42, value; print('NATIVE_INTEGRATED_ANSWER', value)"
+      ],
+      "snapshot_sha256": "7a9c20fd09a628c9cd6cbc6361a621ffa8489a9bc8dd76efa642b118592d8013",
+      "succeeded": true,
+      "exit_code": 0,
+      "termination_reason": "finished",
+      "stdout_excerpt": "NATIVE_INTEGRATED_ANSWER 42\n",
+      "stdout_artifact_id": "ac99aad4-4710-41de-8e03-7f5afbaf3825",
+      "stderr_artifact_id": "5d84ccf8-b93d-48e3-9d8e-e1027fe3095c"
+    },
+    {
+      "call_id": "project-validation-c78aad2f-1c82-494d-a717-557157a00073",
+      "argv": [
+        "/usr/bin/python3",
+        "-I",
+        "-c",
+        "import runpy; value=runpy.run_path('answer.py')['answer'](); assert value == 42, value; print('NATIVE_INTEGRATED_ANSWER', value)"
+      ],
+      "snapshot_sha256": "84dff0b333e217466bb49fc21608b2c97c4c4a80998e30f83ab41651313ba4bf",
+      "succeeded": true,
+      "exit_code": 0,
+      "termination_reason": "finished",
+      "stdout_excerpt": "NATIVE_INTEGRATED_ANSWER 42\n",
+      "stdout_artifact_id": "957a0c98-e55f-4047-9ea2-0d2833d3285d",
+      "stderr_artifact_id": "cffd19d3-fb17-43aa-9f63-00f5157900fd"
+    }
+  ],
+  "stale_validation_blocked": true,
+  "refreshed_validation_accepted": true,
+  "selected_validation_call_ids": [
+    "project-validation-c78aad2f-1c82-494d-a717-557157a00073"
+  ],
+  "review_event": {
+    "actor": "local-user",
+    "decision": "accept",
+    "expected_revision": 3,
+    "rationale": "The current integrated project passed the restricted WSL check.",
+    "objective_confirmed": true,
+    "confirmed_criteria": [
+      0
+    ],
+    "validation_call_ids": [
+      "project-validation-c78aad2f-1c82-494d-a717-557157a00073"
+    ],
+    "validation_snapshot_sha256": "84dff0b333e217466bb49fc21608b2c97c4c4a80998e30f83ab41651313ba4bf",
+    "file_checks_passed": 0,
+    "state": "completed"
+  },
+  "database_schema": 7,
+  "sqlite_integrity": "ok",
+  "foreign_key_errors": 0
+}

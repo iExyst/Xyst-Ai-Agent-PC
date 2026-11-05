@@ -907,6 +907,162 @@
         "title": "PreferenceRequest",
         "type": "object"
       },
+      "ProjectValidationEvidence": {
+        "properties": {
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Argv",
+            "type": "array"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "matches_current_project": {
+            "title": "Matches Current Project",
+            "type": "boolean"
+          },
+          "snapshot_sha256": {
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "stderr_artifact_id": {
+            "title": "Stderr Artifact Id",
+            "type": "string"
+          },
+          "stderr_excerpt": {
+            "title": "Stderr Excerpt",
+            "type": "string"
+          },
+          "stdout_artifact_id": {
+            "title": "Stdout Artifact Id",
+            "type": "string"
+          },
+          "stdout_excerpt": {
+            "title": "Stdout Excerpt",
+            "type": "string"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "boolean"
+          },
+          "termination_reason": {
+            "title": "Termination Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "argv",
+          "snapshot_sha256",
+          "matches_current_project",
+          "succeeded",
+          "exit_code",
+          "termination_reason",
+          "stdout_excerpt",
+          "stderr_excerpt",
+          "stdout_artifact_id",
+          "stderr_artifact_id"
+        ],
+        "title": "ProjectValidationEvidence",
+        "type": "object"
+      },
+      "ProjectValidationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Argv",
+            "type": "array"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "max_seconds": {
+            "default": 10,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Max Seconds",
+            "type": "integer"
+          },
+          "request_id": {
+            "pattern": "^[a-f0-9-]{16,64}$",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "argv",
+          "request_id",
+          "expected_revision"
+        ],
+        "title": "ProjectValidationRequest",
+        "type": "object"
+      },
+      "ProjectValidationSummary": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "current_snapshot_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Snapshot Sha256"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectValidationEvidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "unresolved_call_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved Call Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "required",
+          "current_snapshot_sha256",
+          "evidence"
+        ],
+        "title": "ProjectValidationSummary",
+        "type": "object"
+      },
       "PromptCount": {
         "additionalProperties": false,
         "properties": {
@@ -1394,6 +1550,14 @@
             "minLength": 1,
             "title": "Rationale",
             "type": "string"
+          },
+          "validation_call_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Validation Call Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -4002,6 +4166,155 @@
           }
         ],
         "summary": "Get Run Usage"
+      }
+    },
+    "/runs/{run_id}/validation": {
+      "get": {
+        "operationId": "get_project_validation_runs__run_id__validation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectValidationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Validation"
+      },
+      "post": {
+        "operationId": "run_project_validation_runs__run_id__validation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectValidationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Project Validation"
+      }
+    },
+    "/runs/{run_id}/validation/{call_id}/reconcile": {
+      "post": {
+        "operationId": "reconcile_project_validation_runs__run_id__validation__call_id__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectValidationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Project Validation"
       }
     },
     "/shutdown": {

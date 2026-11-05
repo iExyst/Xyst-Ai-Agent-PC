@@ -18,6 +18,7 @@ export type Plan = components['schemas']['PlanRecord'];
 export type Candidate = components['schemas']['TaskCandidate'];
 export type ReviewDecision = components['schemas']['TaskReviewDecision'];
 export type RunReviewDecision = components['schemas']['RunReviewDecision'];
+export type ProjectValidation = components['schemas']['ProjectValidationSummary'];
 export type RunHistory = components['schemas']['RunHistory'];
 
 export class EngineRequestError extends Error {
@@ -96,6 +97,10 @@ export class EngineClient {
   reviewRun(runId: string, decision: RunReviewDecision): Promise<Run> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/review`, {method:'POST',body:JSON.stringify(decision)});
   }
+
+  projectValidation(runId:string):Promise<ProjectValidation>{return this.#request(`/runs/${encodeURIComponent(runId)}/validation`);}
+  runProjectValidation(runId:string,input:{request_id:string;expected_revision:number;argv:string[];max_seconds:number}):Promise<ProjectValidation>{return this.#request(`/runs/${encodeURIComponent(runId)}/validation`,{method:'POST',body:JSON.stringify(input)});}
+  reconcileProjectValidation(runId:string,callId:string):Promise<ProjectValidation>{return this.#request(`/runs/${encodeURIComponent(runId)}/validation/${encodeURIComponent(callId)}/reconcile`,{method:'POST'});}
 
   reviewCandidate(runId: string, taskId: string, decision: ReviewDecision): Promise<Plan> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/review`, {method:'POST',body:JSON.stringify(decision)});
