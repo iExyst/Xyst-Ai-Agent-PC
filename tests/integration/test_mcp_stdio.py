@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from mcp.types import CallToolResult, TextContent
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
+from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.mcp_manager import (
     MCP_RESULT_BYTES,
     MCPInvocationError,
@@ -85,6 +87,62 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
     finally:
         await manager.close()
     assert manager.tools_for_run(set()) == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_journals_disconnected_call_without_corrupting_run(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-disconnect.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(name="Fixture", command=sys.executable, args=[str(FIXTURE)])
+    )
+    manager = MCPManager(store, None)
+    await manager.connect_server(server.id)
+    tool = registry.list_tools(server.id)[0]
+    registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+    qualified = registry.list_tools(server.id)[0].qualified_name
+    run = store.create_run(
+        objective="Call the configured MCP read tool",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )
+    lease = store.acquire_lease(run["id"], "mcp-disconnect-test")
+    assert lease is not None
+    coordinator = Coordinator(store, LMStudioProvider(), mcp_manager=manager)
+    advertised = manager.tools_for_run(set())
+    await manager.disconnect_server(server.id)
+    try:
+        result = await coordinator._execute_tool(
+            run["id"],
+            lease,
+            run,
+            1,
+            time.monotonic() + 10,
+            {
+                "id": "mcp-disconnect-call",
+                "function": {
+                    "name": qualified,
+                    "arguments": '{"left": 2, "right": 3}',
+                },
+            },
+            advertised,
+        )
+        assert result["status"] == "not_connected"
+        assert store.unresolved_tool_calls(run["id"]) == []
+        with store.connection() as connection:
+            saved = connection.execute(
+                "SELECT state,result FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run["id"], "mcp-disconnect-call"),
+            ).fetchone()
+        assert saved["state"] == "completed"
+        assert '"status": "not_connected"' in saved["result"]
+    finally:
+        store.release_lease(run["id"], lease)
+        await manager.close()
 
 
 def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):

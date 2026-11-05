@@ -253,10 +253,9 @@ class Coordinator:
         name = function["name"]
         arguments = json.loads(function["arguments"])
         if name.startswith("mcp_"):
-            if self.mcp_manager is None or name not in {
-                item["function"]["name"]
-                for item in self.mcp_manager.tools_for_run(set(run.get("approved_mcp_tools", [])))
-            }:
+            if self.mcp_manager is None or not self.mcp_manager.is_tool_authorized_for_run(
+                name, set(run.get("approved_mcp_tools", []))
+            ):
                 raise PermissionError("This MCP tool is not connected and approved for this run.")
             if not self.store.record_tool_intent(
                 run_id,
