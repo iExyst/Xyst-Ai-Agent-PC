@@ -159,6 +159,68 @@ def test_one_time_occurrence_is_unique_across_ticks_and_store_reopen(
     assert ScheduleStore(reopened).get(schedule["id"])["enabled"] is False
 
 
+def test_restart_recovers_durable_scheduled_run_if_process_stops_before_submit(
+    workspace_tmp_path: Path,
+) -> None:
+    from xaa.runtime.supervisor import RunSupervisor
+
+    database = workspace_tmp_path / "schedule-submit-crash.sqlite3"
+    store = RunStore(database)
+    schedule = create_schedule(store, start_at="2025-01-02T12:00")
+
+    # The schedule transaction commits its execution and run before dispatching.
+    # Model a process crash in that exact gap by leaving submit uncalled.
+    assert (
+        len(
+            ScheduleService(store, lambda _run_id: None).tick(
+                datetime(2025, 1, 2, 12, 0, 2, tzinfo=UTC)
+            )
+        )
+        == 1
+    )
+    with store.connection() as connection:
+        saved = connection.execute(
+            "SELECT e.run_id,e.state,r.state AS run_state FROM schedule_executions e "
+            "JOIN runs r ON r.id=e.run_id WHERE e.schedule_id=?",
+            (schedule["id"],),
+        ).fetchone()
+    assert saved["state"] == "queued"
+    assert saved["run_state"] == "queued"
+
+    recovered_store = RunStore(database)
+    dispatches: list[str] = []
+
+    class CoordinatorStub:
+        def __init__(self, run_store: RunStore) -> None:
+            self.store = run_store
+
+        async def execute(self, run_id: str) -> None:
+            dispatches.append(run_id)
+
+    supervisor = RunSupervisor(CoordinatorStub(recovered_store))  # type: ignore[arg-type]
+
+    import asyncio
+
+    async def recover_once() -> None:
+        supervisor.start()
+        assert supervisor.recovery_task is not None
+        for _ in range(20):
+            if dispatches:
+                break
+            await asyncio.sleep(0)
+        await supervisor.close()
+
+    asyncio.run(recover_once())
+    assert dispatches == [saved["run_id"]]
+    assert (
+        ScheduleService(recovered_store, dispatches.append).tick(
+            datetime(2025, 1, 2, 12, 0, 2, tzinfo=UTC)
+        )
+        == []
+    )
+    assert dispatches == [saved["run_id"]]
+
+
 def test_missed_daily_occurrences_are_recorded_once_without_duplicate_runs(
     workspace_tmp_path: Path,
 ) -> None:
