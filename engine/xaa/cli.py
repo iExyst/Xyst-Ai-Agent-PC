@@ -27,6 +27,9 @@ def main() -> None:
     tokens.add_argument("message")
     tokens.add_argument("--model", required=True)
     commands.add_parser("backup", help="Create a verified database and artifact bundle")
+    trajectory = commands.add_parser("export", help="Export a redacted run trajectory as JSON")
+    trajectory.add_argument("run_id")
+    trajectory.add_argument("--output", type=Path, required=True)
     restore = commands.add_parser(
         "restore", help="Restore a database-only snapshot to a new offline destination"
     )
@@ -114,6 +117,9 @@ def main() -> None:
                         "max_output_tokens": args.max_output_tokens,
                     },
                 )
+            elif args.command == "export":
+                path = f"/runs/{quote(args.run_id, safe='')}/export"
+                response = client.get(path)
             else:
                 path = f"/runs/{quote(args.run_id, safe='')}"
                 if args.command == "events":
@@ -131,6 +137,10 @@ def main() -> None:
                     else client.post(f"{path}/{args.command}")
                 )
             response.raise_for_status()
+            if args.command == "export":
+                args.output.write_bytes(response.content)
+                print(f"Exported run trajectory to {args.output}")
+                return
             print(json.dumps(response.json(), indent=2))
     except httpx.HTTPStatusError as exc:
         hint = (
