@@ -615,6 +615,67 @@
         "title": "IntegrationResolution",
         "type": "object"
       },
+      "LMStudioConfigRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "selected_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Model"
+          }
+        },
+        "required": [
+          "endpoint",
+          "selected_model"
+        ],
+        "title": "LMStudioConfigRecord",
+        "type": "object"
+      },
+      "LMStudioEndpointRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "title": "LMStudioEndpointRequest",
+        "type": "object"
+      },
+      "LMStudioSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "LMStudioSelectionRequest",
+        "type": "object"
+      },
       "MemoryRecord": {
         "properties": {
           "confidence": {
@@ -3245,6 +3306,70 @@
         "summary": "Providers"
       }
     },
+    "/providers/lm-studio/config": {
+      "get": {
+        "operationId": "lm_studio_config_providers_lm_studio_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioConfigRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Lm Studio Config"
+      },
+      "put": {
+        "operationId": "set_lm_studio_endpoint_providers_lm_studio_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LMStudioEndpointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioConfigRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Lm Studio Endpoint"
+      }
+    },
     "/providers/lm-studio/diagnostics": {
       "post": {
         "operationId": "diagnose_model_providers_lm_studio_diagnostics_post",
@@ -3288,6 +3413,60 @@
           }
         ],
         "summary": "Diagnose Model"
+      }
+    },
+    "/providers/lm-studio/selection": {
+      "put": {
+        "operationId": "set_lm_studio_model_providers_lm_studio_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LMStudioSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": "Response Set Lm Studio Model Providers Lm Studio Selection Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Lm Studio Model"
       }
     },
     "/providers/lm-studio/token-count": {

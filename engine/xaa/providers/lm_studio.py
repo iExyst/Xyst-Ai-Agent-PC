@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -76,6 +78,54 @@ class LMStudioProvider:
             headers={"Authorization": f"Bearer {token}"} if token else {},
             timeout=httpx.Timeout(60.0, connect=3.0),
         )
+
+    @staticmethod
+    def validate_endpoint(endpoint: str) -> str:
+        """Restrict provider routing to an explicitly selected loopback HTTP server."""
+        if not 1 <= len(endpoint) <= 300:
+            raise ValueError("LM Studio address must be a short HTTP loopback URL.")
+        try:
+            parsed = urlsplit(endpoint)
+            host = parsed.hostname
+            port = parsed.port
+            address = ipaddress.ip_address(host) if host and host != "localhost" else None
+        except ValueError as exc:
+            raise ValueError("LM Studio address must be a valid HTTP loopback URL.") from exc
+        is_loopback = host == "localhost" or (address is not None and address.is_loopback)
+        if (
+            parsed.scheme != "http"
+            or not is_loopback
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or (port is not None and not 1 <= port <= 65535)
+        ):
+            raise ValueError(
+                "LM Studio address must be an HTTP loopback URL without credentials or a path."
+            )
+        if host == "localhost":
+            return f"http://127.0.0.1{f':{port}' if port is not None else ''}"
+        return f"http://{parsed.netloc}"
+
+    async def configure_endpoint(self, endpoint: str) -> str:
+        """Switch the local server while serialized with inference and model lifecycle work."""
+        normalized = self.validate_endpoint(endpoint)
+        async with self._inference_lock:
+            previous = self._client
+            self._client = httpx.AsyncClient(
+                base_url=normalized,
+                headers={"Authorization": f"Bearer {self._credential.get_secret_value()}"}
+                if self._credential
+                else {},
+                timeout=httpx.Timeout(60.0, connect=3.0),
+            )
+            self.base_url = normalized
+            self._diagnosed_models.clear()
+            self._context_limits.clear()
+            await previous.aclose()
+        return normalized
 
     async def count_prompt(self, request: PromptCountRequest, *, timeout: float = 5) -> PromptCount:
         from xaa.providers.tokenization import PromptCountError, count_prompt

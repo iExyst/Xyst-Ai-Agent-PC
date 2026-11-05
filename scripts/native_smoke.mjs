@@ -40,6 +40,8 @@ let reservationUiVerified=false;
 const reopen = process.env.XAA_NATIVE_REOPEN === '1';
 const tokenCountRequested=process.env.XAA_NATIVE_TOKEN_COUNT==='1';
 let tokenCountVerified=false;
+const providerSetupRequested=process.env.XAA_NATIVE_PROVIDER_SETUP==='1';
+let providerSetupVerified=false;
 const limitsRequested=process.env.XAA_NATIVE_LIMITS==='1';
 let limitsVerified=false;
 const edit = process.env.XAA_NATIVE_EDIT === '1' || finalReview || patchRequested || createRequested;
@@ -60,9 +62,29 @@ try {
   if (!count) throw new Error('Native app did not discover models');
   if(await page.getByLabel('Local model').inputValue()!=='')throw new Error('Native app silently selected an unbenchmarked default model');
   connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
+  const headers={Authorization:`Bearer ${connection.token}`};
+  if(providerSetupRequested){
+    const initial=await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json();
+    if(initial.endpoint!=='http://127.0.0.1:1234')throw new Error('Native provider setup did not start with the default LM Studio endpoint');
+    await page.getByLabel('LM Studio server address').fill('http://localhost:1234');
+    await page.getByRole('button',{name:'Save address and connect',exact:true}).click();
+    await expect(page.getByRole('status').filter({hasText:/Connected\. Found 29 models\./})).toBeVisible({timeout:15000});
+    const saved=await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json();
+    if(saved.endpoint!=='http://127.0.0.1:1234'||saved.selected_model!==null)throw new Error('Native provider endpoint was not persisted or did not clear the stale selection');
+    const loaded=await fetch(`${connection.base_url}/models/load`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({model:'qwen3-0.6b',context_length:4096})});
+    if(!loaded.ok)throw new Error(`Could not load installed tool-diagnostic fixture: ${await loaded.text()}`);
+    instance=(await loaded.json()).instance_id;
+    await page.getByLabel('Local model').selectOption('qwen3-0.6b');
+    await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBe('qwen3-0.6b');
+    await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click();
+    await expect(page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true})).toBeVisible({timeout:60000});
+    await page.getByLabel('Local model').selectOption('');
+    await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBeNull();
+    providerSetupVerified=true;
+    await writeFile(path.join(root,'provider-setup.json'),JSON.stringify({passed:true,initial_endpoint:initial.endpoint,saved_endpoint:saved.endpoint,discovered_model_count:count,selected_model_during_diagnostic:'qwen3-0.6b',real_tool_round_trip:true,selection_cleared:true},null,2));
+  }
   if(skillLifecycleRequested){
     if(!process.env.XAA_NATIVE_SNAPSHOT)throw new Error('Lifecycle acceptance requires a real evaluated-version snapshot');
-    const headers={Authorization:`Bearer ${connection.token}`};
     const entries=await (await fetch(`${connection.base_url}/skills`,{headers})).json();
     const skill=entries[0];
     if(entries.length!==1||skill.latest_version!==2||skill.active_version!==null||skill.lifecycle_state!=='deprecated')throw new Error('Expected deprecated real lifecycle fixture with two evaluated versions');
@@ -495,6 +517,7 @@ try {
   report.native_skill_evaluation_verified=skillEvaluationVerified;
   report.native_skill_lifecycle_verified=skillLifecycleVerified;
   report.native_token_count_verified=tokenCountVerified;
+  report.native_provider_setup_verified=providerSetupVerified;
   await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
   console.log(report, root);
 } catch (error) {

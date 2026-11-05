@@ -222,6 +222,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/lm-studio/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lm Studio Config */
+        get: operations["lm_studio_config_providers_lm_studio_config_get"];
+        /** Set Lm Studio Endpoint */
+        put: operations["set_lm_studio_endpoint_providers_lm_studio_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/lm-studio/diagnostics": {
         parameters: {
             query?: never;
@@ -233,6 +251,23 @@ export interface paths {
         put?: never;
         /** Diagnose Model */
         post: operations["diagnose_model_providers_lm_studio_diagnostics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/lm-studio/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Lm Studio Model */
+        put: operations["set_lm_studio_model_providers_lm_studio_selection_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -942,6 +977,23 @@ export interface components {
             expected_current_sha256: string | null;
             /** Path */
             path: string;
+        };
+        /** LMStudioConfigRecord */
+        LMStudioConfigRecord: {
+            /** Endpoint */
+            endpoint: string;
+            /** Selected Model */
+            selected_model: string | null;
+        };
+        /** LMStudioEndpointRequest */
+        LMStudioEndpointRequest: {
+            /** Endpoint */
+            endpoint: string;
+        };
+        /** LMStudioSelectionRequest */
+        LMStudioSelectionRequest: {
+            /** Model */
+            model?: string | null;
         };
         /** MemoryRecord */
         MemoryRecord: {
@@ -2070,6 +2122,59 @@ export interface operations {
             };
         };
     };
+    lm_studio_config_providers_lm_studio_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioConfigRecord"];
+                };
+            };
+        };
+    };
+    set_lm_studio_endpoint_providers_lm_studio_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LMStudioEndpointRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioConfigRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     diagnose_model_providers_lm_studio_diagnostics_post: {
         parameters: {
             query?: never;
@@ -2091,6 +2196,41 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_lm_studio_model_providers_lm_studio_selection_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LMStudioSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string | null;
                     };
                 };
             };

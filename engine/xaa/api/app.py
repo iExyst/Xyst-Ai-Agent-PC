@@ -57,7 +57,7 @@ from xaa.storage.backup_bundle import create_backup_bundle
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
 from xaa.storage.memory import MemoryStore
-from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore
+from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
 from xaa.storage.skills import (
     SkillConflict,
     SkillDraft,
@@ -116,6 +116,22 @@ class PreferenceRequest(BaseModel):
     content: str = Field(min_length=1, max_length=16384)
 
 
+class LMStudioEndpointRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    endpoint: str = Field(min_length=1, max_length=300)
+
+
+class LMStudioConfigRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    endpoint: str
+    selected_model: str | None
+
+
+class LMStudioSelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str | None = Field(default=None, max_length=256)
+
+
 def create_app(
     provider: LMStudioProvider,
     api_token: SecretStr,
@@ -147,8 +163,23 @@ def create_app(
     skill_store = SkillStore(run_store)
     supervisor = RunSupervisor(Coordinator(run_store, provider, stream_responses=stream_responses))
 
+    with run_store.connection() as connection:
+        profile = connection.execute(
+            "SELECT endpoint FROM provider_profiles WHERE id='lm-studio'"
+        ).fetchone()
+        if profile is None:
+            endpoint = provider.validate_endpoint(provider.base_url)
+            now = utc_now()
+            connection.execute(
+                "INSERT INTO provider_profiles VALUES ('lm-studio','lm-studio',?,NULL,NULL,NULL,?,?)",
+                (endpoint, now, now),
+            )
+        else:
+            endpoint = str(profile["endpoint"])
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
+        await provider.configure_endpoint(endpoint)
         supervisor.start()
         yield
         await supervisor.close()
@@ -167,7 +198,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(trusted_origins),
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
     )
 
@@ -330,6 +361,64 @@ def create_app(
             return [{"id": "lm-studio", "status": "connected"}]
         except ProviderError as exc:
             return [{"id": "lm-studio", "status": "unavailable", "error": str(exc)}]
+
+    @app.get("/providers/lm-studio/config", response_model=LMStudioConfigRecord)
+    def lm_studio_config(_: None = Depends(authenticate)) -> LMStudioConfigRecord:
+        with run_store.connection() as connection:
+            profile = connection.execute(
+                "SELECT endpoint,selected_model FROM provider_profiles WHERE id='lm-studio'"
+            ).fetchone()
+        if profile is None:
+            raise HTTPException(status_code=500, detail="LM Studio configuration is missing.")
+        return LMStudioConfigRecord(
+            endpoint=profile["endpoint"], selected_model=profile["selected_model"]
+        )
+
+    @app.put("/providers/lm-studio/config", response_model=LMStudioConfigRecord)
+    async def set_lm_studio_endpoint(
+        payload: LMStudioEndpointRequest, _: None = Depends(authenticate)
+    ) -> LMStudioConfigRecord:
+        try:
+            endpoint_value = provider.validate_endpoint(payload.endpoint)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        with run_store.connection() as connection:
+            owned_runs = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if owned_runs:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing the LM Studio server.",
+            )
+        await provider.configure_endpoint(endpoint_value)
+        now = utc_now()
+        with run_store.connection() as connection:
+            connection.execute(
+                "UPDATE provider_profiles SET endpoint=?,selected_model=NULL,updated_at=? WHERE id='lm-studio'",
+                (endpoint_value, now),
+            )
+        return LMStudioConfigRecord(endpoint=endpoint_value, selected_model=None)
+
+    @app.put("/providers/lm-studio/selection")
+    async def set_lm_studio_model(
+        payload: LMStudioSelectionRequest, _: None = Depends(authenticate)
+    ) -> dict[str, str | None]:
+        if payload.model is not None:
+            try:
+                available = await provider.models()
+            except ProviderError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            if payload.model not in {item.id for item in available}:
+                raise HTTPException(
+                    status_code=422, detail="Selected model is not currently available."
+                )
+        with run_store.connection() as connection:
+            connection.execute(
+                "UPDATE provider_profiles SET selected_model=?,updated_at=? WHERE id='lm-studio'",
+                (payload.model, utc_now()),
+            )
+        return {"model": payload.model}
 
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:

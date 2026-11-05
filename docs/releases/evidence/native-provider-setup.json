@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "initial_endpoint": "http://127.0.0.1:1234",
+  "saved_endpoint": "http://127.0.0.1:1234",
+  "discovered_model_count": 29,
+  "selected_model_during_diagnostic": "qwen3-0.6b",
+  "real_tool_round_trip": true,
+  "selection_cleared": true
+}

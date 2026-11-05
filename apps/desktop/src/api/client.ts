@@ -64,6 +64,24 @@ export class EngineClient {
 
   models(): Promise<components['schemas']['ModelInfo'][]> { return this.#request('/models'); }
 
+  lmStudioConfig(): Promise<components['schemas']['LMStudioConfigRecord']> {
+    return this.#request('/providers/lm-studio/config');
+  }
+
+  setLMStudioEndpoint(endpoint: string): Promise<components['schemas']['LMStudioConfigRecord']> {
+    return this.#request('/providers/lm-studio/config', {method:'PUT',body:JSON.stringify({endpoint})});
+  }
+
+  selectLMStudioModel(model: string | null): Promise<{model:string|null}> {
+    return this.#request('/providers/lm-studio/selection', {method:'PUT',body:JSON.stringify({model})});
+  }
+
+  diagnoseLMStudioModel(model: string): Promise<{model:string;tool_round_trip_verified:boolean}> {
+    return this.#request('/providers/lm-studio/diagnostics', {method:'POST',body:JSON.stringify({model})});
+  }
+
+  providers(): Promise<{id:string;status:string;error?:string}[]> { return this.#request('/providers'); }
+
   executionDistributions(signal?: AbortSignal): Promise<components['schemas']['DistributionInventory']> {
     return this.#request('/execution/distributions', {signal});
   }

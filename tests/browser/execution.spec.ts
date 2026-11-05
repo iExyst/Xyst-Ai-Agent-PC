@@ -6,6 +6,7 @@ test('sandbox selection checks controls without granting a run, including unavai
     const req=route.request();const path=new URL(req.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/models')return modelsAvailable?route.fulfill({json:[{id:'fixture/model'}],headers}):route.fulfill({status:503,headers});
     if(path==='/runs'&&req.method()==='POST')runCreates++;
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});

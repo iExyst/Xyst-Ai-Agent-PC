@@ -1,0 +1,9 @@
+# LM Studio provider settings
+
+The desktop's LM Studio setup panel reads and writes an authenticated provider profile through the loopback API. The endpoint defaults to `http://127.0.0.1:1234` and is restricted to HTTP loopback addresses, without URL credentials, query strings, fragments, or non-root paths. The `localhost` alias is normalized to IPv4 loopback so it works when LM Studio binds only to `127.0.0.1`. This prevents an ordinary address-setting change from routing local prompts to a network host. An explicit endpoint change is refused while any worker owns a run; changing servers clears the saved model selection.
+
+Model discovery uses the configured server. The selected model identifier is persisted in `provider_profiles` and must be present in current discovery results before selection. The user can run the existing harmless structured tool diagnostic from the panel; only a validated round trip is reported as passed. Runtime tool execution still performs its own capability check and validates every model-proposed call.
+
+The optional LM Studio API token continues to come from the operating system credential store. It is not included in the endpoint profile or returned by the settings API. Selecting another loopback address retains that credential. If the server is unavailable, the panel explains how to start Developer → Local Server in LM Studio.
+
+This setting does not make the LM Studio release gate complete: full onboarding still needs workspace selection and a reviewed demonstration task. It also does not configure cloud providers or remote access.
