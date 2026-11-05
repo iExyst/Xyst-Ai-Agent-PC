@@ -298,6 +298,58 @@ def test_scheduled_delivery_unknown_after_restart_is_never_retried(
         )
 
 
+def test_service_cycle_reconciles_interrupted_scheduled_http_send_after_restart(
+    workspace_tmp_path: Path,
+) -> None:
+    import asyncio
+
+    database = workspace_tmp_path / "scheduled-http-send-restart.sqlite3"
+    original_runs = RunStore(database)
+    original_store, schedule_id = queued_scheduled_delivery(original_runs)
+    claimed = original_store.claim_schedule_delivery(IDENTITY.account_id)
+    assert claimed is not None
+    sends: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/getMe"):
+            return httpx.Response(
+                200, json={"ok": True, "result": {"id": 42, "username": "xaa_test_bot"}}
+            )
+        if request.url.path.endswith("/getUpdates"):
+            return httpx.Response(200, json={"ok": True, "result": []})
+        if request.url.path.endswith("/sendMessage"):
+            sends.append(request.url.path)
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 77}})
+        raise AssertionError(f"Unexpected Telegram API endpoint: {request.url.path}")
+
+    transport = httpx.MockTransport(handler)
+
+    class Credentials(MemoryCredentials):
+        def __init__(self) -> None:
+            super().__init__()
+            self.values["telegram-bot"] = "fixture-token"
+
+    class FixtureApi(TelegramBotApi):
+        def __init__(self, token: str) -> None:
+            super().__init__(token, client=httpx.AsyncClient(transport=transport))
+
+    reopened = RunStore(database)
+    service = TelegramService(reopened, Credentials(), lambda _run_id: None, api_factory=FixtureApi)
+
+    asyncio.run(service.cycle())
+
+    from xaa.storage.schedules import ScheduleStore
+
+    saved = ScheduleStore(reopened).get(schedule_id)
+    assert saved is not None
+    assert saved["executions"][0]["delivery_evidence"] == "unknown"
+    assert sends == []
+    with reopened.connection() as connection:
+        assert (
+            connection.execute("SELECT state FROM schedule_deliveries").fetchone()[0] == "unknown"
+        )
+
+
 def test_revoked_telegram_identity_cannot_receive_scheduled_delivery(
     workspace_tmp_path: Path,
 ) -> None:
