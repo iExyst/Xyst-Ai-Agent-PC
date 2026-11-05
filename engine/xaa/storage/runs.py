@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import uuid
 from collections.abc import Generator
@@ -19,7 +20,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 10
+DATABASE_SCHEMA_VERSION = 11
 
 
 @dataclass(frozen=True)
@@ -419,6 +420,28 @@ class RunStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS mcp_servers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    command TEXT NOT NULL,
+                    args TEXT NOT NULL,
+                    cwd TEXT,
+                    secret_env TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS mcp_server_tools (
+                    server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    title TEXT,
+                    description TEXT,
+                    input_schema TEXT NOT NULL,
+                    output_schema TEXT,
+                    schema_sha256 TEXT NOT NULL,
+                    permission TEXT NOT NULL CHECK(permission IN ('none','read','write')),
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(server_id,name)
+                );
                 """
             )
             connection.execute("BEGIN IMMEDIATE")
@@ -524,6 +547,7 @@ class RunStore:
         approved_web_hosts: list[str] | None = None,
         approved_web_search: bool = False,
         approved_browser: bool = False,
+        approved_mcp_tools: list[str] | None = None,
     ) -> dict[str, Any]:
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
@@ -537,6 +561,12 @@ class RunStore:
             from xaa.runtime.web_fetch import normalize_approved_hosts
 
             approved_web_hosts = normalize_approved_hosts(approved_web_hosts)
+        approved_mcp_tools = sorted(set(approved_mcp_tools or []))
+        if len(approved_mcp_tools) > 50 or any(
+            re.fullmatch(r"mcp_[a-f0-9]{32}_[A-Za-z0-9_-]{1,24}", name) is None
+            for name in approved_mcp_tools
+        ):
+            raise ValueError("Approve up to 50 valid MCP tool names per run.")
         granted_command = None
         if command_grant is not None:
             from xaa.runtime.command_contracts import CommandGrant, command_workspace
@@ -602,6 +632,13 @@ class RunStore:
                         "actor": "local_user",
                     },
                 )
+            if approved_mcp_tools:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "mcp.access_granted",
+                    {"tools": approved_mcp_tools, "actor": "local_user"},
+                )
             connection.execute(
                 "INSERT INTO run_limits VALUES (?, ?, ?)", (run_id, max_iterations, max_seconds)
             )
@@ -652,6 +689,14 @@ class RunStore:
             bool(json.loads(web_grants[0][0]).get("browser", False))
             if len(web_grants) == 1
             else False
+        )
+        with self._connection() as connection:
+            mcp_grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='mcp.access_granted'",
+                (run_id,),
+            ).fetchall()
+        record["approved_mcp_tools"] = (
+            json.loads(mcp_grants[0][0]).get("tools", []) if len(mcp_grants) == 1 else []
         )
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (

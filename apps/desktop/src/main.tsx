@@ -17,6 +17,7 @@ import { ActiveRunPanel } from './ActiveRunPanel.tsx';
 import { ExecutionSetup } from './ExecutionSetup.tsx';
 import { ProviderSetup } from './ProviderSetup.tsx';
 import { SearchProviderPanel } from './SearchProviderPanel.tsx';
+import { MCPPanel } from './MCPPanel.tsx';
 import type {components} from './generated/api.js';
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
   const [approvedWebHosts, setApprovedWebHosts] = useState('');
   const [approvedWebSearch, setApprovedWebSearch] = useState(false);
   const [approvedBrowser, setApprovedBrowser] = useState(false);
+  const [approvedMCPTools, setApprovedMCPTools] = useState<string[]>([]);
   const [expectedContent, setExpectedContent] = useState('');
   const [objective, setObjective] = useState('');
   const [run, setRun] = useState<Run>();
@@ -146,7 +148,7 @@ function App() {
     if (!client || !parsedLimits) return;
     if(commandAllowed&&(!sandbox||sandbox.state!=='ready'||!sandbox.profile_sha256||mode!=='workspace'||Date.now()>=Date.parse(sandbox.expires_at))){setCommandAllowed(false);setError('Sandbox authorization expired. Check the sandbox and select the command permission again.');return;}
     setBusy(true); setError(''); setActivity([]); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
-    try { const next = await client.createRun({ objective, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setProcedureTrial(undefined);setHistoryRefresh(value=>value+1); void watch(next); }
+    try { const next = await client.createRun({ objective, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedMCPTools([]);setProcedureTrial(undefined);setHistoryRefresh(value=>value+1); void watch(next); }
     catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
   async function selectWorkspace() {
@@ -186,6 +188,7 @@ function App() {
       <section><details><summary>Automations</summary><AutomationsPanel client={client} model={model} workspace={workspace}/></details></section>
       <section><details><summary>Messaging channels</summary><ChannelsPanel client={client}/></details></section>
       <section><details><summary>Web search integration</summary><SearchProviderPanel client={client}/></details></section>
+      <section><details><summary>MCP integrations</summary><MCPPanel client={client} selectedRunWriteTools={approvedMCPTools} onRunWriteToolsChange={setApprovedMCPTools}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>

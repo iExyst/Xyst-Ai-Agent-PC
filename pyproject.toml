@@ -12,6 +12,7 @@ dependencies = [
     "lmstudio==1.6.0b1",
     "tzdata>=2026.6",
     "playwright>=1.52,<2",
+    "mcp>=1.26,<2",
 ]
 
 [project.scripts]

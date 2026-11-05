@@ -122,6 +122,14 @@
             "title": "Approved Browser",
             "type": "boolean"
           },
+          "approved_mcp_tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Approved Mcp Tools",
+            "type": "array"
+          },
           "approved_web_hosts": {
             "items": {
               "type": "string"
@@ -838,6 +846,307 @@
           }
         },
         "title": "LMStudioSelectionRequest",
+        "type": "object"
+      },
+      "MCPConnectResponse": {
+        "properties": {
+          "state": {
+            "const": "connected",
+            "title": "State",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/MCPToolResponse"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "state",
+          "tools"
+        ],
+        "title": "MCPConnectResponse",
+        "type": "object"
+      },
+      "MCPSecretRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "MCPSecretRequest",
+        "type": "object"
+      },
+      "MCPServerResponse": {
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "secret_env": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Env",
+            "type": "array"
+          },
+          "secret_env_configured": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Secret Env Configured",
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "connected",
+              "disconnected",
+              "error"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/MCPToolResponse"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "args",
+          "cwd",
+          "secret_env",
+          "created_at",
+          "updated_at",
+          "state",
+          "error",
+          "secret_env_configured",
+          "tools"
+        ],
+        "title": "MCPServerResponse",
+        "type": "object"
+      },
+      "MCPServerSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Args",
+            "type": "array"
+          },
+          "command": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Command",
+            "type": "string"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "secret_env": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Secret Env",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "command"
+        ],
+        "title": "MCPServerSpec",
+        "type": "object"
+      },
+      "MCPToolPermissionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "permission": {
+            "enum": [
+              "none",
+              "read",
+              "write"
+            ],
+            "title": "Permission",
+            "type": "string"
+          },
+          "schema_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Schema Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "schema_sha256"
+        ],
+        "title": "MCPToolPermissionRequest",
+        "type": "object"
+      },
+      "MCPToolResponse": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Schema"
+          },
+          "permission": {
+            "enum": [
+              "none",
+              "read",
+              "write"
+            ],
+            "title": "Permission",
+            "type": "string"
+          },
+          "qualified_name": {
+            "title": "Qualified Name",
+            "type": "string"
+          },
+          "schema_sha256": {
+            "title": "Schema Sha256",
+            "type": "string"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_id",
+          "name",
+          "title",
+          "description",
+          "input_schema",
+          "output_schema",
+          "schema_sha256",
+          "permission",
+          "qualified_name",
+          "updated_at"
+        ],
+        "title": "MCPToolResponse",
         "type": "object"
       },
       "MemoryRecord": {
@@ -1663,6 +1972,13 @@
             "default": false,
             "title": "Approved Browser",
             "type": "boolean"
+          },
+          "approved_mcp_tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved Mcp Tools",
+            "type": "array"
           },
           "approved_web_hosts": {
             "items": {
@@ -3634,6 +3950,382 @@
           }
         ],
         "summary": "Health"
+      }
+    },
+    "/mcp/servers": {
+      "get": {
+        "operationId": "list_mcp_servers_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MCPServerResponse"
+                  },
+                  "title": "Response List Mcp Servers Mcp Servers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mcp Servers"
+      },
+      "post": {
+        "operationId": "create_mcp_server_mcp_servers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPServerSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}": {
+      "delete": {
+        "operationId": "delete_mcp_server_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/connect": {
+      "post": {
+        "operationId": "connect_mcp_server_mcp_servers__server_id__connect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPConnectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Connect Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/disconnect": {
+      "post": {
+        "operationId": "disconnect_mcp_server_mcp_servers__server_id__disconnect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Disconnect Mcp Server Mcp Servers  Server Id  Disconnect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disconnect Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/secrets/{env_name}": {
+      "delete": {
+        "operationId": "delete_mcp_secret_mcp_servers__server_id__secrets__env_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "env_name",
+            "required": true,
+            "schema": {
+              "title": "Env Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Mcp Secret"
+      },
+      "put": {
+        "operationId": "set_mcp_secret_mcp_servers__server_id__secrets__env_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "env_name",
+            "required": true,
+            "schema": {
+              "title": "Env Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPSecretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Set Mcp Secret Mcp Servers  Server Id  Secrets  Env Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Mcp Secret"
+      }
+    },
+    "/mcp/servers/{server_id}/tools/{tool_name}/permission": {
+      "put": {
+        "operationId": "set_mcp_tool_permission_mcp_servers__server_id__tools__tool_name__permission_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "title": "Tool Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPToolPermissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Mcp Tool Permission"
       }
     },
     "/memory": {

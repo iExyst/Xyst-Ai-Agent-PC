@@ -23,6 +23,9 @@ export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
 export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
 export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
+export type MCPTool = components['schemas']['MCPToolResponse'];
+export type MCPServer = components['schemas']['MCPServerResponse'];
+export type MCPConnect = components['schemas']['MCPConnectResponse'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -69,6 +72,15 @@ export class EngineClient {
   braveSearchStatus(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential'); }
   setBraveSearchKey(token:string): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'PUT',body:JSON.stringify({token})}); }
   clearBraveSearchKey(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'DELETE'}); }
+
+  mcpServers(): Promise<MCPServer[]> { return this.#request('/mcp/servers'); }
+  createMCPServer(input:{name:string;command:string;args:string[];cwd:string|null;secret_env:string[]}):Promise<MCPServer>{return this.#request('/mcp/servers',{method:'POST',body:JSON.stringify(input)});}
+  deleteMCPServer(id:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}`,{method:'DELETE'});}
+  connectMCPServer(id:string):Promise<MCPConnect>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/connect`,{method:'POST'});}
+  disconnectMCPServer(id:string):Promise<{state:string}>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/disconnect`,{method:'POST'});}
+  setMCPToolPermission(serverId:string,tool:MCPTool,permission:MCPTool['permission']):Promise<MCPTool>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(tool.name)}/permission`,{method:'PUT',body:JSON.stringify({permission,schema_sha256:tool.schema_sha256})});}
+  setMCPSecret(serverId:string,name:string,value:string):Promise<{configured:boolean}>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({value})});}
+  clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}
 
   lmStudioConfig(): Promise<components['schemas']['LMStudioConfigRecord']> {
     return this.#request('/providers/lm-studio/config');

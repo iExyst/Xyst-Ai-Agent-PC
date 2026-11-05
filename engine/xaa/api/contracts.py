@@ -39,6 +39,7 @@ class RunRecord(BaseModel):
     approved_web_hosts: list[str] = Field(default_factory=list)
     approved_web_search: bool = False
     approved_browser: bool = False
+    approved_mcp_tools: list[str] = Field(default_factory=list)
     procedure_trial: SkillTrialRecord | None = None
     command_grant: CommandGrant | None = None
 

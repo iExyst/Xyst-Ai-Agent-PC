@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import sqlite3
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -42,6 +43,7 @@ from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
 from xaa.runtime.file_handles import opened_file_path
+from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
 from xaa.runtime.project_validation import (
     ProjectValidationRequest,
     validate_project,
@@ -63,6 +65,7 @@ from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import create_backup_bundle
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
+from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
 from xaa.storage.schedules import ScheduleStore, parse_local_time, validate_quiet_hours
@@ -106,6 +109,7 @@ class CreateRunRequest(BaseModel):
     approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
     approved_web_search: bool = False
     approved_browser: bool = False
+    approved_mcp_tools: list[str] = Field(default_factory=list, max_length=50)
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
@@ -161,6 +165,50 @@ class LMStudioCredentialStatus(BaseModel):
 class WebSearchCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: SecretStr = Field(min_length=1, max_length=512)
+
+
+class MCPSecretRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    value: SecretStr = Field(min_length=1, max_length=4096)
+
+
+class MCPToolPermissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    permission: Literal["none", "read", "write"]
+    schema_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class MCPToolResponse(BaseModel):
+    server_id: str
+    name: str
+    title: str | None
+    description: str | None
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any] | None
+    schema_sha256: str
+    permission: Literal["none", "read", "write"]
+    qualified_name: str
+    updated_at: str
+
+
+class MCPServerResponse(BaseModel):
+    id: str
+    name: str
+    command: str
+    args: list[str]
+    cwd: str | None
+    secret_env: list[str]
+    created_at: str
+    updated_at: str
+    state: Literal["connected", "disconnected", "error"]
+    error: str | None
+    secret_env_configured: dict[str, bool]
+    tools: list[MCPToolResponse]
+
+
+class MCPConnectResponse(BaseModel):
+    state: Literal["connected"]
+    tools: list[MCPToolResponse]
 
 
 class CreateScheduleRequest(BaseModel):
@@ -272,6 +320,7 @@ def create_app(
             )
 
     run_store = store or RunStore()
+    mcp_manager = MCPManager(run_store, credential_store)
     memory_store = MemoryStore(run_store)
     skill_store = SkillStore(run_store)
     supervisor = RunSupervisor(
@@ -280,6 +329,7 @@ def create_app(
             provider,
             stream_responses=stream_responses,
             credential_store=credential_store,
+            mcp_manager=mcp_manager,
         )
     )
     schedule_store = ScheduleStore(run_store)
@@ -317,9 +367,131 @@ def create_app(
             await telegram_service.close()
         await schedule_service.close()
         await supervisor.close()
+        await mcp_manager.close()
         await provider.close()
 
     app = FastAPI(title="X.A.A. Local API", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/mcp/servers", response_model=list[MCPServerResponse])
+    def list_mcp_servers(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        registry = MCPRegistry(run_store)
+        servers: list[dict[str, Any]] = []
+        for server in registry.list_servers():
+            state, error = mcp_manager.server_status(server.id)
+            configured = {
+                name: bool(credential_store and credential_store.get(f"mcp:{server.id}:{name}"))
+                for name in server.secret_env
+            }
+            servers.append(
+                {
+                    **server.model_dump(),
+                    "state": state,
+                    "error": error,
+                    "secret_env_configured": configured,
+                    "tools": [tool.model_dump() for tool in registry.list_tools(server.id)],
+                }
+            )
+        return servers
+
+    @app.post("/mcp/servers", status_code=201, response_model=MCPServerResponse)
+    def create_mcp_server(
+        payload: MCPServerSpec, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            server = MCPRegistry(run_store).create_server(payload)
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(
+                status_code=409, detail="An MCP server with that name already exists."
+            ) from exc
+        return {
+            **server.model_dump(),
+            "state": "disconnected",
+            "error": None,
+            "secret_env_configured": {name: False for name in server.secret_env},
+            "tools": [],
+        }
+
+    @app.delete("/mcp/servers/{server_id}", status_code=204)
+    async def delete_mcp_server(server_id: str, _: None = Depends(authenticate)) -> Response:
+        if not await mcp_manager.delete_server(server_id):
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        return Response(status_code=204)
+
+    @app.post("/mcp/servers/{server_id}/connect", response_model=MCPConnectResponse)
+    async def connect_mcp_server(server_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
+        try:
+            tools = await mcp_manager.connect_server(server_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="MCP server not found.") from exc
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"state": "connected", "tools": [tool.model_dump() for tool in tools]}
+
+    @app.post("/mcp/servers/{server_id}/disconnect")
+    async def disconnect_mcp_server(
+        server_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, str]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        await mcp_manager.disconnect_server(server_id)
+        return {"state": "disconnected"}
+
+    @app.put(
+        "/mcp/servers/{server_id}/tools/{tool_name}/permission", response_model=MCPToolResponse
+    )
+    def set_mcp_tool_permission(
+        server_id: str,
+        tool_name: str,
+        payload: MCPToolPermissionRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return (
+                MCPRegistry(run_store)
+                .set_permission(server_id, tool_name, payload.permission, payload.schema_sha256)
+                .model_dump()
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="MCP tool not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.put("/mcp/servers/{server_id}/secrets/{env_name}")
+    def set_mcp_secret(
+        server_id: str, env_name: str, payload: MCPSecretRequest, _: None = Depends(authenticate)
+    ) -> dict[str, bool]:
+        server = MCPRegistry(run_store).get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        if env_name not in server.secret_env:
+            raise HTTPException(
+                status_code=400, detail="This environment name is not configured as a secret."
+            )
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            credential_store.set(payload.value.get_secret_value(), f"mcp:{server_id}:{env_name}")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
+        return {"configured": True}
+
+    @app.delete("/mcp/servers/{server_id}/secrets/{env_name}")
+    def delete_mcp_secret(
+        server_id: str, env_name: str, _: None = Depends(authenticate)
+    ) -> Response:
+        server = MCPRegistry(run_store).get_server(server_id)
+        if server is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        if env_name not in server.secret_env:
+            raise HTTPException(
+                status_code=400, detail="This environment name is not configured as a secret."
+            )
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        credential_store.delete(f"mcp:{server_id}:{env_name}")
+        return Response(status_code=204)
 
     @app.post("/shutdown")
     async def shutdown(_: None = Depends(authenticate)) -> dict[str, str]:
@@ -939,6 +1111,7 @@ def create_app(
                 approved_web_hosts=payload.approved_web_hosts,
                 approved_web_search=payload.approved_web_search,
                 approved_browser=payload.approved_browser,
+                approved_mcp_tools=payload.approved_mcp_tools,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
