@@ -4,7 +4,7 @@ Updated 2026-11-05. This documents the initial MCP client slice; it does not cla
 
 ## Configuration and lifecycle
 
-The authenticated loopback API stores a user-selected server name, executable, argument array, optional working directory, and names of credential variables. It does not accept shell command strings. Connecting is an explicit desktop action. The app launches the configured process using the official Python MCP SDK stdio transport, initializes a session, and discovers tools. Connections live only for the app process lifetime and are closed on disconnect or shutdown; the user must reconnect after restart.
+The authenticated loopback API stores a user-selected server name, executable, argument array, optional working directory, and names of credential variables. It does not accept shell command strings. Connecting is an explicit desktop action. The app launches the configured process using the official Python MCP SDK stdio transport, initializes a session, and discovers tools. Connections live only for the app process lifetime and are closed on disconnect or shutdown; the user must reconnect after restart. A fixture test reopens the same SQLite database through a new store/manager, confirms the server is disconnected and offers no tools, then reconnects and verifies the unchanged schema retains its read permission.
 
 Each connection's AnyIO stdio context is entered and exited by its own background owner task. API requests can then discover, call, disconnect, or shut down the connection without transferring an AnyIO cancel scope across tasks. Calls on one server are serialized. Initialization is bounded to 15 seconds, calls to 45 seconds, listings to 256 tools/eight pages, input schemas to 128 KiB, and results to 256 KiB.
 

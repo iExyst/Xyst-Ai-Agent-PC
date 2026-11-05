@@ -91,6 +91,44 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
 
 
 @pytest.mark.asyncio
+async def test_server_configuration_and_permissions_survive_engine_restart(
+    workspace_tmp_path: Path,
+):
+    database = workspace_tmp_path / "mcp-restart.sqlite3"
+    initial_store = RunStore(database)
+    initial_registry = MCPRegistry(initial_store)
+    server = initial_registry.create_server(
+        MCPServerSpec(name="Fixture", command=sys.executable, args=[str(FIXTURE)])
+    )
+    initial_manager = MCPManager(initial_store, None)
+    discovered = await initial_manager.connect_server(server.id)
+    add_tool = next(tool for tool in discovered if tool.name == "add")
+    persisted = initial_registry.set_permission(server.id, "add", "read", add_tool.schema_sha256)
+    await initial_manager.close()
+
+    restarted_store = RunStore(database)
+    restarted_registry = MCPRegistry(restarted_store)
+    restarted_manager = MCPManager(restarted_store, None)
+    try:
+        assert restarted_registry.get_server(server.id) == server
+        assert restarted_registry.list_tools(server.id)[0].permission == "read"
+        assert restarted_manager.server_status(server.id)[0] == "disconnected"
+        assert restarted_manager.tools_for_run(set()) == []
+
+        reconnected = await restarted_manager.connect_server(server.id)
+        reconnected_add = next(tool for tool in reconnected if tool.name == "add")
+        assert reconnected_add.schema_sha256 == persisted.schema_sha256
+        assert reconnected_add.permission == "read"
+        result = await restarted_manager.call_tool(
+            reconnected_add.qualified_name, {"left": 19, "right": 23}
+        )
+        assert result["status"] == "ok"
+        assert result["structured_content"] == {"result": 42}
+    finally:
+        await restarted_manager.close()
+
+
+@pytest.mark.asyncio
 async def test_coordinator_journals_disconnected_call_without_corrupting_run(
     workspace_tmp_path: Path,
 ):
