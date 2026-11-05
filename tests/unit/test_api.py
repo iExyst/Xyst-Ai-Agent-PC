@@ -215,6 +215,87 @@ def test_public_run_record_does_not_expose_worker_lease(workspace_tmp_path):
         assert response.json()["limits"]["max_iterations"] == 8
 
 
+def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(workspace_tmp_path):
+    secret = "fixture-secret-value-1234"
+
+    class Credentials:
+        def get(self, profile="lm-studio"):
+            return secret if profile == "brave-search" else None
+
+        def set(self, _token, _profile="lm-studio"):
+            return None
+
+        def delete(self, _profile="lm-studio"):
+            return None
+
+    store = RunStore(workspace_tmp_path / "trajectory.sqlite3")
+    run = store.create_run(
+        objective="Check redacted export",
+        acceptance_criteria=["secret absent"],
+        workspace=None,
+        mode="observe",
+        model="fixture/model",
+    )
+    with store.connection() as connection:
+        RunStore.record_event(
+            connection,
+            run["id"],
+            "model.message",
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": f"stored {secret}; Bearer abc.def; api_key=inline-secret",
+                }
+            },
+        )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(
+            FakeProvider(),
+            SecretStr(TOKEN),
+            store=store,
+            credential_store=Credentials(),
+        )
+    ) as client:
+        route = f"/runs/{run['id']}/export"
+        assert client.get(route).status_code == 401
+        response = client.get(route, headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert "attachment;" in response.headers["content-disposition"]
+    assert secret.encode() not in response.content
+    exported = response.json()
+    assert exported["format"] == "xaa-trajectory"
+    assert exported["run"]["id"] == run["id"]
+    message_event = next(
+        event for event in exported["events"] if event["event_type"] == "model.message"
+    )
+    event_text = message_event["payload"]["message"]["content"]
+    assert "[REDACTED]" in event_text
+    assert "inline-secret" not in event_text
+    assert "abc.def" not in event_text
+
+
+def test_run_trajectory_export_enforces_event_and_byte_limits(workspace_tmp_path, monkeypatch):
+    from xaa.storage import trajectory
+
+    store = RunStore(workspace_tmp_path / "trajectory-limits.sqlite3")
+    run = store.create_run(
+        objective="Bound export",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )
+    monkeypatch.setattr(trajectory, "MAX_TRAJECTORY_EVENTS", 0)
+    with pytest.raises(ValueError, match="event export limit"):
+        trajectory.export_trajectory(store, run["id"])
+    monkeypatch.setattr(trajectory, "MAX_TRAJECTORY_EVENTS", 10)
+    monkeypatch.setattr(trajectory, "MAX_TRAJECTORY_BYTES", 1)
+    with pytest.raises(ValueError, match="size limit"):
+        trajectory.export_trajectory(store, run["id"])
+
+
 def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp_path):
     database = workspace_tmp_path / "web-grant.sqlite3"
     headers = {"Authorization": f"Bearer {TOKEN}"}

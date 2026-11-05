@@ -83,6 +83,7 @@ from xaa.storage.skills import (
     SkillVersion,
 )
 from xaa.storage.tasks import TaskStore
+from xaa.storage.trajectory import export_trajectory
 
 
 class ChatRequest(BaseModel):
@@ -1141,6 +1142,32 @@ def create_app(
         if run_store.get_run(run_id) is None:
             raise HTTPException(status_code=404, detail="Run not found.")
         return run_store.public_events(run_id, max(after, 0))
+
+    @app.get("/runs/{run_id}/export")
+    def export_run_trajectory(run_id: str, _: None = Depends(authenticate)) -> Response:
+        secrets_to_redact: list[str] = []
+        if credential_store is not None:
+            for profile in ("lm-studio", "brave-search", "telegram-bot"):
+                value = credential_store.get(profile)
+                if value:
+                    secrets_to_redact.append(value)
+            for server in MCPRegistry(run_store).list_servers():
+                for name in server.secret_env:
+                    value = credential_store.get(f"mcp:{server.id}:{name}")
+                    if value:
+                        secrets_to_redact.append(value)
+        try:
+            trajectory = export_trajectory(run_store, run_id, secrets=tuple(secrets_to_redact))
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        if trajectory is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        content = json.dumps(trajectory, ensure_ascii=False, separators=(",", ":"))
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="xaa-run-{run_id}.json"'},
+        )
 
     def transition_run(run_id: str, destination: RunState, reason: str) -> dict[str, Any]:
         try:
