@@ -212,6 +212,8 @@ class MCPToolResponse(BaseModel):
 class MCPServerResponse(BaseModel):
     id: str
     name: str
+    transport: Literal["stdio", "streamable_http"]
+    endpoint: str | None
     command: str
     args: list[str]
     cwd: str | None

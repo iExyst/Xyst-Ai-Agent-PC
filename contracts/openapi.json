@@ -1072,6 +1072,17 @@
             ],
             "title": "Cwd"
           },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
           "error": {
             "anyOf": [
               {
@@ -1121,6 +1132,14 @@
             "title": "Tools",
             "type": "array"
           },
+          "transport": {
+            "enum": [
+              "stdio",
+              "streamable_http"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
           "updated_at": {
             "title": "Updated At",
             "type": "string"
@@ -1129,6 +1148,8 @@
         "required": [
           "id",
           "name",
+          "transport",
+          "endpoint",
           "command",
           "args",
           "cwd",
@@ -1155,8 +1176,8 @@
             "type": "array"
           },
           "command": {
+            "default": "",
             "maxLength": 512,
-            "minLength": 1,
             "title": "Command",
             "type": "string"
           },
@@ -1172,6 +1193,18 @@
             ],
             "title": "Cwd"
           },
+          "endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
@@ -1185,11 +1218,19 @@
             "maxItems": 12,
             "title": "Secret Env",
             "type": "array"
+          },
+          "transport": {
+            "default": "stdio",
+            "enum": [
+              "stdio",
+              "streamable_http"
+            ],
+            "title": "Transport",
+            "type": "string"
           }
         },
         "required": [
-          "name",
-          "command"
+          "name"
         ],
         "title": "MCPServerSpec",
         "type": "object"

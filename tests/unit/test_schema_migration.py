@@ -329,6 +329,27 @@ def test_schema_ten_adds_mcp_configuration_tables_without_losing_run_history(wor
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_schema_fourteen_adds_streamable_http_mcp_fields(workspace_tmp_path):
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    database = workspace_tmp_path / "schema-fourteen-mcp-transport.sqlite3"
+    store = RunStore(database)
+    server = MCPRegistry(store).create_server(MCPServerSpec(name="Legacy", command="python"))
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN endpoint")
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN transport")
+        connection.execute("PRAGMA user_version=14")
+
+    migrated = RunStore(database)
+    restored = MCPRegistry(migrated).get_server(server.id)
+    assert restored is not None
+    assert restored.transport == "stdio"
+    assert restored.endpoint is None
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
 def test_schema_twelve_adds_snapshotted_specialist_instructions(workspace_tmp_path):
     from xaa.storage.specialist_profiles import SpecialistProfileStore
 

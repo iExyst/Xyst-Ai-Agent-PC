@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 14
+DATABASE_SCHEMA_VERSION = 15
 
 
 @dataclass(frozen=True)
@@ -443,7 +443,9 @@ class RunStore:
                     cwd TEXT,
                     secret_env TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    transport TEXT NOT NULL DEFAULT 'stdio' CHECK(transport IN ('stdio','streamable_http')),
+                    endpoint TEXT
                 );
                 CREATE TABLE IF NOT EXISTS mcp_server_tools (
                     server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
@@ -538,6 +540,15 @@ class RunStore:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS schedule_deliveries_retry ON schedule_deliveries(account_id,state,next_attempt_at,created_at)"
             )
+            mcp_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(mcp_servers)")
+            }
+            if "transport" not in mcp_columns:
+                connection.execute(
+                    "ALTER TABLE mcp_servers ADD COLUMN transport TEXT NOT NULL DEFAULT 'stdio'"
+                )
+            if "endpoint" not in mcp_columns:
+                connection.execute("ALTER TABLE mcp_servers ADD COLUMN endpoint TEXT")
             if connection.execute("PRAGMA user_version").fetchone()[0] < 3:
                 install_index(connection)
             connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")

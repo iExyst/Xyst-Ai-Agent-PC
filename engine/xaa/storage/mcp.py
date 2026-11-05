@@ -1,11 +1,13 @@
-"""Durable user configuration and permission mapping for MCP stdio servers."""
+"""Durable user configuration and permission mapping for MCP servers."""
+
+from __future__ import annotations
 
 import json
 import re
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from xaa.storage.runs import RunStore, utc_now
 
@@ -16,17 +18,27 @@ MCP_TOOL_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 class MCPServerSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     name: str = Field(min_length=1, max_length=80)
-    command: str = Field(min_length=1, max_length=512)
+    transport: Literal["stdio", "streamable_http"] = "stdio"
+    endpoint: str | None = Field(default=None, max_length=2048)
+    command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
     cwd: str | None = Field(default=None, max_length=2048)
     secret_env: list[str] = Field(default_factory=list, max_length=12)
 
-    @field_validator("name", "command")
+    @field_validator("name")
     @classmethod
     def trimmed_nonempty(cls, value: str) -> str:
         value = value.strip()
         if not value or any(ord(char) < 32 for char in value):
-            raise ValueError("MCP server names and commands must be plain text.")
+            raise ValueError("MCP server names must be plain text.")
+        return value
+
+    @field_validator("command")
+    @classmethod
+    def normalize_command(cls, value: str) -> str:
+        value = value.strip()
+        if any(ord(char) < 32 for char in value):
+            raise ValueError("MCP commands must be plain text.")
         return value
 
     @field_validator("args")
@@ -44,6 +56,52 @@ class MCPServerSpec(BaseModel):
         ):
             raise ValueError("MCP secret environment names must be unique uppercase identifiers.")
         return value
+
+    @model_validator(mode="after")
+    def validate_transport(self) -> MCPServerSpec:
+        if self.transport == "stdio":
+            if not self.command.strip() or self.endpoint is not None:
+                raise ValueError("stdio MCP servers need a command and cannot set an endpoint.")
+        else:
+            if self.command or self.args or self.cwd:
+                raise ValueError(
+                    "Streamable HTTP MCP servers cannot set a command, arguments or working directory."
+                )
+            if self.endpoint is None:
+                raise ValueError("Streamable HTTP MCP servers need an endpoint URL.")
+            import ipaddress
+            from urllib.parse import urlsplit
+
+            parsed = urlsplit(self.endpoint)
+            if (
+                parsed.scheme not in {"https", "http"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+                or any(ord(char) < 32 for char in self.endpoint)
+            ):
+                raise ValueError(
+                    "MCP endpoint must be an HTTP(S) URL without embedded credentials, query strings or fragments."
+                )
+            try:
+                port = parsed.port
+            except ValueError as error:
+                raise ValueError("MCP endpoint URL contains an invalid port.") from error
+            if port == 0:
+                raise ValueError("MCP endpoint URL cannot use port zero.")
+            if parsed.scheme == "http":
+                host = parsed.hostname.lower()
+                try:
+                    loopback = ipaddress.ip_address(host).is_loopback
+                except ValueError:
+                    loopback = host == "localhost"
+                if not loopback:
+                    raise ValueError("Remote MCP endpoints must use HTTPS.")
+            if len(self.secret_env) > 1:
+                raise ValueError("Streamable HTTP supports one OS-stored bearer token name.")
+        return self
 
 
 class MCPServerRecord(MCPServerSpec):
@@ -78,7 +136,7 @@ class MCPRegistry:
         now = utc_now()
         with self.store.connection() as connection:
             connection.execute(
-                "INSERT INTO mcp_servers VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -88,6 +146,8 @@ class MCPRegistry:
                     json.dumps(spec.secret_env),
                     now,
                     now,
+                    spec.transport,
+                    spec.endpoint,
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -207,6 +267,8 @@ class MCPRegistry:
             args=json.loads(row["args"]),
             cwd=row["cwd"],
             secret_env=json.loads(row["secret_env"]),
+            transport=row.get("transport", "stdio"),
+            endpoint=row.get("endpoint"),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

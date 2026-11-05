@@ -12,9 +12,11 @@ from contextlib import AsyncExitStack, contextmanager
 from datetime import timedelta
 from typing import Any, Literal, TextIO, cast
 
+import httpx
 from jsonschema import validators
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, PaginatedRequestParams, Tool
 
 from xaa.credentials import CredentialStore
@@ -118,11 +120,27 @@ class MCPManager:
         connection: _ConnectedServer | None = None
         try:
             async with AsyncExitStack() as stack:
-                params = self._parameters(server)
-                errlog = stack.enter_context(_discard_stdio_output())
-                read_stream, write_stream = await stack.enter_async_context(
-                    stdio_client(params, errlog=errlog)
-                )
+                if server.transport == "stdio":
+                    params = self._parameters(server)
+                    errlog = stack.enter_context(_discard_stdio_output())
+                    read_stream, write_stream = await stack.enter_async_context(
+                        stdio_client(params, errlog=errlog)
+                    )
+                else:
+                    if server.endpoint is None:
+                        raise MCPConnectionError("The MCP HTTP endpoint is missing.")
+                    http_client = httpx.AsyncClient(
+                        headers=self._http_headers(server),
+                        timeout=httpx.Timeout(MCP_CALL_TIMEOUT, connect=MCP_CONNECT_TIMEOUT),
+                        follow_redirects=False,
+                    )
+                    await stack.enter_async_context(http_client)
+                    read_stream, write_stream, _ = await stack.enter_async_context(
+                        streamable_http_client(
+                            server.endpoint,
+                            http_client=http_client,
+                        )
+                    )
                 session = ClientSession(
                     read_stream,
                     write_stream,
@@ -323,6 +341,18 @@ class MCPManager:
             env=environment,
             cwd=server.cwd,
         )
+
+    def _http_headers(self, server: MCPServerRecord) -> dict[str, str]:
+        if not server.secret_env:
+            return {}
+        if self.credential_store is None:
+            raise MCPConnectionError("OS credential storage is unavailable for this MCP server.")
+        secret = self.credential_store.get(MCP_ENV_PROFILE.format(server.id, server.secret_env[0]))
+        if secret is None:
+            raise MCPConnectionError(
+                f"Set the configured {server.secret_env[0]} bearer token before connecting this MCP server."
+            )
+        return {"Authorization": f"Bearer {secret}"}
 
     async def _list_tools(self, session: ClientSession, server_id: str) -> list[MCPDiscoveredTool]:
         tools: list[Tool] = []

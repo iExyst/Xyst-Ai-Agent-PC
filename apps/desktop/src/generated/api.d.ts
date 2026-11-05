@@ -1541,6 +1541,8 @@ export interface components {
             created_at: string;
             /** Cwd */
             cwd: string | null;
+            /** Endpoint */
+            endpoint: string | null;
             /** Error */
             error: string | null;
             /** Id */
@@ -1560,6 +1562,11 @@ export interface components {
             state: "connected" | "disconnected" | "error";
             /** Tools */
             tools: components["schemas"]["MCPToolResponse"][];
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "stdio" | "streamable_http";
             /** Updated At */
             updated_at: string;
         };
@@ -1567,14 +1574,25 @@ export interface components {
         MCPServerSpec: {
             /** Args */
             args?: string[];
-            /** Command */
+            /**
+             * Command
+             * @default
+             */
             command: string;
             /** Cwd */
             cwd?: string | null;
+            /** Endpoint */
+            endpoint?: string | null;
             /** Name */
             name: string;
             /** Secret Env */
             secret_env?: string[];
+            /**
+             * Transport
+             * @default stdio
+             * @enum {string}
+             */
+            transport: "stdio" | "streamable_http";
         };
         /** MCPToolPermissionRequest */
         MCPToolPermissionRequest: {

@@ -75,7 +75,7 @@ export class EngineClient {
   clearBraveSearchKey(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'DELETE'}); }
 
   mcpServers(): Promise<MCPServer[]> { return this.#request('/mcp/servers'); }
-  createMCPServer(input:{name:string;command:string;args:string[];cwd:string|null;secret_env:string[]}):Promise<MCPServer>{return this.#request('/mcp/servers',{method:'POST',body:JSON.stringify(input)});}
+  createMCPServer(input:{name:string;transport:'stdio'|'streamable_http';endpoint:string|null;command:string;args:string[];cwd:string|null;secret_env:string[]}):Promise<MCPServer>{return this.#request('/mcp/servers',{method:'POST',body:JSON.stringify(input)});}
   deleteMCPServer(id:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}`,{method:'DELETE'});}
   connectMCPServer(id:string):Promise<MCPConnect>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/connect`,{method:'POST'});}
   disconnectMCPServer(id:string):Promise<{state:string}>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/disconnect`,{method:'POST'});}

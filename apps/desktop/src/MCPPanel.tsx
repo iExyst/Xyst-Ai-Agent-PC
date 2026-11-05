@@ -10,6 +10,8 @@ type Props = {
 export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange }: Props) {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [name, setName] = useState('');
+  const [transport, setTransport] = useState<'stdio'|'streamable_http'>('stdio');
+  const [endpoint, setEndpoint] = useState('');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('[]');
   const [cwd, setCwd] = useState('');
@@ -37,10 +39,10 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
     onRunWriteToolsChange(next);
   };
   const create = () => act(async()=>{
-    const parsed:unknown = JSON.parse(args);
+    const parsed:unknown = transport==='stdio'?JSON.parse(args):[];
     if (!Array.isArray(parsed) || parsed.some(item=>typeof item!=='string')) throw new Error('Arguments must be a JSON array of strings.');
-    await client.createMCPServer({name,command,args:parsed,cwd:cwd.trim()||null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
-    setName('');setCommand('');setArgs('[]');setCwd('');setSecretEnv('');
+    await client.createMCPServer({name,transport,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
+    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');
   });
   const changePermission = (server:MCPServer,tool:MCPTool,permission:MCPTool['permission']) => act(async()=>{
     await client.setMCPToolPermission(server.id,tool,permission);
@@ -49,26 +51,32 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
 
   return <section aria-label="MCP integrations">
     <h3>MCP servers</h3>
-    <p>Configure a local server command and arguments, then connect to discover tools. Each discovered tool starts disabled. Read permission is available to runs; write permission also requires selecting the tool for the next run.</p>
+    <p>Configure a local stdio server or an HTTPS Streamable HTTP endpoint, then connect to discover tools. HTTP endpoints may use plain HTTP only on loopback. Each discovered tool starts disabled; write tools also need a per-run grant.</p>
     {error&&<p role="alert">{error}</p>}
     <div className="mcp-config">
       <label>Server name<input value={name} onChange={e=>setName(e.target.value)} /></label>
-      <label>Command<input value={command} onChange={e=>setCommand(e.target.value)} placeholder="python" /></label>
-      <label>Arguments (JSON string array)<input value={args} onChange={e=>setArgs(e.target.value)} /></label>
-      <label>Working directory (optional)<input value={cwd} onChange={e=>setCwd(e.target.value)} /></label>
-      <label>Secret environment variable names<input value={secretEnv} onChange={e=>setSecretEnv(e.target.value)} placeholder="API_TOKEN" /></label>
-      <button type="button" disabled={busy||!name.trim()||!command.trim()} onClick={()=>void create()}>Add MCP server</button>
+      <label>Transport<select value={transport} onChange={e=>setTransport(e.target.value as 'stdio'|'streamable_http')}><option value="stdio">Local process (stdio)</option><option value="streamable_http">Streamable HTTP</option></select></label>
+      {transport==='stdio'?<>
+        <label>Command<input value={command} onChange={e=>setCommand(e.target.value)} placeholder="python" /></label>
+        <label>Arguments (JSON string array)<input value={args} onChange={e=>setArgs(e.target.value)} /></label>
+        <label>Working directory (optional)<input value={cwd} onChange={e=>setCwd(e.target.value)} /></label>
+        <label>Secret environment variable names<input value={secretEnv} onChange={e=>setSecretEnv(e.target.value)} placeholder="API_TOKEN" /></label>
+      </>:<>
+        <label>Streamable HTTP endpoint<input value={endpoint} onChange={e=>setEndpoint(e.target.value)} placeholder="https://mcp.example.com/mcp" /></label>
+        <label>Bearer token variable name (optional)<input value={secretEnv} onChange={e=>setSecretEnv(e.target.value)} placeholder="MCP_TOKEN" /></label>
+      </>}
+      <button type="button" disabled={busy||!name.trim()||(transport==='stdio'?!command.trim():!endpoint.trim())} onClick={()=>void create()}>Add MCP server</button>
     </div>
     {servers.map(server=><article key={server.id} className="mcp-server">
       <h4>{server.name} <small>({server.state})</small></h4>
       {server.error&&<p role="alert">{server.error}</p>}
-      <code>{server.command} {server.args.join(' ')}</code>
+      <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(()=>client.disconnectMCPServer(server.id))}>Disconnect</button>
         <button type="button" disabled={busy} onClick={()=>void act(async()=>{await client.deleteMCPServer(server.id);onRunWriteToolsChange(selectedRunWriteTools.filter(tool=>!tool.startsWith(`mcp_${server.id}_`)));})}>Remove server</button>
       </div>
-      {server.secret_env.map(env=>{const key=`${server.id}:${env}`;return <label key={env}>{env} {server.secret_env_configured[env]?'(saved in OS credential store)':'(not set)'}
+      {server.secret_env.map(env=>{const key=`${server.id}:${env}`;return <label key={env}>{env} {server.transport==='streamable_http'?'bearer token': 'environment secret'} {server.secret_env_configured[env]?'(saved in OS credential store)':'(not set)'}
         <input type="password" autoComplete="off" value={secrets[key]??''} onChange={e=>setSecrets(prev=>({...prev,[key]:e.target.value}))}/>
         <button type="button" disabled={busy||!secrets[key]} onClick={()=>void act(async()=>{await client.setMCPSecret(server.id,env,secrets[key]!);setSecrets(prev=>({...prev,[key]:''}));})}>Save secret</button>
         <button type="button" disabled={busy||!server.secret_env_configured[env]} onClick={()=>void act(()=>client.clearMCPSecret(server.id,env))}>Clear</button>

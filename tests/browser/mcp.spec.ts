@@ -42,6 +42,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
       server = {...body,id:serverId,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{},tools:[]};
       return route.fulfill({status:201,json:server,headers});
     }
+    if (path === `/mcp/servers/${serverId}` && request.method() === 'DELETE') { server = null; return route.fulfill({status:204,headers}); }
     if (path === `/mcp/servers/${serverId}/connect`) {
       server = {...server,state:'connected',tools:[tool]};
       return route.fulfill({json:{state:'connected',tools:[tool]},headers});
@@ -74,5 +75,13 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await grant.check();
   await expect(grant).toBeChecked();
   expect(requests.some(item=>item.method==='PUT'&&item.path.endsWith('/permission')&&item.body.permission==='write')).toBe(true);
+  await panel.getByRole('button',{name:'Remove server'}).click();
+  await panel.getByLabel('Server name').fill('HTTP MCP');
+  await panel.getByLabel('Transport').selectOption('streamable_http');
+  await panel.getByLabel('Streamable HTTP endpoint').fill('https://mcp.example.com/mcp');
+  await panel.getByLabel('Bearer token variable name (optional)').fill('MCP_TOKEN');
+  await panel.getByRole('button',{name:'Add MCP server'}).click();
+  await expect(panel.getByText('https://mcp.example.com/mcp')).toBeVisible();
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.transport==='streamable_http'&&item.body.endpoint==='https://mcp.example.com/mcp'&&item.body.secret_env[0]==='MCP_TOKEN')).toBe(true);
   expect(errors).toEqual([]);
 });
