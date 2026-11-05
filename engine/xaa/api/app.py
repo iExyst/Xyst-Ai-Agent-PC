@@ -440,7 +440,9 @@ def create_app(
             credential_store.set(token_value)
             await provider.configure_credential(token_value)
         except (OSError, RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=503, detail="Could not save the OS credential.") from exc
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
         return LMStudioCredentialStatus(configured=True)
 
     @app.delete("/providers/lm-studio/credential", response_model=LMStudioCredentialStatus)
@@ -462,7 +464,9 @@ def create_app(
             credential_store.delete()
             await provider.configure_credential(None)
         except (OSError, RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=503, detail="Could not clear the OS credential.") from exc
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
         return LMStudioCredentialStatus(configured=False)
 
     @app.put("/providers/lm-studio/selection")
