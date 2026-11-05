@@ -186,3 +186,25 @@ async def test_saved_iteration_budget_stops_before_second_model_turn(workspace_t
         )
         == 1
     )
+
+
+def test_initial_messages_include_verified_run_image(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "image-context.sqlite3")
+    png = b"\x89PNG\r\n\x1a\nfixture-image"
+    run = store.create_run(
+        objective="Describe the image",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        image_bytes=png,
+        image_media_type="image/png",
+    )
+    token = store.acquire_lease(run["id"], "image-context-test")
+    assert token
+    coordinator = Coordinator(store, ScriptedProvider())
+    messages = coordinator._initial_messages(run["id"], token, run)
+    content = messages[1]["content"]
+    assert isinstance(content, list)
+    assert content[0] == {"type": "text", "text": "Describe the image"}
+    assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")

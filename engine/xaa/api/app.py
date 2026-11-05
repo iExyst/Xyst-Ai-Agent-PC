@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -100,6 +102,7 @@ class CreateRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     objective: str = Field(min_length=1, max_length=10_000)
+    image: str | None = Field(default=None, max_length=4_200_000)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
     mode: Literal["observe", "workspace", "authorized_automation"] = "observe"
@@ -1233,6 +1236,34 @@ def create_app(
         payload: CreateRunRequest, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
         try:
+            image_bytes: bytes | None = None
+            image_type: str | None = None
+            if payload.image is not None:
+                if not payload.model:
+                    raise ValueError("Select a vision-capable model before attaching an image.")
+                available_models = await provider.models()
+                selected_model = next(
+                    (item for item in available_models if item.id == payload.model), None
+                )
+                if selected_model is None or not selected_model.capabilities.vision:
+                    raise ValueError(
+                        "The selected LM Studio model does not advertise vision support."
+                    )
+                if not payload.image.startswith(
+                    ("data:image/png;base64,", "data:image/jpeg;base64,")
+                ):
+                    raise ValueError("Run image must be a PNG or JPEG data URL.")
+                header, encoded = payload.image.split(",", 1)
+                image_type = "image/png" if header.startswith("data:image/png;") else "image/jpeg"
+                try:
+                    image_bytes = base64.b64decode(encoded, validate=True)
+                except (ValueError, binascii.Error):
+                    raise ValueError("Run image data is invalid.") from None
+                if not image_bytes or len(image_bytes) > 3 * 1024 * 1024:
+                    raise ValueError("Run image must be between 1 byte and 3 MiB.")
+                signature = b"\x89PNG\r\n\x1a\n" if image_type == "image/png" else b"\xff\xd8\xff"
+                if not image_bytes.startswith(signature):
+                    raise ValueError("Run image content does not match its declared type.")
             if payload.command_grant is not None:
                 execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(
@@ -1254,6 +1285,8 @@ def create_app(
                 approved_web_search=payload.approved_web_search,
                 approved_browser=payload.approved_browser,
                 approved_mcp_tools=payload.approved_mcp_tools,
+                image_bytes=image_bytes,
+                image_media_type=image_type,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -1263,6 +1296,8 @@ def create_app(
             ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ProviderError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         if record["model"]:
             supervisor.submit(record["id"])
         return record
@@ -1536,7 +1571,7 @@ def create_app(
             or hashlib.sha256(content).hexdigest() != metadata["sha256"]
         ):
             raise HTTPException(status_code=409, detail="Artifact integrity verification failed.")
-        extension = "png" if metadata["media_type"] == "image/png" else "txt"
+        extension = {"image/png": "png", "image/jpeg": "jpg"}.get(metadata["media_type"], "txt")
         return Response(
             content=content,
             media_type=metadata["media_type"],

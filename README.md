@@ -7,11 +7,11 @@ Windows-first desktop agent under development. The native app, local engine and 
 - Current work: durable execution, workspace tools and desktop workflows; several phase gates remain incomplete
 - Completion estimate: approximately 16% of the full release objective
 - Hermes audit pin: `1e208b280deb18f01d015b0acdf3ef3552d08039` (official `NousResearch/hermes-agent`, audited 2026-11-03)
-- See `docs/progress.md` for evidence and next gates.
+- See the [user guide](docs/user-guide.md) for operating instructions, and `docs/progress.md` for evidence and next gates.
 
 ## Unsigned Windows development installer
 
-The [verified hosted build](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/41795825037) provides an `xaa-windows-installer-unsigned` artifact (14-day retention). Its setup bundles the engine; Python and Node are not runtime prerequisites. LM Studio remains a separate installation. The disposable hosted Windows test verifies installation, actual GUI/API startup, shutdown, uninstall and data preservation. This remains an unsigned development build; upgrade and clean normal-user-machine acceptance are incomplete. See [installer evidence and limitations](docs/releases/windows-installer.md).
+The latest successful [Engine checks run](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions) provides an `xaa-windows-installer-unsigned` artifact (14-day retention). Its setup bundles the engine; Python and Node are not runtime prerequisites. LM Studio remains a separate installation. The disposable hosted Windows test verifies installation, actual GUI/API startup, shutdown, uninstall and data preservation. This remains an unsigned development build; upgrade and clean normal-user-machine acceptance are incomplete. See [installer evidence and limitations](docs/releases/windows-installer.md).
 
 ## Development use
 
@@ -29,7 +29,7 @@ Optional coordinator response streaming: set `$env:XAA_STREAM_RESPONSES='1'` bef
 
 If LM Studio requires authentication, use `uv run xaa credentials set` to enter its token privately into Windows Credential Manager, then restart the engine. Remove it with `uv run xaa credentials delete`. The engine reads this credential directly from the OS vault.
 
-Use `uv run xaa backup` to create an integrity-checked SQLite snapshot under the engine data directory's `backups` folder. Restore offline into a new directory with `uv run xaa restore SNAPSHOT --destination C:\new-data\XAA\xaa.sqlite3`, then set `XAA_DATA_DIR=C:\new-data` before starting the engine. Existing destinations are refused. These commands cover database records; artifact-content backup remains incomplete.
+Use `uv run xaa backup` to create an integrity-checked `.xaa-backup` bundle containing the SQLite database and managed artifacts. Stop X.A.A., then restore offline with `uv run xaa restore-bundle C:\path\to\backup.xaa-backup --destination C:\new-data\XAA`; set `XAA_DATA_DIR=C:\new-data` before starting the engine. The restore destination must not already exist. The older `xaa restore` command accepts a database-only snapshot and does not restore artifact files. See [backup and restore](docs/releases/backup-restore.md).
 
 Optional reported-token stop threshold: pass `--max-total-tokens 20000` to `xaa run`. This blocks further work based on saved provider usage; it is not a hard inference ceiling and includes run-triggered capability diagnostics. See [token threshold behavior](docs/architecture/token-thresholds.md).
 

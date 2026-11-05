@@ -1240,6 +1240,8 @@ export interface components {
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /** File Checks */
             file_checks?: components["schemas"]["FileContentCheck"][];
+            /** Image */
+            image?: string | null;
             /**
              * Max Iterations
              * @default 8

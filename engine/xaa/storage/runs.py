@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -616,7 +617,15 @@ class RunStore:
         approved_web_search: bool = False,
         approved_browser: bool = False,
         approved_mcp_tools: list[str] | None = None,
+        image_bytes: bytes | None = None,
+        image_media_type: str | None = None,
     ) -> dict[str, Any]:
+        if (image_bytes is None) != (image_media_type is None):
+            raise ValueError("Image bytes and media type must be supplied together.")
+        if image_media_type not in {None, "image/png", "image/jpeg"}:
+            raise ValueError("Run images must be PNG or JPEG.")
+        if image_bytes is not None and (not image_bytes or len(image_bytes) > 3 * 1024 * 1024):
+            raise ValueError("Run images must be between 1 byte and 3 MiB.")
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
         ):
@@ -648,6 +657,18 @@ class RunStore:
             }
         run_id = str(uuid.uuid4())
         now = utc_now()
+        image_filename: str | None = None
+        image_id: str | None = None
+        if image_bytes is not None and image_media_type is not None:
+            image_filename = (
+                f"{uuid.uuid4().hex}.{'png' if image_media_type == 'image/png' else 'jpg'}"
+            )
+            artifact_directory = self.path.parent / "artifacts"
+            artifact_directory.mkdir(parents=True, exist_ok=True)
+            image_path = artifact_directory / image_filename
+            with image_path.open("xb") as image_file:
+                image_file.write(image_bytes)
+            image_id = str(uuid.uuid4())
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             trial_snapshot = None
@@ -684,6 +705,26 @@ class RunStore:
                     "max_output_tokens": max_output_tokens,
                 },
             )
+            if image_filename is not None and image_id is not None and image_bytes is not None:
+                connection.execute(
+                    "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+                    (
+                        image_id,
+                        run_id,
+                        image_media_type,
+                        image_filename,
+                        len(image_bytes),
+                        hashlib.sha256(image_bytes).hexdigest(),
+                        "user.input_image",
+                        now,
+                    ),
+                )
+                self.record_event(
+                    connection,
+                    run_id,
+                    "run.image_attached",
+                    {"artifact_id": image_id, "media_type": image_media_type},
+                )
             if trial_snapshot is not None:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
             if granted_command is not None:
@@ -716,6 +757,30 @@ class RunStore:
         result = self.get_run(run_id)
         assert result is not None
         return result
+
+    def image_data_url(self, run_id: str) -> str | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT id, media_type, storage_key, size_bytes, sha256 FROM artifacts "
+                "WHERE run_id=? AND provenance='user.input_image' ORDER BY created_at LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        root = (self.path.parent / "artifacts").resolve(strict=True)
+        target = (root / row["storage_key"]).resolve(strict=True)
+        if not target.is_relative_to(root):
+            raise PermissionError("Run image escaped managed artifact storage.")
+        with target.open("rb") as source:
+            if not opened_file_path(source).is_relative_to(root):
+                raise PermissionError("Opened run image escaped managed artifact storage.")
+            content = source.read(3 * 1024 * 1024 + 1)
+        if (
+            len(content) != row["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != row["sha256"]
+        ):
+            raise ValueError("Run image failed artifact integrity verification.")
+        return f"data:{row['media_type']};base64," + base64.b64encode(content).decode("ascii")
 
     def procedure_trial(self, run_id: str) -> dict[str, Any] | None:
         with self.connection() as connection:

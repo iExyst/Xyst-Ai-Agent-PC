@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
-from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
+from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.storage.runs import RunStore
 
 
@@ -178,6 +178,62 @@ def test_artifact_download_requires_auth_and_rejects_tampering(workspace_tmp_pat
         assert image["media_type"] == "image/png"
         artifact.write_bytes(b"tampered")
         assert client.get(route, headers=headers).status_code == 409
+
+
+def test_run_image_is_validated_stored_as_artifact_and_reconstructed(workspace_tmp_path):
+    import base64
+
+    store = RunStore(workspace_tmp_path / "run-image.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    png = b"\x89PNG\r\n\x1a\nfixture-image"
+    encoded = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+
+    class VisionProvider(FakeProvider):
+        async def models(self) -> list[ModelInfo]:
+            return [ModelInfo(id="fixture", capabilities=ModelCapabilities(vision=True))]
+
+    with TestClient(create_app(VisionProvider(), SecretStr(TOKEN), store=store)) as client:
+        bad = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Inspect",
+                "model": "fixture",
+                "image": "data:image/jpeg;base64,SGVsbG8=",
+            },
+        )
+        assert bad.status_code == 409
+        response = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Describe this image", "model": "fixture", "image": encoded},
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert store.image_data_url(run_id) == encoded
+        artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
+        assert len(artifacts) == 1
+        assert artifacts[0]["media_type"] == "image/png"
+        event = next(
+            item
+            for item in store.public_events(run_id)
+            if item["event_type"] == "run.image_attached"
+        )
+        assert set(event["payload"]) == {"artifact_id", "media_type"}
+        metadata = store.get_artifact(artifacts[0]["id"])
+        assert metadata
+        (workspace_tmp_path / "artifacts" / metadata["storage_key"]).write_bytes(png + b"tamper")
+        with pytest.raises(ValueError, match="integrity"):
+            store.image_data_url(run_id)
+
+    nonvision_store = RunStore(workspace_tmp_path / "no-vision.sqlite3")
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=nonvision_store)) as client:
+        rejected = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Describe image", "model": "fixture/model", "image": encoded},
+        )
+        assert rejected.status_code == 409
 
 
 def test_shutdown_pauses_worker_before_signalling_server(workspace_tmp_path):

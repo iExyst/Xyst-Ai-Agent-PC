@@ -113,6 +113,30 @@ async def test_cancelled_count_releases_owner_without_prediction():
         await provider.close()
 
 
+async def test_conservative_context_estimate_bounds_image_data_url():
+    provider = LMStudioProvider()
+    provider._context_limits["fixture"] = 10_000
+    try:
+        provider._check_context(
+            "fixture",
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64," + "A" * 4_000_000},
+                        },
+                    ],
+                }
+            ],
+            max_output_tokens=512,
+        )
+    finally:
+        await provider.close()
+
+
 async def test_streamed_default_cap_is_verified_after_assembly():
     import json
 

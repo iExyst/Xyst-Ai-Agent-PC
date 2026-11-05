@@ -293,6 +293,18 @@
             "title": "File Checks",
             "type": "array"
           },
+          "image": {
+            "anyOf": [
+              {
+                "maxLength": 4200000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
           "max_iterations": {
             "default": 8,
             "maximum": 100.0,

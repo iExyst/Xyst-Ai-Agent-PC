@@ -453,14 +453,33 @@ class LMStudioProvider:
         # UTF-8 bytes plus template allowance are a deliberately conservative
         # estimate, with the selected output allowance reserved separately.
         # No history or tool/result pairs are silently discarded.
+        projected_messages: list[dict[str, Any]] = []
+        image_count = 0
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, list):
+                projected_content: list[Any] = []
+                for part in cast(list[Any], content):
+                    if (
+                        isinstance(part, dict)
+                        and cast(dict[str, Any], part).get("type") == "image_url"
+                    ):
+                        image_count += 1
+                        projected_content.append({"type": "image_url", "image_url": "[image]"})
+                    else:
+                        projected_content.append(part)
+                projected_messages.append({**message, "content": projected_content})
+            else:
+                projected_messages.append(message)
         estimate = (
             len(
-                json.dumps({"messages": messages, "tools": tools}, ensure_ascii=False).encode(
-                    "utf-8"
-                )
+                json.dumps(
+                    {"messages": projected_messages, "tools": tools}, ensure_ascii=False
+                ).encode("utf-8")
             )
             + 128 * len(messages)
             + 1024
+            + 4096 * image_count
             + (max_output_tokens or 0)
         )
         if estimate > limit:
