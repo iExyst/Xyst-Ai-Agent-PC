@@ -916,6 +916,8 @@ export interface components {
         CreateRunRequest: {
             /** Acceptance Criteria */
             acceptance_criteria?: string[];
+            /** Approved Web Hosts */
+            approved_web_hosts?: string[];
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /** File Checks */
             file_checks?: components["schemas"]["FileContentCheck"][];
@@ -1454,6 +1456,8 @@ export interface components {
         RunRecord: {
             /** Acceptance Criteria */
             acceptance_criteria: string[];
+            /** Approved Web Hosts */
+            approved_web_hosts?: string[];
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /**
              * Created At

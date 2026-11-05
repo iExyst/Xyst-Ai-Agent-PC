@@ -117,6 +117,14 @@
             "title": "Acceptance Criteria",
             "type": "array"
           },
+          "approved_web_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Approved Web Hosts",
+            "type": "array"
+          },
           "command_grant": {
             "anyOf": [
               {
@@ -1639,6 +1647,13 @@
               "type": "string"
             },
             "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "approved_web_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved Web Hosts",
             "type": "array"
           },
           "command_grant": {

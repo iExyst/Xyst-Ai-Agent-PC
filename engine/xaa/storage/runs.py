@@ -513,6 +513,7 @@ class RunStore:
         file_checks: list[dict[str, Any]] | None = None,
         procedure_trial: dict[str, Any] | None = None,
         command_grant: dict[str, Any] | None = None,
+        approved_web_hosts: list[str] | None = None,
     ) -> dict[str, Any]:
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
@@ -522,6 +523,10 @@ class RunStore:
             type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 1_000_000
         ):
             raise ValueError("Output token limit must be an integer from 1 to 1000000.")
+        if approved_web_hosts:
+            from xaa.runtime.web_fetch import normalize_approved_hosts
+
+            approved_web_hosts = normalize_approved_hosts(approved_web_hosts)
         granted_command = None
         if command_grant is not None:
             from xaa.runtime.command_contracts import CommandGrant, command_workspace
@@ -575,6 +580,13 @@ class RunStore:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
             if granted_command is not None:
                 self.record_event(connection, run_id, "execution.granted", granted_command)
+            if approved_web_hosts:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "web.access_granted",
+                    {"hosts": approved_web_hosts, "actor": "local_user"},
+                )
             connection.execute(
                 "INSERT INTO run_limits VALUES (?, ?, ?)", (run_id, max_iterations, max_seconds)
             )
@@ -608,6 +620,14 @@ class RunStore:
                 (run_id,),
             ).fetchall()
         record["command_grant"] = json.loads(grants[0][0])["grant"] if len(grants) == 1 else None
+        with self._connection() as connection:
+            web_grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='web.access_granted'",
+                (run_id,),
+            ).fetchall()
+        record["approved_web_hosts"] = (
+            json.loads(web_grants[0][0])["hosts"] if len(web_grants) == 1 else []
+        )
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (
             {

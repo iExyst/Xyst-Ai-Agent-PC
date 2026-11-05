@@ -1,0 +1,16 @@
+{
+  "checked_at_utc": "2026-11-05T14:33:17.842050+00:00",
+  "approved_hosts": [
+    "example.com"
+  ],
+  "result": {
+    "status": "ok",
+    "url": "https://example.com/",
+    "title": "Example Domain",
+    "trust": "untrusted_web_content",
+    "content_characters": 156,
+    "truncated": false
+  },
+  "elapsed_ms": 121,
+  "source_sha256": "5f5abbb58f6106a7f0157a076f4514a59f5a3632450faaeb51d358a43a521589"
+}

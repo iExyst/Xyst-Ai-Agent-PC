@@ -18,7 +18,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, sta
 from fastapi import Path as PathParameter
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from starlette.middleware.cors import CORSMiddleware
 
 from xaa.api.contracts import (
@@ -57,6 +57,7 @@ from xaa.runtime.task_integration import preview as integration_preview
 from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
 from xaa.runtime.tool_worker import FilesystemWorkerError
 from xaa.runtime.verification import FileContentCheck
+from xaa.runtime.web_fetch import normalize_approved_hosts
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import create_backup_bundle
@@ -102,9 +103,15 @@ class CreateRunRequest(BaseModel):
     max_output_tokens: int | None = Field(default=None, ge=1, le=1_000_000, strict=True)
     procedure_trial: SkillTrial | None = None
     command_grant: CommandGrant | None = None
+    approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
+
+    @field_validator("approved_web_hosts")
+    @classmethod
+    def validate_approved_web_hosts(cls, value: list[str]) -> list[str]:
+        return normalize_approved_hosts(value)
 
 
 class ModelRequest(BaseModel):
@@ -861,6 +868,7 @@ def create_app(
                 if payload.procedure_trial
                 else None,
                 command_grant=payload.command_grant.model_dump() if payload.command_grant else None,
+                approved_web_hosts=payload.approved_web_hosts,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc

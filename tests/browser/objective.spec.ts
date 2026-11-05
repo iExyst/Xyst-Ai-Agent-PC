@@ -32,6 +32,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path === '/runs' && request.method() === 'POST') {
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
+      expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().file_checks).toEqual([{path: 'input.txt', expected_content: 'fixture\n'}]);
       return route.fulfill({ json: run, headers });
     }
@@ -63,6 +64,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByText('Use detailed examples',{exact:true})).toHaveCount(0);
   await page.getByText('Memory preferences', {exact:true}).click();
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');

@@ -206,6 +206,39 @@ def test_public_run_record_does_not_expose_worker_lease(workspace_tmp_path):
         assert response.json()["limits"]["max_iterations"] == 8
 
 
+def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp_path):
+    database = workspace_tmp_path / "web-grant.sqlite3"
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(database))
+    ) as client:
+        created = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Read the docs", "approved_web_hosts": ["Docs.Example.com."]},
+        )
+        assert created.status_code == 201
+        run_id = created.json()["id"]
+        assert created.json()["approved_web_hosts"] == ["docs.example.com"]
+        events = client.get(f"/runs/{run_id}/events", headers=headers).json()
+        assert events[-1]["event_type"] == "web.access_granted"
+        assert events[-1]["payload"] == {
+            "hosts": ["docs.example.com"],
+            "actor": "local_user",
+        }
+        invalid = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Bad", "approved_web_hosts": ["https://example.com/path"]},
+        )
+        assert invalid.status_code == 422
+        assert client.get("/runs", headers=headers).status_code == 200
+
+    recovered = RunStore(database).get_run(run_id)
+    assert recovered is not None
+    assert recovered["approved_web_hosts"] == ["docs.example.com"]
+
+
 def test_failed_tool_diagnostic_is_reported_without_enabling_tools(workspace_tmp_path):
     class UnsupportedProvider(FakeProvider):
         async def diagnose_tools(self, model, *, request=None):

@@ -36,6 +36,7 @@ class RunRecord(BaseModel):
     revision: int = Field(ge=0)
     limits: RunLimits
     file_checks: list[FileContentCheck]
+    approved_web_hosts: list[str] = Field(default_factory=list)
     procedure_trial: SkillTrialRecord | None = None
     command_grant: CommandGrant | None = None
 
