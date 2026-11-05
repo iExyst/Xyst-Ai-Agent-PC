@@ -382,11 +382,19 @@ def test_scheduled_delivery_retries_only_explicit_rate_limits_with_bounded_attem
         == (first_at + timedelta(seconds=10)).isoformat()
     )
 
-    second = store.claim_schedule_delivery(
+    # A desktop restart preserves the due time and attempt count, and cannot
+    # make the notification eligible before Telegram's requested delay.
+    reopened_runs = RunStore(runs.path)
+    reopened = TelegramStore(reopened_runs)
+    assert (
+        reopened.claim_schedule_delivery(IDENTITY.account_id, now=first_at + timedelta(seconds=9))
+        is None
+    )
+    second = reopened.claim_schedule_delivery(
         IDENTITY.account_id, now=first_at + timedelta(seconds=10)
     )
     assert second is not None
-    store.finish_schedule_delivery(
+    reopened.finish_schedule_delivery(
         second["execution_id"],
         state="failed",
         retry_after_seconds=10,
