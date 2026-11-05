@@ -11,6 +11,7 @@ test('configure persistent specialist model routes from discovered local models'
   }));
   const saved: {role:string;model_route:string|null}[] = [];
   const instructionSaves: {role:string;system_instructions:string}[] = [];
+  const roleMemories: Record<string,{id:string;content:string}[]> = Object.fromEntries(roles.map(role => [role, []]));
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**', async route => {
@@ -29,6 +30,20 @@ test('configure persistent specialist model routes from discovered local models'
     if (path === '/providers/lm-studio/config') return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:'parent/model'},headers});
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
     if (path === '/specialists/profiles' && request.method() === 'GET') return route.fulfill({json:profiles,headers});
+    const memoryMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/memory(?:\/([^/]+))?$/);
+    if (memoryMatch) {
+      const role = decodeURIComponent(memoryMatch[1]!);
+      if (request.method() === 'GET') return route.fulfill({json:roleMemories[role],headers});
+      if (request.method() === 'POST') {
+        const item = {id:`memory-${roleMemories[role]!.length+1}`,content:(request.postDataJSON() as {content:string}).content};
+        roleMemories[role]!.push(item);
+        return route.fulfill({status:201,json:{...item,kind:'preference',scope:`specialist:${role}`,provenance:'user',confidence:1,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',schema_version:1},headers});
+      }
+      if (request.method() === 'DELETE') {
+        roleMemories[role] = roleMemories[role]!.filter(item => item.id !== memoryMatch[2]);
+        return route.fulfill({status:204,headers});
+      }
+    }
     const routeMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/(route|instructions)$/);
     if (routeMatch && request.method() === 'PUT') {
       const role = decodeURIComponent(routeMatch[1]!);
@@ -66,5 +81,11 @@ test('configure persistent specialist model routes from discovered local models'
   await panel.getByRole('button',{name:'Save role instructions'}).nth(1).click();
   await expect(instructions).toHaveValue('Cite evidence and label uncertainty.');
   expect(instructionSaves).toEqual([{role:'researcher',system_instructions:'Cite evidence and label uncertainty.'}]);
+  const memory = panel.getByRole('textbox',{name:'Researcher saved memory'});
+  await memory.fill('Prefer primary documentation.');
+  await panel.getByRole('button',{name:'Save role memory'}).nth(1).click();
+  await expect(panel.getByText('Prefer primary documentation.')).toBeVisible();
+  await panel.getByRole('button',{name:'Delete memory'}).nth(0).click();
+  await expect(panel.getByText('Prefer primary documentation.')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

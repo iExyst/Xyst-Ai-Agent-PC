@@ -89,6 +89,28 @@ def test_specialist_profile_api_authenticates_and_only_accepts_discovered_models
         )
         assert instructions.status_code == 200
         assert instructions.json()["system_instructions"] == "Cite evidence and label uncertainty."
+        assert client.get("/specialists/profiles/researcher/memory", headers=HEADERS).json() == []
+        saved_memory = client.post(
+            "/specialists/profiles/researcher/memory",
+            headers=HEADERS,
+            json={"content": "Prefer primary documentation."},
+        )
+        assert saved_memory.status_code == 201
+        memory_id = saved_memory.json()["id"]
+        assert (
+            client.get("/specialists/profiles/researcher/memory", headers=HEADERS).json()[0][
+                "content"
+            ]
+            == "Prefer primary documentation."
+        )
+        assert client.get("/specialists/profiles/developer/memory", headers=HEADERS).json() == []
+        assert (
+            client.delete(
+                f"/specialists/profiles/researcher/memory/{memory_id}", headers=HEADERS
+            ).status_code
+            == 204
+        )
+        assert client.get("/specialists/profiles/researcher/memory", headers=HEADERS).json() == []
         assert (
             client.put(
                 "/specialists/profiles/researcher/instructions",

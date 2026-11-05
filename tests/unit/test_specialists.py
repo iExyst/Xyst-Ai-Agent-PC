@@ -7,6 +7,7 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import RunStore
 from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
@@ -210,6 +211,9 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
     SpecialistProfileStore(store).set_instructions(
         "researcher", "Prefer primary sources and cite file paths."
     )
+    MemoryStore(store).save_preference(
+        "specialist:researcher", "Use the checked-in API contract as the source of truth."
+    )
     TaskStore(store).save_plan(
         run_id,
         parent,
@@ -224,6 +228,10 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
         async def chat(self, *, model, messages, tools=None):
             if messages[0]["content"].startswith("You are the"):
                 assert "Prefer primary sources and cite file paths." in messages[0]["content"]
+                assert (
+                    "Use the checked-in API contract as the source of truth."
+                    in messages[1]["content"]
+                )
                 message = {"role": "assistant", "content": "Specialist candidate awaiting review"}
             elif messages[-1]["role"] == "user":
                 assert any(tool["function"]["name"] == "plan_run_ready" for tool in tools)

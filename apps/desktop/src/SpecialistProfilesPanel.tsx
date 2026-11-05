@@ -8,6 +8,8 @@ export function SpecialistProfilesPanel({ client }: Props) {
   const [models, setModels] = useState<{ id: string }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [instructionDrafts, setInstructionDrafts] = useState<Record<string, string>>({});
+  const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
+  const [memories, setMemories] = useState<Record<string, Awaited<ReturnType<EngineClient['specialistMemory']>>>>({});
   const [busyRole, setBusyRole] = useState('');
   const [error, setError] = useState('');
 
@@ -23,6 +25,8 @@ export function SpecialistProfilesPanel({ client }: Props) {
     setModels(nextModels.map(model => ({ id: model.id })));
     setDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.model_route ?? ''])));
     setInstructionDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.system_instructions])));
+    const roleMemories = await Promise.all(nextProfiles.map(async profile => [profile.role, await client.specialistMemory(profile.role)] as const));
+    setMemories(Object.fromEntries(roleMemories));
   };
 
   useEffect(() => { void refresh().catch(failure => setError(String(failure))); }, [client]);
@@ -48,6 +52,34 @@ export function SpecialistProfilesPanel({ client }: Props) {
       const saved = await client.setSpecialistInstructions(profile.role, instructionDrafts[profile.role] ?? '');
       setProfiles(current => current.map(item => item.role === saved.role ? saved : item));
       setInstructionDrafts(current => ({ ...current, [saved.role]: saved.system_instructions }));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusyRole('');
+    }
+  };
+
+  const saveMemory = async (profile: SpecialistProfile) => {
+    setBusyRole(profile.role);
+    setError('');
+    try {
+      await client.saveSpecialistMemory(profile.role, memoryDrafts[profile.role] ?? '');
+      setMemoryDrafts(current => ({ ...current, [profile.role]: '' }));
+      const next = await client.specialistMemory(profile.role);
+      setMemories(current => ({ ...current, [profile.role]: next }));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusyRole('');
+    }
+  };
+
+  const deleteMemory = async (profile: SpecialistProfile, id: string) => {
+    setBusyRole(profile.role);
+    setError('');
+    try {
+      await client.deleteSpecialistMemory(profile.role, id);
+      setMemories(current => ({ ...current, [profile.role]: (current[profile.role] ?? []).filter(item => item.id !== id) }));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
@@ -90,6 +122,19 @@ export function SpecialistProfilesPanel({ client }: Props) {
         disabled={busyRole === profile.role || (instructionDrafts[profile.role] ?? '') === profile.system_instructions}
         onClick={() => void saveInstructions(profile)}
       >Save role instructions</button>
+      <label>{profile.display_name} saved memories
+        <textarea
+          aria-label={`${profile.display_name} saved memory`}
+          maxLength={16384}
+          value={memoryDrafts[profile.role] ?? ''}
+          disabled={busyRole === profile.role}
+          onChange={event => setMemoryDrafts(current => ({ ...current, [profile.role]: event.target.value }))}
+        />
+      </label>
+      <button type="button" disabled={busyRole === profile.role || !(memoryDrafts[profile.role] ?? '').trim()} onClick={() => void saveMemory(profile)}>Save role memory</button>
+      <ul aria-label={`${profile.display_name} saved memory list`}>
+        {(memories[profile.role] ?? []).map(memory => <li key={memory.id}>{memory.content} <button type="button" disabled={busyRole === profile.role} onClick={() => void deleteMemory(profile, memory.id)}>Delete memory</button></li>)}
+      </ul>
     </div>)}
   </section>;
 }

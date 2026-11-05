@@ -127,6 +127,22 @@ export class EngineClient {
     });
   }
 
+  specialistMemory(role: string): Promise<Memory[]> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/memory`);
+  }
+
+  saveSpecialistMemory(role: string, content: string): Promise<Memory> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/memory`, {
+      method: 'POST', body: JSON.stringify({content}),
+    });
+  }
+
+  deleteSpecialistMemory(role: string, id: string): Promise<void> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/memory/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
   executionDistributions(signal?: AbortSignal): Promise<components['schemas']['DistributionInventory']> {
     return this.#request('/execution/distributions', {signal});
   }

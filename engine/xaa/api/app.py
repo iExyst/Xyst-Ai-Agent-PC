@@ -82,7 +82,7 @@ from xaa.storage.skills import (
     SkillTrialRun,
     SkillVersion,
 )
-from xaa.storage.specialist_profiles import SpecialistProfileStore
+from xaa.storage.specialist_profiles import ROLES, SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 from xaa.storage.trajectory import export_trajectory
 
@@ -1118,7 +1118,7 @@ def create_app(
         payload: SpecialistRouteRequest,
         _: None = Depends(authenticate),
     ) -> dict[str, Any]:
-        if role not in {"planner", "researcher", "developer", "reviewer", "tester", "executor"}:
+        if role not in ROLES:
             raise HTTPException(status_code=404, detail="Specialist role not found.")
         if payload.model_route is not None:
             try:
@@ -1143,6 +1143,33 @@ def create_app(
             raise HTTPException(status_code=404, detail="Specialist role not found.") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/specialists/profiles/{role}/memory", response_model=list[MemoryRecord])
+    def list_specialist_memory(role: str, _: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        if role not in ROLES:
+            raise HTTPException(status_code=404, detail="Specialist role not found.")
+        return memory_store.search(f"specialist:{role}")
+
+    @app.post("/specialists/profiles/{role}/memory", response_model=MemoryRecord, status_code=201)
+    def save_specialist_memory(
+        role: str, payload: PreferenceRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        if role not in ROLES:
+            raise HTTPException(status_code=404, detail="Specialist role not found.")
+        try:
+            return memory_store.save_preference(f"specialist:{role}", payload.content)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete("/specialists/profiles/{role}/memory/{memory_id}", status_code=204)
+    def delete_specialist_memory(
+        role: str, memory_id: str, _: None = Depends(authenticate)
+    ) -> Response:
+        if role not in {"planner", "researcher", "developer", "reviewer", "tester", "executor"}:
+            raise HTTPException(status_code=404, detail="Specialist role not found.")
+        if not memory_store.delete(f"specialist:{role}", memory_id):
+            raise HTTPException(status_code=404, detail="Specialist memory not found.")
+        return Response(status_code=204)
 
     @app.post("/runs", status_code=status.HTTP_201_CREATED, response_model=RunRecord)
     async def create_run(
