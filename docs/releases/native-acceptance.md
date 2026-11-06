@@ -42,7 +42,7 @@ For database boot/migration acceptance, set `$env:XAA_NATIVE_SNAPSHOT` to a cons
 
 Combine `$env:XAA_NATIVE_REOPEN='1'` with a completed-run snapshot to test saved-history restoration. The script opens the saved accepted result in the fresh process, reloads the native page and opens it again, checks disabled terminal controls and compares execution events before/after. Verified evidence: `.acceptance/45202e89-2b39-463c-ac2b-d1c5e0efb099/reopen.json` (29 unchanged events). This validates local persistence/replay, not installer upgrade behavior.
 
-Verified planning evidence: `.acceptance/67871daf-1c7a-455a-806a-e453ecaaa1a5/report.json`. Remaining release gates include an installer, clean-machine install/upgrade/recovery/uninstall, migration compatibility and complete dependency/license inventory.
+Verified planning evidence: `.acceptance/67871daf-1c7a-455a-806a-e453ecaaa1a5/report.json`. The current Windows installer and version-to-version upgrade are exercised by the hosted [engine workflow](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42196654721), including boot, preservation and uninstall. Remaining release gates include broader clean-machine recovery, migration compatibility across supported historical versions and a complete dependency/license inventory.
 
 Verified native patch and final review with default non-streaming inference: `.acceptance/9fa690db-c717-4255-9de2-d23dc0ee0abc/` (`patch.json`, executable digests, screenshot and shutdown log). A rebuilt streamed attempt `.acceptance/a7b85bf5-b7af-47d7-bb60-198bb2512ede/` produced correct patch bytes but blocked on an incomplete/invalid final streamed response. That combined scenario remains unverified; the passing default-path test does not establish streaming reliability.
 
