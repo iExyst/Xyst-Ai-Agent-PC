@@ -94,9 +94,31 @@ async def test_activate_upgrade_rollback_deprecate_and_snapshot_persistence(work
 
     class Provider(LMStudioProvider):
         async def chat(self, *, model, messages, tools=None):
-            assert any(
-                "Version two procedure" in (message.get("content") or "") for message in messages
-            )
+            if messages[-1]["role"] == "user":
+                assert not any(
+                    "Version two procedure" in (message.get("content") or "")
+                    for message in messages
+                )
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "lifecycle-view-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "procedure_view",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            assert "Version two procedure" in messages[-1]["content"]
             return {"choices": [{"message": {"role": "assistant", "content": "Snapshot used"}}]}
 
     provider = Provider()

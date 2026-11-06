@@ -15,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from xaa.storage.runs import RunStore, utc_now
 
+MAX_PROCEDURE_TEXT_BYTES = 80 * 1024
+
 _HERMES_TOOL_ALIASES = {
     "read_file": "workspace_read_file",
     "workspace.read_file": "workspace_read_file",
@@ -161,7 +163,7 @@ class SkillAsset(BaseModel):
 class SkillDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str = Field(min_length=1, max_length=80)
-    content: str = Field(min_length=1, max_length=16384)
+    content: str = Field(min_length=1, max_length=MAX_PROCEDURE_TEXT_BYTES)
     description: str = Field(default="", max_length=1024)
     category: str = Field(default="", max_length=64, pattern=r"^(?:[a-z0-9]+(?:-[a-z0-9]+)*)?$")
     required_tools: list[SkillTool] = Field(max_length=32)
@@ -173,9 +175,11 @@ class SkillDraft(BaseModel):
         if (
             not self.name.strip()
             or not self.content.strip()
-            or len(self.content.encode("utf-8")) > 16384
+            or len(self.content.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES
         ):
-            raise ValueError("Procedure needs a name and 1-16384 UTF-8 bytes of text.")
+            raise ValueError(
+                f"Procedure needs a name and 1-{MAX_PROCEDURE_TEXT_BYTES} UTF-8 bytes of text."
+            )
         if len({tool.name for tool in self.required_tools}) != len(self.required_tools):
             raise ValueError("Tool dependencies must have unique names.")
         if self.description and not self.description.strip():

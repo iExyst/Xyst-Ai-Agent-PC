@@ -137,7 +137,7 @@ def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path:
     skill_path.write_text(
         "---\nname: summarize\ndescription: Summarize selected material.\nversion: 0.2.0\n"
         "metadata:\n  hermes:\n    category: writing\n---\n"
-        "Use the linked reference only when it helps. [Guide](references/guide.md)\n",
+        "Use the linked reference only when it helps. [Guide](./references/guide.md)\n",
         encoding="utf-8",
     )
     (skill_directory / "references" / "guide.md").write_text("Reference content", encoding="utf-8")
@@ -453,7 +453,16 @@ def test_hermes_skill_import_api_keeps_candidate_inactive_and_records_source(
     assert version["evaluation_evidence"]["state"] == "candidate"
 
 
-@pytest.mark.parametrize("link", ["../outside.txt", "./guide.md", "%2e%2e/outside.txt"])
+@pytest.mark.parametrize(
+    "link",
+    [
+        "../outside.txt",
+        "%2e%2e/outside.txt",
+        "folder/../outside.txt",
+        "/etc/passwd",
+        "..\\outside.txt",
+    ],
+)
 def test_plugin_skill_import_rejects_unsafe_resource_paths(tmp_path: Path, link: str) -> None:
     package = make_package(tmp_path)
     skill_file = package / "skills" / "summarize" / "SKILL.md"
@@ -479,7 +488,7 @@ def test_plugin_skill_import_refuses_oversized_skill_without_creating_candidate(
     package = make_package(tmp_path)
     frontmatter = "---\nname: summarize\ndescription: Oversized fixture.\n---\n"
     (package / "skills" / "summarize" / "SKILL.md").write_text(
-        frontmatter + "x" * 16_385, encoding="utf-8"
+        frontmatter + "x" * (80 * 1024 + 1), encoding="utf-8"
     )
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "large.sqlite3"))
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -488,5 +497,5 @@ def test_plugin_skill_import_refuses_oversized_skill_without_creating_candidate(
         response = client.post("/extensions/packages/import-skill", headers=headers, json=payload)
         procedures = client.get("/skills", headers=headers)
     assert response.status_code == 400
-    assert "16 KiB" in response.json()["detail"]
+    assert "80 KiB" in response.json()["detail"]
     assert procedures.json() == []

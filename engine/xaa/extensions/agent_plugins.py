@@ -22,6 +22,8 @@ from urllib.parse import unquote, urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from xaa.storage.skills import MAX_PROCEDURE_TEXT_BYTES
+
 MAX_PACKAGES = 128
 MAX_SKILLS = 128
 MAX_SERVERS = 64
@@ -46,6 +48,14 @@ _DEPENDENCY_SPEC = re.compile(
 )
 _HEADER = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _LOCAL_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
+_PLACEHOLDER_LINK = re.compile(r"[{}<>]")
+
+
+def _markdown_links(markdown: str) -> list[str]:
+    """Return ordinary Markdown destinations, excluding fenced/inline code examples."""
+    without_fences = re.sub(r"(?ms)^\s*(`{3,}|~{3,}).*?^\s*\1\s*$", "", markdown)
+    without_inline_code = re.sub(r"(?<!`)`[^`\n]*`(?!`)", "", without_fences)
+    return _LOCAL_LINK.findall(without_inline_code)
 
 
 class PluginSkill(BaseModel):
@@ -435,8 +445,8 @@ def _update_skill_frontmatter(
         values.pop("metadata", None)
     serialized = yaml.safe_dump(values, sort_keys=False, allow_unicode=True)
     updated = f"---\n{serialized}---" + content[3 + closing.end() :]
-    if len(updated.encode("utf-8")) > 16_384:
-        raise ValueError("Updated SKILL.md exceeds the 16 KiB import limit.")
+    if len(updated.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES:
+        raise ValueError("Updated SKILL.md exceeds the 80 KiB import limit.")
     return updated
 
 
@@ -698,12 +708,12 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
     skill_path = (package_root / skill.path).resolve(strict=True)
     if not _inside(skill_path, package_root) or not skill_path.is_file():
         raise ValueError("skill file is not a regular file within the package")
-    if skill_path.stat().st_size > 16_384:
-        raise ValueError("skill file exceeds the 16 KiB procedure candidate limit")
+    if skill_path.stat().st_size > MAX_PROCEDURE_TEXT_BYTES:
+        raise ValueError("skill file exceeds the 80 KiB procedure candidate limit")
     with skill_path.open("rb") as source:
-        raw = source.read(16_385)
-    if len(raw) > 16_384:
-        raise ValueError("skill file exceeds the 16 KiB procedure candidate limit")
+        raw = source.read(MAX_PROCEDURE_TEXT_BYTES + 1)
+    if len(raw) > MAX_PROCEDURE_TEXT_BYTES:
+        raise ValueError("skill file exceeds the 80 KiB procedure candidate limit")
     try:
         content = raw.decode("utf-8-sig")
     except UnicodeError as exc:
@@ -716,7 +726,7 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
     asset_rows: list[dict[str, str]] = []
     seen_paths: set[str] = set()
     total_bytes = 0
-    links: list[str] = _LOCAL_LINK.findall(content)
+    links = _markdown_links(content)
     for link in links:
         parsed_link = urlsplit(link)
         if (
@@ -727,15 +737,20 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         ):
             continue
         decoded_path = unquote(parsed_link.path)
+        if _PLACEHOLDER_LINK.search(decoded_path):
+            continue
         relative = PurePosixPath(decoded_path)
         if (
             relative.is_absolute()
-            or relative.as_posix() != decoded_path
             or "\\" in decoded_path
-            or any(part in {"", ".", ".."} for part in relative.parts)
+            or decoded_path.startswith("/")
+            or any(part == ".." for part in decoded_path.split("/"))
         ):
             raise ValueError("skill resource link must be a normalized relative path")
-        resource_name = relative.as_posix()
+        normalized_parts = [part for part in decoded_path.split("/") if part not in {"", "."}]
+        if not normalized_parts:
+            raise ValueError("skill resource link must name a file")
+        resource_name = PurePosixPath(*normalized_parts).as_posix()
         if resource_name in seen_paths:
             continue
         seen_paths.add(resource_name)
@@ -858,8 +873,8 @@ def export_procedure_package(
             allow_unicode=True,
         )
         markdown = f"---\n{header}---\n\n{content}"
-    if len(markdown.encode("utf-8")) > 16_384:
-        raise ValueError("Exported SKILL.md exceeds the 16 KiB import limit.")
+    if len(markdown.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES:
+        raise ValueError("Exported SKILL.md exceeds the 80 KiB import limit.")
     manifest: dict[str, Any] = {
         "$schema": PLUGIN_SCHEMA_V1,
         "name": package_name,

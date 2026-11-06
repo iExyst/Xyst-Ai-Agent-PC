@@ -55,8 +55,34 @@ async def test_explicit_trial_uses_immutable_snapshot_after_revision_and_deletio
 
         async def chat(self, *, model, messages, tools=None):
             combined = json.dumps(messages)
-            assert "TRIAL_ORIGINAL" in combined and "REVISION_NOT_SELECTED" not in combined
             assert "never expand permissions" in combined
+            if messages[-1]["role"] == "user":
+                assert "TRIAL_ORIGINAL" not in combined
+                assert "REVISION_NOT_SELECTED" not in combined
+                view_tool = next(t for t in tools if t["function"]["name"] == "procedure_view")
+                assert view_tool["function"]["parameters"]["additionalProperties"] is False
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "trial-view-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "procedure_view",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            selected = json.loads(messages[-1]["content"])
+            assert "TRIAL_ORIGINAL" in selected["content"]
+            assert "REVISION_NOT_SELECTED" not in selected["content"]
             return {
                 "choices": [{"message": {"role": "assistant", "content": "Candidate evidence"}}]
             }
@@ -132,6 +158,52 @@ async def test_procedure_view_returns_only_selected_integrity_checked_version(wo
         ).fetchone()
     assert result is not None
     assert json.loads(result["result"])["skill_id"] == skill["id"]
+
+
+async def test_large_selected_procedure_body_is_loaded_only_on_demand(workspace_tmp_path):
+    body = "A" * 72_164
+    store = RunStore(workspace_tmp_path / "large-procedure.sqlite3")
+    skill = SkillStore(store).create(draft(body))
+    run = queue(store, workspace_tmp_path, skill)
+
+    class Provider(LMStudioProvider):
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            if messages[-1]["role"] == "user":
+                assert body not in json.dumps(messages)
+                assert any(t["function"]["name"] == "procedure_view" for t in tools)
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "large-view-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "procedure_view",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            selected = json.loads(messages[-1]["content"])
+            assert selected["content"] == body
+            assert selected["trust"] == "untrusted_selected_procedure"
+            return {"choices": [{"message": {"role": "assistant", "content": "Read it."}}]}
+
+    provider = Provider()
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+    assert store.get_run(run["id"])["state"] == "verifying"
 
 
 async def test_procedure_view_is_unavailable_without_explicit_selection(workspace_tmp_path):

@@ -58,7 +58,12 @@ from xaa.storage.commands import TOOL as COMMAND_TOOL
 from xaa.storage.commands import CommandJournal
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import IterationBudgetExceeded, LeaseLost, RunStore, TokenBudgetExceeded
-from xaa.storage.skills import SkillStore, available_toolsets, snapshot_digest
+from xaa.storage.skills import (
+    MAX_PROCEDURE_TEXT_BYTES,
+    SkillStore,
+    available_toolsets,
+    snapshot_digest,
+)
 from xaa.storage.tasks import TaskStore
 
 
@@ -298,7 +303,10 @@ class Coordinator:
             if snapshot_digest(trial) != trial["snapshot_sha256"]:
                 raise ValueError("Saved procedure snapshot failed its integrity check.")
             content = trial.get("content")
-            if not isinstance(content, str) or len(content.encode("utf-8")) > 16_384:
+            if (
+                not isinstance(content, str)
+                or len(content.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES
+            ):
                 raise ValueError(
                     "Selected procedure text exceeds its integrity-checked size limit."
                 )
@@ -826,7 +834,9 @@ class Coordinator:
                 raw = base64.b64decode(asset["content_base64"], validate=True)
                 if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != asset["sha256"]:
                     raise ValueError("Saved procedure resource failed its integrity check.")
-            procedure_context = {key: value for key, value in trial.items() if key != "assets"}
+            procedure_context = {
+                key: value for key, value in trial.items() if key not in {"assets", "content"}
+            }
             if assets:
                 procedure_context["linked_resources"] = [
                     {key: asset[key] for key in ("path", "media_type", "sha256")}

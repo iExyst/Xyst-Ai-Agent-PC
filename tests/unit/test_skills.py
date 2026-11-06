@@ -13,6 +13,7 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import RunStore
 from xaa.storage.skills import (
+    MAX_PROCEDURE_TEXT_BYTES,
     SkillAsset,
     SkillConflict,
     SkillDraft,
@@ -53,6 +54,24 @@ def test_procedure_platform_visibility(requirements, platform, expected):
 
 def test_host_platform_name_is_normalized():
     assert host_platform_name() in {"windows", "macos", "linux", "other"}
+
+
+def test_procedure_text_bound_is_eighty_kib_in_utf8_bytes():
+    exact = "é" * (MAX_PROCEDURE_TEXT_BYTES // 2)
+    accepted = SkillDraft(
+        name="Large reference",
+        content=exact,
+        required_tools=[],
+        required_permissions=[],
+    )
+    assert len(accepted.content.encode("utf-8")) == MAX_PROCEDURE_TEXT_BYTES
+    with pytest.raises(ValidationError, match="UTF-8 bytes"):
+        SkillDraft(
+            name="Oversized reference",
+            content="é" * (MAX_PROCEDURE_TEXT_BYTES // 2 + 1),
+            required_tools=[],
+            required_permissions=[],
+        )
 
 
 def test_immutable_versions_concurrent_edit_backup_and_delete(workspace_tmp_path):
@@ -122,7 +141,7 @@ def test_catalog_is_paginated_metadata_only_and_never_selects_candidates(workspa
     "changes",
     [
         {"content": " "},
-        {"content": "é" * 9000},
+        {"content": "é" * (MAX_PROCEDURE_TEXT_BYTES // 2 + 1)},
         {"required_permissions": ["system.admin"]},
         {"category": "Bad Category"},
         {"required_tools": [{"name": "read", "version": "1"}, {"name": "read", "version": "2"}]},

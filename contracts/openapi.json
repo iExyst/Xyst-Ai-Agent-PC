@@ -3052,7 +3052,7 @@
             "type": "string"
           },
           "content": {
-            "maxLength": 16384,
+            "maxLength": 81920,
             "minLength": 1,
             "title": "Content",
             "type": "string"
@@ -3363,7 +3363,7 @@
             "type": "string"
           },
           "content": {
-            "maxLength": 16384,
+            "maxLength": 81920,
             "minLength": 1,
             "title": "Content",
             "type": "string"

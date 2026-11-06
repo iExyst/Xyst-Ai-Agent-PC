@@ -72,7 +72,7 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
       <label>Procedure name<input aria-label="Procedure name" value={name} maxLength={80} disabled={busy} onChange={event=>setName(event.target.value)}/></label>
       <label>Procedure description<input aria-label="Procedure description" value={description} maxLength={1024} disabled={busy} onChange={event=>setDescription(event.target.value)}/></label>
       <label>Procedure category<input aria-label="Procedure category" value={category} maxLength={64} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="writing" disabled={busy} onChange={event=>setCategory(event.target.value)}/></label>
-      <label>Procedure text<textarea aria-label="Procedure text" value={content} maxLength={16384} disabled={busy} onChange={event=>setContent(event.target.value)}/></label>
+      <label>Procedure text<textarea aria-label="Procedure text" value={content} maxLength={81920} disabled={busy} onChange={event=>setContent(event.target.value)}/></label>
       <label>Tool dependencies (one name@version per line)<textarea aria-label="Tool dependencies (one name@version per line)" value={tools} maxLength={5200} disabled={busy} onChange={event=>setTools(event.target.value)}/></label>
       <label className="procedure-permission"><input type="checkbox" checked={read} disabled={busy} onChange={event=>setRead(event.target.checked)}/>Requires reading workspace files</label>
       <label className="procedure-permission"><input type="checkbox" checked={write} disabled={busy} onChange={event=>setWrite(event.target.checked)}/>Requires editing workspace files</label>
