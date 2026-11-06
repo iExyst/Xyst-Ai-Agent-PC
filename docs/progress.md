@@ -2,6 +2,10 @@
 
 Updated 2026-11-06.
 
+## Fresh-process backup restore CLI acceptance (2026-11-06)
+
+Added `scripts/backup_restore_cli_acceptance.py` to create a disposable run and registered binary artifact, create a bundle, invoke the real offline `xaa.cli restore-bundle` in a child process, and reopen the restored data in a second fresh process. The acceptance verifies persisted run fields, ordered events, artifact ID and metadata digest, exact bytes, and SQLite integrity. It passed on Windows; retained report and all disposable data are under `.acceptance/backup-restore-cli-j9h6882c/`. Bundle generation uses the storage function directly, so authenticated `POST /backups` / `xaa backup`, installed restore, real user data and disaster recovery remain unverified. This closes a process-boundary acceptance gap for offline restore only; overall goal completion remains approximately 16%.
+
 ## Hermes conditional skill visibility declarations (2026-11-06)
 
 Pinned Hermes source documentation defines `requires_toolsets`, `requires_tools`, `fallback_for_toolsets`, and `fallback_for_tools` as conditions for showing skills based on available capabilities. The pinned 186-skill inventory has ten `requires_toolsets` keys (nine non-empty, one empty) and none of the other three fields. Agent Plugin discovery and immutable candidate provenance now preserve all four as bounded untrusted names; readiness explicitly reports the conditions as unassessed. X.A.A. does not filter procedure discovery, automatically select fallbacks, or map these declarations to grants. Regression/API and browser coverage exercise each field. Focused importer tests pass (15 passed, one Windows symlink skip); the full suite passes (642 passed, one Windows symlink skip, one existing Starlette/httpx deprecation warning). Ruff, formatting, strict Pyright, API/generated contracts, TypeScript, and production desktop build pass. Dependency-resolution, toolset compatibility and conditional selection remain open.
