@@ -8,6 +8,7 @@ from xaa.runtime.command_recovery import StoppedCommandRecovery
 from xaa.runtime.coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
+RECOVERY_INTERVAL_SECONDS = 2.0
 
 
 class RunSupervisor:
@@ -23,10 +24,21 @@ class RunSupervisor:
     async def _recover(self) -> None:
         commands = StoppedCommandRecovery(self.coordinator.store)
         while True:
-            for run_id in self.coordinator.store.recover_abandoned_runs():
-                self.submit(run_id)
-            await commands.run_once()
-            await asyncio.sleep(2)
+            try:
+                recoverable = self.coordinator.store.recover_abandoned_runs()
+            except Exception:
+                logger.exception("Run ownership recovery scan failed")
+                recoverable = []
+            for run_id in recoverable:
+                try:
+                    self.submit(run_id)
+                except Exception:
+                    logger.exception("Could not dispatch recovered run %s", run_id)
+            try:
+                await commands.run_once()
+            except Exception:
+                logger.exception("Stopped command recovery scan failed")
+            await asyncio.sleep(RECOVERY_INTERVAL_SECONDS)
 
     def submit(self, run_id: str) -> None:
         active = self.tasks.get(run_id)
