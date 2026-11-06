@@ -49,6 +49,12 @@ try {
         $xaaReport.prior_version = $xaaPriorManifest.version
         $xaaReport.prior_install_verified = (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
         if (-not $xaaReport.prior_install_verified) { throw 'Prior installer did not install its engine.' }
+        # Seed a real schema-18 profile while the predecessor package is installed.
+        # The current package's backup/restore acceptance later proves its run, events,
+        # artifact metadata and bytes survived the in-place upgrade.
+        uv run python scripts/installed_backup_fixture.py seed --directory $xaaDataDir --report $xaaBackupFixture
+        if ($LASTEXITCODE -ne 0) { throw 'Could not seed user data before the version upgrade.' }
+        $xaaReport.upgrade_data_fixture_seeded_before_upgrade = $true
     }
     [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
     $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
@@ -63,8 +69,10 @@ try {
     $xaaAcpHelp = & $xaaEngine --cli acp --help 2>&1
     if ($LASTEXITCODE -ne 0 -or -not (($xaaAcpHelp | Out-String) -match 'usage: xaa acp')) { throw 'Installed ACP CLI entry point failed.' }
     $xaaReport.installed_acp_cli_verified = $true
-    uv run python scripts/installed_backup_fixture.py seed --directory $xaaDataDir --report $xaaBackupFixture
-    if ($LASTEXITCODE -ne 0) { throw 'Could not seed disposable installed backup data.' }
+    if (-not (Test-Path -LiteralPath $xaaBackupFixture)) {
+        uv run python scripts/installed_backup_fixture.py seed --directory $xaaDataDir --report $xaaBackupFixture
+        if ($LASTEXITCODE -ne 0) { throw 'Could not seed disposable installed backup data.' }
+    }
     # WebView2 150+ ignores WEBVIEW2_* environment overrides in elevated hosts.
     # Use the documented app-specific HKLM channel only on this disposable runner.
     # https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
@@ -96,6 +104,7 @@ try {
     $xaaReport.native_acceptance = Get-Content -LiteralPath (Join-Path $xaaAcceptanceRoot 'report.json') -Raw | ConvertFrom-Json
     $xaaReport.installed_backup_restore_verified = [bool]$xaaReport.native_acceptance.installed_backup_restore_verified
     if (-not $xaaReport.installed_backup_restore_verified -or -not $xaaReport.native_acceptance.backup_acceptance.verification.passed) { throw 'Installed backup/restore evidence was incomplete.' }
+    $xaaReport.upgrade_data_verified = [bool]$xaaPriorInstaller -and [bool]$xaaReport.upgrade_data_fixture_seeded_before_upgrade -and $xaaReport.installed_backup_restore_verified
     $xaaReport.installed_binaries_present = $true
     $xaaReport.installed_boot_verified = $true
 } finally {
@@ -107,7 +116,7 @@ try {
         $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
     }
     $xaaReport.user_data_preserved = (Test-Path -LiteralPath $xaaMarker) -and (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash -eq $xaaMarkerHash
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified))
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     Remove-Item Env:XAA_NATIVE_ACCEPTANCE_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue
