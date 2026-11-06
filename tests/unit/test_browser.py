@@ -96,6 +96,43 @@ async def test_browser_dns_rejects_mixed_public_and_private_answers(
         await browser_worker.resolve_public("docs.example.com")
 
 
+@pytest.mark.parametrize(
+    "address",
+    [
+        "0.0.0.0",
+        "10.10.0.1",
+        "100.64.0.1",
+        "127.0.0.1",
+        "169.254.169.254",
+        "172.20.0.1",
+        "192.0.2.1",
+        "192.168.1.1",
+        "224.0.0.1",
+        "239.1.2.3",
+        "::",
+        "::1",
+        "2001:db8::1",
+        "fc00::1",
+        "fe80::1",
+        "ff02::1",
+    ],
+)
+@pytest.mark.asyncio
+async def test_browser_dns_rejects_non_global_address_classes(
+    monkeypatch: pytest.MonkeyPatch, address: str
+) -> None:
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+
+    class FakeLoop:
+        async def getaddrinfo(self, host: str, port: int, *, type: int) -> list[Any]:
+            del host, port, type
+            return [(family, socket.SOCK_STREAM, 6, "", (address, 443))]
+
+    monkeypatch.setattr(browser_worker.asyncio, "get_running_loop", lambda: FakeLoop())
+    with pytest.raises(PermissionError, match="private or non-public"):
+        await browser_worker.resolve_public("docs.example.com")
+
+
 def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) -> None:
     store = RunStore(workspace_tmp_path / "browser-grant.sqlite3")
     coordinator = Coordinator(store, object())  # type: ignore[arg-type]

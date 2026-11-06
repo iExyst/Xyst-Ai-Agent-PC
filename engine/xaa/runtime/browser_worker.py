@@ -61,7 +61,11 @@ async def resolve_public(host: str) -> list[str]:
     addresses = sorted(
         {address for answer in answers if isinstance((address := answer[4][0]), str)}
     )
-    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+    parsed_addresses = [ipaddress.ip_address(address) for address in addresses]
+    if not parsed_addresses or any(
+        not address.is_global or address.is_multicast or address.is_unspecified
+        for address in parsed_addresses
+    ):
         raise PermissionError("Browser host resolved to a private or non-public address.")
     return addresses
 
