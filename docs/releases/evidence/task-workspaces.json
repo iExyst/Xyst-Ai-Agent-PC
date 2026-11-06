@@ -142,6 +142,20 @@
     "tests": 4,
     "coverage": "Edit and delete proposals, conflict preview/choice, explicit authorization, with and without private-validation requirements"
   },
+  "live_deletion": {
+    "passed": true,
+    "report": ".acceptance/72fec94f-9e4e-4ee9-add9-56546cd232ab/report.json",
+    "model": "qwen/qwen3.5-9b",
+    "scope": "Real source-model specialist proposed deleting one file in its private snapshot; original remained until explicit scripted review; integration deleted only that file and preserved its neighbor",
+    "diagnostic": "scripts/live_task_deletion_diagnostic.py",
+    "exact_context_admission": false
+  },
+  "live_deletion_failed_attempts": [
+    {
+      "report": ".acceptance/d6d92bff-86d5-4b34-b6de-49fdb69502e1/report.json",
+      "reason": "The independent SDK exact prompt counter failed during the harmless tool diagnostic before specialist execution or filesystem effects. The successful deletion attempt disabled exact-count admission for this focused behavior acceptance."
+    }
+  ],
   "verification": {
     "engine_tests": 447,
     "targeted_final_workspace_tests": 10,
