@@ -28,8 +28,12 @@ def make_package(root: Path) -> Path:
     (package / "skills" / "summarize" / "SKILL.md").write_text(
         "---\nname: summarize\ndescription: Summarize a bounded file.\n"
         "allowed-tools: workspace.read_file shell.exec\n---\n"
-        "ignored instruction text",
+        "ignored instruction text\n\n[Reference](references/guide.md)",
         encoding="utf-8",
+    )
+    (package / "skills" / "summarize" / "references").mkdir()
+    (package / "skills" / "summarize" / "references" / "guide.md").write_text(
+        "Reference text", encoding="utf-8"
     )
     (package / "plugin.json").write_text(
         json.dumps(
@@ -183,9 +187,34 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert [tool["name"] for tool in version.json()["required_tools"]] == ["workspace.read_file"]
     assert evidence["source"]["unmapped_allowed_tools"] == "shell.exec"
     assert evidence["source"]["description"] == "Summarize a bounded file."
+    resource = version.json()["assets"][0]
+    assert resource["path"] == "references/guide.md"
+    assert resource["sha256"]
+    assert resource["content_base64"]
     assert revised.status_code == 201
     assert revised_version.json()["evaluation_evidence"]["provenance"] == "agent_plugin"
     assert revised_version.json()["evaluation_evidence"]["source"] == evidence["source"]
+    assert revised_version.json()["assets"] == version.json()["assets"]
+
+
+@pytest.mark.parametrize("link", ["../outside.txt", "./guide.md", "%2e%2e/outside.txt"])
+def test_plugin_skill_import_rejects_unsafe_resource_paths(tmp_path: Path, link: str) -> None:
+    package = make_package(tmp_path)
+    skill_file = package / "skills" / "summarize" / "SKILL.md"
+    content = skill_file.read_text(encoding="utf-8").replace("references/guide.md", link)
+    skill_file.write_text(content, encoding="utf-8")
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "unsafe.sqlite3"))
+    with TestClient(app) as client:
+        response = client.post(
+            "/extensions/packages/import-skill",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={
+                "root": str(tmp_path),
+                "package_name": "sample-package",
+                "skill_name": "summarize",
+            },
+        )
+    assert response.status_code == 400
 
 
 def test_plugin_skill_import_refuses_oversized_skill_without_creating_candidate(

@@ -2163,8 +2163,21 @@ export interface components {
             /** Updated At */
             updated_at: string;
         };
+        /** SkillAsset */
+        SkillAsset: {
+            /** Content Base64 */
+            content_base64: string;
+            /** Media Type */
+            media_type: string;
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+        };
         /** SkillDraft */
         SkillDraft: {
+            /** Assets */
+            assets?: components["schemas"]["SkillAsset"][];
             /** Content */
             content: string;
             /** Name */
@@ -2254,6 +2267,8 @@ export interface components {
         };
         /** SkillRevision */
         SkillRevision: {
+            /** Assets */
+            assets?: components["schemas"]["SkillAsset"][];
             /** Content */
             content: string;
             /** Expected Version */
@@ -2344,6 +2359,8 @@ export interface components {
         };
         /** SkillVersion */
         SkillVersion: {
+            /** Assets */
+            assets?: components["schemas"]["SkillAsset"][];
             /** Content */
             content: string;
             /**

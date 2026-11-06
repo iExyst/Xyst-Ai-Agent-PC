@@ -1,3 +1,5 @@
+import base64
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -7,7 +9,7 @@ from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillConflict, SkillDraft, SkillRevision, SkillStore
+from xaa.storage.skills import SkillAsset, SkillConflict, SkillDraft, SkillRevision, SkillStore
 
 
 def draft(content="Read the relevant files; check evidence before reporting."):
@@ -63,6 +65,21 @@ def test_immutable_versions_concurrent_edit_backup_and_delete(workspace_tmp_path
 def test_draft_bounds_and_no_self_activation(changes):
     with pytest.raises(ValidationError):
         SkillDraft.model_validate({**draft().model_dump(), **changes})
+
+
+def test_draft_caps_combined_resource_bytes():
+    raw = b"x" * (64 * 1024)
+    resources = [
+        SkillAsset(
+            path=f"references/{index}.txt",
+            content_base64=base64.b64encode(raw).decode("ascii"),
+            media_type="text/plain",
+            sha256=hashlib.sha256(raw).hexdigest(),
+        )
+        for index in range(17)
+    ]
+    with pytest.raises(ValidationError, match="combined content limit"):
+        SkillDraft.model_validate({**draft().model_dump(), "assets": resources})
 
 
 def test_candidate_api_is_authenticated_and_never_executes_text(workspace_tmp_path):

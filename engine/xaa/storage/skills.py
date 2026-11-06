@@ -1,5 +1,6 @@
 """Immutable user-authored procedure candidates; text never grants execution authority."""
 
+import base64
 import builtins
 import hashlib
 import json
@@ -19,12 +20,45 @@ class SkillTool(BaseModel):
     version: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,31}$")
 
 
+class SkillAsset(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    path: str = Field(min_length=1, max_length=512)
+    content_base64: str = Field(max_length=90_000)
+    media_type: str = Field(min_length=1, max_length=128)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def bounded_text_asset(self) -> "SkillAsset":
+        from pathlib import PurePosixPath
+
+        normalized = PurePosixPath(self.path)
+        if (
+            normalized.is_absolute()
+            or normalized.as_posix() != self.path
+            or any(part in {"", ".", ".."} for part in normalized.parts)
+            or "\\" in self.path
+        ):
+            raise ValueError("Procedure resource paths must be normalized relative POSIX paths.")
+        try:
+            raw = base64.b64decode(self.content_base64, validate=True)
+        except ValueError as exc:
+            raise ValueError("Procedure resource is not valid base64.") from exc
+        if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != self.sha256:
+            raise ValueError("Procedure resource exceeds 64 KiB or failed its digest check.")
+        try:
+            raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Procedure resources must contain UTF-8 text.") from exc
+        return self
+
+
 class SkillDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=16384)
     required_tools: list[SkillTool] = Field(max_length=32)
     required_permissions: list[Literal["workspace.read", "workspace.write"]] = Field(max_length=2)
+    assets: list[SkillAsset] = Field(default_factory=list[SkillAsset], max_length=32)
 
     @model_validator(mode="after")
     def valid_manifest(self) -> "SkillDraft":
@@ -38,6 +72,13 @@ class SkillDraft(BaseModel):
             raise ValueError("Tool dependencies must have unique names.")
         if len(set(self.required_permissions)) != len(self.required_permissions):
             raise ValueError("Permissions must be unique.")
+        if len({asset.path for asset in self.assets}) != len(self.assets):
+            raise ValueError("Procedure resource paths must be unique.")
+        if (
+            sum(len(base64.b64decode(asset.content_base64, validate=True)) for asset in self.assets)
+            > 1024 * 1024
+        ):
+            raise ValueError("Procedure resources exceed the 1 MiB combined content limit.")
         return self
 
 
@@ -66,6 +107,11 @@ TRIAL_TOOLS = {
 
 def snapshot_digest(snapshot: dict[str, Any]) -> str:
     manifest = {key: snapshot[key] for key in ("content", "required_tools", "required_permissions")}
+    if snapshot.get("assets"):
+        manifest["assets"] = [
+            {key: asset[key] for key in ("path", "media_type", "sha256")}
+            for asset in snapshot["assets"]
+        ]
     return hashlib.sha256(
         json.dumps(manifest, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
@@ -111,6 +157,21 @@ def resolve_trial(
         "required_permissions": sorted(permissions),
         "purpose": selection.purpose,
     }
+    assets: list[sqlite3.Row] = connection.execute(
+        "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
+        "WHERE skill_id=? AND version=? ORDER BY relative_path",
+        (selection.skill_id, selection.version),
+    ).fetchall()
+    if assets:
+        snapshot["assets"] = [
+            {
+                "path": asset["relative_path"],
+                "media_type": asset["media_type"],
+                "sha256": asset["sha256"],
+                "content_base64": base64.b64encode(asset["content"]).decode("ascii"),
+            }
+            for asset in assets
+        ]
     snapshot["snapshot_sha256"] = snapshot_digest(snapshot)
     return snapshot
 
@@ -193,6 +254,7 @@ class SkillVersion(BaseModel):
     required_permissions: list[str]
     evaluation_evidence: SkillEvidence
     created_at: datetime
+    assets: list[SkillAsset] = Field(default_factory=list[SkillAsset])
 
 
 class SkillTrialRun(BaseModel):
@@ -260,6 +322,12 @@ class SkillStore:
                 utc_now(),
             ),
         )
+        for asset in draft.assets:
+            raw = base64.b64decode(asset.content_base64, validate=True)
+            connection.execute(
+                "INSERT INTO skill_version_assets VALUES (?,?,?,?,?,?,?)",
+                (identity, version, asset.path, asset.media_type, len(raw), asset.sha256, raw),
+            )
 
     def create(self, draft: SkillDraft) -> dict[str, Any]:
         identity, now = str(uuid4()), utc_now()
@@ -318,6 +386,25 @@ class SkillStore:
             latest = int(latest_row["version"])
             if latest != draft.expected_version:
                 raise SkillConflict("Procedure changed; reload its latest candidate version.")
+            if not draft.assets:
+                prior_assets = connection.execute(
+                    "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
+                    "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                    (identity, latest),
+                ).fetchall()
+                draft = draft.model_copy(
+                    update={
+                        "assets": [
+                            SkillAsset(
+                                path=item["relative_path"],
+                                media_type=item["media_type"],
+                                sha256=item["sha256"],
+                                content_base64=base64.b64encode(item["content"]).decode("ascii"),
+                            )
+                            for item in prior_assets
+                        ]
+                    }
+                )
             try:
                 connection.execute(
                     "UPDATE skills SET name=?,updated_at=?,lifecycle_state=? WHERE id=?",
@@ -368,6 +455,21 @@ class SkillStore:
         value = dict(row)
         for key in ("required_tools", "required_permissions", "evaluation_evidence"):
             value[key] = json.loads(value[key])
+        with self.runs.connection() as connection:
+            assets: list[sqlite3.Row] = connection.execute(
+                "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
+                "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                (identity, version),
+            ).fetchall()
+        value["assets"] = [
+            {
+                "path": item["relative_path"],
+                "media_type": item["media_type"],
+                "sha256": item["sha256"],
+                "content_base64": base64.b64encode(item["content"]).decode("ascii"),
+            }
+            for item in assets
+        ]
         return value
 
     def eligible_trials(self, identity: str, version: int) -> builtins.list[dict[str, Any]]:
@@ -410,6 +512,20 @@ class SkillStore:
                 key: json.loads(row[key]) if key != "content" else row[key]
                 for key in ("content", "required_tools", "required_permissions")
             }
+            asset_rows = connection.execute(
+                "SELECT relative_path,media_type,sha256 FROM skill_version_assets "
+                "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                (identity, version),
+            ).fetchall()
+            if asset_rows:
+                manifest["assets"] = [
+                    {
+                        "path": item["relative_path"],
+                        "media_type": item["media_type"],
+                        "sha256": item["sha256"],
+                    }
+                    for item in asset_rows
+                ]
             manifest["required_permissions"] = sorted(manifest["required_permissions"])
             digest = snapshot_digest(manifest)
             trials: list[dict[str, Any]] = []

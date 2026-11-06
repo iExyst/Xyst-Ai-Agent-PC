@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 15
+DATABASE_SCHEMA_VERSION = 16
 
 
 @dataclass(frozen=True)
@@ -336,6 +336,17 @@ class RunStore:
                     evaluation_evidence TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(skill_id, version)
+                );
+                CREATE TABLE IF NOT EXISTS skill_version_assets (
+                    skill_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    content BLOB NOT NULL,
+                    PRIMARY KEY(skill_id,version,relative_path),
+                    FOREIGN KEY(skill_id,version) REFERENCES skill_versions(skill_id,version) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS skill_lifecycle_events (
                     skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,

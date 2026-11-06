@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 
 import pytest
@@ -7,7 +9,7 @@ from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillDraft, SkillRevision, SkillStore
+from xaa.storage.skills import SkillAsset, SkillDraft, SkillRevision, SkillStore
 
 
 def draft(content="TRIAL_ORIGINAL: Read and report evidence.", tools=None, permissions=None):
@@ -69,6 +71,101 @@ async def test_explicit_trial_uses_immutable_snapshot_after_revision_and_deletio
         assert SkillStore(reopened).list() == []
     finally:
         await provider.close()
+
+
+def test_selected_trial_snapshots_linked_resource_bytes_and_revision_preserves_them(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "resource-trial.sqlite3")
+    skills = SkillStore(store)
+    raw = b"Reference content"
+    resource = SkillAsset(
+        path="references/guide.md",
+        content_base64=base64.b64encode(raw).decode("ascii"),
+        media_type="text/markdown",
+        sha256=hashlib.sha256(raw).hexdigest(),
+    )
+    skill = skills.create(draft().model_copy(update={"assets": [resource]}))
+    run = queue(store, workspace_tmp_path, skill)
+    snapshot = store.procedure_trial(run["id"])
+    assert snapshot is not None
+    assert snapshot["assets"][0]["path"] == "references/guide.md"
+    assert base64.b64decode(snapshot["assets"][0]["content_base64"]) == raw
+    skills.revise(
+        skill["id"],
+        SkillRevision(**draft("Updated procedure").model_dump(), expected_version=1),
+    )
+    assert skills.version(skill["id"], 2)["assets"] == [resource.model_dump()]
+    assert store.procedure_trial(run["id"])["assets"] == snapshot["assets"]
+
+
+async def test_selected_procedure_exposes_only_scoped_untrusted_resource_reader(
+    workspace_tmp_path,
+):
+    raw = b"Untrusted linked reference"
+    asset = SkillAsset(
+        path="references/guide.md",
+        content_base64=base64.b64encode(raw).decode("ascii"),
+        media_type="text/markdown",
+        sha256=hashlib.sha256(raw).hexdigest(),
+    )
+    store = RunStore(workspace_tmp_path / "resource-reader.sqlite3")
+    skill = SkillStore(store).create(draft().model_copy(update={"assets": [asset]}))
+    run = queue(store, workspace_tmp_path, skill)
+
+    class Provider(LMStudioProvider):
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            if messages[-1]["role"] == "user":
+                tool = next(t for t in tools if t["function"]["name"] == "procedure_read_resource")
+                assert tool["function"]["parameters"]["properties"]["path"]["enum"] == [
+                    "references/guide.md"
+                ]
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "resource-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "procedure_read_resource",
+                                            "arguments": '{"path":"references/guide.md"}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            result = json.loads(messages[-1]["content"])
+            assert result["content"] == raw.decode()
+            assert result["trust"] == "untrusted_skill_resource"
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Reviewed reference"}}]
+            }
+
+    provider = Provider()
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+    assert store.get_run(run["id"])["state"] == "verifying"
+    with store.connection() as connection:
+        result = connection.execute(
+            "SELECT result FROM tool_calls WHERE run_id=? AND provider_call_id='resource-1'",
+            (run["id"],),
+        ).fetchone()
+    assert result is not None
+    assert json.loads(result["result"]) == {
+        "path": "references/guide.md",
+        "content": raw.decode(),
+        "trust": "untrusted_skill_resource",
+    }
 
 
 @pytest.mark.parametrize(

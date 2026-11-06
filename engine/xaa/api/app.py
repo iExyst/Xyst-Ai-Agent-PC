@@ -80,6 +80,7 @@ from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
 from xaa.storage.schedules import ScheduleStore, parse_local_time, validate_quiet_hours
 from xaa.storage.skills import (
     TRIAL_TOOLS,
+    SkillAsset,
     SkillConflict,
     SkillDraft,
     SkillEvaluation,
@@ -460,6 +461,7 @@ def create_app(
                 content=imported.content,
                 required_tools=[SkillTool(name=tool, version="1") for tool in mapped_tools],
                 required_permissions=required_permissions,
+                assets=[SkillAsset.model_validate(asset) for asset in imported.assets],
             )
             return skill_store.import_agent_plugin(
                 draft,

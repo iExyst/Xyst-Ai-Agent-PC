@@ -2853,9 +2853,52 @@
         "title": "ScheduleRecord",
         "type": "object"
       },
+      "SkillAsset": {
+        "additionalProperties": false,
+        "properties": {
+          "content_base64": {
+            "maxLength": 90000,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "media_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content_base64",
+          "media_type",
+          "sha256"
+        ],
+        "title": "SkillAsset",
+        "type": "object"
+      },
       "SkillDraft": {
         "additionalProperties": false,
         "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAsset"
+            },
+            "maxItems": 32,
+            "title": "Assets",
+            "type": "array"
+          },
           "content": {
             "maxLength": 16384,
             "minLength": 1,
@@ -3144,6 +3187,14 @@
       "SkillRevision": {
         "additionalProperties": false,
         "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAsset"
+            },
+            "maxItems": 32,
+            "title": "Assets",
+            "type": "array"
+          },
           "content": {
             "maxLength": 16384,
             "minLength": 1,
@@ -3377,6 +3428,13 @@
       },
       "SkillVersion": {
         "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAsset"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
           "content": {
             "title": "Content",
             "type": "string"

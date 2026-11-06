@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import ipaddress
 import json
+import mimetypes
 import re
 from collections.abc import Iterable
 from itertools import islice
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +21,9 @@ MAX_PACKAGES = 128
 MAX_SKILLS = 128
 MAX_SERVERS = 64
 MAX_MANIFEST_BYTES = 256 * 1024
+MAX_SKILL_RESOURCE_COUNT = 32
+MAX_SKILL_RESOURCE_BYTES = 64 * 1024
+MAX_SKILL_RESOURCE_TOTAL_BYTES = 1024 * 1024
 _SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 PLUGIN_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -26,6 +31,7 @@ MCP_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 _PLUGIN_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 _SKILL_NAME = re.compile(r"^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$")
 _HEADER = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+_LOCAL_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 
 
 class PluginSkill(BaseModel):
@@ -79,6 +85,7 @@ class PluginSkillImport(BaseModel):
     allowed_tools: list[str]
     content_sha256: str
     manifest_sha256: str
+    assets: list[dict[str, str]]
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -385,6 +392,63 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
     if "\x00" in content:
         raise ValueError("skill file cannot contain NUL characters")
     description, allowed_tools = _parse_skill_frontmatter(raw, skill.name)
+    asset_rows: list[dict[str, str]] = []
+    seen_paths: set[str] = set()
+    total_bytes = 0
+    links: list[str] = _LOCAL_LINK.findall(content)
+    for link in links:
+        parsed_link = urlsplit(link)
+        if (
+            parsed_link.scheme
+            or parsed_link.netloc
+            or not parsed_link.path
+            or parsed_link.path.startswith("#")
+        ):
+            continue
+        decoded_path = unquote(parsed_link.path)
+        relative = PurePosixPath(decoded_path)
+        if (
+            relative.is_absolute()
+            or relative.as_posix() != decoded_path
+            or "\\" in decoded_path
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise ValueError("skill resource link must be a normalized relative path")
+        resource_name = relative.as_posix()
+        if resource_name in seen_paths:
+            continue
+        seen_paths.add(resource_name)
+        if len(seen_paths) > MAX_SKILL_RESOURCE_COUNT:
+            raise ValueError("skill references more than 32 supporting files")
+        resource_path = (skill_path.parent / Path(*relative.parts)).resolve(strict=True)
+        if not _inside(resource_path, skill_path.parent) or not resource_path.is_file():
+            raise ValueError("linked skill resource escapes its skill directory or is not a file")
+        with resource_path.open("rb") as source:
+            resource_bytes = source.read(MAX_SKILL_RESOURCE_BYTES + 1)
+        if len(resource_bytes) > MAX_SKILL_RESOURCE_BYTES:
+            raise ValueError("linked skill resource exceeds the 64 KiB per-file limit")
+        total_bytes += len(resource_bytes)
+        if total_bytes > MAX_SKILL_RESOURCE_TOTAL_BYTES:
+            raise ValueError("linked skill resources exceed the 1 MiB total limit")
+        try:
+            resource_bytes.decode("utf-8-sig")
+        except UnicodeError as exc:
+            raise ValueError("linked skill resources must be UTF-8 text files") from exc
+        media_type = mimetypes.guess_type(resource_name)[0] or "text/plain"
+        if not media_type.startswith("text/") and media_type not in {
+            "application/json",
+            "application/yaml",
+            "application/toml",
+        }:
+            raise ValueError("linked skill resource type is not a supported text format")
+        asset_rows.append(
+            {
+                "path": resource_name,
+                "content_base64": base64.b64encode(resource_bytes).decode("ascii"),
+                "media_type": media_type,
+                "sha256": hashlib.sha256(resource_bytes).hexdigest(),
+            }
+        )
     with (package_root / "plugin.json").open("rb") as manifest_source:
         manifest_bytes = manifest_source.read(MAX_MANIFEST_BYTES + 1)
     if len(manifest_bytes) > MAX_MANIFEST_BYTES:
@@ -398,4 +462,5 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         allowed_tools=allowed_tools,
         content_sha256=hashlib.sha256(raw).hexdigest(),
         manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+        assets=asset_rows,
     )
