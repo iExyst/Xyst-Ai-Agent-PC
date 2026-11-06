@@ -115,7 +115,9 @@ async def preview(store: RunStore, run_id: str, task_id: str, owner: str) -> Int
             )
         )
     # The copy is immutable once the task reaches verifying; read all bytes to validate its journal.
-    if any(path not in files and path not in {item["path"] for item in changes} for path in original):
+    if any(
+        path not in files and path not in {item["path"] for item in changes} for path in original
+    ):
         raise ValueError("Unexpected specialist file removal.")
     return IntegrationPreview(task_id=task_id, changes=rows)
 

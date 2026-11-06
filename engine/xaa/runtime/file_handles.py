@@ -123,7 +123,12 @@ def opened_file_path(source: BinaryIO) -> Path:
 
 
 def delete_opened_file_if_hash(
-    path: Path, root: Path, expected_sha256: str, *, database: Path, before_delete: Callable[[], None]
+    path: Path,
+    root: Path,
+    expected_sha256: str,
+    *,
+    database: Path,
+    before_delete: Callable[[], None],
 ) -> int:
     """Exclusively hash and unlink one regular Windows file through its open handle."""
     if os.name != "nt":

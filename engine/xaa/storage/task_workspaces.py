@@ -27,7 +27,9 @@ from xaa.runtime.workspace_snapshot import (
 from xaa.storage.commands import command_artifact_root
 from xaa.storage.runs import RunStore, utc_now
 
-BranchOperation = Literal["branch_read", "branch_list", "branch_write", "branch_create", "branch_delete"]
+BranchOperation = Literal[
+    "branch_read", "branch_list", "branch_write", "branch_create", "branch_delete"
+]
 
 
 class TaskWorkspaces:
@@ -227,14 +229,18 @@ class TaskWorkspaces:
                 }
             elif operation == "branch_delete":
                 delete = DeleteFileArguments.model_validate(arguments)
-                if path not in files or hashlib.sha256(files[path]).hexdigest() != delete.expected_sha256:
+                if (
+                    path not in files
+                    or hashlib.sha256(files[path]).hexdigest() != delete.expected_sha256
+                ):
                     raise ValueError("Specialist file changed; read it before deleting.")
                 if len(files[path]) > 65536:
                     raise ValueError("Specialist deletion requires a file of at most 64 KiB.")
                 del files[path]
                 original = {item.path: item.content for item in base.files}
                 dirty_paths = {
-                    name for name in original.keys() | files.keys()
+                    name
+                    for name in original.keys() | files.keys()
                     if original.get(name) != files.get(name)
                 }
                 dirty_size = sum(
@@ -276,7 +282,8 @@ class TaskWorkspaces:
                 )
                 original = {item.path: item.content for item in base.files}
                 dirty_paths = {
-                    name for name in original.keys() | files.keys()
+                    name
+                    for name in original.keys() | files.keys()
                     if original.get(name) != files.get(name)
                 }
                 dirty_size = sum(
@@ -341,7 +348,9 @@ class TaskWorkspaces:
                 line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
                 for line in difflib.unified_diff(
                     (before or b"").decode("utf-8", errors="replace").splitlines(keepends=True),
-                    data.decode("utf-8", errors="replace").splitlines(keepends=True) if data is not None else [],
+                    data.decode("utf-8", errors="replace").splitlines(keepends=True)
+                    if data is not None
+                    else [],
                     fromfile="a/" + name,
                     tofile="b/" + name,
                 )
@@ -352,7 +361,9 @@ class TaskWorkspaces:
                     "base_sha256": hashlib.sha256(before).hexdigest()
                     if before is not None
                     else None,
-                    "proposed_sha256": hashlib.sha256(data).hexdigest() if data is not None else None,
+                    "proposed_sha256": hashlib.sha256(data).hexdigest()
+                    if data is not None
+                    else None,
                     "diff": diff,
                     "diff_truncated": False,
                 }

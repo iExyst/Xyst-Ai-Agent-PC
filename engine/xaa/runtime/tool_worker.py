@@ -20,7 +20,6 @@ FilesystemOperation = Literal[
     "read",
     "write",
     "create",
-    "delete",
     "replace",
     "patch",
     "list",
@@ -211,7 +210,6 @@ def main() -> None:
             "create": executor.create_file,
             "replace": executor.replace_text,
             "patch": executor.apply_patch,
-            "delete": executor.delete_file,
         }
         try:
             if request.operation == "project_hash":
@@ -295,7 +293,7 @@ def main() -> None:
                     internal=request.internal,
                 )
             else:
-                if request.internal and request.operation != "delete":
+                if request.internal:
                     raise ValueError("Internal writes are not supported.")
                 result = operations[request.operation](
                     request.run_id,

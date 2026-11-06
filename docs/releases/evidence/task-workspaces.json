@@ -131,9 +131,9 @@
   ],
   "frozen_deletion": {
     "passed": true,
-    "report": ".acceptance/207d46de-70e7-49a1-b268-edce76c473d7/report.json",
-    "engine_sha256": "7de46531517d3ad0dd34a377bbfd6184bb31e086211a591b0f88e532830f4e15",
-    "scope": "Frozen worker; private deletion proposal kept the original intact; exact deletion followed saved explicit authorization; no unresolved calls",
+    "report": ".acceptance/49029969-18e9-4856-a8d0-11a5e71d7d1f/report.json",
+    "engine_sha256": "c9ce063e831c279c4b98ed78234b4917600bb523617034eb1aae1aca47d5d664",
+    "scope": "Rebuilt frozen worker after removing standalone internal delete operation; private deletion proposal kept the original intact; exact deletion followed saved explicit authorization; no unresolved calls",
     "diagnostic": "scripts/task_deletion_worker_diagnostic.py"
   },
   "deletion_review_ui": {

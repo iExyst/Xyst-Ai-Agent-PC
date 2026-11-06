@@ -209,7 +209,17 @@ class WorkspaceExecutor:
                 try:
                     resolved_target = target.resolve(strict=True)
                 except FileNotFoundError:
-                    self.store.record_tool_result(run_id, token, call["id"], {"path": deleted.path, "deleted": True, "previous_sha256": deleted.expected_sha256, "reconciled": True})
+                    self.store.record_tool_result(
+                        run_id,
+                        token,
+                        call["id"],
+                        {
+                            "path": deleted.path,
+                            "deleted": True,
+                            "previous_sha256": deleted.expected_sha256,
+                            "reconciled": True,
+                        },
+                    )
                     outcomes[call["id"]] = "applied"
                     continue
                 if not resolved_target.is_relative_to(root) or not resolved_target.is_file():
@@ -217,10 +227,16 @@ class WorkspaceExecutor:
                     continue
                 with open_for_read(resolved_target) as source:
                     if not opened_file_path(source).is_relative_to(root):
-                        raise PermissionError("Opened deletion reconciliation target escaped workspace.")
+                        raise PermissionError(
+                            "Opened deletion reconciliation target escaped workspace."
+                        )
                     content = source.read(65537)
                 digest = hashlib.sha256(content).hexdigest()
-                outcomes[call["id"]] = "unchanged" if digest == deleted.expected_sha256 and len(content) <= 65536 else "conflicting"
+                outcomes[call["id"]] = (
+                    "unchanged"
+                    if digest == deleted.expected_sha256 and len(content) <= 65536
+                    else "conflicting"
+                )
                 continue
             if call["tool_name"] == "workspace.create_file" and call["tool_version"] == "1":
                 created = CreateFileArguments.model_validate(call["arguments"])
@@ -310,7 +326,9 @@ class WorkspaceExecutor:
         try:
             resolved_target = target.resolve(strict=True)
         except FileNotFoundError:
-            raise PermissionError("Reviewed deletion target is already missing; refresh the preview.")
+            raise PermissionError(
+                "Reviewed deletion target is already missing; refresh the preview."
+            )
         if not resolved_target.is_relative_to(root) or not resolved_target.is_file():
             raise PermissionError("Deletion target is outside the selected workspace.")
         if not self.store.record_tool_intent(
@@ -344,7 +362,15 @@ class WorkspaceExecutor:
         except (OSError, PermissionError, ValueError) as exc:
             if execution_started:
                 raise
-            raise ToolPreconditionError(self.store.record_tool_failure(run_id, token, call_id, code="delete_precondition", message="Reviewed deletion failed before the approved file was removed.")) from exc
+            raise ToolPreconditionError(
+                self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call_id,
+                    code="delete_precondition",
+                    message="Reviewed deletion failed before the approved file was removed.",
+                )
+            ) from exc
         result = {
             "path": parsed.path,
             "deleted": True,
