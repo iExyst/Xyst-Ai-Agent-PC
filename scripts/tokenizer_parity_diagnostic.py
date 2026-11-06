@@ -187,7 +187,7 @@ async def main() -> None:
                         "sdk_context_length": direct_count["sdk_context_length"],
                     }
             except Exception as exc:  # noqa: BLE001 - retain a type-only compatibility finding
-                count_error_type = type(exc).__name__
+                count_error_type = getattr(exc, "worker_error_type", None) or type(exc).__name__
                 counted = {"sdk_prompt_tokens": None, "sdk_context_length": None}
             http_error_type = None
             actual = None

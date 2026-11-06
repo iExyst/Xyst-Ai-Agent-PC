@@ -157,7 +157,7 @@ async def test_count_queue_deadline_does_not_launch_worker(monkeypatch):
         await provider.close()
 
 
-@pytest.mark.parametrize("mode", ["malformed", "oversized", "nonzero"])
+@pytest.mark.parametrize("mode", ["malformed", "oversized", "nonzero", "sdk_error"])
 async def test_counter_rejects_broken_worker_and_joins_it(monkeypatch, mode):
     import sys
 
@@ -167,6 +167,7 @@ async def test_counter_rejects_broken_worker_and_joins_it(monkeypatch, mode):
         "malformed": "import sys; sys.stdout.write('PRIVATE_BROKEN_WORKER_OUTPUT'); sys.stdout.flush()",
         "oversized": "import sys,time; sys.stdout.write('x'*40000); sys.stdout.flush(); time.sleep(30)",
         "nonzero": "import sys; sys.exit(9)",
+        "sdk_error": 'import sys; sys.stdout.write(\'{"ok":false,"error":"ReadTimeout"}\'); sys.stdout.flush()',
     }[mode]
 
     async def spawn(*command, **kwargs):
@@ -182,3 +183,5 @@ async def test_counter_rejects_broken_worker_and_joins_it(monkeypatch, mode):
     assert len(children) == 1
     assert children[0].returncode is not None
     assert "PRIVATE_BROKEN_WORKER_OUTPUT" not in str(error.value)
+    if mode == "sdk_error":
+        assert error.value.worker_error_type == "ReadTimeout"
