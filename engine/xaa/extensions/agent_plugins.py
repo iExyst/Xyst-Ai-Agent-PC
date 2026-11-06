@@ -44,6 +44,7 @@ class PluginSkill(BaseModel):
     description: str
     category: str | None = None
     allowed_tools: list[str] = Field(default_factory=list)
+    declared_requirements: dict[str, Any] = Field(default_factory=dict)
 
 
 class PluginServer(BaseModel):
@@ -88,6 +89,7 @@ class PluginSkillImport(BaseModel):
     description: str
     category: str | None = None
     allowed_tools: list[str]
+    declared_requirements: dict[str, Any]
     content_sha256: str
     manifest_sha256: str
     assets: list[dict[str, str]]
@@ -110,7 +112,81 @@ def _unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list[str], str | None]:
+def _bounded_names(value: Any, *, env: bool = False) -> list[str]:
+    values: list[Any]
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, dict)):
+        values = list(cast(Iterable[Any], value))[:64]
+    else:
+        return []
+    pattern = _ENV if env else re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+    result: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        if not item.strip():
+            continue
+        candidate = (
+            item
+            if env
+            else PurePosixPath(item.strip().split(maxsplit=1)[0].replace("\\", "/")).name
+        )
+        if pattern.fullmatch(candidate):
+            result.add(candidate)
+    return sorted(result)[:64]
+
+
+def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
+    raw_prerequisites = values.get("prerequisites")
+    prerequisites = (
+        cast(dict[str, Any], raw_prerequisites) if isinstance(raw_prerequisites, dict) else {}
+    )
+    dependencies = values.get("dependencies")
+    if isinstance(dependencies, dict):
+        dependency_count = len(cast(dict[str, Any], dependencies))
+    elif isinstance(dependencies, list):
+        dependency_count = len(cast(list[Any], dependencies))
+    elif isinstance(dependencies, tuple):
+        dependency_count = len(cast(tuple[Any, ...], dependencies))
+    else:
+        dependency_count = int(dependencies is not None)
+    raw_metadata = values.get("metadata")
+    metadata = cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
+    raw_hermes = metadata.get("hermes")
+    hermes = cast(dict[str, Any], raw_hermes) if isinstance(raw_hermes, dict) else {}
+    toolsets = _bounded_names(hermes.get("requires_toolsets"))
+    commands = _bounded_names(prerequisites.get("commands"))
+    commands.extend(
+        command
+        for command in _bounded_names(values.get("required_commands"))
+        if command not in commands
+    )
+    environment_names = _bounded_names(values.get("required_environment_variables"), env=True)
+    return {
+        "platforms": _bounded_names(values.get("platforms")),
+        "hermes_toolsets": toolsets,
+        "required_command_names": commands,
+        "required_environment_names": environment_names,
+        "prerequisite_fields": sorted(str(key) for key in prerequisites)[:64],
+        "dependencies_declared": dependencies is not None,
+        "dependency_count": min(dependency_count, 128),
+        "declared_fields": sorted(
+            key
+            for key in (
+                "dependencies",
+                "prerequisites",
+                "required_commands",
+                "required_environment_variables",
+            )
+            if key in values
+        ),
+    }
+
+
+def _parse_skill_frontmatter(
+    raw: bytes, directory_name: str
+) -> tuple[str, list[str], str | None, dict[str, Any]]:
     """Parse and validate the bounded Agent Skills frontmatter prefix."""
     prefix = raw[:16_384].decode("utf-8-sig")
     if (
@@ -184,7 +260,7 @@ def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list
     raw_tools = values.get("allowed-tools", "")
     if not isinstance(raw_tools, str):
         raise TypeError("frontmatter allowed-tools must be a string")
-    return description, raw_tools.split(), category
+    return description, raw_tools.split(), category, _declared_requirements(values)
 
 
 def _update_skill_frontmatter(
@@ -256,7 +332,9 @@ def _skill_summaries(package_root: Path) -> list[PluginSkill]:
             raise ValueError("skill file exceeds size limit")
         with resolved.open("rb") as source:
             prefix = source.read(16_384)
-        description, allowed_tools, category = _parse_skill_frontmatter(prefix, directory.name)
+        description, allowed_tools, category, declared_requirements = _parse_skill_frontmatter(
+            prefix, directory.name
+        )
         summaries.append(
             PluginSkill(
                 name=directory.name,
@@ -264,6 +342,7 @@ def _skill_summaries(package_root: Path) -> list[PluginSkill]:
                 description=description,
                 category=category,
                 allowed_tools=allowed_tools,
+                declared_requirements=declared_requirements,
             )
         )
     return summaries
@@ -453,7 +532,9 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         raise ValueError("skill file must be UTF-8 text") from exc
     if "\x00" in content:
         raise ValueError("skill file cannot contain NUL characters")
-    description, allowed_tools, category = _parse_skill_frontmatter(raw, skill.name)
+    description, allowed_tools, category, declared_requirements = _parse_skill_frontmatter(
+        raw, skill.name
+    )
     asset_rows: list[dict[str, str]] = []
     seen_paths: set[str] = set()
     total_bytes = 0
@@ -523,6 +604,7 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         description=description,
         category=category,
         allowed_tools=allowed_tools,
+        declared_requirements=declared_requirements,
         content_sha256=hashlib.sha256(raw).hexdigest(),
         manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
         assets=asset_rows,
@@ -566,7 +648,7 @@ def export_procedure_package(
         allowed_tools = [tool["name"] for tool in required_tools]
     markdown = content
     try:
-        prior_description, _, prior_category = _parse_skill_frontmatter(
+        prior_description, _, prior_category, _ = _parse_skill_frontmatter(
             content.encode("utf-8"), skill_name
         )
         if prior_description != description or prior_category != category:

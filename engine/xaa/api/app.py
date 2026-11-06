@@ -514,6 +514,9 @@ def create_app(
                     "category": imported.category or "",
                     "allowed_tools": " ".join(imported.allowed_tools),
                     "unmapped_allowed_tools": " ".join(unmapped_tools),
+                    "declared_requirements": json.dumps(
+                        imported.declared_requirements, sort_keys=True, ensure_ascii=True
+                    ),
                     "content_sha256": imported.content_sha256,
                     "manifest_sha256": imported.manifest_sha256,
                 },

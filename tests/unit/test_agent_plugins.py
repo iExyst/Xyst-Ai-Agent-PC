@@ -29,8 +29,13 @@ def make_package(root: Path) -> Path:
     (package / "skills" / "summarize").mkdir(parents=True)
     (package / "skills" / "summarize" / "SKILL.md").write_text(
         "---\nname: summarize\ndescription: Summarize a bounded file.\n"
+        "platforms: [linux, macos]\n"
+        "prerequisites:\n  commands: [git, python.exe --version]\n"
+        "dependencies:\n  python: [requests]\n"
+        "required_environment_variables: [API_TOKEN]\n"
         "metadata:\n  category: writing\n"
         "  hermes:\n    category: writing\n    tags: [writing, utility]\n"
+        "    requires_toolsets: [terminal, files]\n"
         "    related_skills: [review]\n"
         "allowed-tools: workspace.read_file shell.exec\n---\n"
         "ignored instruction text\n\n[Reference](references/guide.md)",
@@ -91,6 +96,13 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert summary.skills[0].description == "Summarize a bounded file."
     assert summary.skills[0].category == "writing"
     assert summary.skills[0].allowed_tools == ["workspace.read_file", "shell.exec"]
+    requirements = summary.skills[0].declared_requirements
+    assert requirements["platforms"] == ["linux", "macos"]
+    assert requirements["hermes_toolsets"] == ["files", "terminal"]
+    assert requirements["required_command_names"] == ["git", "python.exe"]
+    assert requirements["required_environment_names"] == ["API_TOKEN"]
+    assert requirements["prerequisite_fields"] == ["commands"]
+    assert requirements["dependencies_declared"] is True
     assert summary.servers[0].command_name == "python.exe"
     assert summary.servers[0].argument_count == 2
     assert summary.servers[0].environment_names == ["API_TOKEN"]
@@ -245,6 +257,11 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert [tool["name"] for tool in version.json()["required_tools"]] == ["workspace.read_file"]
     assert evidence["source"]["unmapped_allowed_tools"] == "shell.exec"
     assert evidence["source"]["description"] == "Summarize a bounded file."
+    declared = json.loads(evidence["source"]["declared_requirements"])
+    assert declared["hermes_toolsets"] == ["files", "terminal"]
+    assert declared["required_environment_names"] == ["API_TOKEN"]
+    assert "requests" not in json.dumps(declared)
+    assert "tags: [writing, utility]" in version.json()["content"]
     resource = version.json()["assets"][0]
     assert resource["path"] == "references/guide.md"
     assert resource["sha256"]

@@ -1985,6 +1985,10 @@ export interface components {
             allowed_tools?: string[];
             /** Category */
             category?: string | null;
+            /** Declared Requirements */
+            declared_requirements?: {
+                [key: string]: unknown;
+            };
             /** Description */
             description: string;
             /** Name */

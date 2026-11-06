@@ -1913,6 +1913,11 @@
             ],
             "title": "Category"
           },
+          "declared_requirements": {
+            "additionalProperties": true,
+            "title": "Declared Requirements",
+            "type": "object"
+          },
           "description": {
             "title": "Description",
             "type": "string"

@@ -1,6 +1,25 @@
 import { useState } from 'react';
 import type { EngineClient, PluginDiscovery } from './api/client.ts';
 
+function declaredRequirementsSummary(value: Record<string, unknown> | undefined): string {
+  if (!value) return 'No supported dependency metadata found.';
+  const names = (key: string) => {
+    const items = value[key];
+    return Array.isArray(items) ? items.filter((item): item is string => typeof item === 'string').join(', ') : '';
+  };
+  const dependencies = value.dependencies_declared === true
+    ? `declared (${typeof value.dependency_count === 'number' ? value.dependency_count : 'count unknown'})`
+    : 'not declared';
+  return [
+    `Platforms: ${names('platforms') || 'not declared'}`,
+    `Hermes toolsets: ${names('hermes_toolsets') || 'not declared'}`,
+    `Prerequisite fields: ${names('prerequisite_fields') || 'none'}`,
+    `Command names: ${names('required_command_names') || 'none'}`,
+    `Environment variable names: ${names('required_environment_names') || 'none'}`,
+    `Dependencies: ${dependencies}`,
+  ].join(' · ');
+}
+
 export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImported:()=>void}) {
   const [root,setRoot]=useState('');
   const [result,setResult]=useState<PluginDiscovery>();
@@ -35,7 +54,7 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
       {result.packages.map(item=><article key={item.path}>
         <h3>{item.name}{item.version?` · ${item.version}`:''}</h3>{item.description&&<p>{item.description}</p>}
         <p>Package: <code>{item.path}</code></p>
-        <h4>Skills ({item.skills.length})</h4><ul>{item.skills.map(skill=><li key={skill.path}><strong>{skill.name}</strong>: {skill.description} <code>{skill.path}</code><p>Package-declared tools: {skill.allowed_tools?.join(', ')||'none'}</p><button disabled={busy} onClick={()=>void importSkill(item.name,skill.name)}>Import as candidate</button></li>)}</ul>
+        <h4>Skills ({item.skills.length})</h4><ul>{item.skills.map(skill=><li key={skill.path}><strong>{skill.name}</strong>: {skill.description} <code>{skill.path}</code><p>Package-declared tools: {skill.allowed_tools?.join(', ')||'none'}</p><p>Untrusted package requirements (not X.A.A. permissions): {declaredRequirementsSummary(skill.declared_requirements)}</p><button disabled={busy} onClick={()=>void importSkill(item.name,skill.name)}>Import as candidate</button></li>)}</ul>
         <h4>MCP servers ({item.servers.length})</h4><ul>{item.servers.map(server=><li key={server.name}>{server.name}: {server.transport==='stdio'?`stdio · ${server.command_name} · ${server.argument_count} arguments · environment names: ${server.environment_names.join(', ')||'none'}`:`${server.transport} · ${server.endpoint}`}</li>)}</ul>
       </article>)}
       {result.diagnostics.length>0&&<><h3>Package diagnostics</h3><ul>{result.diagnostics.map((diagnostic,index)=><li key={`${diagnostic.path}:${index}`}><code>{diagnostic.path}</code>: {diagnostic.message}</li>)}</ul></>}

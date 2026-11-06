@@ -4,6 +4,14 @@ import type {components} from './generated/api.js';
 
 type Summary=components['schemas']['SkillSummary'];
 export type ProcedureTrialSelection=components['schemas']['SkillTrial']&{name:string};
+function importedRequirementsJson(raw:string|undefined):string {
+  try {
+    const value:unknown=JSON.parse(raw??'{}');
+    return JSON.stringify(value,null,2);
+  } catch {
+    return 'Unavailable';
+  }
+}
 export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onTrial:(selection:ProcedureTrialSelection)=>void;refreshKey:number}){
   const [items,setItems]=useState<Summary[]>([]);
   const [selected,setSelected]=useState<Summary>();
@@ -82,7 +90,7 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
     </section>}
     {selected&&evidence&&<section aria-label="Procedure evaluation"><h3>Version evaluation</h3>
       <p>Version {version}: {evidence.state}. Saved evaluations: {evidence.evaluations.length}. Recording a review does not activate this procedure.</p>
-      {evidence.provenance==='agent_plugin'&&evidence.source&&<><p>Imported from Agent Plugin {evidence.source.package_name}@{evidence.source.package_version} / {evidence.source.skill_name}. Source content SHA-256: <code>{evidence.source.content_sha256}</code></p><p>{evidence.source.description} Declared tools: {evidence.source.allowed_tools||'none'}. Unmapped package tools: {evidence.source.unmapped_allowed_tools||'none'}. Tool requirements are not permission grants; each trial remains constrained by the selected run's permissions.</p></>}
+      {evidence.provenance==='agent_plugin'&&evidence.source&&<><p>Imported from Agent Plugin {evidence.source.package_name}@{evidence.source.package_version} / {evidence.source.skill_name}. Source content SHA-256: <code>{evidence.source.content_sha256}</code></p><p>{evidence.source.description} Declared tools: {evidence.source.allowed_tools||'none'}. Unmapped package tools: {evidence.source.unmapped_allowed_tools||'none'}. Tool requirements are not permission grants; each trial remains constrained by the selected run's permissions.</p><details><summary>Untrusted source dependency declarations (not X.A.A. permissions)</summary><pre>{importedRequirementsJson(evidence.source.declared_requirements)}</pre><p>Review platform, command, environment-name, prerequisite, and dependency declarations before trialing this candidate. Values are omitted from this summary.</p></details></>}
       {evidence.evaluations.map(entry=><details key={entry.id}><summary>Evaluation {new Date(entry.evaluated_at).toLocaleString()}</summary><p>{entry.rationale}</p><ul>{entry.trials.map(trial=><li key={trial.run_id}>{trial.case_description}: {trial.objective}</li>)}</ul><ul>{entry.criteria.map((criterion,index)=><li key={index}>{criterion}</li>)}</ul></details>)}
       <button disabled={busy} onClick={()=>void loadTrials()}>Find completed procedure trials</button>
       {trials.length<2?<p>At least two completed, explicitly accepted trials of this exact version are required. Describe distinct representative cases when reviewing them.</p>:<form onSubmit={event=>{event.preventDefault();void evaluate();}}>
