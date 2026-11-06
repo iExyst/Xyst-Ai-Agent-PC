@@ -1,4 +1,4 @@
-"""Verify the frozen engine exposes ACP with packaged application metadata."""
+"""Verify the frozen engine's ACP CLI reports its packaged version."""
 
 from __future__ import annotations
 
