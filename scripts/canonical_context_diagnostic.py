@@ -70,10 +70,12 @@ async def main() -> None:
     store = RunStore(root / "runs.sqlite3")
     provider = AuditedProvider()
     instance = None
+    run_id: str | None = None
     report: dict[str, Any] = {
         "passed": False,
         "model": "qwen/qwen3.5-9b",
         "scope": "automatic SDK admission and durable inference-linked token holds",
+        "run_deadline_seconds": 240,
     }
     try:
         await provider.models()
@@ -85,12 +87,36 @@ async def main() -> None:
             mode="observe",
             model=instance,
             max_iterations=4,
-            max_seconds=90,
+            max_seconds=240,
             max_output_tokens=1024,
             max_total_tokens=20000,
         )
-        await Coordinator(store, provider).execute(run["id"])
+        current_run_id = run["id"]
+        run_id = current_run_id
+        report["run_id"] = current_run_id
+        try:
+            await Coordinator(store, provider).execute(current_run_id)
+        except Exception as exc:  # noqa: BLE001 - acceptance reports bounded failure classes
+            # Preserve a useful bounded acceptance result when model inference or
+            # the tool diagnostic fails, instead of leaving only a traceback.
+            mismatch = any(row["match"] is False for row in provider.rows)
+            report["failure_type"] = (
+                "SDKHTTPPromptCountMismatch" if mismatch else type(exc).__name__
+            )
+            report["failure_stage"] = "coordinator_execution"
         events = store.list_events(run["id"])
+        event_types = [event["event_type"] for event in events]
+        if "failure_type" in report:
+            report["failure_stage"] = (
+                "normal_model_prompt_count_parity"
+                if any(row["match"] is False for row in provider.rows)
+                else "harmless_tool_diagnostic_inference"
+                if "diagnostic.inference.started" in event_types
+                and "diagnostic.inference.completed" not in event_types
+                else "context_admission"
+                if "context.admission_failed" in event_types
+                else "coordinator_execution"
+            )
         messages = store.conversation_messages(run["id"])
         persisted = [
             e["payload"]["message"]
@@ -103,10 +129,13 @@ async def main() -> None:
         saved = store.get_run(run["id"])
         assert saved is not None
         report.update(
-            run_id=run["id"],
             state=saved["state"],
             counts=provider.rows,
             durable_reservations=len(reservations),
+            reservation_events=[
+                event["payload"] for event in events if event["event_type"] == "tokens.reserved"
+            ],
+            event_types=event_types,
             raw_nonpublic_field_names=sorted(provider.extra_fields),
             new_journal_messages_public_only=public_only,
             fixture_bytes_unchanged=fixture.read_bytes() == original,
@@ -123,9 +152,18 @@ async def main() -> None:
             and not store.unresolved_tool_calls(run["id"])
         )
         if not report["passed"]:
-            raise RuntimeError("Canonical real-run acceptance failed.")
+            raise SystemExit(1)
     finally:
         report["counts"] = provider.rows
+        if run_id is not None:
+            saved = store.get_run(run_id)
+            events = store.list_events(run_id)
+            report.setdefault("state", saved["state"] if saved is not None else None)
+            report.setdefault(
+                "reservation_events",
+                [event["payload"] for event in events if event["event_type"] == "tokens.reserved"],
+            )
+            report.setdefault("event_types", [event["event_type"] for event in events])
         try:
             if instance is not None:
                 await provider.unload_model(instance)
