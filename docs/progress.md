@@ -2,6 +2,10 @@
 
 Updated 2026-11-06.
 
+## Authenticated backup creation and restore acceptance (2026-11-06)
+
+Extended the disposable backup acceptance to launch a temporary authenticated loopback API backed by an isolated database, invoke the real `xaa backup` CLI, and verify the API-created bundle is inside the selected data directory. The real offline `xaa restore-bundle` then restores it in a child process; another fresh process verifies exact run/event records, artifact identity and bytes, metadata digest, and SQLite integrity. The run passed on Windows; report and retained data are under `.acceptance/backup-restore-cli-6ut2_m6u/`. Ruff, strict Pyright, and hosted source plus installer workflows passed in [run 42267851589](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42267851589). This verifies the CLI/API path with synthetic data, not installed recovery or user-data disaster recovery. Overall goal completion remains approximately 16%.
+
 ## Fresh-process backup restore CLI acceptance (2026-11-06)
 
 Added `scripts/backup_restore_cli_acceptance.py` to create a disposable run and registered binary artifact, create a bundle, invoke the real offline `xaa.cli restore-bundle` in a child process, and reopen the restored data in a second fresh process. The acceptance verifies persisted run fields, ordered events, artifact ID and metadata digest, exact bytes, and SQLite integrity. It passed on Windows; retained report and all disposable data are under `.acceptance/backup-restore-cli-j9h6882c/`. Bundle generation uses the storage function directly, so authenticated `POST /backups` / `xaa backup`, installed restore, real user data and disaster recovery remain unverified. This closes a process-boundary acceptance gap for offline restore only; overall goal completion remains approximately 16%.

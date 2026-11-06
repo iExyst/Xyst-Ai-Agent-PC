@@ -6,13 +6,17 @@ import argparse
 import hashlib
 import json
 import os
+import secrets
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
-from xaa.storage.backup_bundle import create_backup_bundle
 from xaa.storage.runs import RunStore
 
 
@@ -56,7 +60,76 @@ def main() -> None:
         json.dumps({"run": persisted_run, "events": source_events, "artifact": artifact}, indent=2),
         encoding="utf-8",
     )
-    bundle = create_backup_bundle(store)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    api_token = secrets.token_urlsafe(40)
+    api_url = f"http://127.0.0.1:{port}"
+    server_source = r"""
+import sys, uvicorn
+from pathlib import Path
+from pydantic import SecretStr
+from xaa.api.app import create_app
+from xaa.providers.lm_studio import LMStudioProvider
+from xaa.storage.runs import RunStore
+app = create_app(
+    LMStudioProvider('http://127.0.0.1:9'),
+    SecretStr(sys.argv[2]),
+    store=RunStore(Path(sys.argv[1])),
+    trusted_origins=(),
+)
+uvicorn.run(app, host='127.0.0.1', port=int(sys.argv[3]), log_level='error')
+"""
+    server_log_path = root / "api-server.log"
+    with server_log_path.open("w", encoding="utf-8") as server_log:
+        server = subprocess.Popen(
+            [sys.executable, "-c", server_source, str(store.path), api_token, str(port)],
+            stdout=server_log,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if server.poll() is not None:
+                    raise RuntimeError(
+                        f"Disposable API stopped during startup; see {server_log_path}"
+                    )
+                request = urllib.request.Request(
+                    f"{api_url}/runs", headers={"Authorization": f"Bearer {api_token}"}
+                )
+                try:
+                    with urllib.request.urlopen(request, timeout=1) as response:
+                        if response.status == 200:
+                            break
+                except (OSError, urllib.error.URLError):
+                    time.sleep(0.1)
+            else:
+                raise TimeoutError(f"Disposable authenticated API did not start: {server_log_path}")
+            backup_env = os.environ.copy()
+            backup_env["XAA_API_TOKEN"] = api_token
+            backup = subprocess.run(
+                [sys.executable, "-m", "xaa.cli", "--api-url", api_url, "backup"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=backup_env,
+            )
+            if backup.returncode != 0:
+                raise RuntimeError(f"authenticated xaa backup failed: {backup.stderr.strip()}")
+            backup_result = json.loads(backup.stdout)
+            if backup_result.get("status") != "verified":
+                raise AssertionError("Authenticated backup API did not report a verified bundle.")
+            bundle = Path(backup_result["path"])
+            if not bundle.is_file() or not bundle.is_relative_to(source_root / "backups"):
+                raise AssertionError("Backup API returned a missing or out-of-scope bundle path.")
+        finally:
+            server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
     destination = root / "restored"
 
     restore = subprocess.run(
@@ -131,6 +204,8 @@ print(json.dumps({
         "acceptance": "offline backup restore CLI round trip",
         "passed": True,
         "restore_command": "python -m xaa.cli restore-bundle",
+        "authenticated_backup_command": "python -m xaa.cli --api-url URL backup",
+        "authenticated_backup_api": True,
         "fresh_process_reopen": True,
         "run_id": run_id,
         "event_count": len(source_events),
@@ -141,6 +216,7 @@ print(json.dumps({
         "bundle": str(bundle),
         "restored_directory": str(destination),
         "restore_stdout": restore.stdout.strip(),
+        "backup_stdout": backup.stdout.strip(),
     }
     report_path = root / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + os.linesep, encoding="utf-8")
