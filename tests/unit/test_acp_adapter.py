@@ -28,6 +28,9 @@ def test_api_url_must_be_loopback_and_uncredentialed() -> None:
         "http://192.168.1.2:8765",
         "http://user:pass@127.0.0.1:8765",
         "http://127.0.0.1:8765/?token=secret",
+        "http://127.0.0.1:0",
+        "http://127.0.0.1:invalid",
+        "http://127.0.0.1",
     ):
         with pytest.raises(ValueError):
             validate_local_api_url(value)

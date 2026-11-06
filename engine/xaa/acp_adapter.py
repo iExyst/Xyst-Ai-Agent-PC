@@ -49,6 +49,12 @@ def validate_local_api_url(value: str) -> str:
         loopback = False
     if not loopback:
         raise ValueError("ACP can connect only to a numeric loopback X.A.A. API URL.")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("ACP requires a valid loopback API port.") from exc
+    if port is None or port == 0:
+        raise ValueError("ACP requires a valid loopback API port.")
     return value.rstrip("/")
 
 
