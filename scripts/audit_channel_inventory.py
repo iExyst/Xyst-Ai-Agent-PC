@@ -95,6 +95,90 @@ EXTERNAL_CHANNEL_SOURCE_AUDITS = {
         "Inline platform adapter with a supervised Node realtime-SDK sidecar for inbound updates and outbound messaging.",
         ["plugin.yaml", "adapter.py"],
     ),
+    "iris-chat-channel": (
+        "Iris Chat platform adapter for encrypted Iris messaging.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "jp-chatwork": (
+        "Chatwork platform adapter polling the API, routing room mentions/replies, and preventing duplicate replies across restarts.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "max-platform": (
+        "MAX messenger gateway adapter supporting long-polling and webhook transports.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "minecraft-platform": (
+        "Minecraft gateway adapter joining a server and relaying player chat to/from Hermes.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "mqtt": (
+        "MQTT platform adapter subscribing to configured topics and routing messages by per-topic policy; supports TCP/TLS transport.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "nextcloud-talk-platform": (
+        "Nextcloud Talk platform repository declaring webhook-bot and real-user polling modes.",
+        ["plugin.yaml", "bot/adapter.py", "user/adapter.py"],
+    ),
+    "nextcloud-talk": (
+        "Nextcloud Talk signed text webhook bot platform adapter.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "onebot-platform": (
+        "QQ OneBot platform adapter supporting reverse-WebSocket server or forward client modes for direct and group messages.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "openmail": (
+        "OpenMail email platform with websocket inbound wakeups, in-thread replies, and account tools.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "pidgeon": (
+        "Pidgeon email platform routing messages by email thread and enforcing declared sender/address filters.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "pushover-hermes-plugin": (
+        "Outbound-only Pushover notification platform; it declares no inbound message handling.",
+        ["plugin.yaml", "pushover_hermes_plugin/adapter.py"],
+    ),
+    "radio-dm-gateway": (
+        "Meshtastic radio direct-message platform with encrypted-DM and sender allowlist requirements; channel packets are not answered.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "rocketchat-platform": (
+        "Rocket.Chat gateway using REST outbound operations and Realtime DDP WebSocket inbound messages.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "rply-platform": (
+        "rply inbox gateway with inbound/outbound messages, acknowledgements, cron delivery, and interactive approvals.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "salesforce-chatter": (
+        "Salesforce Chatter gateway adapter for mentions and replies.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "vector-platform": (
+        "Vector gateway adapter relaying direct messages over HTTP/SSE through a local Rust sidecar.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "vk-platform": (
+        "VK Messenger gateway adapter using community messages and Group Long Poll.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "watchline": (
+        "Watchline delivery adapter polling a pull channel and forwarding matched events into the Hermes gateway.",
+        ["plugin.yaml", "watchline_hermes_plugin/adapter.py"],
+    ),
+    "whatsapp-agent-platform": (
+        "WhatsApp Agent Platform adapter using its long-poll API to route chats between WhatsApp agents and Hermes.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "xchat": (
+        "X Chat platform adapter for encrypted direct messages, using polling for inbound events and signed/encrypted outbound replies.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "zalo-platform": (
+        "Zalo Bot Platform adapter supporting long-polling and webhook transports.",
+        ["plugin.yaml", "zalo/adapter.py"],
+    ),
 }
 EXTERNAL_NON_CHANNEL_SOURCE_AUDITS = {
     "hermes-fleet-connector": (
@@ -104,6 +188,22 @@ EXTERNAL_NON_CHANNEL_SOURCE_AUDITS = {
     "hermes-telegram-business": (
         "Telegram Business observe-with-approval workflow plugin that drafts replies for owner approval; it consumes a connected account workflow and does not declare a platform adapter manifest/transport.",
         ["plugin.yaml", "__init__.py", "manager.py"],
+    ),
+    "mermail": (
+        "Multi-agent skill bundle and marketplace plugin; its pinned source does not declare a Hermes gateway platform adapter.",
+        ["plugin.json", "README.md", "skills"],
+    ),
+    "microsoft365": (
+        "Standalone Microsoft 365 Graph tools plugin; its pinned manifest declares kind=standalone rather than a messaging platform adapter.",
+        ["plugin.yaml"],
+    ),
+    "sendblue": (
+        "Sendblue messaging dispatch tools and hook; its pinned plugin declares tools/hooks but no gateway platform adapter.",
+        ["plugin.yaml", "README.md"],
+    ),
+    "session-mirror": (
+        "Conversation mirroring hook that posts session turns to Discord; it is an observer plugin, not an inbound/outbound gateway adapter.",
+        ["plugin.yaml", "__init__.py"],
     ),
 }
 # Transport observations and channel-specific acceptance, not runtime verification.

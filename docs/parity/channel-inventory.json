@@ -4343,9 +4343,19 @@
       "subdirectory": "hermes",
       "version": "0.1.1",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/irislib/iris-chat-channels",
+        "reference_commit": "202a422c81eec3246bf19cb45657fc3513c2ac9a",
+        "subdirectory": "hermes",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Iris Chat platform adapter for encrypted Iris messaging.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4361,9 +4371,19 @@
         "CHATWORK_API_TOKEN",
         "CHATWORK_ROOMS"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/TakeshiTGAL/hermes-plugin-chatwork",
+        "reference_commit": "8dbdff609b3c99768420a19a7ca646b6daad3dbe",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Chatwork platform adapter polling the API, routing room mentions/replies, and preventing duplicate replies across restarts.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4378,9 +4398,19 @@
       "required_environment_names": [
         "MAX_BOT_TOKEN"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Realmagnum/hermes-max-integration",
+        "reference_commit": "50c7a9a7c16b6207a079b7b883718dd863e9e951",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "MAX messenger gateway adapter supporting long-polling and webhook transports.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4393,9 +4423,20 @@
       "subdirectory": "",
       "version": "1.5.5",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed non-channel plugin candidate",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Nudgen-Marketing/mermail-skills",
+        "reference_commit": "269a711bf683845d75009df4984bf25eee83b0bd",
+        "subdirectory": "",
+        "paths": [
+          "plugin.json",
+          "README.md",
+          "skills"
+        ],
+        "finding": "Multi-agent skill bundle and marketplace plugin; its pinned source does not declare a Hermes gateway platform adapter.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4410,9 +4451,18 @@
       "required_environment_names": [
         "MICROSOFT365_CLIENT_SECRET"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed non-channel plugin candidate",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/fabiomotta0311/hermes-microsoft365-plugin",
+        "reference_commit": "4fdc64c02c92e155df570c030f6d3c53d5361e23",
+        "subdirectory": "microsoft365",
+        "paths": [
+          "plugin.yaml"
+        ],
+        "finding": "Standalone Microsoft 365 Graph tools plugin; its pinned manifest declares kind=standalone rather than a messaging platform adapter.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4427,9 +4477,19 @@
       "required_environment_names": [
         "name"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/kyssta-exe/hermes-minecraft-gateway",
+        "reference_commit": "8ff37a626439caecb9ceb724b5da7718eb77a8b1",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Minecraft gateway adapter joining a server and relaying player chat to/from Hermes.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4445,9 +4505,19 @@
         "MQTT_HERMES_URL",
         "MQTT_HERMES_PASSWORD"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/JasonSwindle/hermes-mqtt",
+        "reference_commit": "103ec28e9e2f68b080fd8e8074d0e5a98750e06e",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "MQTT platform adapter subscribing to configured topics and routing messages by per-topic policy; supports TCP/TLS transport.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4460,9 +4530,20 @@
       "subdirectory": "",
       "version": "1.4.3",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/smilinTux/hermes-nextcloud-talk",
+        "reference_commit": "03f27203fd983d4714891302c49f06b404c4b02f",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "bot/adapter.py",
+          "user/adapter.py"
+        ],
+        "finding": "Nextcloud Talk platform repository declaring webhook-bot and real-user polling modes.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4478,9 +4559,19 @@
         "NC_TALK_BASE_URL",
         "NC_TALK_BOT_SECRET"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Cliff3c/hermes-nextcloud-talk",
+        "reference_commit": "0df0679d1ed28c2087774fea9ae646a858e7ed70",
+        "subdirectory": "plugin",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Nextcloud Talk signed text webhook bot platform adapter.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4493,9 +4584,19 @@
       "subdirectory": "",
       "version": "1.3.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/mario841859784/hermes-plugin-onebot",
+        "reference_commit": "086dd7e5c13004e41301f5cea1f352c46b0f3c50",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "QQ OneBot platform adapter supporting reverse-WebSocket server or forward client modes for direct and group messages.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4510,9 +4611,19 @@
       "required_environment_names": [
         "OPENMAIL_API_KEY"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/openmailsh/hermes-plugin",
+        "reference_commit": "4035b7d1f8775304443f60f67bcd636acb1a325d",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "OpenMail email platform with websocket inbound wakeups, in-thread replies, and account tools.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4527,9 +4638,19 @@
       "required_environment_names": [
         "PIDGEON_API_KEY"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/pidgeon-ai/pidgeon-python",
+        "reference_commit": "d4448663b39ae0280a247bb3ea4cab7ef0a4e080",
+        "subdirectory": "hermes/pidgeon",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Pidgeon email platform routing messages by email thread and enforcing declared sender/address filters.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4545,9 +4666,19 @@
         "PUSHOVER_APP_TOKEN",
         "PUSHOVER_USER_KEY"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/lightx/pushover-hermes-plugin",
+        "reference_commit": "967fe2d476b384d51773529a7b34ab52e3fdebf1",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "pushover_hermes_plugin/adapter.py"
+        ],
+        "finding": "Outbound-only Pushover notification platform; it declares no inbound message handling.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4562,9 +4693,19 @@
       "required_environment_names": [
         "MESHTASTIC_URL"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/TakeshiTGAL/hermes-plugin-radio-dm-gateway",
+        "reference_commit": "cc543e3fcd331bb3aeb995d8176947593134e7a3",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Meshtastic radio direct-message platform with encrypted-DM and sender allowlist requirements; channel packets are not answered.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4596,9 +4737,19 @@
       "required_environment_names": [
         "name"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/HalfbitStudio/hermes-plugin-rocketchat",
+        "reference_commit": "989a04cd5f09e57bdd88997940cd18e4d58415b2",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Rocket.Chat gateway using REST outbound operations and Realtime DDP WebSocket inbound messages.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4611,9 +4762,19 @@
       "subdirectory": "integrations/hermes",
       "version": "0.7.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/joshuaKnauber/rply",
+        "reference_commit": "932926e7f209e2d41b985b51a73867e7b050ab57",
+        "subdirectory": "integrations/hermes",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "rply inbox gateway with inbound/outbound messages, acknowledgements, cron delivery, and interactive approvals.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4632,9 +4793,19 @@
         "SF_CHATTER_PRIVATE_KEY_PATH",
         "SF_CHATTER_BOT_USER_ID"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/zenplace-system/hermes-plugin-salesforce-chatter",
+        "reference_commit": "16ff469ffb1484e37053315e799846d3c4d7c9d8",
+        "subdirectory": "salesforce_chatter",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Salesforce Chatter gateway adapter for mentions and replies.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4647,9 +4818,19 @@
       "subdirectory": "",
       "version": "",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed non-channel plugin candidate",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/duoi/hermes-sendblue-plugin",
+        "reference_commit": "3318aaa4402769ce440d43e0445ea2151ad5e73e",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "README.md"
+        ],
+        "finding": "Sendblue messaging dispatch tools and hook; its pinned plugin declares tools/hooks but no gateway platform adapter.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4662,9 +4843,19 @@
       "subdirectory": "",
       "version": "0.5.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed non-channel plugin candidate",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/rrrrnmtsu/hermes-session-mirror",
+        "reference_commit": "02a923f04b414f30286d31b278a3177892dd5f9f",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "__init__.py"
+        ],
+        "finding": "Conversation mirroring hook that posts session turns to Discord; it is an observer plugin, not an inbound/outbound gateway adapter.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4679,9 +4870,19 @@
       "required_environment_names": [
         "VECTOR_NPUB"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/BonesGit/hermes-vector-platform",
+        "reference_commit": "94e1af49a2dcbce4952cb3d17b8591b8e3e10bed",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Vector gateway adapter relaying direct messages over HTTP/SSE through a local Rust sidecar.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4697,9 +4898,19 @@
         "VK_GROUP_TOKEN",
         "VK_GROUP_ID"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/web3blind/hermes-vk-platform",
+        "reference_commit": "2443f32b38a944f17889fba3efc5243af3b8e875",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "VK Messenger gateway adapter using community messages and Group Long Poll.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4712,9 +4923,19 @@
       "subdirectory": "",
       "version": "",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/qordinate-ai/watchline-hermes-plugin",
+        "reference_commit": "d3d2424336af16cae94e4bbcb47e6edd07a88062",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "watchline_hermes_plugin/adapter.py"
+        ],
+        "finding": "Watchline delivery adapter polling a pull channel and forwarding matched events into the Hermes gateway.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4729,9 +4950,19 @@
       "required_environment_names": [
         "WHATSAPP_AGENT_PLATFORM_API_KEY"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/ahtishamdilawar/hermes-whatsapp-agent-platform",
+        "reference_commit": "3a57b1da04499279d1af6c7d979c9c2d8b658ce0",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "WhatsApp Agent Platform adapter using its long-poll API to route chats between WhatsApp agents and Hermes.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4746,9 +4977,19 @@
       "required_environment_names": [
         "XCHAT_ACCESS_TOKEN"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/NousResearch/hermes-official-plugins",
+        "reference_commit": "f98c0999c6dd4e59680addc8f3480208018ab5b0",
+        "subdirectory": "xchat",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "X Chat platform adapter for encrypted direct messages, using polling for inbound events and signed/encrypted outbound replies.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4763,9 +5004,19 @@
       "required_environment_names": [
         "ZALO_BOT_TOKEN"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/moken627-hub/hermes-plugin-zalo",
+        "reference_commit": "5a989368d0877c930e76fcc75ea125e7af7ea872",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "zalo/adapter.py"
+        ],
+        "finding": "Zalo Bot Platform adapter supporting long-polling and webhook transports.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     }
