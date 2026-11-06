@@ -85,6 +85,13 @@ export class EngineClient {
   clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}
   discoverAgentPlugins(root:string):Promise<PluginDiscovery>{return this.#request('/extensions/packages/discover',{method:'POST',body:JSON.stringify({root})});}
   importAgentPluginSkill(input:{root:string;package_name:string;skill_name:string}):Promise<components['schemas']['SkillSummary']>{return this.#request('/extensions/packages/import-skill',{method:'POST',body:JSON.stringify(input)});}
+  async exportSkillPackage(id:string,version:number):Promise<Blob>{
+    const path=`/skills/${encodeURIComponent(id)}/versions/${version}/export`;
+    const response=await this.#fetch(new URL(path,this.#base),{headers:{Authorization:`Bearer ${this.#token}`},redirect:'error'});
+    if(!response.ok)throw new EngineRequestError(response.status,`Engine request failed (${response.status}).`);
+    if(!response.headers.get('content-type')?.startsWith('application/zip'))throw new Error('Engine returned an invalid procedure package.');
+    return response.blob();
+  }
 
   lmStudioConfig(): Promise<components['schemas']['LMStudioConfigRecord']> {
     return this.#request('/providers/lm-studio/config');

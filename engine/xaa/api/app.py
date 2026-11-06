@@ -41,6 +41,7 @@ from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import (
     PluginDiscovery,
     discover_agent_plugins,
+    export_procedure_package,
     read_plugin_skill,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
@@ -662,6 +663,43 @@ def create_app(
             return skill_store.version(skill_id, version)
         except KeyError:
             raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+
+    @app.get(
+        "/skills/{skill_id}/versions/{version}/export",
+        response_class=Response,
+        responses={
+            200: {
+                "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}
+            }
+        },
+    )
+    def export_skill_package(
+        skill_id: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> Response:
+        try:
+            saved = skill_store.version(skill_id, version)
+            summary = skill_store.get(skill_id)
+            source = saved["evaluation_evidence"].get("source")
+            package_name, package_bytes = export_procedure_package(
+                identity=skill_id,
+                version=version,
+                name=summary["name"],
+                content=saved["content"],
+                required_tools=saved["required_tools"],
+                source=source,
+                assets=saved["assets"],
+            )
+            return Response(
+                package_bytes,
+                media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{package_name}.zip"'},
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/skills/{skill_id}/versions/{version}/trials", response_model=list[SkillTrialRun])
     def eligible_skill_trials(

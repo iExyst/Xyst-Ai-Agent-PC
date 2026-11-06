@@ -1,11 +1,14 @@
 import base64
 import hashlib
+import io
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 from xaa.api.app import create_app
+from xaa.extensions.agent_plugins import discover_agent_plugins, read_plugin_skill
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import RunStore
@@ -126,3 +129,22 @@ def test_candidate_api_is_authenticated_and_never_executes_text(workspace_tmp_pa
     with runs.connection() as connection:
         assert connection.execute("SELECT count(*) FROM tool_calls").fetchone()[0] == 0
         assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+
+
+def test_user_procedure_export_creates_importable_agent_plugin_package(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "package-export.sqlite3")
+    skill = SkillStore(runs).create(draft())
+    headers = {"Authorization": "Bearer " + "x" * 32}
+    with TestClient(create_app(LMStudioProvider(), SecretStr("x" * 32), store=runs)) as client:
+        exported = client.get(f"/skills/{skill['id']}/versions/1/export", headers=headers)
+    assert exported.status_code == 200
+    package_root = workspace_tmp_path / "package"
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        archive.extractall(package_root)
+    discovered = discover_agent_plugins(str(package_root))
+    assert len(discovered.packages) == 1
+    package = discovered.packages[0]
+    assert package.skills[0].name == "inspect-files"
+    imported = read_plugin_skill(str(package_root), package.name, "inspect-files")
+    assert "Read the relevant files; check evidence before reporting." in imported.content
+    assert imported.allowed_tools == ["workspace.read_file"]

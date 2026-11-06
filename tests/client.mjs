@@ -60,6 +60,18 @@ test('client sends bearer token and objective only to the loopback engine', asyn
   assert.equal(request.init.redirect, 'error');
 });
 
+test('procedure package export is authenticated and remains binary', async () => {
+  let request;
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async (url, init) => {
+    request = {url: String(url), authorization: new Headers(init.headers).get('Authorization')};
+    return new Response(new Uint8Array([0x50,0x4b,0x03,0x04]), {headers:{'content-type':'application/zip'}});
+  });
+  const blob = await client.exportSkillPackage('skill/one', 2);
+  assert.equal(request.url, 'http://127.0.0.1:8765/skills/skill%2Fone/versions/2/export');
+  assert.equal(request.authorization, 'Bearer ' + 'x'.repeat(32));
+  assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [0x50,0x4b,0x03,0x04]);
+});
+
 test('client rejects cloud addresses before sending a token', () => {
   assert.throws(() => new EngineClient('https://example.com', 'x'.repeat(32)), /loopback/);
 });

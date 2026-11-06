@@ -51,7 +51,7 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
     }catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
   async function remove(){if(!selected)return;setBusy(true);setError('');try{await client.deleteSkill(selected.id);reset();await refresh();}catch(failure){setError(String(failure));}finally{setBusy(false);}}
-  async function exportVersion(){if(!selected)return;setBusy(true);try{const data=await client.skillVersion(selected.id,version);const url=URL.createObjectURL(new Blob([JSON.stringify({name:selected.name,...data},null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`procedure-${selected.id}-v${version}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(failure){setError(String(failure));}finally{setBusy(false);}}
+  async function exportVersion(){if(!selected)return;setBusy(true);try{const blob=await client.exportSkillPackage(selected.id,version);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`procedure-${selected.id}-v${version}.zip`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(failure){setError(String(failure));}finally{setBusy(false);}}
   return <section aria-label="Procedure candidates"><h2>Procedure candidates</h2>
     <p>Draft reusable procedures here. Candidates are unverified. Select a version explicitly for an evaluation trial; declared tools and permissions grant no authority.</p>
     <div className="controls"><button disabled={busy} onClick={reset}>New procedure</button>

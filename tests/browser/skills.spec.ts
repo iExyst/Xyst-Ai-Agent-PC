@@ -10,6 +10,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
     expect(request.headers()['authorization']).toBe('Bearer '+'x'.repeat(32));
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.endsWith('/export'))return route.fulfill({status:200,body:Buffer.from('mock zip'),contentType:'application/zip',headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path.startsWith('/skills')){
       if(path.endsWith('/lifecycle'))return route.fulfill({json:[],headers});
@@ -57,7 +58,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await page.getByRole('button',{name:'Remove selected procedure',exact:true}).click();
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toHaveCount(0);
   const download=page.waitForEvent('download');await panel.getByRole('button',{name:'Export procedure version',exact:true}).click();
-  expect((await download).suggestedFilename()).toBe('procedure-procedure-1-v1.json');
+  expect((await download).suggestedFilename()).toBe('procedure-procedure-1-v1.zip');
   await panel.getByRole('button',{name:'Find completed procedure trials',exact:true}).click();
   await panel.getByLabel('First completed trial',{exact:true}).selectOption('trial-a');
   await panel.getByLabel('Second completed trial',{exact:true}).selectOption('trial-b');

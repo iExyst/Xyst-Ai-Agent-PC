@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import ipaddress
 import json
 import mimetypes
 import re
+import zipfile
 from collections.abc import Iterable
 from itertools import islice
 from pathlib import Path, PurePosixPath
@@ -464,3 +466,87 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
         assets=asset_rows,
     )
+
+
+def export_procedure_package(
+    *,
+    identity: str,
+    version: int,
+    name: str,
+    content: str,
+    required_tools: list[dict[str, str]],
+    source: dict[str, str] | None,
+    assets: list[dict[str, str]],
+) -> tuple[str, bytes]:
+    """Build a bounded Agent Plugins ZIP containing one procedure version."""
+    source = source or {}
+
+    def slug(value: str, fallback: str) -> str:
+        result = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")[:64].rstrip("-")
+        return result or fallback
+
+    package_name = slug(
+        source.get("package_name", ""), f"xaa-{slug(name, 'procedure')}-{identity[:8]}"
+    )
+    skill_name = source.get("skill_name", "")
+    if not _SKILL_NAME.fullmatch(skill_name):
+        skill_name = slug(name, "procedure")
+    package_version = source.get("package_version", "")
+    if not package_version or len(package_version) > 128:
+        package_version = f"1.0.{version}"
+    description = source.get("description", "")
+    if not description:
+        description = f"Exported X.A.A. procedure version {version}."
+    description = description[:1024]
+    allowed_tools = source.get("allowed_tools", "").split()
+    if not allowed_tools:
+        allowed_tools = [tool["name"] for tool in required_tools]
+    markdown = content
+    try:
+        _parse_skill_frontmatter(content.encode("utf-8"), skill_name)
+    except (UnicodeError, TypeError, ValueError, yaml.YAMLError):
+        header = yaml.safe_dump(
+            {
+                "name": skill_name,
+                "description": description,
+                "allowed-tools": " ".join(allowed_tools),
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        )
+        markdown = f"---\n{header}---\n\n{content}"
+    if len(markdown.encode("utf-8")) > 16_384:
+        raise ValueError("Exported SKILL.md exceeds the 16 KiB import limit.")
+    manifest: dict[str, Any] = {
+        "$schema": PLUGIN_SCHEMA_V1,
+        "name": package_name,
+        "version": package_version,
+        "description": (source.get("package_description") or f"Exported X.A.A. procedure {name}.")[
+            :2048
+        ],
+        "extensions": {},
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        archive.writestr("plugin.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        base = f"skills/{skill_name}/"
+        archive.writestr(base + "SKILL.md", markdown.encode("utf-8"))
+        for asset in assets:
+            relative = PurePosixPath(asset["path"])
+            if (
+                relative.is_absolute()
+                or relative.as_posix() != asset["path"]
+                or any(part in {"", ".", ".."} for part in relative.parts)
+            ):
+                raise ValueError("Procedure resource path is invalid for package export.")
+            raw = base64.b64decode(asset["content_base64"], validate=True)
+            if (
+                len(raw) > MAX_SKILL_RESOURCE_BYTES
+                or hashlib.sha256(raw).hexdigest() != asset["sha256"]
+            ):
+                raise ValueError("Procedure resource failed its package export integrity check.")
+            archive.writestr(base + relative.as_posix(), raw)
+    data = buffer.getvalue()
+    if len(data) > MAX_MANIFEST_BYTES + MAX_SKILL_RESOURCE_TOTAL_BYTES + MAX_SKILL_RESOURCE_BYTES:
+        raise ValueError("Exported procedure package exceeds its size limit.")
+    return package_name, data

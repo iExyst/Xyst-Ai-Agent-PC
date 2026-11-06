@@ -7466,6 +7466,62 @@
         "summary": "Evaluate Skill"
       }
     },
+    "/skills/{skill_id}/versions/{version}/export": {
+      "get": {
+        "operationId": "export_skill_package_skills__skill_id__versions__version__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Skill Package"
+      }
+    },
     "/skills/{skill_id}/versions/{version}/trials": {
       "get": {
         "operationId": "eligible_skill_trials_skills__skill_id__versions__version__trials_get",

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
-from xaa.extensions.agent_plugins import discover_agent_plugins
+from xaa.extensions.agent_plugins import discover_agent_plugins, read_plugin_skill
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.storage.runs import RunStore
 
@@ -164,6 +166,8 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
         assert created.status_code == 201
         assert created.json()["lifecycle_state"] == "candidate"
         version = client.get(f"/skills/{created.json()['id']}/versions/1", headers=headers)
+        assert client.get(f"/skills/{created.json()['id']}/versions/1/export").status_code == 401
+        exported = client.get(f"/skills/{created.json()['id']}/versions/1/export", headers=headers)
         revised = client.post(
             f"/skills/{created.json()['id']}/versions",
             headers=headers,
@@ -195,6 +199,19 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert revised_version.json()["evaluation_evidence"]["provenance"] == "agent_plugin"
     assert revised_version.json()["evaluation_evidence"]["source"] == evidence["source"]
     assert revised_version.json()["assets"] == version.json()["assets"]
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/zip")
+    unpacked = tmp_path / "exported"
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        assert "plugin.json" in archive.namelist()
+        archive.extractall(unpacked)
+    exported_packages = discover_agent_plugins(str(tmp_path / "exported"))
+    assert len(exported_packages.packages) == 1
+    assert exported_packages.packages[0].skills[0].name == "summarize"
+    exported_skill = read_plugin_skill(str(unpacked), "sample-package", "summarize")
+    assert exported_skill.content == version.json()["content"]
+    assert exported_skill.assets[0]["path"] == "references/guide.md"
+    assert exported_skill.assets[0]["content_base64"] == resource["content_base64"]
 
 
 @pytest.mark.parametrize("link", ["../outside.txt", "./guide.md", "%2e%2e/outside.txt"])
