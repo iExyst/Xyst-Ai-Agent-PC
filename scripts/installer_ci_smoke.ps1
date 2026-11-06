@@ -12,6 +12,17 @@ $xaaInstallerName = $xaaManifest.artifacts.installer.filename
 if ([IO.Path]::GetFileName($xaaInstallerName) -ne $xaaInstallerName) { throw 'Installer manifest filename escaped its staging directory.' }
 $xaaInstaller = (Resolve-Path -LiteralPath (Join-Path 'build/installer' $xaaInstallerName)).Path
 if ((Get-FileHash -LiteralPath $xaaInstaller -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.installer.sha256) { throw 'Installer checksum mismatch.' }
+$xaaPriorInstaller = $null
+$xaaPriorManifest = $null
+$xaaPriorPath = Get-ChildItem -LiteralPath 'build/prior-installer' -Filter 'manifest.json' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($xaaPriorPath) {
+    $xaaPriorManifest = Get-Content -LiteralPath $xaaPriorPath.FullName -Raw | ConvertFrom-Json
+    if ([version]$xaaPriorManifest.version -ge [version]$xaaManifest.version) { throw 'Upgrade fixture must be older than the current package.' }
+    $xaaPriorName = $xaaPriorManifest.artifacts.installer.filename
+    if ([IO.Path]::GetFileName($xaaPriorName) -ne $xaaPriorName) { throw 'Prior installer manifest filename escaped its directory.' }
+    $xaaPriorInstaller = Join-Path $xaaPriorPath.DirectoryName $xaaPriorName
+    if (-not (Test-Path -LiteralPath $xaaPriorInstaller) -or (Get-FileHash -LiteralPath $xaaPriorInstaller -Algorithm SHA256).Hash -ne $xaaPriorManifest.artifacts.installer.sha256) { throw 'Prior installer checksum mismatch.' }
+}
 $xaaDataDir = Join-Path $env:LOCALAPPDATA 'XAA'
 $xaaMarker = Join-Path $xaaDataDir 'installer-preservation-fixture.txt'
 if (Test-Path -LiteralPath $xaaMarker) { throw 'Data fixture already exists.' }
@@ -20,6 +31,15 @@ New-Item -ItemType Directory -Path $xaaDataDir -Force | Out-Null
 $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
 $xaaReport = @{ passed = $false; environment = 'disposable hosted Windows runner'; unsigned = $true }
 try {
+    if ($xaaPriorInstaller) {
+        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
+        if ($xaaPriorSetup.ExitCode -ne 0) { throw "Prior installer exit code $($xaaPriorSetup.ExitCode)" }
+        $xaaReport.prior_version = $xaaPriorManifest.version
+        $xaaReport.prior_install_verified = (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
+        if (-not $xaaReport.prior_install_verified) { throw 'Prior installer did not install its engine.' }
+    }
+    [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
+    $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
     $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
     if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
     $xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
@@ -27,6 +47,7 @@ try {
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
     if ((Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.desktop.sha256 -or (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.engine.sha256) { throw 'Installed binary checksums do not match the manifest.' }
     $xaaReport.installed_binary_hashes_match = $true
+    $xaaReport.upgrade_verified = [bool]$xaaPriorInstaller
     $xaaAcpHelp = & $xaaEngine --cli acp --help 2>&1
     if ($LASTEXITCODE -ne 0 -or -not (($xaaAcpHelp | Out-String) -match 'usage: xaa acp')) { throw 'Installed ACP CLI entry point failed.' }
     $xaaReport.installed_acp_cli_verified = $true
@@ -67,7 +88,7 @@ try {
         $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
     }
     $xaaReport.user_data_preserved = (Test-Path -LiteralPath $xaaMarker) -and (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash -eq $xaaMarkerHash
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
 }
 if (-not $xaaReport.passed) { throw 'Install/uninstall or data preservation verification failed.' }

@@ -10,6 +10,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   windows:
@@ -70,6 +71,10 @@ jobs:
       - name: Verify private task command snapshot scopes
         run: uv run python scripts/task_command_snapshot_diagnostic.py --engine apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe
         timeout-minutes: 2
+      - name: Download previous 0.1.0 installer for upgrade acceptance
+        run: gh run download 42181905058 --repo $env:GITHUB_REPOSITORY --name xaa-windows-installer-unsigned --dir build/prior-installer
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Install, boot and uninstall unsigned package
         run: ./scripts/installer_ci_smoke.ps1
         timeout-minutes: 5
