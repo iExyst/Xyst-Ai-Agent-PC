@@ -5,12 +5,18 @@ import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 
 const executable=path.resolve(process.argv[2]??'build/native-release/xaa-desktop.exe');
-const root=path.resolve('.acceptance',randomUUID());await mkdir(root,{recursive:true});
-const logPath=path.join(process.env.LOCALAPPDATA,'dev.xyst.xaa','logs','engine.log');
+const requestedRoot=process.env.XAA_NATIVE_ACCEPTANCE_ROOT;
+const root=requestedRoot?path.resolve(requestedRoot):path.resolve('.acceptance',randomUUID());
+if(requestedRoot){const acceptanceRoot=path.resolve('.acceptance')+path.sep;if(!root.startsWith(acceptanceRoot)||await readFile(path.join(root,'report.json')).then(()=>true).catch(()=>false))throw new Error('Requested native acceptance root must be new and inside .acceptance');}
+await mkdir(root,{recursive:true});
+const logDirectory=path.join(root,'logs');await mkdir(logDirectory,{recursive:true});
+const logPath=path.join(logDirectory,'engine.log');
 const previous=await readFile(logPath,'utf8').catch(()=>'');
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH','PYTHONPATH','VIRTUAL_ENV'].includes(key.toUpperCase())));
 const started=Date.now();let stdout='',stderr='';
-const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),XAA_TEST_HIDDEN:'1',XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
+const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
+const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),XAA_TEST_HIDDEN:'1',XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;
@@ -44,10 +50,26 @@ try{
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   let ready=false;
   for(let attempt=0;attempt<240;attempt++){
-    try{const response=await fetch(`${connection.base_url}/runs`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(500)});if(response.ok){const history=await response.json();if(history.items.length)throw new Error('Isolated boot unexpectedly has runs');ready=true;break;}}catch{}
+    try{const response=await fetch(`${connection.base_url}/runs`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(500)});if(response.ok){const history=await response.json();if(backupFixture){if(!history.items.some(item=>item.id===backupFixture.run.id))throw new Error('Seeded installed backup run is absent from the engine database');}else if(history.items.length)throw new Error('Isolated boot unexpectedly has runs');ready=true;break;}}catch(error){if(String(error).includes('Seeded installed backup run'))throw error;}
     await new Promise(resolve=>setTimeout(resolve,250));
   }
   if(!ready)throw new Error('Bundled engine API did not become ready');
+  let backupAcceptance;
+  if(backupFixture){
+    const engine=path.join(path.dirname(executable),'xaa-engine.exe');
+    const cliEnv={...process.env,XAA_API_TOKEN:connection.token,XAA_API_URL:connection.base_url};
+    const backupText=execFileSync(engine,['--cli','--api-url',connection.base_url,'backup'],{windowsHide:true,encoding:'utf8',timeout:60000,env:cliEnv});
+    const backupResult=JSON.parse(backupText);
+    if(backupResult.status!=='verified')throw new Error('Installed xaa backup did not verify its bundle');
+    const bundle=path.resolve(backupResult.path);
+    const relativeBundle=path.relative(backupFixture.directory,bundle);
+    if(relativeBundle.startsWith('..')||path.isAbsolute(relativeBundle)||!relativeBundle.toLowerCase().startsWith(`backups${path.sep}`.toLowerCase()))throw new Error('Installed backup path escaped the selected data directory');
+    const restoreDirectory=path.join(root,'installed-backup-restored');
+    const restoreText=execFileSync(engine,['--cli','restore-bundle',bundle,'--destination',restoreDirectory],{windowsHide:true,encoding:'utf8',timeout:60000,env:cliEnv});
+    if(!restoreText.includes('Restored database and artifacts:'))throw new Error('Installed restore-bundle CLI did not report success');
+    const verified=execFileSync('uv',['run','python','scripts/installed_backup_fixture.py','verify','--directory',restoreDirectory,'--fixture',backupFixturePath,'--report',path.join(root,'installed-backup-verification.json')],{windowsHide:true,encoding:'utf8',timeout:60000,env:process.env});
+    backupAcceptance={backup_cli:true,restore_cli:true,bundle,restored_directory:restoreDirectory,verification:JSON.parse(verified)};
+  }
   const startupMilliseconds=Date.now()-started;
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
   await page.screenshot({path:path.join(root,'release-boot.png'),fullPage:true});
@@ -61,7 +83,7 @@ try{
   if(!stopped)throw new Error('Bundled engine survived desktop closure');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:true,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;

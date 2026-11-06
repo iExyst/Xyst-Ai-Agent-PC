@@ -4,6 +4,7 @@ use std::{
     io::Write,
     net::TcpListener,
     net::TcpStream,
+    path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
@@ -65,6 +66,19 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
         .env("XAA_STREAM_RESPONSES", "1");
 }
 
+fn selected_log_directory(
+    hidden_acceptance: bool,
+    requested: Option<PathBuf>,
+    default: PathBuf,
+) -> PathBuf {
+    if hidden_acceptance {
+        if let Some(path) = requested {
+            return path;
+        }
+    }
+    default
+}
+
 #[cfg(test)]
 mod tests {
     use super::configure_engine_environment;
@@ -79,6 +93,20 @@ mod tests {
             .find(|(name, _)| *name == "XAA_STREAM_RESPONSES")
             .map(|(_, value)| value);
         assert!(matches!(streaming, Some(Some(value)) if value.to_string_lossy() == "1"));
+    }
+
+    #[test]
+    fn acceptance_log_override_is_ignored_for_visible_application() {
+        let default = std::path::PathBuf::from("default-log-dir");
+        let requested = std::path::PathBuf::from("acceptance-log-dir");
+        assert_eq!(
+            super::selected_log_directory(false, Some(requested.clone()), default.clone()),
+            default
+        );
+        assert_eq!(
+            super::selected_log_directory(true, Some(requested.clone()), default),
+            requested
+        );
     }
 }
 
@@ -141,7 +169,11 @@ fn main() {
                 executable = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("binaries/xaa-engine-x86_64-pc-windows-msvc.exe");
             }
-            let logs = app.path().app_log_dir()?;
+            let logs = selected_log_directory(
+                std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1"),
+                std::env::var_os("XAA_TEST_LOG_DIR").map(PathBuf::from),
+                app.path().app_log_dir()?,
+            );
             std::fs::create_dir_all(&logs)?;
             let log = std::fs::OpenOptions::new()
                 .create(true)
