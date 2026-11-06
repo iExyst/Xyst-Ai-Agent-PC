@@ -1415,6 +1415,22 @@ def create_app(
             raise HTTPException(status_code=404, detail="Specialist memory not found.")
         return Response(status_code=204)
 
+    @app.get("/chat/acp-sessions")
+    def list_acp_chat_sessions(
+        model: str,
+        workspace: str,
+        mode: Literal["observe", "workspace"],
+        after: str = "",
+        limit: int = Query(default=50, ge=1, le=50),
+        _: None = Depends(authenticate),
+    ) -> list[dict[str, str]]:
+        try:
+            return cli_chat_store.list_acp(
+                model=model, workspace=workspace, mode=mode, after=after, limit=limit
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.get("/chat/sessions/{session_id}", response_model=CLIChatSessionRecord)
     def get_cli_chat_session(session_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
         try:

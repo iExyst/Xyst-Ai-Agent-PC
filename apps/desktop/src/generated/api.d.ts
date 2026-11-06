@@ -154,6 +154,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/acp-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Acp Chat Sessions */
+        get: operations["list_acp_chat_sessions_chat_acp_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -3031,6 +3048,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramPairingCode"];
+                };
+            };
+        };
+    };
+    list_acp_chat_sessions_chat_acp_sessions_get: {
+        parameters: {
+            query: {
+                model: string;
+                workspace: string;
+                mode: "observe" | "workspace";
+                after?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

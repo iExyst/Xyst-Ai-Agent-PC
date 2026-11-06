@@ -14,6 +14,40 @@ class QuietProvider(LMStudioProvider):
         return None
 
 
+def test_acp_session_listing_filters_scope_and_cursor(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "acp-list.sqlite3")
+    chat = CLIChatStore(store)
+    run_id = store.create_run(
+        objective="List fixture",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="local/model",
+    )["id"]
+    for session_id, model in (
+        ("a" * 32, "local/model"),
+        ("b" * 32, "other/model"),
+        ("terminal", "local/model"),
+        ("c" * 32, "local/model"),
+    ):
+        chat.append_turn(
+            session_id,
+            run_id=run_id,
+            model=model,
+            workspace=str(workspace_tmp_path),
+            mode="observe",
+            user_message="Hello",
+            assistant_message="World",
+        )
+    first = chat.list_acp(
+        model="local/model", workspace=str(workspace_tmp_path), mode="observe", limit=1
+    )
+    second = chat.list_acp(
+        model="local/model", workspace=str(workspace_tmp_path), mode="observe", after=first[0]["id"]
+    )
+    assert [item["id"] for item in first + second] == ["a" * 32, "c" * 32]
+
+
 def test_cli_chat_session_persists_bounded_turns_and_rejects_config_change(workspace_tmp_path):
     database = workspace_tmp_path / "cli-chat.sqlite3"
     store = RunStore(database)

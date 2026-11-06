@@ -60,6 +60,26 @@ class CLIChatStore:
             "messages": [dict(item) for item in reversed(messages)],
         }
 
+    def list_acp(
+        self, *, model: str, workspace: str, mode: ChatMode, after: str = "", limit: int = 50
+    ) -> list[dict[str, str]]:
+        """List only ACP generated sessions matching this adapter's fixed settings."""
+        if after and re.fullmatch(r"[0-9a-f]{32}", after) is None:
+            raise ValueError("Invalid ACP session cursor.")
+        if not 1 <= limit <= 50:
+            raise ValueError("ACP session page size must be 1–50.")
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT s.id,s.title,s.updated_at FROM sessions AS s "
+                "JOIN cli_chat_config AS c ON c.session_id=s.id "
+                "WHERE s.channel='cli' AND s.account_id='local-user' "
+                "AND c.model=? AND c.workspace=? AND c.mode=? AND s.id>? "
+                "AND length(s.id)=32 AND s.id NOT GLOB '*[^0-9a-f]*' "
+                "ORDER BY s.id LIMIT ?",
+                (model, workspace, mode, after, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def append_turn(
         self,
         session_id: str,

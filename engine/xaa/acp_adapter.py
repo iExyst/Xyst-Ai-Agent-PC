@@ -28,6 +28,10 @@ from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     Implementation,
+    ListSessionsResponse,
+    SessionCapabilities,
+    SessionInfo,
+    SessionListCapabilities,
     TextContentBlock,
     UserMessageChunk,
 )
@@ -174,7 +178,10 @@ class XaaAcpAgent:
         return InitializeResponse(
             protocol_version=protocol_version,
             agent_info=Implementation(name="xyst-ai-agent", title="Xyst AI Agent", version="0.1.0"),
-            agent_capabilities=AgentCapabilities(load_session=True),
+            agent_capabilities=AgentCapabilities(
+                load_session=True,
+                session_capabilities=SessionCapabilities(list=SessionListCapabilities()),
+            ),
         )
 
     async def new_session(
@@ -255,6 +262,46 @@ class XaaAcpAgent:
             return LoadSessionResponse()
         except httpx.HTTPError as exc:
             raise RequestError(-32000, "Cannot load session from the local X.A.A. API.") from exc
+
+    async def list_sessions(
+        self, cursor: str | None = None, cwd: str | None = None, **kwargs: Any
+    ) -> ListSessionsResponse:
+        if cursor and re.fullmatch(r"[0-9a-f]{32}", cursor) is None:
+            raise RequestError(-32602, "Invalid ACP session cursor.")
+        if cwd is not None:
+            try:
+                requested_workspace = Path(cwd).expanduser().resolve(strict=True)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise RequestError(-32602, "ACP working directory is unavailable.") from exc
+            if requested_workspace != self.workspace:
+                return ListSessionsResponse(sessions=[])
+        try:
+            response = await self._client.get(
+                "/chat/acp-sessions",
+                params={
+                    "model": self.model,
+                    "workspace": str(self.workspace),
+                    "mode": self.mode,
+                    "after": cursor or "",
+                    "limit": 50,
+                },
+            )
+            response.raise_for_status()
+            records = cast(list[dict[str, str]], response.json())
+            return ListSessionsResponse(
+                sessions=[
+                    SessionInfo(
+                        session_id=item["id"],
+                        cwd=str(self.workspace),
+                        title=item["title"],
+                        updated_at=item["updated_at"],
+                    )
+                    for item in records
+                ],
+                next_cursor=records[-1]["id"] if len(records) == 50 else None,
+            )
+        except httpx.HTTPError as exc:
+            raise RequestError(-32000, "Cannot list sessions from the local X.A.A. API.") from exc
 
     async def prompt(
         self,

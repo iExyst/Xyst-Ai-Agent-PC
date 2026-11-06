@@ -90,6 +90,19 @@ def _api_fixture(
             else value
         )
 
+    @app.get("/chat/acp-sessions")
+    async def list_sessions(
+        model: str, workspace: str, mode: str, after: str = "", limit: int = 50
+    ) -> list[dict[str, str]]:
+        return [
+            {"id": key, "title": f"ACP {key}", "updated_at": "2026-11-06T00:00:00Z"}
+            for key, value in sorted(state["sessions"].items())
+            if key > after
+            and value["model"] == model
+            and value["workspace"] == workspace
+            and value["mode"] == mode
+        ][:limit]
+
     @app.post("/runs")
     async def create_run(request: Request) -> dict[str, str]:
         payload = await request.json()
@@ -208,6 +221,8 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
             initialized = await connection.initialize(protocol_version=PROTOCOL_VERSION)
             assert initialized.agent_capabilities is not None
             assert initialized.agent_capabilities.load_session is True
+            listed = await connection.list_sessions(cwd=str(tmp_path.resolve()))
+            assert [item.session_id for item in listed.sessions] == [session.session_id]
             await connection.load_session(
                 cwd=str(tmp_path.resolve()), session_id=session.session_id, mcp_servers=[]
             )
