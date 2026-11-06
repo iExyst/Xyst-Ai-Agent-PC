@@ -3210,13 +3210,13 @@
       "id": "email",
       "kind": "registered_platform",
       "phase": 9,
-      "status": "planned",
+      "status": "implemented (partial)",
       "full_parity_phase": 9,
       "phase_scope": "parity expansion",
-      "xaa_module": "engine/xaa/channels/email (not implemented)",
+      "xaa_module": "engine/xaa/channels/email.py and authenticated email settings API",
       "transport_observation": "Polled IMAP receive and SMTP send",
       "acceptance_id": "CHANNEL-EMAIL",
-      "acceptance": "Verify TLS/authentication, mailbox UID/message-ID deduplication, sender authorization, thread headers and automated-mail loop prevention.",
+      "acceptance": "Bounded IMAP TLS and SMTP TLS/STARTTLS, exact sender allowlist plus pinned aligned DMARC authserv validation, UIDVALIDITY/UID deduplication, threaded bounded text replies, automated-mail suppression, and no retry after ambiguous send. Live mailbox interoperability remains open.",
       "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
     },
     {

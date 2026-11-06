@@ -36,6 +36,7 @@ from xaa.api.contracts import (
     TaskCandidate,
     UsageReport,
 )
+from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import (
@@ -333,6 +334,27 @@ class TelegramLinkedUser(BaseModel):
     user_id: str
 
 
+class EmailCredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    address: str = Field(min_length=3, max_length=320)
+    password: SecretStr = Field(min_length=1, max_length=512)
+    imap_host: str = Field(min_length=1, max_length=253)
+    imap_port: int = Field(default=993, ge=1, le=65535)
+    smtp_host: str = Field(min_length=1, max_length=253)
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_security: Literal["starttls", "tls"] = "starttls"
+    allowed_senders: list[str] = Field(min_length=1, max_length=100)
+    authserv_id: str = Field(min_length=1, max_length=253, pattern=r"^[A-Za-z0-9.-]+$")
+
+
+class EmailCredentialStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configured: bool
+    address: str | None
+    processed_messages: int
+    deliveries: dict[str, int]
+
+
 class SpecialistRouteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     model_route: str | None
@@ -407,6 +429,12 @@ def create_app(
         if credential_store is not None
         else None
     )
+    email_store = EmailStore(run_store)
+    email_service = (
+        EmailService(run_store, credential_store, supervisor.submit)
+        if credential_store is not None
+        else None
+    )
 
     with run_store.connection() as connection:
         profile = connection.execute(
@@ -429,9 +457,13 @@ def create_app(
         schedule_service.start()
         if telegram_service is not None:
             telegram_service.start()
+        if email_service is not None:
+            email_service.start()
         yield
         if telegram_service is not None:
             await telegram_service.close()
+        if email_service is not None:
+            await email_service.close()
         await schedule_service.close()
         await supervisor.close()
         await mcp_manager.close()
@@ -1109,6 +1141,62 @@ def create_app(
         code = secrets.token_urlsafe(32)
         expires_at = telegram_store.create_pairing(code)
         return {"code": code, "expires_at": expires_at}
+
+    @app.get("/channels/email", response_model=EmailCredentialStatus)
+    def email_status(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        raw = credential_store.get("email-mailbox-config")
+        parsed: object = json.loads(raw) if raw else {}
+        values = cast(dict[str, object], parsed) if isinstance(parsed, dict) else {}
+        raw_address = values.get("address")
+        address = raw_address if isinstance(raw_address, str) else None
+        configured = bool(address and credential_store.get("email-mailbox-password"))
+        return email_store.status(address if configured else None)
+
+    @app.put("/channels/email/credential", response_model=EmailCredentialStatus)
+    def set_email_credential(
+        payload: EmailCredentialRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        values = {
+            "address": payload.address,
+            "password": payload.password.get_secret_value(),
+            "imap_host": payload.imap_host,
+            "imap_port": str(payload.imap_port),
+            "smtp_host": payload.smtp_host,
+            "smtp_port": str(payload.smtp_port),
+            "smtp_security": payload.smtp_security,
+            "allowed_senders": ",".join(payload.allowed_senders),
+            "authserv_id": payload.authserv_id,
+        }
+        try:
+            config = EmailConfig.parse(values)
+            stored_config = {key: value for key, value in values.items() if key != "password"}
+            credential_store.set(
+                json.dumps(stored_config, separators=(",", ":")), profile="email-mailbox-config"
+            )
+            credential_store.set(values["password"], profile="email-mailbox-password")
+            email_store.save_config(config)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="Email settings are invalid or could not be saved."
+            ) from exc
+        return email_store.status(config.address)
+
+    @app.delete("/channels/email/credential", response_model=EmailCredentialStatus)
+    def clear_email_credential(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            credential_store.delete("email-mailbox-config")
+            credential_store.delete("email-mailbox-password")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return email_store.status(None)
 
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:

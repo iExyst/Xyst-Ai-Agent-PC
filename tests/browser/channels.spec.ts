@@ -3,6 +3,7 @@ import {expect,test} from '@playwright/test';
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{}};
+  let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{}};
   await page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
@@ -34,6 +35,16 @@ test('save Telegram token securely, pair an account and clear the credential',as
       status={...status,linked_users:0};
       return route.fulfill({json:{revoked_users:1,linked_users:0},headers});
     }
+    if(path==='/channels/email'&&request.method()==='GET')return route.fulfill({json:emailStatus,headers});
+    if(path==='/channels/email/credential'&&request.method()==='PUT'){
+      const body=request.postDataJSON();requests.push(body);expect(body.password).toBe('email-app-password');expect(body.authserv_id).toBe('mx.example.test');
+      emailStatus={configured:true,address:'agent@example.test',processed_messages:0,deliveries:{}};
+      return route.fulfill({json:emailStatus,headers});
+    }
+    if(path==='/channels/email/credential'&&request.method()==='DELETE'){
+      emailStatus={configured:false,address:null,processed_messages:0,deliveries:{}};
+      return route.fulfill({json:emailStatus,headers});
+    }
     return route.fulfill({json:{status:'ok'},headers});
   });
   await page.goto('/');
@@ -54,5 +65,17 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByText(/0 linked user/)).toBeVisible();
   await panel.getByRole('button',{name:'Clear saved token',exact:true}).click();
   await expect(panel.getByText('Telegram bot is not configured')).toBeVisible();
+  await panel.getByLabel('Mailbox address').fill('agent@example.test');
+  await panel.getByLabel('Mailbox password or app password').fill('email-app-password');
+  await panel.getByLabel('IMAP server').fill('imap.example.test');
+  await panel.getByLabel('SMTP server').fill('smtp.example.test');
+  await panel.getByLabel('Authorized sender addresses (comma separated)').fill('owner@example.test');
+  await panel.getByLabel('Receiving mail server authserv-id').fill('mx.example.test');
+  await panel.getByRole('button',{name:'Save email settings',exact:true}).click();
+  await expect(panel.getByLabel('Mailbox password or app password')).toHaveValue('');
+  await expect(panel.getByText('Configured mailbox: agent@example.test')).toBeVisible();
+  await panel.getByRole('button',{name:'Clear email credentials',exact:true}).click();
+  await expect(panel.getByText('Email is not configured')).toBeVisible();
+  expect(requests).toHaveLength(2);
   expect(errors).toEqual([]);
 });

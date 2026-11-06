@@ -33,6 +33,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Email Status */
+        get: operations["email_status_channels_email_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/email/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Email Credential */
+        put: operations["set_email_credential_channels_email_credential_put"];
+        post?: never;
+        /** Clear Email Credential */
+        delete: operations["clear_email_credential_channels_email_credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram": {
         parameters: {
             query?: never;
@@ -1390,6 +1425,53 @@ export interface components {
              */
             state: "available" | "unsupported" | "unavailable";
         };
+        /** EmailCredentialRequest */
+        EmailCredentialRequest: {
+            /** Address */
+            address: string;
+            /** Allowed Senders */
+            allowed_senders: string[];
+            /** Authserv Id */
+            authserv_id: string;
+            /** Imap Host */
+            imap_host: string;
+            /**
+             * Imap Port
+             * @default 993
+             */
+            imap_port: number;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+            /** Smtp Host */
+            smtp_host: string;
+            /**
+             * Smtp Port
+             * @default 587
+             */
+            smtp_port: number;
+            /**
+             * Smtp Security
+             * @default starttls
+             * @enum {string}
+             */
+            smtp_security: "starttls" | "tls";
+        };
+        /** EmailCredentialStatus */
+        EmailCredentialStatus: {
+            /** Address */
+            address: string | null;
+            /** Configured */
+            configured: boolean;
+            /** Deliveries */
+            deliveries: {
+                [key: string]: number;
+            };
+            /** Processed Messages */
+            processed_messages: number;
+        };
         /** EvaluationRecord */
         EvaluationRecord: {
             /**
@@ -2743,6 +2825,79 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    email_status_channels_email_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailCredentialStatus"];
+                };
+            };
+        };
+    };
+    set_email_credential_channels_email_credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_email_credential_channels_email_credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailCredentialStatus"];
                 };
             };
         };

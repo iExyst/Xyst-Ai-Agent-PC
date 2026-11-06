@@ -403,3 +403,26 @@ def test_schema_seventeen_adds_durable_specialist_identity_snapshots(workspace_t
     assert TaskStore(migrated).records(run_id)[0]["identity_name"] == "Evidence Scout"
     with migrated.connection() as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_seventeen_adds_email_channel_deduplication_tables(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-seventeen-email.sqlite3"
+    store = RunStore(database)
+    with store.connection() as connection:
+        connection.execute("DROP TABLE email_messages")
+        connection.execute("DROP TABLE email_mailboxes")
+        connection.execute("PRAGMA user_version=17")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        tables = {
+            row["name"]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert {"email_mailboxes", "email_messages"}.issubset(tables)
+        assert {"uid_validity", "last_uid"}.issubset(
+            {row["name"] for row in connection.execute("PRAGMA table_info(email_mailboxes)")}
+        )
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

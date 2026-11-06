@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 17
+DATABASE_SCHEMA_VERSION = 18
 
 
 @dataclass(frozen=True)
@@ -437,6 +437,32 @@ class RunStore:
                     next_offset INTEGER NOT NULL,
                     last_update_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS email_mailboxes (
+                    id TEXT PRIMARY KEY,
+                    address TEXT NOT NULL UNIQUE,
+                    config_json TEXT NOT NULL,
+                    uid_validity TEXT,
+                    last_uid INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS email_messages (
+                    mailbox_id TEXT NOT NULL REFERENCES email_mailboxes(id) ON DELETE CASCADE,
+                    uid_validity TEXT NOT NULL,
+                    uid TEXT NOT NULL,
+                    message_id TEXT,
+                    sender TEXT,
+                    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+                    run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+                    state TEXT NOT NULL,
+                    delivery_state TEXT,
+                    delivery_message_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(mailbox_id,uid_validity,uid)
+                );
+                CREATE INDEX IF NOT EXISTS email_messages_delivery
+                    ON email_messages(mailbox_id,delivery_state,created_at);
                 CREATE TABLE IF NOT EXISTS provider_profiles (
                     id TEXT PRIMARY KEY,
                     adapter TEXT NOT NULL,
@@ -534,6 +560,15 @@ class RunStore:
                 )
                 connection.execute(
                     "UPDATE tasks SET identity_name=COALESCE((SELECT display_name FROM specialist_profiles WHERE role=tasks.assigned_role),tasks.assigned_role)"
+                )
+            email_mailbox_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(email_mailboxes)")
+            }
+            if "uid_validity" not in email_mailbox_columns:
+                connection.execute("ALTER TABLE email_mailboxes ADD COLUMN uid_validity TEXT")
+            if "last_uid" not in email_mailbox_columns:
+                connection.execute(
+                    "ALTER TABLE email_mailboxes ADD COLUMN last_uid INTEGER NOT NULL DEFAULT 0"
                 )
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(tool_calls)")}
             if "provider_call_id" not in columns:

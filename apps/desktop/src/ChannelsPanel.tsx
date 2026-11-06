@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import type {EngineClient,TelegramChannelStatus} from './api/client.ts';
+import type {EmailChannelStatus,EngineClient,TelegramChannelStatus} from './api/client.ts';
 
 export function ChannelsPanel({client}:{client:EngineClient}) {
   const [status,setStatus]=useState<TelegramChannelStatus>();
@@ -8,12 +8,19 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [busy,setBusy]=useState(false);
   const [confirmRevoke,setConfirmRevoke]=useState(false);
   const [error,setError]=useState('');
+  const [email,setEmail]=useState<EmailChannelStatus>();
+  const [emailAddress,setEmailAddress]=useState('');
+  const [emailPassword,setEmailPassword]=useState('');
+  const [imapHost,setImapHost]=useState('');
+  const [smtpHost,setSmtpHost]=useState('');
+  const [allowedSenders,setAllowedSenders]=useState('');
+  const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
     try {setStatus(await client.telegramStatus());setError('');}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
-  useEffect(()=>{void refresh();},[client]);
+  useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
 
   async function saveToken() {
     setBusy(true);setError('');
@@ -41,6 +48,20 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function saveEmail() {
+    setBusy(true);setError('');
+    try {setEmail(await client.setEmailAccount({address:emailAddress,password:emailPassword,imap_host:imapHost,smtp_host:smtpHost,allowed_senders:allowedSenders.split(',').map(value=>value.trim()).filter(Boolean),imap_port:993,smtp_port:587,smtp_security:'starttls',authserv_id:authservId}));setEmailPassword('');}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not save email settings.');}
+    finally {setBusy(false);}
+  }
+
+  async function clearEmail() {
+    setBusy(true);setError('');
+    try {setEmail(await client.clearEmailAccount());setEmailPassword('');}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not clear email settings.');}
+    finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
     <h3>Telegram (private chats)</h3>
@@ -62,6 +83,16 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       {pairing&&<div aria-label="Telegram pairing instructions"><p>Within five minutes, send this exact command in a private chat with @{status.bot_username??'your bot'}:</p><code>/pair {pairing.code}</code><p>Expires {new Date(pairing.expires_at).toLocaleString()}.</p></div>}
       {status.deliveries&&Object.keys(status.deliveries).length>0&&<p>Delivery records: {Object.entries(status.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}</p>}
     </>}
+    <h3>Email (authorized senders)</h3>
+    <p>Email uses IMAP over verified TLS and SMTP STARTTLS. Only exact allowed senders with a passing DMARC result from the configured receiving mail server can start Observe-mode runs. Replies are text only; ambiguous SMTP outcomes are never retried automatically.</p>
+    <label htmlFor="email-address">Mailbox address</label><input id="email-address" type="email" autoComplete="username" value={emailAddress} onChange={event=>setEmailAddress(event.target.value)} disabled={busy}/>
+    <label htmlFor="email-password">Mailbox password or app password</label><input id="email-password" type="password" autoComplete="new-password" value={emailPassword} onChange={event=>setEmailPassword(event.target.value)} disabled={busy}/>
+    <label htmlFor="email-imap-host">IMAP server</label><input id="email-imap-host" value={imapHost} onChange={event=>setImapHost(event.target.value)} placeholder="imap.example.com" disabled={busy}/>
+    <label htmlFor="email-smtp-host">SMTP server</label><input id="email-smtp-host" value={smtpHost} onChange={event=>setSmtpHost(event.target.value)} placeholder="smtp.example.com" disabled={busy}/>
+    <label htmlFor="email-allowed-senders">Authorized sender addresses (comma separated)</label><input id="email-allowed-senders" value={allowedSenders} onChange={event=>setAllowedSenders(event.target.value)} placeholder="you@example.com" disabled={busy}/>
+    <label htmlFor="email-authserv-id">Receiving mail server authserv-id</label><input id="email-authserv-id" value={authservId} onChange={event=>setAuthservId(event.target.value)} placeholder="mx.example.com" disabled={busy}/>
+    <div className="controls"><button type="button" onClick={()=>void saveEmail()} disabled={busy||!emailAddress||!emailPassword||!imapHost||!smtpHost||!allowedSenders.trim()||!authservId.trim()}>Save email settings</button>{email?.configured&&<button type="button" onClick={()=>void clearEmail()} disabled={busy}>Clear email credentials</button>}</div>
+    {email&&<p role="status">{email.configured?`Configured mailbox: ${email.address}`:'Email is not configured'} · {email.processed_messages} processed message(s){email.deliveries&&Object.keys(email.deliveries).length?` · ${Object.entries(email.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}`:''}</p>}
     {error&&<p role="alert">{error}</p>}
   </section>;
 }

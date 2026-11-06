@@ -555,6 +555,125 @@
         "title": "DistributionInventory",
         "type": "object"
       },
+      "EmailCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Address",
+            "type": "string"
+          },
+          "allowed_senders": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Allowed Senders",
+            "type": "array"
+          },
+          "authserv_id": {
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9.-]+$",
+            "title": "Authserv Id",
+            "type": "string"
+          },
+          "imap_host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Imap Host",
+            "type": "string"
+          },
+          "imap_port": {
+            "default": 993,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Imap Port",
+            "type": "integer"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "smtp_host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Smtp Host",
+            "type": "string"
+          },
+          "smtp_port": {
+            "default": 587,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Smtp Port",
+            "type": "integer"
+          },
+          "smtp_security": {
+            "default": "starttls",
+            "enum": [
+              "starttls",
+              "tls"
+            ],
+            "title": "Smtp Security",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "password",
+          "imap_host",
+          "smtp_host",
+          "allowed_senders",
+          "authserv_id"
+        ],
+        "title": "EmailCredentialRequest",
+        "type": "object"
+      },
+      "EmailCredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "deliveries": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Deliveries",
+            "type": "object"
+          },
+          "processed_messages": {
+            "title": "Processed Messages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "address",
+          "processed_messages",
+          "deliveries"
+        ],
+        "title": "EmailCredentialStatus",
+        "type": "object"
+      },
       "EvaluationRecord": {
         "properties": {
           "actor": {
@@ -4316,6 +4435,93 @@
           }
         ],
         "summary": "Create Backup"
+      }
+    },
+    "/channels/email": {
+      "get": {
+        "operationId": "email_status_channels_email_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Email Status"
+      }
+    },
+    "/channels/email/credential": {
+      "delete": {
+        "operationId": "clear_email_credential_channels_email_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear Email Credential"
+      },
+      "put": {
+        "operationId": "set_email_credential_channels_email_credential_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Email Credential"
       }
     },
     "/channels/telegram": {

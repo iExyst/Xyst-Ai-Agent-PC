@@ -22,6 +22,7 @@ export type ProjectValidation = components['schemas']['ProjectValidationSummary'
 export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
 export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
+export type EmailChannelStatus = components['schemas']['EmailCredentialStatus'];
 export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
@@ -197,6 +198,16 @@ export class EngineClient {
 
   revokeTelegramLinks(): Promise<components['schemas']['TelegramLinkRevocation']> {
     return this.#request('/channels/telegram/links',{method:'DELETE'});
+  }
+
+  emailStatus(): Promise<EmailChannelStatus> { return this.#request('/channels/email'); }
+
+  setEmailAccount(input: components['schemas']['EmailCredentialRequest']): Promise<EmailChannelStatus> {
+    return this.#request('/channels/email/credential',{method:'PUT',body:JSON.stringify(input)});
+  }
+
+  clearEmailAccount(): Promise<EmailChannelStatus> {
+    return this.#request('/channels/email/credential',{method:'DELETE'});
   }
 
   history(query='',before?:string,signal?:AbortSignal,scope:'objective'|'conversation'='objective'): Promise<RunHistory> {

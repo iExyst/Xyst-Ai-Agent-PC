@@ -1,6 +1,10 @@
 # Progress
 
-Updated 2026-11-05.
+Updated 2026-11-06.
+
+## First authenticated email channel slice (2026-11-06)
+
+Added one configurable text-only IMAP mailbox with SMTP replies through the shared supervisor. Mailbox credentials and server settings are stored in Windows Credential Manager; the database stores only non-secret server/allowlist metadata plus durable UIDVALIDITY/UID records. An exact sender allowlist is combined with the first `Authentication-Results` header from a configured exact authserv-id and aligned passing DMARC; conflicting duplicate headers from that authserv-id also fail closed before a message can create an Observe run. Automated senders, unlisted senders, HTML-only/empty and oversized messages are ignored. Ingress is deduplicated by mailbox UIDVALIDITY and UID, with a durable per-mailbox high-water UID that resumes after restart and resets safely when UIDVALIDITY changes. Schema 18 adds the mailbox and message journal tables plus cursor persistence. Replies retain Message-ID threading; durable send intent makes SMTP ambiguity `unknown` and never retries it. Shutdown waits for its bounded in-flight SMTP operation before returning, leaving interrupted delivery evidence for restart reconciliation. The desktop includes setup and status controls. Seven email channel/config/service/API tests and the schema-18 migration test pass; focused channel/migration run passes 25 tests. The full engine suite passes 605 tests with one Windows symlink-creation skip and one existing Starlette/httpx deprecation warning. The email browser settings flow passes; Ruff, formatting, strict Pyright, generated OpenAPI/types, TypeScript, client tests and production desktop build pass. Live IMAP/SMTP acceptance is not claimed because no mailbox was configured. Live mail-server acceptance, transport health diagnostics, broader mailbox/thread semantics, restart-on-real-mail, attachments, multi-account operation, and remaining Hermes channel inventory are open. This is an implemented partial slice; no channel parity gate or overall release phase is claimed complete.
 
 ## Editable specialist identities (2026-11-06)
 
