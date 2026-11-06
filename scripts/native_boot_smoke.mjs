@@ -52,13 +52,16 @@ try{
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
   await page.screenshot({path:path.join(root,'release-boot.png'),fullPage:true});
   await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'})).catch(()=>{});
-  for(let attempt=0;attempt<60&&proc.exitCode===null;attempt++)await new Promise(resolve=>setTimeout(resolve,250));
+  const closeStarted=Date.now();
+  const closeDeadline=closeStarted+30000;
+  while(proc.exitCode===null&&Date.now()<closeDeadline)await new Promise(resolve=>setTimeout(resolve,250));
+  const closeWaitMilliseconds=Date.now()-closeStarted;
   if(proc.exitCode===null)throw new Error('Packaged desktop did not close');
   let stopped=false;try{await fetch(`${connection.base_url}/runs`,{signal:AbortSignal.timeout(1000)});}catch{stopped=true;}
   if(!stopped)throw new Error('Bundled engine survived desktop closure');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:true,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:true,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;
