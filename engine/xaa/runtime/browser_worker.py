@@ -55,6 +55,17 @@ def validate_url(url: str, hosts: set[str]) -> str:
     return url
 
 
+async def guard_browser_route(route: Any, hosts: set[str]) -> None:
+    try:
+        if route.request.method not in {"GET", "HEAD"}:
+            raise PermissionError("Browser requests that can submit data are blocked.")
+        validate_web_target(route.request.url, hosts)
+    except (ValueError, PermissionError):
+        await route.abort("blockedbyclient")
+    else:
+        await route.continue_()
+
+
 async def resolve_public(host: str) -> list[str]:
     loop = asyncio.get_running_loop()
     answers = await loop.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
@@ -182,20 +193,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                     ignore_https_errors=False,
                 )
                 try:
-
-                    async def guard(route: Any) -> None:
-                        try:
-                            if route.request.method not in {"GET", "HEAD"}:
-                                raise PermissionError(
-                                    "Browser requests that can submit data are blocked."
-                                )
-                            validate_web_target(route.request.url, hosts)
-                        except (ValueError, PermissionError):
-                            await route.abort("blockedbyclient")
-                        else:
-                            await route.continue_()
-
-                    await context.route("**/*", guard)
+                    await context.route("**/*", lambda route: guard_browser_route(route, hosts))
                     page = await context.new_page()
                     await page.goto(request.url, wait_until="domcontentloaded", timeout=15000)
                     for name in request.links:

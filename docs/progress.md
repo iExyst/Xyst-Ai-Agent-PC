@@ -862,3 +862,7 @@ Added an opt-in `inspect_forms` operation to the disposable Edge worker. It repo
 ### Managed browser DNS address hardening (2026-11-06)
 
 Expanded the resolver rejection matrix across loopback, private, link-local, carrier-grade NAT, documentation, unspecified, IPv6 unique-local, and multicast ranges. It caught that Python reports IPv4 multicast as `is_global`; the proxy DNS gate now also rejects multicast and unspecified addresses, allowing only globally reachable unicast answers before pinning the connection. Focused browser tests pass (22), Ruff and strict Pyright pass, and the full suite passes (659 passed, one Windows-only skip, one existing Starlette/httpx warning). These are resolver-policy tests; live proxy bypass and redirect/subresource cases remain open. Overall completion remains approximately 16%.
+
+### Managed browser request guard coverage (2026-11-06)
+
+Extracted the Playwright route callback into `guard_browser_route`, the same helper still registered for every request with `**/*`. Focused route tests cover an allowed document and HEAD request, blocked cross-host document navigation (redirect target), blocked cross-host script subresource, and blocked POST. The full suite passes (664 passed, one Windows-only skip, one existing Starlette/httpx warning); Ruff and strict Pyright pass. This tests the shared routing decision, not a live redirected network chain; live redirect/subresource behavior, internal-address bypass attempts, and cancellation/process-tree acceptance remain open. Overall completion remains approximately 16%.

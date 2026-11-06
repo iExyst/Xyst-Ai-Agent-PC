@@ -133,6 +133,41 @@ async def test_browser_dns_rejects_non_global_address_classes(
         await browser_worker.resolve_public("docs.example.com")
 
 
+@pytest.mark.parametrize(
+    ("resource_type", "method", "url", "allowed"),
+    [
+        ("document", "GET", "https://docs.example.com/start", True),
+        ("document", "GET", "https://outside.example.net/redirect-target", False),
+        ("script", "GET", "https://outside.example.net/tracker.js", False),
+        ("image", "HEAD", "https://docs.example.com/image.png", True),
+        ("document", "POST", "https://docs.example.com/submit", False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_browser_route_guard_applies_to_redirect_and_subresource_requests(
+    resource_type: str, method: str, url: str, allowed: bool
+) -> None:
+    class FakeRequest:
+        def __init__(self) -> None:
+            self.resource_type = resource_type
+            self.method = method
+            self.url = url
+
+    class FakeRoute:
+        request = FakeRequest()
+        action: tuple[str, str | None] | None = None
+
+        async def abort(self, error_code: str) -> None:
+            self.action = ("abort", error_code)
+
+        async def continue_(self) -> None:
+            self.action = ("continue", None)
+
+    route = FakeRoute()
+    await browser_worker.guard_browser_route(route, {"docs.example.com"})
+    assert route.action == (("continue", None) if allowed else ("abort", "blockedbyclient"))
+
+
 def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) -> None:
     store = RunStore(workspace_tmp_path / "browser-grant.sqlite3")
     coordinator = Coordinator(store, object())  # type: ignore[arg-type]
