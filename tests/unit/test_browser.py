@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from xaa.runtime import browser_worker
-from xaa.runtime.browser import BrowserArguments, _worker_environment
+from xaa.runtime.browser import BrowserArguments, BrowserOutput, _worker_environment
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.web_fetch import validate_web_target
 from xaa.storage.runs import RunStore
@@ -16,6 +16,45 @@ def test_browser_arguments_reject_unbounded_or_empty_link_actions() -> None:
         BrowserArguments(url="https://docs.example.com", links=[""])
     with pytest.raises(ValueError):
         BrowserArguments(url="https://docs.example.com", links=["x"] * 6)
+
+
+def test_browser_form_inspection_is_opt_in_and_output_contains_metadata_only() -> None:
+    assert BrowserArguments(url="https://docs.example.com").inspect_forms is False
+    assert BrowserArguments(url="https://docs.example.com", inspect_forms=True).inspect_forms
+    payload = {
+        "status": "ok",
+        "trust": "untrusted_web_content",
+        "forms": [
+            {
+                "index": 0,
+                "method": "post",
+                "controls": [
+                    {
+                        "tag": "input",
+                        "type": "email",
+                        "name": "email",
+                        "label": "Email address",
+                        "required": True,
+                        "options": [],
+                    }
+                ],
+            }
+        ],
+    }
+    output = BrowserOutput.model_validate(payload)
+    assert output.forms is not None
+    assert output.forms[0].controls[0].label == "Email address"
+    unsafe = {
+        **payload,
+        "forms": [
+            {
+                **payload["forms"][0],
+                "controls": [{**payload["forms"][0]["controls"][0], "value": "private user input"}],
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="extra"):
+        BrowserOutput.model_validate(unsafe)
 
 
 def test_browser_worker_receives_only_os_runtime_environment(

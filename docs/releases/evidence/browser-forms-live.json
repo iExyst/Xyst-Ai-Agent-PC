@@ -1,0 +1,29 @@
+{
+  "checked_at_utc": "2026-11-06T17:00:20.376950+00:00",
+  "browser": "managed Microsoft Edge worker subprocess",
+  "approved_hosts": [
+    "httpbin.org"
+  ],
+  "result": {
+    "status": "ok",
+    "trust": "untrusted_web_content",
+    "forms": 1,
+    "controls": 12,
+    "control_names": [
+      "comments",
+      "custemail",
+      "custname",
+      "custtel",
+      "delivery",
+      "size",
+      "topping"
+    ],
+    "control_values_in_output": false,
+    "journal_state": "completed"
+  },
+  "elapsed_ms": 2463,
+  "source_sha256": {
+    "browser.py": "66512814adeea25982b5b147c5147d529be9c543b05144c371d7b2d1bbcb8810",
+    "browser_worker.py": "7f97dfad7722398f81197c51b9f8dcce6ffb7d17621ca13aa11119a90366ddff"
+  }
+}

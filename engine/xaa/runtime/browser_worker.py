@@ -30,6 +30,7 @@ class BrowserRequest(BaseModel):
     approved_hosts: list[str] = Field(min_length=1, max_length=10)
     links: list[str] = Field(default_factory=list, max_length=5)
     screenshot: bool = False
+    inspect_forms: bool = False
 
     @field_validator("approved_hosts")
     @classmethod
@@ -209,6 +210,39 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         "truncated": len(text) >= MAX_PAGE_TEXT,
                         "trust": "untrusted_web_content",
                     }
+                    if request.inspect_forms:
+                        result["forms"] = await page.locator("form").evaluate_all(
+                            """forms => {
+                              const visible = element => element.getClientRects().length > 0;
+                              let remaining = 100;
+                              return forms.slice(0, 20).filter(visible).map((form, index) => {
+                                const controls = Array.from(form.querySelectorAll('input, select, textarea'))
+                                  .filter(visible).slice(0, remaining);
+                                remaining -= controls.length;
+                                return {
+                                  index,
+                                  method: (form.getAttribute('method') || 'get').slice(0, 10).toLowerCase(),
+                                  controls: controls.map(control => {
+                                    const labels = Array.from(control.labels || [])
+                                      .map(label => (label.innerText || '').trim()).filter(Boolean).join(' ');
+                                    const tag = control.tagName.toLowerCase();
+                                    const type = (control.getAttribute('type') || (tag === 'textarea' ? 'textarea' : tag)).slice(0, 30).toLowerCase();
+                                    const options = tag === 'select'
+                                      ? Array.from(control.options).slice(0, 20).map(option => (option.textContent || '').trim().slice(0, 200))
+                                      : [];
+                                    return {
+                                      tag,
+                                      type,
+                                      name: (control.getAttribute('name') || '').slice(0, 200),
+                                      label: (labels || control.getAttribute('aria-label') || '').slice(0, 200),
+                                      required: control.hasAttribute('required'),
+                                      options
+                                    };
+                                  })
+                                };
+                              });
+                            }"""
+                        )
                     if request.screenshot:
                         image = await page.screenshot(
                             type="png", full_page=False, animations="disabled"
