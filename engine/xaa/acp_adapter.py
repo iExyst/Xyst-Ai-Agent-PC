@@ -399,7 +399,7 @@ class XaaAcpAgent:
             if session_id in self._cancel_requested:
                 await self._request_run_cancel(run_id)
 
-            answer, state = await self._wait_for_run(session_id, run_id)
+            answer, state, streamed_text = await self._wait_for_run(session_id, run_id)
             async with self._session_lock(session_id):
                 if session_id in self._deleted_sessions:
                     return PromptResponse(stop_reason="cancelled")
@@ -427,9 +427,13 @@ class XaaAcpAgent:
                         "Inspect the run in Xyst AI Agent for review or recovery."
                     )
                 if state != "cancelled":
-                    await self._send_message(
-                        session_id, answer or "X.A.A. run finished without a text response."
-                    )
+                    unsent_text = self._unsent_text(answer, streamed_text)
+                    if unsent_text:
+                        await self._send_message(session_id, unsent_text)
+                    elif not answer and not streamed_text:
+                        await self._send_message(
+                            session_id, "X.A.A. run finished without a text response."
+                        )
             return PromptResponse(stop_reason="cancelled" if state == "cancelled" else "end_turn")
         except httpx.HTTPStatusError as exc:
             logger.warning(
@@ -496,9 +500,10 @@ class XaaAcpAgent:
         response = await self._client.post(f"/runs/{run_id}/cancel")
         response.raise_for_status()
 
-    async def _wait_for_run(self, session_id: str, run_id: str) -> tuple[str, str]:
+    async def _wait_for_run(self, session_id: str, run_id: str) -> tuple[str, str, str]:
         cursor = 0
         answer = ""
+        streamed_text = ""
         public_tool_calls: dict[str, tuple[str, str]] = {}
         run_path = f"/runs/{run_id}"
         while True:
@@ -523,6 +528,12 @@ class XaaAcpAgent:
                     continue
                 payload = cast(dict[str, Any], payload)
                 event_type = event.get("event_type")
+                if event_type == "model.delta":
+                    delta = payload.get("text")
+                    if isinstance(delta, str) and delta:
+                        await self._send_message(session_id, delta)
+                        streamed_text += delta
+                    continue
                 call_id = payload.get("call_id")
                 if event_type == "tool.intended":
                     tool = payload.get("tool")
@@ -615,19 +626,31 @@ class XaaAcpAgent:
             if state in _TERMINAL_STATES:
                 if state != "cancelled" and not answer:
                     answer = f"X.A.A. run ended in state {state}."
-                return answer, state
+                return answer, state, streamed_text
             await asyncio.sleep(0.5)
 
     async def _send_message(self, session_id: str, text: str) -> None:
         if self._connection is None:
             raise RequestError(-32603, "ACP client connection is not available.")
-        await self._connection.session_update(
-            session_id=session_id,
-            update=AgentMessageChunk(
-                session_update="agent_message_chunk",
-                content=TextContentBlock(type="text", text=text),
-            ),
-        )
+        for offset in range(0, len(text), 4096):
+            await self._connection.session_update(
+                session_id=session_id,
+                update=AgentMessageChunk(
+                    session_update="agent_message_chunk",
+                    content=TextContentBlock(type="text", text=text[offset : offset + 4096]),
+                ),
+            )
+
+    @staticmethod
+    def _unsent_text(answer: str, streamed_text: str) -> str:
+        if not streamed_text:
+            return answer
+        streamed = streamed_text.strip()
+        if streamed and answer.startswith(streamed):
+            return answer[len(streamed) :]
+        if answer and answer in streamed_text:
+            return ""
+        return answer
 
     async def _send_tool_call(
         self, session_id: str, update: ToolCallStart | ToolCallProgress

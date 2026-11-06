@@ -39,6 +39,14 @@ def test_api_url_must_be_loopback_and_uncredentialed() -> None:
             validate_local_api_url(value)
 
 
+def test_acp_stream_finalization_sends_only_unsent_suffix() -> None:
+    assert XaaAcpAgent._unsent_text("Candidate review notice", "Candidate") == (" review notice")
+    assert XaaAcpAgent._unsent_text("Final answer", "Final answer") == ""
+    assert XaaAcpAgent._unsent_text("Corrected final answer", "Earlier partial") == (
+        "Corrected final answer"
+    )
+
+
 def test_acp_cli_prefers_environment_token_then_uses_launch_vault(monkeypatch: Any) -> None:
     class FakeCredentialStore:
         def get(self, profile: str) -> str:
@@ -287,6 +295,16 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
         },
         {
             "sequence": 7,
+            "event_type": "model.delta",
+            "payload": {"inference_id": "infer-1", "text": "Fixture "},
+        },
+        {
+            "sequence": 8,
+            "event_type": "model.delta",
+            "payload": {"inference_id": "infer-1", "text": "answer for run-1"},
+        },
+        {
+            "sequence": 9,
             "event_type": "model.message",
             "payload": {"message": {"content": "Fixture answer for run-1"}},
         },
@@ -439,7 +457,8 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
         assert "Now summarize that again." in state["requests"][2]["objective"]
         assert saved_messages[-2]["content"] == "Continue after restart."
         assert [text for _, text in sink.updates] == [
-            "Fixture answer for run-1",
+            "Fixture ",
+            "answer for run-1",
             "Fixture answer for run-2",
         ]
         assert [update.session_update for update in sink.tool_updates] == [
