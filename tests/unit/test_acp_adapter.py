@@ -5,14 +5,16 @@ import os
 import socket
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import httpx
 import pytest
 import uvicorn
 from acp import PROTOCOL_VERSION, spawn_agent_process, text_block
+from acp.interfaces import Client
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from xaa.acp_adapter import validate_local_api_url
+from xaa.acp_adapter import XaaAcpAgent, validate_local_api_url
 from xaa.cli import _resolve_api_token, _resolve_api_url
 from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE
 from xaa.version import APP_VERSION
@@ -165,6 +167,47 @@ def _api_fixture(
 
 
 @pytest.mark.asyncio
+async def test_acp_returns_candidate_while_run_awaits_independent_review(tmp_path: Path) -> None:
+    app, state = _api_fixture(tmp_path.resolve(), initial_state="verifying")
+    api_url = "http://127.0.0.1:43210"
+    client = httpx.AsyncClient(
+        base_url=api_url,
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        transport=httpx.ASGITransport(app=app),
+    )
+    sink = UpdateSink()
+    agent = XaaAcpAgent(
+        api_url=api_url,
+        api_token=TOKEN,
+        model="fixture-model",
+        workspace=tmp_path.resolve(),
+        mode="observe",
+        client=client,
+    )
+    agent.on_connect(cast(Client, sink))
+    try:
+        session = await agent.new_session(cwd=str(tmp_path.resolve()), mcp_servers=[])
+        response = await agent.prompt(
+            prompt=[{"text": "Read the project status."}], session_id=session.session_id
+        )
+    finally:
+        await client.aclose()
+
+    assert response.stop_reason == "end_turn"
+    candidate_response = (
+        "Fixture answer for run-1\n\nThis result is a candidate awaiting independent "
+        "review in Xyst AI Agent. Review it in the desktop app; it has not been marked complete."
+    )
+    assert sink.updates == [
+        (
+            session.session_id,
+            candidate_response,
+        )
+    ]
+    assert state["sessions"] == {}
+
+
+@pytest.mark.asyncio
 async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: Path) -> None:
     app, state = _api_fixture(tmp_path.resolve())
     state["run_events"]["run-1"] = [
@@ -273,6 +316,8 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
             second = await connection.prompt(
                 session_id=session.session_id, prompt=[text_block("Now summarize that again.")]
             )
+            closed = await connection.close_session(session_id=session.session_id)
+            assert closed is not None
 
         replay_sink = UpdateSink()
         async with spawn_agent_process(

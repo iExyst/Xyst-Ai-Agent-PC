@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "verified_at": "2026-11-06T08:53:32.953158+00:00",
+  "model": "qwen3-0.6b",
+  "provider": "LM Studio local OpenAI-compatible API",
+  "workspace_mode": "observe",
+  "fixture_sha256": "d6bac0bb18b9f0962f3878ea93356d8edf05a155af4c0503cde3f4d4e116f226",
+  "read_tool_statuses": [
+    "pending",
+    "completed"
+  ],
+  "read_tool_titles": [
+    "X.A.A. tool: workspace.read_file",
+    "X.A.A. tool: workspace.read_file"
+  ],
+  "run_state": "verifying",
+  "candidate_awaiting_independent_review": true,
+  "answer_matched_fixture": true,
+  "local_inference_only": true,
+  "model_auto_loaded": false,
+  "user_project_modified": false
+}

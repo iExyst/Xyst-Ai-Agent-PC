@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 _TERMINAL_STATES = {
     "completed",
+    "verifying",
     "blocked",
     "failed",
     "cancelled",
@@ -373,6 +374,11 @@ class XaaAcpAgent:
                     },
                 )
                 save_response.raise_for_status()
+            elif state == "verifying":
+                answer = ((answer + "\n\n") if answer else "") + (
+                    "This result is a candidate awaiting independent review in Xyst AI Agent. "
+                    "Review it in the desktop app; it has not been marked complete."
+                )
             elif state not in {"cancelled"}:
                 answer = (
                     f"X.A.A. run {run_id} ended in state {state}. "
@@ -552,6 +558,6 @@ async def serve_acp(
         mode=mode,
     )
     try:
-        await run_agent(cast(Agent, agent))
+        await run_agent(cast(Agent, agent), use_unstable_protocol=True)
     finally:
         await agent.aclose()
