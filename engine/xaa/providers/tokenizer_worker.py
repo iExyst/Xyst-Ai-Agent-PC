@@ -35,7 +35,11 @@ def main() -> None:
         request = TokenizerRequest.model_validate_json(raw)
         host = tokenizer_host(request.base_url)
         chat = make_chat(request.request.messages)
-        with lms.Client(host, api_token=request.api_token.get_secret_value()) as client:
+        # Client.__enter__ performs a separate one-second HTTP health probe.
+        # On loaded servers it can time out even when the SDK WebSocket is healthy;
+        # the explicit host and next SDK RPC provide the needed connection check.
+        client = lms.Client(host, api_token=request.api_token.get_secret_value())
+        try:
             matches = [
                 model
                 for model in client.llm.list_loaded()
@@ -54,6 +58,8 @@ def main() -> None:
                 context_length=model.get_context_length(),
                 sdk_version=version("lmstudio"),
             )
+        finally:
+            client.close()
         response = TokenizerResponse(ok=True, count=count)
     except Exception as exc:  # noqa: BLE001 - fixed worker boundary returns only an exception class, never payloads
         response = TokenizerResponse(ok=False, error=type(exc).__name__)

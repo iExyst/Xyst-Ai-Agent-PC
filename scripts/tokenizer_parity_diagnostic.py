@@ -155,7 +155,8 @@ async def main() -> None:
             sdk_module = importlib.import_module("lmstudio")
             direct_client: Any = sdk_module.Client("127.0.0.1:1234")
             sdk_client = direct_client
-            direct_client.__enter__()
+            # Avoid the SDK context manager's one-second HTTP health probe;
+            # list_loaded below validates the real SDK WebSocket connection.
             matches = [
                 item for item in direct_client.llm.list_loaded() if item.identifier == instance
             ]
