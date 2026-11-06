@@ -1995,6 +1995,10 @@ export interface components {
             name: string;
             /** Path */
             path: string;
+            /** Requirement Readiness */
+            requirement_readiness?: {
+                [key: string]: unknown;
+            };
         };
         /** PluginSkillImportRequest */
         PluginSkillImportRequest: {

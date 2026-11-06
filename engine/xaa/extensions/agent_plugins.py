@@ -8,7 +8,10 @@ import io
 import ipaddress
 import json
 import mimetypes
+import os
 import re
+import shutil
+import sys
 import zipfile
 from collections.abc import Iterable
 from itertools import islice
@@ -26,6 +29,7 @@ MAX_MANIFEST_BYTES = 256 * 1024
 MAX_SKILL_RESOURCE_COUNT = 32
 MAX_SKILL_RESOURCE_BYTES = 64 * 1024
 MAX_SKILL_RESOURCE_TOTAL_BYTES = 1024 * 1024
+MAX_READINESS_COMMAND_CHECKS = 256
 _SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 PLUGIN_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -45,6 +49,7 @@ class PluginSkill(BaseModel):
     category: str | None = None
     allowed_tools: list[str] = Field(default_factory=list)
     declared_requirements: dict[str, Any] = Field(default_factory=dict)
+    requirement_readiness: dict[str, Any] = Field(default_factory=dict)
 
 
 class PluginServer(BaseModel):
@@ -184,6 +189,75 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _assess_requirement_readiness(
+    requirements: dict[str, Any], command_cache: dict[str, bool] | None = None
+) -> dict[str, Any]:
+    """Compare safe declaration names with this process environment; never execute them."""
+    current_platform = (
+        "windows"
+        if sys.platform == "win32"
+        else "macos"
+        if sys.platform == "darwin"
+        else "linux"
+        if sys.platform.startswith("linux")
+        else "other"
+    )
+    declared_platforms = cast(list[str], requirements.get("platforms", []))
+    known_platforms = {"windows", "linux", "macos"}
+    recognized = set(declared_platforms) & known_platforms
+    if not declared_platforms:
+        platform_status = "not_declared"
+    elif current_platform in recognized:
+        platform_status = "compatible"
+    elif recognized:
+        platform_status = "incompatible"
+    else:
+        platform_status = "unrecognized"
+
+    commands = cast(list[str], requirements.get("required_command_names", []))
+    checked_commands = command_cache if command_cache is not None else {}
+    unchecked_commands: list[str] = []
+    for name in commands:
+        if name in checked_commands:
+            continue
+        if len(checked_commands) >= MAX_READINESS_COMMAND_CHECKS:
+            unchecked_commands.append(name)
+            continue
+        checked_commands[name] = shutil.which(name) is not None
+    available_commands = sorted(name for name in commands if checked_commands.get(name) is True)
+    available_command_set = set(available_commands)
+    missing_commands = sorted(name for name in commands if checked_commands.get(name) is False)
+    environment_names = cast(list[str], requirements.get("required_environment_names", []))
+    present_environment = sorted(name for name in environment_names if os.environ.get(name))
+    present_environment_set = set(present_environment)
+    dependencies_declared = requirements.get("dependencies_declared") is True
+    dependency_count = requirements.get("dependency_count", 0)
+    toolsets = cast(list[str], requirements.get("hermes_toolsets", []))
+    return {
+        "current_platform": current_platform,
+        "platform_status": platform_status,
+        "unknown_platform_names": sorted(set(declared_platforms) - known_platforms),
+        "available_command_names": available_commands,
+        "missing_command_names": sorted(set(missing_commands) - available_command_set),
+        "unchecked_command_names": sorted(set(unchecked_commands)),
+        "present_environment_names": present_environment,
+        "missing_environment_names": sorted(set(environment_names) - present_environment_set),
+        "dependencies_unresolved": dependencies_declared,
+        "dependency_count_unresolved": dependency_count if dependencies_declared else 0,
+        "hermes_toolsets_unresolved": toolsets,
+        "not_assessed": [
+            field
+            for field, present in (
+                ("dependency_installation", dependencies_declared),
+                ("hermes_toolsets", bool(toolsets)),
+                ("command_semantics", bool(commands)),
+                ("command_presence_budget", bool(unchecked_commands)),
+            )
+            if present
+        ],
+    }
+
+
 def _parse_skill_frontmatter(
     raw: bytes, directory_name: str
 ) -> tuple[str, list[str], str | None, dict[str, Any]]:
@@ -312,7 +386,7 @@ def _json(path: Path, package_root: Path) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def _skill_summaries(package_root: Path) -> list[PluginSkill]:
+def _skill_summaries(package_root: Path, command_cache: dict[str, bool]) -> list[PluginSkill]:
     skills_root = package_root / "skills"
     if not skills_root.exists():
         return []
@@ -343,6 +417,9 @@ def _skill_summaries(package_root: Path) -> list[PluginSkill]:
                 category=category,
                 allowed_tools=allowed_tools,
                 declared_requirements=declared_requirements,
+                requirement_readiness=_assess_requirement_readiness(
+                    declared_requirements, command_cache
+                ),
             )
         )
     return summaries
@@ -444,7 +521,7 @@ def _servers(manifest: dict[str, Any], package_root: Path) -> list[PluginServer]
     return result
 
 
-def _package(path: Path, root: Path) -> PluginSummary:
+def _package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSummary:
     package_root = path.resolve(strict=True)
     if not _inside(package_root, root) or not package_root.is_dir():
         raise ValueError("package directory escapes selected root")
@@ -471,7 +548,7 @@ def _package(path: Path, root: Path) -> PluginSummary:
         version=version,
         description=description,
         path=str(package_root),
-        skills=_skill_summaries(package_root),
+        skills=_skill_summaries(package_root, command_cache),
         servers=_servers(manifest, package_root),
     )
 
@@ -492,6 +569,7 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
     )
     packages: list[PluginSummary] = []
     diagnostics: list[PluginDiagnostic] = []
+    command_cache: dict[str, bool] = {}
     for candidate in candidates[:MAX_PACKAGES]:
         if candidate.name.startswith("."):
             continue
@@ -501,7 +579,7 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
                 raise ValueError("package directory escapes selected root")
             if not resolved.is_dir() or not (resolved / "plugin.json").exists():
                 continue
-            packages.append(_package(resolved, root))
+            packages.append(_package(resolved, root, command_cache))
         except (OSError, RuntimeError, ValueError) as exc:
             diagnostics.append(PluginDiagnostic(path=candidate.name[:256], message=str(exc)[:300]))
     return PluginDiscovery(root=str(root), packages=packages, diagnostics=diagnostics)

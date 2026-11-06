@@ -1929,6 +1929,11 @@
           "path": {
             "title": "Path",
             "type": "string"
+          },
+          "requirement_readiness": {
+            "additionalProperties": true,
+            "title": "Requirement Readiness",
+            "type": "object"
           }
         },
         "required": [

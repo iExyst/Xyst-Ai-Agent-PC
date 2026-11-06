@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.extensions import agent_plugins
 from xaa.extensions.agent_plugins import discover_agent_plugins, read_plugin_skill
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.storage.runs import RunStore
@@ -118,6 +119,73 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert str(package) == summary.path
 
 
+def test_requirement_readiness_checks_names_without_exposing_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(agent_plugins.sys, "platform", "win32")
+    monkeypatch.setattr(
+        agent_plugins.shutil,
+        "which",
+        lambda name: "C:/tools/git.exe" if name == "git" else None,
+    )
+    monkeypatch.setenv("XAA_FIXTURE_TOKEN", "must-not-appear")
+    monkeypatch.delenv("MISSING_FIXTURE_TOKEN", raising=False)
+
+    result = agent_plugins._assess_requirement_readiness(
+        {
+            "platforms": ["windows"],
+            "required_command_names": ["git", "not-installed"],
+            "required_environment_names": ["XAA_FIXTURE_TOKEN", "MISSING_FIXTURE_TOKEN"],
+            "dependencies_declared": True,
+            "dependency_count": 2,
+            "hermes_toolsets": ["terminal"],
+        }
+    )
+
+    assert result["current_platform"] == "windows"
+    assert result["platform_status"] == "compatible"
+    assert result["available_command_names"] == ["git"]
+    assert result["missing_command_names"] == ["not-installed"]
+    assert result["present_environment_names"] == ["XAA_FIXTURE_TOKEN"]
+    assert result["missing_environment_names"] == ["MISSING_FIXTURE_TOKEN"]
+    assert result["dependencies_unresolved"] is True
+    assert result["dependency_count_unresolved"] == 2
+    assert result["hermes_toolsets_unresolved"] == ["terminal"]
+    assert "command_semantics" in result["not_assessed"]
+    assert "must-not-appear" not in json.dumps(result)
+
+
+def test_requirement_readiness_marks_platform_mismatch_and_unknown_platforms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(agent_plugins.sys, "platform", "win32")
+    assert (
+        agent_plugins._assess_requirement_readiness({"platforms": ["linux"]})["platform_status"]
+        == "incompatible"
+    )
+    unknown = agent_plugins._assess_requirement_readiness({"platforms": ["plan9"]})
+    assert unknown["platform_status"] == "unrecognized"
+    assert unknown["unknown_platform_names"] == ["plan9"]
+    assert agent_plugins._assess_requirement_readiness({})["platform_status"] == "not_declared"
+
+
+def test_requirement_readiness_caps_distinct_command_lookups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(agent_plugins, "MAX_READINESS_COMMAND_CHECKS", 1)
+    monkeypatch.setattr(agent_plugins.shutil, "which", lambda name: f"/bin/{name}")
+    cache: dict[str, bool] = {}
+
+    result = agent_plugins._assess_requirement_readiness(
+        {"required_command_names": ["first", "second"]}, cache
+    )
+
+    assert result["available_command_names"] == ["first"]
+    assert result["missing_command_names"] == []
+    assert result["unchecked_command_names"] == ["second"]
+    assert "command_presence_budget" in result["not_assessed"]
+
+
 def test_discovery_rejects_manifest_symlink_escape(tmp_path: Path) -> None:
     root = tmp_path / "plugins"
     root.mkdir()
@@ -211,6 +279,9 @@ def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path
         )
     assert response.status_code == 200
     assert response.json()["packages"][0]["version"] == "1.2.3"
+    readiness = response.json()["packages"][0]["skills"][0]["requirement_readiness"]
+    assert readiness["platform_status"] in {"compatible", "incompatible", "unrecognized"}
+    assert "must-not-appear" not in response.text
     assert "secret-value" not in response.text
 
 
