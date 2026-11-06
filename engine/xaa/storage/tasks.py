@@ -378,6 +378,14 @@ class TaskStore:
             rows = connection.execute(
                 "SELECT * FROM tasks WHERE run_id=? ORDER BY created_at,id", (run_id,)
             ).fetchall()
+            recovery_reasons = {
+                str(item[0])
+                for item in connection.execute(
+                    "SELECT json_extract(payload,'$.task_id') FROM run_events WHERE run_id=? AND event_type='task.blocked' AND json_extract(payload,'$.reason')=?",
+                    (run_id, "worker_lost_reconciliation_required"),
+                ).fetchall()
+                if item[0] is not None
+            }
             records: list[dict[str, Any]] = []
             for row in rows:
                 record = dict(row)
@@ -398,7 +406,9 @@ class TaskStore:
             if record["status"] != "blocked":
                 continue
             outcome: dict[str, Any] = json.loads(record["result"]) if record["result"] else {}
-            if "TaskTokenBudgetExceeded" in outcome.get("causes", []):
+            if record["local_id"] in recovery_reasons:
+                record["blocked_reason"] = "worker_lost_reconciliation_required"
+            elif "TaskTokenBudgetExceeded" in outcome.get("causes", []):
                 record["blocked_reason"] = "token_budget_exhausted_or_unmeasured"
             elif any(
                 statuses.get(dependency) in {"failed", "blocked", "cancelled"}

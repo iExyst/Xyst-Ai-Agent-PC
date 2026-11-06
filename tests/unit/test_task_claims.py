@@ -47,6 +47,9 @@ def test_claims_are_distinct_and_failed_dependency_is_blocked(workspace_tmp_path
     with pytest.raises(PermissionError):
         second.renew_worker(run_id, parent, "b", b["token"])
     assert second.recover_expired(run_id, parent) == ["b"]
+    recovered = next(row for row in second.records(run_id) if row["local_id"] == "b")
+    assert recovered["status"] == "blocked"
+    assert recovered["blocked_reason"] == "worker_lost_reconciliation_required"
     with pytest.raises(PermissionError):
         second.record_outcome(run_id, parent, "b", b["token"], state="verifying", result={})
     assert second.claim_ready(run_id, parent) is None

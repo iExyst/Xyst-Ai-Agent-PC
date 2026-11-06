@@ -1686,7 +1686,8 @@
                 "enum": [
                   "token_budget_exhausted_or_unmeasured",
                   "dependency_failed",
-                  "execution_blocked"
+                  "execution_blocked",
+                  "worker_lost_reconciliation_required"
                 ],
                 "type": "string"
               },

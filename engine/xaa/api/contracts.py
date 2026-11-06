@@ -125,7 +125,12 @@ class PlanTaskRecord(BaseModel):
     budgets: TaskBudgets
     status: TaskStatus
     blocked_reason: (
-        Literal["token_budget_exhausted_or_unmeasured", "dependency_failed", "execution_blocked"]
+        Literal[
+            "token_budget_exhausted_or_unmeasured",
+            "dependency_failed",
+            "execution_blocked",
+            "worker_lost_reconciliation_required",
+        ]
         | None
     ) = None
 
