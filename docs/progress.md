@@ -2,6 +2,10 @@
 
 Updated 2026-11-06.
 
+## Hermes conditional skill visibility declarations (2026-11-06)
+
+Pinned Hermes source documentation defines `requires_toolsets`, `requires_tools`, `fallback_for_toolsets`, and `fallback_for_tools` as conditions for showing skills based on available capabilities. The pinned 186-skill inventory has ten `requires_toolsets` keys (nine non-empty, one empty) and none of the other three fields. Agent Plugin discovery and immutable candidate provenance now preserve all four as bounded untrusted names; readiness explicitly reports the conditions as unassessed. X.A.A. does not filter procedure discovery, automatically select fallbacks, or map these declarations to grants. Regression/API and browser coverage exercise each field. Focused importer tests pass (15 passed, one Windows symlink skip); the full suite passes (642 passed, one Windows symlink skip, one existing Starlette/httpx deprecation warning). Ruff, formatting, strict Pyright, API/generated contracts, TypeScript, and production desktop build pass. Dependency-resolution, toolset compatibility and conditional selection remain open.
+
 ## Reviewable package dependency identifiers (2026-11-06)
 
 Pinned Hermes source inspection found that all 30 skill dependency declarations use lists, often with version constraints, and do not declare a dependency manager. Discovery and immutable candidate provenance now include validated package identifiers and explicitly declared manager keys where applicable. Version constraints, direct URLs and unparsed dependency values are omitted; imports do not install dependencies. Coverage verifies package-name extraction, manager reporting, direct-reference omission, and provenance redaction. Focused importer tests pass (15 passed, one Windows symlink skip), the full suite passes (642 passed, one Windows symlink skip and the existing Starlette/httpx warning), and the targeted desktop discovery browser flow passes. Ruff, formatting, strict Pyright, API/generated contracts, TypeScript and production desktop build pass. Dependency resolution and setup remain open; overall release completion remains approximately 16%.

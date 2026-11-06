@@ -37,6 +37,9 @@ def make_package(root: Path) -> Path:
         "metadata:\n  category: writing\n"
         "  hermes:\n    category: writing\n    tags: [writing, utility]\n"
         "    requires_toolsets: [terminal, files]\n"
+        "    requires_tools: [workspace.read_file, shell.exec]\n"
+        "    fallback_for_toolsets: [browser]\n"
+        "    fallback_for_tools: [web.search]\n"
         "    related_skills: [review]\n"
         "allowed-tools: workspace.read_file shell.exec\n---\n"
         "ignored instruction text\n\n[Reference](references/guide.md)",
@@ -100,6 +103,9 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     requirements = summary.skills[0].declared_requirements
     assert requirements["platforms"] == ["linux", "macos"]
     assert requirements["hermes_toolsets"] == ["files", "terminal"]
+    assert requirements["hermes_required_tools"] == ["shell.exec", "workspace.read_file"]
+    assert requirements["hermes_fallback_toolsets"] == ["browser"]
+    assert requirements["hermes_fallback_tools"] == ["web.search"]
     assert requirements["required_command_names"] == ["git", "python.exe"]
     assert requirements["required_environment_names"] == ["API_TOKEN"]
     assert requirements["prerequisite_fields"] == ["commands"]
@@ -142,6 +148,8 @@ def test_requirement_readiness_checks_names_without_exposing_values(
             "dependencies_declared": True,
             "dependency_count": 2,
             "hermes_toolsets": ["terminal"],
+            "hermes_required_tools": ["workspace.read_file"],
+            "hermes_fallback_toolsets": ["browser"],
         }
     )
 
@@ -154,7 +162,11 @@ def test_requirement_readiness_checks_names_without_exposing_values(
     assert result["dependencies_unresolved"] is True
     assert result["dependency_count_unresolved"] == 2
     assert result["hermes_toolsets_unresolved"] == ["terminal"]
+    assert result["hermes_tools_unresolved"] == ["workspace.read_file"]
+    assert result["hermes_fallback_toolsets_unresolved"] == ["browser"]
     assert "command_semantics" in result["not_assessed"]
+    assert "hermes_tools" in result["not_assessed"]
+    assert "hermes_fallback_conditions" in result["not_assessed"]
     assert "must-not-appear" not in json.dumps(result)
 
 
@@ -333,6 +345,8 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert evidence["source"]["description"] == "Summarize a bounded file."
     declared = json.loads(evidence["source"]["declared_requirements"])
     assert declared["hermes_toolsets"] == ["files", "terminal"]
+    assert declared["hermes_required_tools"] == ["shell.exec", "workspace.read_file"]
+    assert declared["hermes_fallback_toolsets"] == ["browser"]
     assert declared["required_environment_names"] == ["API_TOKEN"]
     assert declared["dependency_names"] == ["requests"]
     assert "2.0" not in json.dumps(declared)

@@ -13,6 +13,9 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
   return [
     `Platforms: ${names('platforms') || 'not declared'}`,
     `Hermes toolsets: ${names('hermes_toolsets') || 'not declared'}`,
+    `Hermes tools: ${names('hermes_required_tools') || 'not declared'}`,
+    `Fallback toolsets: ${names('hermes_fallback_toolsets') || 'not declared'}`,
+    `Fallback tools: ${names('hermes_fallback_tools') || 'not declared'}`,
     `Prerequisite fields: ${names('prerequisite_fields') || 'none'}`,
     `Command names: ${names('required_command_names') || 'none'}`,
     `Environment variable names: ${names('required_environment_names') || 'none'}`,
@@ -32,12 +35,16 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
   const dependencies = value.dependencies_unresolved === true
     ? `${typeof value.dependency_count_unresolved === 'number' ? value.dependency_count_unresolved : 'some'} unresolved`
     : 'none declared';
+  const fallbackConditions = [names('hermes_fallback_toolsets_unresolved'), names('hermes_fallback_tools_unresolved')]
+    .filter(Boolean).join(', ') || 'none';
   return [
     `Current machine (${current}): platform ${platform}`,
     `Commands available: ${names('available_command_names') || 'none'}; missing: ${names('missing_command_names') || 'none'}; not checked: ${names('unchecked_command_names') || 'none'}`,
     `Required environment names present: ${names('present_environment_names') || 'none'}; missing: ${names('missing_environment_names') || 'none'}`,
     `Package dependencies: ${dependencies}`,
     `Unresolved Hermes toolsets: ${names('hermes_toolsets_unresolved') || 'none'}`,
+    `Unresolved Hermes tools: ${names('hermes_tools_unresolved') || 'none'}`,
+    `Unresolved fallback conditions: ${fallbackConditions}`,
     `Not assessed: ${names('not_assessed') || 'none'}`,
   ].join(' · ');
 }

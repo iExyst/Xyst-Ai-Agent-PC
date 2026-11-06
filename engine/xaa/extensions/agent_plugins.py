@@ -206,6 +206,9 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
             continue
         dependency_names.add(match.group(1))
     toolsets = _bounded_names(hermes.get("requires_toolsets"))
+    tools = _bounded_names(hermes.get("requires_tools"))
+    fallback_toolsets = _bounded_names(hermes.get("fallback_for_toolsets"))
+    fallback_tools = _bounded_names(hermes.get("fallback_for_tools"))
     commands = _bounded_names(prerequisites.get("commands"))
     commands.extend(
         command
@@ -216,6 +219,9 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
     return {
         "platforms": _bounded_names(values.get("platforms")),
         "hermes_toolsets": toolsets,
+        "hermes_required_tools": tools,
+        "hermes_fallback_toolsets": fallback_toolsets,
+        "hermes_fallback_tools": fallback_tools,
         "required_command_names": commands,
         "required_environment_names": environment_names,
         "prerequisite_fields": sorted(str(key) for key in prerequisites)[:64],
@@ -282,6 +288,9 @@ def _assess_requirement_readiness(
     dependencies_declared = requirements.get("dependencies_declared") is True
     dependency_count = requirements.get("dependency_count", 0)
     toolsets = cast(list[str], requirements.get("hermes_toolsets", []))
+    hermes_tools = cast(list[str], requirements.get("hermes_required_tools", []))
+    fallback_toolsets = cast(list[str], requirements.get("hermes_fallback_toolsets", []))
+    fallback_tools = cast(list[str], requirements.get("hermes_fallback_tools", []))
     return {
         "current_platform": current_platform,
         "platform_status": platform_status,
@@ -294,11 +303,16 @@ def _assess_requirement_readiness(
         "dependencies_unresolved": dependencies_declared,
         "dependency_count_unresolved": dependency_count if dependencies_declared else 0,
         "hermes_toolsets_unresolved": toolsets,
+        "hermes_tools_unresolved": hermes_tools,
+        "hermes_fallback_toolsets_unresolved": fallback_toolsets,
+        "hermes_fallback_tools_unresolved": fallback_tools,
         "not_assessed": [
             field
             for field, present in (
                 ("dependency_installation", dependencies_declared),
                 ("hermes_toolsets", bool(toolsets)),
+                ("hermes_tools", bool(hermes_tools)),
+                ("hermes_fallback_conditions", bool(fallback_toolsets or fallback_tools)),
                 ("command_semantics", bool(commands)),
                 ("command_presence_budget", bool(unchecked_commands)),
             )
