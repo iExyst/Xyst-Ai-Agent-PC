@@ -43,6 +43,46 @@ def test_openapi_advertises_packaged_engine_version(workspace_tmp_path) -> None:
     assert app.version == APP_VERSION
 
 
+def test_public_tool_result_api_is_authenticated_and_excludes_internal_data(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "tool-result-api.sqlite3")
+    run_id = store.create_run(
+        objective="Read a file", acceptance_criteria=[], workspace=None, mode="observe", model=None
+    )["id"]
+    token = store.acquire_lease(run_id, "worker")
+    assert token
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="public-call",
+        tool="workspace.read_file",
+        version="1",
+        arguments={"path": "secret.txt"},
+        idempotency_key="public-action",
+    )
+    store.record_tool_result(run_id, token, "public-call", {"content": "visible result"})
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="internal-call",
+        tool="internal.check",
+        version="1",
+        arguments={},
+        idempotency_key="internal-action",
+        internal=True,
+    )
+    store.record_tool_result(run_id, token, "internal-call", {"content": "private result"})
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        public = client.get(f"/runs/{run_id}/tools/public-call/result", headers=headers)
+        private = client.get(f"/runs/{run_id}/tools/internal-call/result", headers=headers)
+        unauthorized = client.get(f"/runs/{run_id}/tools/public-call/result")
+    assert public.status_code == 200
+    assert public.json() == {"result": '{"content": "visible result"}'}
+    assert private.status_code == 200
+    assert private.json() == {"result": None}
+    assert unauthorized.status_code == 401
+
+
 class WaitingProvider(FakeProvider):
     def __init__(self):
         super().__init__()

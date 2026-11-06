@@ -136,6 +136,12 @@ def _api_fixture(
         ]
         return [event for event in events if event["sequence"] > after]
 
+    @app.get("/runs/{run_id}/tools/{call_id}/result")
+    async def get_tool_result(run_id: str, call_id: str) -> dict[str, str | None]:
+        if call_id == "call-public":
+            return {"result": '{"ok": true, "contents": "fixture file"}'}
+        return {"result": None}
+
     @app.post("/chat/sessions/{session_id}/turn")
     async def append_turn(session_id: str, request: Request) -> dict[str, Any]:
         turn = await request.json()
@@ -458,6 +464,9 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
         assert all(
             update.raw_input is None and update.raw_output is None for update in sink.tool_updates
         )
+        completed_content = sink.tool_updates[2].content
+        assert completed_content is not None
+        assert completed_content[0].content.text == '{"ok": true, "contents": "fixture file"}'
         assert all("internal" not in update.title for update in sink.tool_updates)
     finally:
         server.should_exit = True

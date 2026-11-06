@@ -1201,6 +1201,42 @@ class RunStore:
     def public_events(self, run_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
         return [public_run_event(event) for event in self.list_events(run_id, after_sequence)]
 
+    def public_tool_result(
+        self, run_id: str, call_id: str, *, max_bytes: int = 16_000
+    ) -> str | None:
+        """Return a bounded, resolved public tool result without exposing its arguments."""
+        if not 1 <= max_bytes <= 16_000:
+            raise ValueError("Tool result limit must be between 1 and 16000 bytes.")
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT t.result FROM tool_calls t WHERE t.run_id=? AND t.provider_call_id=? "
+                "AND t.state IN ('completed','failed') AND NOT EXISTS ("
+                "SELECT 1 FROM run_events e WHERE e.run_id=t.run_id "
+                "AND e.event_type IN ('tool.intended','tool.completed','tool.failed') "
+                "AND json_extract(e.payload,'$.call_id')=t.provider_call_id "
+                "AND json_extract(e.payload,'$.internal')=1) "
+                "AND EXISTS (SELECT 1 FROM run_events e WHERE e.run_id=t.run_id "
+                "AND e.event_type IN ('tool.completed','tool.failed') "
+                "AND json_extract(e.payload,'$.call_id')=t.provider_call_id) LIMIT 1",
+                (run_id, call_id),
+            ).fetchone()
+        if row is None or row["result"] is None:
+            return None
+        encoded = str(row["result"])
+        raw = encoded.encode("utf-8")
+        if len(raw) > max_bytes:
+            marker = "\n[tool result truncated]"
+            marker_bytes = marker.encode("utf-8")
+            raw = raw[: max(0, max_bytes - len(marker_bytes))]
+            while True:
+                try:
+                    encoded = raw.decode("utf-8")
+                    break
+                except UnicodeDecodeError:
+                    raw = raw[:-1]
+            encoded += marker if max_bytes >= len(marker_bytes) else ""
+        return encoded
+
     def require_new_tool_call(self, run_id: str, token: str, call_id: str) -> None:
         """Reject reused provider IDs before dispatch; intent insertion remains atomic."""
         with self.connection() as connection:

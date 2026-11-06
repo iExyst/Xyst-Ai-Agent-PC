@@ -62,3 +62,30 @@ def test_provider_call_ids_can_repeat_in_separate_runs(workspace_tmp_path):
         messages = reopened.conversation_messages(run_id)
         assert messages[0]["tool_call_id"] == "call-0"
         assert content in messages[0]["content"]
+
+
+def test_public_tool_result_is_bounded_and_omits_internal_calls(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "public-results.sqlite3")
+    run_id = store.create_run(
+        objective="Task", acceptance_criteria=[], workspace=None, mode="observe", model=None
+    )["id"]
+    token = store.acquire_lease(run_id, "worker")
+    assert token
+    for call_id, internal in (("public", False), ("private", True)):
+        store.record_tool_intent(
+            run_id,
+            token,
+            call_id=call_id,
+            tool="read",
+            version="1",
+            arguments={"secret": "never returned"},
+            idempotency_key=call_id,
+            internal=internal,
+        )
+        store.record_tool_result(run_id, token, call_id, {"content": "result"})
+
+    assert store.public_tool_result(run_id, "public") == '{"content": "result"}'
+    assert store.public_tool_result(run_id, "private") is None
+    assert store.public_tool_result(run_id, "missing") is None
+    bounded = store.public_tool_result(run_id, "public", max_bytes=9)
+    assert bounded is not None and len(bounded.encode("utf-8")) <= 9

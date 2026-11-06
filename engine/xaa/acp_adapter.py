@@ -10,7 +10,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
 import httpx
@@ -31,6 +31,7 @@ from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     CloseSessionResponse,
+    ContentToolCallContent,
     Implementation,
     ListSessionsResponse,
     SessionCapabilities,
@@ -567,6 +568,28 @@ class XaaAcpAgent:
                                 "tool.failed": "failed",
                             }[cast(str, event_type)],
                         )
+                        content: list[Any] | None = None
+                        if event_type == "tool.completed":
+                            try:
+                                result_response = await self._client.get(
+                                    f"/runs/{run_id}/tools/{quote(call_id, safe='')}/result"
+                                )
+                                result_response.raise_for_status()
+                                result_value = result_response.json().get("result")
+                                if isinstance(result_value, str):
+                                    content = [
+                                        ContentToolCallContent(
+                                            type="content",
+                                            content=TextContentBlock(
+                                                type="text", text=result_value
+                                            ),
+                                        )
+                                    ]
+                            except (httpx.HTTPError, ValueError, TypeError):
+                                logger.warning(
+                                    "ACP could not retrieve bounded public tool result for run %s",
+                                    run_id,
+                                )
                         await self._send_tool_call(
                             session_id,
                             ToolCallProgress(
@@ -574,6 +597,7 @@ class XaaAcpAgent:
                                 tool_call_id=acp_tool_id,
                                 title=title,
                                 status=status,
+                                content=content,
                             ),
                         )
                         if event_type in {"tool.completed", "tool.failed"}:

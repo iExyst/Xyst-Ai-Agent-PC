@@ -1606,6 +1606,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="Run not found.")
         return run_store.public_events(run_id, max(after, 0))
 
+    @app.get("/runs/{run_id}/tools/{call_id}/result")
+    async def get_public_tool_result(
+        run_id: str,
+        call_id: str,
+        _: None = Depends(authenticate),
+    ) -> dict[str, str | None]:
+        if run_store.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        return {"result": run_store.public_tool_result(run_id, call_id)}
+
     @app.get("/runs/{run_id}/export")
     def export_run_trajectory(run_id: str, _: None = Depends(authenticate)) -> Response:
         secrets_to_redact: list[str] = []
