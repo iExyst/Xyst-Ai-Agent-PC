@@ -19,6 +19,7 @@ import { ProviderSetup } from './ProviderSetup.tsx';
 import { SearchProviderPanel } from './SearchProviderPanel.tsx';
 import { SpecialistProfilesPanel } from './SpecialistProfilesPanel.tsx';
 import { MCPPanel } from './MCPPanel.tsx';
+import { AgentPluginsPanel } from './AgentPluginsPanel.tsx';
 import type {components} from './generated/api.js';
 
 function App() {
@@ -195,6 +196,7 @@ function App() {
       <section><details><summary>Messaging channels</summary><ChannelsPanel client={client}/></details></section>
       <section><details><summary>Web search integration</summary><SearchProviderPanel client={client}/></details></section>
       <section><details><summary>MCP integrations</summary><MCPPanel client={client} selectedRunWriteTools={approvedMCPTools} onRunWriteToolsChange={setApprovedMCPTools}/></details></section>
+      <section><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>

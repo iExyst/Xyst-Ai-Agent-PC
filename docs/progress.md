@@ -2,6 +2,10 @@
 
 Updated 2026-11-05.
 
+## Static Agent Plugins package discovery (2026-11-05)
+
+Added authenticated `POST /extensions/packages/discover` and a desktop discovery panel. The scanner accepts one package directory or its immediate child packages, with limits of 128 packages, 128 skills per package, 64 MCP servers and 256 KiB per manifest/skill file. It rejects duplicate JSON keys and escaped paths, checks bounded skill file locations without reading their instructions, and summarizes MCP transport metadata without returning raw arguments, environment values, HTTP headers or endpoint paths. Stdio summaries expose only command basename, argument count and environment variable names; HTTP summaries require HTTPS or loopback HTTP. Focused tests pass (3 passed, one symlink case skipped because local Windows denied symlink creation); Pyright, Ruff, OpenAPI and generated desktop contracts, TypeScript, and production build pass. This is discovery only: package installation, full upstream schema compatibility, skill import/activation, and server launch/registration remain unimplemented. The repository still estimates total release completion at approximately 16%; this narrow feature does not close a phase gate.
+
 ## Current release status
 
 Approximately 16% of the complete objective. This is a rough release-scope estimate, not a claim that any broad phase or Hermes parity gate is complete. Entries below record historical milestones and retain their original test counts/limitations; later evidence supersedes earlier pending statements only for the specific checks it proves.

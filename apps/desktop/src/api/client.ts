@@ -26,6 +26,7 @@ export type CredentialStatus = components['schemas']['LMStudioCredentialStatus']
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
+export type PluginDiscovery = components['schemas']['PluginDiscovery'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
 
 export class EngineRequestError extends Error {
@@ -82,6 +83,7 @@ export class EngineClient {
   setMCPToolPermission(serverId:string,tool:MCPTool,permission:MCPTool['permission']):Promise<MCPTool>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(tool.name)}/permission`,{method:'PUT',body:JSON.stringify({permission,schema_sha256:tool.schema_sha256})});}
   setMCPSecret(serverId:string,name:string,value:string):Promise<{configured:boolean}>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({value})});}
   clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}
+  discoverAgentPlugins(root:string):Promise<PluginDiscovery>{return this.#request('/extensions/packages/discover',{method:'POST',body:JSON.stringify({root})});}
 
   lmStudioConfig(): Promise<components['schemas']['LMStudioConfigRecord']> {
     return this.#request('/providers/lm-studio/config');

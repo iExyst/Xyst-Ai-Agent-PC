@@ -205,6 +205,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/extensions/packages/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover Extension Packages */
+        post: operations["discover_extension_packages_extensions_packages_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1731,6 +1748,73 @@ export interface components {
             /** Workspace */
             workspace: string | null;
         };
+        /** PluginDiagnostic */
+        PluginDiagnostic: {
+            /** Message */
+            message: string;
+            /** Path */
+            path: string;
+        };
+        /** PluginDiscovery */
+        PluginDiscovery: {
+            /** Diagnostics */
+            diagnostics: components["schemas"]["PluginDiagnostic"][];
+            /** Packages */
+            packages: components["schemas"]["PluginSummary"][];
+            /** Root */
+            root: string;
+        };
+        /** PluginDiscoveryRequest */
+        PluginDiscoveryRequest: {
+            /** Root */
+            root: string;
+        };
+        /** PluginServer */
+        PluginServer: {
+            /**
+             * Argument Count
+             * @default 0
+             */
+            argument_count: number;
+            /** Command Name */
+            command_name?: string | null;
+            /** Endpoint */
+            endpoint?: string | null;
+            /**
+             * Environment Names
+             * @default []
+             */
+            environment_names: string[];
+            /** Name */
+            name: string;
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "stdio" | "streamable_http";
+        };
+        /** PluginSkill */
+        PluginSkill: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+        };
+        /** PluginSummary */
+        PluginSummary: {
+            /** Description */
+            description: string | null;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Servers */
+            servers: components["schemas"]["PluginServer"][];
+            /** Skills */
+            skills: components["schemas"]["PluginSkill"][];
+            /** Version */
+            version: string | null;
+        };
         /** PreferenceRequest */
         PreferenceRequest: {
             /** Content */
@@ -2840,6 +2924,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_extension_packages_extensions_packages_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginDiscoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDiscovery"];
                 };
             };
             /** @description Validation Error */

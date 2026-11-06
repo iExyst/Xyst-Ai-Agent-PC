@@ -38,6 +38,7 @@ from xaa.api.contracts import (
 )
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.credentials import CredentialStore
+from xaa.extensions.agent_plugins import PluginDiscovery, discover_agent_plugins
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
@@ -231,6 +232,11 @@ class MCPConnectResponse(BaseModel):
     tools: list[MCPToolResponse]
 
 
+class PluginDiscoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    root: str = Field(min_length=1, max_length=2048)
+
+
 class CreateScheduleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     objective: str = Field(min_length=1, max_length=10_000)
@@ -412,6 +418,15 @@ def create_app(
         await provider.close()
 
     app = FastAPI(title="X.A.A. Local API", version="0.1.0", lifespan=lifespan)
+
+    @app.post("/extensions/packages/discover", response_model=PluginDiscovery)
+    def discover_extension_packages(
+        payload: PluginDiscoveryRequest, _: None = Depends(authenticate)
+    ) -> PluginDiscovery:
+        try:
+            return discover_agent_plugins(payload.root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/mcp/servers", response_model=list[MCPServerResponse])
     def list_mcp_servers(_: None = Depends(authenticate)) -> list[dict[str, Any]]:

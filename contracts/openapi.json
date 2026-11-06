@@ -1645,6 +1645,207 @@
         "title": "PlanTaskRecord",
         "type": "object"
       },
+      "PluginDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "title": "PluginDiagnostic",
+        "type": "object"
+      },
+      "PluginDiscovery": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/PluginDiagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/PluginSummary"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "packages",
+          "diagnostics"
+        ],
+        "title": "PluginDiscovery",
+        "type": "object"
+      },
+      "PluginDiscoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "root": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root"
+        ],
+        "title": "PluginDiscoveryRequest",
+        "type": "object"
+      },
+      "PluginServer": {
+        "additionalProperties": false,
+        "properties": {
+          "argument_count": {
+            "default": 0,
+            "title": "Argument Count",
+            "type": "integer"
+          },
+          "command_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Name"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "environment_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Environment Names",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "transport": {
+            "enum": [
+              "stdio",
+              "streamable_http"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "transport"
+        ],
+        "title": "PluginServer",
+        "type": "object"
+      },
+      "PluginSkill": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "PluginSkill",
+        "type": "object"
+      },
+      "PluginSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/PluginServer"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/PluginSkill"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "description",
+          "path",
+          "skills",
+          "servers"
+        ],
+        "title": "PluginSummary",
+        "type": "object"
+      },
       "PreferenceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4330,6 +4531,49 @@
           }
         ],
         "summary": "Check Execution Readiness"
+      }
+    },
+    "/extensions/packages/discover": {
+      "post": {
+        "operationId": "discover_extension_packages_extensions_packages_discover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDiscovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discover Extension Packages"
       }
     },
     "/health": {
