@@ -8,7 +8,7 @@ X.A.A. provides an ACP stdio agent through `xaa acp`. It is a client bridge to t
 - The ACP host must send that exact workspace as `session/new`'s `cwd`. Additional directories and host-provided MCP servers are refused.
 - ACP currently accepts text prompts up to 2,000 UTF-8 bytes. Conversations persist in the X.A.A. chat-session store across ACP process restarts. `session/load` replays saved text turns to the host; `session/list` finds matching saved sessions with bounded pages, and the API's bounded prior-turn context is reused.
 - The ACP process sends its bearer token only to a numeric loopback HTTP URL. HTTPS, remote hosts, DNS names, URL credentials, query strings, and fragments are rejected.
-- ACP cancellation calls the authenticated `/runs/{run_id}/cancel` route. Run completion and user-visible errors are returned through ACP session updates.
+- ACP cancellation and session close call the authenticated `/runs/{run_id}/cancel` route when a run is active. Closing releases process-local state while retaining saved text history for `session/load`. Run completion and user-visible errors are returned through ACP session updates.
 
 ## Launching from an editor
 

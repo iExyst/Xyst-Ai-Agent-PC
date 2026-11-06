@@ -27,9 +27,11 @@ from acp.interfaces import Client
 from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
+    CloseSessionResponse,
     Implementation,
     ListSessionsResponse,
     SessionCapabilities,
+    SessionCloseCapabilities,
     SessionInfo,
     SessionListCapabilities,
     TextContentBlock,
@@ -180,7 +182,9 @@ class XaaAcpAgent:
             agent_info=Implementation(name="xyst-ai-agent", title="Xyst AI Agent", version="0.1.0"),
             agent_capabilities=AgentCapabilities(
                 load_session=True,
-                session_capabilities=SessionCapabilities(list=SessionListCapabilities()),
+                session_capabilities=SessionCapabilities(
+                    close=SessionCloseCapabilities(), list=SessionListCapabilities()
+                ),
             ),
         )
 
@@ -395,6 +399,14 @@ class XaaAcpAgent:
                 self._cancel_requested.add(session_id)
             return
         await self._request_run_cancel(run_id)
+
+    async def close_session(self, session_id: str, **kwargs: Any) -> CloseSessionResponse:
+        if session_id in self._active_runs:
+            await self.cancel(session_id)
+        elif session_id in self._pending_sessions:
+            self._cancel_requested.add(session_id)
+        self._sessions.discard(session_id)
+        return CloseSessionResponse()
 
     async def _request_run_cancel(self, run_id: str) -> None:
         response = await self._client.post(f"/runs/{run_id}/cancel")
