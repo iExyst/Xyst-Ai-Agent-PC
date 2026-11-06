@@ -3163,7 +3163,9 @@
           "provenance": {
             "enum": [
               "user",
-              "agent_plugin"
+              "agent_plugin",
+              "agent_plugins_v1",
+              "hermes_skill"
             ],
             "title": "Provenance",
             "type": "string"

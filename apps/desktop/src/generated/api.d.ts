@@ -2397,7 +2397,7 @@ export interface components {
              * Provenance
              * @enum {string}
              */
-            provenance: "user" | "agent_plugin";
+            provenance: "user" | "agent_plugin" | "agent_plugins_v1" | "hermes_skill";
             /** Source */
             source?: {
                 [key: string]: string;

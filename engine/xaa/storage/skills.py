@@ -359,7 +359,7 @@ class EvaluationRecord(BaseModel):
 
 class SkillEvidence(BaseModel):
     state: Literal["candidate", "evaluated"]
-    provenance: Literal["user", "agent_plugin"]
+    provenance: Literal["user", "agent_plugin", "agent_plugins_v1", "hermes_skill"]
     source: dict[str, str] | None = None
     evaluations: list[EvaluationRecord]
 
@@ -468,12 +468,18 @@ class SkillStore:
             self._insert_version(connection, identity, 1, draft)
         return self.get(identity)
 
-    def import_agent_plugin(self, draft: SkillDraft, source: dict[str, str]) -> dict[str, Any]:
-        """Create an inactive candidate with immutable Agent Plugins source provenance."""
+    def import_agent_plugin(
+        self,
+        draft: SkillDraft,
+        source: dict[str, str],
+        *,
+        source_kind: Literal["agent_plugin", "agent_plugins_v1", "hermes_skill"] = "agent_plugin",
+    ) -> dict[str, Any]:
+        """Create an inactive candidate with immutable package source provenance."""
         identity, now = str(uuid4()), utc_now()
         evidence: dict[str, Any] = {
             "state": "candidate",
-            "provenance": "agent_plugin",
+            "provenance": source_kind,
             "source": source,
             "evaluations": [],
         }

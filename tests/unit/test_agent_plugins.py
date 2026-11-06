@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -126,6 +127,43 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     ):
         assert forbidden not in encoded
     assert str(package) == summary.path
+
+
+def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path: Path) -> None:
+    skills_root = tmp_path / "hermes-skills"
+    skill_directory = skills_root / "summarize"
+    (skill_directory / "references").mkdir(parents=True)
+    skill_path = skill_directory / "SKILL.md"
+    skill_path.write_text(
+        "---\nname: summarize\ndescription: Summarize selected material.\nversion: 0.2.0\n"
+        "metadata:\n  hermes:\n    category: writing\n---\n"
+        "Use the linked reference only when it helps. [Guide](references/guide.md)\n",
+        encoding="utf-8",
+    )
+    (skill_directory / "references" / "guide.md").write_text("Reference content", encoding="utf-8")
+
+    discovery = discover_agent_plugins(str(skills_root))
+    assert len(discovery.packages) == 1
+    package = discovery.packages[0]
+    assert package.name == "summarize"
+    assert package.version == "0.2.0"
+    assert package.skills[0].path == "SKILL.md"
+    assert package.skills[0].category == "writing"
+    assert "Use the linked reference" not in package.model_dump_json()
+
+    # Selecting the skill directory itself works as well as selecting its catalog root.
+    direct = discover_agent_plugins(str(skill_directory))
+    assert [item.name for item in direct.packages] == ["summarize"]
+    imported = read_plugin_skill(str(skills_root), "summarize", "summarize")
+    source_bytes = skill_path.read_bytes()
+    assert imported.source_format == "hermes_skill"
+    assert imported.package_name == "summarize"
+    assert imported.package_version == "0.2.0"
+    assert imported.content_sha256 == imported.manifest_sha256
+    assert imported.content_sha256 == hashlib.sha256(source_bytes).hexdigest()
+    assert imported.assets[0]["path"] == "references/guide.md"
+    assert imported.assets[0]["content_base64"]
+    assert imported.assets[0]["sha256"] == hashlib.sha256(b"Reference content").hexdigest()
 
 
 def test_requirement_readiness_checks_names_without_exposing_values(
@@ -332,7 +370,7 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
         )
     assert version.status_code == 200
     evidence = version.json()["evaluation_evidence"]
-    assert evidence["provenance"] == "agent_plugin"
+    assert evidence["provenance"] == "agent_plugins_v1"
     assert evidence["source"]["package_version"] == "1.2.3"
     assert evidence["source"]["skill_name"] == "summarize"
     assert evidence["source"]["content_sha256"]
@@ -357,7 +395,7 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert resource["sha256"]
     assert resource["content_base64"]
     assert revised.status_code == 201
-    assert revised_version.json()["evaluation_evidence"]["provenance"] == "agent_plugin"
+    assert revised_version.json()["evaluation_evidence"]["provenance"] == "agent_plugins_v1"
     assert revised_version.json()["evaluation_evidence"]["source"] == evidence["source"]
     assert revised_version.json()["assets"] == version.json()["assets"]
     assert exported.status_code == 200
@@ -382,6 +420,37 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     revised_skill = read_plugin_skill(str(revised_package_root), revised_package.name, "summarize")
     assert revised_skill.description == "Updated bounded file summaries."
     assert revised_skill.category == "technical-writing"
+
+
+def test_hermes_skill_import_api_keeps_candidate_inactive_and_records_source(
+    tmp_path: Path,
+) -> None:
+    skills_root = tmp_path / "hermes-skills"
+    skill_directory = skills_root / "summarize"
+    skill_directory.mkdir(parents=True)
+    (skill_directory / "SKILL.md").write_text(
+        "---\nname: summarize\ndescription: Summarize selected material.\nversion: 0.2.0\n"
+        "allowed-tools: workspace.read_file\n---\n"
+        "Read the relevant material and summarize it.\n",
+        encoding="utf-8",
+    )
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "hermes.sqlite3"))
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    payload = {
+        "root": str(skills_root),
+        "package_name": "summarize",
+        "skill_name": "summarize",
+    }
+    with TestClient(app) as client:
+        created = client.post("/extensions/packages/import-skill", headers=headers, json=payload)
+        assert created.status_code == 201
+        version = client.get(f"/skills/{created.json()['id']}/versions/1", headers=headers).json()
+
+    assert created.json()["lifecycle_state"] == "candidate"
+    assert version["required_permissions"] == ["workspace.read"]
+    assert version["evaluation_evidence"]["provenance"] == "hermes_skill"
+    assert version["evaluation_evidence"]["source"]["package_version"] == "0.2.0"
+    assert version["evaluation_evidence"]["state"] == "candidate"
 
 
 @pytest.mark.parametrize("link", ["../outside.txt", "./guide.md", "%2e%2e/outside.txt"])

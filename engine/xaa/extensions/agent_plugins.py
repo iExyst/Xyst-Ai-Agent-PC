@@ -1,4 +1,4 @@
-"""Bounded, read-only discovery for Agent Plugins v1 package directories."""
+"""Bounded, read-only discovery for Agent Plugins and Hermes skill directories."""
 
 from __future__ import annotations
 
@@ -94,6 +94,7 @@ class PluginDiscovery(BaseModel):
 
 class PluginSkillImport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    source_format: Literal["agent_plugins_v1", "hermes_skill"]
     package_name: str
     package_version: str
     skill_name: str
@@ -323,7 +324,7 @@ def _assess_requirement_readiness(
 
 def _parse_skill_frontmatter(
     raw: bytes, directory_name: str
-) -> tuple[str, list[str], str | None, dict[str, Any]]:
+) -> tuple[str, list[str], str | None, dict[str, Any], str | None]:
     """Parse and validate the bounded Agent Skills frontmatter prefix."""
     prefix = raw[:16_384].decode("utf-8-sig")
     if (
@@ -360,6 +361,11 @@ def _parse_skill_frontmatter(
         raise ValueError("frontmatter name must match its directory and Agent Skills constraints")
     if not isinstance(description, str) or not 1 <= len(description) <= 1024:
         raise ValueError("frontmatter description must be 1 to 1024 characters")
+    version = values.get("version")
+    if isinstance(version, (int, float)) and not isinstance(version, bool):
+        version = str(version)
+    if version is not None and (not isinstance(version, str) or len(version) > 128):
+        raise ValueError("frontmatter version must be a string of at most 128 characters")
     if "license" in values and not isinstance(values["license"], str):
         raise ValueError("frontmatter license must be a string")
     if "compatibility" in values and (
@@ -397,7 +403,7 @@ def _parse_skill_frontmatter(
     raw_tools = values.get("allowed-tools", "")
     if not isinstance(raw_tools, str):
         raise TypeError("frontmatter allowed-tools must be a string")
-    return description, raw_tools.split(), category, _declared_requirements(values)
+    return description, raw_tools.split(), category, _declared_requirements(values), version
 
 
 def _update_skill_frontmatter(
@@ -449,6 +455,38 @@ def _json(path: Path, package_root: Path) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
+def _skill_summary(
+    package_root: Path,
+    directory: Path,
+    skill_file: Path,
+    command_cache: dict[str, bool],
+) -> tuple[PluginSkill, str | None]:
+    resolved = skill_file.resolve(strict=True)
+    if not _inside(resolved, package_root) or not resolved.is_file():
+        raise ValueError("skill file escapes package")
+    if resolved.stat().st_size > MAX_MANIFEST_BYTES:
+        raise ValueError("skill file exceeds size limit")
+    with resolved.open("rb") as source:
+        prefix = source.read(16_384)
+    description, allowed_tools, category, declared_requirements, version = _parse_skill_frontmatter(
+        prefix, directory.name
+    )
+    return (
+        PluginSkill(
+            name=directory.name,
+            path=skill_file.relative_to(package_root).as_posix(),
+            description=description,
+            category=category,
+            allowed_tools=allowed_tools,
+            declared_requirements=declared_requirements,
+            requirement_readiness=_assess_requirement_readiness(
+                declared_requirements, command_cache
+            ),
+        ),
+        version,
+    )
+
+
 def _skill_summaries(package_root: Path, command_cache: dict[str, bool]) -> list[PluginSkill]:
     skills_root = package_root / "skills"
     if not skills_root.exists():
@@ -460,32 +498,26 @@ def _skill_summaries(package_root: Path, command_cache: dict[str, bool]) -> list
         if not _SLUG.fullmatch(directory.name):
             continue
         skill_file = directory / "SKILL.md"
-        if not skill_file.exists():
-            continue
-        resolved = skill_file.resolve(strict=True)
-        if not _inside(resolved, package_root) or not resolved.is_file():
-            raise ValueError("skill file escapes package")
-        if resolved.stat().st_size > MAX_MANIFEST_BYTES:
-            raise ValueError("skill file exceeds size limit")
-        with resolved.open("rb") as source:
-            prefix = source.read(16_384)
-        description, allowed_tools, category, declared_requirements = _parse_skill_frontmatter(
-            prefix, directory.name
-        )
-        summaries.append(
-            PluginSkill(
-                name=directory.name,
-                path=skill_file.relative_to(package_root).as_posix(),
-                description=description,
-                category=category,
-                allowed_tools=allowed_tools,
-                declared_requirements=declared_requirements,
-                requirement_readiness=_assess_requirement_readiness(
-                    declared_requirements, command_cache
-                ),
-            )
-        )
+        if skill_file.exists():
+            summary, _ = _skill_summary(package_root, directory, skill_file, command_cache)
+            summaries.append(summary)
     return summaries
+
+
+def _hermes_skill_package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSummary:
+    package_root = path.resolve(strict=True)
+    if not _inside(package_root, root) or not package_root.is_dir():
+        raise ValueError("skill directory escapes selected root")
+    skill_file = package_root / "SKILL.md"
+    skill, version = _skill_summary(package_root, package_root, skill_file, command_cache)
+    return PluginSummary(
+        name=package_root.name,
+        version=version,
+        description=skill.description,
+        path=str(package_root),
+        skills=[skill],
+        servers=[],
+    )
 
 
 def _servers(manifest: dict[str, Any], package_root: Path) -> list[PluginServer]:
@@ -617,7 +649,7 @@ def _package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSu
 
 
 def discover_agent_plugins(directory: str) -> PluginDiscovery:
-    """Inspect immediate package directories. No package code or skill contents are executed/read."""
+    """Inspect bounded package and standalone Hermes skill directories without execution."""
     requested = Path(directory).expanduser()
     try:
         root = requested.resolve(strict=True)
@@ -628,6 +660,8 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
     candidates = (
         [root]
         if (root / "plugin.json").exists()
+        else [root]
+        if (root / "SKILL.md").exists()
         else sorted(islice(root.iterdir(), MAX_PACKAGES), key=lambda item: item.name)
     )
     packages: list[PluginSummary] = []
@@ -640,9 +674,12 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
             resolved = candidate.resolve(strict=True)
             if not _inside(resolved, root):
                 raise ValueError("package directory escapes selected root")
-            if not resolved.is_dir() or not (resolved / "plugin.json").exists():
+            if not resolved.is_dir():
                 continue
-            packages.append(_package(resolved, root, command_cache))
+            if (resolved / "plugin.json").exists():
+                packages.append(_package(resolved, root, command_cache))
+            elif (resolved / "SKILL.md").exists():
+                packages.append(_hermes_skill_package(resolved, root, command_cache))
         except (OSError, RuntimeError, ValueError) as exc:
             diagnostics.append(PluginDiagnostic(path=candidate.name[:256], message=str(exc)[:300]))
     return PluginDiscovery(root=str(root), packages=packages, diagnostics=diagnostics)
@@ -673,7 +710,7 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         raise ValueError("skill file must be UTF-8 text") from exc
     if "\x00" in content:
         raise ValueError("skill file cannot contain NUL characters")
-    description, allowed_tools, category, declared_requirements = _parse_skill_frontmatter(
+    description, allowed_tools, category, declared_requirements, _ = _parse_skill_frontmatter(
         raw, skill.name
     )
     asset_rows: list[dict[str, str]] = []
@@ -733,11 +770,19 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
                 "sha256": hashlib.sha256(resource_bytes).hexdigest(),
             }
         )
-    with (package_root / "plugin.json").open("rb") as manifest_source:
-        manifest_bytes = manifest_source.read(MAX_MANIFEST_BYTES + 1)
+    manifest_path = package_root / "plugin.json"
+    has_manifest = manifest_path.exists()
+    if has_manifest:
+        with manifest_path.open("rb") as manifest_source:
+            manifest_bytes = manifest_source.read(MAX_MANIFEST_BYTES + 1)
+    else:
+        # A standalone Hermes skill has no package manifest; bind its source
+        # provenance to the SKILL.md bytes already read for the import.
+        manifest_bytes = raw
     if len(manifest_bytes) > MAX_MANIFEST_BYTES:
         raise ValueError("plugin.json exceeds the package manifest size limit")
     return PluginSkillImport(
+        source_format="agent_plugins_v1" if has_manifest else "hermes_skill",
         package_name=package.name,
         package_version=package.version or "",
         skill_name=skill.name,
@@ -789,7 +834,7 @@ def export_procedure_package(
         allowed_tools = [tool["name"] for tool in required_tools]
     markdown = content
     try:
-        prior_description, _, prior_category, _ = _parse_skill_frontmatter(
+        prior_description, _, prior_category, _, _ = _parse_skill_frontmatter(
             content.encode("utf-8"), skill_name
         )
         if prior_description != description or prior_category != category:

@@ -520,6 +520,7 @@ def create_app(
                     "content_sha256": imported.content_sha256,
                     "manifest_sha256": imported.manifest_sha256,
                 },
+                source_kind=imported.source_format,
             )
         except SkillConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
