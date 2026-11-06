@@ -157,11 +157,28 @@ def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list
         if not isinstance(values["metadata"], dict):
             raise ValueError("frontmatter metadata must map strings to strings")
         skill_metadata = cast(dict[str, Any], values["metadata"])
-        if any(not isinstance(value, str) for value in skill_metadata.values()):
+        hermes_value = skill_metadata.get("hermes")
+        if any(
+            (key == "hermes" and not isinstance(value, dict))
+            or (key != "hermes" and not isinstance(value, str))
+            for key, value in skill_metadata.items()
+        ):
             raise ValueError("frontmatter metadata must map strings to strings")
+        hermes_metadata = (
+            cast(dict[str, Any], hermes_value) if isinstance(hermes_value, dict) else None
+        )
     else:
         skill_metadata = {}
+        hermes_metadata = None
     category = skill_metadata.get("category")
+    if isinstance(hermes_metadata, dict):
+        hermes_category = hermes_metadata.get("category")
+        if hermes_category is not None and not isinstance(hermes_category, str):
+            raise ValueError("frontmatter metadata.hermes.category must be a string")
+        if category is not None and hermes_category is not None and category != hermes_category:
+            raise ValueError("frontmatter category fields disagree")
+        if category is None:
+            category = hermes_category
     if category is not None and not _CATEGORY.fullmatch(category):
         raise ValueError("frontmatter metadata.category must be a lowercase slug")
     raw_tools = values.get("allowed-tools", "")

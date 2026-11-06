@@ -2,6 +2,10 @@
 
 Updated 2026-11-06.
 
+## Pinned Hermes skill package compatibility audit (2026-11-06)
+
+Added a reproducible, object-level inventory of all 44 default and 142 optional skill packages at the pinned Hermes commit, including metadata keys, declared platforms/prerequisites, package file hashes/modes and local Markdown destinations. No package content was imported or executed during the source audit. The audit found 181 packages using nested `metadata.hermes` metadata and nine declaring Hermes toolsets, 23 SKILL.md files above X.A.A.'s 16 KiB candidate limit, and five under-limit packages with unresolved linked destinations; 158 meet the current bounded text/resource preflight. The importer now accepts the pinned Hermes metadata extension as untrusted source data and maps its category only when consistent with standard category metadata. Package frontmatter regression tests pass (12 passed, one Windows symlink skip). Ruff and strict Pyright pass for the importer and new audit script. Direct discovery of Hermes folder layouts, prerequisite/platform/toolset-to-permission mapping, the size/resource exceptions, external catalog packages and script execution remain open. This closes one metadata compatibility mismatch and adds an audited dependency/size matrix; overall completion remains approximately 16%.
+
 ## Bounded local provider and specialist stream recovery (2026-11-06)
 
 LM Studio chat requests now retry one time after transport failures and transient HTTP 408/429/500/502/503/504 responses, with a short bounded delay; permanent client errors are returned without retry. Specialists now reject incomplete/invalid streamed tool calls before execution and may request one safe repair completion when their persisted iteration budget has room. The retry reason is stored as a safe error code and shown in the desktop activity timeline. Focused provider, specialist and stream assembly tests pass (35); Ruff, formatting, strict Pyright, TypeScript and native development build pass. The full engine suite passes 637 tests, one Windows symlink-creation skip, and one existing Starlette/httpx deprecation warning.

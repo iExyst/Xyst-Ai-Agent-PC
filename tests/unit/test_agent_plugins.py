@@ -30,6 +30,8 @@ def make_package(root: Path) -> Path:
     (package / "skills" / "summarize" / "SKILL.md").write_text(
         "---\nname: summarize\ndescription: Summarize a bounded file.\n"
         "metadata:\n  category: writing\n"
+        "  hermes:\n    category: writing\n    tags: [writing, utility]\n"
+        "    related_skills: [review]\n"
         "allowed-tools: workspace.read_file shell.exec\n---\n"
         "ignored instruction text\n\n[Reference](references/guide.md)",
         encoding="utf-8",
@@ -151,6 +153,35 @@ def test_discovery_rejects_invalid_skill_category_metadata(tmp_path: Path) -> No
     result = discover_agent_plugins(str(tmp_path))
     assert result.packages == []
     assert "category" in result.diagnostics[0].message
+
+
+def test_discovery_accepts_hermes_metadata_and_uses_its_category(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    skill_file = package / "skills" / "summarize" / "SKILL.md"
+    content = skill_file.read_text(encoding="utf-8")
+    content = content.replace("metadata:\n  category: writing\n", "metadata:\n")
+    skill_file.write_text(content, encoding="utf-8")
+
+    result = discover_agent_plugins(str(tmp_path))
+
+    assert len(result.packages) == 1
+    assert result.packages[0].skills[0].category == "writing"
+
+
+def test_discovery_rejects_conflicting_standard_and_hermes_categories(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    skill_file = package / "skills" / "summarize" / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8").replace(
+            "    category: writing", "    category: other"
+        ),
+        encoding="utf-8",
+    )
+
+    result = discover_agent_plugins(str(tmp_path))
+
+    assert result.packages == []
+    assert "disagree" in result.diagnostics[0].message
 
 
 def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path) -> None:
