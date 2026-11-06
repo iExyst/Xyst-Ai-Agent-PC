@@ -938,6 +938,58 @@ class Coordinator:
         messages.append(feedback)
         return True
 
+    async def _infer_with_stream_recovery(
+        self,
+        run_id: str,
+        token: str,
+        run: dict[str, Any],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        deadline: float,
+        max_iterations: int,
+    ) -> tuple[dict[str, Any], str]:
+        retries = 0
+        retryable_codes = {
+            "incomplete_response",
+            "empty_response",
+            "invalid_tool_arguments",
+            "invalid_completion",
+        }
+        while True:
+            self.store.renew_lease(run_id, token, seconds=180)
+            self.store.check_token_budget(run_id, token, before_inference=True)
+            inference_id = self.store.reserve_parent_inference(run_id, token, limit=max_iterations)
+            self._update_plan_budget(run_id, run, tools, max_iterations)
+            try:
+                async with asyncio.timeout(min(90, max(0, deadline - time.monotonic()))):
+                    response = await self._infer(
+                        run_id, token, inference_id, run["model"], messages, tools
+                    )
+                return response, inference_id
+            except StreamAssemblyError as exc:
+                self.store.append_worker_event(
+                    run_id,
+                    token,
+                    "model.stream_rejected",
+                    {"inference_id": inference_id, "code": exc.code},
+                )
+                exhausted = self.store.inference_attempts(run_id) >= max_iterations
+                if retries or exhausted or exc.code not in retryable_codes:
+                    raise
+                feedback = {
+                    "role": "user",
+                    "content": "The previous streamed response ended before it formed a complete, validated answer or tool call. No part of that response was executed. Continue from the saved conversation and completed tool results. Return one complete authorized tool call or a public answer, and do not repeat completed effects.",
+                }
+                self.store.append_worker_event(
+                    run_id,
+                    token,
+                    "model.response_requested",
+                    {"message": feedback, "actor": "engine"},
+                )
+                messages.append(feedback)
+                retries += 1
+
     async def execute(self, run_id: str, *, max_iterations: int | None = None) -> None:
         if max_iterations is not None and not 1 <= max_iterations <= 100:
             raise ValueError("Iteration budget must be between 1 and 100.")
@@ -1030,16 +1082,15 @@ class Coordinator:
                 consumed = self.store.inference_attempts(run_id)
                 if consumed >= max_iterations:
                     break
-                self.store.renew_lease(run_id, token, seconds=180)
-                self.store.check_token_budget(run_id, token, before_inference=True)
-                inference_id = self.store.reserve_parent_inference(
-                    run_id, token, limit=max_iterations
+                response, inference_id = await self._infer_with_stream_recovery(
+                    run_id,
+                    token,
+                    run,
+                    messages,
+                    tools,
+                    deadline=deadline,
+                    max_iterations=max_iterations,
                 )
-                self._update_plan_budget(run_id, run, tools, max_iterations)
-                async with asyncio.timeout(min(90, max(0, deadline - time.monotonic()))):
-                    response = await self._infer(
-                        run_id, token, inference_id, run["model"], messages, tools
-                    )
                 choice = validate_completion(response)
                 usage = (
                     TokenUsage.model_validate(response["usage"]).model_dump()

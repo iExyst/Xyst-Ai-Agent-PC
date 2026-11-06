@@ -143,9 +143,12 @@ def test_stream_assembly_errors_expose_bounded_machine_readable_code(fragments, 
     assert captured.value.code == code
 
 
-@pytest.mark.parametrize("complete_arguments,finish", [(True, False), (False, True)])
+@pytest.mark.parametrize(
+    "complete_arguments,finish,error_code",
+    [(True, False, "incomplete_response"), (False, True, "invalid_tool_arguments")],
+)
 async def test_partial_stream_never_executes_a_write(
-    workspace_tmp_path, complete_arguments, finish
+    workspace_tmp_path, complete_arguments, finish, error_code
 ):
     target = workspace_tmp_path / "file.txt"
     target.write_bytes(b"before")
@@ -194,9 +197,53 @@ async def test_partial_stream_never_executes_a_write(
         await provider.close()
     assert target.read_bytes() == b"before"
     assert store.get_run(run_id)["state"] == "blocked"
-    assert store.conversation_messages(run_id) == []
-    assert store.inference_attempts(run_id) == 1
+    history = store.conversation_messages(run_id)
+    assert len(history) == 1 and history[0]["role"] == "user"
+    assert "No part of that response was executed" in history[0]["content"]
+    events = store.list_events(run_id)
+    rejected = [event for event in events if event["event_type"] == "model.stream_rejected"]
+    assert store.inference_attempts(run_id) == 2
+    assert len(rejected) == 2
+    assert all(event["payload"]["code"] == error_code for event in rejected)
     assert not any(event["event_type"] == "tool.intended" for event in store.list_events(run_id))
+
+
+async def test_incomplete_stream_gets_one_safe_recovery_attempt(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "stream-recovery.sqlite3")
+    run_id = store.create_run(
+        objective="Answer after a truncated response",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+    )["id"]
+
+    class RecoveringProvider(LMStudioProvider):
+        calls = 0
+
+        async def _stream(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield chunk({"content": "partial draft"})
+                return
+            yield chunk({"content": "Recovered answer"}, "stop")
+
+    provider = RecoveringProvider()
+    try:
+        await Coordinator(store, provider, stream_responses=True).execute(run_id)
+    finally:
+        await provider.close()
+
+    events = store.list_events(run_id)
+    rejected = [event for event in events if event["event_type"] == "model.stream_rejected"]
+    requested = [event for event in events if event["event_type"] == "model.response_requested"]
+    replies = [event for event in events if event["event_type"] == "model.message"]
+    assert store.get_run(run_id)["state"] == "verifying"
+    assert store.inference_attempts(run_id) == 2
+    assert len(rejected) == 1 and rejected[0]["payload"]["code"] == "incomplete_response"
+    assert len(requested) == 1
+    assert "No part of that response was executed" in requested[0]["payload"]["message"]["content"]
+    assert replies[-1]["payload"]["message"]["content"] == "Recovered answer"
 
 
 async def test_cancelling_stream_releases_inference_queue(workspace_tmp_path):
