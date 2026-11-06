@@ -354,6 +354,9 @@ export class EngineClient {
         for await (const event of decodeRunEvents(response.body, cursor)) {
           cursor = event.sequence;
           yield event;
+          // Bound consecutive failures, not the lifetime number of recoveries.
+          // A valid persisted event proves the connection made forward progress.
+          attempt = 0;
         }
         return;
       } catch (failure) {

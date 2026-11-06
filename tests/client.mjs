@@ -18,6 +18,23 @@ test('interrupted stream reconnects from delivered cursor without duplicate even
   assert.deepEqual(cursors, ['0','1']);
 });
 
+test('retry budget resets after each delivered event across a long run', async () => {
+  const cursors = [];
+  let attempts = 0;
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async (_url, init) => {
+    attempts++;
+    cursors.push(init.headers.get('Last-Event-ID'));
+    if (attempts <= 8) {
+      return new Response(wireEvent(attempts) + `id: ${attempts + 1}\nevent: run_event\ndata: {`);
+    }
+    return new Response(wireEvent(9) + 'event: done\ndata: {}\n\n');
+  });
+  const sequences = [];
+  for await (const event of client.events('run-long')) sequences.push(event.sequence);
+  assert.deepEqual(sequences, [1,2,3,4,5,6,7,8,9]);
+  assert.deepEqual(cursors, ['0','1','2','3','4','5','6','7','8']);
+});
+
 test('authentication and event sequence failures never reconnect', async () => {
   for (const response of [() => new Response('', {status:401}), () => new Response(wireEvent(2))]) {
     let attempts = 0;
