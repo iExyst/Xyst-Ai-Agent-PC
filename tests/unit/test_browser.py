@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import socket
+import sys
+import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from xaa.runtime import browser as browser_runtime
 from xaa.runtime import browser_worker
-from xaa.runtime.browser import BrowserArguments, BrowserOutput, _worker_environment
+from xaa.runtime.browser import (
+    BrowserArguments,
+    BrowserOutput,
+    _execute_worker,
+    _worker_environment,
+)
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.web_fetch import validate_web_target
 from xaa.storage.runs import RunStore
@@ -166,6 +177,84 @@ async def test_browser_route_guard_applies_to_redirect_and_subresource_requests(
     route = FakeRoute()
     await browser_worker.guard_browser_route(route, {"docs.example.com"})
     assert route.action == (("continue", None) if allowed else ("abort", "blockedbyclient"))
+
+
+@pytest.mark.asyncio
+async def test_browser_cancellation_stops_owned_worker_process_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    if os.name != "nt":
+        pytest.skip("Browser worker process-tree termination is Windows-specific.")
+    marker = tmp_path / "child-running.txt"
+    child_script = tmp_path / "child.py"
+    pid_file = tmp_path / "child.pid"
+    child_script.write_text(
+        "from pathlib import Path\n"
+        "import time\n"
+        f"marker = Path({str(marker)!r})\n"
+        "while True:\n"
+        "    with marker.open('a', encoding='utf-8') as output:\n"
+        "        output.write('alive\\n')\n"
+        "    time.sleep(0.05)\n",
+        encoding="utf-8",
+    )
+    command_script = (
+        "from pathlib import Path\n"
+        "import subprocess, sys, time\n"
+        f"child = subprocess.Popen([sys.executable, '-I', {str(child_script)!r}])\n"
+        f"Path({str(pid_file)!r}).write_text(str(child.pid), encoding='ascii')\n"
+        "time.sleep(60)\n"
+    )
+    original_create = asyncio.create_subprocess_exec
+    spawned: list[asyncio.subprocess.Process] = []
+    ready = asyncio.Event()
+
+    async def spawn_worker(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        del args
+        process = await original_create(
+            sys.executable,
+            "-I",
+            "-c",
+            command_script,
+            **kwargs,
+        )
+        spawned.append(process)
+        ready.set()
+        return process
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "asyncio",
+        SimpleNamespace(
+            create_subprocess_exec=spawn_worker,
+            subprocess=asyncio.subprocess,
+            timeout=asyncio.timeout,
+        ),
+    )
+    task = asyncio.create_task(
+        _execute_worker(
+            {"url": "https://docs.example.com", "approved_hosts": ["docs.example.com"]},
+            30,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=5)
+        deadline = time.monotonic() + 5
+        while (not pid_file.exists() or not marker.exists()) and time.monotonic() < deadline:
+            await asyncio.sleep(0.02)
+        assert pid_file.exists() and marker.exists(), "The worker child did not start."
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        stopped_size = marker.stat().st_size
+        await asyncio.sleep(0.25)
+        assert marker.stat().st_size == stopped_size
+        assert spawned[0].returncode is not None
+    finally:
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
 
 def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) -> None:

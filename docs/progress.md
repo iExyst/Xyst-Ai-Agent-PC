@@ -866,3 +866,7 @@ Expanded the resolver rejection matrix across loopback, private, link-local, car
 ### Managed browser request guard coverage (2026-11-06)
 
 Extracted the Playwright route callback into `guard_browser_route`, the same helper still registered for every request with `**/*`. Focused route tests cover an allowed document and HEAD request, blocked cross-host document navigation (redirect target), blocked cross-host script subresource, and blocked POST. The full suite passes (664 passed, one Windows-only skip, one existing Starlette/httpx warning); Ruff and strict Pyright pass. This tests the shared routing decision, not a live redirected network chain; live redirect/subresource behavior, internal-address bypass attempts, and cancellation/process-tree acceptance remain open. Overall completion remains approximately 16%.
+
+### Managed browser cancellation process-tree acceptance (2026-11-06)
+
+Added a Windows integration test that runs the managed worker wrapper around a controlled child process which continuously writes a marker. Cancelling `_execute_worker` invokes the real owned-process cleanup; the test confirms the child stops writing and the worker exits. This verifies cancellation kills the owned process tree without starting Edge or contacting a website. The full suite passes (665 passed, one Windows-only skip, one existing Starlette/httpx warning); Ruff/format and strict Pyright pass. Real Edge cancellation during navigation, timeout, and crash recovery remain separate acceptance cases. Overall completion remains approximately 16%.
