@@ -32,7 +32,7 @@ def make_package(root: Path) -> Path:
         "---\nname: summarize\ndescription: Summarize a bounded file.\n"
         "platforms: [linux, macos]\n"
         "prerequisites:\n  commands: [git, python.exe --version]\n"
-        "dependencies:\n  python: [requests]\n"
+        'dependencies:\n  python: [requests>=2.0, "git+https://example.test/repo.git"]\n'
         "required_environment_variables: [API_TOKEN]\n"
         "metadata:\n  category: writing\n"
         "  hermes:\n    category: writing\n    tags: [writing, utility]\n"
@@ -104,6 +104,9 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert requirements["required_environment_names"] == ["API_TOKEN"]
     assert requirements["prerequisite_fields"] == ["commands"]
     assert requirements["dependencies_declared"] is True
+    assert requirements["dependency_names"] == ["requests"]
+    assert requirements["dependency_managers"] == ["python"]
+    assert requirements["unparsed_dependency_count"] == 1
     assert summary.servers[0].command_name == "python.exe"
     assert summary.servers[0].argument_count == 2
     assert summary.servers[0].environment_names == ["API_TOKEN"]
@@ -331,7 +334,9 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     declared = json.loads(evidence["source"]["declared_requirements"])
     assert declared["hermes_toolsets"] == ["files", "terminal"]
     assert declared["required_environment_names"] == ["API_TOKEN"]
-    assert "requests" not in json.dumps(declared)
+    assert declared["dependency_names"] == ["requests"]
+    assert "2.0" not in json.dumps(declared)
+    assert "example.test" not in json.dumps(declared)
     assert "tags: [writing, utility]" in version.json()["content"]
     resource = version.json()["assets"][0]
     assert resource["path"] == "references/guide.md"

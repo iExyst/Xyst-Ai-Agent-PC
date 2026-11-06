@@ -17,6 +17,7 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
     `Command names: ${names('required_command_names') || 'none'}`,
     `Environment variable names: ${names('required_environment_names') || 'none'}`,
     `Dependencies: ${dependencies}`,
+    `Package names: ${names('dependency_names') || 'none parsed'} · manager keys: ${names('dependency_managers') || 'not declared'} · unparsed entries: ${typeof value.unparsed_dependency_count === 'number' ? value.unparsed_dependency_count : 'unknown'}`,
   ].join(' · ');
 }
 

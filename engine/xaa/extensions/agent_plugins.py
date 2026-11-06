@@ -37,6 +37,13 @@ MCP_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 _PLUGIN_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 _SKILL_NAME = re.compile(r"^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$")
 _CATEGORY = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_DEPENDENCY_SPEC = re.compile(
+    r"^\s*([A-Za-z0-9][A-Za-z0-9._-]{0,127})"
+    r"(?:\[[A-Za-z0-9._,-]{1,128}\])?"
+    r"(?:\s*(?:===|==|~=|!=|<=|>=|<|>)\s*[A-Za-z0-9.*+!_-]{1,128}"
+    r"(?:\s*,\s*(?:===|==|~=|!=|<=|>=|<|>)\s*[A-Za-z0-9.*+!_-]{1,128}){0,15})?"
+    r"(?:\s*;[^\r\n]{1,128})?\s*$"
+)
 _HEADER = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _LOCAL_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 
@@ -160,6 +167,44 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
     metadata = cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
     raw_hermes = metadata.get("hermes")
     hermes = cast(dict[str, Any], raw_hermes) if isinstance(raw_hermes, dict) else {}
+    dependency_names: set[str] = set()
+    dependency_managers: set[str] = set()
+    unparsed_dependency_count = 0
+    dependency_items: list[Any] = []
+    dependency_items_truncated = False
+    if isinstance(dependencies, (list, tuple)):
+        all_dependency_items = list(cast(Iterable[Any], dependencies))
+        dependency_items = all_dependency_items[:128]
+        dependency_items_truncated = len(all_dependency_items) > 128
+    elif isinstance(dependencies, dict):
+        for manager, package_items in list(cast(dict[Any, Any], dependencies).items())[:64]:
+            if isinstance(manager, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,31}", manager):
+                dependency_managers.add(manager.lower())
+            remaining = 128 - len(dependency_items)
+            if isinstance(package_items, str):
+                dependency_items.extend([package_items] if remaining else [])
+            elif isinstance(package_items, (list, tuple)):
+                all_package_items = list(cast(Iterable[Any], package_items))
+                dependency_items.extend(all_package_items[:remaining])
+                dependency_items_truncated = (
+                    dependency_items_truncated or len(all_package_items) > remaining
+                )
+            else:
+                unparsed_dependency_count += 1
+            if len(dependency_items) >= 128:
+                dependency_items_truncated = True
+                break
+    elif isinstance(dependencies, str):
+        dependency_items = [dependencies]
+    for item in dependency_items:
+        if not isinstance(item, str) or len(item) > 256:
+            unparsed_dependency_count += 1
+            continue
+        match = _DEPENDENCY_SPEC.fullmatch(item)
+        if match is None or "://" in item or item.startswith(("git+", "hg+", "svn+")):
+            unparsed_dependency_count += 1
+            continue
+        dependency_names.add(match.group(1))
     toolsets = _bounded_names(hermes.get("requires_toolsets"))
     commands = _bounded_names(prerequisites.get("commands"))
     commands.extend(
@@ -176,6 +221,10 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         "prerequisite_fields": sorted(str(key) for key in prerequisites)[:64],
         "dependencies_declared": dependencies is not None,
         "dependency_count": min(dependency_count, 128),
+        "dependency_names": sorted(dependency_names)[:128],
+        "dependency_names_truncated": dependency_count > 128 or dependency_items_truncated,
+        "dependency_managers": sorted(dependency_managers)[:64],
+        "unparsed_dependency_count": min(unparsed_dependency_count, 128),
         "declared_fields": sorted(
             key
             for key in (
