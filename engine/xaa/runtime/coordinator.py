@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import time
 from datetime import UTC, datetime
 from functools import partial
@@ -293,6 +294,7 @@ class Coordinator:
         if name == "procedure_catalog":
             limit = arguments.get("limit", 20)
             offset = arguments.get("offset", 0)
+            category = arguments.get("category")
             if (
                 not isinstance(limit, int)
                 or isinstance(limit, bool)
@@ -300,6 +302,11 @@ class Coordinator:
                 or not isinstance(offset, int)
                 or isinstance(offset, bool)
                 or not 0 <= offset <= 99
+                or category is not None
+                and (
+                    not isinstance(category, str)
+                    or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", category) is None
+                )
             ):
                 raise ValueError("Procedure catalog pagination is out of range.")
             if not self.store.record_tool_intent(
@@ -308,11 +315,11 @@ class Coordinator:
                 call_id=call["id"],
                 tool="procedure.catalog",
                 version="1",
-                arguments={"limit": limit, "offset": offset},
+                arguments={"limit": limit, "offset": offset, "category": category},
                 idempotency_key=call["id"],
             ):
                 raise ValueError("Procedure catalog read requires reconciliation.")
-            result = SkillStore(self.store).catalog(limit=limit, offset=offset)
+            result = SkillStore(self.store).catalog(limit=limit, offset=offset, category=category)
             self.store.record_tool_result(run_id, token, call["id"], result)
             return result
         if name.startswith("mcp_"):
@@ -628,6 +635,11 @@ class Coordinator:
                                 "minimum": 0,
                                 "maximum": 99,
                                 "default": 0,
+                            },
+                            "category": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
                             },
                         },
                         "additionalProperties": False,

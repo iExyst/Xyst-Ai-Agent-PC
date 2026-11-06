@@ -1831,6 +1831,8 @@ export interface components {
         PluginSkill: {
             /** Allowed Tools */
             allowed_tools?: string[];
+            /** Category */
+            category?: string | null;
             /** Description */
             description: string;
             /** Name */
@@ -2195,8 +2197,18 @@ export interface components {
         SkillDraft: {
             /** Assets */
             assets?: components["schemas"]["SkillAsset"][];
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /** Content */
             content: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Name */
             name: string;
             /** Required Permissions */
@@ -2286,8 +2298,18 @@ export interface components {
         SkillRevision: {
             /** Assets */
             assets?: components["schemas"]["SkillAsset"][];
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /** Content */
             content: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Expected Version */
             expected_version: number;
             /** Name */
@@ -2378,6 +2400,11 @@ export interface components {
         SkillVersion: {
             /** Assets */
             assets?: components["schemas"]["SkillAsset"][];
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /** Content */
             content: string;
             /**
@@ -2385,6 +2412,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             evaluation_evidence: components["schemas"]["SkillEvidence"];
             /** Required Permissions */
             required_permissions: string[];

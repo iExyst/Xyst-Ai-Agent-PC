@@ -57,16 +57,32 @@ def test_immutable_versions_concurrent_edit_backup_and_delete(workspace_tmp_path
 
 def test_catalog_is_paginated_metadata_only_and_never_selects_candidates(workspace_tmp_path):
     store = SkillStore(RunStore(workspace_tmp_path / "catalog.sqlite3"))
-    first = store.create(draft("UNTRUSTED procedure body"))
-    store.create(SkillDraft.model_validate({**draft().model_dump(), "name": "Summarize"}))
+    first = store.create(
+        SkillDraft.model_validate(
+            {
+                **draft("UNTRUSTED procedure body").model_dump(),
+                "description": "Writing help",
+                "category": "writing",
+            }
+        )
+    )
+    store.create(
+        SkillDraft.model_validate(
+            {**draft().model_dump(), "name": "Summarize", "category": "research"}
+        )
+    )
     catalog = store.catalog(limit=1)
     assert catalog["selection"] == "explicit_user_only"
     assert catalog["trust"] == "untrusted_procedure_metadata"
     assert catalog["procedures"][0]["id"] == first["id"]
     assert "UNTRUSTED procedure body" not in str(catalog)
     assert catalog["procedures"][0]["lifecycle_state"] == "candidate"
+    assert catalog["procedures"][0]["category"] == "writing"
+    assert catalog["procedures"][0]["description"] == "Writing help"
     assert catalog["procedures"][0]["active_version"] is None
     assert catalog["next_offset"] == 1
+    filtered = store.catalog(category="research")
+    assert [item["name"] for item in filtered["procedures"]] == ["Summarize"]
     with pytest.raises(ValueError):
         store.catalog(limit=0)
 
@@ -77,6 +93,7 @@ def test_catalog_is_paginated_metadata_only_and_never_selects_candidates(workspa
         {"content": " "},
         {"content": "é" * 9000},
         {"required_permissions": ["system.admin"]},
+        {"category": "Bad Category"},
         {"required_tools": [{"name": "read", "version": "1"}, {"name": "read", "version": "2"}]},
         {"active_version": 1},
     ],
@@ -149,7 +166,11 @@ def test_candidate_api_is_authenticated_and_never_executes_text(workspace_tmp_pa
 
 def test_user_procedure_export_creates_importable_agent_plugin_package(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "package-export.sqlite3")
-    skill = SkillStore(runs).create(draft())
+    skill = SkillStore(runs).create(
+        SkillDraft.model_validate(
+            {**draft().model_dump(), "description": "Review files", "category": "engineering"}
+        )
+    )
     headers = {"Authorization": "Bearer " + "x" * 32}
     with TestClient(create_app(LMStudioProvider(), SecretStr("x" * 32), store=runs)) as client:
         exported = client.get(f"/skills/{skill['id']}/versions/1/export", headers=headers)
@@ -164,3 +185,5 @@ def test_user_procedure_export_creates_importable_agent_plugin_package(workspace
     imported = read_plugin_skill(str(package_root), package.name, "inspect-files")
     assert "Read the relevant files; check evidence before reporting." in imported.content
     assert imported.allowed_tools == ["workspace.read_file"]
+    assert imported.description == "Review files"
+    assert imported.category == "engineering"

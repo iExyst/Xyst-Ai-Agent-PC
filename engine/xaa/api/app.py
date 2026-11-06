@@ -460,6 +460,8 @@ def create_app(
             draft = SkillDraft(
                 name=imported.skill_name,
                 content=imported.content,
+                description=imported.description,
+                category=imported.category or "",
                 required_tools=[SkillTool(name=tool, version="1") for tool in mapped_tools],
                 required_permissions=required_permissions,
                 assets=[SkillAsset.model_validate(asset) for asset in imported.assets],
@@ -471,6 +473,7 @@ def create_app(
                     "package_version": imported.package_version,
                     "skill_name": imported.skill_name,
                     "description": imported.description,
+                    "category": imported.category or "",
                     "allowed_tools": " ".join(imported.allowed_tools),
                     "unmapped_allowed_tools": " ".join(unmapped_tools),
                     "content_sha256": imported.content_sha256,
@@ -690,6 +693,8 @@ def create_app(
                 required_tools=saved["required_tools"],
                 source=source,
                 assets=saved["assets"],
+                description=saved["description"],
+                category=saved["category"],
             )
             return Response(
                 package_bytes,

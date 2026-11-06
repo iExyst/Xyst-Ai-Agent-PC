@@ -32,6 +32,7 @@ PLUGIN_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 _PLUGIN_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 _SKILL_NAME = re.compile(r"^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$")
+_CATEGORY = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _HEADER = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _LOCAL_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 
@@ -41,6 +42,7 @@ class PluginSkill(BaseModel):
     name: str
     path: str
     description: str
+    category: str | None = None
     allowed_tools: list[str] = Field(default_factory=list)
 
 
@@ -84,6 +86,7 @@ class PluginSkillImport(BaseModel):
     skill_name: str
     content: str
     description: str
+    category: str | None = None
     allowed_tools: list[str]
     content_sha256: str
     manifest_sha256: str
@@ -107,7 +110,7 @@ def _unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list[str]]:
+def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list[str], str | None]:
     """Parse and validate the bounded Agent Skills frontmatter prefix."""
     prefix = raw[:16_384].decode("utf-8-sig")
     if (
@@ -156,10 +159,49 @@ def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list
         skill_metadata = cast(dict[str, Any], values["metadata"])
         if any(not isinstance(value, str) for value in skill_metadata.values()):
             raise ValueError("frontmatter metadata must map strings to strings")
+    else:
+        skill_metadata = {}
+    category = skill_metadata.get("category")
+    if category is not None and not _CATEGORY.fullmatch(category):
+        raise ValueError("frontmatter metadata.category must be a lowercase slug")
     raw_tools = values.get("allowed-tools", "")
     if not isinstance(raw_tools, str):
         raise TypeError("frontmatter allowed-tools must be a string")
-    return description, raw_tools.split()
+    return description, raw_tools.split(), category
+
+
+def _update_skill_frontmatter(
+    content: str, *, directory_name: str, description: str, category: str
+) -> str:
+    _parse_skill_frontmatter(content.encode("utf-8"), directory_name)
+    prefix = content[:16_384]
+    closing = re.search(r"\n---[ \t]*\r?\n", prefix[3:])
+    if closing is None:
+        raise ValueError("SKILL.md frontmatter is missing its closing delimiter within 16 KiB")
+    values = yaml.safe_load(prefix[3 : closing.start() + 3])
+    if not isinstance(values, dict):
+        raise TypeError("SKILL.md frontmatter must be an object")
+    values = cast(dict[str, Any], values)
+    values["description"] = description
+    metadata = values.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise TypeError("SKILL.md metadata must be an object")
+    metadata = cast(dict[str, Any], metadata)
+    if category:
+        if not _CATEGORY.fullmatch(category):
+            raise ValueError("Procedure category must be a lowercase slug.")
+        metadata["category"] = category
+    else:
+        metadata.pop("category", None)
+    if metadata:
+        values["metadata"] = metadata
+    else:
+        values.pop("metadata", None)
+    serialized = yaml.safe_dump(values, sort_keys=False, allow_unicode=True)
+    updated = f"---\n{serialized}---" + content[3 + closing.end() :]
+    if len(updated.encode("utf-8")) > 16_384:
+        raise ValueError("Updated SKILL.md exceeds the 16 KiB import limit.")
+    return updated
 
 
 def _json(path: Path, package_root: Path) -> dict[str, Any]:
@@ -197,12 +239,13 @@ def _skill_summaries(package_root: Path) -> list[PluginSkill]:
             raise ValueError("skill file exceeds size limit")
         with resolved.open("rb") as source:
             prefix = source.read(16_384)
-        description, allowed_tools = _parse_skill_frontmatter(prefix, directory.name)
+        description, allowed_tools, category = _parse_skill_frontmatter(prefix, directory.name)
         summaries.append(
             PluginSkill(
                 name=directory.name,
                 path=skill_file.relative_to(package_root).as_posix(),
                 description=description,
+                category=category,
                 allowed_tools=allowed_tools,
             )
         )
@@ -393,7 +436,7 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         raise ValueError("skill file must be UTF-8 text") from exc
     if "\x00" in content:
         raise ValueError("skill file cannot contain NUL characters")
-    description, allowed_tools = _parse_skill_frontmatter(raw, skill.name)
+    description, allowed_tools, category = _parse_skill_frontmatter(raw, skill.name)
     asset_rows: list[dict[str, str]] = []
     seen_paths: set[str] = set()
     total_bytes = 0
@@ -461,6 +504,7 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         skill_name=skill.name,
         content=content,
         description=description,
+        category=category,
         allowed_tools=allowed_tools,
         content_sha256=hashlib.sha256(raw).hexdigest(),
         manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
@@ -477,6 +521,8 @@ def export_procedure_package(
     required_tools: list[dict[str, str]],
     source: dict[str, str] | None,
     assets: list[dict[str, str]],
+    description: str = "",
+    category: str = "",
 ) -> tuple[str, bytes]:
     """Build a bounded Agent Plugins ZIP containing one procedure version."""
     source = source or {}
@@ -494,7 +540,7 @@ def export_procedure_package(
     package_version = source.get("package_version", "")
     if not package_version or len(package_version) > 128:
         package_version = f"1.0.{version}"
-    description = source.get("description", "")
+    description = description or source.get("description", "")
     if not description:
         description = f"Exported X.A.A. procedure version {version}."
     description = description[:1024]
@@ -503,14 +549,26 @@ def export_procedure_package(
         allowed_tools = [tool["name"] for tool in required_tools]
     markdown = content
     try:
-        _parse_skill_frontmatter(content.encode("utf-8"), skill_name)
+        prior_description, _, prior_category = _parse_skill_frontmatter(
+            content.encode("utf-8"), skill_name
+        )
+        if prior_description != description or prior_category != category:
+            markdown = _update_skill_frontmatter(
+                content,
+                directory_name=skill_name,
+                description=description,
+                category=category,
+            )
     except (UnicodeError, TypeError, ValueError, yaml.YAMLError):
+        frontmatter: dict[str, Any] = {
+            "name": skill_name,
+            "description": description,
+            "allowed-tools": " ".join(allowed_tools),
+        }
+        if category:
+            frontmatter["metadata"] = {"category": category}
         header = yaml.safe_dump(
-            {
-                "name": skill_name,
-                "description": description,
-                "allowed-tools": " ".join(allowed_tools),
-            },
+            frontmatter,
             sort_keys=False,
             allow_unicode=True,
         )

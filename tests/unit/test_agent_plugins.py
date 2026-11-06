@@ -29,6 +29,7 @@ def make_package(root: Path) -> Path:
     (package / "skills" / "summarize").mkdir(parents=True)
     (package / "skills" / "summarize" / "SKILL.md").write_text(
         "---\nname: summarize\ndescription: Summarize a bounded file.\n"
+        "metadata:\n  category: writing\n"
         "allowed-tools: workspace.read_file shell.exec\n---\n"
         "ignored instruction text\n\n[Reference](references/guide.md)",
         encoding="utf-8",
@@ -86,6 +87,7 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert summary.version == "1.2.3"
     assert [skill.name for skill in summary.skills] == ["summarize"]
     assert summary.skills[0].description == "Summarize a bounded file."
+    assert summary.skills[0].category == "writing"
     assert summary.skills[0].allowed_tools == ["workspace.read_file", "shell.exec"]
     assert summary.servers[0].command_name == "python.exe"
     assert summary.servers[0].argument_count == 2
@@ -137,6 +139,20 @@ def test_discovery_rejects_yaml_aliases_in_skill_metadata(tmp_path: Path) -> Non
     assert "aliases" in result.diagnostics[0].message
 
 
+def test_discovery_rejects_invalid_skill_category_metadata(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    skill_file = package / "skills" / "summarize" / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8").replace(
+            "category: writing", "category: Bad Category"
+        ),
+        encoding="utf-8",
+    )
+    result = discover_agent_plugins(str(tmp_path))
+    assert result.packages == []
+    assert "category" in result.diagnostics[0].message
+
+
 def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path) -> None:
     make_package(tmp_path)
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "api.sqlite3"))
@@ -174,12 +190,17 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
             json={
                 "name": "summarize",
                 "content": "reviewed revision",
+                "description": "Updated bounded file summaries.",
+                "category": "technical-writing",
                 "required_tools": [],
                 "required_permissions": [],
                 "expected_version": 1,
             },
         )
         revised_version = client.get(f"/skills/{created.json()['id']}/versions/2", headers=headers)
+        revised_export = client.get(
+            f"/skills/{created.json()['id']}/versions/2/export", headers=headers
+        )
     assert version.status_code == 200
     evidence = version.json()["evaluation_evidence"]
     assert evidence["provenance"] == "agent_plugin"
@@ -188,6 +209,8 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert evidence["source"]["content_sha256"]
     assert evidence["state"] == "candidate"
     assert version.json()["required_permissions"] == ["workspace.read"]
+    assert version.json()["description"] == "Summarize a bounded file."
+    assert version.json()["category"] == "writing"
     assert [tool["name"] for tool in version.json()["required_tools"]] == ["workspace.read_file"]
     assert evidence["source"]["unmapped_allowed_tools"] == "shell.exec"
     assert evidence["source"]["description"] == "Summarize a bounded file."
@@ -212,6 +235,15 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert exported_skill.content == version.json()["content"]
     assert exported_skill.assets[0]["path"] == "references/guide.md"
     assert exported_skill.assets[0]["content_base64"] == resource["content_base64"]
+    assert exported_skill.category == "writing"
+    assert exported_skill.description == "Summarize a bounded file."
+    revised_package_root = tmp_path / "revised-export"
+    with zipfile.ZipFile(io.BytesIO(revised_export.content)) as archive:
+        archive.extractall(revised_package_root)
+    revised_package = discover_agent_plugins(str(revised_package_root)).packages[0]
+    revised_skill = read_plugin_skill(str(revised_package_root), revised_package.name, "summarize")
+    assert revised_skill.description == "Updated bounded file summaries."
+    assert revised_skill.category == "technical-writing"
 
 
 @pytest.mark.parametrize("link", ["../outside.txt", "./guide.md", "%2e%2e/outside.txt"])

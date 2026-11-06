@@ -26,7 +26,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
       if(request.method()==='POST'){
         const body=request.postDataJSON();
         if(summary)expect(body.expected_version).toBe(versions.length);
-        versions.push({skill_id:'procedure-1',version:versions.length+1,content:body.content,required_tools:body.required_tools,required_permissions:body.required_permissions,evaluation_evidence:{state:'candidate',provenance:'user',evaluations:[]},created_at:'2026-11-04T00:00:00Z'});
+        versions.push({skill_id:'procedure-1',version:versions.length+1,content:body.content,description:body.description,category:body.category,required_tools:body.required_tools,required_permissions:body.required_permissions,evaluation_evidence:{state:'candidate',provenance:'user',evaluations:[]},created_at:'2026-11-04T00:00:00Z'});
         summary={id:'procedure-1',name:body.name,lifecycle_state:'candidate',active_version:null,lifecycle_revision:0,latest_version:versions.length,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
         return route.fulfill({status:201,json:summary,headers});
       }
@@ -40,10 +40,14 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await page.getByText('Reusable procedures',{exact:true}).click();
   const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
   await panel.getByLabel('Procedure name',{exact:true}).fill('Inspect safely');
+  await panel.getByLabel('Procedure description',{exact:true}).fill('Read-only project inspection');
+  await panel.getByLabel('Procedure category',{exact:true}).fill('engineering');
   await panel.getByLabel('Procedure text',{exact:true}).fill('Read files and preserve evidence.');
   await panel.getByLabel('Tool dependencies (one name@version per line)',{exact:true}).fill('workspace.read_file@1');
   await panel.getByLabel('Requires reading workspace files',{exact:true}).check();
   await panel.getByRole('button',{name:'Save procedure candidate',exact:true}).click();
+  expect(versions[0].description).toBe('Read-only project inspection');
+  expect(versions[0].category).toBe('engineering');
   await expect(panel.getByRole('button',{name:'Inspect Inspect safely',exact:true})).toBeVisible();
   await expect(panel.getByText('Draft reusable procedures here.',{exact:false})).toContainText('evaluation trial');
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeEnabled();

@@ -9,6 +9,8 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
   const [selected,setSelected]=useState<Summary>();
   const [version,setVersion]=useState(1);
   const [name,setName]=useState('');
+  const [description,setDescription]=useState('');
+  const [category,setCategory]=useState('');
   const [content,setContent]=useState('');
   const [tools,setTools]=useState('');
   const [read,setRead]=useState(false),[write,setWrite]=useState(false);
@@ -23,10 +25,10 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   async function refresh(){const rows=await client.skills();if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');setItems(rows);}
   useEffect(()=>{let active=true;void client.skills().then(rows=>{if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');if(active)setItems(rows);}).catch(failure=>{if(active)setError(String(failure));});return()=>{active=false;};},[client,refreshKey]);
-  function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setTrials([]);setSelected(undefined);setVersion(1);setName('');setContent('');setTools('');setRead(false);setWrite(false);setError('');}
+  function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setTrials([]);setSelected(undefined);setVersion(1);setName('');setDescription('');setCategory('');setContent('');setTools('');setRead(false);setWrite(false);setError('');}
   async function inspect(item:Summary,revision=item.latest_version){
     setBusy(true);setError('');
-    try{const [data,actions]=await Promise.all([client.skillVersion(item.id,revision),client.skillLifecycle(item.id)]);if(!Array.isArray(actions))throw new Error('Procedure lifecycle unavailable.');setLifecycle(actions);setEvidence(data.evaluation_evidence);setTrials([]);setTrialOne('');setTrialTwo('');setConfirmed(false);setSelected(item);setVersion(revision);setName(item.name);setContent(data.content);setTools(data.required_tools.map(tool=>`${tool.name}@${tool.version}`).join('\n'));setRead(data.required_permissions.includes('workspace.read'));setWrite(data.required_permissions.includes('workspace.write'));}
+    try{const [data,actions]=await Promise.all([client.skillVersion(item.id,revision),client.skillLifecycle(item.id)]);if(!Array.isArray(actions))throw new Error('Procedure lifecycle unavailable.');setLifecycle(actions);setEvidence(data.evaluation_evidence);setTrials([]);setTrialOne('');setTrialTwo('');setConfirmed(false);setSelected(item);setVersion(revision);setName(item.name);setDescription(data.description??'');setCategory(data.category??'');setContent(data.content);setTools(data.required_tools.map(tool=>`${tool.name}@${tool.version}`).join('\n'));setRead(data.required_permissions.includes('workspace.read'));setWrite(data.required_permissions.includes('workspace.write'));}
     catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
   async function save(){
@@ -34,7 +36,7 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
     try{
       const dependencies=tools.split('\n').filter(line=>line.trim()).map(line=>{const parts=line.trim().split('@');if(parts.length!==2)throw new Error('Each tool dependency needs name@version.');return {name:parts[0]!,version:parts[1]!};});
       const permissions:('workspace.read'|'workspace.write')[]=[];if(read)permissions.push('workspace.read');if(write)permissions.push('workspace.write');
-      const saved=await client.saveSkill({name,content,required_tools:dependencies,required_permissions:permissions},selected?.id,selected?.latest_version);
+      const saved=await client.saveSkill({name,description,category,content,required_tools:dependencies,required_permissions:permissions},selected?.id,selected?.latest_version);
       await refresh();await inspect(saved);
     }catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
@@ -60,6 +62,8 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
     {selected&&<label>Procedure version<select aria-label="Procedure version" value={version} disabled={busy} onChange={event=>void inspect(selected,Number(event.target.value))}>{Array.from({length:selected.latest_version},(_,i)=><option key={i+1} value={i+1}>{i+1}</option>)}</select></label>}
     <form onSubmit={event=>{event.preventDefault();void save();}}>
       <label>Procedure name<input aria-label="Procedure name" value={name} maxLength={80} disabled={busy} onChange={event=>setName(event.target.value)}/></label>
+      <label>Procedure description<input aria-label="Procedure description" value={description} maxLength={1024} disabled={busy} onChange={event=>setDescription(event.target.value)}/></label>
+      <label>Procedure category<input aria-label="Procedure category" value={category} maxLength={64} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="writing" disabled={busy} onChange={event=>setCategory(event.target.value)}/></label>
       <label>Procedure text<textarea aria-label="Procedure text" value={content} maxLength={16384} disabled={busy} onChange={event=>setContent(event.target.value)}/></label>
       <label>Tool dependencies (one name@version per line)<textarea aria-label="Tool dependencies (one name@version per line)" value={tools} maxLength={5200} disabled={busy} onChange={event=>setTools(event.target.value)}/></label>
       <label className="procedure-permission"><input type="checkbox" checked={read} disabled={busy} onChange={event=>setRead(event.target.checked)}/>Requires reading workspace files</label>

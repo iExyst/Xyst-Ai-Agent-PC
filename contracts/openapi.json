@@ -1778,6 +1778,17 @@
             "title": "Allowed Tools",
             "type": "array"
           },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -2899,10 +2910,23 @@
             "title": "Assets",
             "type": "array"
           },
+          "category": {
+            "default": "",
+            "maxLength": 64,
+            "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*)?$",
+            "title": "Category",
+            "type": "string"
+          },
           "content": {
             "maxLength": 16384,
             "minLength": 1,
             "title": "Content",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Description",
             "type": "string"
           },
           "name": {
@@ -3195,10 +3219,23 @@
             "title": "Assets",
             "type": "array"
           },
+          "category": {
+            "default": "",
+            "maxLength": 64,
+            "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*)?$",
+            "title": "Category",
+            "type": "string"
+          },
           "content": {
             "maxLength": 16384,
             "minLength": 1,
             "title": "Content",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Description",
             "type": "string"
           },
           "expected_version": {
@@ -3435,6 +3472,11 @@
             "title": "Assets",
             "type": "array"
           },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -3442,6 +3484,11 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
             "type": "string"
           },
           "evaluation_evidence": {

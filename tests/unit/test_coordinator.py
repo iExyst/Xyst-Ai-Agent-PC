@@ -127,6 +127,8 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
         SkillDraft(
             name="Catalog fixture",
             content="Untrusted candidate instructions.",
+            description="Inspect source safely.",
+            category="engineering",
             required_tools=[],
             required_permissions=[],
         )
@@ -160,7 +162,7 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
                                         "type": "function",
                                         "function": {
                                             "name": "procedure_catalog",
-                                            "arguments": '{"limit":10,"offset":0}',
+                                            "arguments": '{"limit":10,"offset":0,"category":"engineering"}',
                                         },
                                     }
                                 ],
@@ -172,6 +174,7 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
             assert result["trust"] == "untrusted_procedure_metadata"
             assert result["selection"] == "explicit_user_only"
             assert result["procedures"][0]["id"] == procedure["id"]
+            assert result["procedures"][0]["category"] == "engineering"
             return {
                 "choices": [
                     {"message": {"role": "assistant", "content": "Ask the user to select it."}}

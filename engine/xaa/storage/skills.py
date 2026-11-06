@@ -4,6 +4,7 @@ import base64
 import builtins
 import hashlib
 import json
+import re
 import sqlite3
 from datetime import datetime
 from typing import Any, Literal
@@ -56,6 +57,8 @@ class SkillDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=16384)
+    description: str = Field(default="", max_length=1024)
+    category: str = Field(default="", max_length=64, pattern=r"^(?:[a-z0-9]+(?:-[a-z0-9]+)*)?$")
     required_tools: list[SkillTool] = Field(max_length=32)
     required_permissions: list[Literal["workspace.read", "workspace.write"]] = Field(max_length=2)
     assets: list[SkillAsset] = Field(default_factory=list[SkillAsset], max_length=32)
@@ -70,6 +73,8 @@ class SkillDraft(BaseModel):
             raise ValueError("Procedure needs a name and 1-16384 UTF-8 bytes of text.")
         if len({tool.name for tool in self.required_tools}) != len(self.required_tools):
             raise ValueError("Tool dependencies must have unique names.")
+        if self.description and not self.description.strip():
+            raise ValueError("Procedure descriptions must contain visible text.")
         if len(set(self.required_permissions)) != len(self.required_permissions):
             raise ValueError("Permissions must be unique.")
         if len({asset.path for asset in self.assets}) != len(self.assets):
@@ -107,6 +112,9 @@ TRIAL_TOOLS = {
 
 def snapshot_digest(snapshot: dict[str, Any]) -> str:
     manifest = {key: snapshot[key] for key in ("content", "required_tools", "required_permissions")}
+    for key in ("description", "category"):
+        if snapshot.get(key):
+            manifest[key] = snapshot[key]
     if snapshot.get("assets"):
         manifest["assets"] = [
             {key: asset[key] for key in ("path", "media_type", "sha256")}
@@ -157,6 +165,11 @@ def resolve_trial(
         "required_permissions": sorted(permissions),
         "purpose": selection.purpose,
     }
+    evidence = json.loads(row["evaluation_evidence"])
+    if evidence.get("description"):
+        snapshot["description"] = evidence["description"]
+    if evidence.get("category"):
+        snapshot["category"] = evidence["category"]
     assets: list[sqlite3.Row] = connection.execute(
         "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
         "WHERE skill_id=? AND version=? ORDER BY relative_path",
@@ -250,6 +263,8 @@ class SkillVersion(BaseModel):
     skill_id: str
     version: int
     content: str
+    description: str = ""
+    category: str = ""
     required_tools: list[SkillTool]
     required_permissions: list[str]
     evaluation_evidence: SkillEvidence
@@ -308,6 +323,11 @@ class SkillStore:
         draft: SkillDraft,
         evidence: dict[str, Any] | None = None,
     ) -> None:
+        version_evidence = dict(
+            evidence or {"state": "candidate", "provenance": "user", "evaluations": []}
+        )
+        version_evidence["description"] = draft.description
+        version_evidence["category"] = draft.category
         connection.execute(
             "INSERT INTO skill_versions VALUES (?,?,?,?,?,?,?)",
             (
@@ -316,9 +336,7 @@ class SkillStore:
                 draft.content,
                 json.dumps([tool.model_dump() for tool in draft.required_tools]),
                 json.dumps(draft.required_permissions),
-                json.dumps(
-                    evidence or {"state": "candidate", "provenance": "user", "evaluations": []}
-                ),
+                json.dumps(version_evidence),
                 utc_now(),
             ),
         )
@@ -418,6 +436,13 @@ class SkillStore:
             except sqlite3.IntegrityError:
                 raise SkillConflict("A procedure with that name already exists.") from None
             prior_evidence: dict[str, Any] = json.loads(str(latest_row["evaluation_evidence"]))
+            if not draft.description or not draft.category:
+                draft = draft.model_copy(
+                    update={
+                        "description": draft.description or prior_evidence.get("description", ""),
+                        "category": draft.category or prior_evidence.get("category", ""),
+                    }
+                )
             evidence: dict[str, Any] = {
                 "state": "candidate",
                 "provenance": prior_evidence.get("provenance", "user"),
@@ -437,10 +462,14 @@ class SkillStore:
                 )
             ]
 
-    def catalog(self, *, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    def catalog(
+        self, *, limit: int = 20, offset: int = 0, category: str | None = None
+    ) -> dict[str, Any]:
         """Return bounded discovery metadata; procedure text is never included."""
         if not 1 <= limit <= 50 or not 0 <= offset <= 99:
             raise ValueError("Procedure catalog pagination is out of range.")
+        if category is not None and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", category):
+            raise ValueError("Procedure category must be a lowercase slug.")
         with self.runs.connection() as connection:
             rows = connection.execute(
                 "SELECT skills.id,skills.name,skills.lifecycle_state,skills.active_version,"
@@ -450,23 +479,24 @@ class SkillStore:
                 "ON skills.id=skill_versions.skill_id AND skill_versions.version="
                 "COALESCE(skills.active_version,(SELECT MAX(v.version) FROM skill_versions v "
                 "WHERE v.skill_id=skills.id)) WHERE skills.lifecycle_state!='deprecated' "
-                "ORDER BY skills.name COLLATE NOCASE,skills.id LIMIT ? OFFSET ?",
-                (limit + 1, offset),
+                "ORDER BY skills.name COLLATE NOCASE,skills.id LIMIT 100"
             ).fetchall()
-        has_more = len(rows) > limit
-        rows = rows[:limit]
         procedures: list[dict[str, Any]] = []
         for row in rows:
             evidence = json.loads(row["evaluation_evidence"])
             source = evidence.get("source", {})
-            description = str(source.get("description", "")).strip()
+            description = str(evidence.get("description") or source.get("description", "")).strip()
             if not description:
                 description = "User-authored saved procedure."
+            procedure_category = evidence.get("category") or source.get("category", "")
+            if category is not None and procedure_category != category:
+                continue
             procedures.append(
                 {
                     "id": row["id"],
                     "name": row["name"],
                     "description": description[:256],
+                    "category": procedure_category,
                     "lifecycle_state": row["lifecycle_state"],
                     "active_version": row["active_version"],
                     "latest_version": row["latest_version"],
@@ -474,9 +504,11 @@ class SkillStore:
                     "required_permissions": json.loads(row["required_permissions"]),
                 }
             )
+        page = procedures[offset : offset + limit]
+        next_offset = offset + len(page) if offset + len(page) < len(procedures) else None
         return {
-            "procedures": procedures,
-            "next_offset": offset + limit if has_more and offset + limit < 100 else None,
+            "procedures": page,
+            "next_offset": next_offset,
             "selection": "explicit_user_only",
             "trust": "untrusted_procedure_metadata",
         }
@@ -499,6 +531,8 @@ class SkillStore:
         value = dict(row)
         for key in ("required_tools", "required_permissions", "evaluation_evidence"):
             value[key] = json.loads(value[key])
+        value["description"] = value["evaluation_evidence"].pop("description", "")
+        value["category"] = value["evaluation_evidence"].pop("category", "")
         with self.runs.connection() as connection:
             assets: list[sqlite3.Row] = connection.execute(
                 "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
@@ -556,6 +590,10 @@ class SkillStore:
                 key: json.loads(row[key]) if key != "content" else row[key]
                 for key in ("content", "required_tools", "required_permissions")
             }
+            if evidence.get("description"):
+                manifest["description"] = evidence["description"]
+            if evidence.get("category"):
+                manifest["category"] = evidence["category"]
             asset_rows = connection.execute(
                 "SELECT relative_path,media_type,sha256 FROM skill_version_assets "
                 "WHERE skill_id=? AND version=? ORDER BY relative_path",
@@ -715,6 +753,24 @@ class SkillStore:
                     key: json.loads(selected[key]) if key != "content" else selected[key]
                     for key in ("content", "required_tools", "required_permissions")
                 }
+                if evidence.get("description"):
+                    manifest["description"] = evidence["description"]
+                if evidence.get("category"):
+                    manifest["category"] = evidence["category"]
+                asset_rows = connection.execute(
+                    "SELECT relative_path,media_type,sha256 FROM skill_version_assets "
+                    "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                    (identity, target),
+                ).fetchall()
+                if asset_rows:
+                    manifest["assets"] = [
+                        {
+                            "path": item["relative_path"],
+                            "media_type": item["media_type"],
+                            "sha256": item["sha256"],
+                        }
+                        for item in asset_rows
+                    ]
                 manifest["required_permissions"] = sorted(manifest["required_permissions"])
                 digest = snapshot_digest(manifest)
                 if evidence.get("state") != "evaluated" or not any(

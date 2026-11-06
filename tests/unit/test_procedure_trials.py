@@ -85,17 +85,29 @@ def test_selected_trial_snapshots_linked_resource_bytes_and_revision_preserves_t
         media_type="text/markdown",
         sha256=hashlib.sha256(raw).hexdigest(),
     )
-    skill = skills.create(draft().model_copy(update={"assets": [resource]}))
+    skill = skills.create(
+        draft().model_copy(
+            update={
+                "assets": [resource],
+                "description": "Read linked references",
+                "category": "engineering",
+            }
+        )
+    )
     run = queue(store, workspace_tmp_path, skill)
     snapshot = store.procedure_trial(run["id"])
     assert snapshot is not None
     assert snapshot["assets"][0]["path"] == "references/guide.md"
+    assert snapshot["description"] == "Read linked references"
+    assert snapshot["category"] == "engineering"
     assert base64.b64decode(snapshot["assets"][0]["content_base64"]) == raw
     skills.revise(
         skill["id"],
         SkillRevision(**draft("Updated procedure").model_dump(), expected_version=1),
     )
     assert skills.version(skill["id"], 2)["assets"] == [resource.model_dump()]
+    assert skills.version(skill["id"], 2)["description"] == "Read linked references"
+    assert skills.version(skill["id"], 2)["category"] == "engineering"
     assert store.procedure_trial(run["id"])["assets"] == snapshot["assets"]
 
 
