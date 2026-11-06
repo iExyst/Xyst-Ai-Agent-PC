@@ -3795,8 +3795,8 @@
         "reference_commit": "d565d7698a28f4364f819446e5f7ae2b67c57352",
         "subdirectory": "plugins/aichipmunk",
         "paths": [
-          "plugins/aichipmunk/plugin.yaml",
-          "plugins/aichipmunk/pairing.py"
+          "plugin.yaml",
+          "pairing.py"
         ],
         "finding": "Hermes Desktop pairing connector for the AI Chipmunk mobile app; reviewed plugin manifest and pairing implementation.",
         "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
@@ -3845,8 +3845,8 @@
         "reference_commit": "8dce90c47a7b0d9e9c5edcb3dd2dd09227fe6fea",
         "subdirectory": "plugins/hermes",
         "paths": [
-          "plugins/hermes/plugin.yaml",
-          "plugins/hermes/README.md"
+          "plugin.yaml",
+          "README.md"
         ],
         "finding": "Email, phone, and workspace account connector; catalog source describes direct customer/team messaging.",
         "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
@@ -4060,9 +4060,19 @@
       "required_environment_names": [
         "name"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/markmnl/hermes-fmsg",
+        "reference_commit": "562f45a48a6b10504c8d6ff5c677f1ec990e6b7b",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "plugin/adapter.py"
+        ],
+        "finding": "fmsg platform adapter with realtime WebSocket inbound delivery and REST outbound routes.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4075,9 +4085,19 @@
       "subdirectory": "plugin",
       "version": "0.3.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Adolanium/hermes-gadget-sdk",
+        "reference_commit": "0b957aae2f7f11904a9daab031f1378a45de21dc",
+        "subdirectory": "plugin",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Hermes Gadget device platform with WebSocket connections, device messaging, voice, and device-action tools.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4090,9 +4110,19 @@
       "subdirectory": "",
       "version": "0.3.1",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed non-channel plugin candidate",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/tony-simons-aiowa/hermes-fleet-connector",
+        "reference_commit": "1ef5b46c3312d8a3ee5c16c1999862a5d1c2fd4a",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "README.md"
+        ],
+        "finding": "Standalone phone and fleet reporting service; its pinned manifest declares kind=standalone and no tools/hooks/middleware, not a gateway platform adapter.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4105,9 +4135,19 @@
       "subdirectory": "",
       "version": "0.4.3",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/luantak/hermes-github-mentions",
+        "reference_commit": "d8a88220a547180663fcec76a069c8fbbf63bff9",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "hermes_github_mentions/adapter.py"
+        ],
+        "finding": "Receive-only GitHub mention gateway adapter that routes trusted mention requests into Hermes.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4120,9 +4160,19 @@
       "subdirectory": "plugin/hermes_jetstream",
       "version": "1.2.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/atbrace/hermes-jetstream",
+        "reference_commit": "4508957d1889ddb625c8bfb1eef7c822f2761349",
+        "subdirectory": "plugin/hermes_jetstream",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Jetstream platform adapter; reviewed pinned adapter and manifest for its event transport declaration.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4137,9 +4187,19 @@
       "required_environment_names": [
         "MOBILE_TOKEN"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/geniok1980/hermes-mobile-adapter",
+        "reference_commit": "91bdca089770c3ad83f157e2932d8c3d9ed55a6a",
+        "subdirectory": "adapter/hermes_mobile",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Hermes Mobile adapter; reviewed pinned adapter and manifest for mobile client messaging transport.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4152,9 +4212,19 @@
       "subdirectory": "",
       "version": "",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/boobutler/hermes-rustpush-imessage",
+        "reference_commit": "695f74755cbcdbcd742baa51021fdb96a78ac10e",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Local iMessage adapter communicating with a same-user RustPush sidecar over a Unix-domain socket, with optional sender allowlisting.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4167,9 +4237,20 @@
       "subdirectory": "telegram-business",
       "version": "",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed non-channel plugin candidate",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/NousResearch/hermes-labs-plugins",
+        "reference_commit": "0480b2e2947276b55b302d3288b30597d238ba51",
+        "subdirectory": "telegram-business",
+        "paths": [
+          "plugin.yaml",
+          "__init__.py",
+          "manager.py"
+        ],
+        "finding": "Telegram Business observe-with-approval workflow plugin that drafts replies for owner approval; it consumes a connected account workflow and does not declare a platform adapter manifest/transport.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4210,9 +4291,19 @@
       "subdirectory": "",
       "version": "",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/inkbox-ai/hermes-agent-plugin",
+        "reference_commit": "0948a16679f09fcfc78ed3d9171604b2c853402c",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Multi-modal communications adapter routing email, SMS/MMS, iMessage, voice, and A2A into contact-keyed sessions.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4227,9 +4318,19 @@
       "required_environment_names": [
         "INLINE_TOKEN"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/inline-chat/inline",
+        "reference_commit": "2d3b360da0430684eabab2d946eca0e725c08aa5",
+        "subdirectory": "plugins/hermes-agent/plugin/inline",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Inline platform adapter with a supervised Node realtime-SDK sidecar for inbound updates and outbound messaging.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },

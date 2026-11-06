@@ -23,16 +23,88 @@ HOMEASSISTANT_SOURCE_AUDIT = {
     "evidence_level": "pinned source reviewed; external plugin tests and live Home Assistant runtime not independently verified",
 }
 EXTERNAL_CHANNEL_SOURCE_AUDITS = {
-    "agentchat": ("AgentChat peer-to-peer WebSocket messaging; inbound events wake the agent and outbound sends are explicit tool calls.", ["plugin.yaml", "agentchatme_hermes/__init__.py"]),
-    "aichipmunk": ("Hermes Desktop pairing connector for the AI Chipmunk mobile app; reviewed plugin manifest and pairing implementation.", ["plugins/aichipmunk/plugin.yaml", "plugins/aichipmunk/pairing.py"]),
-    "ando-platform": ("Persistent gateway adapter receiving Ando messages and replying through the invited agent connection.", ["plugin/plugin.yaml", "plugin/adapter.py"]),
-    "artil": ("Email, phone, and workspace account connector; catalog source describes direct customer/team messaging.", ["plugins/hermes/plugin.yaml", "plugins/hermes/README.md"]),
-    "bridge-adapter": ("Generic filesystem bridge: polls inbox JSON and writes outbound JSON through registered bridge wrappers.", ["plugin.yaml", "adapter.py"]),
-    "bunny_space-platform": ("Bunny Space gateway adapter joining private rooms, receiving messages, and replying over outbound pull transport.", ["plugin.yaml", "adapter.py"]),
-    "call-me": ("Phone messaging gateway with verified-device allowlisting, inbound texts/voice answers, and agent replies/calls.", ["plugin.yaml", "adapter.py"]),
-    "carbonvoice-platform": ("Carbon Voice gateway adapter using Socket.IO with REST polling fallback and outbound replies.", ["plugin.yaml", "adapter.py"]),
-    "chatto-platform": ("Chatto gateway adapter with realtime WebSocket inbound events and ConnectRPC outbound messages.", ["plugin.yaml", "adapter.py"]),
-    "fluxer-platform": ("Fluxer gateway adapter using REST outbound and Gateway WebSocket inbound events.", ["plugin.yaml", "adapter.py"]),
+    "agentchat": (
+        "AgentChat peer-to-peer WebSocket messaging; inbound events wake the agent and outbound sends are explicit tool calls.",
+        ["plugin.yaml", "agentchatme_hermes/__init__.py"],
+    ),
+    "aichipmunk": (
+        "Hermes Desktop pairing connector for the AI Chipmunk mobile app; reviewed plugin manifest and pairing implementation.",
+        ["plugin.yaml", "pairing.py"],
+    ),
+    "ando-platform": (
+        "Persistent gateway adapter receiving Ando messages and replying through the invited agent connection.",
+        ["plugin/plugin.yaml", "plugin/adapter.py"],
+    ),
+    "artil": (
+        "Email, phone, and workspace account connector; catalog source describes direct customer/team messaging.",
+        ["plugin.yaml", "README.md"],
+    ),
+    "bridge-adapter": (
+        "Generic filesystem bridge: polls inbox JSON and writes outbound JSON through registered bridge wrappers.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "bunny_space-platform": (
+        "Bunny Space gateway adapter joining private rooms, receiving messages, and replying over outbound pull transport.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "call-me": (
+        "Phone messaging gateway with verified-device allowlisting, inbound texts/voice answers, and agent replies/calls.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "carbonvoice-platform": (
+        "Carbon Voice gateway adapter using Socket.IO with REST polling fallback and outbound replies.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "chatto-platform": (
+        "Chatto gateway adapter with realtime WebSocket inbound events and ConnectRPC outbound messages.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "fluxer-platform": (
+        "Fluxer gateway adapter using REST outbound and Gateway WebSocket inbound events.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "fmsg-platform": (
+        "fmsg platform adapter with realtime WebSocket inbound delivery and REST outbound routes.",
+        ["plugin.yaml", "plugin/adapter.py"],
+    ),
+    "gadget": (
+        "Hermes Gadget device platform with WebSocket connections, device messaging, voice, and device-action tools.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "hermes-github-mentions": (
+        "Receive-only GitHub mention gateway adapter that routes trusted mention requests into Hermes.",
+        ["plugin.yaml", "hermes_github_mentions/adapter.py"],
+    ),
+    "hermes-jetstream": (
+        "Jetstream platform adapter; reviewed pinned adapter and manifest for its event transport declaration.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "hermes-mobile": (
+        "Hermes Mobile adapter; reviewed pinned adapter and manifest for mobile client messaging transport.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "hermes-rustpush-imessage": (
+        "Local iMessage adapter communicating with a same-user RustPush sidecar over a Unix-domain socket, with optional sender allowlisting.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "inkbox": (
+        "Multi-modal communications adapter routing email, SMS/MMS, iMessage, voice, and A2A into contact-keyed sessions.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+    "inline-platform": (
+        "Inline platform adapter with a supervised Node realtime-SDK sidecar for inbound updates and outbound messaging.",
+        ["plugin.yaml", "adapter.py"],
+    ),
+}
+EXTERNAL_NON_CHANNEL_SOURCE_AUDITS = {
+    "hermes-fleet-connector": (
+        "Standalone phone and fleet reporting service; its pinned manifest declares kind=standalone and no tools/hooks/middleware, not a gateway platform adapter.",
+        ["plugin.yaml", "README.md"],
+    ),
+    "hermes-telegram-business": (
+        "Telegram Business observe-with-approval workflow plugin that drafts replies for owner approval; it consumes a connected account workflow and does not declare a platform adapter manifest/transport.",
+        ["plugin.yaml", "__init__.py", "manager.py"],
+    ),
 }
 # Transport observations and channel-specific acceptance, not runtime verification.
 REQUIREMENTS = {
@@ -384,9 +456,12 @@ def inventory() -> dict[str, Any]:
                 if path.stem == "render-platform"
                 else "source-reviewed messaging or gateway adapter"
                 if path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS
+                else "source-reviewed non-channel plugin candidate"
+                if path.stem in EXTERNAL_NON_CHANNEL_SOURCE_AUDITS
                 else "unclassified platform-category discovery candidate",
                 "external_source_inspected": path.stem == "homeassistant"
-                or path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS,
+                or path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS
+                or path.stem in EXTERNAL_NON_CHANNEL_SOURCE_AUDITS,
                 "external_source_evidence": (
                     HOMEASSISTANT_SOURCE_AUDIT
                     if path.stem == "homeassistant"
@@ -399,6 +474,15 @@ def inventory() -> dict[str, Any]:
                         "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified",
                     }
                     if path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS
+                    else {
+                        "repository": data.get("repo"),
+                        "reference_commit": data.get("sha"),
+                        "subdirectory": data.get("subdir") or "",
+                        "paths": EXTERNAL_NON_CHANNEL_SOURCE_AUDITS[path.stem][1],
+                        "finding": EXTERNAL_NON_CHANNEL_SOURCE_AUDITS[path.stem][0],
+                        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified",
+                    }
+                    if path.stem in EXTERNAL_NON_CHANNEL_SOURCE_AUDITS
                     else None
                 ),
                 "status": "planned",

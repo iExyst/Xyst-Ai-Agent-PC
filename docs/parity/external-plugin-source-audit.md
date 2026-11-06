@@ -119,3 +119,13 @@ The following platform-category candidates were inspected at the exact SHAs reco
 - Repositories were fetched at recorded commits for static inspection only. No plugin was installed, imported, or executed. The inventory now has source review for Home Assistant plus these ten candidates; 35 platform-category candidates remain unclassified. Platform-category discovery is not exhaustive of plugins in other catalog categories.
 
 This is not X.A.A. channel implementation or Hermes runtime parity. Each adapter still requires isolated protocol/security review and authorized live acceptance before implementation or support claims.
+
+## Additional external channel catalog source review (2026-11-06)
+
+Ten more platform-category candidates were reviewed at the exact pins recorded in `channel-inventory.json`: fmsg, Hermes Gadget, Hermes Fleet Connector, Hermes GitHub Mentions, Hermes Jetstream, Hermes Mobile, Hermes RustPush iMessage, Telegram Business, Inkbox, and Inline.
+
+- Eight pinned declarations describe gateway or messaging integrations (fmsg, Gadget, GitHub Mentions, Jetstream, Mobile, RustPush iMessage, Inkbox, and Inline). Their source indicates WebSocket/REST, a device sidecar, receive-only GitHub mention ingress, local Unix-domain socket, or supervised Node-sidecar transports.
+- Hermes Fleet Connector declares a standalone phone/fleet reporting service, not a gateway platform. Telegram Business declares an observe-with-approval workflow that drafts replies for owner approval using a connected Telegram Business account; it does not declare its own gateway adapter transport.
+- The inventory records each catalog pin, paths relative to its declared subdirectory, the static finding, and evidence level. None of these plugins was installed, imported, or executed. The combined inventory now has 21 static source reviews (18 messaging/gateway candidates and three source-classified non-channel declarations, including the previously catalog-classified Discord TPS and Render entries; counts in `channel-requirements.md` are specific to source-reviewed declarations). 25 platform-category candidates remain unclassified.
+
+The inventory now has 21 static source reviews: 18 messaging/gateway candidates, two source-reviewed non-channel plugins, and the Home Assistant gateway/toolset review. Twenty-five platform-category candidates remain unclassified. Transport descriptions do not verify authentication, identity binding, replay handling, delivery guarantees, authorization, crash recovery, or live behavior. No X.A.A. messaging support or Hermes runtime parity is claimed.
