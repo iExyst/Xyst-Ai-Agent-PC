@@ -203,6 +203,8 @@ async def main() -> None:
             await provider.close()
             (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
             print(json.dumps({**report, "evidence": str(root)}, indent=2))
+    if report["probe_complete"] and not report["all_counts_match"]:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
