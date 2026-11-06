@@ -3,7 +3,7 @@ import json
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillDraft, SkillStore
+from xaa.storage.skills import SkillDraft, SkillStore, host_platform_name
 
 
 class ScriptedProvider(LMStudioProvider):
@@ -157,12 +157,18 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
             },
         )
 
+    current_platform = host_platform_name()
+    other_platform = next(
+        platform for platform in ("windows", "macos", "linux") if platform != current_platform
+    )
+
     expected_visible = {
         "Catalog fixture",
         "Requires files",
         "Requires read file",
         "Unknown fallback stays visible",
         "Always visible",
+        "Current platform",
     }
     add_imported("Requires files", {"hermes_toolsets": ["files"]})
     add_imported("Requires read file", {"hermes_required_tools": ["read_file"]})
@@ -172,6 +178,8 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
     add_imported("Needs unknown tool", {"hermes_required_tools": ["third_party_exec"]})
     add_imported("Unknown fallback stays visible", {"hermes_fallback_tools": ["third_party_exec"]})
     add_imported("Always visible", {})
+    add_imported("Current platform", {"platforms": [current_platform]})
+    add_imported("Other platform", {"platforms": [other_platform]})
 
     run_id = store.create_run(
         objective="Find a reusable procedure",

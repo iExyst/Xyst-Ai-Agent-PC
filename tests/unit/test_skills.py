@@ -12,7 +12,15 @@ from xaa.extensions.agent_plugins import discover_agent_plugins, read_plugin_ski
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillAsset, SkillConflict, SkillDraft, SkillRevision, SkillStore
+from xaa.storage.skills import (
+    SkillAsset,
+    SkillConflict,
+    SkillDraft,
+    SkillRevision,
+    SkillStore,
+    host_platform_name,
+    procedure_matches_tool_conditions,
+)
 
 
 def draft(content="Read the relevant files; check evidence before reporting."):
@@ -22,6 +30,29 @@ def draft(content="Read the relevant files; check evidence before reporting."):
         required_tools=[{"name": "workspace.read_file", "version": "1"}],
         required_permissions=["workspace.read"],
     )
+
+
+@pytest.mark.parametrize(
+    ("requirements", "platform", "expected"),
+    [
+        ({}, "windows", True),
+        ({"platforms": ["windows"]}, "windows", True),
+        ({"platforms": ["linux", "macos"]}, "windows", False),
+        ({"platforms": ["plan9"]}, "windows", False),
+        ({"platforms": ["windows", "plan9"]}, "windows", True),
+    ],
+)
+def test_procedure_platform_visibility(requirements, platform, expected):
+    assert (
+        procedure_matches_tool_conditions(
+            requirements, available_tools=set(), toolsets=set(), current_platform=platform
+        )
+        is expected
+    )
+
+
+def test_host_platform_name_is_normalized():
+    assert host_platform_name() in {"windows", "macos", "linux", "other"}
 
 
 def test_immutable_versions_concurrent_edit_backup_and_delete(workspace_tmp_path):

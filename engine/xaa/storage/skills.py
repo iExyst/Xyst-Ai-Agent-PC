@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import sys
 from datetime import datetime
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -64,8 +65,25 @@ def available_toolsets(tool_names: set[str]) -> set[str]:
     return result
 
 
+def host_platform_name() -> str:
+    """Return the normalized operating-system name used by skill metadata."""
+    return (
+        "windows"
+        if sys.platform == "win32"
+        else "macos"
+        if sys.platform == "darwin"
+        else "linux"
+        if sys.platform.startswith("linux")
+        else "other"
+    )
+
+
 def procedure_matches_tool_conditions(
-    requirements: dict[str, Any], *, available_tools: set[str], toolsets: set[str]
+    requirements: dict[str, Any],
+    *,
+    available_tools: set[str],
+    toolsets: set[str],
+    current_platform: str | None = None,
 ) -> bool:
     """Apply Hermes requires/fallback visibility rules without granting authority."""
 
@@ -84,6 +102,12 @@ def procedure_matches_tool_conditions(
     fallback_tools = values("hermes_fallback_tools")
     required_toolsets = values("hermes_toolsets")
     fallback_toolsets = values("hermes_fallback_toolsets")
+    declared_platforms = values("platforms")
+    host_platform = current_platform or host_platform_name()
+    known_platforms = {"windows", "macos", "linux"}
+    supported_platforms = set(declared_platforms) & known_platforms
+    if declared_platforms and (not supported_platforms or host_platform not in supported_platforms):
+        return False
     known_tools = available | set(_HERMES_TOOL_ALIASES)
     # Unknown required capabilities cannot be satisfied. Unknown fallback names
     # are absent, so they do not hide an otherwise usable fallback.
