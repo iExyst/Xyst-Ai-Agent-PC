@@ -1432,6 +1432,21 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @app.delete("/chat/acp-sessions/{session_id}", status_code=204)
+    def delete_acp_chat_session(
+        session_id: str,
+        model: str,
+        workspace: str,
+        mode: Literal["observe", "workspace"],
+        _: None = Depends(authenticate),
+    ) -> Response:
+        try:
+            cli_chat_store.delete_acp(session_id, model=model, workspace=workspace, mode=mode)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # ACP deletion is intentionally idempotent, including unknown or already-deleted IDs.
+        return Response(status_code=204)
+
     @app.get("/chat/sessions/{session_id}", response_model=CLIChatSessionRecord)
     def get_cli_chat_session(session_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
         try:

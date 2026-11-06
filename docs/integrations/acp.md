@@ -6,9 +6,10 @@ X.A.A. provides an ACP stdio agent through `xaa acp`. It is a client bridge to t
 
 - The user explicitly chooses the LM Studio model, workspace, and `observe` or `workspace` mode when launching the server.
 - The ACP host must send that exact workspace as `session/new`'s `cwd`. Additional directories and host-provided MCP servers are refused.
-- ACP currently accepts text prompts up to 2,000 UTF-8 bytes. Conversations persist in the X.A.A. chat-session store across ACP process restarts. `session/load` replays saved text turns to the host; `session/list` finds matching saved sessions with bounded pages, and the API's bounded prior-turn context is reused.
+- ACP currently accepts text prompts up to 2,000 UTF-8 bytes. Conversations persist in the X.A.A. chat-session store across ACP process restarts. `session/load` replays saved text turns to the host; `session/list` finds matching saved sessions with bounded pages; and `session/delete` removes the durable session from future lists. Deletion is scoped to the session's bound model, workspace and mode, and cancels an active prompt before removing history.
 - The ACP process sends its bearer token only to a numeric loopback HTTP URL. HTTPS, remote hosts, DNS names, URL credentials, query strings, and fragments are rejected.
 - ACP cancellation and the pinned SDK's unstable `session/close` extension call the authenticated `/runs/{run_id}/cancel` route when a run is active. Closing releases process-local state while retaining saved text history for `session/load`. A run in `verifying` returns its candidate and states that independent review is still required; it is not saved as a completed chat turn.
+- The pinned Python SDK does not yet provide the stable v1 `session/delete` route, so X.A.A. registers the protocol method on its SDK router and advertises `sessionCapabilities.delete` in the initialize response. The method follows the [ACP v1 session delete contract](https://agentclientprotocol.com/protocol/v1/session-delete): successful deletion and unknown IDs return an empty result.
 - Public coordinator tool intents and execution outcomes are forwarded as ACP `tool_call` / `tool_call_update` notifications. Internal calls are omitted, and raw arguments and results are not forwarded. ACP and API version metadata comes from the packaged engine distribution.
 
 ## Launching from an editor

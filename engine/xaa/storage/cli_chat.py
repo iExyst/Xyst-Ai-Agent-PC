@@ -207,3 +207,21 @@ class CLIChatStore:
                 ).rowcount
                 == 1
             )
+
+    def delete_acp(self, session_id: str, *, model: str, workspace: str, mode: ChatMode) -> bool:
+        """Delete only an ACP-shaped session matching its bound runtime settings."""
+        if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
+            raise ValueError("ACP session ID must be a lowercase UUID hex string.")
+        if not model.strip() or len(model) > 256 or len(workspace) > 4096:
+            raise ValueError("ACP session settings are invalid.")
+        if mode not in {"observe", "workspace"}:
+            raise ValueError("Unsupported ACP chat mode.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            result = connection.execute(
+                "DELETE FROM sessions WHERE id=? AND channel='cli' AND account_id='local-user' "
+                "AND EXISTS (SELECT 1 FROM cli_chat_config AS c WHERE c.session_id=sessions.id "
+                "AND c.model=? AND c.workspace=? AND c.mode=?)",
+                (session_id, model, workspace, mode),
+            )
+            return result.rowcount == 1

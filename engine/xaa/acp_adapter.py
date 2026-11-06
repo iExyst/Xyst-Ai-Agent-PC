@@ -15,15 +15,18 @@ from uuid import uuid4
 
 import httpx
 from acp import (
+    CLIENT_METHODS,
     Agent,
     InitializeResponse,
     LoadSessionResponse,
     NewSessionResponse,
     PromptResponse,
-    run_agent,
 )
+from acp.agent.router import build_agent_router
+from acp.connection import Connection
 from acp.exceptions import RequestError
 from acp.interfaces import Client
+from acp.router import Route
 from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
@@ -34,11 +37,15 @@ from acp.schema import (
     SessionCloseCapabilities,
     SessionInfo,
     SessionListCapabilities,
+    SessionNotification,
     TextContentBlock,
     ToolCallProgress,
     ToolCallStart,
     UserMessageChunk,
 )
+from acp.stdio import stdio_streams
+from acp.utils import notify_model
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from xaa.version import APP_VERSION
 
@@ -53,6 +60,35 @@ _TERMINAL_STATES = {
     "waiting_for_approval",
     "paused",
 }
+
+
+class _ACPInitializeResponse(InitializeResponse):
+    @model_serializer(mode="wrap")
+    def include_delete_capability(self, handler: Any) -> dict[str, Any]:
+        result = cast(dict[str, Any], handler(self))
+        capabilities = result.get("agentCapabilities")
+        if isinstance(capabilities, dict):
+            capabilities = cast(dict[str, Any], capabilities)
+            sessions = cast(dict[str, Any] | None, capabilities.get("sessionCapabilities"))
+            if isinstance(sessions, dict):
+                sessions["delete"] = {}
+        return result
+
+
+class _DeleteSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    session_id: str = Field(alias="sessionId", min_length=1, max_length=64)
+
+
+class _ACPClientConnection:
+    def __init__(self, connection: Connection) -> None:
+        self._connection = connection
+
+    async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        notification = SessionNotification(
+            session_id=session_id, update=update, field_meta=kwargs or None
+        )
+        await notify_model(self._connection, CLIENT_METHODS["session_update"], notification)
 
 
 def validate_local_api_url(value: str) -> str:
@@ -165,6 +201,8 @@ class XaaAcpAgent:
         self._active_runs: dict[str, str] = {}
         self._pending_sessions: set[str] = set()
         self._cancel_requested: set[str] = set()
+        self._deleted_sessions: set[str] = set()
+        self._session_locks: dict[str, asyncio.Lock] = {}
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=self.api_url,
@@ -182,7 +220,7 @@ class XaaAcpAgent:
         client_info: Any = None,
         **kwargs: Any,
     ) -> InitializeResponse:
-        return InitializeResponse(
+        return _ACPInitializeResponse(
             protocol_version=protocol_version,
             agent_info=Implementation(
                 name="xyst-ai-agent", title="Xyst AI Agent", version=APP_VERSION
@@ -361,33 +399,36 @@ class XaaAcpAgent:
                 await self._request_run_cancel(run_id)
 
             answer, state = await self._wait_for_run(session_id, run_id)
-            if answer and state == "completed":
-                save_response = await self._client.post(
-                    f"/chat/sessions/{session_id}/turn",
-                    json={
-                        "run_id": run_id,
-                        "model": self.model,
-                        "workspace": str(self.workspace),
-                        "mode": self.mode,
-                        "user_message": current,
-                        "assistant_message": answer[:16_000],
-                    },
-                )
-                save_response.raise_for_status()
-            elif state == "verifying":
-                answer = ((answer + "\n\n") if answer else "") + (
-                    "This result is a candidate awaiting independent review in Xyst AI Agent. "
-                    "Review it in the desktop app; it has not been marked complete."
-                )
-            elif state not in {"cancelled"}:
-                answer = (
-                    f"X.A.A. run {run_id} ended in state {state}. "
-                    "Inspect the run in Xyst AI Agent for review or recovery."
-                )
-            if state != "cancelled":
-                await self._send_message(
-                    session_id, answer or "X.A.A. run finished without a text response."
-                )
+            async with self._session_lock(session_id):
+                if session_id in self._deleted_sessions:
+                    return PromptResponse(stop_reason="cancelled")
+                if answer and state == "completed":
+                    save_response = await self._client.post(
+                        f"/chat/sessions/{session_id}/turn",
+                        json={
+                            "run_id": run_id,
+                            "model": self.model,
+                            "workspace": str(self.workspace),
+                            "mode": self.mode,
+                            "user_message": current,
+                            "assistant_message": answer[:16_000],
+                        },
+                    )
+                    save_response.raise_for_status()
+                elif state == "verifying":
+                    answer = ((answer + "\n\n") if answer else "") + (
+                        "This result is a candidate awaiting independent review in Xyst AI Agent. "
+                        "Review it in the desktop app; it has not been marked complete."
+                    )
+                elif state not in {"cancelled"}:
+                    answer = (
+                        f"X.A.A. run {run_id} ended in state {state}. "
+                        "Inspect the run in Xyst AI Agent for review or recovery."
+                    )
+                if state != "cancelled":
+                    await self._send_message(
+                        session_id, answer or "X.A.A. run finished without a text response."
+                    )
             return PromptResponse(stop_reason="cancelled" if state == "cancelled" else "end_turn")
         except httpx.HTTPStatusError as exc:
             logger.warning(
@@ -403,6 +444,7 @@ class XaaAcpAgent:
             self._active_runs.pop(session_id, None)
             self._pending_sessions.discard(session_id)
             self._cancel_requested.discard(session_id)
+            self._deleted_sessions.discard(session_id)
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
         run_id = self._active_runs.get(session_id)
@@ -419,6 +461,35 @@ class XaaAcpAgent:
             self._cancel_requested.add(session_id)
         self._sessions.discard(session_id)
         return CloseSessionResponse()
+
+    async def delete_session(self, params: Any) -> dict[str, Any]:
+        """Implement ACP v1 session/delete over the scoped durable-session API."""
+        try:
+            request = _DeleteSessionRequest.model_validate(params)
+        except Exception as exc:
+            raise RequestError(-32602, "Invalid session/delete parameters.") from exc
+        session_id = request.session_id
+        if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
+            raise RequestError(-32602, "Session ID is not an X.A.A. ACP session ID.")
+        active = session_id in self._active_runs or session_id in self._pending_sessions
+        self._sessions.discard(session_id)
+        if active:
+            self._deleted_sessions.add(session_id)
+            await self.cancel(session_id)
+        async with self._session_lock(session_id):
+            response = await self._client.delete(
+                f"/chat/acp-sessions/{session_id}",
+                params={
+                    "model": self.model,
+                    "workspace": str(self.workspace),
+                    "mode": self.mode,
+                },
+            )
+            response.raise_for_status()
+        return {}
+
+    def _session_lock(self, session_id: str) -> asyncio.Lock:
+        return self._session_locks.setdefault(session_id, asyncio.Lock())
 
     async def _request_run_cancel(self, run_id: str) -> None:
         response = await self._client.post(f"/runs/{run_id}/cancel")
@@ -557,7 +628,19 @@ async def serve_acp(
         workspace=workspace,
         mode=mode,
     )
+    reader, writer = await stdio_streams()
+    router = build_agent_router(cast(Agent, agent), use_unstable_protocol=True)
+    router.add_route(
+        Route(
+            method="session/delete",
+            func=agent.delete_session,
+            kind="request",
+        )
+    )
+    connection = Connection(router, writer, reader, listening=False)
+    agent.on_connect(cast(Client, _ACPClientConnection(connection)))
     try:
-        await run_agent(cast(Agent, agent), use_unstable_protocol=True)
+        await connection.main_loop()
     finally:
         await agent.aclose()
+        await connection.close()

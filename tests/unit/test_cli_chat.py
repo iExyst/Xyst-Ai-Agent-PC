@@ -48,6 +48,49 @@ def test_acp_session_listing_filters_scope_and_cursor(workspace_tmp_path):
     assert [item["id"] for item in first + second] == ["a" * 32, "c" * 32]
 
 
+def test_acp_session_delete_is_idempotent_and_bound_to_session_settings(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "acp-delete.sqlite3")
+    chat = CLIChatStore(store)
+    run_id = store.create_run(
+        objective="Create scoped sessions",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="local/model",
+    )["id"]
+    session_id = "a" * 32
+    chat.append_turn(
+        session_id,
+        run_id=run_id,
+        model="local/model",
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        user_message="Keep this session scoped.",
+        assistant_message="Saved.",
+    )
+
+    assert not chat.delete_acp(
+        session_id,
+        model="other/model",
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+    )
+    assert chat.get(session_id) is not None
+    assert chat.delete_acp(
+        session_id,
+        model="local/model",
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+    )
+    assert not chat.delete_acp(
+        session_id,
+        model="local/model",
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+    )
+    assert chat.get(session_id) is None
+
+
 def test_cli_chat_session_persists_bounded_turns_and_rejects_config_change(workspace_tmp_path):
     database = workspace_tmp_path / "cli-chat.sqlite3"
     store = RunStore(database)
@@ -158,3 +201,55 @@ def test_cli_chat_api_authenticates_and_keeps_messages_in_session_scope(workspac
         assert client.get("/chat/sessions/other", headers=HEADERS).status_code == 404
         assert client.delete("/chat/sessions/default", headers=HEADERS).status_code == 204
         assert client.get("/chat/sessions/default", headers=HEADERS).status_code == 404
+
+
+def test_acp_delete_api_is_scoped_and_idempotent(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "acp-delete-api.sqlite3")
+    chat = CLIChatStore(store)
+    run_id = store.create_run(
+        objective="Create a durable ACP session",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="local/model",
+    )["id"]
+    session_id = "b" * 32
+    chat.append_turn(
+        session_id,
+        run_id=run_id,
+        model="local/model",
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        user_message="Hello",
+        assistant_message="Hi",
+    )
+    path = f"/chat/acp-sessions/{session_id}"
+    with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
+        assert client.delete(path, params={"model": "local/model"}).status_code == 401
+        mismatch = client.delete(
+            path,
+            headers=HEADERS,
+            params={
+                "model": "other/model",
+                "workspace": str(workspace_tmp_path),
+                "mode": "observe",
+            },
+        )
+        assert mismatch.status_code == 204
+        assert chat.get(session_id) is not None
+        params = {
+            "model": "local/model",
+            "workspace": str(workspace_tmp_path),
+            "mode": "observe",
+        }
+        assert client.delete(path, headers=HEADERS, params=params).status_code == 204
+        assert client.delete(path, headers=HEADERS, params=params).status_code == 204
+        assert chat.get(session_id) is None
+        assert (
+            client.delete(
+                "/chat/acp-sessions/not-a-uuid",
+                headers=HEADERS,
+                params=params,
+            ).status_code
+            == 422
+        )

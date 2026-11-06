@@ -13,7 +13,7 @@ import uvicorn
 from acp import PROTOCOL_VERSION, spawn_agent_process, text_block
 from acp.interfaces import Client
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from xaa.acp_adapter import XaaAcpAgent, validate_local_api_url
 from xaa.cli import _resolve_api_token, _resolve_api_url
 from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE
@@ -81,6 +81,7 @@ def _api_fixture(
         "requests": [],
         "cancellations": [],
         "run_events": {},
+        "next_state": initial_state,
     }
 
     @app.middleware("http")
@@ -117,7 +118,7 @@ def _api_fixture(
         state["requests"].append(payload)
         run_id = f"run-{len(state['runs']) + 1}"
         state["runs"].append(run_id)
-        state["run_states"][run_id] = initial_state
+        state["run_states"][run_id] = state["next_state"]
         return {"id": run_id}
 
     @app.get("/runs/{run_id}")
@@ -156,6 +157,16 @@ def _api_fixture(
             "messages": messages,
         }
         return state["sessions"][session_id]
+
+    @app.delete("/chat/acp-sessions/{session_id}", status_code=204, response_class=Response)
+    async def delete_acp_session(session_id: str, request: Request) -> Response:
+        params = request.query_params
+        value = state["sessions"].get(session_id)
+        if value is not None and all(
+            value.get(key) == params.get(key) for key in ("model", "workspace", "mode")
+        ):
+            state["sessions"].pop(session_id)
+        return Response(status_code=204)
 
     @app.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str) -> dict[str, str]:
@@ -205,6 +216,29 @@ async def test_acp_returns_candidate_while_run_awaits_independent_review(tmp_pat
         )
     ]
     assert state["sessions"] == {}
+
+
+@pytest.mark.asyncio
+async def test_acp_initialize_advertises_stable_session_delete(tmp_path: Path) -> None:
+    agent = XaaAcpAgent(
+        api_url="http://127.0.0.1:43210",
+        api_token=TOKEN,
+        model="fixture-model",
+        workspace=tmp_path.resolve(),
+        mode="observe",
+        client=httpx.AsyncClient(
+            base_url="http://127.0.0.1:43210",
+            transport=httpx.MockTransport(lambda _: httpx.Response(204)),
+        ),
+    )
+    try:
+        response = await agent.initialize(protocol_version=PROTOCOL_VERSION)
+        encoded = response.model_dump(
+            mode="json", by_alias=True, exclude_none=True, exclude_unset=True
+        )
+        assert encoded["agentCapabilities"]["sessionCapabilities"]["delete"] == {}
+    finally:
+        await agent.aclose()
 
 
 @pytest.mark.asyncio
@@ -346,6 +380,35 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
             third = await connection.prompt(
                 session_id=session.session_id, prompt=[text_block("Continue after restart.")]
             )
+            saved_messages = state["sessions"][session.session_id]["messages"]
+            assert len(saved_messages) == 6
+            deleted = await connection._conn.send_request(
+                "session/delete", {"sessionId": session.session_id}
+            )
+            assert deleted == {}
+            listed_after_delete = await connection.list_sessions(cwd=str(tmp_path.resolve()))
+            assert listed_after_delete.sessions == []
+            state["next_state"] = "running"
+            active_session = await connection.new_session(
+                cwd=str(tmp_path.resolve()), mcp_servers=[]
+            )
+            active_prompt = asyncio.create_task(
+                connection.prompt(
+                    session_id=active_session.session_id,
+                    prompt=[text_block("This prompt will be cancelled by session deletion.")],
+                )
+            )
+            for _ in range(100):
+                if len(state["runs"]) == 4:
+                    break
+                await asyncio.sleep(0.01)
+            assert len(state["runs"]) == 4
+            active_delete = await connection._conn.send_request(
+                "session/delete", {"sessionId": active_session.session_id}
+            )
+            assert active_delete == {}
+            cancelled_prompt = await asyncio.wait_for(active_prompt, timeout=5)
+            assert cancelled_prompt.stop_reason == "cancelled"
         assert third.stop_reason == "end_turn"
         assert [text for _, text in replay_sink.updates] == [
             "Read the project status.",
@@ -357,17 +420,18 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
 
         assert first.stop_reason == "end_turn"
         assert second.stop_reason == "end_turn"
-        assert len(state["runs"]) == 3
-        assert len(state["requests"]) == 3
+        assert len(state["runs"]) == 4
+        assert session.session_id not in state["sessions"]
+        assert active_session.session_id not in state["sessions"]
+        assert state["cancellations"] == ["run-4"]
+        assert len(state["requests"]) == 4
         assert all(item["model"] == "fixture-model" for item in state["requests"])
         assert all(item["workspace"] == str(tmp_path.resolve()) for item in state["requests"])
         assert all(item["mode"] == "observe" for item in state["requests"])
         assert "Read the project status." in state["requests"][1]["objective"]
         assert "Now summarize that again." in state["requests"][1]["objective"]
         assert "Now summarize that again." in state["requests"][2]["objective"]
-        assert state["sessions"][session.session_id]["messages"][-2]["content"] == (
-            "Continue after restart."
-        )
+        assert saved_messages[-2]["content"] == "Continue after restart."
         assert [text for _, text in sink.updates] == [
             "Fixture answer for run-1",
             "Fixture answer for run-2",
