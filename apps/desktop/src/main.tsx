@@ -33,7 +33,7 @@ function App() {
   const [workspace, setWorkspace] = useState('');
   const [sandbox,setSandbox]=useState<components['schemas']['ReadinessResult']>();
   const [commandAllowed,setCommandAllowed]=useState(false);
-  const [limits, setLimits] = useState<LimitInputs>({max_iterations:'8', max_seconds:'900', max_total_tokens:'', max_output_tokens:''});
+  const [limits, setLimits] = useState<LimitInputs>({max_iterations:'8', max_seconds:'900', max_total_tokens:'', max_output_tokens:'', pre_inference_token_reservations:false});
   const parsedLimits = parseLimits(limits);
   const [procedureTrial,setProcedureTrial]=useState<ProcedureTrialSelection>();
   const [usageRefresh, setUsageRefresh] = useState(0);

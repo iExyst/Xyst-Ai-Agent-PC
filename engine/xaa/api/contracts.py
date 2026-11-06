@@ -20,7 +20,7 @@ class TaskBudgets(BaseModel):
 
 
 class RunLimits(TaskBudgets):
-    pass
+    pre_inference_token_reservations: bool = False
 
 
 class RunRecord(BaseModel):

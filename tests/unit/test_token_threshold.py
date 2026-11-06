@@ -19,6 +19,54 @@ def create(root, limit):
     return store, run["id"]
 
 
+async def test_configured_pre_inference_budget_reserves_before_parent_request(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "pre-inference-budget.sqlite3")
+    run = store.create_run(
+        objective="Return a short answer",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_total_tokens=500,
+        max_output_tokens=64,
+        pre_inference_token_reservations=True,
+    )
+
+    class Provider(LMStudioProvider):
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(
+            self,
+            *,
+            model,
+            messages,
+            tools=None,
+            on_admission=None,
+            require_exact_context=False,
+            max_output_tokens=None,
+        ):
+            assert require_exact_context is True
+            assert max_output_tokens == 64
+            assert on_admission is not None
+            on_admission(30, max_output_tokens)
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Done."}}],
+                "usage": {"prompt_tokens": 30, "completion_tokens": 5, "total_tokens": 35},
+            }
+
+    provider = Provider()
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+    events = store.list_events(run["id"])
+    reservation = next(event for event in events if event["event_type"] == "tokens.reserved")
+    assert reservation["payload"]["reserved_tokens"] == 94
+    assert store.token_usage(run["id"])["total_tokens"] == 35
+    assert store.usage_report(run["id"])["outstanding_reserved_tokens"] == 0
+
+
 @pytest.mark.parametrize("usage,blocked", [(None, True), (11, True), (10, False), (9, False)])
 async def test_threshold_blocks_proposed_write_before_effect(workspace_tmp_path, usage, blocked):
     store, identity = create(workspace_tmp_path, 10)

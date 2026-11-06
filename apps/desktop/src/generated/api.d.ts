@@ -1422,6 +1422,12 @@ export interface components {
             model?: string | null;
             /** Objective */
             objective: string;
+            /**
+             * Pre Inference Token Reservations
+             * @description Require exact prompt counting and a durable token hold before each inference.
+             * @default false
+             */
+            pre_inference_token_reservations: boolean;
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
             /** Workspace */
             workspace?: string | null;
@@ -2188,6 +2194,11 @@ export interface components {
             max_seconds: number;
             /** Max Total Tokens */
             max_total_tokens?: number | null;
+            /**
+             * Pre Inference Token Reservations
+             * @default false
+             */
+            pre_inference_token_reservations: boolean;
         };
         /** RunRecord */
         RunRecord: {

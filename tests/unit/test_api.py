@@ -478,6 +478,39 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
     assert recovered["approved_browser"] is True
 
 
+def test_run_can_require_pre_inference_token_reservations(workspace_tmp_path):
+    database = workspace_tmp_path / "reserved-budget.sqlite3"
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(database))
+    ) as client:
+        invalid = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Invalid", "pre_inference_token_reservations": True},
+        )
+        assert invalid.status_code == 409
+        assert "require a total token threshold" in invalid.json()["detail"]
+        created = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Count before inference",
+                "model": "fixture/model",
+                "max_total_tokens": 4000,
+                "max_output_tokens": 256,
+                "pre_inference_token_reservations": True,
+            },
+        )
+        assert created.status_code == 201
+        run_id = created.json()["id"]
+        assert created.json()["limits"]["pre_inference_token_reservations"] is True
+        queued = client.get(f"/runs/{run_id}/events", headers=headers).json()[0]
+        assert queued["payload"]["pre_inference_token_reservations"] is True
+    reopened = RunStore(database).get_run(run_id)
+    assert reopened["limits"]["pre_inference_token_reservations"] is True
+
+
 def test_failed_tool_diagnostic_is_reported_without_enabling_tools(workspace_tmp_path):
     class UnsupportedProvider(FakeProvider):
         async def diagnose_tools(self, model, *, request=None):
@@ -539,6 +572,7 @@ def test_token_settings_survive_public_create_read_and_control(workspace_tmp_pat
         "max_seconds": 900,
         "max_total_tokens": 5000,
         "max_output_tokens": 128,
+        "pre_inference_token_reservations": False,
     }
     with TestClient(create_app(provider, SecretStr(TOKEN), store=store)) as client:
         response = client.post(

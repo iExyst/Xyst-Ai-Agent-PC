@@ -384,8 +384,10 @@ class LMStudioProvider:
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
         on_admission: AdmissionCallback | None = None,
+        require_exact_context: bool = False,
     ) -> dict[str, Any]:
-        if self.exact_context and max_output_tokens is None:
+        exact_context = self.exact_context or require_exact_context
+        if exact_context and max_output_tokens is None:
             max_output_tokens = 512
         options = self.output_options(max_output_tokens)
         prepared = prepare_tools(tools)
@@ -398,6 +400,7 @@ class LMStudioProvider:
                 prepared,
                 max_output_tokens=max_output_tokens,
                 on_admission=on_admission,
+                require_exact_context=exact_context,
             )
             return await self._chat(model=model, messages=messages, tools=prepared, **options)
 
@@ -409,9 +412,10 @@ class LMStudioProvider:
         *,
         max_output_tokens: int | None,
         on_admission: AdmissionCallback | None = None,
+        require_exact_context: bool = False,
     ) -> None:
         # Caller owns the inference queue slot throughout counting and prediction.
-        if not self.exact_context:
+        if not (self.exact_context or require_exact_context):
             self._check_context(model, messages, tools, max_output_tokens=max_output_tokens)
             return
         from pydantic import ValidationError
@@ -562,8 +566,10 @@ class LMStudioProvider:
         max_output_tokens: int | None = None,
         on_admission: AdmissionCallback | None = None,
         on_content: Callable[[str], None] | None = None,
+        require_exact_context: bool = False,
     ) -> dict[str, Any]:
-        if self.exact_context and max_output_tokens is None:
+        exact_context = self.exact_context or require_exact_context
+        if exact_context and max_output_tokens is None:
             max_output_tokens = 512
         assembler = CompletionAssembler()
         generator = self.stream(
@@ -571,6 +577,7 @@ class LMStudioProvider:
             messages=messages,
             tools=tools,
             on_admission=on_admission,
+            require_exact_context=exact_context,
             **self.output_options(max_output_tokens),
         )
         try:
@@ -590,8 +597,10 @@ class LMStudioProvider:
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
         on_admission: AdmissionCallback | None = None,
+        require_exact_context: bool = False,
     ) -> AsyncGenerator[str]:
-        if self.exact_context and max_output_tokens is None:
+        exact_context = self.exact_context or require_exact_context
+        if exact_context and max_output_tokens is None:
             max_output_tokens = 512
         options = self.output_options(max_output_tokens)
         prepared = prepare_tools(tools)
@@ -604,6 +613,7 @@ class LMStudioProvider:
                 prepared,
                 max_output_tokens=max_output_tokens,
                 on_admission=on_admission,
+                require_exact_context=exact_context,
             )
             generator = self._stream(model=model, messages=messages, tools=prepared, **options)
             try:

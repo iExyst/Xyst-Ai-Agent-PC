@@ -15,8 +15,20 @@ class DiagnosticProvider(LMStudioProvider):
         self.missing = missing
         self.interrupted = interrupted
 
-    async def chat(self, *, model, messages, tools=None, max_output_tokens=None):
+    async def chat(
+        self,
+        *,
+        model,
+        messages,
+        tools=None,
+        max_output_tokens=None,
+        on_admission=None,
+        require_exact_context=False,
+    ):
         self.calls += 1
+        if require_exact_context:
+            assert on_admission is not None
+            on_admission(2, max_output_tokens or 512)
         if self.interrupted:
             raise ConnectionError("fixture disconnect")
         if tools and tools[0]["function"]["name"] == "xaa_echo":
@@ -120,6 +132,38 @@ async def test_cached_diagnostic_has_no_new_inference_charge(workspace_tmp_path)
         assert not any(e["event_type"].startswith("diagnostic.") for e in store.list_events(second))
     finally:
         await provider.close()
+
+
+async def test_pre_inference_reservations_cover_diagnostics_and_parent_requests(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "diagnostic-reservations.sqlite3")
+    run = store.create_run(
+        objective="Inspect workspace",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        max_total_tokens=3000,
+        pre_inference_token_reservations=True,
+    )
+    provider = DiagnosticProvider()
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+    events = store.list_events(run["id"])
+    starts = {
+        event["payload"]["inference_id"]
+        for event in events
+        if event["event_type"] in {"diagnostic.inference.started", "model.inference.started"}
+    }
+    holds = {
+        event["payload"]["inference_id"]
+        for event in events
+        if event["event_type"] == "tokens.reserved"
+    }
+    assert len(starts) == provider.calls
+    assert holds == starts
+    assert store.usage_report(run["id"])["outstanding_reservations"] == 0
 
 
 async def test_explicit_specialist_dispatch_obeys_diagnostic_threshold(workspace_tmp_path):

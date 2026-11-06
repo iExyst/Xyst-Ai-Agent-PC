@@ -675,6 +675,7 @@ class RunStore:
         max_seconds: int = 900,
         max_total_tokens: int | None = None,
         max_output_tokens: int | None = None,
+        pre_inference_token_reservations: bool = False,
         file_checks: list[dict[str, Any]] | None = None,
         procedure_trial: dict[str, Any] | None = None,
         command_grant: dict[str, Any] | None = None,
@@ -718,6 +719,10 @@ class RunStore:
             type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 1_000_000
         ):
             raise ValueError("Output token limit must be an integer from 1 to 1000000.")
+        if type(pre_inference_token_reservations) is not bool:
+            raise ValueError("Pre-inference token reservation setting must be a boolean.")
+        if pre_inference_token_reservations and max_total_tokens is None:
+            raise ValueError("Pre-inference token reservations require a total token threshold.")
         if approved_web_hosts:
             from xaa.runtime.web_fetch import normalize_approved_hosts
 
@@ -803,6 +808,7 @@ class RunStore:
                     "state": RunState.QUEUED.value,
                     "max_total_tokens": max_total_tokens,
                     "max_output_tokens": max_output_tokens,
+                    "pre_inference_token_reservations": pre_inference_token_reservations,
                 },
             )
             for artifact_id, filename, media_type, content, provenance in staged_artifacts:
@@ -1002,6 +1008,14 @@ class RunStore:
                 (run_id,),
             ).fetchone()
         run_limits["max_output_tokens"] = output[0] if output else None
+        with self._connection() as connection:
+            reservations = connection.execute(
+                "SELECT json_extract(payload,'$.pre_inference_token_reservations') FROM run_events WHERE run_id=? AND event_type='run.queued' ORDER BY sequence LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        run_limits["pre_inference_token_reservations"] = (
+            bool(reservations[0]) if reservations else False
+        )
         record["limits"] = run_limits
         with self._connection() as connection:
             checks = connection.execute(

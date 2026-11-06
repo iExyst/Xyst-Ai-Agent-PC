@@ -21,7 +21,8 @@ export function RunResources({client, run, refresh}: {client: EngineClient; run:
   return <section aria-label="Run resources"><h2>Run resources</h2><p>Model: {run.model ?? 'Not selected'}</p>
     {run.procedure_trial&&<p>{run.procedure_trial.purpose==='active_use'?'Active procedure':'Procedure trial'}: {run.procedure_trial.name} &middot; version {run.procedure_trial.version}. This run does not activate or independently evaluate the procedure.</p>}
     {run.limits && <><p>{run.limits.max_iterations} iterations · {run.limits.max_seconds} seconds</p>
-      <p>Reported token threshold: {run.limits.max_total_tokens ?? 'Not set'} · Output tokens per request: {run.limits.max_output_tokens ?? 'Server default'}</p></>}
+      <p>Reported token threshold: {run.limits.max_total_tokens ?? 'Not set'} · Output tokens per request: {run.limits.max_output_tokens ?? 'Server default'}</p>
+      <p>Pre-inference token reservation: {run.limits.pre_inference_token_reservations ? 'Required; exact LM Studio count' : 'Off'}</p></>}
     {usage ? <p>Measured tokens: {usage.total_tokens} ({usage.prompt_tokens} input, {usage.completion_tokens} output). Calls without measured usage: {usage.unmeasured_calls}.</p> : <p>{unavailable ? 'Token usage unavailable.' : 'Loading token usage…'}</p>}
     {usage && <><p>Reserved tokens awaiting measured results: {usage.outstanding_reserved_tokens} across {usage.outstanding_reservations} {usage.outstanding_reservations === 1 ? 'request' : 'requests'}.</p>
       {usage.outstanding_reservations > 0 && <p>These holds include input and the output allowance. Interrupted requests keep their hold until a measured result is saved.</p>}</>}

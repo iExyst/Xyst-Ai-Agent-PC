@@ -102,6 +102,11 @@ def main() -> None:
         type=int,
         help="Stop threshold for reported run-tree tokens; not a hard inference cap",
     )
+    run.add_argument(
+        "--reserve-tokens-before-inference",
+        action="store_true",
+        help="Require exact LM Studio prompt counting and a durable hold; requires --max-total-tokens",
+    )
     run.add_argument("--max-output-tokens", type=int, help="Per-request generated token limit")
     run.add_argument("--accept", action="append", default=[])
     chat = commands.add_parser("chat", help="Start an interactive terminal conversation")
@@ -212,6 +217,7 @@ def main() -> None:
                         "mode": args.mode,
                         "max_total_tokens": args.max_total_tokens,
                         "max_output_tokens": args.max_output_tokens,
+                        "pre_inference_token_reservations": args.reserve_tokens_before_inference,
                     },
                 )
             elif args.command == "chat":

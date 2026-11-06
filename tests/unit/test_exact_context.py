@@ -6,8 +6,8 @@ from xaa.providers.tokenization import PromptCount, PromptCountError
 
 
 class CountedProvider(LMStudioProvider):
-    def __init__(self):
-        super().__init__(exact_context=True)
+    def __init__(self, *, exact_context=True):
+        super().__init__(exact_context=exact_context)
         self.counted = asyncio.Event()
         self.release = asyncio.Event()
         self.predictions = []
@@ -109,6 +109,61 @@ async def test_cancelled_count_releases_owner_without_prediction():
             await prediction
         assert not provider.predictions
         await asyncio.wait_for(provider.unload_model("fixture"), 1)
+    finally:
+        await provider.close()
+
+
+async def test_per_request_exact_admission_is_available_when_global_mode_is_off():
+    provider = CountedProvider(exact_context=False)
+    provider.release.set()
+    admissions = []
+    try:
+        result = await provider.chat(
+            model="fixture",
+            messages=[{"role": "user", "content": "hello"}],
+            require_exact_context=True,
+            on_admission=lambda prompt, output: admissions.append((prompt, output)),
+        )
+        assert result == {"ok": True}
+        assert admissions == [(20, 512)]
+        assert provider.predictions[0]["max_output_tokens"] == 512
+    finally:
+        await provider.close()
+
+
+async def test_per_request_exact_admission_covers_streaming():
+    provider = CountedProvider(exact_context=False)
+    provider.release.set()
+    admissions = []
+    try:
+        chunks = [
+            chunk
+            async for chunk in provider.stream(
+                model="fixture",
+                messages=[{"role": "user", "content": "hello"}],
+                require_exact_context=True,
+                on_admission=lambda prompt, output: admissions.append((prompt, output)),
+            )
+        ]
+        assert chunks == ["fixture"]
+        assert admissions == [(20, 512)]
+        assert provider.predictions[0]["max_output_tokens"] == 512
+    finally:
+        await provider.close()
+
+
+async def test_per_request_exact_count_failure_blocks_before_prediction():
+    provider = CountedProvider(exact_context=False)
+    provider.release.set()
+    provider.failure = True
+    try:
+        with pytest.raises(ContextLimitError, match="could not count"):
+            await provider.chat(
+                model="fixture",
+                messages=[{"role": "user", "content": "hello"}],
+                require_exact_context=True,
+            )
+        assert not provider.predictions
     finally:
         await provider.close()
 

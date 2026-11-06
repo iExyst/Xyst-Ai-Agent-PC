@@ -385,6 +385,12 @@
             "title": "Objective",
             "type": "string"
           },
+          "pre_inference_token_reservations": {
+            "default": false,
+            "description": "Require exact prompt counting and a durable token hold before each inference.",
+            "title": "Pre Inference Token Reservations",
+            "type": "boolean"
+          },
           "procedure_trial": {
             "anyOf": [
               {
@@ -2535,6 +2541,11 @@
               }
             ],
             "title": "Max Total Tokens"
+          },
+          "pre_inference_token_reservations": {
+            "default": false,
+            "title": "Pre Inference Token Reservations",
+            "type": "boolean"
           }
         },
         "required": [

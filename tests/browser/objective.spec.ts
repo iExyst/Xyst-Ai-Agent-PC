@@ -8,7 +8,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   let braveSearchSecret = '';
   let memories: {id: string; content: string; provenance: string}[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  const run = { id: 'browser-run', objective: 'Read input.txt', state: 'verifying', acceptance_criteria:[], revision:3, model:'fixture/model', limits:{max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256} };
+  const run = { id: 'browser-run', objective: 'Read input.txt', state: 'verifying', acceptance_criteria:[], revision:3, model:'fixture/model', limits:{max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true} };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
     const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' };
@@ -41,7 +41,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path === '/artifacts/artifact-1') return route.fulfill({ body: '<script>window.artifactExecuted=true</script>', contentType: 'text/plain', headers });
     if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
     if (path === '/runs' && request.method() === 'POST') {
-      expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256});
+      expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
       expect(request.postDataJSON().document).toBe(`data:text/markdown;base64,${Buffer.from('# Field notes\n').toString('base64')}`);
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
@@ -104,10 +104,12 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('1.5');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
   await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('256');
+  await page.getByLabel('Reserve prompt and output tokens before each inference',{exact:true}).check();
   await page.getByRole('button', { name: 'Start objective' }).click();
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('3 iterations · 60 seconds');
   await expect(resources).toContainText('Reported token threshold: 5000 · Output tokens per request: 256');
+  await expect(resources).toContainText('Pre-inference token reservation: Required; exact LM Studio count');
   await expect(resources).toContainText('Token usage unavailable.');
   usageUnavailable=false;
   await resources.getByRole('button',{name:'Retry token usage',exact:true}).click();

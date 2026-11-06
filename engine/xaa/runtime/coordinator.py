@@ -141,6 +141,10 @@ class Coordinator:
         return history
 
     async def diagnose_run_tools(self, run_id: str, token: str, model: str) -> None:
+        run = self.store.get_run(run_id)
+        assert run is not None
+        require_exact = run["limits"].get("pre_inference_token_reservations") is True
+
         async def request(
             selected: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
         ) -> dict[str, Any]:
@@ -157,10 +161,12 @@ class Coordinator:
                 },
             )
             admission: dict[str, Any] = {}
-            if self.provider.exact_context:
+            if self.provider.exact_context or require_exact:
                 admission["on_admission"] = partial(
                     self.store.reserve_tokens, run_id, token, identity
                 )
+            if require_exact:
+                admission["require_exact_context"] = True
             response = await self.provider.chat(
                 **admission,
                 model=selected,
@@ -198,10 +204,13 @@ class Coordinator:
         options: dict[str, Any] = dict(
             self.provider.output_options(run["limits"]["max_output_tokens"])
         )
-        if self.provider.exact_context:
+        require_exact = run["limits"].get("pre_inference_token_reservations") is True
+        if self.provider.exact_context or require_exact:
             options["on_admission"] = partial(
                 self.store.reserve_tokens, run_id, token, inference_id
             )
+        if require_exact:
+            options["require_exact_context"] = True
         if not self.stream_responses:
             return await self.provider.chat(model=model, messages=messages, tools=tools, **options)
         pending = ""

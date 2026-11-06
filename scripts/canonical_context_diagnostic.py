@@ -31,6 +31,7 @@ class AuditedProvider(LMStudioProvider):
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
         on_admission: AdmissionCallback | None = None,
+        require_exact_context: bool = False,
     ) -> dict[str, Any]:
         response = await super().chat(
             model=model,
@@ -38,6 +39,7 @@ class AuditedProvider(LMStudioProvider):
             tools=tools,
             max_output_tokens=max_output_tokens,
             on_admission=on_admission,
+            require_exact_context=require_exact_context,
         )
         counted = self.last_count
         assert counted is not None

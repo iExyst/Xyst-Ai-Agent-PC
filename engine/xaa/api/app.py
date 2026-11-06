@@ -123,6 +123,11 @@ class CreateRunRequest(BaseModel):
     max_seconds: int = Field(default=900, ge=1, le=86400)
     max_total_tokens: int | None = Field(default=None, ge=1, le=100_000_000, strict=True)
     max_output_tokens: int | None = Field(default=None, ge=1, le=1_000_000, strict=True)
+    pre_inference_token_reservations: bool = Field(
+        default=False,
+        strict=True,
+        description="Require exact prompt counting and a durable token hold before each inference.",
+    )
     procedure_trial: SkillTrial | None = None
     command_grant: CommandGrant | None = None
     approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
@@ -1564,6 +1569,7 @@ def create_app(
                 max_seconds=payload.max_seconds,
                 max_total_tokens=payload.max_total_tokens,
                 max_output_tokens=payload.max_output_tokens,
+                pre_inference_token_reservations=payload.pre_inference_token_reservations,
                 file_checks=[check.model_dump() for check in payload.file_checks],
                 procedure_trial=payload.procedure_trial.model_dump()
                 if payload.procedure_trial

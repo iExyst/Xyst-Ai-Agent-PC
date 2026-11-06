@@ -14,11 +14,15 @@ from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
-@pytest.mark.parametrize("threshold,output_limit", [(None, None), (20, 8)])
+@pytest.mark.parametrize(
+    "threshold,output_limit,pre_reserve",
+    [(None, None, False), (20, 8, False), (100, 8, True)],
+)
 async def test_independent_specialists_read_scoped_files_without_polluting_parent_history(
     workspace_tmp_path,
     threshold,
     output_limit,
+    pre_reserve,
 ):
     store = RunStore(workspace_tmp_path / "specialists.sqlite3")
     for name in ("a", "b"):
@@ -31,6 +35,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
         model="fixture",
         max_total_tokens=threshold,
         max_output_tokens=output_limit,
+        pre_inference_token_reservations=pre_reserve,
     )["id"]
     parent = store.acquire_lease(run_id, "coordinator")
     tasks = TaskStore(store)
@@ -42,7 +47,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
                 id=name,
                 objective=name,
                 max_iterations=2,
-                max_total_tokens=10 if threshold is not None else None,
+                max_total_tokens=10 if threshold is not None and not pre_reserve else None,
                 max_output_tokens=4 if output_limit is not None else None,
             )
             for name in ("a", "b")
@@ -50,7 +55,19 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
     )
 
     class Reader(LMStudioProvider):
-        async def chat(self, *, model, messages, tools=None, max_output_tokens=None):
+        async def chat(
+            self,
+            *,
+            model,
+            messages,
+            tools=None,
+            max_output_tokens=None,
+            on_admission=None,
+            require_exact_context=False,
+        ):
+            if pre_reserve:
+                assert require_exact_context is True and on_admission is not None
+                on_admission(3, max_output_tokens)
             assert max_output_tokens == (4 if output_limit is not None else None)
             assert "Parent context must not be copied" not in json.dumps(messages)
             assert {tool["function"]["name"] for tool in tools} == {
@@ -99,6 +116,19 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
     assert store.conversation_messages(run_id) == []
     assert not store.unresolved_tool_calls(run_id)
     assert store.token_usage(run_id)["total_tokens"] == 20
+    if pre_reserve:
+        report = store.usage_report(run_id)
+        assert report["outstanding_reservations"] == 0
+        assert (
+            len(
+                [
+                    event
+                    for event in store.list_events(run_id)
+                    if event["event_type"] == "tokens.reserved"
+                ]
+            )
+            == 4
+        )
 
 
 async def test_specialist_write_request_fails_without_modifying_file(workspace_tmp_path):

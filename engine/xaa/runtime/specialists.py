@@ -181,6 +181,9 @@ class SpecialistRunner:
             if value is not None
         ]
         options: dict[str, Any] = dict(self.provider.output_options(min(caps) if caps else None))
+        require_exact = run["limits"].get("pre_inference_token_reservations") is True
+        if require_exact:
+            options["require_exact_context"] = True
         if "workspace.read" not in task["permission_scope"]:
             raise PermissionError("Specialist has no workspace read permission.")
         isolated = "workspace.write" in task["permission_scope"]
@@ -330,7 +333,7 @@ class SpecialistRunner:
             self.store.check_token_budget(run_id, parent, before_inference=True)
             self.tasks.check_token_budget(run_id, identity, before_inference=True)
             inference_id = self.tasks.reserve_inference(run_id, parent, identity, worker)
-            if self.provider.exact_context:
+            if self.provider.exact_context or require_exact:
                 options["on_admission"] = partial(
                     self.tasks.reserve_tokens,
                     run_id,
