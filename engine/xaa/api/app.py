@@ -99,6 +99,7 @@ from xaa.storage.skills import (
 from xaa.storage.specialist_profiles import ROLES, SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 from xaa.storage.trajectory import export_trajectory
+from xaa.version import APP_VERSION
 
 
 class ChatRequest(BaseModel):
@@ -469,7 +470,7 @@ def create_app(
         await mcp_manager.close()
         await provider.close()
 
-    app = FastAPI(title="X.A.A. Local API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="X.A.A. Local API", version=APP_VERSION, lifespan=lifespan)
 
     @app.post("/extensions/packages/discover", response_model=PluginDiscovery)
     def discover_extension_packages(

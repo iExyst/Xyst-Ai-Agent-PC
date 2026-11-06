@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from xaa.acp_adapter import validate_local_api_url
 from xaa.cli import _resolve_api_token, _resolve_api_url
 from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE
+from xaa.version import APP_VERSION
 
 TOKEN = "acp-test-token-that-is-longer-than-thirty-two-bytes"
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -56,11 +57,15 @@ def test_acp_cli_prefers_environment_token_then_uses_launch_vault(monkeypatch: A
 class UpdateSink:
     def __init__(self) -> None:
         self.updates: list[tuple[str, str]] = []
+        self.tool_updates: list[Any] = []
 
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        if getattr(update, "tool_call_id", None) is not None:
+            self.tool_updates.append(update)
         content = getattr(update, "content", None)
         text = getattr(content, "text", "")
-        self.updates.append((session_id, text))
+        if isinstance(text, str) and text:
+            self.updates.append((session_id, text))
 
 
 def _api_fixture(
@@ -73,6 +78,7 @@ def _api_fixture(
         "sessions": {},
         "requests": [],
         "cancellations": [],
+        "run_events": {},
     }
 
     @app.middleware("http")
@@ -117,14 +123,15 @@ def _api_fixture(
         return {"state": state["run_states"][run_id]}
 
     @app.get("/runs/{run_id}/events")
-    async def get_events(run_id: str) -> list[dict[str, Any]]:
-        return [
+    async def get_events(run_id: str, after: int = 0) -> list[dict[str, Any]]:
+        events = state["run_events"].get(run_id) or [
             {
                 "sequence": 1,
                 "event_type": "model.message",
                 "payload": {"message": {"content": f"Fixture answer for {run_id}"}},
             }
         ]
+        return [event for event in events if event["sequence"] > after]
 
     @app.post("/chat/sessions/{session_id}/turn")
     async def append_turn(session_id: str, request: Request) -> dict[str, Any]:
@@ -160,6 +167,69 @@ def _api_fixture(
 @pytest.mark.asyncio
 async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: Path) -> None:
     app, state = _api_fixture(tmp_path.resolve())
+    state["run_events"]["run-1"] = [
+        {
+            "sequence": 1,
+            "event_type": "tool.intended",
+            "payload": {"call_id": "call-public", "tool": "workspace.read_file"},
+        },
+        {
+            "sequence": 2,
+            "event_type": "tool.executing",
+            "payload": {"call_id": "call-public"},
+        },
+        {
+            "sequence": 3,
+            "event_type": "tool.completed",
+            "payload": {"call_id": "call-public"},
+        },
+        {
+            "sequence": 4,
+            "event_type": "tool.intended",
+            "payload": {
+                "call_id": "call-internal",
+                "tool": "internal.check",
+                "internal": True,
+            },
+        },
+        {
+            "sequence": 5,
+            "event_type": "tool.executing",
+            "payload": {"call_id": "call-internal"},
+        },
+        {
+            "sequence": 6,
+            "event_type": "tool.completed",
+            "payload": {"call_id": "call-internal", "internal": True},
+        },
+        {
+            "sequence": 7,
+            "event_type": "model.message",
+            "payload": {"message": {"content": "Fixture answer for run-1"}},
+        },
+    ]
+    state["run_events"]["run-2"] = [
+        {
+            "sequence": 1,
+            "event_type": "tool.intended",
+            "payload": {"call_id": "call-failed", "tool": "workspace.search"},
+        },
+        {
+            "sequence": 2,
+            "event_type": "tool.executing",
+            "payload": {"call_id": "call-failed"},
+        },
+        {
+            "sequence": 3,
+            "event_type": "tool.failed",
+            "payload": {"call_id": "call-failed"},
+        },
+        {
+            "sequence": 4,
+            "event_type": "model.message",
+            "payload": {"message": {"content": "Fixture answer for run-2"}},
+        },
+    ]
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
@@ -194,6 +264,8 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
         ) as (connection, _process):
             initialized = await connection.initialize(protocol_version=PROTOCOL_VERSION)
             assert initialized.protocol_version == PROTOCOL_VERSION
+            assert initialized.agent_info is not None
+            assert initialized.agent_info.version == APP_VERSION
             session = await connection.new_session(cwd=str(tmp_path.resolve()), mcp_servers=[])
             first = await connection.prompt(
                 session_id=session.session_id, prompt=[text_block("Read the project status.")]
@@ -255,6 +327,29 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
             "Fixture answer for run-1",
             "Fixture answer for run-2",
         ]
+        assert [update.session_update for update in sink.tool_updates] == [
+            "tool_call",
+            "tool_call_update",
+            "tool_call_update",
+            "tool_call",
+            "tool_call_update",
+            "tool_call_update",
+        ]
+        assert [update.status for update in sink.tool_updates] == [
+            "pending",
+            "in_progress",
+            "completed",
+            "pending",
+            "in_progress",
+            "failed",
+        ]
+        assert len({update.tool_call_id for update in sink.tool_updates[:3]}) == 1
+        assert len({update.tool_call_id for update in sink.tool_updates[3:]}) == 1
+        assert sink.tool_updates[0].tool_call_id != sink.tool_updates[3].tool_call_id
+        assert all(
+            update.raw_input is None and update.raw_output is None for update in sink.tool_updates
+        )
+        assert all("internal" not in update.title for update in sink.tool_updates)
     finally:
         server.should_exit = True
         await server_task

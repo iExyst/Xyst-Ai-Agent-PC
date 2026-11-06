@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.storage.runs import RunStore
+from xaa.version import APP_VERSION
 
 
 class FakeProvider(LMStudioProvider):
@@ -33,6 +34,13 @@ class FakeProvider(LMStudioProvider):
 
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
+
+
+def test_openapi_advertises_packaged_engine_version(workspace_tmp_path) -> None:
+    app = create_app(
+        FakeProvider(), SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "api.sqlite3")
+    )
+    assert app.version == APP_VERSION
 
 
 class WaitingProvider(FakeProvider):

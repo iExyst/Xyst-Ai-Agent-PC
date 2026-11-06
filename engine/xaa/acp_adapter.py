@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -35,8 +35,12 @@ from acp.schema import (
     SessionInfo,
     SessionListCapabilities,
     TextContentBlock,
+    ToolCallProgress,
+    ToolCallStart,
     UserMessageChunk,
 )
+
+from xaa.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +183,9 @@ class XaaAcpAgent:
     ) -> InitializeResponse:
         return InitializeResponse(
             protocol_version=protocol_version,
-            agent_info=Implementation(name="xyst-ai-agent", title="Xyst AI Agent", version="0.1.0"),
+            agent_info=Implementation(
+                name="xyst-ai-agent", title="Xyst AI Agent", version=APP_VERSION
+            ),
             agent_capabilities=AgentCapabilities(
                 load_session=True,
                 session_capabilities=SessionCapabilities(
@@ -415,6 +421,7 @@ class XaaAcpAgent:
     async def _wait_for_run(self, session_id: str, run_id: str) -> tuple[str, str]:
         cursor = 0
         answer = ""
+        public_tool_calls: dict[str, tuple[str, str]] = {}
         run_path = f"/runs/{run_id}"
         while True:
             state_response = await self._client.get(run_path)
@@ -433,12 +440,70 @@ class XaaAcpAgent:
                 sequence = event.get("sequence")
                 if isinstance(sequence, int):
                     cursor = max(cursor, sequence)
-                if event.get("event_type") != "model.message":
+                payload = event.get("payload")
+                if not isinstance(payload, dict):
                     continue
-                raw_payload = event.get("payload")
-                if not isinstance(raw_payload, dict):
+                payload = cast(dict[str, Any], payload)
+                event_type = event.get("event_type")
+                call_id = payload.get("call_id")
+                if event_type == "tool.intended":
+                    tool = payload.get("tool")
+                    if (
+                        payload.get("internal") is True
+                        or not isinstance(call_id, str)
+                        or not isinstance(tool, str)
+                    ):
+                        continue
+                    try:
+                        call_id_bytes = len(call_id.encode("utf-8"))
+                        tool_bytes = len(tool.encode("utf-8"))
+                    except UnicodeEncodeError:
+                        continue
+                    safe_tool = "".join(
+                        character if character.isprintable() else " " for character in tool
+                    ).strip()
+                    if 1 <= call_id_bytes <= 256 and 1 <= tool_bytes <= 128 and safe_tool:
+                        acp_tool_id = uuid4().hex
+                        title = f"X.A.A. tool: {safe_tool}"
+                        public_tool_calls[call_id] = (acp_tool_id, title)
+                        await self._send_tool_call(
+                            session_id,
+                            ToolCallStart(
+                                session_update="tool_call",
+                                tool_call_id=acp_tool_id,
+                                title=title,
+                                status="pending",
+                            ),
+                        )
                     continue
-                payload = cast(dict[str, Any], raw_payload)
+                if event_type in {"tool.executing", "tool.completed", "tool.failed"}:
+                    if not isinstance(call_id, str):
+                        continue
+                    public_tool_call = public_tool_calls.get(call_id)
+                    if public_tool_call is not None:
+                        acp_tool_id, title = public_tool_call
+                        status = cast(
+                            Literal["in_progress", "completed", "failed"],
+                            {
+                                "tool.executing": "in_progress",
+                                "tool.completed": "completed",
+                                "tool.failed": "failed",
+                            }[cast(str, event_type)],
+                        )
+                        await self._send_tool_call(
+                            session_id,
+                            ToolCallProgress(
+                                session_update="tool_call_update",
+                                tool_call_id=acp_tool_id,
+                                title=title,
+                                status=status,
+                            ),
+                        )
+                        if event_type in {"tool.completed", "tool.failed"}:
+                            del public_tool_calls[call_id]
+                    continue
+                if event_type != "model.message":
+                    continue
                 raw_message = payload.get("message")
                 if not isinstance(raw_message, dict):
                     continue
@@ -462,6 +527,13 @@ class XaaAcpAgent:
                 content=TextContentBlock(type="text", text=text),
             ),
         )
+
+    async def _send_tool_call(
+        self, session_id: str, update: ToolCallStart | ToolCallProgress
+    ) -> None:
+        if self._connection is None:
+            raise RequestError(-32603, "ACP client connection is not available.")
+        await self._connection.session_update(session_id=session_id, update=update)
 
     async def aclose(self) -> None:
         if self._owns_client:

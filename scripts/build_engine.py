@@ -58,6 +58,8 @@ def main() -> None:
             "playwright",
             "--collect-all",
             "acp",
+            "--copy-metadata",
+            "xaa-engine",
             "--hidden-import",
             "xaa.cli",
             "--hidden-import",

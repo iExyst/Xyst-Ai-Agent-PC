@@ -21,6 +21,7 @@ from xaa.credentials import (
 )
 from xaa.storage.backup_bundle import restore_backup_bundle
 from xaa.storage.restore import restore_database
+from xaa.version import APP_VERSION
 
 
 def _session_name(value: str) -> str:
@@ -122,6 +123,7 @@ def main() -> None:
         "--workspace", type=Path, required=True, help="Fixed workspace for ACP sessions"
     )
     acp.add_argument("--mode", choices=["observe", "workspace"], default="observe")
+    acp.add_argument("--version", action="version", version=f"Xyst AI Agent ACP {APP_VERSION}")
     for name in ("status", "pause", "resume", "cancel", "events"):
         command = commands.add_parser(name)
         command.add_argument("run_id")

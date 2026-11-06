@@ -9,6 +9,7 @@ X.A.A. provides an ACP stdio agent through `xaa acp`. It is a client bridge to t
 - ACP currently accepts text prompts up to 2,000 UTF-8 bytes. Conversations persist in the X.A.A. chat-session store across ACP process restarts. `session/load` replays saved text turns to the host; `session/list` finds matching saved sessions with bounded pages, and the API's bounded prior-turn context is reused.
 - The ACP process sends its bearer token only to a numeric loopback HTTP URL. HTTPS, remote hosts, DNS names, URL credentials, query strings, and fragments are rejected.
 - ACP cancellation and session close call the authenticated `/runs/{run_id}/cancel` route when a run is active. Closing releases process-local state while retaining saved text history for `session/load`. Run completion and user-visible errors are returned through ACP session updates.
+- Public coordinator tool intents and execution outcomes are forwarded as ACP `tool_call` / `tool_call_update` notifications. Internal calls are omitted, and raw arguments and results are not forwarded. ACP and API version metadata comes from the packaged engine distribution.
 
 ## Launching from an editor
 
@@ -60,4 +61,4 @@ This packaged invocation uses the API URL and token placed in Windows Credential
 
 The ACP process refuses to send the API token to nonnumeric hosts and requires a numeric loopback URL. An explicit `--api-url` argument or `XAA_API_URL` overrides the OS-vault launch URL; the selected URL must still pass this loopback check.
 
-This is an initial ACP stdio slice. It does not yet support images/audio, host MCP servers, additional workspace roots, tool-call progress streaming, evaluation batch generation. The stable prompt and session flow follows the [Agent Client Protocol specification](https://agentclientprotocol.com/protocol/overview) and the [official Python SDK](https://agentclientprotocol.github.io/python-sdk/quickstart/).
+This is an initial ACP stdio slice. It does not yet support images/audio, host MCP servers, additional workspace roots, streaming tool content, or evaluation batch generation. Tool status notifications follow the [Agent Client Protocol v1 tool-call lifecycle](https://agentclientprotocol.com/protocol/v1/tool-calls) and the [official Python SDK](https://agentclientprotocol.github.io/python-sdk/quickstart/).
