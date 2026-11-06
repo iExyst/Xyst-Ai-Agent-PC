@@ -69,11 +69,32 @@ async def main() -> None:
     parser.add_argument(
         "--engine", action="store_true", help="Use the owned engine tokenizer worker"
     )
+    parser.add_argument(
+        "--model",
+        default="qwen/qwen3.5-9b",
+        help="Installed LM Studio model identifier to compare (default: qwen/qwen3.5-9b)",
+    )
+    parser.add_argument(
+        "--context-length",
+        type=int,
+        default=16384,
+        help="Context size for the temporary loaded instance (default: 16384)",
+    )
+    parser.add_argument(
+        "--count-timeout",
+        type=float,
+        default=5.0,
+        help="Maximum seconds for each owned-worker token count (default: 5; maximum: 60)",
+    )
     args = parser.parse_args()
+    if args.context_length < 512:
+        parser.error("--context-length must be at least 512")
+    if not 0 < args.count_timeout <= 60:
+        parser.error("--count-timeout must be greater than 0 and at most 60")
     root = (Path(".acceptance") / str(uuid4())).resolve()
     root.mkdir(parents=True)
     provider = LMStudioProvider()
-    model = "qwen/qwen3.5-9b"
+    model = args.model
     instance = None
     report: dict[str, Any] = {
         "probe_complete": False,
@@ -81,6 +102,7 @@ async def main() -> None:
         "sdk_version": importlib.metadata.version("lmstudio"),
         "model": model,
         "counter": "engine_owned_worker" if args.engine else "direct_sdk_probe",
+        "count_timeout_s": args.count_timeout if args.engine else None,
         "scope": "single installed model; fixture text/tool prompts; not aggregate budget enforcement",
         "cases": [],
     }
@@ -131,20 +153,33 @@ async def main() -> None:
     ]
     try:
         await provider.models()
-        instance = await provider.load_model(model, context_length=16384)
+        instance = await provider.load_model(model, context_length=args.context_length)
         for name, messages, definitions in cases:
-            if args.engine:
-                counted_model = await provider.count_prompt(
-                    PromptCountRequest.model_validate(
-                        {"model": instance, "messages": messages, "tools": definitions}
+            count_error_type = None
+            counted: dict[str, int | None]
+            try:
+                if args.engine:
+                    counted_model = await provider.count_prompt(
+                        PromptCountRequest.model_validate(
+                            {"model": instance, "messages": messages, "tools": definitions}
+                        ),
+                        timeout=args.count_timeout,
                     )
-                )
-                counted = {
-                    "sdk_prompt_tokens": counted_model.prompt_tokens,
-                    "sdk_context_length": counted_model.context_length,
-                }
-            else:
-                counted = await asyncio.to_thread(sdk_count, instance, messages, definitions)
+                    counted = {
+                        "sdk_prompt_tokens": counted_model.prompt_tokens,
+                        "sdk_context_length": counted_model.context_length,
+                    }
+                else:
+                    direct_count = await asyncio.to_thread(
+                        sdk_count, instance, messages, definitions
+                    )
+                    counted = {
+                        "sdk_prompt_tokens": direct_count["sdk_prompt_tokens"],
+                        "sdk_context_length": direct_count["sdk_context_length"],
+                    }
+            except Exception as exc:  # noqa: BLE001 - retain a type-only compatibility finding
+                count_error_type = type(exc).__name__
+                counted = {"sdk_prompt_tokens": None, "sdk_context_length": None}
             response = await provider.chat(
                 model=model, messages=messages, tools=definitions or None, max_output_tokens=1
             )
@@ -155,10 +190,11 @@ async def main() -> None:
                     **counted,
                     "http_prompt_tokens": actual,
                     "match": counted["sdk_prompt_tokens"] == actual,
+                    **({"count_error_type": count_error_type} if count_error_type else {}),
                 }
             )
         report["probe_complete"] = True
-        report["all_counts_match"] = all(row["match"] for row in report["cases"])
+        report["all_counts_match"] = all(row["match"] is True for row in report["cases"])
     finally:
         try:
             if instance is not None:
