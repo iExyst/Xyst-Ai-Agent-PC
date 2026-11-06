@@ -144,11 +144,13 @@
   },
   "live_deletion": {
     "passed": true,
-    "report": ".acceptance/72fec94f-9e4e-4ee9-add9-56546cd232ab/report.json",
+    "report": ".acceptance/28aabe4f-8676-40c6-b175-c20b30d6f992/report.json",
     "model": "qwen/qwen3.5-9b",
     "scope": "Real source-model specialist proposed deleting one file in its private snapshot; original remained until explicit scripted review; integration deleted only that file and preserved its neighbor",
     "diagnostic": "scripts/live_task_deletion_diagnostic.py",
-    "exact_context_admission": false
+    "exact_context_admission": false,
+    "replayed_after_private_journal_cas_validation": true,
+    "prior_successful_report": ".acceptance/72fec94f-9e4e-4ee9-add9-56546cd232ab/report.json"
   },
   "live_deletion_failed_attempts": [
     {

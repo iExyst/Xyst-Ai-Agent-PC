@@ -140,7 +140,7 @@ class TaskWorkspaces:
             raise ValueError("Specialist snapshot identity changed.")
         files = {item.path: item.content for item in base.files}
         rows = connection.execute(
-            "SELECT tool_name,arguments,result FROM (SELECT t.tool_name,t.arguments,t.result,ROW_NUMBER() OVER (PARTITION BY json_extract(t.arguments,'$.path') ORDER BY e.sequence DESC) AS latest FROM tool_calls t JOIN run_events e ON e.run_id=t.run_id AND e.event_type='tool.completed' AND json_extract(e.payload,'$.call_id')=t.provider_call_id WHERE t.run_id=? AND t.task_id=? AND t.state='completed' AND t.tool_name IN ('workspace.write_file','workspace.create_file','workspace.delete_file')) WHERE latest=1",
+            "SELECT t.tool_name,t.arguments,t.result FROM tool_calls t JOIN run_events e ON e.run_id=t.run_id AND e.event_type='tool.completed' AND json_extract(e.payload,'$.call_id')=t.provider_call_id WHERE t.run_id=? AND t.task_id=? AND t.state='completed' AND t.tool_name IN ('workspace.write_file','workspace.create_file','workspace.delete_file') ORDER BY e.sequence",
             (run_id, f"{run_id}:{task_id}"),
         ).fetchall()
         for row in rows:
@@ -148,16 +148,36 @@ class TaskWorkspaces:
             result = json.loads(row["result"])
             path = checked_path(args["path"]).as_posix()
             if row["tool_name"] == "workspace.delete_file":
-                if result.get("effect") != "private_copy_only" or result.get("deleted") is not True:
+                previous = files.get(path)
+                expected = args.get("expected_sha256")
+                if (
+                    previous is None
+                    or not isinstance(expected, str)
+                    or hashlib.sha256(previous).hexdigest() != expected
+                    or result.get("previous_sha256") != expected
+                    or result.get("effect") != "private_copy_only"
+                    or result.get("deleted") is not True
+                ):
                     raise ValueError("Specialist deletion journal is inconsistent.")
-                files.pop(path, None)
+                del files[path]
                 continue
             data = args["content"].encode("utf-8")
             if (
                 hashlib.sha256(data).hexdigest() != result["sha256"]
                 or result.get("effect") != "private_copy_only"
+                or result.get("bytes_written") != len(data)
             ):
                 raise ValueError("Specialist edit journal is inconsistent.")
+            if row["tool_name"] == "workspace.write_file":
+                previous = files.get(path)
+                if (
+                    previous is None
+                    or hashlib.sha256(previous).hexdigest() != args.get("expected_sha256")
+                    or result.get("created") is not False
+                ):
+                    raise ValueError("Specialist write journal transition is inconsistent.")
+            elif path in files or result.get("created") is not True:
+                raise ValueError("Specialist creation journal transition is inconsistent.")
             files[path] = data
         return base, files
 

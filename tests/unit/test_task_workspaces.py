@@ -147,6 +147,94 @@ async def test_real_workers_keep_each_private_edit_and_original_project_separate
     assert not (project.parent / "escape.txt").exists()
 
 
+async def test_private_journal_replays_cas_operations_in_order_across_delete_and_restore(
+    workspace_tmp_path,
+):
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+    claim = tasks.claim_ready(run_id, owner)
+
+    async def call(call_id, operation, arguments):
+        return await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            call_id,
+            operation,
+            arguments,
+            idempotency_key=call_id,
+            internal=True,
+            task_id="a",
+            task_token=claim["token"],
+        )
+
+    await call("journal-init", "branch_init", {})
+    original_hash = hashlib.sha256(b"original\n").hexdigest()
+    await call(
+        "journal-write",
+        "branch_write",
+        {"path": "shared.txt", "content": "temporary\n", "expected_sha256": original_hash},
+    )
+    temporary_hash = hashlib.sha256(b"temporary\n").hexdigest()
+    await call(
+        "journal-delete",
+        "branch_delete",
+        {"path": "shared.txt", "expected_sha256": temporary_hash},
+    )
+    assert TaskWorkspaces(store).changes(run_id, "a")[0]["proposed_sha256"] is None
+    await call(
+        "journal-restore",
+        "branch_create",
+        {"path": "shared.txt", "content": "original\n"},
+    )
+    assert TaskWorkspaces(store).changes(run_id, "a") == []
+    assert (project / "shared.txt").read_bytes() == b"original\n"
+
+
+async def test_private_delete_replay_rejects_mismatched_expected_hash_in_journal(
+    workspace_tmp_path,
+):
+    store, run_id, owner, tasks, _project = setup(workspace_tmp_path)
+    claim = tasks.claim_ready(run_id, owner)
+    await execute_filesystem(
+        store,
+        run_id,
+        owner,
+        "tamper-init",
+        "branch_init",
+        {},
+        idempotency_key="tamper-init",
+        internal=True,
+        task_id="a",
+        task_token=claim["token"],
+    )
+    digest = hashlib.sha256(b"original\n").hexdigest()
+    await execute_filesystem(
+        store,
+        run_id,
+        owner,
+        "tamper-delete",
+        "branch_delete",
+        {"path": "shared.txt", "expected_sha256": digest},
+        idempotency_key="tamper-delete",
+        internal=True,
+        task_id="a",
+        task_token=claim["token"],
+    )
+    with store.connection() as connection:
+        row = connection.execute(
+            "SELECT arguments FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+            (run_id, "tamper-delete"),
+        ).fetchone()
+        arguments = json.loads(row["arguments"])
+        arguments["expected_sha256"] = "0" * 64
+        connection.execute(
+            "UPDATE tool_calls SET arguments=? WHERE run_id=? AND provider_call_id=?",
+            (json.dumps(arguments), run_id, "tamper-delete"),
+        )
+        with pytest.raises(ValueError, match="deletion journal is inconsistent"):
+            TaskWorkspaces(store).view(connection, run_id, "a")
+
+
 async def test_specialist_deletion_stays_private_until_review_authorizes_it(workspace_tmp_path):
     from xaa.runtime.states import RunState
     from xaa.runtime.task_integration import preview
