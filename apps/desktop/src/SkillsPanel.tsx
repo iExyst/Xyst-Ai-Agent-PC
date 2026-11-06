@@ -4,7 +4,7 @@ import type {components} from './generated/api.js';
 
 type Summary=components['schemas']['SkillSummary'];
 export type ProcedureTrialSelection=components['schemas']['SkillTrial']&{name:string};
-export function SkillsPanel({client,onTrial}:{client:EngineClient;onTrial:(selection:ProcedureTrialSelection)=>void}){
+export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onTrial:(selection:ProcedureTrialSelection)=>void;refreshKey:number}){
   const [items,setItems]=useState<Summary[]>([]);
   const [selected,setSelected]=useState<Summary>();
   const [version,setVersion]=useState(1);
@@ -22,7 +22,7 @@ export function SkillsPanel({client,onTrial}:{client:EngineClient;onTrial:(selec
   const [confirmed,setConfirmed]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   async function refresh(){const rows=await client.skills();if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');setItems(rows);}
-  useEffect(()=>{let active=true;void client.skills().then(rows=>{if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');if(active)setItems(rows);}).catch(failure=>{if(active)setError(String(failure));});return()=>{active=false;};},[client]);
+  useEffect(()=>{let active=true;void client.skills().then(rows=>{if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');if(active)setItems(rows);}).catch(failure=>{if(active)setError(String(failure));});return()=>{active=false;};},[client,refreshKey]);
   function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setTrials([]);setSelected(undefined);setVersion(1);setName('');setContent('');setTools('');setRead(false);setWrite(false);setError('');}
   async function inspect(item:Summary,revision=item.latest_version){
     setBusy(true);setError('');
@@ -78,6 +78,7 @@ export function SkillsPanel({client,onTrial}:{client:EngineClient;onTrial:(selec
     </section>}
     {selected&&evidence&&<section aria-label="Procedure evaluation"><h3>Version evaluation</h3>
       <p>Version {version}: {evidence.state}. Saved evaluations: {evidence.evaluations.length}. Recording a review does not activate this procedure.</p>
+      {evidence.provenance==='agent_plugin'&&evidence.source&&<p>Imported from Agent Plugin {evidence.source.package_name}@{evidence.source.package_version} / {evidence.source.skill_name}. Source content SHA-256: <code>{evidence.source.content_sha256}</code></p>}
       {evidence.evaluations.map(entry=><details key={entry.id}><summary>Evaluation {new Date(entry.evaluated_at).toLocaleString()}</summary><p>{entry.rationale}</p><ul>{entry.trials.map(trial=><li key={trial.run_id}>{trial.case_description}: {trial.objective}</li>)}</ul><ul>{entry.criteria.map((criterion,index)=><li key={index}>{criterion}</li>)}</ul></details>)}
       <button disabled={busy} onClick={()=>void loadTrials()}>Find completed procedure trials</button>
       {trials.length<2?<p>At least two completed, explicitly accepted trials of this exact version are required. Describe distinct representative cases when reviewing them.</p>:<form onSubmit={event=>{event.preventDefault();void evaluate();}}>

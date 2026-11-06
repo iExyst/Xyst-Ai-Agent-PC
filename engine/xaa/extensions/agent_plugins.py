@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import re
@@ -61,6 +62,16 @@ class PluginDiscovery(BaseModel):
     root: str
     packages: list[PluginSummary]
     diagnostics: list[PluginDiagnostic]
+
+
+class PluginSkillImport(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    package_name: str
+    package_version: str
+    skill_name: str
+    content: str
+    content_sha256: str
+    manifest_sha256: str
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -276,3 +287,42 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
         except (OSError, RuntimeError, ValueError) as exc:
             diagnostics.append(PluginDiagnostic(path=candidate.name[:256], message=str(exc)[:300]))
     return PluginDiscovery(root=str(root), packages=packages, diagnostics=diagnostics)
+
+
+def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> PluginSkillImport:
+    """Read one bounded in-root skill selected from a fresh static discovery result."""
+    discovery = discover_agent_plugins(directory)
+    package = next((item for item in discovery.packages if item.name == package_name), None)
+    if package is None:
+        raise ValueError("selected package is not a valid discovered package")
+    skill = next((item for item in package.skills if item.name == skill_name), None)
+    if skill is None:
+        raise ValueError("selected skill is not present in the discovered package")
+    package_root = Path(package.path)
+    skill_path = (package_root / skill.path).resolve(strict=True)
+    if not _inside(skill_path, package_root) or not skill_path.is_file():
+        raise ValueError("skill file is not a regular file within the package")
+    if skill_path.stat().st_size > 16_384:
+        raise ValueError("skill file exceeds the 16 KiB procedure candidate limit")
+    with skill_path.open("rb") as source:
+        raw = source.read(16_385)
+    if len(raw) > 16_384:
+        raise ValueError("skill file exceeds the 16 KiB procedure candidate limit")
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeError as exc:
+        raise ValueError("skill file must be UTF-8 text") from exc
+    if "\x00" in content:
+        raise ValueError("skill file cannot contain NUL characters")
+    with (package_root / "plugin.json").open("rb") as manifest_source:
+        manifest_bytes = manifest_source.read(MAX_MANIFEST_BYTES + 1)
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+        raise ValueError("plugin.json exceeds the package manifest size limit")
+    return PluginSkillImport(
+        package_name=package.name,
+        package_version=package.version or "",
+        skill_name=skill.name,
+        content=content,
+        content_sha256=hashlib.sha256(raw).hexdigest(),
+        manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+    )

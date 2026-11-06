@@ -84,6 +84,7 @@ export class EngineClient {
   setMCPSecret(serverId:string,name:string,value:string):Promise<{configured:boolean}>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({value})});}
   clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}
   discoverAgentPlugins(root:string):Promise<PluginDiscovery>{return this.#request('/extensions/packages/discover',{method:'POST',body:JSON.stringify({root})});}
+  importAgentPluginSkill(input:{root:string;package_name:string;skill_name:string}):Promise<components['schemas']['SkillSummary']>{return this.#request('/extensions/packages/import-skill',{method:'POST',body:JSON.stringify(input)});}
 
   lmStudioConfig(): Promise<components['schemas']['LMStudioConfigRecord']> {
     return this.#request('/providers/lm-studio/config');

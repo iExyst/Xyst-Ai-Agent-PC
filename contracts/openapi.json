@@ -1787,6 +1787,36 @@
         "title": "PluginSkill",
         "type": "object"
       },
+      "PluginSkillImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "package_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Package Name",
+            "type": "string"
+          },
+          "root": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          },
+          "skill_name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Skill Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "package_name",
+          "skill_name"
+        ],
+        "title": "PluginSkillImportRequest",
+        "type": "object"
+      },
       "PluginSummary": {
         "additionalProperties": false,
         "properties": {
@@ -2918,9 +2948,26 @@
             "type": "array"
           },
           "provenance": {
-            "const": "user",
+            "enum": [
+              "user",
+              "agent_plugin"
+            ],
             "title": "Provenance",
             "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "state": {
             "enum": [
@@ -4574,6 +4621,49 @@
           }
         ],
         "summary": "Discover Extension Packages"
+      }
+    },
+    "/extensions/packages/import-skill": {
+      "post": {
+        "operationId": "import_extension_skill_extensions_packages_import_skill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginSkillImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Extension Skill"
       }
     },
     "/health": {

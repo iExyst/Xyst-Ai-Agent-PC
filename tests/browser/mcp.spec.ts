@@ -4,6 +4,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   const errors: string[] = [];
   const requests: {method:string;path:string;body?:any}[] = [];
   const serverId = '1234567890abcdef1234567890abcdef';
+  let importedSkill: any;
   const tool = {
     server_id: serverId,
     name: 'change_value',
@@ -35,7 +36,13 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     if (path === '/providers') return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if (path === '/providers/lm-studio/config') return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
-    if (path === '/memory' || path === '/skills' || path === '/schedules') return route.fulfill({json:[],headers});
+    if (path === '/memory' || path === '/schedules') return route.fulfill({json:[],headers});
+    if (path === '/skills') return route.fulfill({json:importedSkill?[importedSkill]:[],headers});
+    if (path === '/extensions/packages/discover') return route.fulfill({json:{root:'C:\\plugins',packages:[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample',skills:[{name:'summarize',path:'skills/summarize/SKILL.md'}],servers:[]}],diagnostics:[]},headers});
+    if (path === '/extensions/packages/import-skill') {
+      importedSkill={id:'imported-procedure',name:'summarize',lifecycle_state:'candidate',active_version:null,lifecycle_revision:0,latest_version:1,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z'};
+      return route.fulfill({status:201,json:importedSkill,headers});
+    }
     if (path === '/channels/telegram') return route.fulfill({json:{configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{}},headers});
     if (path === '/mcp/servers' && request.method() === 'GET') return route.fulfill({json:server?[server]:[],headers});
     if (path === '/mcp/servers' && request.method() === 'POST') {
@@ -83,5 +90,15 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByRole('button',{name:'Add MCP server'}).click();
   await expect(panel.getByText('https://mcp.example.com/mcp')).toBeVisible();
   expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.transport==='streamable_http'&&item.body.endpoint==='https://mcp.example.com/mcp'&&item.body.secret_env[0]==='MCP_TOKEN')).toBe(true);
+  await page.locator('summary').filter({hasText:'Agent plugin discovery'}).click();
+  const plugins=page.getByRole('region',{name:'Agent plugin package discovery'});
+  await plugins.getByLabel('Package folder').fill('C:\\plugins');
+  await plugins.getByRole('button',{name:'Discover packages'}).click();
+  await expect(plugins.getByText('sample-package · 1.2.3')).toBeVisible();
+  await plugins.getByRole('button',{name:'Import as candidate'}).click();
+  await expect(plugins.getByRole('status')).toContainText('inactive candidate');
+  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+  await expect(page.getByRole('button',{name:'Inspect summarize',exact:true})).toBeVisible();
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/import-skill'&&item.body.package_name==='sample-package'&&item.body.skill_name==='summarize')).toBe(true);
   expect(errors).toEqual([]);
 });

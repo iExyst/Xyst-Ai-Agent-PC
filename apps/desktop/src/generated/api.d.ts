@@ -222,6 +222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/extensions/packages/import-skill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Extension Skill */
+        post: operations["import_extension_skill_extensions_packages_import_skill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1800,6 +1817,15 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** PluginSkillImportRequest */
+        PluginSkillImportRequest: {
+            /** Package Name */
+            package_name: string;
+            /** Root */
+            root: string;
+            /** Skill Name */
+            skill_name: string;
+        };
         /** PluginSummary */
         PluginSummary: {
             /** Description */
@@ -2163,9 +2189,13 @@ export interface components {
             evaluations: components["schemas"]["EvaluationRecord"][];
             /**
              * Provenance
-             * @constant
+             * @enum {string}
              */
-            provenance: "user";
+            provenance: "user" | "agent_plugin";
+            /** Source */
+            source?: {
+                [key: string]: string;
+            } | null;
             /**
              * State
              * @enum {string}
@@ -2957,6 +2987,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginDiscovery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_extension_skill_extensions_packages_import_skill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginSkillImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"];
                 };
             };
             /** @description Validation Error */

@@ -180,7 +180,8 @@ class EvaluationRecord(BaseModel):
 
 class SkillEvidence(BaseModel):
     state: Literal["candidate", "evaluated"]
-    provenance: Literal["user"]
+    provenance: Literal["user", "agent_plugin"]
+    source: dict[str, str] | None = None
     evaluations: list[EvaluationRecord]
 
 
@@ -239,7 +240,11 @@ class SkillStore:
 
     @staticmethod
     def _insert_version(
-        connection: sqlite3.Connection, identity: str, version: int, draft: SkillDraft
+        connection: sqlite3.Connection,
+        identity: str,
+        version: int,
+        draft: SkillDraft,
+        evidence: dict[str, Any] | None = None,
     ) -> None:
         connection.execute(
             "INSERT INTO skill_versions VALUES (?,?,?,?,?,?,?)",
@@ -249,7 +254,9 @@ class SkillStore:
                 draft.content,
                 json.dumps([tool.model_dump() for tool in draft.required_tools]),
                 json.dumps(draft.required_permissions),
-                json.dumps({"state": "candidate", "provenance": "user", "evaluations": []}),
+                json.dumps(
+                    evidence or {"state": "candidate", "provenance": "user", "evaluations": []}
+                ),
                 utc_now(),
             ),
         )
@@ -270,6 +277,29 @@ class SkillStore:
             self._insert_version(connection, identity, 1, draft)
         return self.get(identity)
 
+    def import_agent_plugin(self, draft: SkillDraft, source: dict[str, str]) -> dict[str, Any]:
+        """Create an inactive candidate with immutable Agent Plugins source provenance."""
+        identity, now = str(uuid4()), utc_now()
+        evidence: dict[str, Any] = {
+            "state": "candidate",
+            "provenance": "agent_plugin",
+            "source": source,
+            "evaluations": [],
+        }
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute("SELECT COUNT(*) FROM skills").fetchone()[0] >= 100:
+                raise SkillConflict("The current procedure library limit is 100.")
+            try:
+                connection.execute(
+                    "INSERT INTO skills VALUES (?,?,'candidate',NULL,?,?)",
+                    (identity, draft.name.strip(), now, now),
+                )
+            except sqlite3.IntegrityError:
+                raise SkillConflict("A procedure with that name already exists.") from None
+            self._insert_version(connection, identity, 1, draft, evidence)
+        return self.get(identity)
+
     def revise(self, identity: str, draft: SkillRevision) -> dict[str, Any]:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -278,9 +308,14 @@ class SkillStore:
             ).fetchone()
             if row is None:
                 raise KeyError(identity)
-            latest = connection.execute(
-                "SELECT MAX(version) FROM skill_versions WHERE skill_id=?", (identity,)
-            ).fetchone()[0]
+            latest_row = connection.execute(
+                "SELECT version,evaluation_evidence FROM skill_versions "
+                "WHERE skill_id=? ORDER BY version DESC LIMIT 1",
+                (identity,),
+            ).fetchone()
+            if latest_row is None:
+                raise RuntimeError("Procedure has no stored versions.")
+            latest = int(latest_row["version"])
             if latest != draft.expected_version:
                 raise SkillConflict("Procedure changed; reload its latest candidate version.")
             try:
@@ -295,7 +330,15 @@ class SkillStore:
                 )
             except sqlite3.IntegrityError:
                 raise SkillConflict("A procedure with that name already exists.") from None
-            self._insert_version(connection, identity, latest + 1, draft)
+            prior_evidence: dict[str, Any] = json.loads(str(latest_row["evaluation_evidence"]))
+            evidence: dict[str, Any] = {
+                "state": "candidate",
+                "provenance": prior_evidence.get("provenance", "user"),
+                "evaluations": [],
+            }
+            if "source" in prior_evidence:
+                evidence["source"] = prior_evidence["source"]
+            self._insert_version(connection, identity, latest + 1, draft, evidence)
         return self.get(identity)
 
     def list(self) -> list[dict[str, Any]]:

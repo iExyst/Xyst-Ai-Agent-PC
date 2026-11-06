@@ -38,7 +38,11 @@ from xaa.api.contracts import (
 )
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.credentials import CredentialStore
-from xaa.extensions.agent_plugins import PluginDiscovery, discover_agent_plugins
+from xaa.extensions.agent_plugins import (
+    PluginDiscovery,
+    discover_agent_plugins,
+    read_plugin_skill,
+)
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
@@ -237,6 +241,13 @@ class PluginDiscoveryRequest(BaseModel):
     root: str = Field(min_length=1, max_length=2048)
 
 
+class PluginSkillImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    root: str = Field(min_length=1, max_length=2048)
+    package_name: str = Field(min_length=1, max_length=128)
+    skill_name: str = Field(min_length=1, max_length=80)
+
+
 class CreateScheduleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     objective: str = Field(min_length=1, max_length=10_000)
@@ -428,6 +439,37 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/extensions/packages/import-skill", status_code=201, response_model=SkillSummary)
+    def import_extension_skill(
+        payload: PluginSkillImportRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            imported = read_plugin_skill(payload.root, payload.package_name, payload.skill_name)
+            draft = SkillDraft(
+                name=imported.skill_name,
+                content=imported.content,
+                required_tools=[],
+                required_permissions=[],
+            )
+            return skill_store.import_agent_plugin(
+                draft,
+                {
+                    "package_name": imported.package_name,
+                    "package_version": imported.package_version,
+                    "skill_name": imported.skill_name,
+                    "content_sha256": imported.content_sha256,
+                    "manifest_sha256": imported.manifest_sha256,
+                },
+            )
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=400, detail="Selected package files could not be read."
+            ) from exc
+
     @app.get("/mcp/servers", response_model=list[MCPServerResponse])
     def list_mcp_servers(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
         registry = MCPRegistry(run_store)
@@ -593,7 +635,11 @@ def create_app(
         except SkillConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    @app.get("/skills/{skill_id}/versions/{version}", response_model=SkillVersion)
+    @app.get(
+        "/skills/{skill_id}/versions/{version}",
+        response_model=SkillVersion,
+        response_model_exclude_none=True,
+    )
     def skill_version(
         skill_id: str, version: int = PathParameter(ge=1, le=128), _: None = Depends(authenticate)
     ) -> dict[str, Any]:

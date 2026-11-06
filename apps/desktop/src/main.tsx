@@ -55,6 +55,7 @@ function App() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [plan, setPlan] = useState<Plan>();
   const [historyRefresh,setHistoryRefresh]=useState(0);
+  const [skillsRefresh,setSkillsRefresh]=useState(0);
   const [preview, setPreview] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -190,13 +191,13 @@ function App() {
       <ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/>
       <section aria-labelledby="onboarding-title"><h2 id="onboarding-title">Get started</h2><ol><li>Connect LM Studio, choose a discovered model, and complete the harmless tool diagnostic above. {diagnosticPassed?'Tool support verified.':'The demonstration unlocks after a successful diagnostic.'}</li><li>{workspace ? <>Workspace selected: <code>{workspace}</code></> : 'Choose a project folder below.'}</li><li>Run a read-only demonstration to see the agent inspect and explain that project.</li></ol><button type="button" onClick={()=>void startDemonstration()} disabled={busy||!diagnosticPassed||!model||!workspace.trim()}>Start read-only onboarding demonstration</button></section>
       <section><details><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>
-      <section><details><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={setProcedureTrial}/></details></section>
+      <section><details><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={setProcedureTrial} refreshKey={skillsRefresh}/></details></section>
       <section><details><summary>Specialist identities and model routes</summary><SpecialistProfilesPanel client={client}/></details></section>
       <section><details><summary>Automations</summary><AutomationsPanel client={client} model={model} workspace={workspace}/></details></section>
       <section><details><summary>Messaging channels</summary><ChannelsPanel client={client}/></details></section>
       <section><details><summary>Web search integration</summary><SearchProviderPanel client={client}/></details></section>
       <section><details><summary>MCP integrations</summary><MCPPanel client={client} selectedRunWriteTools={approvedMCPTools} onRunWriteToolsChange={setApprovedMCPTools}/></details></section>
-      <section><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client}/></details></section>
+      <section><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client} onImported={()=>setSkillsRefresh(value=>value+1)}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>

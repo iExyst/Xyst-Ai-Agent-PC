@@ -132,3 +132,55 @@ def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path
     assert response.status_code == 200
     assert response.json()["packages"][0]["version"] == "1.2.3"
     assert "secret-value" not in response.text
+
+
+def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path: Path) -> None:
+    make_package(tmp_path)
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "import.sqlite3"))
+    payload = {"root": str(tmp_path), "package_name": "sample-package", "skill_name": "summarize"}
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        assert client.post("/extensions/packages/import-skill", json=payload).status_code == 401
+        created = client.post("/extensions/packages/import-skill", headers=headers, json=payload)
+        assert created.status_code == 201
+        assert created.json()["lifecycle_state"] == "candidate"
+        version = client.get(f"/skills/{created.json()['id']}/versions/1", headers=headers)
+        revised = client.post(
+            f"/skills/{created.json()['id']}/versions",
+            headers=headers,
+            json={
+                "name": "summarize",
+                "content": "reviewed revision",
+                "required_tools": [],
+                "required_permissions": [],
+                "expected_version": 1,
+            },
+        )
+        revised_version = client.get(f"/skills/{created.json()['id']}/versions/2", headers=headers)
+    assert version.status_code == 200
+    evidence = version.json()["evaluation_evidence"]
+    assert evidence["provenance"] == "agent_plugin"
+    assert evidence["source"]["package_version"] == "1.2.3"
+    assert evidence["source"]["skill_name"] == "summarize"
+    assert evidence["source"]["content_sha256"]
+    assert evidence["state"] == "candidate"
+    assert version.json()["required_permissions"] == []
+    assert revised.status_code == 201
+    assert revised_version.json()["evaluation_evidence"]["provenance"] == "agent_plugin"
+    assert revised_version.json()["evaluation_evidence"]["source"] == evidence["source"]
+
+
+def test_plugin_skill_import_refuses_oversized_skill_without_creating_candidate(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    (package / "skills" / "summarize" / "SKILL.md").write_text("x" * 16_385, encoding="utf-8")
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "large.sqlite3"))
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    payload = {"root": str(tmp_path), "package_name": "sample-package", "skill_name": "summarize"}
+    with TestClient(app) as client:
+        response = client.post("/extensions/packages/import-skill", headers=headers, json=payload)
+        procedures = client.get("/skills", headers=headers)
+    assert response.status_code == 400
+    assert "16 KiB" in response.json()["detail"]
+    assert procedures.json() == []
