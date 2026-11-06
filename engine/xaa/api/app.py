@@ -14,7 +14,7 @@ import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
@@ -79,6 +79,7 @@ from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
 from xaa.storage.schedules import ScheduleStore, parse_local_time, validate_quiet_hours
 from xaa.storage.skills import (
+    TRIAL_TOOLS,
     SkillConflict,
     SkillDraft,
     SkillEvaluation,
@@ -87,6 +88,7 @@ from xaa.storage.skills import (
     SkillRevision,
     SkillStore,
     SkillSummary,
+    SkillTool,
     SkillTrial,
     SkillTrialRun,
     SkillVersion,
@@ -445,11 +447,19 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             imported = read_plugin_skill(payload.root, payload.package_name, payload.skill_name)
+            mapped_tools = list(
+                dict.fromkeys(tool for tool in imported.allowed_tools if tool in TRIAL_TOOLS)
+            )
+            unmapped_tools = [tool for tool in imported.allowed_tools if tool not in TRIAL_TOOLS]
+            required_permissions = cast(
+                list[Literal["workspace.read", "workspace.write"]],
+                sorted({permission for tool in mapped_tools for permission in TRIAL_TOOLS[tool]}),
+            )
             draft = SkillDraft(
                 name=imported.skill_name,
                 content=imported.content,
-                required_tools=[],
-                required_permissions=[],
+                required_tools=[SkillTool(name=tool, version="1") for tool in mapped_tools],
+                required_permissions=required_permissions,
             )
             return skill_store.import_agent_plugin(
                 draft,
@@ -457,6 +467,9 @@ def create_app(
                     "package_name": imported.package_name,
                     "package_version": imported.package_version,
                     "skill_name": imported.skill_name,
+                    "description": imported.description,
+                    "allowed_tools": " ".join(imported.allowed_tools),
+                    "unmapped_allowed_tools": " ".join(unmapped_tools),
                     "content_sha256": imported.content_sha256,
                     "manifest_sha256": imported.manifest_sha256,
                 },

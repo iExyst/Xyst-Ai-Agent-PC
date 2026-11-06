@@ -6,12 +6,14 @@ import hashlib
 import ipaddress
 import json
 import re
+from collections.abc import Iterable
 from itertools import islice
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict
+import yaml
+from pydantic import BaseModel, ConfigDict, Field
 
 MAX_PACKAGES = 128
 MAX_SKILLS = 128
@@ -22,6 +24,7 @@ _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 PLUGIN_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 _PLUGIN_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+_SKILL_NAME = re.compile(r"^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$")
 _HEADER = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
@@ -29,6 +32,8 @@ class PluginSkill(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     name: str
     path: str
+    description: str
+    allowed_tools: list[str] = Field(default_factory=list)
 
 
 class PluginServer(BaseModel):
@@ -70,6 +75,8 @@ class PluginSkillImport(BaseModel):
     package_version: str
     skill_name: str
     content: str
+    description: str
+    allowed_tools: list[str]
     content_sha256: str
     manifest_sha256: str
 
@@ -89,6 +96,61 @@ def _unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError("manifest contains duplicate keys")
         result[key] = value
     return result
+
+
+def _parse_skill_frontmatter(raw: bytes, directory_name: str) -> tuple[str, list[str]]:
+    """Parse and validate the bounded Agent Skills frontmatter prefix."""
+    prefix = raw[:16_384].decode("utf-8-sig")
+    if (
+        not prefix.startswith("---")
+        or not prefix.startswith("\n", 3)
+        and not prefix.startswith("\r\n", 3)
+    ):
+        raise ValueError("SKILL.md must begin with YAML frontmatter")
+    closing = re.search(r"\n---[ \t]*\r?\n", prefix[3:])
+    if closing is None:
+        raise ValueError("SKILL.md frontmatter is missing its closing delimiter within 16 KiB")
+    try:
+        frontmatter = prefix[3 : closing.start() + 3]
+        yaml_module = cast(Any, yaml)
+        tokens = cast(Iterable[object], yaml_module.scan(frontmatter))
+        if any(isinstance(token, yaml.tokens.AliasToken) for token in tokens):
+            raise ValueError("YAML aliases are not supported in SKILL.md frontmatter")
+        metadata = yaml.safe_load(frontmatter)
+    except ValueError:
+        raise
+    except yaml.YAMLError as exc:
+        raise ValueError("SKILL.md frontmatter is not valid YAML") from exc
+    if not isinstance(metadata, dict):
+        raise TypeError("SKILL.md frontmatter must be an object")
+    values = cast(dict[str, Any], metadata)
+    name = values.get("name")
+    description = values.get("description")
+    if (
+        not isinstance(name, str)
+        or name != directory_name
+        or len(name) > 64
+        or not _SKILL_NAME.fullmatch(name)
+    ):
+        raise ValueError("frontmatter name must match its directory and Agent Skills constraints")
+    if not isinstance(description, str) or not 1 <= len(description) <= 1024:
+        raise ValueError("frontmatter description must be 1 to 1024 characters")
+    if "license" in values and not isinstance(values["license"], str):
+        raise ValueError("frontmatter license must be a string")
+    if "compatibility" in values and (
+        not isinstance(values["compatibility"], str) or not 1 <= len(values["compatibility"]) <= 500
+    ):
+        raise ValueError("frontmatter compatibility must be 1 to 500 characters")
+    if "metadata" in values:
+        if not isinstance(values["metadata"], dict):
+            raise ValueError("frontmatter metadata must map strings to strings")
+        skill_metadata = cast(dict[str, Any], values["metadata"])
+        if any(not isinstance(value, str) for value in skill_metadata.values()):
+            raise ValueError("frontmatter metadata must map strings to strings")
+    raw_tools = values.get("allowed-tools", "")
+    if not isinstance(raw_tools, str):
+        raise TypeError("frontmatter allowed-tools must be a string")
+    return description, raw_tools.split()
 
 
 def _json(path: Path, package_root: Path) -> dict[str, Any]:
@@ -124,8 +186,16 @@ def _skill_summaries(package_root: Path) -> list[PluginSkill]:
             raise ValueError("skill file escapes package")
         if resolved.stat().st_size > MAX_MANIFEST_BYTES:
             raise ValueError("skill file exceeds size limit")
+        with resolved.open("rb") as source:
+            prefix = source.read(16_384)
+        description, allowed_tools = _parse_skill_frontmatter(prefix, directory.name)
         summaries.append(
-            PluginSkill(name=directory.name, path=skill_file.relative_to(package_root).as_posix())
+            PluginSkill(
+                name=directory.name,
+                path=skill_file.relative_to(package_root).as_posix(),
+                description=description,
+                allowed_tools=allowed_tools,
+            )
         )
     return summaries
 
@@ -314,6 +384,7 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         raise ValueError("skill file must be UTF-8 text") from exc
     if "\x00" in content:
         raise ValueError("skill file cannot contain NUL characters")
+    description, allowed_tools = _parse_skill_frontmatter(raw, skill.name)
     with (package_root / "plugin.json").open("rb") as manifest_source:
         manifest_bytes = manifest_source.read(MAX_MANIFEST_BYTES + 1)
     if len(manifest_bytes) > MAX_MANIFEST_BYTES:
@@ -323,6 +394,8 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         package_version=package.version or "",
         skill_name=skill.name,
         content=content,
+        description=description,
+        allowed_tools=allowed_tools,
         content_sha256=hashlib.sha256(raw).hexdigest(),
         manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
     )

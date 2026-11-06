@@ -38,7 +38,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
     if (path === '/memory' || path === '/schedules') return route.fulfill({json:[],headers});
     if (path === '/skills') return route.fulfill({json:importedSkill?[importedSkill]:[],headers});
-    if (path === '/extensions/packages/discover') return route.fulfill({json:{root:'C:\\plugins',packages:[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample',skills:[{name:'summarize',path:'skills/summarize/SKILL.md'}],servers:[]}],diagnostics:[]},headers});
+    if (path === '/extensions/packages/discover') return route.fulfill({json:{root:'C:\\plugins',packages:[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample',skills:[{name:'summarize',path:'skills/summarize/SKILL.md',description:'Summarize safely.',allowed_tools:['workspace.read_file']}],servers:[]}],diagnostics:[]},headers});
     if (path === '/extensions/packages/import-skill') {
       importedSkill={id:'imported-procedure',name:'summarize',lifecycle_state:'candidate',active_version:null,lifecycle_revision:0,latest_version:1,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z'};
       return route.fulfill({status:201,json:importedSkill,headers});
@@ -95,6 +95,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await plugins.getByLabel('Package folder').fill('C:\\plugins');
   await plugins.getByRole('button',{name:'Discover packages'}).click();
   await expect(plugins.getByText('sample-package · 1.2.3')).toBeVisible();
+  await expect(plugins.getByText('Summarize safely.')).toBeVisible();
   await plugins.getByRole('button',{name:'Import as candidate'}).click();
   await expect(plugins.getByRole('status')).toContainText('inactive candidate');
   await page.locator('summary').filter({hasText:'Reusable procedures'}).click();

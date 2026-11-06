@@ -1771,6 +1771,17 @@
       "PluginSkill": {
         "additionalProperties": false,
         "properties": {
+          "allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1782,7 +1793,8 @@
         },
         "required": [
           "name",
-          "path"
+          "path",
+          "description"
         ],
         "title": "PluginSkill",
         "type": "object"

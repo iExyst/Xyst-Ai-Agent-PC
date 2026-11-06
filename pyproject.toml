@@ -14,6 +14,7 @@ dependencies = [
     "playwright>=1.52,<2",
     "mcp>=1.26,<2",
     "pypdf>=6.21.4,<7",
+    "pyyaml>=6,<7",
 ]
 
 [project.scripts]

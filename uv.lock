@@ -1020,6 +1020,7 @@ dependencies = [
     { name = "playwright" },
     { name = "pydantic" },
     { name = "pypdf" },
+    { name = "pyyaml" },
     { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1043,6 +1044,7 @@ requires-dist = [
     { name = "playwright", specifier = ">=1.52,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pypdf", specifier = ">=6.21.4,<7" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "tzdata", specifier = ">=2026.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38,<1" },
 ]

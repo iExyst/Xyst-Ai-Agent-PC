@@ -26,7 +26,10 @@ def make_package(root: Path) -> Path:
     package = root / "sample"
     (package / "skills" / "summarize").mkdir(parents=True)
     (package / "skills" / "summarize" / "SKILL.md").write_text(
-        "ignored instruction text", encoding="utf-8"
+        "---\nname: summarize\ndescription: Summarize a bounded file.\n"
+        "allowed-tools: workspace.read_file shell.exec\n---\n"
+        "ignored instruction text",
+        encoding="utf-8",
     )
     (package / "plugin.json").write_text(
         json.dumps(
@@ -76,6 +79,8 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert summary.name == "sample-package"
     assert summary.version == "1.2.3"
     assert [skill.name for skill in summary.skills] == ["summarize"]
+    assert summary.skills[0].description == "Summarize a bounded file."
+    assert summary.skills[0].allowed_tools == ["workspace.read_file", "shell.exec"]
     assert summary.servers[0].command_name == "python.exe"
     assert summary.servers[0].argument_count == 2
     assert summary.servers[0].environment_names == ["API_TOKEN"]
@@ -114,6 +119,16 @@ def test_discovery_reports_duplicate_manifest_keys(tmp_path: Path) -> None:
     result = discover_agent_plugins(str(tmp_path))
     assert result.packages == []
     assert "duplicate" in result.diagnostics[0].message
+
+
+def test_discovery_rejects_yaml_aliases_in_skill_metadata(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    (package / "skills" / "summarize" / "SKILL.md").write_text(
+        "---\nname: &skill summarize\ndescription: *skill\n---\ntext", encoding="utf-8"
+    )
+    result = discover_agent_plugins(str(tmp_path))
+    assert result.packages == []
+    assert "aliases" in result.diagnostics[0].message
 
 
 def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path) -> None:
@@ -164,7 +179,10 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert evidence["source"]["skill_name"] == "summarize"
     assert evidence["source"]["content_sha256"]
     assert evidence["state"] == "candidate"
-    assert version.json()["required_permissions"] == []
+    assert version.json()["required_permissions"] == ["workspace.read"]
+    assert [tool["name"] for tool in version.json()["required_tools"]] == ["workspace.read_file"]
+    assert evidence["source"]["unmapped_allowed_tools"] == "shell.exec"
+    assert evidence["source"]["description"] == "Summarize a bounded file."
     assert revised.status_code == 201
     assert revised_version.json()["evaluation_evidence"]["provenance"] == "agent_plugin"
     assert revised_version.json()["evaluation_evidence"]["source"] == evidence["source"]
@@ -174,7 +192,10 @@ def test_plugin_skill_import_refuses_oversized_skill_without_creating_candidate(
     tmp_path: Path,
 ) -> None:
     package = make_package(tmp_path)
-    (package / "skills" / "summarize" / "SKILL.md").write_text("x" * 16_385, encoding="utf-8")
+    frontmatter = "---\nname: summarize\ndescription: Oversized fixture.\n---\n"
+    (package / "skills" / "summarize" / "SKILL.md").write_text(
+        frontmatter + "x" * 16_385, encoding="utf-8"
+    )
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "large.sqlite3"))
     headers = {"Authorization": f"Bearer {TOKEN}"}
     payload = {"root": str(tmp_path), "package_name": "sample-package", "skill_name": "summarize"}

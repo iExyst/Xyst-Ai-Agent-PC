@@ -1812,6 +1812,10 @@ export interface components {
         };
         /** PluginSkill */
         PluginSkill: {
+            /** Allowed Tools */
+            allowed_tools?: string[];
+            /** Description */
+            description: string;
             /** Name */
             name: string;
             /** Path */
