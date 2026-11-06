@@ -60,12 +60,12 @@ BUILTINS = {
 }
 EXTERNAL = {
     "bubblewrap": "Linux bwrap/prlimit; profile-specific network and filesystem policy must be verified.",
-    "cua-spaces": "Configured Cua SDK/Space and explicit authorization for remote commands/files/screens.",
-    "deepinfra-sandbox": "DeepInfra credential and explicit billable sandbox/credential-upload policy.",
+    "cua-spaces": "Configured Cua SDK and local/cloud/host Space; created Spaces may be disposable, existing Spaces are user-owned, and network/isolation/resource controls require runtime verification.",
+    "deepinfra-sandbox": "DeepInfra API credential and billable sandbox plan; pinned plugin uploads Hermes skill/cache/registered credential files and does not map generic CPU/memory settings.",
     "singularity": "Linux Apptainer/Singularity executable, selected image and overlay/resource policy.",
-    "smolmachines": "Supported Apple Silicon macOS or Linux/KVM host and local microVM SDK.",
-    "upstash-box": "Upstash Box credential and explicit cloud, persistence, upload and credential-exposure policy.",
-    "hermes-wsl-terminal": "Windows WSL distro/user. Manifest explicitly describes full access, not a restricted sandbox.",
+    "smolmachines": "Apple Silicon macOS or Linux/KVM host and local microVM SDK; pinned config enables guest networking and may use host Docker registry credentials for image pulls.",
+    "upstash-box": "Upstash Box API credential and billable cloud account; pinned plugin transfers Hermes skills/cache/registered credential files and Boxes may include account-connected GitHub credentials.",
+    "hermes-wsl-terminal": "Windows WSL distro/user. Pinned provider runs as that distro user with the distro's files/network; explicitly not a restricted sandbox.",
     "hermes-wslc-sandbox": "Windows wslc runtime; manifest discloses no capability dropping and no enforced disk quota.",
 }
 EXTERNAL_SOURCE_AUDITS = {
@@ -81,6 +81,33 @@ EXTERNAL_SOURCE_AUDITS = {
         "evidence_level": "pinned source reviewed; upstream plugin runtime not independently verified",
         "acceptance": "Review complete; verify the intended Bubblewrap profile on a supported host and satisfy EXEC-COMMON-1 through EXEC-COMMON-8",
     },
+    "cua-spaces": {
+        "repository": "trycua/hermes-cua-spaces",
+        "reference_commit": "82bb8d31517d2d1b8f1ef7f64701558dcac8aea9",
+        "paths": [
+            "README.md",
+            "plugin.yaml",
+            "hermes_cua_spaces/__init__.py",
+            "hermes_cua_spaces/environment.py",
+            "hermes_cua_spaces/config.py",
+            "hermes_cua_spaces/client.py",
+            "hermes_cua_spaces/streams.py",
+        ],
+        "evidence_level": "pinned source reviewed; Cua Space runtime and isolation not independently verified",
+        "acceptance": "Review complete; verify target type, network/resource controls, command cancellation, data transfer and cleanup on each supported Space OS; satisfy EXEC-COMMON-1 through EXEC-COMMON-8",
+    },
+    "deepinfra-sandbox": {
+        "repository": "deepinfra/deepinfra-hermes-sandbox",
+        "reference_commit": "259a477548f1862071c9e2462fda6a7bb9de68c8",
+        "paths": [
+            "README.md",
+            "plugin.yaml",
+            "deepinfra_hermes_sandbox/__init__.py",
+            "deepinfra_hermes_sandbox/environment.py",
+        ],
+        "evidence_level": "pinned source reviewed; DeepInfra sandbox service and isolation not independently verified",
+        "acceptance": "Review complete; verify billed plan/resources, network boundary, uploaded credential/cache files, cancellation and cleanup with authorized service evidence; satisfy EXEC-COMMON-1 through EXEC-COMMON-8",
+    },
     "hermes-wslc-sandbox": {
         "repository": "Yicheng-Mark/hermes-windows-plugins",
         "reference_commit": "5bad3fb2baf04ce6befecfefce6d14f4c9c98934",
@@ -93,6 +120,43 @@ EXTERNAL_SOURCE_AUDITS = {
         ],
         "evidence_level": "pinned source reviewed; WSL Containers runtime and isolation not independently verified",
         "acceptance": "Review complete; runtime host probes, effective resource/isolation checks and EXEC-COMMON-1 through EXEC-COMMON-8 remain required",
+    },
+    "hermes-wsl-terminal": {
+        "repository": "Yicheng-Mark/hermes-windows-plugins",
+        "reference_commit": "5bad3fb2baf04ce6befecfefce6d14f4c9c98934",
+        "paths": [
+            "wsl-terminal/hermes_wsl_terminal/provider.py",
+            "wsl-terminal/hermes_wsl_terminal/environment.py",
+            "wsl-terminal/hermes_wsl_terminal/wsl.py",
+            "wsl-terminal/README.md",
+            "wsl-terminal/VALIDATION.md",
+        ],
+        "evidence_level": "pinned source reviewed; WSL CLI behavior described by upstream validation, not independently reproduced here",
+        "acceptance": "Review complete; treat as full-access execution only, never as a restricted generated-code backend; separately verify distro routing/CWD/exit behavior before claiming transport compatibility",
+    },
+    "smolmachines": {
+        "repository": "smol-machines/hermes-smolmachines",
+        "reference_commit": "093371b13c99685e992e0621aa8e36e2b71645be",
+        "paths": [
+            "README.md",
+            "plugin.yaml",
+            "__init__.py",
+            "environment.py",
+        ],
+        "evidence_level": "pinned source reviewed; local microVM runtime and host isolation not independently verified",
+        "acceptance": "Review complete; verify supported host virtualization, network policy, effective resource limits, host mounts/registry credentials, cancellation and persistent-VM cleanup; satisfy EXEC-COMMON-1 through EXEC-COMMON-8",
+    },
+    "upstash-box": {
+        "repository": "upstash/box",
+        "reference_commit": "da7d85ac0cb4e114a5d8adc79cfb24bfff084bfb",
+        "paths": [
+            "packages/hermes-box/README.md",
+            "packages/hermes-box/plugin.yaml",
+            "packages/hermes-box/provider.py",
+            "packages/hermes-box/upstash_box_env.py",
+        ],
+        "evidence_level": "pinned source reviewed; Upstash Box service and isolation not independently verified",
+        "acceptance": "Review complete; verify account credential exposure, uploaded/synced files, cross-process name collisions, billed persistence, cancellation and deletion with authorized service evidence; satisfy EXEC-COMMON-1 through EXEC-COMMON-8",
     },
     "singularity": {
         "repository": "NousResearch/hermes-official-plugins",
@@ -289,7 +353,7 @@ def inventory() -> dict[str, Any]:
         ],
         "limitations": [
             "Keyword candidate discovery is not proof of exhaustive external capability coverage.",
-            "Selected external repository pins were source-reviewed without execution; remaining external pins have not been fetched or executed.",
+            "All eight catalog-declared external execution backend pins have source reviews without execution; source review is not runtime verification or parity.",
             "No execution backend parity is established; X.A.A. fixed filesystem workers are lifecycle containment, not generated-code isolation.",
         ],
     }

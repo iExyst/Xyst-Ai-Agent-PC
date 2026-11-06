@@ -54,6 +54,58 @@ Reference: `NousResearch/hermes-official-plugins` commit `d46aced3031a8f533fdbf0
 
 Acceptance still required: inspect effective mount/user/network namespaces and host/credential access on each supported host; prove CPU/memory/PID/storage limits; test command-tree cancellation, crash/restart and overlay isolation/retention; inspect image acquisition and bind manifests; reject unsupported controls. These are backend-specific additions to `EXEC-COMMON-1` through `EXEC-COMMON-8`.
 
+## Cua Spaces execution backend
+
+Reference: `trycua/hermes-cua-spaces` commit `82bb8d31517d2d1b8f1ef7f64701558dcac8aea9`, catalog version 0.4.0. Reviewed `README.md`, `plugin.yaml`, `hermes_cua_spaces/__init__.py`, `environment.py`, `config.py`, `client.py`, and `streams.py`.
+
+- The provider can create a Space or attach to a configured existing Space. Creation location can be local, cloud, or a named host. New Spaces default to deletion, but `delete_on_exit: false` reuses a named Space; an explicitly named Space is never deleted by cleanup. Deletion failure leaves the Space and logs manual cleanup guidance.
+- The plugin supports Linux, Windows and macOS Spaces, but execution paths differ. Windows runs terminal input through PowerShell and other generated shell/file operations through Git Bash; Linux/macOS use a Bash path. Persistent interactive streams are available only for Linux when a sufficiently recent `cua` CLI is installed. This stream capability does not make the Windows paths a container runtime.
+- It removes `CUA_API_KEY` and `CUA_DAEMON_TOKEN` from guest command environments. Source config exposes image, target, desktop setup and create timeout, but does not expose CPU, memory, disk, process-count, or network-egress policy. The Cua Space is described by the vendor as isolated; this audit did not verify the boundary, host mounts, network policy, identity, resource enforcement, file transfers, or cleanup against a live Space.
+- Per-command cancellation is implemented by best-effort process-tree termination using a run marker; the source notes that the Space API has no per-command cancel. If reconnecting to the Space fails, the in-flight call cannot be assumed to have stopped. Existing named Spaces retain dangerous-command guards; created disposable Spaces may skip them.
+
+Acceptance still required: verify local/cloud/host target identity and effective isolation separately for each supported OS; inspect implicit file/credential transfer and guest network; measure resources; test timeout, cancellation, reconnect, deletion and persistent ownership. Until then a Space description is not evidence that it meets X.A.A.'s execution contract.
+
+## DeepInfra Sandboxes execution backend
+
+Reference: `deepinfra/deepinfra-hermes-sandbox` commit `259a477548f1862071c9e2462fda6a7bb9de68c8`, catalog version 0.1.0. Reviewed `README.md`, `plugin.yaml`, `deepinfra_hermes_sandbox/__init__.py`, and `environment.py`.
+
+- The provider uses the DeepInfra API key through Hermes secret scope and strips `DEEPINFRA_API_KEY` from guest commands. The API key selects a billable cloud account. The plugin creates a fresh sandbox with an optional explicit `DEEPINFRA_SANDBOX_PLAN`; it does not translate generic `container_cpu` or `container_memory` settings, and the image argument is ignored because the service uses a fixed platform image.
+- The plugin's persistence path tags sandboxes by Hermes task ID, stops persistent instances on teardown/idle reap, and resumes a single unambiguous stopped match. Nonpersistent instances are terminated. Failed creates are reconciled using a unique creation ID to avoid terminating an unrelated sandbox. This behavior is source-level lifecycle logic, not proof of service idempotency or crash recovery.
+- Only `/workspace` is documented as persistent. A `FileSyncManager` uploads Hermes skill/cache and registered credential files beneath `/workspace/.hermes`, and attempts to sync changed files back during cleanup. The README describes server-side execution with no sandbox network access; the inspected plugin delegates that boundary to DeepInfra and does not independently configure an egress policy.
+- The SDK exec interface has no stdin field; the plugin stages stdin through a temporary remote file. Interrupt stops the whole sandbox rather than just one command. The README describes a 30-minute service-side command cap and a five-sandbox account cap. These platform claims were not independently measured here.
+
+Acceptance still required: explicitly authorize billing and data upload; verify the service's network, kernel and resource boundaries; inspect exact credential/cache transfer; test plan costs, account limits, interruption side effects, ambiguous create/cleanup, persistence and delete/stop behavior. The vendor's microVM and no-network description is not runtime evidence.
+
+## smol machines execution backend
+
+Reference: `smol-machines/hermes-smolmachines` commit `093371b13c99685e992e0621aa8e36e2b71645be`, catalog version 0.1.0. Reviewed `README.md`, `plugin.yaml`, `__init__.py`, and `environment.py`.
+
+- The provider selects a local VM target and supports Apple Silicon macOS or Linux hosts with KVM; the pinned README excludes Windows and Intel Macs. It passes image, CPU and memory settings into `MachineConfig`. `ResourceSpec` explicitly sets guest networking on. No host workspace mount is configured in the reviewed environment constructor; file operations use the VM API.
+- Persistent machines are named from Hermes home and task ID, created detached, and left running at cleanup. A later environment reconnects by that name. Nonpersistent machines use a random identity and are deleted at cleanup. A persistent machine can therefore retain files and processes after Hermes exits, and concurrent contexts with the same home/task identity can share it.
+- The README says image pulls can use host Docker registry credentials and that guest commands have outbound network access. The process stream has an 11 MiB output cap; file retrieval is separately bounded by the core delivery limit. The plugin does not configure a no-egress policy. Vendor descriptions call this a microVM with a separate kernel, but actual hypervisor isolation and effective limits were not inspected on a supported host.
+
+Acceptance still required: test on each supported host architecture; verify the VM boundary, host-file and registry-credential exposure, guest network, effective CPU/memory limits, output/file bounds, cancellation and persistent/nonpersistent cleanup. This backend is not available for the current Windows-first install.
+
+## Upstash Box execution backend
+
+Reference: `upstash/box` commit `da7d85ac0cb4e114a5d8adc79cfb24bfff084bfb`, subdirectory `packages/hermes-box`. Reviewed that package's `README.md`, `plugin.yaml`, `provider.py`, and `upstash_box_env.py`.
+
+- The API key and optional endpoint are read through Hermes secret scope and passed to the SDK client object; the key is stripped from guest process environments. The plugin declares a cloud Box per task, with pause/resume persistence by name or a random per-session Box that is deleted on cleanup. Concurrent processes using the same account, name prefix and task ID can attach to the same persistent Box; the README calls for distinct prefixes when profiles or machines must be isolated. Keep-alive persistent Boxes remain running and billable.
+- Commands use live exec sessions with streamed stdin and merged stdout/stderr. Timeout and interrupt request remote `SIGKILL` and close the session asynchronously. A dropped connection ends the session; background processes can outlive it. The plugin does not declare open terminal streams for Bot Desktop. It exposes Box size/runtime, but generic CPU, memory and disk settings do not apply.
+- Before commands, `FileSyncManager` uploads Hermes skills, cache and skill-registered credential files under the Box user's `.hermes`; changed skills/cache may be copied back at cleanup. The README warns that Boxes can also contain account-connected GitHub credentials and an `UPSTASH_BLOB_TOKEN`. Thus keeping the Box API key local does not imply that guest commands have no account credentials. Cleanup pauses or deletes the exact attached Box and retries transient failures, but a process crash can leave a nonpersistent Box behind.
+- The README documents plan limits, persistence billing, default runtime behavior, lack of session reattachment, and potential name collisions. Those service and billing behaviors were not verified with an authorized account.
+
+Acceptance still required: explicitly authorize cloud billing and credential/file transfer; verify the Box isolation and network/resource limits; inspect all account credentials visible inside the guest; test same-name races, cross-profile isolation, streaming interruption, keep-alive, sync-back conflicts and crash cleanup. No Upstash service was contacted in this audit.
+
+## Hermes WSL terminal execution backend
+
+Reference: `Yicheng-Mark/hermes-windows-plugins` commit `5bad3fb2baf04ce6befecfefce6d14f4c9c98934`, subdirectory `wsl-terminal`. Reviewed the provider, WSL CLI and environment modules, `README.md`, `plugin.yaml`, and upstream `VALIDATION.md`.
+
+- The provider selects an existing WSL distribution and invokes `wsl.exe` as its normal user (or an explicitly configured distro user). Windows paths are translated into the distro automount path. WSL exposes the user's mounted Windows files and distro network; there is no container, credential filter, or resource limit, and dangerous-command approval remains enabled.
+- The plugin is a standard-library-only transport adapter and itself makes no network calls. Its upstream validation document reports distro/CWD/exit-code checks on one WSL installation, but those observations were not reproduced here. Its README explicitly says this is full access and not a sandbox.
+
+This backend cannot satisfy X.A.A.'s generated-code isolation requirement. Any transport-compatibility acceptance must remain distinct from restricted execution acceptance.
+
 ## Inventory updates
 
-`audit_channel_inventory.py` and `audit_execution_inventory.py` encode these source-review states and regenerate their JSON evidence. The Home Assistant registration remains external, and Singularity remains a planned X.A.A. backend. Other external plugin pins remain unaudited; overall Phase 0 and full release parity remain open.
+`audit_channel_inventory.py` and `audit_execution_inventory.py` encode the reviewed pins and regenerate their JSON evidence. All eight external backend declarations in the execution inventory now have pinned-source reviews. None was installed, imported, or executed, and none gains X.A.A. implementation or parity status from this review. Phase 0 still needs broader catalog/capability and channel-source coverage; Phase 3 runtime acceptance and full release parity remain open.
