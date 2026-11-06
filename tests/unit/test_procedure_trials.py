@@ -73,6 +73,110 @@ async def test_explicit_trial_uses_immutable_snapshot_after_revision_and_deletio
         await provider.close()
 
 
+async def test_procedure_view_returns_only_selected_integrity_checked_version(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "procedure-view.sqlite3")
+    skills = SkillStore(store)
+    skill = skills.create(draft("Selected version full procedure text."))
+    run = queue(store, workspace_tmp_path, skill)
+    skills.revise(
+        skill["id"],
+        SkillRevision(**draft("Later version must not appear.").model_dump(), expected_version=1),
+    )
+
+    class Provider(LMStudioProvider):
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            if messages[-1]["role"] == "user":
+                view_tool = next(t for t in tools if t["function"]["name"] == "procedure_view")
+                assert view_tool["function"]["parameters"]["additionalProperties"] is False
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "view-1",
+                                        "type": "function",
+                                        "function": {"name": "procedure_view", "arguments": "{}"},
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            result = json.loads(messages[-1]["content"])
+            assert result["content"] == "Selected version full procedure text."
+            assert "Later version" not in result["content"]
+            assert result["version"] == 1
+            assert result["trust"] == "untrusted_selected_procedure"
+            assert result["authority"] == "selection_does_not_expand_permissions_or_tools"
+            return {
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Viewed selected version."}}
+                ]
+            }
+
+    provider = Provider()
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+    assert store.get_run(run["id"])["state"] == "verifying"
+    with store.connection() as connection:
+        result = connection.execute(
+            "SELECT result FROM tool_calls WHERE run_id=? AND provider_call_id='view-1'",
+            (run["id"],),
+        ).fetchone()
+    assert result is not None
+    assert json.loads(result["result"])["skill_id"] == skill["id"]
+
+
+async def test_procedure_view_is_unavailable_without_explicit_selection(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "procedure-view-unselected.sqlite3")
+    run_id = store.create_run(
+        objective="Discover procedures",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+
+    class Provider(LMStudioProvider):
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            assert all(t["function"]["name"] != "procedure_view" for t in tools)
+            if messages[-1]["role"] == "user":
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "unselected-view",
+                                        "type": "function",
+                                        "function": {"name": "procedure_view", "arguments": "{}"},
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            raise AssertionError("unavailable view tool must not be exposed")
+
+    provider = Provider()
+    try:
+        with pytest.raises(PermissionError, match="not authorized in the current catalog"):
+            await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+
+
 def test_selected_trial_snapshots_linked_resource_bytes_and_revision_preserves_them(
     workspace_tmp_path,
 ):
