@@ -125,6 +125,47 @@ async def test_queue_wait_deadline_releases_reservation():
         queue.lock.release()
 
 
+async def test_read_timeout_is_actionable_and_releases_queue_for_successor():
+    import httpx
+    from xaa.providers.lm_studio import ProviderError
+
+    requests = 0
+
+    def handle(request):
+        nonlocal requests
+        requests += 1
+        if requests == 1:
+            raise httpx.ReadTimeout("synthetic local server stall")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"role": "assistant", "content": "READY"}, "finish_reason": "stop"}
+                ]
+            },
+        )
+
+    provider = LMStudioProvider()
+    await provider._client.aclose()
+    provider._client = httpx.AsyncClient(
+        base_url="http://127.0.0.1:1234", transport=httpx.MockTransport(handle)
+    )
+    try:
+        with pytest.raises(ProviderError, match="response stream timed out"):
+            async for _ in provider.stream(
+                model="fixture", messages=[{"role": "user", "content": "wait"}]
+            ):
+                pytest.fail("synthetic timeout unexpectedly yielded content")
+        assert provider._inference_queue.waiting == 0
+        assert provider._inference_queue.reserved_tokens == 0
+        result = await provider.chat(
+            model="fixture", messages=[{"role": "user", "content": "ready"}]
+        )
+        assert result["choices"][0]["message"]["content"] == "READY"
+    finally:
+        await provider.close()
+
+
 @pytest.mark.parametrize("streamed", [False, True])
 async def test_output_allowance_is_reserved_before_http(streamed):
     import json

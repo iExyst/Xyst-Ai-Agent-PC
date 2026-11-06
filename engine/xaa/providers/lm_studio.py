@@ -621,5 +621,9 @@ class LMStudioProvider:
                 async for line in response.aiter_lines():
                     if line.startswith("data: ") and line[6:] != "[DONE]":
                         yield line[6:]
+        except httpx.TimeoutException as exc:
+            raise ProviderError(
+                "LM Studio response stream timed out; retry or increase the server timeout."
+            ) from exc
         except httpx.HTTPError as exc:
             raise ProviderError("LM Studio response stream failed or was interrupted.") from exc
