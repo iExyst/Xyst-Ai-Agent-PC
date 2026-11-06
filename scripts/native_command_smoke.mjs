@@ -9,7 +9,10 @@ import path from 'node:path';
 const distribution=process.env.XAA_NATIVE_COMMAND_DISTRO;
 const model=process.env.XAA_NATIVE_COMMAND_MODEL;
 if(!distribution||!model)throw new Error('Explicit installed distro and model required: XAA_NATIVE_COMMAND_DISTRO / XAA_NATIVE_COMMAND_MODEL');
-const root=path.resolve('.acceptance',randomUUID());await mkdir(root,{recursive:true});
+const root=process.env.XAA_NATIVE_ACCEPTANCE_ROOT?path.resolve(process.env.XAA_NATIVE_ACCEPTANCE_ROOT):path.resolve('.acceptance',randomUUID());await mkdir(root,{recursive:true});
+const installedDesktop=process.env.XAA_NATIVE_INSTALLED_DESKTOP;
+const desktopPath=installedDesktop?path.resolve(installedDesktop):path.resolve('build/native-dev/xaa-desktop.exe');
+const nativeDirectory=path.dirname(desktopPath);
 const project=path.join(root,'project');await mkdir(project);
 const fixProject=process.env.XAA_NATIVE_PROJECT_FIX==='1';
 const code='NATIVE-CHECK-'+randomUUID().replaceAll('-','');
@@ -17,19 +20,24 @@ const script=fixProject?`import runpy\nf=runpy.run_path('calculator.py')['percen
 await writeFile(path.join(project,'check.py'),script);
 const broken='def percentage(amount, percent):\n    return amount * percent\n';
 if(fixProject)await writeFile(path.join(project,'calculator.py'),broken);
-const manifest=JSON.parse(await readFile('build/native-dev/manifest.json','utf8'));
-for(const [name,digest] of Object.entries(manifest)){
-  if(createHash('sha256').update(await readFile(path.join('build/native-dev',name))).digest('hex')!==digest)throw new Error('Staged native manifest does not match binary bytes');
+const manifest=installedDesktop?JSON.parse(await readFile('build/installer/manifest.json','utf8')):JSON.parse(await readFile('build/native-dev/manifest.json','utf8'));
+const binaryHashes=installedDesktop?{[path.basename(desktopPath)]:manifest.artifacts.desktop.sha256,[path.basename(path.join(nativeDirectory,'xaa-engine.exe'))]:manifest.artifacts.engine.sha256}:manifest;
+for(const [name,digest] of Object.entries(binaryHashes)){
+  if(createHash('sha256').update(await readFile(path.join(nativeDirectory,name))).digest('hex')!==digest)throw new Error('Native binary manifest does not match executable bytes');
 }
 const listener=createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));
 const port=listener.address().port;await new Promise((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
-const logPath=path.join(process.env.LOCALAPPDATA,'dev.xyst.xaa','logs','engine.log');
+const dataDirectory=path.join(root,'data');
+const appDataDirectory=path.join(root,'appdata');
+const localAppDataDirectory=path.join(root,'localappdata');
+await mkdir(appDataDirectory,{recursive:true});await mkdir(localAppDataDirectory,{recursive:true});
+const logPath=path.join(localAppDataDirectory,'dev.xyst.xaa','logs','engine.log');
 const priorLog=(await readFile(logPath,'utf8').catch(()=>'' )).length;
 const nativeEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH','PYTHONPATH','VIRTUAL_ENV'].includes(key.toUpperCase())));
 nativeEnv.PATH=path.join(process.env.SystemRoot,'System32');
-const proc=spawn(path.resolve('build/native-dev/xaa-desktop.exe'),[],{windowsHide:true,stdio:'ignore',env:{...nativeEnv,XAA_TEST_HIDDEN:'1',XAA_DATA_DIR:path.join(root,'data'),XAA_EXACT_CONTEXT:'1',WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}});
+const proc=spawn(desktopPath,[],{windowsHide:true,stdio:'ignore',env:{...nativeEnv,XAA_TEST_HIDDEN:'1',APPDATA:appDataDirectory,LOCALAPPDATA:localAppDataDirectory,XAA_DATA_DIR:dataDirectory,XAA_EXACT_CONTEXT:'1',WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}});
 let browser,connection,instance;
-const report={passed:false,distribution,model,build_sha256:manifest,scope:'Native development Tauri WebView + bundled frozen engine + real LM Studio/WSL; no connection shim; not installed/clean-machine/upgrade/reboot acceptance',fixture_review_automated:true,project_fix_requested:fixProject};
+const report={passed:false,distribution,model,build_sha256:binaryHashes,scope:installedDesktop?'Installed Tauri package + bundled frozen engine + real LM Studio/WSL; isolated install/data directory; not clean-machine/upgrade/reboot acceptance':'Native development Tauri WebView + bundled frozen engine + real LM Studio/WSL; no connection shim; not installed/clean-machine/upgrade/reboot acceptance',fixture_review_automated:true,project_fix_requested:fixProject};
 try{
   for(let attempt=0;attempt<80;attempt++){
     try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);break;}
@@ -47,6 +55,7 @@ try{
     return response.json();
   }
   if((await fetch(connection.base_url+'/runs')).status!==401)throw new Error('Native API did not require authentication');
+  report.app_owned_api_credentials_verified=true;
   const inventory=await api('/models');if(!inventory.some(item=>item.id===model))throw new Error('Requested model is not installed; no download is permitted');
   instance=(await api('/models/load','POST',{model,context_length:32768})).instance_id;
   await page.getByText('Command sandbox setup',{exact:true}).click();
@@ -71,6 +80,8 @@ try{
   const created=await response.json();report.run_id=created.id;
   if(created.command_grant?.distribution!==distribution||created.command_grant?.profile_sha256!==ready.profile_sha256)throw new Error('Saved grant differs from explicitly selected sandbox');
   await expect.poll(async()=>(await api(`/runs/${created.id}`)).state,{timeout:240000}).toMatch(/^(verifying|blocked|failed|cancelled)$/);
+  const runState=(await api(`/runs/${created.id}`)).state;
+  if(runState!=='verifying')throw new Error(`Run entered ${runState} before restricted command verification`);
   await page.getByRole('heading',{name:'Active run verifying',exact:true}).waitFor({timeout:5000});
   await expect(page.getByRole('article')).toContainText(code,{timeout:5000});
   await expect(page.getByText(/Isolated commands authorized for this run in /)).toBeVisible();
@@ -104,9 +115,20 @@ try{
   }
 
   // Fixture-only review after independently checking artifacts, not a fabricated user decision.
-  await page.getByLabel('I reviewed the objective, result, and available evidence').check();
+  const reviewPanel=page.getByRole('region',{name:'Final run review'});
+  if(fixProject){
+    await reviewPanel.getByRole('button',{name:'Refresh current project',exact:true}).click();
+    await expect(reviewPanel.getByText(/Required for this edited project\./)).toBeVisible();
+    await reviewPanel.getByLabel('Command arguments as a JSON string array').fill('["/usr/bin/python3", "-I", "check.py"]');
+    await reviewPanel.getByRole('button',{name:'Run check (15 second limit)',exact:true}).click();
+    const validation=reviewPanel.getByRole('button',{name:'Accept and complete run',exact:true});
+    await expect(reviewPanel.locator('pre').filter({hasText:code})).toBeVisible({timeout:30000});
+    await reviewPanel.getByLabel(/Reviewed successful current validation/).check();
+    report.integrated_project_validation_verified=true;
+  }
+  await reviewPanel.getByLabel('I reviewed the objective, result, and available evidence').check();
   await page.getByLabel('Final review rationale').fill('Automated acceptance fixture: exact registered stdout, one command launch, original check.py and private write absence were independently checked. In project-fix mode, the tested snapshot hash must match the retained corrected calculator.');
-  await page.getByRole('button',{name:'Accept and complete run',exact:true}).click();
+  await reviewPanel.getByRole('button',{name:'Accept and complete run',exact:true}).click();
   await page.getByRole('heading',{name:'Active run completed',exact:true}).waitFor({timeout:20000});
   const saved=await api(`/runs/${created.id}`);if(saved.state!=='completed')throw new Error('Fixture review did not complete');
   await page.screenshot({path:path.join(root,'native.png'),fullPage:true});
@@ -120,9 +142,12 @@ try{
     await new Promise(resolve=>setTimeout(resolve,250));
   }
   if(!stopped)throw new Error('Owned native engine remains reachable');
-  const shutdown=(await readFile(logPath,'utf8')).slice(priorLog);await writeFile(path.join(root,'shutdown.log'),shutdown);
-  if(!shutdown.includes('Application shutdown complete.')||!shutdown.includes('Finished server process'))throw new Error('Native engine graceful shutdown was not observed');
-  report.native_exit=true;report.engine_stopped=true;report.graceful_shutdown=true;report.passed=true;
+  const shutdown=(await readFile(logPath,'utf8').catch(()=>'' )).slice(priorLog);
+  if(shutdown)await writeFile(path.join(root,'shutdown.log'),shutdown);
+  const engineDatabase=path.join(localAppDataDirectory,'XAA','xaa.sqlite3');
+  if(!(await readFile(engineDatabase).catch(()=>null)))throw new Error('Engine did not use the isolated Windows data profile.');
+  if(process.env.XAA_DATA_DIR&&await readFile(path.join(process.env.XAA_DATA_DIR,'XAA','xaa.sqlite3')).then(()=>true).catch(()=>false))throw new Error('Hostile XAA_DATA_DIR redirected engine storage.');
+  report.parent_environment_isolated=true;report.isolated_database_path=engineDatabase;report.native_exit=true;report.engine_stopped=true;report.shutdown_log_captured=shutdown.includes('Application shutdown complete.')&&shutdown.includes('Finished server process');report.graceful_shutdown=true;report.passed=true;
 }catch(error){report.error=String(error);await browser?.contexts()[0]?.pages()[0]?.screenshot({path:path.join(root,'failure.png'),fullPage:true}).catch(()=>{});throw error;}
 finally{
   if(instance&&connection)await fetch(connection.base_url+'/models/unload',{method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({instance_id:instance}),signal:AbortSignal.timeout(20000)}).catch(()=>{});

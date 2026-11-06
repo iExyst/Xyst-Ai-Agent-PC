@@ -36,6 +36,34 @@ fn engine_connection(state: tauri::State<'_, EngineState>) -> Result<Connection,
     Ok(state.connection.clone())
 }
 
+fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
+    command.env_clear();
+    #[cfg(windows)]
+    {
+        for name in [
+            "SystemRoot",
+            "WINDIR",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "USERPROFILE",
+            "TEMP",
+            "TMP",
+        ] {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
+        }
+        let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        command.env(
+            "PATH",
+            std::path::PathBuf::from(system_root).join("System32"),
+        );
+    }
+    command
+        .env("XAA_API_TOKEN", token)
+        .env("XAA_API_PORT", port.to_string());
+}
+
 impl EngineState {
     fn stop(&self) {
         if let Ok(mut child) = self.child.lock() {
@@ -102,11 +130,8 @@ fn main() {
                 .append(true)
                 .open(logs.join("engine.log"))?;
             let mut command = Command::new(executable);
-            command
-                .env("XAA_API_TOKEN", &token)
-                .env("XAA_API_PORT", port.to_string())
-                .stdout(log.try_clone()?)
-                .stderr(log);
+            configure_engine_environment(&mut command, &token, port);
+            command.stdout(log.try_clone()?).stderr(log);
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
