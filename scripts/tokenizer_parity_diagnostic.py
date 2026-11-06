@@ -18,9 +18,8 @@ from xaa.providers.tokenization import PromptCountRequest
 
 
 def sdk_count(
-    instance: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    sdk: Any, model: Any, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
 ) -> dict[str, int]:
-    sdk: Any = importlib.import_module("lmstudio")
     chat = sdk.Chat()
     for message in messages:
         role = message["role"]
@@ -52,16 +51,11 @@ def sdk_count(
             )
         else:
             raise ValueError("Probe only supports text/tool message roles.")
-    with sdk.Client("127.0.0.1:1234") as client:
-        matches = [model for model in client.llm.list_loaded() if model.identifier == instance]
-        if len(matches) != 1:
-            raise RuntimeError("SDK could not identify the exact loaded HTTP instance.")
-        model = matches[0]
-        formatted = model.apply_prompt_template(chat, {"toolDefinitions": tools})
-        return {
-            "sdk_prompt_tokens": len(model.tokenize(formatted)),
-            "sdk_context_length": model.get_context_length(),
-        }
+    formatted = model.apply_prompt_template(chat, {"toolDefinitions": tools})
+    return {
+        "sdk_prompt_tokens": len(model.tokenize(formatted)),
+        "sdk_context_length": model.get_context_length(),
+    }
 
 
 async def main() -> None:
@@ -96,6 +90,9 @@ async def main() -> None:
     provider = LMStudioProvider()
     model = args.model
     instance = None
+    sdk_module: Any | None = None
+    sdk_client: Any | None = None
+    sdk_model: Any | None = None
     report: dict[str, Any] = {
         "probe_complete": False,
         "all_counts_match": False,
@@ -154,6 +151,17 @@ async def main() -> None:
     try:
         await provider.models()
         instance = await provider.load_model(model, context_length=args.context_length)
+        if not args.engine:
+            sdk_module = importlib.import_module("lmstudio")
+            direct_client: Any = sdk_module.Client("127.0.0.1:1234")
+            sdk_client = direct_client
+            direct_client.__enter__()
+            matches = [
+                item for item in direct_client.llm.list_loaded() if item.identifier == instance
+            ]
+            if len(matches) != 1:
+                raise RuntimeError("SDK could not identify the exact loaded HTTP instance.")
+            sdk_model = matches[0]
         for name, messages, definitions in cases:
             count_error_type = None
             counted: dict[str, int | None]
@@ -170,8 +178,9 @@ async def main() -> None:
                         "sdk_context_length": counted_model.context_length,
                     }
                 else:
+                    assert sdk_module is not None and sdk_model is not None
                     direct_count = await asyncio.to_thread(
-                        sdk_count, instance, messages, definitions
+                        sdk_count, sdk_module, sdk_model, messages, definitions
                     )
                     counted = {
                         "sdk_prompt_tokens": direct_count["sdk_prompt_tokens"],
@@ -180,29 +189,43 @@ async def main() -> None:
             except Exception as exc:  # noqa: BLE001 - retain a type-only compatibility finding
                 count_error_type = type(exc).__name__
                 counted = {"sdk_prompt_tokens": None, "sdk_context_length": None}
-            response = await provider.chat(
-                model=model, messages=messages, tools=definitions or None, max_output_tokens=1
-            )
-            actual = response["usage"]["prompt_tokens"]
+            http_error_type = None
+            actual = None
+            try:
+                response = await provider.chat(
+                    model=model, messages=messages, tools=definitions or None, max_output_tokens=1
+                )
+                actual = response["usage"]["prompt_tokens"]
+            except Exception as exc:  # noqa: BLE001 - retain a type-only compatibility finding
+                http_error_type = type(exc).__name__
             report["cases"].append(
                 {
                     "case": name,
                     **counted,
                     "http_prompt_tokens": actual,
-                    "match": counted["sdk_prompt_tokens"] == actual,
+                    "match": (
+                        counted["sdk_prompt_tokens"] is not None
+                        and actual is not None
+                        and counted["sdk_prompt_tokens"] == actual
+                    ),
                     **({"count_error_type": count_error_type} if count_error_type else {}),
+                    **({"http_error_type": http_error_type} if http_error_type else {}),
                 }
             )
         report["probe_complete"] = True
         report["all_counts_match"] = all(row["match"] is True for row in report["cases"])
     finally:
         try:
-            if instance is not None:
-                await provider.unload_model(instance)
+            if sdk_client is not None:
+                sdk_client.close()
         finally:
-            await provider.close()
-            (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            print(json.dumps({**report, "evidence": str(root)}, indent=2))
+            try:
+                if instance is not None:
+                    await provider.unload_model(instance)
+            finally:
+                await provider.close()
+                (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+                print(json.dumps({**report, "evidence": str(root)}, indent=2))
     if report["probe_complete"] and not report["all_counts_match"]:
         raise SystemExit(1)
 
