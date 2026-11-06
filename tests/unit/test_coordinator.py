@@ -133,6 +133,46 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
             required_permissions=[],
         )
     )
+
+    def add_imported(name, declared):
+        return SkillStore(store).import_agent_plugin(
+            SkillDraft(
+                name=name,
+                content="Untrusted imported instructions.",
+                description=f"Description for {name}.",
+                required_tools=[],
+                required_permissions=[],
+            ),
+            {
+                "package_name": "visibility-fixture",
+                "package_version": "1.0.0",
+                "skill_name": name,
+                "description": f"Description for {name}.",
+                "category": "engineering",
+                "allowed_tools": "",
+                "unmapped_allowed_tools": "",
+                "declared_requirements": json.dumps(declared),
+                "content_sha256": "0" * 64,
+                "manifest_sha256": "1" * 64,
+            },
+        )
+
+    expected_visible = {
+        "Catalog fixture",
+        "Requires files",
+        "Requires read file",
+        "Unknown fallback stays visible",
+        "Always visible",
+    }
+    add_imported("Requires files", {"hermes_toolsets": ["files"]})
+    add_imported("Requires read file", {"hermes_required_tools": ["read_file"]})
+    add_imported("Needs unavailable terminal", {"hermes_toolsets": ["terminal"]})
+    add_imported("Fallback for files", {"hermes_fallback_toolsets": ["files"]})
+    add_imported("Fallback for read file", {"hermes_fallback_tools": ["workspace.read_file"]})
+    add_imported("Needs unknown tool", {"hermes_required_tools": ["third_party_exec"]})
+    add_imported("Unknown fallback stays visible", {"hermes_fallback_tools": ["third_party_exec"]})
+    add_imported("Always visible", {})
+
     run_id = store.create_run(
         objective="Find a reusable procedure",
         acceptance_criteria=[],
@@ -173,8 +213,12 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
             result = json.loads(messages[-1]["content"])
             assert result["trust"] == "untrusted_procedure_metadata"
             assert result["selection"] == "explicit_user_only"
-            assert result["procedures"][0]["id"] == procedure["id"]
-            assert result["procedures"][0]["category"] == "engineering"
+            assert {item["name"] for item in result["procedures"]} == expected_visible
+            catalog_fixture = next(
+                item for item in result["procedures"] if item["name"] == "Catalog fixture"
+            )
+            assert catalog_fixture["id"] == procedure["id"]
+            assert catalog_fixture["category"] == "engineering"
             return {
                 "choices": [
                     {"message": {"role": "assistant", "content": "Ask the user to select it."}}
@@ -193,7 +237,9 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
             (run_id,),
         ).fetchone()
     assert result is not None
-    assert json.loads(result["result"])["selection"] == "explicit_user_only"
+    saved = json.loads(result["result"])
+    assert saved["selection"] == "explicit_user_only"
+    assert {item["name"] for item in saved["procedures"]} == expected_visible
 
 
 async def test_recovery_blocks_unconfirmed_tool_request(workspace_tmp_path):

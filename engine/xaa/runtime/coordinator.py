@@ -58,7 +58,7 @@ from xaa.storage.commands import TOOL as COMMAND_TOOL
 from xaa.storage.commands import CommandJournal
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import IterationBudgetExceeded, LeaseLost, RunStore, TokenBudgetExceeded
-from xaa.storage.skills import SkillStore, snapshot_digest
+from xaa.storage.skills import SkillStore, available_toolsets, snapshot_digest
 from xaa.storage.tasks import TaskStore
 
 
@@ -350,7 +350,18 @@ class Coordinator:
                 idempotency_key=call["id"],
             ):
                 raise ValueError("Procedure catalog read requires reconciliation.")
-            result = SkillStore(self.store).catalog(limit=limit, offset=offset, category=category)
+            available_tools = {
+                item["function"]["name"]
+                for item in tools
+                if isinstance(item["function"].get("name"), str)
+            }
+            result = SkillStore(self.store).catalog(
+                limit=limit,
+                offset=offset,
+                category=category,
+                available_tools=available_tools,
+                toolsets=available_toolsets(available_tools),
+            )
             self.store.record_tool_result(run_id, token, call["id"], result)
             return result
         if name.startswith("mcp_"):

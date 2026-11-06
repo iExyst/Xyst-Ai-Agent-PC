@@ -7,12 +7,93 @@ import json
 import re
 import sqlite3
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from xaa.storage.runs import RunStore, utc_now
+
+_HERMES_TOOL_ALIASES = {
+    "read_file": "workspace_read_file",
+    "workspace.read_file": "workspace_read_file",
+    "list_directory": "workspace_list_directory",
+    "workspace.list_directory": "workspace_list_directory",
+    "write_file": "workspace_write_file",
+    "workspace.write_file": "workspace_write_file",
+    "create_file": "workspace_create_file",
+    "workspace.create_file": "workspace_create_file",
+    "replace_text": "workspace_replace_text",
+    "workspace.replace_text": "workspace_replace_text",
+    "apply_patch": "workspace_apply_patch",
+    "workspace.apply_patch": "workspace_apply_patch",
+    "search_files": "workspace_search",
+    "web_search": "web_search",
+    "web_fetch": "web_fetch",
+    "browser_run": "browser_run",
+    "terminal": "workspace_run_command",
+}
+
+
+def available_toolsets(tool_names: set[str]) -> set[str]:
+    """Return capability groups backed by tools exposed in this run."""
+    file_tools = {
+        "workspace_read_file",
+        "workspace_list_directory",
+        "workspace_create_file",
+        "workspace_write_file",
+        "workspace_replace_text",
+        "workspace_apply_patch",
+        "workspace_search",
+    }
+    result: set[str] = set()
+    if tool_names & file_tools:
+        result.update({"file", "files", "workspace"})
+    if "workspace_run_command" in tool_names:
+        result.update({"terminal", "workspace"})
+    if tool_names & {"web_search", "web_fetch"}:
+        result.add("web")
+    if "browser_run" in tool_names:
+        result.add("browser")
+    if tool_names & {"workspace_search", "web_search"}:
+        result.add("search")
+    if any(name.startswith("mcp_") for name in tool_names):
+        result.add("mcp")
+    if tool_names & {"procedure_view", "procedure_read_resource", "procedure_catalog"}:
+        result.add("skills")
+    return result
+
+
+def procedure_matches_tool_conditions(
+    requirements: dict[str, Any], *, available_tools: set[str], toolsets: set[str]
+) -> bool:
+    """Apply Hermes requires/fallback visibility rules without granting authority."""
+
+    def values(key: str) -> list[str]:
+        raw_value: Any = requirements.get(key, [])
+        if not isinstance(raw_value, list):
+            return []
+        raw = cast(list[Any], raw_value)
+        return [item.strip().lower() for item in raw[:64] if isinstance(item, str) and item.strip()]
+
+    available = set(available_tools)
+    available.update(
+        declared for declared, actual in _HERMES_TOOL_ALIASES.items() if actual in available_tools
+    )
+    required_tools = values("hermes_required_tools")
+    fallback_tools = values("hermes_fallback_tools")
+    required_toolsets = values("hermes_toolsets")
+    fallback_toolsets = values("hermes_fallback_toolsets")
+    known_tools = available | set(_HERMES_TOOL_ALIASES)
+    # Unknown required capabilities cannot be satisfied. Unknown fallback names
+    # are absent, so they do not hide an otherwise usable fallback.
+    if any(name not in known_tools or name not in available for name in required_tools):
+        return False
+    if any(name not in toolsets for name in required_toolsets):
+        return False
+    if any(name in available for name in fallback_tools):
+        return False
+    return not any(name in toolsets for name in fallback_toolsets)
 
 
 class SkillTool(BaseModel):
@@ -463,7 +544,13 @@ class SkillStore:
             ]
 
     def catalog(
-        self, *, limit: int = 20, offset: int = 0, category: str | None = None
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        category: str | None = None,
+        available_tools: set[str] | None = None,
+        toolsets: set[str] | None = None,
     ) -> dict[str, Any]:
         """Return bounded discovery metadata; procedure text is never included."""
         if not 1 <= limit <= 50 or not 0 <= offset <= 99:
@@ -483,12 +570,29 @@ class SkillStore:
             ).fetchall()
         procedures: list[dict[str, Any]] = []
         for row in rows:
-            evidence = json.loads(row["evaluation_evidence"])
-            source = evidence.get("source", {})
+            evidence = cast(dict[str, Any], json.loads(row["evaluation_evidence"]))
+            raw_source: Any = evidence.get("source", {})
+            source = cast(dict[str, Any], raw_source) if isinstance(raw_source, dict) else {}
+            if available_tools is not None and toolsets is not None:
+                raw_requirements: Any = source.get("declared_requirements")
+                if isinstance(raw_requirements, str) and len(raw_requirements) <= 8192:
+                    try:
+                        decoded_requirements: Any = json.loads(raw_requirements)
+                    except json.JSONDecodeError:
+                        decoded_requirements = {}
+                    if isinstance(
+                        decoded_requirements, dict
+                    ) and not procedure_matches_tool_conditions(
+                        cast(dict[str, Any], decoded_requirements),
+                        available_tools=available_tools,
+                        toolsets=toolsets,
+                    ):
+                        continue
             description = str(evidence.get("description") or source.get("description", "")).strip()
             if not description:
                 description = "User-authored saved procedure."
-            procedure_category = evidence.get("category") or source.get("category", "")
+            raw_category: Any = evidence.get("category") or source.get("category", "")
+            procedure_category = raw_category if isinstance(raw_category, str) else ""
             if category is not None and procedure_category != category:
                 continue
             procedures.append(
