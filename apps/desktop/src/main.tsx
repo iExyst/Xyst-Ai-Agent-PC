@@ -22,6 +22,8 @@ import { MCPPanel } from './MCPPanel.tsx';
 import { AgentPluginsPanel } from './AgentPluginsPanel.tsx';
 import type {components} from './generated/api.js';
 
+const SPECIALIST_DRAFT_CLEAR_DELAY_MS=1000;
+
 function App() {
   const [token, setToken] = useState('');
   const [client, setClient] = useState<EngineClient>();
@@ -53,6 +55,7 @@ function App() {
   const [answer, setAnswer] = useState('');
   const [partial,setPartial]=useState('');
   const [specialistPartials,setSpecialistPartials]=useState<Record<string,string>>({});
+  const specialistDraftTimers=useRef<Record<string,number>>({});
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [plan, setPlan] = useState<Plan>();
   const [historyRefresh,setHistoryRefresh]=useState(0);
@@ -100,6 +103,8 @@ function App() {
     if (!client) return;
     stream.current?.abort();
     const controller = new AbortController(); stream.current = controller;
+    Object.values(specialistDraftTimers.current).forEach(timer=>window.clearTimeout(timer));
+    specialistDraftTimers.current={};
     setActivity([]);setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPreview('');setPlan(undefined);
     try {
       const initialPlan = await client.plan(next.id, controller.signal);
@@ -111,6 +116,8 @@ function App() {
         if(event.event_type==='model.delta'&&typeof event.payload.text==='string'){setPartial(text=>(text+event.payload.text).slice(0,65536));continue;}
         if(event.event_type==='task.model.delta'&&typeof event.payload.task_id==='string'&&typeof event.payload.text==='string'){
           const taskId=event.payload.task_id;
+          const pendingClear=specialistDraftTimers.current[taskId];
+          if(pendingClear!==undefined){window.clearTimeout(pendingClear);delete specialistDraftTimers.current[taskId];}
           setSpecialistPartials(current=>({...current,[taskId]:((current[taskId]??'')+event.payload.text).slice(-65536)}));
           continue;
         }
@@ -144,7 +151,13 @@ function App() {
           if (message && typeof message === 'object' && 'content' in message && typeof message.content === 'string') setAnswer(message.content);
         }
         if(event.event_type==='task.model.message'&&typeof event.payload.task_id==='string'){
-          setSpecialistPartials(current=>({...current,[event.payload.task_id as string]:''}));
+          const taskId=event.payload.task_id;
+          const pendingClear=specialistDraftTimers.current[taskId];
+          if(pendingClear!==undefined)window.clearTimeout(pendingClear);
+          specialistDraftTimers.current[taskId]=window.setTimeout(()=>{
+            setSpecialistPartials(current=>({...current,[taskId]:''}));
+            delete specialistDraftTimers.current[taskId];
+          },SPECIALIST_DRAFT_CLEAR_DELAY_MS);
         }
         if(event.event_type==='run.state_changed')setHistoryRefresh(value=>value+1);
         if (event.event_type.startsWith('run.')) {const saved=await client.getRun(next.id,controller.signal);if(!controller.signal.aborted)setRun(saved);}

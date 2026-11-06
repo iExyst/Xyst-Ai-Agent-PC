@@ -11,6 +11,10 @@ from xaa.providers.contracts import TokenUsage, validate_completion
 class StreamAssemblyError(ValueError):
     """A stream cannot safely form one complete assistant response."""
 
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class FunctionDelta(BaseModel):
     model_config = ConfigDict(strict=True)
@@ -90,18 +94,32 @@ class CompletionAssembler:
             self.finish_reason = choice.finish_reason
             return piece
         except (ValueError, UnicodeError) as exc:
-            raise StreamAssemblyError("Malformed or oversized streamed completion.") from exc
+            raise StreamAssemblyError(
+                "Malformed or oversized streamed completion.", code="invalid_or_oversized_chunk"
+            ) from exc
 
     def complete(self) -> dict[str, Any]:
+        if self.finish_reason is None or sorted(self.calls) != list(range(len(self.calls))):
+            raise StreamAssemblyError(
+                "Incomplete response or sparse tool indexes.", code="incomplete_response"
+            )
+        calls = [self.calls[index] for index in sorted(self.calls)]
+        if not calls and not self.content.strip():
+            raise StreamAssemblyError(
+                "Stream ended without a public answer or tool call.", code="empty_response"
+            )
+        for call in calls:
+            try:
+                arguments = json.loads(call["function"]["arguments"])
+            except (ValueError, TypeError) as exc:
+                raise StreamAssemblyError(
+                    "Tool arguments were not valid JSON.", code="invalid_tool_arguments"
+                ) from exc
+            if not isinstance(arguments, dict):
+                raise StreamAssemblyError(
+                    "Tool arguments must be a JSON object.", code="invalid_tool_arguments"
+                )
         try:
-            if self.finish_reason is None or sorted(self.calls) != list(range(len(self.calls))):
-                raise ValueError("Incomplete response or sparse tool indexes.")
-            calls = [self.calls[index] for index in sorted(self.calls)]
-            if not calls and not self.content.strip():
-                raise ValueError("Stream ended without a public answer or tool call.")
-            for call in calls:
-                if not isinstance(json.loads(call["function"]["arguments"]), dict):
-                    raise TypeError("Tool arguments must be an object.")
             message: dict[str, Any] = {"role": "assistant", "content": self.content}
             if calls:
                 message["tool_calls"] = calls
@@ -114,5 +132,5 @@ class CompletionAssembler:
             return response
         except (ValueError, TypeError) as exc:
             raise StreamAssemblyError(
-                "Stream ended without a complete validated response."
+                "Stream ended without a complete validated response.", code="invalid_completion"
             ) from exc

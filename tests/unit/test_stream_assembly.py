@@ -123,6 +123,26 @@ def test_incomplete_or_invalid_stream_cannot_form_completion(fragments):
         assembler.complete()
 
 
+@pytest.mark.parametrize(
+    ("fragments", "code"),
+    [
+        ([chunk({"content": "unfinished"})], "incomplete_response"),
+        ([chunk({"reasoning_content": "private reasoning only"}, "stop")], "empty_response"),
+        (
+            [chunk({"content": "ok"}, "stop"), chunk({"content": "late"})],
+            "invalid_or_oversized_chunk",
+        ),
+    ],
+)
+def test_stream_assembly_errors_expose_bounded_machine_readable_code(fragments, code):
+    assembler = CompletionAssembler()
+    with pytest.raises(StreamAssemblyError) as captured:
+        for fragment in fragments:
+            assembler.feed(fragment)
+        assembler.complete()
+    assert captured.value.code == code
+
+
 @pytest.mark.parametrize("complete_arguments,finish", [(True, False), (False, True)])
 async def test_partial_stream_never_executes_a_write(
     workspace_tmp_path, complete_arguments, finish

@@ -51,6 +51,8 @@ const limitsRequested=process.env.XAA_NATIVE_LIMITS==='1';
 let limitsVerified=false;
 const edit = process.env.XAA_NATIVE_EDIT === '1' || finalReview || patchRequested || createRequested;
 const specialists = process.env.XAA_NATIVE_SPECIALISTS === '1';
+const seededSpecialists = specialists && process.env.XAA_NATIVE_SPECIALIST_SEEDED === '1';
+const nativeSpecialistModel = process.env.XAA_NATIVE_SPECIALIST_MODEL || 'qwen/qwen3.5-9b';
 let specialistStreamingVerified=false;
 const exactContextRequested=process.env.XAA_EXACT_CONTEXT==='1';
 const taskQuotaRequested=process.env.XAA_NATIVE_TASK_QUOTA==='1';
@@ -105,7 +107,7 @@ try {
     await page.getByLabel('Local model').selectOption(model);
     await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBe(model);
     for(diagnosticAttempts=1;diagnosticAttempts<=2;diagnosticAttempts++){
-      await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click();
+      await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click({force:true});
       try{await page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true}).waitFor({timeout:120000});break;}
       catch(error){if(diagnosticAttempts===2)throw error;}
     }
@@ -323,22 +325,54 @@ try {
     const filename = `project-${randomUUID()}.txt`;
     const fixture = (specialists||taskQuotaRequested) ? `XAA-${randomUUID()}\n` : 'native planning fixture\n';
     await writeFile(path.join(workspace, filename), fixture);
-    const response = await fetch(connection.base_url + '/models/load', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'qwen/qwen3.5-9b', context_length: taskQuotaRequested ? 32768 : 16384 }) });
-    if (!response.ok) throw new Error('Native planning model loading failed');
-    instance = (await response.json()).instance_id;
-    await page.getByLabel('Local model').selectOption('qwen/qwen3.5-9b');
-    await page.getByLabel('Workspace path').fill(workspace);
-    const specialistRequirements = (specialists||taskQuotaRequested) ? 'Both task objectives must tell the assigned specialist to use workspace_read_file on the actual discovered filename and report the exact code in that file. For both tasks, acceptance_criteria must be exactly ["Report the exact code read from the fixture file."]. The reviewer must independently read the file. ' : '';
-    const reservations = ((specialists||taskQuotaRequested) ? 'Give inspect max_iterations 2 and review max_iterations 3. ' : 'Give each task max_iterations 2. ')+'The tasks[].id values must be exactly inspect and review, without suffixes. Set review dependencies to ["inspect"]. ';
-    await page.getByLabel('Objective', { exact: true }).fill('First list the workspace root using workspace_list_directory. Then use plan_save to save exactly two tasks: inspect (researcher, no dependencies) and review (reviewer, depends on inspect). Include the actual discovered filename in the inspect objective. ' + reservations + 'Give both tasks max_seconds 60, permission workspace.read, and explicit acceptance_criteria. ' + specialistRequirements + (taskQuotaRequested?'Set inspect max_total_tokens to exactly 1 and max_output_tokens to exactly 256. Set review max_total_tokens and max_output_tokens to null. This is an acceptance test of quota blocking; the tiny inspect allowance is intentional and must not be expanded. ':'') + 'After plan_save succeeds, immediately finish with a plain text answer: the plan is saved and execution is pending. Do not call plan_run_ready or any further tool after saving. The user will dispatch manually. Do not read or modify files and do not execute the tasks during this planning request.');
-    if(taskQuotaRequested){
-      await page.getByText('Run limits',{exact:true}).click();
-      await page.getByLabel('Reported token threshold (optional)',{exact:true}).fill('50000');
-      await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('4096');
+    let run;
+    if (seededSpecialists) {
+      const objective = 'Native streamed specialist acceptance fixture';
+      const loaded = await fetch(`${connection.base_url}/models/load`, {method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({model:nativeSpecialistModel,context_length:nativeSpecialistModel==='qwen/qwen3.5-9b'?16384:8192})});
+      if(!loaded.ok)throw new Error('Native specialist model loading failed');
+      instance=(await loaded.json()).instance_id;
+      await page.getByLabel('Local model').selectOption(nativeSpecialistModel);
+      let diagnosticResult;
+      let diagnosticResponse;
+      for(let attempt=0;attempt<3;attempt++){
+        diagnosticResponse=await fetch(`${connection.base_url}/providers/lm-studio/diagnostics`,{method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({model:nativeSpecialistModel})});
+        diagnosticResult=await diagnosticResponse.json();
+        if(diagnosticResponse.ok&&diagnosticResult.tool_round_trip_verified===true)break;
+        await new Promise(resolve=>setTimeout(resolve,250));
+      }
+      if(!diagnosticResponse?.ok||diagnosticResult?.tool_round_trip_verified!==true)throw new Error(`Native specialist model failed its harmless tool-use diagnostic: ${String(diagnosticResult?.detail??'unverified').slice(0,240)}`);
+      await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click({force:true});
+      const diagnosticPassed=page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true}).waitFor({timeout:180000}).then(()=>true,()=>false);
+      const diagnosticFailed=page.getByRole('alert').filter({hasText:'Tool use remains unverified for this model'}).waitFor({timeout:180000}).then(()=>false,()=>false);
+      if(!await Promise.race([diagnosticPassed,diagnosticFailed]))throw new Error(`Selected native specialist model failed its UI capability diagnostic: ${await page.getByRole('alert').allTextContents()}`);
+      await page.getByLabel('Workspace path').fill(workspace);
+      const created = await fetch(`${connection.base_url}/runs`, {method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({objective,workspace,mode:'observe',model:null,max_iterations:8,max_seconds:240})});
+      if(!created.ok)throw new Error('Could not create model-free native specialist fixture run');
+      run=await created.json();
+      execFileSync('uv',['run','python','scripts/seed_native_specialists.py',run.id,nativeSpecialistModel,filename],{cwd:process.cwd(),windowsHide:true,stdio:'pipe',env:{...process.env,XAA_DATA_DIR:nativeLocalAppData}});
+      await page.reload();
+      await page.getByLabel('Local model').waitFor({timeout:20000});
+      await page.getByLabel('Local model').selectOption(nativeSpecialistModel);
+      await page.getByLabel('Workspace path').fill(workspace);
+      await page.getByRole('button',{name:`Open ${objective}`,exact:true}).click();
+    } else {
+      const response = await fetch(connection.base_url + '/models/load', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'qwen/qwen3.5-9b', context_length: taskQuotaRequested ? 32768 : 16384 }) });
+      if (!response.ok) throw new Error('Native planning model loading failed');
+      instance = (await response.json()).instance_id;
+      await page.getByLabel('Local model').selectOption('qwen/qwen3.5-9b');
+      await page.getByLabel('Workspace path').fill(workspace);
+      const specialistRequirements = (specialists||taskQuotaRequested) ? 'Both task objectives must tell the assigned specialist to use workspace_read_file on the actual discovered filename and report the exact code in that file. For both tasks, acceptance_criteria must be exactly ["Report the exact code read from the fixture file."]. The reviewer must independently read the file. ' : '';
+      const reservations = ((specialists||taskQuotaRequested) ? 'Give inspect max_iterations 2 and review max_iterations 3. ' : 'Give each task max_iterations 2. ')+'The tasks[].id values must be exactly inspect and review, without suffixes. Set review dependencies to ["inspect"]. ';
+      await page.getByLabel('Objective', { exact: true }).fill('First list the workspace root using workspace_list_directory. Then use plan_save to save exactly two tasks: inspect (researcher, no dependencies) and review (reviewer, depends on inspect). Include the actual discovered filename in the inspect objective. ' + reservations + 'Give both tasks max_seconds 60, permission workspace.read, and explicit acceptance_criteria. ' + specialistRequirements + (taskQuotaRequested?'Set inspect max_total_tokens to exactly 1 and max_output_tokens to exactly 256. Set review max_total_tokens and max_output_tokens to null. This is an acceptance test of quota blocking; the tiny inspect allowance is intentional and must not be expanded. ':'') + 'After plan_save succeeds, immediately finish with a plain text answer: the plan is saved and execution is pending. Do not call plan_run_ready or any further tool after saving. The user will dispatch manually. Do not read or modify files and do not execute the tasks during this planning request.');
+      if(taskQuotaRequested){
+        await page.getByText('Run limits',{exact:true}).click();
+        await page.getByLabel('Reported token threshold (optional)',{exact:true}).fill('50000');
+        await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('4096');
+      }
+      const created = page.waitForResponse(response => new URL(response.url()).pathname === '/runs' && response.request().method() === 'POST');
+      await page.getByRole('button', { name: 'Start objective' }).click();
+      run = await (await created).json();
     }
-    const created = page.waitForResponse(response => new URL(response.url()).pathname === '/runs' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Start objective' }).click();
-    const run = await (await created).json();
     const panel = page.getByRole('region', {name:'Task plan'});
     await panel.getByRole('article', {name:'Task inspect'}).waitFor({timeout:90000});
     await page.getByRole('heading', {name:'Active run verifying'}).waitFor({timeout:90000});
@@ -371,6 +405,7 @@ try {
     if (specialists) {
       const expectedCriteria = ['Report the exact code read from the fixture file.'];
       if (graph.tasks.some(task => JSON.stringify(task.acceptance_criteria) !== JSON.stringify(expectedCriteria))) throw new Error('Model plan did not preserve fixture acceptance criteria');
+      const streamedDraftTasks=[];
       for (const taskId of ['inspect', 'review']) {
         const article = panel.getByRole('article', {name:`Task ${taskId}`});
         const streamedDraft=streamingRequested
@@ -381,7 +416,11 @@ try {
         for(let attempt=0;attempt<90;attempt++){
           const response=await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}/plan`,{headers:{Authorization:`Bearer ${connection.token}`}});
           if(!response.ok)throw new Error('Cannot observe native specialist state');
-          const status=(await response.json()).tasks.find(task=>task.local_id===taskId)?.status;
+          const observedPlan=await response.json();
+          const runStateResponse=await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}`,{headers:{Authorization:`Bearer ${connection.token}`}});
+          const runState=await runStateResponse.json();
+          if(['failed','blocked','cancelled'].includes(runState.state))throw new Error(`Native parent run entered ${runState.state} before ${taskId} inference`);
+          const status=observedPlan.tasks.find(task=>task.local_id===taskId)?.status;
           if(status==='verifying'){candidateReady=true;break;}
           if(['failed','blocked','cancelled'].includes(status))throw new Error(`Native ${taskId} entered ${status}`);
           await new Promise(resolve=>setTimeout(resolve,1000));
@@ -390,6 +429,12 @@ try {
         const partialVisible=await streamedDraft;
         if(streamingRequested&&!partialVisible)throw new Error(`Native ${taskId} streamed draft was not visible in its task panel`);
         specialistStreamingVerified ||= partialVisible;
+        if(partialVisible)streamedDraftTasks.push(taskId);
+        if(streamingRequested){
+          const progressEvents=await (await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}/events`,{headers:{Authorization:`Bearer ${connection.token}`}})).json();
+          const progressDeltas=progressEvents.filter(event=>event.event_type==='task.model.delta');
+          await writeFile(path.join(root,'specialist-streaming-progress.json'),JSON.stringify({passed:false,run_id:run.id,model:nativeSpecialistModel,unverified_draft_visible_for_tasks:streamedDraftTasks,task_delta_counts:Object.fromEntries(['inspect','review'].map(id=>[id,progressDeltas.filter(event=>event.payload.task_id===id).length])),max_delta_characters:Math.max(0,...progressDeltas.map(event=>event.payload.text.length)),reason:'In progress; candidate checks and review gating have not all completed.'},null,2));
+        }
         await article.getByRole('button', {name:'Review candidate',exact:true}).waitFor({timeout:10000});
         await page.getByRole('heading', {name:'Active run verifying'}).waitFor({timeout:90000});
         const candidateResponse = await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}/tasks/${taskId}/candidate`, {headers:{Authorization:`Bearer ${connection.token}`}});
@@ -415,7 +460,7 @@ try {
         const deltas=events.filter(event=>event.event_type==='task.model.delta');
         const byTask=Object.fromEntries(['inspect','review'].map(taskId=>[taskId,deltas.filter(event=>event.payload.task_id===taskId)]));
         if(Object.values(byTask).some(items=>items.length===0)||deltas.some(event=>event.payload.text.length>128))throw new Error('Native specialist streaming events were missing, mis-scoped or unbounded');
-        await writeFile(path.join(root,'specialist-streaming.json'),JSON.stringify({passed:true,run_id:run.id,model:'qwen/qwen3.5-9b',unverified_drafts_shown_per_task:true,all_drafts_remained_review_gated:true,task_event_counts:Object.fromEntries(Object.entries(byTask).map(([taskId,items])=>[taskId,items.length])),max_delta_characters:Math.max(...deltas.map(event=>event.payload.text.length)),native_task_panels:true},null,2));
+        await writeFile(path.join(root,'specialist-streaming.json'),JSON.stringify({passed:true,run_id:run.id,model:nativeSpecialistModel,unverified_drafts_shown_per_task:true,all_drafts_remained_review_gated:true,task_event_counts:Object.fromEntries(Object.entries(byTask).map(([taskId,items])=>[taskId,items.length])),max_delta_characters:Math.max(...deltas.map(event=>event.payload.text.length)),native_task_panels:true},null,2));
         specialistStreamingVerified=true;
       }
     }

@@ -53,8 +53,11 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[task],ready:[],blocked:[]},headers});
     if(path.endsWith('/events/stream')){
-      const event={sequence:1,event_type:'task.model.delta',payload:{task_id:'inspect',inference_id:'inference-1',text:'Unverified streamed specialist draft'},created_at:'2026-11-06T00:00:00Z'};
-      return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify(event)}\n\nevent: done\ndata: {}\n\n`});
+      const events=[
+        {sequence:1,event_type:'task.model.delta',payload:{task_id:'inspect',inference_id:'inference-1',text:'Unverified streamed specialist draft'},created_at:'2026-11-06T00:00:00Z'},
+        {sequence:2,event_type:'task.model.message',payload:{task_id:'inspect',inference_id:'inference-1',message:{role:'assistant',content:'Saved candidate'}},created_at:'2026-11-06T00:00:01Z'},
+      ];
+      return route.fulfill({headers,contentType:'text/event-stream',body:events.map(event=>`id: ${event.sequence}\nevent: run_event\ndata: ${JSON.stringify(event)}\n\n`).join('')+'event: done\ndata: {}\n\n'});
     }
     return route.fulfill({json:run,headers});
   });
@@ -68,4 +71,6 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
   const inspect=page.getByRole('article',{name:'Task inspect'});
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
   await expect(inspect).toContainText('Unverified streamed specialist draft');
+  await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
+  await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toHaveCount(0,{timeout:2500});
 });
