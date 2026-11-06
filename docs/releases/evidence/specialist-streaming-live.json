@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "verified_at": "2026-11-06T11:01:14Z",
+  "model": "qwen/qwen3.5-9b",
+  "provider": "LM Studio local OpenAI-compatible API",
+  "workspace_mode": "observe",
+  "specialist_task_count": 2,
+  "streamed_task_event_counts": {
+    "alpha": 4,
+    "beta": 4
+  },
+  "max_delta_characters": 128,
+  "streamed_text_precedes_final_candidate_message": true,
+  "candidates_await_independent_review": true,
+  "workspace_files_modified": false,
+  "parent_conversation_history_pollution": false,
+  "unresolved_tool_calls": false,
+  "local_inference_only": true,
+  "raw_prompts_outputs_and_arguments_omitted": true,
+  "sanitized_live_report": ".acceptance/5edc5f3b-dcea-41e7-9b36-2e7ff89f8ce4/report.json",
+  "native_tauri_live_stream_verified": false
+}

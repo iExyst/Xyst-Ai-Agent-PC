@@ -39,3 +39,33 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   await expect(page.getByRole('heading',{name:'Candidate answer',exact:true})).toHaveCount(0);
   await expect(page.getByRole('region',{name:'Final run review'})).toHaveCount(0);
 });
+
+test('specialist streamed drafts stay attached to their task and visibly unverified',async({page})=>{
+  const run={id:'specialist-stream-run',objective:'Inspect one fixture',state:'running',revision:1,acceptance_criteria:[],model:'fixture/model',limits:{max_iterations:3,max_seconds:60}};
+  const task={id:'specialist-stream-run:inspect',local_id:'inspect',objective:'Read the fixture evidence',acceptance_criteria:['Report the file evidence'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:30},status:'running'};
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const path=new URL(request.url()).pathname;
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[task],ready:[],blocked:[]},headers});
+    if(path.endsWith('/events/stream')){
+      const event={sequence:1,event_type:'task.model.delta',payload:{task_id:'inspect',inference_id:'inference-1',text:'Unverified streamed specialist draft'},created_at:'2026-11-06T00:00:00Z'};
+      return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify(event)}\n\nevent: done\ndata: {}\n\n`});
+    }
+    return route.fulfill({json:run,headers});
+  });
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective',{exact:true}).fill(run.objective);
+  await page.getByRole('button',{name:'Start objective'}).click();
+  const inspect=page.getByRole('article',{name:'Task inspect'});
+  await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
+  await expect(inspect).toContainText('Unverified streamed specialist draft');
+});

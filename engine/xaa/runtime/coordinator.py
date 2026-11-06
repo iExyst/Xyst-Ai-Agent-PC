@@ -442,9 +442,9 @@ class Coordinator:
                 idempotency_key=call["id"],
             ):
                 raise ValueError("Specialist dispatch requires reconciliation.")
-            statuses = await SpecialistRunner(self.store, self.provider).run_ready(
-                run_id, token, deadline=deadline
-            )
+            statuses = await SpecialistRunner(
+                self.store, self.provider, stream_responses=self.stream_responses
+            ).run_ready(run_id, token, deadline=deadline)
             result = {"tasks": statuses, "verification": "Candidates require independent review."}
             self.store.record_tool_result(run_id, token, call["id"], result)
             return result
@@ -518,9 +518,9 @@ class Coordinator:
             deadline = time.monotonic() + remaining
             async with asyncio.timeout(remaining):
                 await self.diagnose_run_tools(run_id, token, run["model"])
-                outcomes = await SpecialistRunner(self.store, self.provider).run_ready(
-                    run_id, token, deadline=deadline
-                )
+                outcomes = await SpecialistRunner(
+                    self.store, self.provider, stream_responses=self.stream_responses
+                ).run_ready(run_id, token, deadline=deadline)
             ready, _ = TaskStore(self.store).readiness(run_id)
             blocked = (
                 not ready

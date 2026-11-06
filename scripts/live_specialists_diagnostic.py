@@ -23,6 +23,7 @@ async def main() -> None:
         (workspace / f"{name}.txt").write_bytes(code.encode())
     store = RunStore(root / "specialists.sqlite3")
     model = os.environ.get("LM_STUDIO_MODEL", "qwen/qwen3.5-9b")
+    streaming_requested = os.environ.get("XAA_STREAM_RESPONSES") == "1"
     run_id = store.create_run(
         objective="Inspect two independent files",
         acceptance_criteria=[],
@@ -54,10 +55,18 @@ async def main() -> None:
     try:
         instance = await provider.load_model(model, context_length=16384)
         await provider.diagnose_tools(model)
-        statuses = await SpecialistRunner(store, provider).run_ready(
-            run_id, parent, deadline=time.monotonic() + 150
-        )
+        statuses = await SpecialistRunner(
+            store, provider, stream_responses=streaming_requested
+        ).run_ready(run_id, parent, deadline=time.monotonic() + 150)
         records = tasks.records(run_id)
+        deltas = [
+            event
+            for event in store.list_events(run_id)
+            if event["event_type"] == "task.model.delta"
+        ]
+        streamed_task_counts = {
+            name: sum(event["payload"].get("task_id") == name for event in deltas) for name in codes
+        }
         passed = all(
             row["status"] == "verifying"
             and codes[row["local_id"]] in json.loads(row["result"])["candidate"]
@@ -68,11 +77,21 @@ async def main() -> None:
             and len(records) == 2
             and not store.conversation_messages(run_id)
             and not store.unresolved_tool_calls(run_id)
+            and (
+                not streaming_requested
+                or all(count > 0 for count in streamed_task_counts.values())
+                and all(len(event["payload"].get("text", "")) <= 128 for event in deltas)
+            )
         )
         report.update(
             passed=passed,
             run_id=run_id,
             statuses=statuses,
+            streaming_requested=streaming_requested,
+            streamed_task_event_counts=streamed_task_counts,
+            max_delta_characters=max(
+                (len(event["payload"].get("text", "")) for event in deltas), default=0
+            ),
             results=[
                 {"task_id": row["local_id"], "result": json.loads(row["result"])} for row in records
             ],

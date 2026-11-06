@@ -2,7 +2,7 @@ import { EngineClient, type Plan } from './api/client.ts';
 import { TaskReviewPanel } from './TaskReviewPanel.tsx';
 import './plan.css';
 
-export function PlanPanel({ plan, client, runId, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
+export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; partials:Record<string,string>; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
   return <section aria-label="Task plan"><h2>Plan and specialists</h2>
     {plan.tasks.length === 0 ? <p>No task plan has been saved for this run.</p> : <>
       <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'}. Queued tasks have not started.</p>
@@ -25,6 +25,7 @@ export function PlanPanel({ plan, client, runId, onReviewed, onDispatch, canDisp
             : 'Task execution is blocked. Inspect the activity before starting a new objective.'}</p>}
           <h4>Acceptance criteria</h4>
           {task.acceptance_criteria.length ? <ul>{task.acceptance_criteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ul> : <p>No criteria recorded.</p>}
+          {partials[task.local_id]&&<article aria-live="polite"><h4>Partial specialist draft · unverified</h4><p style={{whiteSpace:'pre-wrap'}}>{partials[task.local_id]}</p></article>}
           {task.status==='verifying'&&<TaskReviewPanel client={client} runId={runId} taskId={task.local_id} onReviewed={onReviewed}/>}
         </article>;
       })}</div>

@@ -52,6 +52,7 @@ function App() {
   const [activity, setActivity] = useState<string[]>([]);
   const [answer, setAnswer] = useState('');
   const [partial,setPartial]=useState('');
+  const [specialistPartials,setSpecialistPartials]=useState<Record<string,string>>({});
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [plan, setPlan] = useState<Plan>();
   const [historyRefresh,setHistoryRefresh]=useState(0);
@@ -99,7 +100,7 @@ function App() {
     if (!client) return;
     stream.current?.abort();
     const controller = new AbortController(); stream.current = controller;
-    setActivity([]);setAnswer('');setPartial('');setArtifacts([]);setPreview('');setPlan(undefined);
+    setActivity([]);setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPreview('');setPlan(undefined);
     try {
       const initialPlan = await client.plan(next.id, controller.signal);
       if (!controller.signal.aborted) setPlan(initialPlan);
@@ -108,6 +109,11 @@ function App() {
         if(['tokens.reserved','model.inference.started','task.inference.started','model.message','model.incomplete','task.model.message','diagnostic.inference.started','diagnostic.inference.completed'].includes(event.event_type))setUsageRefresh(value=>value+1);
         if(event.event_type==='model.inference.started'){setPartial('');setAnswer('');}
         if(event.event_type==='model.delta'&&typeof event.payload.text==='string'){setPartial(text=>(text+event.payload.text).slice(0,65536));continue;}
+        if(event.event_type==='task.model.delta'&&typeof event.payload.task_id==='string'&&typeof event.payload.text==='string'){
+          const taskId=event.payload.task_id;
+          setSpecialistPartials(current=>({...current,[taskId]:((current[taskId]??'')+event.payload.text).slice(-65536)}));
+          continue;
+        }
         if (event.event_type.startsWith('plan.') || event.event_type.startsWith('task.')) {
           const updatedPlan = await client.plan(next.id, controller.signal);
           if (!controller.signal.aborted) setPlan(updatedPlan);
@@ -136,6 +142,9 @@ function App() {
           setPartial('');
           const message = event.payload.message;
           if (message && typeof message === 'object' && 'content' in message && typeof message.content === 'string') setAnswer(message.content);
+        }
+        if(event.event_type==='task.model.message'&&typeof event.payload.task_id==='string'){
+          setSpecialistPartials(current=>({...current,[event.payload.task_id as string]:''}));
         }
         if(event.event_type==='run.state_changed')setHistoryRefresh(value=>value+1);
         if (event.event_type.startsWith('run.')) {const saved=await client.getRun(next.id,controller.signal);if(!controller.signal.aborted)setRun(saved);}
@@ -207,7 +216,7 @@ function App() {
       {run && <ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} onControl={action=>void control(action)}/>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
       {artifacts.length > 0 && <section><h2>Files and artifacts</h2><ul>{artifacts.map(item => <li key={item.id}>{item.media_type==='application/pdf'?<button onClick={async()=>{try{const blob=await client.artifactDownload(item.id);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='xaa-input-document.pdf';link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(failure){setError(String(failure));}}}>Download {item.provenance}</button>:<button onClick={async () => { try { setPreview(await client.artifactPreview(item.id)); } catch (failure) { setError(String(failure)); } }}>View {item.provenance}</button>} {item.size_bytes} bytes</li>)}</ul>{preview.startsWith('data:image/') ? <img src={preview} alt="Untrusted image content" style={{maxWidth:'100%',maxHeight:600}}/> : preview && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{preview}</pre>}</section>}
-      {run && plan && <PlanPanel key={run.id} plan={plan} client={client} runId={run.id} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'} />}
+      {run && plan && <PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'} />}
       {run?.state==='verifying'&&<RunReviewPanel key={`${run.id}:${run.revision}`} client={client} run={run} canAccept={plan!==undefined&&plan.tasks.every(task=>task.status==='completed')} onReviewed={next=>{setRun(next);setHistoryRefresh(value=>value+1);}}/>}
     </>}{error && <p role="alert">{error}</p>}</main>;
 }

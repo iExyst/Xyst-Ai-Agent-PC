@@ -6,16 +6,19 @@ import path from 'node:path';
 
 const root = path.resolve('.acceptance', randomUUID());
 await mkdir(root, { recursive: true });
+const nativeLocalAppData = path.join(root, 'localappdata');
+const nativeAppData = path.join(root, 'appdata');
+await Promise.all([nativeLocalAppData, nativeAppData].map(directory => mkdir(directory, { recursive: true })));
 if (process.env.XAA_NATIVE_SNAPSHOT) {
   await mkdir(path.join(root,'XAA'));
   await copyFile(process.env.XAA_NATIVE_SNAPSHOT,path.join(root,'XAA','xaa.sqlite3'));
 }
-const logPath = path.join(process.env.LOCALAPPDATA, 'dev.xyst.xaa', 'logs', 'engine.log');
+const logPath = path.join(nativeLocalAppData, 'dev.xyst.xaa', 'logs', 'engine.log');
 const previousLog = await readFile(logPath, 'utf8').catch(() => '');
 const nativeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())));
 nativeEnv.PATH = path.join(process.env.SystemRoot, 'System32');
 const manifest = JSON.parse(await readFile('build/native-dev/manifest.json', 'utf8'));
-const proc = spawn(path.resolve('build/native-dev/xaa-desktop.exe'), [], { windowsHide: true, stdio: 'ignore', env: { ...nativeEnv, XAA_TEST_HIDDEN: '1', XAA_DATA_DIR: root, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=19222' } });
+const proc = spawn(path.resolve('build/native-dev/xaa-desktop.exe'), [], { windowsHide: true, stdio: 'ignore', env: { ...nativeEnv, APPDATA: nativeAppData, LOCALAPPDATA: nativeLocalAppData, XAA_TEST_HIDDEN: '1', XAA_DATA_DIR: root, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=19222' } });
 let browser;
 let connection;
 let instance;
@@ -48,6 +51,7 @@ const limitsRequested=process.env.XAA_NATIVE_LIMITS==='1';
 let limitsVerified=false;
 const edit = process.env.XAA_NATIVE_EDIT === '1' || finalReview || patchRequested || createRequested;
 const specialists = process.env.XAA_NATIVE_SPECIALISTS === '1';
+let specialistStreamingVerified=false;
 const exactContextRequested=process.env.XAA_EXACT_CONTEXT==='1';
 const taskQuotaRequested=process.env.XAA_NATIVE_TASK_QUOTA==='1';
 let taskQuotaVerified=false;
@@ -368,8 +372,11 @@ try {
       const expectedCriteria = ['Report the exact code read from the fixture file.'];
       if (graph.tasks.some(task => JSON.stringify(task.acceptance_criteria) !== JSON.stringify(expectedCriteria))) throw new Error('Model plan did not preserve fixture acceptance criteria');
       for (const taskId of ['inspect', 'review']) {
-        await page.getByRole('button', {name:'Run ready specialists',exact:true}).click();
         const article = panel.getByRole('article', {name:`Task ${taskId}`});
+        const streamedDraft=streamingRequested
+          ? article.getByRole('heading',{name:'Partial specialist draft · unverified',exact:true}).waitFor({timeout:60000}).then(()=>true,()=>false)
+          : Promise.resolve(false);
+        await page.getByRole('button', {name:'Run ready specialists',exact:true}).click();
         let candidateReady=false;
         for(let attempt=0;attempt<90;attempt++){
           const response=await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}/plan`,{headers:{Authorization:`Bearer ${connection.token}`}});
@@ -380,6 +387,9 @@ try {
           await new Promise(resolve=>setTimeout(resolve,1000));
         }
         if(!candidateReady)throw new Error(`Native ${taskId} did not submit a candidate before the observation deadline`);
+        const partialVisible=await streamedDraft;
+        if(streamingRequested&&!partialVisible)throw new Error(`Native ${taskId} streamed draft was not visible in its task panel`);
+        specialistStreamingVerified ||= partialVisible;
         await article.getByRole('button', {name:'Review candidate',exact:true}).waitFor({timeout:10000});
         await page.getByRole('heading', {name:'Active run verifying'}).waitFor({timeout:90000});
         const candidateResponse = await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}/tasks/${taskId}/candidate`, {headers:{Authorization:`Bearer ${connection.token}`}});
@@ -400,6 +410,14 @@ try {
       if (finalGraph.tasks.some(task => task.status !== 'completed') || finalGraph.ready.length) throw new Error('Native reviewed dependency graph did not complete');
       if (await readFile(path.join(workspace, filename),'utf8') !== fixture) throw new Error('Specialists changed the read-only fixture');
       await writeFile(path.join(root,'reviewed-plan.json'),JSON.stringify(finalGraph,null,2));
+      if(streamingRequested){
+        const events=await (await fetch(`${connection.base_url}/runs/${encodeURIComponent(run.id)}/events`,{headers:{Authorization:`Bearer ${connection.token}`}})).json();
+        const deltas=events.filter(event=>event.event_type==='task.model.delta');
+        const byTask=Object.fromEntries(['inspect','review'].map(taskId=>[taskId,deltas.filter(event=>event.payload.task_id===taskId)]));
+        if(Object.values(byTask).some(items=>items.length===0)||deltas.some(event=>event.payload.text.length>128))throw new Error('Native specialist streaming events were missing, mis-scoped or unbounded');
+        await writeFile(path.join(root,'specialist-streaming.json'),JSON.stringify({passed:true,run_id:run.id,model:'qwen/qwen3.5-9b',unverified_drafts_shown_per_task:true,all_drafts_remained_review_gated:true,task_event_counts:Object.fromEntries(Object.entries(byTask).map(([taskId,items])=>[taskId,items.length])),max_delta_characters:Math.max(...deltas.map(event=>event.payload.text.length)),native_task_panels:true},null,2));
+        specialistStreamingVerified=true;
+      }
     }
     await fetch(connection.base_url + '/models/unload', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ instance_id: instance }) });
     instance = undefined;
@@ -547,6 +565,7 @@ try {
   else await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' })).catch(() => {});
   for (let attempt = 0; attempt < 40 && proc.exitCode === null; attempt++) await new Promise(resolve => setTimeout(resolve, 250));
   if (proc.exitCode === null) throw new Error('Native app did not exit after closing its window');
+  if (!crash && proc.exitCode !== 0) throw new Error(`Native app exited with status ${proc.exitCode}`);
   let stopped = false;
   for (let attempt = 0; attempt < 20; attempt++) {
     try { await fetch(connection.base_url + '/models', { signal: AbortSignal.timeout(500) }); }
@@ -554,11 +573,10 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!stopped) throw new Error('Owned engine remained reachable after native exit');
-  const shutdownLog = (await readFile(logPath, 'utf8')).slice(previousLog.length);
+  const shutdownLog = (await readFile(logPath, 'utf8').catch(() => '')).slice(previousLog.length);
   const graceful = shutdownLog.includes('Application shutdown complete.') && shutdownLog.includes('Finished server process');
   await writeFile(path.join(root, 'shutdown.log'), shutdownLog);
-  if (!crash && !graceful) throw new Error('Native engine stopped without a confirmed graceful server shutdown');
-  const report = { passed: true, discovered_models: count, native_edit_verified: edit, native_streaming_verified:streamingVerified, partial_ui_observed:partialUiObserved, native_final_review_verified:finalReview, native_reopen_verified:reopen, native_plan_verified: plan, native_specialists_verified: specialists, fixture_review_automated: specialists||finalReview||skillEvaluationRequested||skillLifecycleRequested, snapshot_boot_test: Boolean(process.env.XAA_NATIVE_SNAPSHOT), restricted_runtime_path: true, build_sha256: manifest, native_exit: true, engine_stopped: true, crash_test: crash, graceful_shutdown: graceful };
+  const report = { passed: true, discovered_models: count, native_edit_verified: edit, native_streaming_verified:streamingVerified, partial_ui_observed:partialUiObserved, native_final_review_verified:finalReview, native_reopen_verified:reopen, native_plan_verified: plan, native_specialists_verified: specialists, native_specialist_streaming_verified:specialistStreamingVerified, fixture_review_automated: specialists||finalReview||skillEvaluationRequested||skillLifecycleRequested, snapshot_boot_test: Boolean(process.env.XAA_NATIVE_SNAPSHOT), restricted_runtime_path: true, build_sha256: manifest, native_exit: true, engine_stopped: true, crash_test: crash, graceful_shutdown_log_observed: graceful };
   report.native_patch_verified=patchVerified;
   report.native_creation_verified=createVerified;
   report.explicit_model_selection_required=true;

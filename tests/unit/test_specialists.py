@@ -198,6 +198,61 @@ async def test_shared_budget_is_charged_before_specialist_inference(workspace_tm
     )
 
 
+async def test_enabled_specialist_stream_is_task_scoped_and_saved_before_final_message(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "specialist-stream.sqlite3")
+    run_id = store.create_run(
+        objective="Parent objective stays private to its specialist",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="research", objective="Inspect evidence", max_iterations=1)],
+    )
+    draft = "specialist evidence " * 20
+
+    class StreamingResearcher(LMStudioProvider):
+        async def chat_streamed(self, *, on_content, **kwargs):
+            assert "Parent objective stays private" not in json.dumps(kwargs["messages"])
+            on_content(draft)
+            return {
+                "choices": [{"message": {"role": "assistant", "content": draft}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+            }
+
+        async def chat(self, **kwargs):
+            raise AssertionError(
+                "Streaming specialist inference must use the streaming provider path"
+            )
+
+    provider = StreamingResearcher()
+    try:
+        result = await SpecialistRunner(store, provider, stream_responses=True).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+
+    assert result == [{"task_id": "research", "status": "verifying"}]
+    events = store.public_events(run_id)
+    deltas = [event for event in events if event["event_type"] == "task.model.delta"]
+    final = next(event for event in events if event["event_type"] == "task.model.message")
+    outcome = next(event for event in events if event["event_type"] == "task.result")
+    assert "".join(event["payload"]["text"] for event in deltas) == draft
+    assert all(len(event["payload"]["text"]) <= 128 for event in deltas)
+    assert all(event["payload"]["task_id"] == "research" for event in deltas)
+    assert all(set(event["payload"]) == {"task_id", "inference_id", "text"} for event in deltas)
+    assert deltas[0]["sequence"] < final["sequence"] < outcome["sequence"]
+    assert json.loads(tasks.records(run_id)[0]["result"])["candidate"] == draft
+
+
 async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "dispatch.sqlite3")
     run_id = store.create_run(
@@ -225,6 +280,13 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
     class DispatchProvider(LMStudioProvider):
         async def diagnose_tools(self, model, *, request=None):
             return True
+
+        async def chat_streamed(self, *, model, messages, tools=None, on_content=None):
+            response = await self.chat(model=model, messages=messages, tools=tools)
+            content = response["choices"][0]["message"].get("content")
+            if content and on_content is not None:
+                on_content(content)
+            return response
 
         async def chat(self, *, model, messages, tools=None):
             if messages[0]["content"].startswith("You are "):
@@ -260,10 +322,16 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
 
     provider = DispatchProvider()
     try:
-        await Coordinator(store, provider).execute(run_id)
+        await Coordinator(store, provider, stream_responses=True).execute(run_id)
     finally:
         await provider.close()
     assert store.get_run(run_id)["state"] == "verifying"
     assert TaskStore(store).records(run_id)[0]["status"] == "verifying"
     assert len(store.conversation_messages(run_id)) == 3
     assert not store.unresolved_tool_calls(run_id)
+    specialist_deltas = [
+        event for event in store.list_events(run_id) if event["event_type"] == "task.model.delta"
+    ]
+    assert "".join(event["payload"]["text"] for event in specialist_deltas) == (
+        "Specialist candidate awaiting review"
+    )

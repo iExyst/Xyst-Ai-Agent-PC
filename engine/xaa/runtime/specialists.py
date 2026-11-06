@@ -50,11 +50,14 @@ RUN_READY_TOOL = {
 
 
 class SpecialistRunner:
-    def __init__(self, store: RunStore, provider: LMStudioProvider) -> None:
+    def __init__(
+        self, store: RunStore, provider: LMStudioProvider, *, stream_responses: bool = False
+    ) -> None:
         self.store = store
         self.memory = MemoryStore(store)
         self.tasks = TaskStore(store)
         self.provider = provider
+        self.stream_responses = stream_responses
 
     async def _heartbeat(self, run_id: str, parent: str, task_id: str, worker: str) -> None:
         while True:
@@ -274,12 +277,52 @@ class SpecialistRunner:
                     task_id=identity,
                     task_token=worker,
                 )
-            response = await self.provider.chat(
-                model=task["model_route"],
-                messages=messages,
-                tools=tools,
-                **options,
-            )
+            if self.stream_responses:
+                pending = ""
+                last_emit = time.monotonic() - 1
+
+                def emit(text: str, active_inference_id: str) -> None:
+                    self.tasks.record_read_worker_event(
+                        run_id,
+                        parent,
+                        identity,
+                        worker,
+                        "task.model.delta",
+                        {
+                            "task_id": identity,
+                            "inference_id": active_inference_id,
+                            "text": text,
+                        },
+                    )
+
+                def progress(piece: str, *, active_inference_id: str = inference_id) -> None:
+                    nonlocal pending, last_emit
+                    pending += piece
+                    while len(pending) >= 128:
+                        emit(pending[:128], active_inference_id)
+                        pending = pending[128:]
+                        last_emit = time.monotonic()
+                    if pending and time.monotonic() - last_emit >= 0.2:
+                        emit(pending, active_inference_id)
+                        pending = ""
+                        last_emit = time.monotonic()
+
+                response = await self.provider.chat_streamed(
+                    model=task["model_route"],
+                    messages=messages,
+                    tools=tools,
+                    on_content=progress,
+                    **options,
+                )
+                if pending:
+                    emit(pending, inference_id)
+            else:
+                response = await self.provider.chat(
+                    model=task["model_route"],
+                    messages=messages,
+                    tools=tools,
+                    **options,
+                )
             choice = validate_completion(response)
             usage = (
                 TokenUsage.model_validate(response["usage"]).model_dump()
