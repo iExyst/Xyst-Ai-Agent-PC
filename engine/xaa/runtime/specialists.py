@@ -15,7 +15,12 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
-from xaa.runtime.executor import CreateFileArguments, ReadFileArguments, WriteFileArguments
+from xaa.runtime.executor import (
+    CreateFileArguments,
+    DeleteFileArguments,
+    ReadFileArguments,
+    WriteFileArguments,
+)
 from xaa.runtime.line_edit import WriteLinesArguments
 from xaa.runtime.task_commands import execute_task_command
 from xaa.runtime.task_review import candidate_evidence
@@ -289,6 +294,14 @@ class SpecialistRunner:
                             "parameters": CreateFileArguments.model_json_schema(),
                         },
                     },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "workspace_delete_file",
+                            "description": "Propose deleting one file from this private working tree. Read it first and provide its sha256 as expected_sha256. This changes only the private snapshot; the original project file can be removed only after explicit user review.",
+                            "parameters": DeleteFileArguments.model_json_schema(),
+                        },
+                    },
                 ]
             )
         if commands:
@@ -499,6 +512,8 @@ class SpecialistRunner:
                     )
                 elif isolated and name == "workspace_create_file":
                     operation = "branch_create"
+                elif isolated and name == "workspace_delete_file":
+                    operation = "branch_delete"
                 else:
                     raise PermissionError("Specialist requested a tool outside its scope.")
                 result = await execute_filesystem(

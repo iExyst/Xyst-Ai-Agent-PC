@@ -2,7 +2,7 @@
 
 import ctypes
 import os
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
@@ -120,3 +120,67 @@ def opened_file_path(source: BinaryIO) -> Path:
     if descriptor.exists():
         return descriptor.resolve(strict=True)
     raise OSError("This platform does not yet support verified file-handle containment.")
+
+
+def delete_opened_file_if_hash(
+    path: Path, root: Path, expected_sha256: str, *, database: Path, before_delete: Callable[[], None]
+) -> int:
+    """Exclusively hash and unlink one regular Windows file through its open handle."""
+    if os.name != "nt":
+        raise PermissionError("Reviewed file deletion currently requires Windows.")
+    import hashlib
+    import msvcrt
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    create.restype = ctypes.c_void_p
+    # DELETE plus read access, no sharing, and open the final reparse point itself.
+    handle = create(str(path), 0x00010000 | 0x80000000, 0, None, 3, 0x80 | 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value or handle is None:
+        raise OSError(ctypes.get_last_error(), "Cannot acquire exclusive file deletion access.")
+    try:
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except BaseException:
+        close = kernel.CloseHandle
+        close.argtypes = [ctypes.c_void_p]
+        close(handle)
+        raise
+    with os.fdopen(descriptor, "rb") as source:
+        actual_path = opened_file_path(source)
+        if not actual_path.is_relative_to(root):
+            raise PermissionError("Opened deletion target escaped the selected workspace.")
+        require_mutable_destination(actual_path, database)
+        attributes = (ctypes.c_uint32 * 2)()
+        inspect = kernel.GetFileInformationByHandleEx
+        inspect.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+        inspect.restype = ctypes.c_int
+        native_handle = msvcrt.get_osfhandle(source.fileno())
+        if not inspect(native_handle, 9, attributes, ctypes.sizeof(attributes)):
+            raise OSError(ctypes.get_last_error(), "Cannot inspect deletion target attributes.")
+        if attributes[0] & 0x400:
+            raise PermissionError("Reviewed deletion does not follow links or junctions.")
+        if os.fstat(source.fileno()).st_nlink != 1:
+            raise PermissionError("Reviewed deletion refuses files with hard-link aliases.")
+        content = source.read(65_537)
+        if len(content) > 65_536:
+            raise ValueError("Reviewed deletion requires a file no larger than 64 KiB.")
+        actual_sha256 = hashlib.sha256(content).hexdigest()
+        if actual_sha256 != expected_sha256:
+            raise PermissionError("File changed after integration review.")
+        before_delete()
+        disposition = ctypes.c_ubyte(1)
+        set_info = kernel.SetFileInformationByHandle
+        set_info.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+        set_info.restype = ctypes.c_int
+        if not set_info(native_handle, 4, ctypes.byref(disposition), ctypes.sizeof(disposition)):
+            raise OSError(ctypes.get_last_error(), "Cannot delete the reviewed workspace file.")
+        return len(content)

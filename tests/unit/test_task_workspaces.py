@@ -147,6 +147,117 @@ async def test_real_workers_keep_each_private_edit_and_original_project_separate
     assert not (project.parent / "escape.txt").exists()
 
 
+async def test_specialist_deletion_stays_private_until_review_authorizes_it(workspace_tmp_path):
+    from xaa.runtime.states import RunState
+    from xaa.runtime.task_integration import preview
+    from xaa.runtime.task_review import TaskReviewDecision, review_candidate
+
+    store, run_id, owner, _tasks, project = setup(workspace_tmp_path)
+    claim = _tasks.claim_ready(run_id, owner)
+    read_result = None
+    for call_id, operation, arguments in [
+        ("delete-init", "branch_init", {}),
+        ("delete-read", "branch_read", {"path": "shared.txt"}),
+        ("delete-proposal", "branch_delete", {"path": "shared.txt", "expected_sha256": hashlib.sha256(b"original\n").hexdigest()}),
+    ]:
+        result = await execute_filesystem(store, run_id, owner, call_id, operation, arguments, idempotency_key=call_id, internal=True, task_id="a", task_token=claim["token"])
+        if operation == "branch_read":
+            read_result = result
+    from xaa.storage.tasks import TaskStore
+    TaskStore(store).record_read_worker_event(run_id, owner, "a", claim["token"], "task.tool.result", {"task_id": "a", "call_id": "read-model-call", "journal_id": "delete-read", "result": read_result})
+    assert (project / "shared.txt").read_bytes() == b"original\n"
+    changes = TaskWorkspaces(store).changes(run_id, "a")
+    assert len(changes) == 1 and changes[0]["proposed_sha256"] is None
+    assert "-original" in changes[0]["diff"]
+    with store.connection() as connection:
+        connection.execute("UPDATE tasks SET status='verifying',acceptance_criteria='[\"Review deletion\"]' WHERE id=?", (run_id + ":a",))
+        connection.execute("UPDATE tasks SET result=? WHERE id=?", (json.dumps({"candidate": "Proposed deletion"}), run_id + ":a"))
+    for state in (RunState.PLANNING, RunState.RUNNING, RunState.VERIFYING):
+        store.transition(run_id, state, owner=owner)
+    store.release_lease(run_id, owner)
+    token = store.acquire_lease(run_id, "preview-delete", seconds=180)
+    snapshot = await preview(store, run_id, "a", token)
+    store.release_lease(run_id, token)
+    assert snapshot.changes[0].proposed_sha256 is None and not snapshot.changes[0].conflict
+    decision = TaskReviewDecision(decision="accept", rationale="Reviewed deletion diff", confirmed_criteria=[0], evidence_call_ids=["delete-read"], changes_confirmed=True)
+    await review_candidate(store, run_id, "a", decision)
+    assert not (project / "shared.txt").exists()
+    assert not store.unresolved_tool_calls(run_id)
+
+
+async def test_private_change_limit_counts_deletions_and_can_return_under_limit(workspace_tmp_path):
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+    for index in range(17):
+        (project / f"file-{index}.txt").write_bytes(f"original {index}\n".encode())
+    claim = tasks.claim_ready(run_id, owner)
+    init = await execute_filesystem(store, run_id, owner, "quota-init", "branch_init", {}, idempotency_key="quota-init", internal=True, task_id="a", task_token=claim["token"])
+    assert init["effect"] == "private_copy_only"
+    for index in range(16):
+        path = f"file-{index}.txt"
+        await execute_filesystem(store, run_id, owner, f"quota-del-{index}", "branch_delete", {"path": path, "expected_sha256": hashlib.sha256(f"original {index}\n".encode()).hexdigest()}, idempotency_key=f"quota-del-{index}", internal=True, task_id="a", task_token=claim["token"])
+    assert len(TaskWorkspaces(store).changes(run_id, "a")) == 16
+    with pytest.raises(FilesystemWorkerError):
+        await execute_filesystem(store, run_id, owner, "quota-add-over", "branch_create", {"path": "new.txt", "content": "new\n"}, idempotency_key="quota-add-over", internal=True, task_id="a", task_token=claim["token"])
+    await execute_filesystem(store, run_id, owner, "quota-restore", "branch_create", {"path": "file-0.txt", "content": "original 0\n"}, idempotency_key="quota-restore", internal=True, task_id="a", task_token=claim["token"])
+    assert len(TaskWorkspaces(store).changes(run_id, "a")) == 15
+
+
+async def test_reviewed_deletion_conflict_requires_choice_and_rejects_stale_hash(workspace_tmp_path):
+    from xaa.runtime.states import RunState
+    from xaa.runtime.task_integration import IntegrationResolution, preview
+    from xaa.runtime.task_review import TaskReviewDecision, review_candidate
+
+    store, run_id, owner, _tasks, project = setup(workspace_tmp_path)
+    claim = _tasks.claim_ready(run_id, owner)
+    for call_id, operation, arguments in [
+        ("conflict-init", "branch_init", {}),
+        ("conflict-read", "branch_read", {"path": "shared.txt"}),
+        ("conflict-delete", "branch_delete", {"path": "shared.txt", "expected_sha256": hashlib.sha256(b"original\n").hexdigest()}),
+    ]:
+        await execute_filesystem(store, run_id, owner, call_id, operation, arguments, idempotency_key=call_id, internal=True, task_id="a", task_token=claim["token"])
+    from xaa.storage.tasks import TaskStore
+    with store.connection() as connection:
+        read_journal = connection.execute("SELECT result FROM tool_calls WHERE run_id=? AND provider_call_id=?", (run_id, "conflict-read")).fetchone()
+    TaskStore(store).record_read_worker_event(run_id, owner, "a", claim["token"], "task.tool.result", {"task_id": "a", "call_id": "read-model-call", "journal_id": "conflict-read", "result": json.loads(read_journal["result"])})
+    with store.connection() as connection:
+        connection.execute("UPDATE tasks SET status='verifying',acceptance_criteria='[\"Review deletion\"]' WHERE id=?", (run_id + ":a",))
+        connection.execute("UPDATE tasks SET result=? WHERE id=?", (json.dumps({"candidate": "Proposed deletion"}), run_id + ":a"))
+    for state in (RunState.PLANNING, RunState.RUNNING, RunState.VERIFYING):
+        store.transition(run_id, state, owner=owner)
+    store.release_lease(run_id, owner)
+    (project / "shared.txt").write_bytes(b"external\n")
+    token = store.acquire_lease(run_id, "preview-delete-conflict", seconds=180)
+    snapshot = await preview(store, run_id, "a", token)
+    store.release_lease(run_id, token)
+    make_decision = lambda resolutions: TaskReviewDecision(decision="accept", rationale="Reviewed deletion conflict", confirmed_criteria=[0], evidence_call_ids=["conflict-read"], changes_confirmed=True, resolutions=resolutions)
+    with pytest.raises(ValueError, match="explicitly choose"):
+        await review_candidate(store, run_id, "a", make_decision([]))
+    (project / "shared.txt").write_bytes(b"another external change\n")
+    with pytest.raises(ValueError, match="changed after conflict preview"):
+        await review_candidate(store, run_id, "a", make_decision([IntegrationResolution(path="shared.txt", expected_current_sha256=snapshot.changes[0].current_sha256, choice="proposed")]))
+    assert (project / "shared.txt").read_bytes() == b"another external change\n"
+
+
+def test_interrupted_delete_reconciliation_observes_without_retry(workspace_tmp_path):
+    from xaa.runtime.executor import WorkspaceExecutor
+
+    store, run_id, owner, _tasks, project = setup(workspace_tmp_path)
+    executor = WorkspaceExecutor(store)
+    original_hash = hashlib.sha256(b"original\n").hexdigest()
+    with store.connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES ('delete-recovery',NULL,?,'workspace.delete_file','1',?, 'delete-recovery','intended',NULL,NULL,'now','now','delete-recovery')",
+            (run_id, json.dumps({"path": "shared.txt", "expected_sha256": original_hash})),
+        )
+        store.record_event(connection, run_id, "tool.intended", {"call_id": "delete-recovery", "tool": "workspace.delete_file", "internal": True})
+    assert executor.reconcile_writes(run_id, owner)["delete-recovery"] == "unchanged"
+    assert (project / "shared.txt").read_bytes() == b"original\n"
+    (project / "shared.txt").unlink()
+    assert executor.reconcile_writes(run_id, owner)["delete-recovery"] == "applied"
+    assert not store.unresolved_tool_calls(run_id)
+
+
 @pytest.mark.parametrize("failure", ["known_no_effect", "unknown_effect", "completed"])
 async def test_integration_recovery_never_replays_uncertain_or_completed_writes(
     workspace_tmp_path, monkeypatch, failure

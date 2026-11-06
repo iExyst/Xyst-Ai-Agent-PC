@@ -11,7 +11,12 @@ from uuid import uuid4
 
 from xaa.runtime.command_contracts import command_workspace
 from xaa.runtime.directory_listing import ListDirectoryArguments
-from xaa.runtime.executor import CreateFileArguments, ReadFileArguments, WriteFileArguments
+from xaa.runtime.executor import (
+    CreateFileArguments,
+    DeleteFileArguments,
+    ReadFileArguments,
+    WriteFileArguments,
+)
 from xaa.runtime.file_handles import open_for_read, opened_file_path
 from xaa.runtime.workspace_snapshot import (
     SnapshotFile,
@@ -22,7 +27,7 @@ from xaa.runtime.workspace_snapshot import (
 from xaa.storage.commands import command_artifact_root
 from xaa.storage.runs import RunStore, utc_now
 
-BranchOperation = Literal["branch_read", "branch_list", "branch_write", "branch_create"]
+BranchOperation = Literal["branch_read", "branch_list", "branch_write", "branch_create", "branch_delete"]
 
 
 class TaskWorkspaces:
@@ -133,14 +138,19 @@ class TaskWorkspaces:
             raise ValueError("Specialist snapshot identity changed.")
         files = {item.path: item.content for item in base.files}
         rows = connection.execute(
-            "SELECT arguments,result FROM (SELECT t.arguments,t.result,ROW_NUMBER() OVER (PARTITION BY json_extract(t.arguments,'$.path') ORDER BY e.sequence DESC) AS latest FROM tool_calls t JOIN run_events e ON e.run_id=t.run_id AND e.event_type='tool.completed' AND json_extract(e.payload,'$.call_id')=t.provider_call_id WHERE t.run_id=? AND t.task_id=? AND t.state='completed' AND t.tool_name IN ('workspace.write_file','workspace.create_file')) WHERE latest=1",
+            "SELECT tool_name,arguments,result FROM (SELECT t.tool_name,t.arguments,t.result,ROW_NUMBER() OVER (PARTITION BY json_extract(t.arguments,'$.path') ORDER BY e.sequence DESC) AS latest FROM tool_calls t JOIN run_events e ON e.run_id=t.run_id AND e.event_type='tool.completed' AND json_extract(e.payload,'$.call_id')=t.provider_call_id WHERE t.run_id=? AND t.task_id=? AND t.state='completed' AND t.tool_name IN ('workspace.write_file','workspace.create_file','workspace.delete_file')) WHERE latest=1",
             (run_id, f"{run_id}:{task_id}"),
         ).fetchall()
         for row in rows:
             args = json.loads(row["arguments"])
             result = json.loads(row["result"])
-            data = args["content"].encode("utf-8")
             path = checked_path(args["path"]).as_posix()
+            if row["tool_name"] == "workspace.delete_file":
+                if result.get("effect") != "private_copy_only" or result.get("deleted") is not True:
+                    raise ValueError("Specialist deletion journal is inconsistent.")
+                files.pop(path, None)
+                continue
+            data = args["content"].encode("utf-8")
             if (
                 hashlib.sha256(data).hexdigest() != result["sha256"]
                 or result.get("effect") != "private_copy_only"
@@ -169,6 +179,8 @@ class TaskWorkspaces:
             else WriteFileArguments
             if operation == "branch_write"
             else CreateFileArguments
+            if operation == "branch_create"
+            else DeleteFileArguments
         ).model_validate(arguments)
         path = "." if parsed.path == "." else checked_path(parsed.path).as_posix()
         tool = {
@@ -176,6 +188,7 @@ class TaskWorkspaces:
             "branch_list": "workspace.list_directory",
             "branch_write": "workspace.write_file",
             "branch_create": "workspace.create_file",
+            "branch_delete": "workspace.delete_file",
         }[operation]
         with self.store.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -212,6 +225,30 @@ class TaskWorkspaces:
                     "truncated": False,
                     "trust": "untrusted_workspace_content",
                 }
+            elif operation == "branch_delete":
+                delete = DeleteFileArguments.model_validate(arguments)
+                if path not in files or hashlib.sha256(files[path]).hexdigest() != delete.expected_sha256:
+                    raise ValueError("Specialist file changed; read it before deleting.")
+                if len(files[path]) > 65536:
+                    raise ValueError("Specialist deletion requires a file of at most 64 KiB.")
+                del files[path]
+                original = {item.path: item.content for item in base.files}
+                dirty_paths = {
+                    name for name in original.keys() | files.keys()
+                    if original.get(name) != files.get(name)
+                }
+                dirty_size = sum(
+                    len(files[name]) if name in files else len(original[name])
+                    for name in dirty_paths
+                )
+                if len(dirty_paths) > 16 or dirty_size > 1024 * 1024:
+                    raise ValueError("Specialist changes exceed 16 files or 1 MiB.")
+                result = {
+                    "path": path,
+                    "deleted": True,
+                    "previous_sha256": delete.expected_sha256,
+                    "effect": "private_copy_only",
+                }
             else:
                 write = (
                     WriteFileArguments.model_validate(arguments)
@@ -238,12 +275,15 @@ class TaskWorkspaces:
                     base.excluded,
                 )
                 original = {item.path: item.content for item in base.files}
-                dirty = {
-                    name: content
-                    for name, content in files.items()
-                    if original.get(name) != content
+                dirty_paths = {
+                    name for name in original.keys() | files.keys()
+                    if original.get(name) != files.get(name)
                 }
-                if len(dirty) > 16 or sum(len(content) for content in dirty.values()) > 1024 * 1024:
+                dirty_size = sum(
+                    len(files[name]) if name in files else len(original[name])
+                    for name in dirty_paths
+                )
+                if len(dirty_paths) > 16 or dirty_size > 1024 * 1024:
                     raise ValueError("Specialist changes exceed 16 files or 1 MiB.")
                 result = {
                     "path": path,
@@ -292,15 +332,16 @@ class TaskWorkspaces:
             base, files = self.view(connection, run_id, task_id)
         original = {item.path: item.content for item in base.files}
         changes: list[dict[str, Any]] = []
-        for name, data in sorted(files.items()):
+        for name in sorted(set(original) | set(files)):
             before = original.get(name)
+            data = files.get(name)
             if before == data:
                 continue
             diff = "".join(
                 line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
                 for line in difflib.unified_diff(
                     (before or b"").decode("utf-8", errors="replace").splitlines(keepends=True),
-                    data.decode("utf-8", errors="replace").splitlines(keepends=True),
+                    data.decode("utf-8", errors="replace").splitlines(keepends=True) if data is not None else [],
                     fromfile="a/" + name,
                     tofile="b/" + name,
                 )
@@ -311,7 +352,7 @@ class TaskWorkspaces:
                     "base_sha256": hashlib.sha256(before).hexdigest()
                     if before is not None
                     else None,
-                    "proposed_sha256": hashlib.sha256(data).hexdigest(),
+                    "proposed_sha256": hashlib.sha256(data).hexdigest() if data is not None else None,
                     "diff": diff,
                     "diff_truncated": False,
                 }

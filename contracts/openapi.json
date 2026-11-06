@@ -959,8 +959,15 @@
             "type": "string"
           },
           "proposed_sha256": {
-            "title": "Proposed Sha256",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Sha256"
           }
         },
         "required": [
@@ -4085,8 +4092,15 @@
             "type": "string"
           },
           "proposed_sha256": {
-            "title": "Proposed Sha256",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Sha256"
           }
         },
         "required": [

@@ -147,7 +147,7 @@ class TaskEvidence(BaseModel):
 class TaskWorkspaceChange(BaseModel):
     path: str
     base_sha256: str | None
-    proposed_sha256: str
+    proposed_sha256: str | None
     diff: str
     diff_truncated: bool
 

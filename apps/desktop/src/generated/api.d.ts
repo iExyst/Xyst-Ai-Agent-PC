@@ -1669,7 +1669,7 @@ export interface components {
             /** Path */
             path: string;
             /** Proposed Sha256 */
-            proposed_sha256: string;
+            proposed_sha256: string | null;
         };
         /** IntegrationPreview */
         IntegrationPreview: {
@@ -2734,7 +2734,7 @@ export interface components {
             /** Path */
             path: string;
             /** Proposed Sha256 */
-            proposed_sha256: string;
+            proposed_sha256: string | null;
         };
         /** TelegramCredentialRequest */
         TelegramCredentialRequest: {

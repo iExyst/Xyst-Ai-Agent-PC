@@ -20,6 +20,7 @@ FilesystemOperation = Literal[
     "read",
     "write",
     "create",
+    "delete",
     "replace",
     "patch",
     "list",
@@ -30,6 +31,7 @@ FilesystemOperation = Literal[
     "branch_list",
     "branch_write",
     "branch_create",
+    "branch_delete",
     "integrate",
     "project_hash",
 ]
@@ -63,6 +65,7 @@ class WorkerRequest(BaseModel):
                 "branch_list",
                 "branch_write",
                 "branch_create",
+                "branch_delete",
             }
         ):
             raise PermissionError("Task workers require scoped reads or private-copy operations.")
@@ -208,6 +211,7 @@ def main() -> None:
             "create": executor.create_file,
             "replace": executor.replace_text,
             "patch": executor.apply_patch,
+            "delete": executor.delete_file,
         }
         try:
             if request.operation == "project_hash":
@@ -243,6 +247,7 @@ def main() -> None:
                 "branch_list",
                 "branch_write",
                 "branch_create",
+                "branch_delete",
             }:
                 assert request.task_id is not None and request.task_token is not None
                 result = TaskWorkspaces(executor.store).operate(
@@ -290,7 +295,7 @@ def main() -> None:
                     internal=request.internal,
                 )
             else:
-                if request.internal:
+                if request.internal and request.operation != "delete":
                     raise ValueError("Internal writes are not supported.")
                 result = operations[request.operation](
                     request.run_id,

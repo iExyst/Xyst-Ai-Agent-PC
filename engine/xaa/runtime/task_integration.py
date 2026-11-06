@@ -26,7 +26,7 @@ class IntegrationResolution(BaseModel):
 class IntegrationFile(BaseModel):
     path: str
     base_sha256: str | None
-    proposed_sha256: str
+    proposed_sha256: str | None
     current_sha256: str | None
     current_excerpt: str
     current_excerpt_truncated: bool
@@ -108,12 +108,14 @@ async def preview(store: RunStore, run_id: str, task_id: str, owner: str) -> Int
                 current_sha256=current["sha256"],
                 current_excerpt=current["text"],
                 current_excerpt_truncated=False,
-                conflict=current["sha256"]
-                not in (change["base_sha256"], change["proposed_sha256"]),
+                conflict=(
+                    current["sha256"] not in (change["base_sha256"], change["proposed_sha256"])
+                    or (change["proposed_sha256"] is None and current["sha256"] is None)
+                ),
             )
         )
     # The copy is immutable once the task reaches verifying; read all bytes to validate its journal.
-    if any(path not in files for path in original):
+    if any(path not in files and path not in {item["path"] for item in changes} for path in original):
         raise ValueError("Unexpected specialist file removal.")
     return IntegrationPreview(task_id=task_id, changes=rows)
 
@@ -148,7 +150,18 @@ async def integrate_changes(
             )
         keep_current = resolution is not None and resolution.choice == "current"
         if keep_current and change.current_sha256 is None:
-            raise ValueError("Keeping a missing current file does not integrate a proposed file.")
+            raise ValueError("A missing current file cannot be selected as the retained version.")
+        if change.proposed_sha256 is None and change.current_sha256 is None:
+            # Desired deletion already holds; no filesystem operation is required.
+            observed.append(
+                {
+                    "path": change.path,
+                    "current_sha256": None,
+                    "proposed_sha256": None,
+                    "choice": "proposed",
+                }
+            )
+            continue
         item = {
             "path": change.path,
             "current_sha256": change.current_sha256,
@@ -159,7 +172,13 @@ async def integrate_changes(
         if keep_current or change.current_sha256 == change.proposed_sha256:
             continue
         identity = prefix + uuid4().hex
-        writes.append({**item, "call_id": identity})
+        writes.append(
+            {
+                **item,
+                "action": "delete" if change.proposed_sha256 is None else "write",
+                "call_id": identity,
+            }
+        )
     with store.connection() as connection:
         connection.execute("BEGIN IMMEDIATE")
         store.require_lease(connection, run_id, owner)
@@ -189,7 +208,9 @@ async def integrate_changes(
             internal=True,
             timeout=min(10, max(0, deadline - time.monotonic())),
         )
-        if result.get("sha256") != item["proposed_sha256"]:
+        if item["action"] == "delete" and result.get("deleted") is not True:
+            raise ValueError("Integration did not confirm the approved deletion.")
+        if item["action"] != "delete" and result.get("sha256") != item["proposed_sha256"]:
             raise ValueError("Integration did not confirm the exact approved file bytes.")
     return observed
 
@@ -230,11 +251,21 @@ def integrate_file(
             "An integration action already exists; inspect/reconcile it instead of replaying it."
         )
     plan = plans[0]
+    executor = WorkspaceExecutor(store)
+    if plan.get("action") == "delete":
+        if plan["proposed_sha256"] is not None or not plan["current_sha256"]:
+            raise ValueError("Saved deletion plan has an unexpected content hash.")
+        return executor.delete_file(
+            run_id,
+            owner,
+            call_id,
+            {"path": path, "expected_sha256": plan["current_sha256"]},
+            idempotency_key=call_id,
+        )
     data = files[path]
     if hashlib.sha256(data).hexdigest() != plan["proposed_sha256"]:
         raise ValueError("The proposed file changed after review.")
     content = data.decode("utf-8")
-    executor = WorkspaceExecutor(store)
     if plan["current_sha256"] is None:
         return executor.create_file(
             run_id, owner, call_id, {"path": path, "content": content}, idempotency_key=call_id
