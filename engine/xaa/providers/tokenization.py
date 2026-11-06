@@ -123,7 +123,7 @@ class TokenizerResponse(BaseModel):
 
 
 async def count_prompt(
-    base_url: str, request: PromptCountRequest, token: SecretStr | None, *, timeout: float = 5
+    base_url: str, request: PromptCountRequest, token: SecretStr | None, *, timeout: float = 20
 ) -> PromptCount:
     tokenizer_host(base_url)
     if timeout <= 0:

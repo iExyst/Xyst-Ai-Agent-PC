@@ -77,8 +77,8 @@ async def main() -> None:
     parser.add_argument(
         "--count-timeout",
         type=float,
-        default=5.0,
-        help="Maximum seconds for each owned-worker token count (default: 5; maximum: 60)",
+        default=20.0,
+        help="Maximum seconds for each owned-worker token count (default: 20; maximum: 60)",
     )
     args = parser.parse_args()
     if args.context_length < 512:

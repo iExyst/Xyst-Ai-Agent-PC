@@ -147,7 +147,9 @@ class LMStudioProvider:
             self._context_limits.clear()
             await previous.aclose()
 
-    async def count_prompt(self, request: PromptCountRequest, *, timeout: float = 5) -> PromptCount:
+    async def count_prompt(
+        self, request: PromptCountRequest, *, timeout: float = 20
+    ) -> PromptCount:
         from xaa.providers.tokenization import PromptCountError, count_prompt
 
         deadline = asyncio.get_running_loop().time() + timeout
@@ -439,7 +441,7 @@ class LMStudioProvider:
     async def _count_prompt_owned(self, request: PromptCountRequest) -> PromptCount:
         from xaa.providers.tokenization import count_prompt
 
-        return await count_prompt(self.base_url, request, self._credential, timeout=5)
+        return await count_prompt(self.base_url, request, self._credential, timeout=20)
 
     def _check_context(
         self,
