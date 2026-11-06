@@ -43,6 +43,10 @@ class DiagnosticLimitError(ProviderError):
 class ContextLimitError(ProviderError):
     """Request cannot safely fit the known loaded model context."""
 
+    def __init__(self, message: str, *, reason: str = "context_budget_exceeded") -> None:
+        super().__init__(message)
+        self.reason = reason
+
 
 class ModelCapabilities(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -430,10 +434,14 @@ class LMStudioProvider:
         except (PromptCountError, ValidationError):
             raise ContextLimitError(
                 "Exact context admission could not count this request. Confirm the selected "
-                "instance is already loaded and the SDK supports its prompt format."
+                "instance is already loaded and the SDK supports its prompt format.",
+                reason="prompt_count_unavailable",
             ) from None
         if counted.model != model:
-            raise ContextLimitError("Prompt counter returned a different model instance.")
+            raise ContextLimitError(
+                "Prompt counter returned a different model instance.",
+                reason="prompt_count_model_mismatch",
+            )
         assert max_output_tokens is not None
         if counted.prompt_tokens + max_output_tokens > counted.context_length:
             raise ContextLimitError(

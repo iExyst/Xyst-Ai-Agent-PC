@@ -3,6 +3,8 @@ import asyncio
 import pytest
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.tokenization import PromptCount, PromptCountError
+from xaa.runtime.coordinator import Coordinator
+from xaa.storage.runs import RunStore
 
 
 class CountedProvider(LMStudioProvider):
@@ -157,15 +159,52 @@ async def test_per_request_exact_count_failure_blocks_before_prediction():
     provider.release.set()
     provider.failure = True
     try:
-        with pytest.raises(ContextLimitError, match="could not count"):
+        with pytest.raises(ContextLimitError, match="could not count") as failure:
             await provider.chat(
                 model="fixture",
                 messages=[{"role": "user", "content": "hello"}],
                 require_exact_context=True,
             )
+        assert failure.value.reason == "prompt_count_unavailable"
         assert not provider.predictions
     finally:
         await provider.close()
+
+
+async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "count-unavailable.sqlite3")
+    run = store.create_run(
+        objective="Return a short answer",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_total_tokens=1000,
+        pre_inference_token_reservations=True,
+    )
+
+    class UnavailableCounter(LMStudioProvider):
+        async def _count_prompt_owned(self, request):
+            raise PromptCountError("fixture failure")
+
+        async def _chat(self, **kwargs):
+            raise AssertionError("Uncounted inference must not be sent")
+
+    provider = UnavailableCounter(exact_context=False)
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+
+    blocked = [
+        event
+        for event in store.list_events(run["id"])
+        if event["event_type"] == "run.state_changed" and event["payload"].get("to") == "blocked"
+    ]
+    assert blocked[-1]["payload"]["reason"] == "prompt_count_unavailable"
+    assert not any(event["event_type"] == "model.message" for event in store.list_events(run["id"]))
 
 
 async def test_conservative_context_estimate_bounds_image_data_url():

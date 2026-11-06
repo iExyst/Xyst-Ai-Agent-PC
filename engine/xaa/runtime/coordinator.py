@@ -1217,10 +1217,8 @@ class Coordinator:
             self.store.transition(
                 run_id, RunState.BLOCKED, reason="iteration_budget_exhausted", owner=token
             )
-        except ContextLimitError:
-            self.store.transition(
-                run_id, RunState.BLOCKED, reason="context_budget_exceeded", owner=token
-            )
+        except ContextLimitError as exc:
+            self.store.transition(run_id, RunState.BLOCKED, reason=exc.reason, owner=token)
         except LeaseLost:
             return
         except asyncio.CancelledError:
