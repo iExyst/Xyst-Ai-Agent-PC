@@ -61,7 +61,25 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
     }
     command
         .env("XAA_API_TOKEN", token)
-        .env("XAA_API_PORT", port.to_string());
+        .env("XAA_API_PORT", port.to_string())
+        .env("XAA_STREAM_RESPONSES", "1");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::configure_engine_environment;
+    use std::process::Command;
+
+    #[test]
+    fn packaged_engine_launch_enables_streamed_responses() {
+        let mut command = Command::new("xaa-engine.exe");
+        configure_engine_environment(&mut command, "fixture-token", 8765);
+        let streaming = command
+            .get_envs()
+            .find(|(name, _)| *name == "XAA_STREAM_RESPONSES")
+            .map(|(_, value)| value);
+        assert!(matches!(streaming, Some(Some(value)) if value.to_string_lossy() == "1"));
+    }
 }
 
 impl EngineState {

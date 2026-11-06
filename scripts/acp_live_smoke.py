@@ -1,4 +1,4 @@
-"""Exercise ACP tool status updates with an already-loaded local LM Studio model."""
+"""Exercise ACP streamed text and tool updates with an already-loaded local model."""
 
 from __future__ import annotations
 
@@ -26,6 +26,50 @@ from xaa.storage.runs import RunStore
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 REQUIRED_TOOL_STATUSES = {"pending", "completed"}
+
+
+def _save_failure_evidence(
+    *,
+    model: str,
+    run_state: str,
+    response_reason: str,
+    statuses: set[str],
+    delta_count: int,
+    event_rows: list[dict[str, Any]],
+    tool_rows: list[dict[str, str]],
+) -> Path:
+    destination = Path(".acceptance") / f"acp-streaming-failure-{uuid4()}"
+    destination.mkdir(parents=True, exist_ok=False)
+    summaries: list[dict[str, Any]] = []
+    for event in event_rows:
+        summary: dict[str, Any] = {"type": event["event_type"]}
+        payload = event["payload"]
+        if event["event_type"] == "run.state_changed":
+            summary.update(
+                {key: payload[key] for key in ("from", "to", "reason") if key in payload}
+            )
+        elif event["event_type"] == "model.incomplete" and isinstance(payload.get("reason"), str):
+            summary["reason"] = payload["reason"]
+        elif event["event_type"] in {"tool.intended", "tool.failed"}:
+            for key in ("tool", "code", "effect"):
+                if isinstance(payload.get(key), str):
+                    summary[key] = payload[key]
+        summaries.append(summary)
+    report = {
+        "passed": False,
+        "model": model,
+        "run_state": run_state,
+        "response_stop_reason": response_reason,
+        "tool_statuses": sorted(statuses),
+        "model_delta_count": delta_count,
+        "tool_calls": tool_rows,
+        "events": summaries,
+        "local_inference_only": True,
+        "user_project_modified": False,
+        "raw_prompts_outputs_and_arguments_omitted": True,
+    }
+    (destination / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return destination / "report.json"
 
 
 class UpdateSink:
@@ -84,7 +128,10 @@ async def _run(model_id: str, report_path: Path | None) -> dict[str, Any]:
             raise RuntimeError(f"Model {model_id!r} is not marked as tool-use capable.")
         print(json.dumps({"model_ready": model_id, "loaded": True}), flush=True)
 
-        with tempfile.TemporaryDirectory(prefix="xaa-acp-live-") as temporary:
+        Path(".acceptance").mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="acp-streaming-live-", dir=".acceptance", delete=False
+        ) as temporary:
             root = Path(temporary)
             workspace = root / "workspace"
             workspace.mkdir()
@@ -93,7 +140,9 @@ async def _run(model_id: str, report_path: Path | None) -> dict[str, Any]:
             fixture.write_text(secret, encoding="utf-8")
             store = RunStore(root / "data" / "xaa.sqlite3")
             token = uuid4().hex + uuid4().hex
-            app: FastAPI = create_app(provider, SecretStr(token), store=store)
+            app: FastAPI = create_app(
+                provider, SecretStr(token), store=store, stream_responses=True
+            )
 
             listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -163,23 +212,55 @@ async def _run(model_id: str, report_path: Path | None) -> dict[str, Any]:
                         except asyncio.CancelledError:
                             pass
                     await connection.close_session(session_id=session.session_id)
-                answer = "\n".join(sink.messages)
+                answer = "".join(sink.messages)
                 statuses = {update["status"] for update in sink.tool_updates}
                 with store.connection() as connection:
                     run = connection.execute(
-                        "SELECT state FROM runs ORDER BY created_at DESC LIMIT 1"
+                        "SELECT id,state FROM runs ORDER BY created_at DESC LIMIT 1"
                     ).fetchone()
-                run_state = run["state"] if run is not None else "missing"
-                if response.stop_reason != "end_turn":
-                    raise RuntimeError(f"ACP prompt ended with {response.stop_reason!r}.")
-                if run_state != "verifying":
-                    raise RuntimeError(
-                        f"Expected independent review state; received {run_state!r}."
+                    delta_count = (
+                        connection.execute(
+                            "SELECT COUNT(*) FROM run_events WHERE run_id=? AND event_type='model.delta'",
+                            (run["id"],),
+                        ).fetchone()[0]
+                        if run is not None
+                        else 0
                     )
+                    call_rows = (
+                        connection.execute(
+                            "SELECT tool_name,state FROM tool_calls WHERE run_id=? ORDER BY created_at",
+                            (run["id"],),
+                        ).fetchall()
+                        if run is not None
+                        else []
+                    )
+                run_id = run["id"] if run is not None else ""
+                run_state = run["state"] if run is not None else "missing"
+                failures: list[str] = []
+                if response.stop_reason != "end_turn":
+                    failures.append(f"ACP prompt ended with {response.stop_reason!r}.")
+                if run_state != "verifying":
+                    failures.append(f"Expected independent review state; received {run_state!r}.")
                 if not REQUIRED_TOOL_STATUSES.issubset(statuses):
-                    raise RuntimeError(f"ACP tool lifecycle was incomplete: {sorted(statuses)}.")
+                    failures.append(f"ACP tool lifecycle was incomplete: {sorted(statuses)}.")
+                if delta_count < 1 or len(sink.messages) < 2:
+                    failures.append(
+                        "The streamed run did not deliver model deltas as ACP message chunks."
+                    )
                 if secret not in answer:
-                    raise RuntimeError("The model's ACP answer did not contain the file contents.")
+                    failures.append("The model's ACP answer did not contain the file contents.")
+                if failures:
+                    event_rows = store.list_events(run_id) if run_id else []
+                    report_path = _save_failure_evidence(
+                        model=model_id,
+                        run_state=run_state,
+                        response_reason=response.stop_reason,
+                        statuses=statuses,
+                        delta_count=delta_count,
+                        event_rows=event_rows,
+                        tool_rows=[dict(row) for row in call_rows],
+                    )
+                    raise RuntimeError(f"{' '.join(failures)} Sanitized report: {report_path}")
 
                 report: dict[str, Any] = {
                     "passed": True,
@@ -193,9 +274,13 @@ async def _run(model_id: str, report_path: Path | None) -> dict[str, Any]:
                     "run_state": run_state,
                     "candidate_awaiting_independent_review": True,
                     "answer_matched_fixture": True,
+                    "model_delta_count": delta_count,
+                    "acp_text_chunk_count": len(sink.messages),
+                    "streamed_text_forwarded": True,
                     "local_inference_only": True,
                     "model_auto_loaded": False,
                     "user_project_modified": False,
+                    "evidence_directory": str(root.relative_to(REPOSITORY)),
                 }
                 if report_path is not None:
                     destination = report_path.resolve()
