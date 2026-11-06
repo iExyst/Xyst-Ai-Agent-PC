@@ -68,6 +68,19 @@ EXTERNAL = {
     "hermes-wsl-terminal": "Windows WSL distro/user. Manifest explicitly describes full access, not a restricted sandbox.",
     "hermes-wslc-sandbox": "Windows wslc runtime; manifest discloses no capability dropping and no enforced disk quota.",
 }
+EXTERNAL_SOURCE_AUDITS = {
+    "singularity": {
+        "repository": "NousResearch/hermes-official-plugins",
+        "reference_commit": "d46aced3031a8f533fdbf0806bc4cf0d0b28be07",
+        "paths": [
+            "singularity/provider.py",
+            "singularity/singularity_env.py",
+            "singularity/README.md",
+        ],
+        "evidence_level": "pinned source reviewed; runtime and security properties not independently verified",
+        "acceptance": "Review complete; EXEC-COMMON-1 through EXEC-COMMON-8 and live Apptainer isolation/resource/cleanup probes remain required",
+    }
+}
 EXCLUDED = {
     "account-pool": "Provider-account scheduling/usage, not a terminal environment provider.",
     "advanced-delegation": "Model/profile routing for delegation, not terminal execution routing.",
@@ -194,6 +207,7 @@ def inventory() -> dict[str, Any]:
             candidates.add(path.stem)
         if path.stem not in EXTERNAL:
             continue
+        source_audit = EXTERNAL_SOURCE_AUDITS.get(path.stem)
         selector = re.search(r"terminal\.backend\s+([a-z][a-z0-9_-]*)", description)
         external.append(
             {
@@ -211,8 +225,13 @@ def inventory() -> dict[str, Any]:
                 "phase": 9,
                 "status": "planned",
                 "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
-                "evidence_level": "catalog declaration only; external source/runtime not inspected",
-                "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements",
+                "evidence_level": source_audit["evidence_level"]
+                if source_audit
+                else "catalog declaration only; external source/runtime not inspected",
+                "source_audit": source_audit,
+                "acceptance": source_audit["acceptance"]
+                if source_audit
+                else "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements",
             }
         )
     unknown = candidates - EXTERNAL.keys() - EXCLUDED.keys()
@@ -245,7 +264,7 @@ def inventory() -> dict[str, Any]:
         ],
         "limitations": [
             "Keyword candidate discovery is not proof of exhaustive external capability coverage.",
-            "External repository pins are recorded but have not been fetched or executed.",
+            "Selected external repository pins were source-reviewed without execution; remaining external pins have not been fetched or executed.",
             "No execution backend parity is established; X.A.A. fixed filesystem workers are lifecycle containment, not generated-code isolation.",
         ],
     }

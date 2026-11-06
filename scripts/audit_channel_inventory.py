@@ -11,6 +11,17 @@ import yaml
 from audit_execution_inventory import PIN, ROOT, check_reference, digest
 
 OUTPUT = Path("docs/parity/channel-inventory.json")
+HOMEASSISTANT_SOURCE_AUDIT = {
+    "repository": "NousResearch/hermes-official-plugins",
+    "reference_commit": "4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072",
+    "paths": [
+        "homeassistant/__init__.py",
+        "homeassistant/adapter.py",
+        "homeassistant/tools.py",
+        "homeassistant/README.md",
+    ],
+    "evidence_level": "pinned source reviewed; external plugin tests and live Home Assistant runtime not independently verified",
+}
 # Transport observations and channel-specific acceptance, not runtime verification.
 REQUIREMENTS = {
     "a2a": (
@@ -360,14 +371,17 @@ def inventory() -> dict[str, Any]:
                 else "not a messaging adapter (deployment MCP/skills)"
                 if path.stem == "render-platform"
                 else "unclassified platform-category discovery candidate",
-                "external_source_inspected": False,
+                "external_source_inspected": path.stem == "homeassistant",
+                "external_source_evidence": HOMEASSISTANT_SOURCE_AUDIT
+                if path.stem == "homeassistant"
+                else None,
                 "status": "planned",
                 "phase": 9,
             }
         )
     homeassistant = next(row for row in external if row["id"] == "homeassistant")
     homeassistant["acceptance"] = (
-        "Verify configured service identity, authorized entity/state-change ingress and exactly-once notification delivery; separate read-only entity queries from explicitly granted service actions. Audit pinned external source before freezing protocol/feature claims."
+        "Source review complete. Verify configured service identity, authorized entity/state-change ingress, durable event deduplication and exactly-once notification delivery; require explicit per-run write grants and entity allowlists for service actions. Runtime/protocol acceptance remains open."
     )
     return {
         "reference_commit": PIN,
@@ -386,7 +400,7 @@ def inventory() -> dict[str, Any]:
         "limitations": [
             "Method declarations and mixin names do not prove supported behavior; inherited methods may be stubs or fallbacks.",
             "Transport observations come from source declarations and selected paths; adapters have not been executed.",
-            "Home Assistant is an external catalog-declared gateway/toolset, not an in-tree registration; external source/runtime remains uninspected.",
+            "Home Assistant is an external catalog-declared gateway/toolset, not an in-tree registration; pinned source was reviewed but plugin tests and live runtime were not executed.",
             "Catalog category platform includes non-channel features and can omit other categories that register channels; candidates are not an exhaustive channel count.",
             "No X.A.A. messaging adapter or authorized external delivery is claimed implemented.",
         ],

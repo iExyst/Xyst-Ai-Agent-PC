@@ -3210,13 +3210,13 @@
       "id": "email",
       "kind": "registered_platform",
       "phase": 9,
-      "status": "implemented (partial)",
+      "status": "planned",
       "full_parity_phase": 9,
       "phase_scope": "parity expansion",
-      "xaa_module": "engine/xaa/channels/email.py and authenticated email settings API",
+      "xaa_module": "engine/xaa/channels/email (not implemented)",
       "transport_observation": "Polled IMAP receive and SMTP send",
       "acceptance_id": "CHANNEL-EMAIL",
-      "acceptance": "Bounded IMAP TLS and SMTP TLS/STARTTLS, exact sender allowlist plus pinned aligned DMARC authserv validation, UIDVALIDITY/UID deduplication, threaded bounded text replies, automated-mail suppression, and no retry after ambiguous send. Live mailbox interoperability remains open.",
+      "acceptance": "Verify TLS/authentication, mailbox UID/message-ID deduplication, sender authorization, thread headers and automated-mail loop prevention.",
       "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
     },
     {
@@ -3765,6 +3765,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3779,6 +3780,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3793,6 +3795,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3807,6 +3810,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3823,6 +3827,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3840,6 +3845,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3856,6 +3862,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3872,6 +3879,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3888,6 +3896,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3904,6 +3913,7 @@
       ],
       "classification": "not a messaging adapter (terminal backend)",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3918,6 +3928,7 @@
       "required_environment_names": [],
       "classification": "not a messaging adapter (presence hook)",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3934,6 +3945,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3950,6 +3962,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3964,6 +3977,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3978,6 +3992,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -3992,6 +4007,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4006,6 +4022,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4022,6 +4039,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4036,6 +4054,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4050,6 +4069,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4065,10 +4085,21 @@
         "HASS_TOKEN"
       ],
       "classification": "catalog-declared gateway and toolset",
-      "external_source_inspected": false,
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "NousResearch/hermes-official-plugins",
+        "reference_commit": "4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072",
+        "paths": [
+          "homeassistant/__init__.py",
+          "homeassistant/adapter.py",
+          "homeassistant/tools.py",
+          "homeassistant/README.md"
+        ],
+        "evidence_level": "pinned source reviewed; external plugin tests and live Home Assistant runtime not independently verified"
+      },
       "status": "planned",
       "phase": 9,
-      "acceptance": "Verify configured service identity, authorized entity/state-change ingress and exactly-once notification delivery; separate read-only entity queries from explicitly granted service actions. Audit pinned external source before freezing protocol/feature claims."
+      "acceptance": "Source review complete. Verify configured service identity, authorized entity/state-change ingress, durable event deduplication and exactly-once notification delivery; require explicit per-run write grants and entity allowlists for service actions. Runtime/protocol acceptance remains open."
     },
     {
       "id": "inkbox",
@@ -4081,6 +4112,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4097,6 +4129,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4111,6 +4144,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4128,6 +4162,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4144,6 +4179,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4158,6 +4194,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4174,6 +4211,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4190,6 +4228,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4207,6 +4246,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4221,6 +4261,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4238,6 +4279,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4252,6 +4294,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4268,6 +4311,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4284,6 +4328,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4301,6 +4346,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4317,6 +4363,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4333,6 +4380,7 @@
       ],
       "classification": "not a messaging adapter (deployment MCP/skills)",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4349,6 +4397,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4363,6 +4412,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4383,6 +4433,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4397,6 +4448,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4411,6 +4463,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4427,6 +4480,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4444,6 +4498,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4458,6 +4513,7 @@
       "required_environment_names": [],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4474,6 +4530,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4490,6 +4547,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     },
@@ -4506,6 +4564,7 @@
       ],
       "classification": "unclassified platform-category discovery candidate",
       "external_source_inspected": false,
+      "external_source_evidence": null,
       "status": "planned",
       "phase": 9
     }
@@ -4513,7 +4572,7 @@
   "limitations": [
     "Method declarations and mixin names do not prove supported behavior; inherited methods may be stubs or fallbacks.",
     "Transport observations come from source declarations and selected paths; adapters have not been executed.",
-    "Home Assistant is an external catalog-declared gateway/toolset, not an in-tree registration; external source/runtime remains uninspected.",
+    "Home Assistant is an external catalog-declared gateway/toolset, not an in-tree registration; pinned source was reviewed but plugin tests and live runtime were not executed.",
     "Catalog category platform includes non-channel features and can omit other categories that register channels; candidates are not an exhaustive channel count.",
     "No X.A.A. messaging adapter or authorized external delivery is claimed implemented."
   ]

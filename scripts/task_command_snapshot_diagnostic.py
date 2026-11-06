@@ -105,7 +105,9 @@ async def diagnose(engine: Path) -> None:
             return await request_process(
                 [str(engine), "--snapshot-worker"],
                 payload.model_dump_json().encode(),
-                timeout=10,
+                # Frozen cold starts can exceed ten seconds on hosted Windows
+                # runners, especially after earlier antivirus-scanned launches.
+                timeout=30,
                 output_limit=MAX_WIRE_BYTES,
             )
 
