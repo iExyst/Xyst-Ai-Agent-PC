@@ -22,6 +22,18 @@ HOMEASSISTANT_SOURCE_AUDIT = {
     ],
     "evidence_level": "pinned source reviewed; external plugin tests and live Home Assistant runtime not independently verified",
 }
+EXTERNAL_CHANNEL_SOURCE_AUDITS = {
+    "agentchat": ("AgentChat peer-to-peer WebSocket messaging; inbound events wake the agent and outbound sends are explicit tool calls.", ["plugin.yaml", "agentchatme_hermes/__init__.py"]),
+    "aichipmunk": ("Hermes Desktop pairing connector for the AI Chipmunk mobile app; reviewed plugin manifest and pairing implementation.", ["plugins/aichipmunk/plugin.yaml", "plugins/aichipmunk/pairing.py"]),
+    "ando-platform": ("Persistent gateway adapter receiving Ando messages and replying through the invited agent connection.", ["plugin/plugin.yaml", "plugin/adapter.py"]),
+    "artil": ("Email, phone, and workspace account connector; catalog source describes direct customer/team messaging.", ["plugins/hermes/plugin.yaml", "plugins/hermes/README.md"]),
+    "bridge-adapter": ("Generic filesystem bridge: polls inbox JSON and writes outbound JSON through registered bridge wrappers.", ["plugin.yaml", "adapter.py"]),
+    "bunny_space-platform": ("Bunny Space gateway adapter joining private rooms, receiving messages, and replying over outbound pull transport.", ["plugin.yaml", "adapter.py"]),
+    "call-me": ("Phone messaging gateway with verified-device allowlisting, inbound texts/voice answers, and agent replies/calls.", ["plugin.yaml", "adapter.py"]),
+    "carbonvoice-platform": ("Carbon Voice gateway adapter using Socket.IO with REST polling fallback and outbound replies.", ["plugin.yaml", "adapter.py"]),
+    "chatto-platform": ("Chatto gateway adapter with realtime WebSocket inbound events and ConnectRPC outbound messages.", ["plugin.yaml", "adapter.py"]),
+    "fluxer-platform": ("Fluxer gateway adapter using REST outbound and Gateway WebSocket inbound events.", ["plugin.yaml", "adapter.py"]),
+}
 # Transport observations and channel-specific acceptance, not runtime verification.
 REQUIREMENTS = {
     "a2a": (
@@ -370,11 +382,25 @@ def inventory() -> dict[str, Any]:
                 if path.stem == "discord-tps"
                 else "not a messaging adapter (deployment MCP/skills)"
                 if path.stem == "render-platform"
+                else "source-reviewed messaging or gateway adapter"
+                if path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS
                 else "unclassified platform-category discovery candidate",
-                "external_source_inspected": path.stem == "homeassistant",
-                "external_source_evidence": HOMEASSISTANT_SOURCE_AUDIT
-                if path.stem == "homeassistant"
-                else None,
+                "external_source_inspected": path.stem == "homeassistant"
+                or path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS,
+                "external_source_evidence": (
+                    HOMEASSISTANT_SOURCE_AUDIT
+                    if path.stem == "homeassistant"
+                    else {
+                        "repository": data.get("repo"),
+                        "reference_commit": data.get("sha"),
+                        "subdirectory": data.get("subdir") or "",
+                        "paths": EXTERNAL_CHANNEL_SOURCE_AUDITS[path.stem][1],
+                        "finding": EXTERNAL_CHANNEL_SOURCE_AUDITS[path.stem][0],
+                        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified",
+                    }
+                    if path.stem in EXTERNAL_CHANNEL_SOURCE_AUDITS
+                    else None
+                ),
                 "status": "planned",
                 "phase": 9,
             }

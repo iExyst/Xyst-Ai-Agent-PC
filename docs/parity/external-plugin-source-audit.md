@@ -109,3 +109,13 @@ This backend cannot satisfy X.A.A.'s generated-code isolation requirement. Any t
 ## Inventory updates
 
 `audit_channel_inventory.py` and `audit_execution_inventory.py` encode the reviewed pins and regenerate their JSON evidence. All eight external backend declarations in the execution inventory now have pinned-source reviews. None was installed, imported, or executed, and none gains X.A.A. implementation or parity status from this review. Phase 0 still needs broader catalog/capability and channel-source coverage; Phase 3 runtime acceptance and full release parity remain open.
+
+## External channel catalog source review (2026-11-06)
+
+The following platform-category candidates were inspected at the exact SHAs recorded in `channel-inventory.json`: `agentchat`, `aichipmunk`, `ando-platform`, `artil`, `bridge-adapter`, `bunny_space-platform`, `call-me`, `carbonvoice-platform`, `chatto-platform`, and `fluxer-platform`. The generated inventory records each repository, SHA, reviewed paths, and bounded finding.
+
+- The pinned manifests/source describe messaging or gateway integrations: AgentChat peer messaging, AI Chipmunk mobile pairing, Ando invitations, Artil email/phone/workspace messaging, a filesystem JSON bridge, Bunny Space private rooms, verified-device phone messaging, Carbon Voice, Chatto, and Fluxer.
+- Their transports and trust boundaries differ. Some maintain gateway connections or poll remote services; the bridge consumes filesystem inbox/outbox data; `/call-me` documents verified-device allowlisting. These manifest/source descriptions are discovery evidence only; ingress authentication, identity binding, replay behavior, delivery guarantees, authorization, and runtime failure handling remain unverified.
+- Repositories were fetched at recorded commits for static inspection only. No plugin was installed, imported, or executed. The inventory now has source review for Home Assistant plus these ten candidates; 35 platform-category candidates remain unclassified. Platform-category discovery is not exhaustive of plugins in other catalog categories.
+
+This is not X.A.A. channel implementation or Hermes runtime parity. Each adapter still requires isolated protocol/security review and authorized live acceptance before implementation or support claims.

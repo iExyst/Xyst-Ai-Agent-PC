@@ -3763,9 +3763,19 @@
       "subdirectory": "",
       "version": "",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/agentchatme/agentchat-hermes",
+        "reference_commit": "8322d5c97fc81b1493c2ccfc83c19cee03173196",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "agentchatme_hermes/__init__.py"
+        ],
+        "finding": "AgentChat peer-to-peer WebSocket messaging; inbound events wake the agent and outbound sends are explicit tool calls.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3778,9 +3788,19 @@
       "subdirectory": "plugins/aichipmunk",
       "version": "0.1.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Pacific-Cloud-Solutions/hermes-plugins",
+        "reference_commit": "d565d7698a28f4364f819446e5f7ae2b67c57352",
+        "subdirectory": "plugins/aichipmunk",
+        "paths": [
+          "plugins/aichipmunk/plugin.yaml",
+          "plugins/aichipmunk/pairing.py"
+        ],
+        "finding": "Hermes Desktop pairing connector for the AI Chipmunk mobile app; reviewed plugin manifest and pairing implementation.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3793,9 +3813,19 @@
       "subdirectory": "",
       "version": "0.2.4",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Ando-Corporation/hermes-ando",
+        "reference_commit": "1bfde877e1ed194ebf461d64e0468605d7e21a87",
+        "subdirectory": "",
+        "paths": [
+          "plugin/plugin.yaml",
+          "plugin/adapter.py"
+        ],
+        "finding": "Persistent gateway adapter receiving Ando messages and replying through the invited agent connection.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3808,9 +3838,19 @@
       "subdirectory": "plugins/hermes",
       "version": "0.4.0",
       "required_environment_names": [],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/artilai/plugins",
+        "reference_commit": "8dce90c47a7b0d9e9c5edcb3dd2dd09227fe6fea",
+        "subdirectory": "plugins/hermes",
+        "paths": [
+          "plugins/hermes/plugin.yaml",
+          "plugins/hermes/README.md"
+        ],
+        "finding": "Email, phone, and workspace account connector; catalog source describes direct customer/team messaging.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3825,9 +3865,19 @@
       "required_environment_names": [
         "BRIDGE_DIR"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/Kesuek/hermes-bridge-adapter",
+        "reference_commit": "c095d54bdecd4a6080e3166bd6c95552ac69ae65",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Generic filesystem bridge: polls inbox JSON and writes outbound JSON through registered bridge wrappers.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3843,9 +3893,19 @@
         "BUNNY_SPACE_BOT_KEY",
         "BUNNY_SPACE_SLUG"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/jasm001/hermes-plugin-bunny-space",
+        "reference_commit": "c28e7985599c03a323ebb06f8ca28ac7cd5b05d6",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Bunny Space gateway adapter joining private rooms, receiving messages, and replying over outbound pull transport.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3860,9 +3920,19 @@
       "required_environment_names": [
         "CALLME_ALLOWED_USERS"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/radres/hermes-plugin-call-me",
+        "reference_commit": "970952e72d633ebdbed20d8c60c327cc45475140",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Phone messaging gateway with verified-device allowlisting, inbound texts/voice answers, and agent replies/calls.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3877,9 +3947,19 @@
       "required_environment_names": [
         "name"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/PhononX/hermes-plugin-carbonvoice",
+        "reference_commit": "55867dba9c6645ce493fd955970302e59a4548ea",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Carbon Voice gateway adapter using Socket.IO with REST polling fallback and outbound replies.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3894,9 +3974,19 @@
       "required_environment_names": [
         "name"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/jrimmer/hermes-chatto-plugin",
+        "reference_commit": "aab0a20635cb578253a8014bc8d93e1b32f020fc",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Chatto gateway adapter with realtime WebSocket inbound events and ConnectRPC outbound messages.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -3943,9 +4033,19 @@
       "required_environment_names": [
         "name"
       ],
-      "classification": "unclassified platform-category discovery candidate",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "classification": "source-reviewed messaging or gateway adapter",
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/elkimek/hermes-fluxer-plugin",
+        "reference_commit": "6d2ef9767d0a0811a3ae26a76290b9b1e4636d4c",
+        "subdirectory": "",
+        "paths": [
+          "plugin.yaml",
+          "adapter.py"
+        ],
+        "finding": "Fluxer gateway adapter using REST outbound and Gateway WebSocket inbound events.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
