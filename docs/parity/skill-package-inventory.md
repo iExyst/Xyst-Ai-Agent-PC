@@ -9,7 +9,7 @@ uv run python scripts/audit_skill_packages.py
 uv run python scripts/audit_skill_packages.py --check
 ```
 
-The inventory script requires the clean pinned `.hermes-audit` checkout used by the other source audits. It fetches blob contents in one Git batch and stores hashes, modes, and bounded metadata rather than skill bodies. To exercise the X.A.A. importer against every recorded standalone source directory, run `uv run python scripts/audit_skill_import_compatibility.py --check`.
+The inventory script requires the clean pinned `.hermes-audit` checkout used by the other source audits. It fetches blob contents in one Git batch and stores hashes, modes, and bounded metadata rather than skill bodies. To exercise the X.A.A. importer against every recorded standalone source directory, run `uv run python scripts/audit_skill_import_compatibility.py --check`; the Windows engine CI job fetches the pinned skill trees and runs this gate on every push and pull request.
 
 ## Inventory findings
 
