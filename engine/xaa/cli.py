@@ -1,6 +1,7 @@
 """Command-line client for the same authenticated API used by the desktop."""
 
 import argparse
+import asyncio
 import getpass
 import json
 import os
@@ -11,8 +12,13 @@ from typing import cast
 from urllib.parse import quote
 
 import httpx
+from keyring.errors import KeyringError
 
-from xaa.credentials import CredentialStore
+from xaa.credentials import (
+    API_LAUNCH_TOKEN_PROFILE,
+    API_LAUNCH_URL_PROFILE,
+    CredentialStore,
+)
 from xaa.storage.backup_bundle import restore_backup_bundle
 from xaa.storage.restore import restore_database
 
@@ -26,9 +32,33 @@ def _session_name(value: str) -> str:
     return value
 
 
+def _resolve_api_token(command: str, environment_token: str) -> str:
+    if len(environment_token) >= 32 or command != "acp":
+        return environment_token
+    try:
+        return CredentialStore().get(API_LAUNCH_TOKEN_PROFILE) or ""
+    except (KeyringError, OSError, RuntimeError):
+        return ""
+
+
+def _resolve_api_url(command: str, explicit_url: str | None, environment_url: str | None) -> str:
+    if explicit_url:
+        return explicit_url
+    if environment_url:
+        return environment_url
+    if command == "acp":
+        try:
+            stored_url = CredentialStore().get(API_LAUNCH_URL_PROFILE)
+            if stored_url:
+                return stored_url
+        except (KeyringError, OSError, RuntimeError):
+            pass
+    return "http://127.0.0.1:8765"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="xaa", description="Xyst AI Agent API client")
-    parser.add_argument("--api-url", default=os.environ.get("XAA_API_URL", "http://127.0.0.1:8765"))
+    parser.add_argument("--api-url")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("models", help="Discover local models")
     commands.add_parser("providers", help="Inspect provider status")
@@ -84,12 +114,21 @@ def main() -> None:
         help="Persistent session name (letters, numbers, dot, underscore, hyphen)",
     )
     chat.add_argument("--reset", action="store_true", help="Clear saved context before starting")
+    acp = commands.add_parser(
+        "acp", help="Serve the selected X.A.A. agent over the Agent Client Protocol (stdio)"
+    )
+    acp.add_argument("--model", required=True, help="Explicit LM Studio model identifier")
+    acp.add_argument(
+        "--workspace", type=Path, required=True, help="Fixed workspace for ACP sessions"
+    )
+    acp.add_argument("--mode", choices=["observe", "workspace"], default="observe")
     for name in ("status", "pause", "resume", "cancel", "events"):
         command = commands.add_parser(name)
         command.add_argument("run_id")
         if name == "events":
             command.add_argument("--after", type=int, default=0)
     args = parser.parse_args()
+    args.api_url = _resolve_api_url(args.command, args.api_url, os.environ.get("XAA_API_URL"))
     if args.command == "restore":
         try:
             restored = restore_database(args.snapshot, args.destination)
@@ -112,9 +151,28 @@ def main() -> None:
             store.delete()
         print("Credential updated. Restart the engine to apply it.")
         return
-    token = os.environ.get("XAA_API_TOKEN", "")
+    token = _resolve_api_token(args.command, os.environ.get("XAA_API_TOKEN", ""))
     if len(token) < 32:
-        parser.exit(2, "Set XAA_API_TOKEN to the engine's bearer token (at least 32 characters).\n")
+        parser.exit(
+            2,
+            "Start the X.A.A. engine or set XAA_API_TOKEN to its bearer token (at least 32 characters).\n",
+        )
+    if args.command == "acp":
+        from xaa.acp_adapter import serve_acp
+
+        try:
+            asyncio.run(
+                serve_acp(
+                    api_url=args.api_url,
+                    model=args.model,
+                    workspace=args.workspace,
+                    mode=args.mode,
+                    api_token=token,
+                )
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            parser.exit(1, f"ACP server could not start: {exc}\n")
+        return
     try:
         with httpx.Client(
             base_url=args.api_url, headers={"Authorization": f"Bearer {token}"}, timeout=30

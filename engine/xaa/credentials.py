@@ -3,6 +3,9 @@
 import os
 from typing import Protocol, cast
 
+API_LAUNCH_TOKEN_PROFILE = "api-launch"
+API_LAUNCH_URL_PROFILE = "api-launch-url"
+
 
 class OSVault(Protocol):
     def get_password(self, service: str, username: str) -> str | None: ...

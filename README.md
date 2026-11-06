@@ -4,10 +4,11 @@ Windows-first desktop agent under development. The native app, local engine and 
 
 ## Status
 
-- Current work: durable execution, workspace tools and desktop workflows; several phase gates remain incomplete
+- Current work: durable execution, workspace tools, desktop workflows, and a partial ACP stdio bridge; several phase gates remain incomplete
 - Completion estimate: approximately 16% of the full release objective
 - Hermes audit pin: `1e208b280deb18f01d015b0acdf3ef3552d08039` (official `NousResearch/hermes-agent`, audited 2026-11-03)
 - See the [user guide](docs/user-guide.md) for operating instructions, and `docs/progress.md` for evidence and next gates.
+- The initial editor integration uses the authenticated run API over ACP stdio; see [ACP integration](docs/integrations/acp.md) for its scope and current token handoff limitation.
 
 ## Unsigned Windows development installer
 

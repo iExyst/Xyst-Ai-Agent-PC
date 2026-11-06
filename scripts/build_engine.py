@@ -56,6 +56,10 @@ def main() -> None:
             "lmstudio",
             "--collect-all",
             "playwright",
+            "--collect-all",
+            "acp",
+            "--hidden-import",
+            "xaa.cli",
             "--hidden-import",
             "keyring.backends.Windows",
             *[

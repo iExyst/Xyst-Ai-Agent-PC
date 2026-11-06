@@ -3,7 +3,12 @@
 if __name__ == "__main__":
     import sys
 
-    if sys.argv[1:] == ["--tool-worker"]:
+    if sys.argv[1:] and sys.argv[1] == "--cli":
+        # The installed sidecar doubles as the ACP CLI executable. Keep this
+        # dispatch explicit so normal Tauri launches still start the API.
+        sys.argv = [sys.argv[0], *sys.argv[2:]]
+        from xaa.cli import main
+    elif sys.argv[1:] == ["--tool-worker"]:
         from xaa.runtime.tool_worker import main
     elif sys.argv[1:] == ["--snapshot-worker"]:
         from xaa.runtime.snapshot_worker import main

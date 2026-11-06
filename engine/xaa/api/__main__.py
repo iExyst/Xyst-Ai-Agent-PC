@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import uvicorn
 from pydantic import SecretStr
 
 from xaa.api.app import create_app
-from xaa.credentials import CredentialStore
+from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE, CredentialStore
 from xaa.providers.lm_studio import LMStudioProvider
 
 token = os.environ.get("XAA_API_TOKEN", "")
@@ -40,15 +41,39 @@ app = create_app(
 
 def main() -> None:
     global server
+    port = int(os.environ.get("XAA_API_PORT", "8765"))
+    api_url = f"http://127.0.0.1:{port}"
     server = uvicorn.Server(
         uvicorn.Config(
             app,
             host="127.0.0.1",
-            port=int(os.environ.get("XAA_API_PORT", "8765")),
+            port=port,
             timeout_graceful_shutdown=3,
         )
     )
-    server.run()
+    shared_profiles: list[tuple[str, str]] = []
+    try:
+        credential_store.set(token, API_LAUNCH_TOKEN_PROFILE)
+        shared_profiles.append((API_LAUNCH_TOKEN_PROFILE, token))
+        credential_store.set(api_url, API_LAUNCH_URL_PROFILE)
+        shared_profiles.append((API_LAUNCH_URL_PROFILE, api_url))
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "ACP API token handoff is unavailable because Windows Credential Manager could not be updated.",
+            exc_info=True,
+        )
+    try:
+        server.run()
+    finally:
+        for profile, value in shared_profiles:
+            try:
+                if credential_store.get(profile) == value:
+                    credential_store.delete(profile)
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Could not remove a temporary ACP API connection value from Windows Credential Manager.",
+                    exc_info=True,
+                )
 
 
 if __name__ == "__main__":
