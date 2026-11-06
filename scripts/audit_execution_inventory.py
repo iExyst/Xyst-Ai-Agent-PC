@@ -69,6 +69,31 @@ EXTERNAL = {
     "hermes-wslc-sandbox": "Windows wslc runtime; manifest discloses no capability dropping and no enforced disk quota.",
 }
 EXTERNAL_SOURCE_AUDITS = {
+    "bubblewrap": {
+        "repository": "NousResearch/hermes-official-plugins",
+        "reference_commit": "a50b0fea59d10f9a51b488206f587d9cb6ca6163",
+        "paths": [
+            "bubblewrap/README.md",
+            "bubblewrap/__init__.py",
+            "bubblewrap/binds.py",
+            "bubblewrap/sandbox.py",
+        ],
+        "evidence_level": "pinned source reviewed; upstream plugin runtime not independently verified",
+        "acceptance": "Review complete; verify the intended Bubblewrap profile on a supported host and satisfy EXEC-COMMON-1 through EXEC-COMMON-8",
+    },
+    "hermes-wslc-sandbox": {
+        "repository": "Yicheng-Mark/hermes-windows-plugins",
+        "reference_commit": "5bad3fb2baf04ce6befecfefce6d14f4c9c98934",
+        "paths": [
+            "wslc-sandbox/hermes_wslc_sandbox/provider.py",
+            "wslc-sandbox/hermes_wslc_sandbox/environment.py",
+            "wslc-sandbox/hermes_wslc_sandbox/wslc.py",
+            "wslc-sandbox/README.md",
+            "wslc-sandbox/VALIDATION.md",
+        ],
+        "evidence_level": "pinned source reviewed; WSL Containers runtime and isolation not independently verified",
+        "acceptance": "Review complete; runtime host probes, effective resource/isolation checks and EXEC-COMMON-1 through EXEC-COMMON-8 remain required",
+    },
     "singularity": {
         "repository": "NousResearch/hermes-official-plugins",
         "reference_commit": "d46aced3031a8f533fdbf0806bc4cf0d0b28be07",
@@ -79,7 +104,7 @@ EXTERNAL_SOURCE_AUDITS = {
         ],
         "evidence_level": "pinned source reviewed; runtime and security properties not independently verified",
         "acceptance": "Review complete; EXEC-COMMON-1 through EXEC-COMMON-8 and live Apptainer isolation/resource/cleanup probes remain required",
-    }
+    },
 }
 EXCLUDED = {
     "account-pool": "Provider-account scheduling/usage, not a terminal environment provider.",

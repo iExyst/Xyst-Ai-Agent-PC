@@ -15,6 +15,34 @@ Reference: `NousResearch/hermes-official-plugins` commit `4d492b1dc5326af3e38bb2
 
 Acceptance still required: transport encryption/identity checks against a configured HA instance; event replay/reconnect and durable deduplication; bounded untrusted event handling; entity filtering; notification reconciliation after ambiguous delivery; tool read/write grants and denial probes. Do not infer exactly-once delivery from the upstream adapter.
 
+## Bubblewrap Linux execution backend
+
+Reference: `NousResearch/hermes-official-plugins` commit `a50b0fea59d10f9a51b488206f587d9cb6ca6163`, subdirectory `bubblewrap`, catalog version 1.3.0. Reviewed `README.md`, `__init__.py`, `binds.py`, and `sandbox.py`.
+
+- The plugin is Linux-only and requires Bubblewrap 0.9.0+, `prlimit`, and a successful namespace probe. Backend setup fails or reports degraded operation if these are unavailable; it does not deliberately fall through to unsandboxed execution.
+- Each command wraps a host-path workspace with a read-only host root and an explicitly configured writable working directory, private PID and other namespaces, private `/tmp` and `/proc`, masked selected agent/socket paths, home-dot-entry and credential hides, and `--die-with-parent`. File tools are also run through the sandbox.
+- `prlimit` applies per-process address-space, CPU-time and process-count limits before Bubblewrap starts. These are not aggregate cgroup limits. The default `network` profile shares the host network; `workspace` and `restricted` use loopback-only networking. No egress allowlist or seccomp filter is described. Other Unix sockets outside the explicitly masked paths may remain connectable.
+- Credential and bind paths are validated and resolved before mounting to reduce symlink-swap exposure. User-selected writable binds and the working directory still mutate real host paths. The README explicitly says other user-readable host files remain readable, background processes and persistent `execute_code` kernels are unsupported, and some home/credential hiding behavior depends on the detailed mount layout.
+- The README describes probes and security intent. This audit did not execute the upstream plugin or test escape resistance, actual kernel-enforced limits, bind races, filesystem behavior, network separation, or process cleanup.
+
+X.A.A.'s existing WSL manager has a different boundary: fixed synthetic runtime mounts and a private snapshot copy, network/socket denial and a seccomp filter, with measured cgroup and tmpfs limits. Its own production integration and escape review remain open. Do not use the upstream Bubblewrap plugin's host-path behavior as evidence for X.A.A.'s backend or vice versa.
+
+Acceptance still required: real host probes for each supported profile; verify aggregate memory, process-tree and storage limits against the shared contract; test hidden/read-only path behavior and writable-bind mutation; probe all socket/network paths and cancellation/cleanup. The profile that shares host network cannot satisfy a no-network grant.
+
+## WSL Containers Windows execution backend
+
+Reference: `Yicheng-Mark/hermes-windows-plugins` commit `5bad3fb2baf04ce6befecfefce6d14f4c9c98934`, subdirectory `wslc-sandbox`. Reviewed the provider, environment and CLI adapter modules plus `README.md` and `VALIDATION.md`.
+
+- The provider detects `wslc`, probes its accepted flags, and reports unsupported hardening flags. It intentionally keeps dangerous-command approval enabled because this runtime cannot accept `--cap-drop` or `--security-opt`.
+- `wslc run -d` creates a long-lived container per environment. A persistent identity is derived from the task ID and is stopped on teardown; it can be started again with its writable layer intact. Nonpersistent instances use a run-specific name and are removed. Therefore persistent state outlives an individual environment and needs explicit ownership, retention and cleanup policy.
+- Network is enabled by default; `docker_network: false` requests `--network none`. Explicit configured volumes/environment forwarding are passed through, while the plugin itself says it does not read or store credentials. Image acquisition may be a separate `wslc pull` or a potentially long first run.
+- CPU and memory options are mapped to WSL Containers flags. The configured disk value is recorded but not enforced because the CLI has no `--storage-opt`. The source explicitly reports that `--cap-drop`, `--security-opt`, `--pids-limit`, `--init`, and `--storage-opt` are unsupported.
+- The plugin validation document reports direct observations from a WSL Containers installation, but this source audit did not execute that runtime or reproduce those checks on the target host. In particular, source and CLI help do not prove effective network, resource, mount, task-isolation or cleanup behavior.
+
+X.A.A. does not select this backend; it uses its own fixed WSL/Bubblewrap manager. The X.A.A. backend's staged data, permission binding and recovery rules remain separately subject to acceptance.
+
+Acceptance still required: install/configure WSL Containers on a supported Windows host; inspect actual CLI capabilities and effective container policy; test cross-task persistence isolation, explicit volume/env transfer, no-network behavior, memory/CPU/process/disk limits, cancellation and stop/remove recovery. Refuse unsupported limits rather than claiming enforcement.
+
 ## Singularity/Apptainer execution backend
 
 Reference: `NousResearch/hermes-official-plugins` commit `d46aced3031a8f533fdbf0806bc4cf0d0b28be07`, subdirectory `singularity`, catalog version 1.0.0. Reviewed `singularity/provider.py`, `singularity/singularity_env.py`, and `singularity/README.md`.

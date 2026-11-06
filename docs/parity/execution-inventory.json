@@ -158,9 +158,20 @@
       "phase": 9,
       "status": "planned",
       "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
-      "evidence_level": "catalog declaration only; external source/runtime not inspected",
-      "source_audit": null,
-      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+      "evidence_level": "pinned source reviewed; upstream plugin runtime not independently verified",
+      "source_audit": {
+        "repository": "NousResearch/hermes-official-plugins",
+        "reference_commit": "a50b0fea59d10f9a51b488206f587d9cb6ca6163",
+        "paths": [
+          "bubblewrap/README.md",
+          "bubblewrap/__init__.py",
+          "bubblewrap/binds.py",
+          "bubblewrap/sandbox.py"
+        ],
+        "evidence_level": "pinned source reviewed; upstream plugin runtime not independently verified",
+        "acceptance": "Review complete; verify the intended Bubblewrap profile on a supported host and satisfy EXEC-COMMON-1 through EXEC-COMMON-8"
+      },
+      "acceptance": "Review complete; verify the intended Bubblewrap profile on a supported host and satisfy EXEC-COMMON-1 through EXEC-COMMON-8"
     },
     {
       "id": "cua-spaces",
@@ -240,9 +251,21 @@
       "phase": 9,
       "status": "planned",
       "xaa_module": "engine/xaa/runtime/execution and integration adapters (not implemented)",
-      "evidence_level": "catalog declaration only; external source/runtime not inspected",
-      "source_audit": null,
-      "acceptance": "External pinned source audit, then EXEC-COMMON-1 through EXEC-COMMON-8 and backend-specific requirements"
+      "evidence_level": "pinned source reviewed; WSL Containers runtime and isolation not independently verified",
+      "source_audit": {
+        "repository": "Yicheng-Mark/hermes-windows-plugins",
+        "reference_commit": "5bad3fb2baf04ce6befecfefce6d14f4c9c98934",
+        "paths": [
+          "wslc-sandbox/hermes_wslc_sandbox/provider.py",
+          "wslc-sandbox/hermes_wslc_sandbox/environment.py",
+          "wslc-sandbox/hermes_wslc_sandbox/wslc.py",
+          "wslc-sandbox/README.md",
+          "wslc-sandbox/VALIDATION.md"
+        ],
+        "evidence_level": "pinned source reviewed; WSL Containers runtime and isolation not independently verified",
+        "acceptance": "Review complete; runtime host probes, effective resource/isolation checks and EXEC-COMMON-1 through EXEC-COMMON-8 remain required"
+      },
+      "acceptance": "Review complete; runtime host probes, effective resource/isolation checks and EXEC-COMMON-1 through EXEC-COMMON-8 remain required"
     },
     {
       "id": "singularity",
