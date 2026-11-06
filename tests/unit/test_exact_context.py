@@ -260,6 +260,7 @@ async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
                 "fixture failure",
                 worker_error_type="LMStudioServerError",
                 worker_error_stage="tokenization",
+                worker_error_code="generic.tokenizeFailed",
             )
 
         async def _chat(self, **kwargs):
@@ -284,6 +285,7 @@ async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
         "reason": "prompt_count_unavailable",
         "counter_error_type": "LMStudioServerError",
         "counter_error_stage": "tokenization",
+        "counter_error_code": "generic.tokenizeFailed",
     }
 
 

@@ -147,7 +147,8 @@ function App() {
           time_budget_exhausted: 'The run time limit was reached.',
         };
         const reason = typeof event.payload.reason === 'string' ? reasons[event.payload.reason] : undefined;
-        const description = event.event_type === 'run.state_changed' ? `Run is ${String(event.payload.to).replaceAll('_', ' ')}${reason ? `. ${reason}` : ''}` : (labels[event.event_type] ?? 'Progress saved');
+        const counterCode = event.event_type === 'context.admission_failed' && typeof event.payload.counter_error_code === 'string' ? ` (${event.payload.counter_error_code})` : '';
+        const description = event.event_type === 'run.state_changed' ? `Run is ${String(event.payload.to).replaceAll('_', ' ')}${reason ? `. ${reason}` : ''}` : event.event_type === 'context.admission_failed' ? `${labels[event.event_type]}${counterCode}` : (labels[event.event_type] ?? 'Progress saved');
         setActivity(items => [...items.slice(-199), description]);
         if (event.event_type === 'model.message') {
           setPartial('');

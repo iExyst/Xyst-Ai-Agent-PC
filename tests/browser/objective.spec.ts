@@ -54,7 +54,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
       const artifact = { sequence: 1, event_type: 'artifact.created', payload: { artifact_id: 'artifact-1' }, created_at: '2026-11-03T00:00:00Z' };
       const event = { sequence: 2, event_type: 'run.state_changed', payload: { to: 'verifying' }, created_at: '2026-11-03T00:00:00Z' };
       const planSaved = {sequence:3,event_type:'plan.saved',payload:{task_ids:['inspect','review']},created_at:'2026-11-03T00:00:00Z'};
-      return route.fulfill({ headers, contentType: 'text/event-stream', body: `id: 1\nevent: run_event\ndata: ${JSON.stringify(artifact)}\n\nid: 2\nevent: run_event\ndata: ${JSON.stringify(event)}\n\nid: 3\nevent: run_event\ndata: ${JSON.stringify(planSaved)}\n\nevent: done\ndata: {}\n\n` });
+      const countFailure = {sequence:4,event_type:'context.admission_failed',payload:{reason:'prompt_count_unavailable',counter_error_type:'LMStudioServerError',counter_error_stage:'tokenization',counter_error_code:'generic.tokenizeFailed'},created_at:'2026-11-03T00:00:00Z'};
+      return route.fulfill({ headers, contentType: 'text/event-stream', body: `id: 1\nevent: run_event\ndata: ${JSON.stringify(artifact)}\n\nid: 2\nevent: run_event\ndata: ${JSON.stringify(event)}\n\nid: 3\nevent: run_event\ndata: ${JSON.stringify(planSaved)}\n\nid: 4\nevent: run_event\ndata: ${JSON.stringify(countFailure)}\n\nevent: done\ndata: {}\n\n` });
     }
     return route.fulfill({ json: run, headers });
   });
@@ -119,6 +120,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByRole('heading', { name: 'Active run verifying' })).toBeVisible();
   await expect(page.getByText('Run is verifying')).toBeVisible();
   const plan = page.getByRole('region', {name:'Task plan'});
+  await expect(page.getByRole('region',{name:'Active run'}).getByRole('list')).toContainText('Exact prompt counter failed; safe SDK error details saved (generic.tokenizeFailed)');
   await expect(plan.getByRole('heading', {name:'Plan and specialists'})).toBeVisible();
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
   await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Reported token allowance: 2000 · Output tokens per request: 128');

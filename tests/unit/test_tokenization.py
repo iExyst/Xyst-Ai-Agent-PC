@@ -2,11 +2,13 @@ import asyncio
 import json
 import time
 from http import HTTPStatus
+from types import SimpleNamespace
 
 import pytest
 from pydantic import SecretStr, ValidationError
 from websockets.asyncio.server import serve
 from xaa.providers.tokenization import PromptCountError, PromptCountRequest, count_prompt
+from xaa.providers.tokenizer_worker import _safe_server_error_code
 
 
 def greeting(connection, request):
@@ -19,6 +21,31 @@ def request():
     return PromptCountRequest.model_validate(
         {"model": "fixture", "messages": [{"role": "user", "content": "PRIVATE_FIXTURE_TEXT"}]}
     )
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("generic.tokenizeFailed", "generic.tokenizeFailed"),
+        ("C:\\Users\\Private Name\\model.gguf", None),
+        ("x" * 97, None),
+        (None, None),
+    ],
+)
+def test_worker_exposes_only_bounded_machine_error_codes(code, expected):
+    error = Exception("private SDK details")
+    error.server_error = SimpleNamespace(display_data={"code": code})
+    assert _safe_server_error_code(error) == expected
+
+
+def test_worker_extracts_structured_code_from_lm_studio_sdk_error():
+    from lmstudio.json_api import LMStudioServerError
+
+    error = LMStudioServerError.from_details(
+        "redacted",
+        {"displayData": {"code": "generic.tokenizeFailed"}},
+    )
+    assert _safe_server_error_code(error) == "generic.tokenizeFailed"
 
 
 @pytest.mark.parametrize("credential", [None, "sk-lm-" + "A" * 8 + ":" + "B" * 20])
@@ -167,7 +194,7 @@ async def test_counter_rejects_broken_worker_and_joins_it(monkeypatch, mode):
         "malformed": "import sys; sys.stdout.write('PRIVATE_BROKEN_WORKER_OUTPUT'); sys.stdout.flush()",
         "oversized": "import sys,time; sys.stdout.write('x'*40000); sys.stdout.flush(); time.sleep(30)",
         "nonzero": "import sys; sys.exit(9)",
-        "sdk_error": 'import sys; sys.stdout.write(\'{"ok":false,"error":"LMStudioServerError","error_stage":"tokenization"}\'); sys.stdout.flush()',
+        "sdk_error": 'import sys; sys.stdout.write(\'{"ok":false,"error":"LMStudioServerError","error_stage":"tokenization","error_code":"generic.tokenizeFailed"}\'); sys.stdout.flush()',
     }[mode]
 
     async def spawn(*command, **kwargs):
@@ -186,3 +213,4 @@ async def test_counter_rejects_broken_worker_and_joins_it(monkeypatch, mode):
     if mode == "sdk_error":
         assert error.value.worker_error_type == "LMStudioServerError"
         assert error.value.worker_error_stage == "tokenization"
+        assert error.value.worker_error_code == "generic.tokenizeFailed"

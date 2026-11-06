@@ -245,6 +245,8 @@ class Coordinator:
             payload["counter_error_type"] = exc.counter_error_type
         if exc.counter_error_stage is not None:
             payload["counter_error_stage"] = exc.counter_error_stage
+        if exc.counter_error_code is not None:
+            payload["counter_error_code"] = exc.counter_error_code
         self.store.append_worker_event(run_id, token, "context.admission_failed", payload)
 
     def _propose_plan(

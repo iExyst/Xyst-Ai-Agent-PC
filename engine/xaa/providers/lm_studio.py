@@ -50,11 +50,13 @@ class ContextLimitError(ProviderError):
         reason: str = "context_budget_exceeded",
         counter_error_type: str | None = None,
         counter_error_stage: str | None = None,
+        counter_error_code: str | None = None,
     ) -> None:
         super().__init__(message)
         self.reason = reason
         self.counter_error_type = counter_error_type
         self.counter_error_stage = counter_error_stage
+        self.counter_error_code = counter_error_code
 
 
 class ModelCapabilities(BaseModel):
@@ -447,6 +449,7 @@ class LMStudioProvider:
                 reason="prompt_count_unavailable",
                 counter_error_type=exc.worker_error_type,
                 counter_error_stage=exc.worker_error_stage,
+                counter_error_code=exc.worker_error_code,
             ) from None
         except ValidationError:
             raise ContextLimitError(

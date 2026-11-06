@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 import sys
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
@@ -14,6 +15,8 @@ from xaa.providers.contracts import ToolCall
 from xaa.providers.tool_schemas import ToolSchemaError, prepare_tools
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.processes import stop_owned_process
+
+SAFE_WORKER_ERROR_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+){0,8}$")
 
 
 class PromptMessage(BaseModel):
@@ -60,10 +63,12 @@ class PromptCountError(RuntimeError):
         *,
         worker_error_type: str | None = None,
         worker_error_stage: str | None = None,
+        worker_error_code: str | None = None,
     ) -> None:
         super().__init__(message)
         self.worker_error_type = worker_error_type
         self.worker_error_stage = worker_error_stage
+        self.worker_error_code = worker_error_code
 
 
 def make_chat(messages: list[PromptMessage]) -> lms.Chat:
@@ -138,6 +143,9 @@ class TokenizerResponse(BaseModel):
         ]
         | None
     ) = None
+    error_code: str | None = Field(
+        default=None, max_length=96, pattern=SAFE_WORKER_ERROR_CODE.pattern
+    )
 
 
 async def count_prompt(
@@ -210,6 +218,7 @@ async def count_prompt(
                     f"Prompt counting failed ({response.error}). Check the loaded model, SDK and LM Studio authentication.",
                     worker_error_type=response.error,
                     worker_error_stage=response.error_stage,
+                    worker_error_code=response.error_code,
                 )
             return response.count
     except TimeoutError:
