@@ -1104,6 +1104,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/specialists/profiles/{role}/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Specialist Identity */
+        put: operations["set_specialist_identity_specialists_profiles__role__identity_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/specialists/profiles/{role}/instructions": {
         parameters: {
             query?: never;
@@ -1766,6 +1783,8 @@ export interface components {
             dependencies: string[];
             /** Id */
             id: string;
+            /** Identity Name */
+            identity_name: string;
             /** Local Id */
             local_id: string;
             /** Model Route */
@@ -2426,6 +2445,11 @@ export interface components {
             skill_id: string;
             /** Version */
             version: number;
+        };
+        /** SpecialistIdentityRequest */
+        SpecialistIdentityRequest: {
+            /** Display Name */
+            display_name: string;
         };
         /** SpecialistInstructionsRequest */
         SpecialistInstructionsRequest: {
@@ -5058,6 +5082,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpecialistProfileResponse"][];
+                };
+            };
+        };
+    };
+    set_specialist_identity_specialists_profiles__role__identity_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialistIdentityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecialistProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

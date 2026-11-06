@@ -343,6 +343,11 @@ class SpecialistInstructionsRequest(BaseModel):
     system_instructions: str = Field(max_length=4000)
 
 
+class SpecialistIdentityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    display_name: str = Field(min_length=1, max_length=64)
+
+
 class SpecialistProfileResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     role: str
@@ -1277,6 +1282,19 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             return specialist_profiles.set_instructions(role, payload.system_instructions)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Specialist role not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.put("/specialists/profiles/{role}/identity", response_model=SpecialistProfileResponse)
+    def set_specialist_identity(
+        role: str,
+        payload: SpecialistIdentityRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return specialist_profiles.set_display_name(role, payload.display_name)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Specialist role not found.") from exc
         except ValueError as exc:

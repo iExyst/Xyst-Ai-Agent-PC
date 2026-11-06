@@ -118,6 +118,7 @@ class PlanTaskRecord(BaseModel):
     acceptance_criteria: list[str]
     dependencies: list[str]
     assigned_role: str
+    identity_name: str
     model_route: str | None
     workspace: str | None
     permission_scope: list[str]

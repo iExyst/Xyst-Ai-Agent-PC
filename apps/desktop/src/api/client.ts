@@ -137,6 +137,12 @@ export class EngineClient {
     });
   }
 
+  setSpecialistIdentity(role: string, display_name: string): Promise<SpecialistProfile> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/identity`, {
+      method: 'PUT', body: JSON.stringify({display_name}),
+    });
+  }
+
   specialistMemory(role: string): Promise<Memory[]> {
     return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/memory`);
   }

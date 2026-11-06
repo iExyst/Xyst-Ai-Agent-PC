@@ -7,6 +7,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
   const [profiles, setProfiles] = useState<SpecialistProfile[]>([]);
   const [models, setModels] = useState<{ id: string }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [identityDrafts, setIdentityDrafts] = useState<Record<string, string>>({});
   const [instructionDrafts, setInstructionDrafts] = useState<Record<string, string>>({});
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
   const [memories, setMemories] = useState<Record<string, Awaited<ReturnType<EngineClient['specialistMemory']>>>>({});
@@ -24,6 +25,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
     setProfiles(nextProfiles);
     setModels(nextModels.map(model => ({ id: model.id })));
     setDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.model_route ?? ''])));
+    setIdentityDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.display_name])));
     setInstructionDrafts(Object.fromEntries(nextProfiles.map(profile => [profile.role, profile.system_instructions])));
     const roleMemories = await Promise.all(nextProfiles.map(async profile => [profile.role, await client.specialistMemory(profile.role)] as const));
     setMemories(Object.fromEntries(roleMemories));
@@ -38,6 +40,20 @@ export function SpecialistProfilesPanel({ client }: Props) {
       const saved = await client.setSpecialistRoute(profile.role, drafts[profile.role] || null);
       setProfiles(current => current.map(item => item.role === saved.role ? saved : item));
       setDrafts(current => ({ ...current, [saved.role]: saved.model_route ?? '' }));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusyRole('');
+    }
+  };
+
+  const saveIdentity = async (profile: SpecialistProfile) => {
+    setBusyRole(profile.role);
+    setError('');
+    try {
+      const saved = await client.setSpecialistIdentity(profile.role, identityDrafts[profile.role] ?? '');
+      setProfiles(current => current.map(item => item.role === saved.role ? saved : item));
+      setIdentityDrafts(current => ({ ...current, [saved.role]: saved.display_name }));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
@@ -92,6 +108,20 @@ export function SpecialistProfilesPanel({ client }: Props) {
     <p>Choose a discovered local model for each role, or inherit the model selected for the parent run. Role instructions and routes are snapshotted when a task plan is saved, so edits only affect future plans. Tool permissions remain controlled by the application.</p>
     {error && <p role="alert">{error}</p>}
     {profiles.map(profile => <div key={profile.role} className="specialist-profile">
+      <label>{profile.role} specialist name
+        <input
+          aria-label={`${profile.role} specialist name`}
+          maxLength={64}
+          value={identityDrafts[profile.role] ?? profile.display_name}
+          disabled={busyRole === profile.role}
+          onChange={event => setIdentityDrafts(current => ({ ...current, [profile.role]: event.target.value }))}
+        />
+      </label>
+      <button
+        type="button"
+        disabled={busyRole === profile.role || (identityDrafts[profile.role] ?? profile.display_name).trim() === profile.display_name}
+        onClick={() => void saveIdentity(profile)}
+      >Save identity</button>
       <label>{profile.display_name} model
         <select
           aria-label={`${profile.display_name} model`}

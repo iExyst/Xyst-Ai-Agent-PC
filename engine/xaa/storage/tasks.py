@@ -308,7 +308,7 @@ class TaskStore:
             specialist_profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,model_route,system_instructions FROM specialist_profiles"
+                    "SELECT role,display_name,model_route,system_instructions FROM specialist_profiles"
                 ).fetchall()
             }
             profile_instructions = {
@@ -317,13 +317,14 @@ class TaskStore:
             }
             for task in graph.tasks.values():
                 connection.execute(
-                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,assigned_role,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
                     (
                         f"{run_id}:{task.id}",
                         run_id,
                         task.objective,
                         json.dumps(task.acceptance_criteria),
                         task.role,
+                        specialist_profiles.get(task.role, {}).get("display_name") or task.role,
                         specialist_profiles.get(task.role, {}).get("model_route") or run["model"],
                         profile_instructions.get(task.role, ""),
                         run["workspace"],

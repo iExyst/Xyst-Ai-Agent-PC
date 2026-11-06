@@ -1578,6 +1578,10 @@
             "title": "Id",
             "type": "string"
           },
+          "identity_name": {
+            "title": "Identity Name",
+            "type": "string"
+          },
           "local_id": {
             "title": "Local Id",
             "type": "string"
@@ -1636,6 +1640,7 @@
           "acceptance_criteria",
           "dependencies",
           "assigned_role",
+          "identity_name",
           "model_route",
           "workspace",
           "permission_scope",
@@ -3527,6 +3532,22 @@
           "created_at"
         ],
         "title": "SkillVersion",
+        "type": "object"
+      },
+      "SpecialistIdentityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "SpecialistIdentityRequest",
         "type": "object"
       },
       "SpecialistInstructionsRequest": {
@@ -7653,6 +7674,60 @@
           }
         ],
         "summary": "List Specialist Profiles"
+      }
+    },
+    "/specialists/profiles/{role}/identity": {
+      "put": {
+        "operationId": "set_specialist_identity_specialists_profiles__role__identity_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialistIdentityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpecialistProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Specialist Identity"
       }
     },
     "/specialists/profiles/{role}/instructions": {

@@ -11,6 +11,7 @@ test('configure persistent specialist model routes from discovered local models'
   }));
   const saved: {role:string;model_route:string|null}[] = [];
   const instructionSaves: {role:string;system_instructions:string}[] = [];
+  const identitySaves: {role:string;display_name:string}[] = [];
   const roleMemories: Record<string,{id:string;content:string}[]> = Object.fromEntries(roles.map(role => [role, []]));
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -44,17 +45,20 @@ test('configure persistent specialist model routes from discovered local models'
         return route.fulfill({status:204,headers});
       }
     }
-    const routeMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/(route|instructions)$/);
+    const routeMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/(route|instructions|identity)$/);
     if (routeMatch && request.method() === 'PUT') {
       const role = decodeURIComponent(routeMatch[1]!);
       const profile = profiles.find(item => item.role === role)!;
-      const body = request.postDataJSON() as {model_route?:string|null;system_instructions?:string};
+      const body = request.postDataJSON() as {model_route?:string|null;system_instructions?:string;display_name?:string};
       if (routeMatch[2] === 'route') {
         profile.model_route = body.model_route ?? null;
         saved.push({role,model_route:profile.model_route});
-      } else {
+      } else if (routeMatch[2] === 'instructions') {
         profile.system_instructions = body.system_instructions ?? '';
         instructionSaves.push({role,system_instructions:profile.system_instructions});
+      } else {
+        profile.display_name = body.display_name ?? profile.display_name;
+        identitySaves.push({role,display_name:profile.display_name});
       }
       return route.fulfill({json:profile,headers});
     }
@@ -87,5 +91,10 @@ test('configure persistent specialist model routes from discovered local models'
   await expect(panel.getByText('Prefer primary documentation.')).toBeVisible();
   await panel.getByRole('button',{name:'Delete memory'}).nth(0).click();
   await expect(panel.getByText('Prefer primary documentation.')).toHaveCount(0);
+  const identity = panel.getByLabel('researcher specialist name');
+  await identity.fill('Evidence Scout');
+  await panel.getByRole('button',{name:'Save identity'}).nth(1).click();
+  await expect(panel.getByLabel('Evidence Scout model')).toBeVisible();
+  expect(identitySaves).toEqual([{role:'researcher',display_name:'Evidence Scout'}]);
   expect(errors).toEqual([]);
 });

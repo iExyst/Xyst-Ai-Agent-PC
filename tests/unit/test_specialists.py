@@ -211,6 +211,7 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
     SpecialistProfileStore(store).set_instructions(
         "researcher", "Prefer primary sources and cite file paths."
     )
+    SpecialistProfileStore(store).set_display_name("researcher", "Source Analyst")
     MemoryStore(store).save_preference(
         "specialist:researcher", "Use the checked-in API contract as the source of truth."
     )
@@ -226,7 +227,10 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
             return True
 
         async def chat(self, *, model, messages, tools=None):
-            if messages[0]["content"].startswith("You are the"):
+            if messages[0]["content"].startswith("You are "):
+                assert messages[0]["content"].startswith(
+                    "You are Source Analyst (researcher specialist)."
+                )
                 assert "Prefer primary sources and cite file paths." in messages[0]["content"]
                 assert (
                     "Use the checked-in API contract as the source of truth."

@@ -64,6 +64,33 @@ class SpecialistProfileStore:
             raise KeyError(role)
         return dict(row)
 
+    def set_display_name(self, role: str, display_name: str) -> dict[str, Any]:
+        if role not in ROLES:
+            raise KeyError(role)
+        name = display_name.strip()
+        if not name or len(name) > 64 or "\x00" in name:
+            raise ValueError("Specialist display names must be 1-64 visible characters.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            duplicate = connection.execute(
+                "SELECT 1 FROM specialist_profiles WHERE role!=? AND display_name=? COLLATE NOCASE",
+                (role, name),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("Specialist display names must be unique.")
+            changed = connection.execute(
+                "UPDATE specialist_profiles SET display_name=?,updated_at=? WHERE role=?",
+                (name, utc_now(), role),
+            ).rowcount
+            if changed != 1:
+                raise KeyError(role)
+            row = connection.execute(
+                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles WHERE role=?",
+                (role,),
+            ).fetchone()
+        assert row is not None
+        return dict(row)
+
     def route_for(self, role: str, fallback: str | None) -> str | None:
         with self.runs.connection() as connection:
             row = connection.execute(

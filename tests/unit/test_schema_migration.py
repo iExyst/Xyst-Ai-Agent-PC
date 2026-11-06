@@ -371,3 +371,35 @@ def test_schema_twelve_adds_snapshotted_specialist_instructions(workspace_tmp_pa
             row["name"] for row in connection.execute("PRAGMA table_info(tasks)")
         }
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_seventeen_adds_durable_specialist_identity_snapshots(workspace_tmp_path):
+    from xaa.runtime.task_graph import TaskDefinition
+    from xaa.storage.specialist_profiles import SpecialistProfileStore
+    from xaa.storage.tasks import TaskStore
+
+    store = RunStore(workspace_tmp_path / "specialist-identity-migration.sqlite3")
+    profiles = SpecialistProfileStore(store)
+    profiles.set_display_name("researcher", "Evidence Scout")
+    run_id = store.create_run(
+        objective="Research",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+    )["id"]
+    owner = store.acquire_lease(run_id, "identity-migration")
+    TaskStore(store).save_plan(
+        run_id, owner, [TaskDefinition(id="research", objective="Research", role="researcher")]
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE tasks DROP COLUMN identity_name")
+        connection.execute("PRAGMA user_version=16")
+
+    migrated = RunStore(store.path)
+    assert TaskStore(migrated).records(run_id)[0]["identity_name"] == "Evidence Scout"
+    profiles = SpecialistProfileStore(migrated)
+    profiles.set_display_name("researcher", "New Name")
+    assert TaskStore(migrated).records(run_id)[0]["identity_name"] == "Evidence Scout"
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

@@ -92,7 +92,7 @@ def test_api_stop_cancels_both_specialists_and_fences_results(
             return True
 
         async def chat(self, *, model, messages, tools=None):
-            if messages[0]["content"].startswith("You are the"):
+            if messages[0]["content"].startswith("You are "):
                 self.started_count += 1
                 if self.started_count == 2:
                     self.started.set()

@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 16
+DATABASE_SCHEMA_VERSION = 17
 
 
 @dataclass(frozen=True)
@@ -241,6 +241,7 @@ class RunStore:
                     objective TEXT NOT NULL,
                     acceptance_criteria TEXT NOT NULL,
                     assigned_role TEXT NOT NULL,
+                    identity_name TEXT NOT NULL DEFAULT '',
                     model_route TEXT,
                     identity_instructions TEXT NOT NULL DEFAULT '',
                     workspace TEXT,
@@ -526,6 +527,13 @@ class RunStore:
             if "identity_instructions" not in task_columns:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN identity_instructions TEXT NOT NULL DEFAULT ''"
+                )
+            if "identity_name" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN identity_name TEXT NOT NULL DEFAULT ''"
+                )
+                connection.execute(
+                    "UPDATE tasks SET identity_name=COALESCE((SELECT display_name FROM specialist_profiles WHERE role=tasks.assigned_role),tasks.assigned_role)"
                 )
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(tool_calls)")}
             if "provider_call_id" not in columns:
