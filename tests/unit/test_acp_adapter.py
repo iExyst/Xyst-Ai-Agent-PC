@@ -189,17 +189,52 @@ async def test_acp_stdio_delegates_two_turns_to_authenticated_run_api(tmp_path: 
                 session_id=session.session_id, prompt=[text_block("Now summarize that again.")]
             )
 
+        replay_sink = UpdateSink()
+        async with spawn_agent_process(
+            replay_sink,
+            sys.executable,
+            "-m",
+            "xaa.cli",
+            "--api-url",
+            f"http://127.0.0.1:{port}",
+            "acp",
+            "--model",
+            "fixture-model",
+            "--workspace",
+            str(tmp_path.resolve()),
+            env=env,
+            cwd=REPOSITORY,
+        ) as (connection, _process):
+            initialized = await connection.initialize(protocol_version=PROTOCOL_VERSION)
+            assert initialized.agent_capabilities is not None
+            assert initialized.agent_capabilities.load_session is True
+            await connection.load_session(
+                cwd=str(tmp_path.resolve()), session_id=session.session_id, mcp_servers=[]
+            )
+            third = await connection.prompt(
+                session_id=session.session_id, prompt=[text_block("Continue after restart.")]
+            )
+        assert third.stop_reason == "end_turn"
+        assert [text for _, text in replay_sink.updates] == [
+            "Read the project status.",
+            "Fixture answer for run-1",
+            "Now summarize that again.",
+            "Fixture answer for run-2",
+            "Fixture answer for run-3",
+        ]
+
         assert first.stop_reason == "end_turn"
         assert second.stop_reason == "end_turn"
-        assert len(state["runs"]) == 2
-        assert len(state["requests"]) == 2
+        assert len(state["runs"]) == 3
+        assert len(state["requests"]) == 3
         assert all(item["model"] == "fixture-model" for item in state["requests"])
         assert all(item["workspace"] == str(tmp_path.resolve()) for item in state["requests"])
         assert all(item["mode"] == "observe" for item in state["requests"])
         assert "Read the project status." in state["requests"][1]["objective"]
         assert "Now summarize that again." in state["requests"][1]["objective"]
+        assert "Now summarize that again." in state["requests"][2]["objective"]
         assert state["sessions"][session.session_id]["messages"][-2]["content"] == (
-            "Now summarize that again."
+            "Continue after restart."
         )
         assert [text for _, text in sink.updates] == [
             "Fixture answer for run-1",

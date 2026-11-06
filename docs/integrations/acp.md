@@ -6,7 +6,7 @@ X.A.A. provides an ACP stdio agent through `xaa acp`. It is a client bridge to t
 
 - The user explicitly chooses the LM Studio model, workspace, and `observe` or `workspace` mode when launching the server.
 - The ACP host must send that exact workspace as `session/new`'s `cwd`. Additional directories and host-provided MCP servers are refused.
-- ACP currently accepts text prompts up to 2,000 UTF-8 bytes. Conversations persist in the X.A.A. chat-session store for the life of the ACP session, and the API's bounded prior-turn context is reused.
+- ACP currently accepts text prompts up to 2,000 UTF-8 bytes. Conversations persist in the X.A.A. chat-session store across ACP process restarts. `session/load` replays saved text turns to the host, and the API's bounded prior-turn context is reused.
 - The ACP process sends its bearer token only to a numeric loopback HTTP URL. HTTPS, remote hosts, DNS names, URL credentials, query strings, and fragments are rejected.
 - ACP cancellation calls the authenticated `/runs/{run_id}/cancel` route. Run completion and user-visible errors are returned through ACP session updates.
 
@@ -60,4 +60,4 @@ This packaged invocation uses the API URL and token placed in Windows Credential
 
 The ACP process refuses to send the API token to nonnumeric hosts and requires a numeric loopback URL. An explicit `--api-url` argument or `XAA_API_URL` overrides the OS-vault launch URL; the selected URL must still pass this loopback check.
 
-This is an initial ACP stdio slice. It does not yet support images/audio, host MCP servers, additional workspace roots, tool-call progress streaming, load/resume across server processes, or evaluation batch generation. The stable prompt and session flow follows the [Agent Client Protocol specification](https://agentclientprotocol.com/protocol/overview) and the [official Python SDK](https://agentclientprotocol.github.io/python-sdk/quickstart/).
+This is an initial ACP stdio slice. It does not yet support images/audio, host MCP servers, additional workspace roots, tool-call progress streaming, session discovery, or evaluation batch generation. The stable prompt and session flow follows the [Agent Client Protocol specification](https://agentclientprotocol.com/protocol/overview) and the [official Python SDK](https://agentclientprotocol.github.io/python-sdk/quickstart/).

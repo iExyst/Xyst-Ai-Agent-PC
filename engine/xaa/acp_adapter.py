@@ -7,16 +7,30 @@ import ipaddress
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
-from acp import Agent, InitializeResponse, NewSessionResponse, PromptResponse, run_agent
+from acp import (
+    Agent,
+    InitializeResponse,
+    LoadSessionResponse,
+    NewSessionResponse,
+    PromptResponse,
+    run_agent,
+)
 from acp.exceptions import RequestError
 from acp.interfaces import Client
-from acp.schema import AgentCapabilities, AgentMessageChunk, Implementation, TextContentBlock
+from acp.schema import (
+    AgentCapabilities,
+    AgentMessageChunk,
+    Implementation,
+    TextContentBlock,
+    UserMessageChunk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +174,7 @@ class XaaAcpAgent:
         return InitializeResponse(
             protocol_version=protocol_version,
             agent_info=Implementation(name="xyst-ai-agent", title="Xyst AI Agent", version="0.1.0"),
-            agent_capabilities=AgentCapabilities(load_session=False),
+            agent_capabilities=AgentCapabilities(load_session=True),
         )
 
     async def new_session(
@@ -190,6 +204,57 @@ class XaaAcpAgent:
         session_id = uuid4().hex
         self._sessions.add(session_id)
         return NewSessionResponse(session_id=session_id)
+
+    async def load_session(
+        self,
+        cwd: str,
+        session_id: str,
+        mcp_servers: list[Any] | None = None,
+        **kwargs: Any,
+    ) -> LoadSessionResponse:
+        if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
+            raise RequestError(-32602, "Session ID is not an X.A.A. ACP session ID.")
+        if mcp_servers or kwargs.get("additional_directories"):
+            raise RequestError(-32602, "Host resources are not enabled in this integration.")
+        try:
+            requested_workspace = Path(cwd).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise RequestError(-32602, "ACP session working directory is unavailable.") from exc
+        if requested_workspace != self.workspace:
+            raise RequestError(
+                -32602, "ACP session working directory must match the selected workspace."
+            )
+        try:
+            response = await self._client.get(f"/chat/sessions/{session_id}")
+            if response.status_code == 404:
+                raise RequestError(-32602, "Saved ACP session was not found.")
+            response.raise_for_status()
+            record = cast(dict[str, Any], response.json())
+            if (
+                record.get("model") != self.model
+                or record.get("workspace") != str(self.workspace)
+                or record.get("mode") != self.mode
+            ):
+                raise RequestError(-32602, "Saved ACP session settings do not match this server.")
+            if self._connection is None:
+                raise RequestError(-32603, "ACP client connection is not available.")
+            for role, content in _chat_transcript(record):
+                update = (
+                    UserMessageChunk(
+                        session_update="user_message_chunk",
+                        content=TextContentBlock(type="text", text=content),
+                    )
+                    if role == "user"
+                    else AgentMessageChunk(
+                        session_update="agent_message_chunk",
+                        content=TextContentBlock(type="text", text=content),
+                    )
+                )
+                await self._connection.session_update(session_id=session_id, update=update)
+            self._sessions.add(session_id)
+            return LoadSessionResponse()
+        except httpx.HTTPError as exc:
+            raise RequestError(-32000, "Cannot load session from the local X.A.A. API.") from exc
 
     async def prompt(
         self,
