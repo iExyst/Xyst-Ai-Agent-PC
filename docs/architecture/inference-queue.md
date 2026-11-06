@@ -1,0 +1,9 @@
+# Local inference queue
+
+`LMStudioProvider` owns one FIFO queue for the configured local server. Inference, exact prompt counting, model load/unload, credential changes, and endpoint changes use the same serialized slot. This prevents provider-owned lifecycle changes from overlapping a request and lets run cancellation release its queue reservation.
+
+The queue bounds both the number of waiters and their estimated working set. By default it admits at most 16 waiting operations and reserves at most 2,000,000 estimated tokens across the active and waiting operations. Each request is weighted by the UTF-8 byte length of its compact model, prompt, and tool JSON plus its output allowance. When no output cap is supplied, the selected instance context length is used; if it is unknown, the estimate uses 8,192 tokens. This deliberately conservative estimate limits provider-side queued payloads; it does not predict actual tokenization or GPU memory use.
+
+Waiting operations have a 180-second queue deadline. Prompt counting uses its own five-second allowance, including time spent waiting for the slot. Queue saturation and deadline expiry return explicit provider errors before the corresponding request reaches LM Studio. Cancellation while waiting removes the waiter and its reservation; cancellation during active streamed inference closes the HTTP stream and releases the slot.
+
+This is a process-local single-server scheduler, not a GPU memory manager. It has no priority classes or model-size/VRAM telemetry, and external clients that call LM Studio directly bypass it. The configured weight budget and server serialization do not establish a hard aggregate context or memory ceiling. Multi-server routing, hardware-aware capacity discovery, and live cancellation/timeout acceptance remain open.

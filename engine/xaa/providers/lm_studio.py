@@ -14,6 +14,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from xaa.providers.contracts import TokenUsage, public_assistant_message, validate_completion
+from xaa.providers.inference_queue import InferenceQueue, InferenceQueueError
 from xaa.providers.streaming import CompletionAssembler
 from xaa.providers.tool_schemas import prepare_tools
 
@@ -72,7 +73,9 @@ class LMStudioProvider:
         self.base_url = base_url.rstrip("/")
         self.exact_context = exact_context
         self._credential = SecretStr(token) if token else None
-        self._inference_lock = asyncio.Lock()
+        self._inference_queue = InferenceQueue()
+        # Kept as a lock alias for narrowly scoped tests and existing diagnostics.
+        self._inference_lock = self._inference_queue.lock
         self._diagnosed_models: set[str] = set()
         self._context_limits: dict[str, int] = {}
         self._client = httpx.AsyncClient(
@@ -114,7 +117,7 @@ class LMStudioProvider:
     async def configure_endpoint(self, endpoint: str) -> str:
         """Switch the local server while serialized with inference and model lifecycle work."""
         normalized = self.validate_endpoint(endpoint)
-        async with self._inference_lock:
+        async with self._inference_queue.slot(0):
             previous = self._client
             self._client = httpx.AsyncClient(
                 base_url=normalized,
@@ -132,7 +135,7 @@ class LMStudioProvider:
     async def configure_credential(self, token: str | None) -> None:
         """Replace the optional API credential without exposing it in provider state."""
         credential = SecretStr(token) if token else None
-        async with self._inference_lock:
+        async with self._inference_queue.slot(0):
             previous = self._client
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
@@ -149,21 +152,18 @@ class LMStudioProvider:
 
         deadline = asyncio.get_running_loop().time() + timeout
         try:
-            async with asyncio.timeout(timeout):
-                await self._inference_lock.acquire()
-        except TimeoutError:
+            weight = len(request.model_dump_json().encode("utf-8"))
+            async with self._inference_queue.slot(weight, wait_timeout=timeout):
+                return await count_prompt(
+                    self.base_url,
+                    request,
+                    self._credential,
+                    timeout=max(0, deadline - asyncio.get_running_loop().time()),
+                )
+        except InferenceQueueError as exc:
             raise PromptCountError(
-                "Prompt counting timed out waiting for local inference."
-            ) from None
-        try:
-            return await count_prompt(
-                self.base_url,
-                request,
-                self._credential,
-                timeout=max(0, deadline - asyncio.get_running_loop().time()),
-            )
-        finally:
-            self._inference_lock.release()
+                f"Prompt counting could not enter the local inference queue: {exc}"
+            ) from exc
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -301,7 +301,7 @@ class LMStudioProvider:
             ) from exc
 
     async def load_model(self, model: str, *, context_length: int | None = None) -> str:
-        async with self._inference_lock:
+        async with self._inference_queue.slot(0):
             instance = await self._load_model(model, context_length=context_length)
             self._diagnosed_models.discard(model)
             if context_length is not None:
@@ -333,7 +333,7 @@ class LMStudioProvider:
             ) from exc
 
     async def unload_model(self, instance_id: str) -> None:
-        async with self._inference_lock:
+        async with self._inference_queue.slot(0):
             await self._unload_model(instance_id)
             self._diagnosed_models.clear()
             self._context_limits.clear()
@@ -382,11 +382,13 @@ class LMStudioProvider:
         max_output_tokens: int | None = None,
         on_admission: AdmissionCallback | None = None,
     ) -> dict[str, Any]:
-        async with self._inference_lock:
-            if self.exact_context and max_output_tokens is None:
-                max_output_tokens = 512
-            options = self.output_options(max_output_tokens)
-            prepared = prepare_tools(tools)
+        if self.exact_context and max_output_tokens is None:
+            max_output_tokens = 512
+        options = self.output_options(max_output_tokens)
+        prepared = prepare_tools(tools)
+        async with self._inference_queue.slot(
+            self._queue_weight(model, messages, prepared, max_output_tokens)
+        ):
             await self._admit_context(
                 model,
                 messages,
@@ -405,7 +407,7 @@ class LMStudioProvider:
         max_output_tokens: int | None,
         on_admission: AdmissionCallback | None = None,
     ) -> None:
-        # Caller owns the inference/lifecycle lock throughout counting and prediction.
+        # Caller owns the inference queue slot throughout counting and prediction.
         if not self.exact_context:
             self._check_context(model, messages, tools, max_output_tokens=max_output_tokens)
             return
@@ -487,6 +489,26 @@ class LMStudioProvider:
                 f"Request exceeds the conservative prompt-plus-output context budget for {model} ({limit} tokens). Select a larger loaded context or reduce input size."
             )
 
+    def _queue_weight(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        max_output_tokens: int | None,
+    ) -> int:
+        """Estimate prompt and output working set for bounded queue admission."""
+        prompt_bytes = len(
+            json.dumps(
+                {"model": model, "messages": messages, "tools": tools},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        output_weight = max_output_tokens
+        if output_weight is None:
+            output_weight = self._context_limits.get(model, 8192)
+        return prompt_bytes + output_weight
+
     async def _chat(
         self,
         *,
@@ -554,11 +576,13 @@ class LMStudioProvider:
         max_output_tokens: int | None = None,
         on_admission: AdmissionCallback | None = None,
     ) -> AsyncGenerator[str]:
-        async with self._inference_lock:
-            if self.exact_context and max_output_tokens is None:
-                max_output_tokens = 512
-            options = self.output_options(max_output_tokens)
-            prepared = prepare_tools(tools)
+        if self.exact_context and max_output_tokens is None:
+            max_output_tokens = 512
+        options = self.output_options(max_output_tokens)
+        prepared = prepare_tools(tools)
+        async with self._inference_queue.slot(
+            self._queue_weight(model, messages, prepared, max_output_tokens)
+        ):
             await self._admit_context(
                 model,
                 messages,
