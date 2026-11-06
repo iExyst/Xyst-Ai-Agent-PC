@@ -431,7 +431,8 @@ def test_hermes_skill_import_api_keeps_candidate_inactive_and_records_source(
     (skill_directory / "SKILL.md").write_text(
         "---\nname: summarize\ndescription: Summarize selected material.\nversion: 0.2.0\n"
         "allowed-tools: workspace.read_file\n---\n"
-        "Read the relevant material and summarize it.\n",
+        "Read the relevant material and summarize it.\n"
+        "A template URL may look like [Open](url).\n",
         encoding="utf-8",
     )
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "hermes.sqlite3"))

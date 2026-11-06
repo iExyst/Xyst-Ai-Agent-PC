@@ -49,6 +49,7 @@ _DEPENDENCY_SPEC = re.compile(
 _HEADER = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _LOCAL_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 _PLACEHOLDER_LINK = re.compile(r"[{}<>]")
+_PLACEHOLDER_DESTINATIONS = {"link", "url"}
 
 
 def _markdown_links(markdown: str) -> list[str]:
@@ -737,7 +738,10 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         ):
             continue
         decoded_path = unquote(parsed_link.path)
-        if _PLACEHOLDER_LINK.search(decoded_path):
+        if (
+            _PLACEHOLDER_LINK.search(decoded_path)
+            or decoded_path.strip().casefold() in _PLACEHOLDER_DESTINATIONS
+        ):
             continue
         relative = PurePosixPath(decoded_path)
         if (
