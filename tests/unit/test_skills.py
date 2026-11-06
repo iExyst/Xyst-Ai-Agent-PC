@@ -55,6 +55,22 @@ def test_immutable_versions_concurrent_edit_backup_and_delete(workspace_tmp_path
     assert store.version(identity, 1)["content"] == draft().content
 
 
+def test_catalog_is_paginated_metadata_only_and_never_selects_candidates(workspace_tmp_path):
+    store = SkillStore(RunStore(workspace_tmp_path / "catalog.sqlite3"))
+    first = store.create(draft("UNTRUSTED procedure body"))
+    store.create(SkillDraft.model_validate({**draft().model_dump(), "name": "Summarize"}))
+    catalog = store.catalog(limit=1)
+    assert catalog["selection"] == "explicit_user_only"
+    assert catalog["trust"] == "untrusted_procedure_metadata"
+    assert catalog["procedures"][0]["id"] == first["id"]
+    assert "UNTRUSTED procedure body" not in str(catalog)
+    assert catalog["procedures"][0]["lifecycle_state"] == "candidate"
+    assert catalog["procedures"][0]["active_version"] is None
+    assert catalog["next_offset"] == 1
+    with pytest.raises(ValueError):
+        store.catalog(limit=0)
+
+
 @pytest.mark.parametrize(
     "changes",
     [

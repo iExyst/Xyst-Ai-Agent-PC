@@ -437,6 +437,50 @@ class SkillStore:
                 )
             ]
 
+    def catalog(self, *, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        """Return bounded discovery metadata; procedure text is never included."""
+        if not 1 <= limit <= 50 or not 0 <= offset <= 99:
+            raise ValueError("Procedure catalog pagination is out of range.")
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT skills.id,skills.name,skills.lifecycle_state,skills.active_version,"
+                "(SELECT MAX(v.version) FROM skill_versions v WHERE v.skill_id=skills.id) AS latest_version,skill_versions.content,"
+                "skill_versions.required_tools,skill_versions.required_permissions,"
+                "skill_versions.evaluation_evidence FROM skills JOIN skill_versions "
+                "ON skills.id=skill_versions.skill_id AND skill_versions.version="
+                "COALESCE(skills.active_version,(SELECT MAX(v.version) FROM skill_versions v "
+                "WHERE v.skill_id=skills.id)) WHERE skills.lifecycle_state!='deprecated' "
+                "ORDER BY skills.name COLLATE NOCASE,skills.id LIMIT ? OFFSET ?",
+                (limit + 1, offset),
+            ).fetchall()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        procedures: list[dict[str, Any]] = []
+        for row in rows:
+            evidence = json.loads(row["evaluation_evidence"])
+            source = evidence.get("source", {})
+            description = str(source.get("description", "")).strip()
+            if not description:
+                description = "User-authored saved procedure."
+            procedures.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": description[:256],
+                    "lifecycle_state": row["lifecycle_state"],
+                    "active_version": row["active_version"],
+                    "latest_version": row["latest_version"],
+                    "required_tools": json.loads(row["required_tools"]),
+                    "required_permissions": json.loads(row["required_permissions"]),
+                }
+            )
+        return {
+            "procedures": procedures,
+            "next_offset": offset + limit if has_more and offset + limit < 100 else None,
+            "selection": "explicit_user_only",
+            "trust": "untrusted_procedure_metadata",
+        }
+
     def get(self, identity: str) -> dict[str, Any]:
         row = next((row for row in self.list() if row["id"] == identity), None)
         if row is None:

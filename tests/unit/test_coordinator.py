@@ -3,6 +3,7 @@ import json
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
+from xaa.storage.skills import SkillDraft, SkillStore
 
 
 class ScriptedProvider(LMStudioProvider):
@@ -116,6 +117,80 @@ async def test_coordinator_executes_journaled_read_and_stops_for_verification(wo
         )
         == 2
     )
+
+
+async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedure(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "procedure-catalog.sqlite3")
+    procedure = SkillStore(store).create(
+        SkillDraft(
+            name="Catalog fixture",
+            content="Untrusted candidate instructions.",
+            required_tools=[],
+            required_permissions=[],
+        )
+    )
+    run_id = store.create_run(
+        objective="Find a reusable procedure",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+
+    class CatalogProvider(LMStudioProvider):
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            if messages[-1]["role"] == "user":
+                tool = next(
+                    item for item in tools if item["function"]["name"] == "procedure_catalog"
+                )
+                assert "never selects or loads" in tool["function"]["description"]
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "catalog-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "procedure_catalog",
+                                            "arguments": '{"limit":10,"offset":0}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            result = json.loads(messages[-1]["content"])
+            assert result["trust"] == "untrusted_procedure_metadata"
+            assert result["selection"] == "explicit_user_only"
+            assert result["procedures"][0]["id"] == procedure["id"]
+            return {
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Ask the user to select it."}}
+                ]
+            }
+
+    provider = CatalogProvider()
+    try:
+        await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+    assert store.get_run(run_id)["procedure_trial"] is None
+    with store.connection() as connection:
+        result = connection.execute(
+            "SELECT result FROM tool_calls WHERE run_id=? AND provider_call_id='catalog-1'",
+            (run_id,),
+        ).fetchone()
+    assert result is not None
+    assert json.loads(result["result"])["selection"] == "explicit_user_only"
 
 
 async def test_recovery_blocks_unconfirmed_tool_request(workspace_tmp_path):
