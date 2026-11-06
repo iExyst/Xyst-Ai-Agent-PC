@@ -6,6 +6,16 @@ from pathlib import Path, PureWindowsPath
 
 def require_mutable_destination(destination: Path, database: Path) -> None:
     """Check actual opened destinations, or a pinned parent plus new filename."""
+    # Reject protected WSL paths from their UNC spelling before resolve() can
+    # contact a missing or temporarily unavailable WSL share on Windows.
+    windows = PureWindowsPath(str(destination))
+    if windows.drive.casefold().startswith(("\\\\wsl$\\", "\\\\wsl.localhost\\")):
+        tail = tuple(part.casefold() for part in windows.parts[1:])
+        for private in (("var", "lib", "xaa-execution-manager"), ("tmp", "xaa-executions")):
+            if tail[: len(private)] == private:
+                raise PermissionError(
+                    "Workspace tools cannot modify execution-manager private state."
+                )
     target = destination.resolve()
     data = database.resolve()
     source_root = Path(__file__).resolve().parents[3]
@@ -35,15 +45,7 @@ def require_mutable_destination(destination: Path, database: Path) -> None:
         raise PermissionError(
             "Workspace tools cannot modify live application code or private state."
         )
-    windows = PureWindowsPath(str(target))
-    if windows.drive.casefold().startswith(("\\\\wsl$\\", "\\\\wsl.localhost\\")):
-        tail = tuple(part.casefold() for part in windows.parts[1:])
-        for private in (("var", "lib", "xaa-execution-manager"), ("tmp", "xaa-executions")):
-            if tail[: len(private)] == private:
-                raise PermissionError(
-                    "Workspace tools cannot modify execution-manager private state."
-                )
-    elif sys.platform == "linux" and any(
+    if sys.platform == "linux" and any(
         target.is_relative_to(location)
         for location in (Path("/var/lib/xaa-execution-manager"), Path("/tmp/xaa-executions"))
     ):
