@@ -1,6 +1,6 @@
 {
-  "checked_at_utc": "2026-11-05T15:24:56.152750+00:00",
-  "browser": "Microsoft Edge via Playwright channel=msedge",
+  "checked_at_utc": "2026-11-06T04:47:28.947144+00:00",
+  "browser": "managed Microsoft Edge worker subprocess",
   "approved_hosts": [
     "example.com"
   ],
@@ -11,11 +11,19 @@
     "trust": "untrusted_web_content",
     "content_characters": 917,
     "screenshot_artifact": {
+      "id": "6d5be548-9fef-4119-9c4e-874933410f64",
+      "run_id": "c0ae6aa0-2ea8-4518-83f1-ee563a1514ac",
       "media_type": "image/png",
       "size_bytes": 45560,
-      "sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240"
-    }
+      "sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240",
+      "provenance": "browser.screenshot:untrusted_web_content",
+      "created_at": "2026-11-06T04:47:28.936983+00:00"
+    },
+    "journal_state": "completed"
   },
-  "elapsed_ms": 1604,
-  "source_sha256": "a155a0c6d7fb07fa6dce2498c62f360667db80722b9269d6e4dff4f4e95c3449"
+  "elapsed_ms": 1533,
+  "source_sha256": {
+    "browser.py": "ea4070c2a8a441b5df97660f3fe39fadc2700f700ea0cc779ff1d32bd46ab3a5",
+    "browser_worker.py": "1d70b793d8f6aebbf946e0dddc9df0795d125081e950559986ce08df493a266c"
+  }
 }

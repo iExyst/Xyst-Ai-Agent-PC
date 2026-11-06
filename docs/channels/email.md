@@ -15,3 +15,7 @@ Authorized private email starts an Observe-mode run with no workspace, file, bro
 Replies go only to the exact allowlisted sender. Each reply uses durable `pending → sending → sent/failed/unknown` state. If SMTP may have accepted a message but the client loses the result, X.A.A. records `unknown` and does not retry automatically, preventing duplicate messages. The original Message-ID is used in `In-Reply-To` and `References`.
 
 The adapter currently supports one configured mailbox, plain-text messages, and no manual retry or attachment handling. Use a dedicated mailbox and a provider that stamps a trusted Authentication-Results header. Fixture tests verify authserv pinning, DMARC alignment, sender allowlisting, deduplication, run scoping, secret handling and ambiguous-send recovery; live IMAP/SMTP interoperability still requires a user-configured account.
+
+## Crash recovery acceptance
+
+Run `uv run python scripts/email_crash_diagnostic.py` to exercise the ambiguous SMTP boundary in separate processes. The diagnostic creates a real SQLite-backed delivery, then kills its email worker after a deterministic fsynced acceptor records acceptance and before the delivery journal can save `sent`. A fresh `EmailService.cycle()` must reconcile the abandoned `sending` row to `unknown` and must not submit it again. Evidence is written to `.acceptance/<id>/report.json`. The acceptor models the durable transport acceptance boundary; this is not live SMTP server acceptance or proof of interoperability with a mail provider.
