@@ -4,6 +4,7 @@ import time
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.task_graph import TaskDefinition
@@ -251,6 +252,58 @@ async def test_enabled_specialist_stream_is_task_scoped_and_saved_before_final_m
     assert all(set(event["payload"]) == {"task_id", "inference_id", "text"} for event in deltas)
     assert deltas[0]["sequence"] < final["sequence"] < outcome["sequence"]
     assert json.loads(tasks.records(run_id)[0]["result"])["candidate"] == draft
+
+
+async def test_specialist_retries_one_invalid_stream_within_its_saved_budget(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-stream-recovery.sqlite3")
+    run_id = store.create_run(
+        objective="Parent objective stays private to its specialist",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="research", objective="Inspect evidence", max_iterations=2)],
+    )
+
+    class RecoveringResearcher(LMStudioProvider):
+        calls = 0
+
+        async def chat_streamed(self, *, on_content, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                on_content("Unverified partial draft")
+                raise StreamAssemblyError("invalid stream", code="invalid_or_oversized_chunk")
+            assert "No part of it was executed" in kwargs["messages"][-1]["content"]
+            on_content("Recovered candidate")
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Recovered candidate"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            }
+
+    provider = RecoveringResearcher()
+    try:
+        result = await SpecialistRunner(store, provider, stream_responses=True).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+
+    assert result == [{"task_id": "research", "status": "verifying"}]
+    events = store.list_events(run_id)
+    rejected = [event for event in events if event["event_type"] == "task.model.stream_rejected"]
+    requested = [event for event in events if event["event_type"] == "task.response_requested"]
+    assert len([event for event in events if event["event_type"] == "task.inference.started"]) == 2
+    assert len(rejected) == 1
+    assert rejected[0]["payload"]["code"] == "invalid_or_oversized_chunk"
+    assert len(requested) == 1
+    assert json.loads(tasks.records(run_id)[0]["result"]) == {"candidate": "Recovered candidate"}
+    assert not any(event["event_type"] == "tool.intended" for event in events)
 
 
 async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(workspace_tmp_path):

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 DIAGNOSTIC_OUTPUT_TOKENS = 512
+CHAT_RETRY_DELAY_SECONDS = 0.25
 
 AdmissionCallback = Callable[[int, int], None]
 
@@ -526,19 +527,31 @@ class LMStudioProvider:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        try:
-            response = await self._client.post("/v1/chat/completions", json=payload)
-            response.raise_for_status()
-            return self.verify_output_limit(response.json(), max_output_tokens)
-        except httpx.HTTPStatusError as exc:
-            raise ProviderError(
-                f"LM Studio rejected chat request ({exc.response.status_code}). "
-                "The selected model or server may not support tool calling."
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise ProviderError(
-                "LM Studio chat request failed; check the local server status."
-            ) from exc
+        for attempt in range(2):
+            try:
+                response = await self._client.post("/v1/chat/completions", json=payload)
+                response.raise_for_status()
+                return self.verify_output_limit(response.json(), max_output_tokens)
+            except httpx.HTTPStatusError as exc:
+                if attempt == 0 and exc.response.status_code in {408, 429, 500, 502, 503, 504}:
+                    await asyncio.sleep(CHAT_RETRY_DELAY_SECONDS)
+                    continue
+                raise ProviderError(
+                    f"LM Studio rejected chat request ({exc.response.status_code}). "
+                    "The selected model or server may not support tool calling."
+                ) from exc
+            except httpx.TransportError as exc:
+                if attempt == 0:
+                    await asyncio.sleep(CHAT_RETRY_DELAY_SECONDS)
+                    continue
+                raise ProviderError(
+                    "LM Studio chat request failed; check the local server status."
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise ProviderError(
+                    "LM Studio chat request failed; check the local server status."
+                ) from exc
+        raise ProviderError("LM Studio chat request failed after one transient retry.")
 
     async def chat_streamed(
         self,

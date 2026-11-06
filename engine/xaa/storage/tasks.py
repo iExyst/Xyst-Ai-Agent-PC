@@ -26,6 +26,7 @@ class TaskStore:
         kind: Literal[
             "task.model.delta",
             "task.model.message",
+            "task.model.stream_rejected",
             "task.tool.result",
             "task.response_requested",
         ],
@@ -37,6 +38,7 @@ class TaskStore:
             not in {
                 "task.model.delta",
                 "task.model.message",
+                "task.model.stream_rejected",
                 "task.tool.result",
                 "task.response_requested",
             }

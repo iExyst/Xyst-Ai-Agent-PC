@@ -346,7 +346,7 @@ try {
       const diagnosticFailed=page.getByRole('alert').filter({hasText:'Tool use remains unverified for this model'}).waitFor({timeout:180000}).then(()=>false,()=>false);
       if(!await Promise.race([diagnosticPassed,diagnosticFailed]))throw new Error(`Selected native specialist model failed its UI capability diagnostic: ${await page.getByRole('alert').allTextContents()}`);
       await page.getByLabel('Workspace path').fill(workspace);
-      const created = await fetch(`${connection.base_url}/runs`, {method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({objective,workspace,mode:'observe',model:null,max_iterations:8,max_seconds:240})});
+      const created = await fetch(`${connection.base_url}/runs`, {method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({objective,workspace,mode:'observe',model:null,max_iterations:specialists?12:8,max_seconds:240})});
       if(!created.ok)throw new Error('Could not create model-free native specialist fixture run');
       run=await created.json();
       execFileSync('uv',['run','python','scripts/seed_native_specialists.py',run.id,nativeSpecialistModel,filename],{cwd:process.cwd(),windowsHide:true,stdio:'pipe',env:{...process.env,XAA_DATA_DIR:nativeLocalAppData}});
@@ -362,8 +362,12 @@ try {
       await page.getByLabel('Local model').selectOption('qwen/qwen3.5-9b');
       await page.getByLabel('Workspace path').fill(workspace);
       const specialistRequirements = (specialists||taskQuotaRequested) ? 'Both task objectives must tell the assigned specialist to use workspace_read_file on the actual discovered filename and report the exact code in that file. For both tasks, acceptance_criteria must be exactly ["Report the exact code read from the fixture file."]. The reviewer must independently read the file. ' : '';
-      const reservations = ((specialists||taskQuotaRequested) ? 'Give inspect max_iterations 2 and review max_iterations 3. ' : 'Give each task max_iterations 2. ')+'The tasks[].id values must be exactly inspect and review, without suffixes. Set review dependencies to ["inspect"]. ';
+      const reservations = (specialists ? 'Give inspect max_iterations 4 and review max_iterations 4. ' : taskQuotaRequested ? 'Give inspect max_iterations 2 and review max_iterations 3. ' : 'Give each task max_iterations 2. ')+'The tasks[].id values must be exactly inspect and review, without suffixes. Set review dependencies to ["inspect"]. ';
       await page.getByLabel('Objective', { exact: true }).fill('First list the workspace root using workspace_list_directory. Then use plan_save to save exactly two tasks: inspect (researcher, no dependencies) and review (reviewer, depends on inspect). Include the actual discovered filename in the inspect objective. ' + reservations + 'Give both tasks max_seconds 60, permission workspace.read, and explicit acceptance_criteria. ' + specialistRequirements + (taskQuotaRequested?'Set inspect max_total_tokens to exactly 1 and max_output_tokens to exactly 256. Set review max_total_tokens and max_output_tokens to null. This is an acceptance test of quota blocking; the tiny inspect allowance is intentional and must not be expanded. ':'') + 'After plan_save succeeds, immediately finish with a plain text answer: the plan is saved and execution is pending. Do not call plan_run_ready or any further tool after saving. The user will dispatch manually. Do not read or modify files and do not execute the tasks during this planning request.');
+      if(specialists){
+        await page.getByText('Run limits',{exact:true}).click();
+        await page.getByLabel('Iteration limit',{exact:true}).fill('12');
+      }
       if(taskQuotaRequested){
         await page.getByText('Run limits',{exact:true}).click();
         await page.getByLabel('Reported token threshold (optional)',{exact:true}).fill('50000');

@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import CreateFileArguments, ReadFileArguments, WriteFileArguments
@@ -30,6 +31,17 @@ class RunReadyArguments(BaseModel):
 
 class SpecialistIterationLimit(ValueError):
     """The saved assignment budget was consumed before a candidate was submitted."""
+
+
+STREAM_RETRYABLE_CODES = frozenset(
+    {
+        "incomplete_response",
+        "empty_response",
+        "invalid_tool_arguments",
+        "invalid_completion",
+        "invalid_or_oversized_chunk",
+    }
+)
 
 
 def _failure_types(error: BaseException) -> list[str]:
@@ -72,6 +84,43 @@ class SpecialistRunner:
             await asyncio.sleep(10)
             self.store.renew_lease(run_id, parent, seconds=180)
             self.tasks.renew_worker(run_id, parent, task_id, worker)
+
+    def _record_stream_rejection(
+        self,
+        run_id: str,
+        parent: str,
+        task_id: str,
+        worker: str,
+        inference_id: str,
+        error: StreamAssemblyError,
+        messages: list[dict[str, Any]],
+        *,
+        retry_available: bool,
+    ) -> bool:
+        self.tasks.record_read_worker_event(
+            run_id,
+            parent,
+            task_id,
+            worker,
+            "task.model.stream_rejected",
+            {"task_id": task_id, "inference_id": inference_id, "code": error.code},
+        )
+        if not retry_available or error.code not in STREAM_RETRYABLE_CODES:
+            return False
+        feedback = {
+            "role": "user",
+            "content": "The previous streamed response was incomplete or invalid. No part of it was executed. Continue from completed task tool results. Return one complete authorized tool call or a public candidate, and do not repeat completed effects.",
+        }
+        self.tasks.record_read_worker_event(
+            run_id,
+            parent,
+            task_id,
+            worker,
+            "task.response_requested",
+            {"task_id": task_id, "actor": "engine", "message": feedback},
+        )
+        messages.append(feedback)
+        return True
 
     async def run_claim(
         self, run_id: str, parent: str, claim: dict[str, Any], *, deadline: float
@@ -266,6 +315,7 @@ class SpecialistRunner:
                 "You cannot run commands or grant permissions.", "You cannot grant permissions."
             )
         scope_instruction = messages[0]["content"]
+        stream_retried = False
         for iteration in range(task["budgets"]["max_iterations"]):
             remaining = task["budgets"]["max_iterations"] - iteration
             messages[0]["content"] = (
@@ -319,13 +369,29 @@ class SpecialistRunner:
                         pending = ""
                         last_emit = time.monotonic()
 
-                response = await self.provider.chat_streamed(
-                    model=task["model_route"],
-                    messages=messages,
-                    tools=tools,
-                    on_content=progress,
-                    **options,
-                )
+                try:
+                    response = await self.provider.chat_streamed(
+                        model=task["model_route"],
+                        messages=messages,
+                        tools=tools,
+                        on_content=progress,
+                        **options,
+                    )
+                except StreamAssemblyError as exc:
+                    recovered = self._record_stream_rejection(
+                        run_id,
+                        parent,
+                        identity,
+                        worker,
+                        inference_id,
+                        exc,
+                        messages,
+                        retry_available=not stream_retried and remaining > 1,
+                    )
+                    if recovered:
+                        stream_retried = True
+                        continue
+                    raise
                 if pending:
                     emit(pending, inference_id)
             else:
