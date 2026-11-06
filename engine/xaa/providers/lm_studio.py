@@ -43,9 +43,18 @@ class DiagnosticLimitError(ProviderError):
 class ContextLimitError(ProviderError):
     """Request cannot safely fit the known loaded model context."""
 
-    def __init__(self, message: str, *, reason: str = "context_budget_exceeded") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str = "context_budget_exceeded",
+        counter_error_type: str | None = None,
+        counter_error_stage: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.reason = reason
+        self.counter_error_type = counter_error_type
+        self.counter_error_stage = counter_error_stage
 
 
 class ModelCapabilities(BaseModel):
@@ -431,11 +440,20 @@ class LMStudioProvider:
                 {"model": model, "messages": messages, "tools": tools}
             )
             counted = await self._count_prompt_owned(request)
-        except (PromptCountError, ValidationError):
+        except PromptCountError as exc:
             raise ContextLimitError(
                 "Exact context admission could not count this request. Confirm the selected "
                 "instance is already loaded and the SDK supports its prompt format.",
                 reason="prompt_count_unavailable",
+                counter_error_type=exc.worker_error_type,
+                counter_error_stage=exc.worker_error_stage,
+            ) from None
+        except ValidationError:
+            raise ContextLimitError(
+                "Exact context admission could not validate this request for the SDK counter.",
+                reason="prompt_count_unavailable",
+                counter_error_type="PromptCountRequestValidationError",
+                counter_error_stage="request_validation",
             ) from None
         if counted.model != model:
             raise ContextLimitError(
@@ -452,9 +470,23 @@ class LMStudioProvider:
             on_admission(counted.prompt_tokens, max_output_tokens)
 
     async def _count_prompt_owned(self, request: PromptCountRequest) -> PromptCount:
-        from xaa.providers.tokenization import count_prompt
+        from xaa.providers.tokenization import PromptCountError, count_prompt
 
-        return await count_prompt(self.base_url, request, self._credential, timeout=20)
+        deadline = asyncio.get_running_loop().time() + 20
+        try:
+            return await count_prompt(self.base_url, request, self._credential, timeout=20)
+        except PromptCountError as exc:
+            if (
+                exc.worker_error_type != "LMStudioWebsocketError"
+                or exc.worker_error_stage != "model_inventory"
+            ):
+                raise
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise
+            # Listing already-loaded models is read-only; retry one dropped SDK socket
+            # within the original count deadline before failing the inference closed.
+            return await count_prompt(self.base_url, request, self._credential, timeout=remaining)
 
     def _check_context(
         self,

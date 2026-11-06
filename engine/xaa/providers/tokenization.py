@@ -54,9 +54,16 @@ class PromptCount(BaseModel):
 class PromptCountError(RuntimeError):
     """Safe user-facing count failure; SDK payloads and credentials are excluded."""
 
-    def __init__(self, message: str, *, worker_error_type: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        worker_error_type: str | None = None,
+        worker_error_stage: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.worker_error_type = worker_error_type
+        self.worker_error_stage = worker_error_stage
 
 
 def make_chat(messages: list[PromptMessage]) -> lms.Chat:
@@ -120,6 +127,17 @@ class TokenizerResponse(BaseModel):
     ok: bool
     count: PromptCount | None = None
     error: str | None = None
+    error_stage: (
+        Literal[
+            "request_validation",
+            "server_connection",
+            "model_inventory",
+            "prompt_formatting",
+            "tokenization",
+            "context_lookup",
+        ]
+        | None
+    ) = None
 
 
 async def count_prompt(
@@ -191,6 +209,7 @@ async def count_prompt(
                 raise PromptCountError(
                     f"Prompt counting failed ({response.error}). Check the loaded model, SDK and LM Studio authentication.",
                     worker_error_type=response.error,
+                    worker_error_stage=response.error_stage,
                 )
             return response.count
     except TimeoutError:

@@ -28,6 +28,7 @@ class TokenizerRequest(BaseModel):
 
 
 def main() -> None:
+    stage = "request_validation"
     try:
         raw = sys.stdin.buffer.read(1_048_577)
         if len(raw) > 1_048_576:
@@ -38,8 +39,10 @@ def main() -> None:
         # Client.__enter__ performs a separate one-second HTTP health probe.
         # On loaded servers it can time out even when the SDK WebSocket is healthy;
         # the explicit host and next SDK RPC provide the needed connection check.
+        stage = "server_connection"
         client = lms.Client(host, api_token=request.api_token.get_secret_value())
         try:
+            stage = "model_inventory"
             matches = [
                 model
                 for model in client.llm.list_loaded()
@@ -49,20 +52,25 @@ def main() -> None:
                 raise ValueError("Exactly one already-loaded instance is required.")
             model = matches[0]
             # Public SDK method, with an explicit typing boundary for generic tool schemas.
+            stage = "prompt_formatting"
             formatted = cast(SyncPromptFormatter, model).apply_prompt_template(
                 chat, {"toolDefinitions": request.request.tools or []}
             )
+            stage = "tokenization"
+            prompt_tokens = len(model.tokenize(formatted))
+            stage = "context_lookup"
+            context_length = model.get_context_length()
             count = PromptCount(
                 model=model.identifier,
-                prompt_tokens=len(model.tokenize(formatted)),
-                context_length=model.get_context_length(),
+                prompt_tokens=prompt_tokens,
+                context_length=context_length,
                 sdk_version=version("lmstudio"),
             )
         finally:
             client.close()
         response = TokenizerResponse(ok=True, count=count)
     except Exception as exc:  # noqa: BLE001 - fixed worker boundary returns only an exception class, never payloads
-        response = TokenizerResponse(ok=False, error=type(exc).__name__)
+        response = TokenizerResponse(ok=False, error=type(exc).__name__, error_stage=stage)
     sys.stdout.write(response.model_dump_json())
     sys.stdout.flush()
 

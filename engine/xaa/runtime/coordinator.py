@@ -235,6 +235,18 @@ class Coordinator:
             )
         return response
 
+    def _record_context_admission_failure(
+        self, run_id: str, token: str, exc: ContextLimitError
+    ) -> None:
+        if not exc.reason.startswith("prompt_count_"):
+            return
+        payload: dict[str, str] = {"reason": exc.reason}
+        if exc.counter_error_type is not None:
+            payload["counter_error_type"] = exc.counter_error_type
+        if exc.counter_error_stage is not None:
+            payload["counter_error_stage"] = exc.counter_error_stage
+        self.store.append_worker_event(run_id, token, "context.admission_failed", payload)
+
     def _propose_plan(
         self, run_id: str, token: str, call_id: str, arguments: str, tools: list[dict[str, Any]]
     ) -> dict[str, Any]:
@@ -563,6 +575,9 @@ class Coordinator:
                 reason="specialist_tasks_blocked" if blocked else "specialist_candidates_available",
                 owner=token,
             )
+        except ContextLimitError as exc:
+            self._record_context_admission_failure(run_id, token, exc)
+            self.store.transition(run_id, RunState.BLOCKED, reason=exc.reason, owner=token)
         except DiagnosticLimitError:
             self.store.transition(
                 run_id, RunState.BLOCKED, reason="diagnostic_output_limit", owner=token
@@ -1218,6 +1233,7 @@ class Coordinator:
                 run_id, RunState.BLOCKED, reason="iteration_budget_exhausted", owner=token
             )
         except ContextLimitError as exc:
+            self._record_context_admission_failure(run_id, token, exc)
             self.store.transition(run_id, RunState.BLOCKED, reason=exc.reason, owner=token)
         except LeaseLost:
             return

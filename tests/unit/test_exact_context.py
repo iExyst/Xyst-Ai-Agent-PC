@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
-from xaa.providers.tokenization import PromptCount, PromptCountError
+from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
 
@@ -115,6 +115,75 @@ async def test_cancelled_count_releases_owner_without_prediction():
         await provider.close()
 
 
+async def test_inventory_websocket_count_error_retries_once_within_deadline(monkeypatch):
+    from xaa.providers import tokenization
+
+    provider = LMStudioProvider()
+    request = PromptCountRequest.model_validate(
+        {"model": "fixture", "messages": [{"role": "user", "content": "hello"}]}
+    )
+    timeouts = []
+    calls = 0
+
+    async def count_prompt(base_url, payload, credential, *, timeout):
+        nonlocal calls
+        assert base_url == provider.base_url
+        assert payload is request
+        assert credential is None
+        calls += 1
+        timeouts.append(timeout)
+        if calls == 1:
+            raise PromptCountError(
+                "safe failure",
+                worker_error_type="LMStudioWebsocketError",
+                worker_error_stage="model_inventory",
+            )
+        return PromptCount(
+            model="fixture", prompt_tokens=1, context_length=1024, sdk_version="fixture"
+        )
+
+    monkeypatch.setattr(tokenization, "count_prompt", count_prompt)
+    try:
+        result = await provider._count_prompt_owned(request)
+        assert result.prompt_tokens == 1
+        assert calls == 2
+        assert timeouts[0] == 20
+        assert 0 < timeouts[1] <= 20
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize(
+    ("error_type", "stage"),
+    [("LMStudioServerError", "model_inventory"), ("LMStudioWebsocketError", "tokenization")],
+)
+async def test_count_error_outside_inventory_websocket_is_not_retried(
+    monkeypatch, error_type, stage
+):
+    from xaa.providers import tokenization
+
+    provider = LMStudioProvider()
+    request = PromptCountRequest.model_validate(
+        {"model": "fixture", "messages": [{"role": "user", "content": "hello"}]}
+    )
+    calls = 0
+
+    async def count_prompt(base_url, payload, credential, *, timeout):
+        nonlocal calls
+        calls += 1
+        raise PromptCountError(
+            "safe failure", worker_error_type=error_type, worker_error_stage=stage
+        )
+
+    monkeypatch.setattr(tokenization, "count_prompt", count_prompt)
+    try:
+        with pytest.raises(PromptCountError):
+            await provider._count_prompt_owned(request)
+        assert calls == 1
+    finally:
+        await provider.close()
+
+
 async def test_per_request_exact_admission_is_available_when_global_mode_is_off():
     provider = CountedProvider(exact_context=False)
     provider.release.set()
@@ -187,7 +256,11 @@ async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
 
     class UnavailableCounter(LMStudioProvider):
         async def _count_prompt_owned(self, request):
-            raise PromptCountError("fixture failure")
+            raise PromptCountError(
+                "fixture failure",
+                worker_error_type="LMStudioServerError",
+                worker_error_stage="tokenization",
+            )
 
         async def _chat(self, **kwargs):
             raise AssertionError("Uncounted inference must not be sent")
@@ -204,7 +277,14 @@ async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
         if event["event_type"] == "run.state_changed" and event["payload"].get("to") == "blocked"
     ]
     assert blocked[-1]["payload"]["reason"] == "prompt_count_unavailable"
-    assert not any(event["event_type"] == "model.message" for event in store.list_events(run["id"]))
+    events = store.list_events(run["id"])
+    assert not any(event["event_type"] == "model.message" for event in events)
+    failure = next(event for event in events if event["event_type"] == "context.admission_failed")
+    assert failure["payload"] == {
+        "reason": "prompt_count_unavailable",
+        "counter_error_type": "LMStudioServerError",
+        "counter_error_stage": "tokenization",
+    }
 
 
 async def test_conservative_context_estimate_bounds_image_data_url():
