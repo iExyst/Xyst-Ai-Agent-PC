@@ -261,6 +261,7 @@ def main() -> None:
     report: dict[str, Any] = {
         "passed": False,
         "scope": "authenticated API process kill and fresh-process specialist recovery",
+        "lease_expiry_accelerated": True,
         "run_id": run_id,
         "fixture_sha256": original_hash,
     }
