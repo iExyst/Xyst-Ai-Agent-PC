@@ -1,0 +1,35 @@
+{
+  "format": "xaa-batch",
+  "version": 1,
+  "batch_id": "17b4da55ecf2407b80c0f58599b6da41",
+  "input_digest": "85d49d8abe7c876807431b00ebd4b8d2d9a8ec743f04fa0d74f01f8f4c728e9c",
+  "settings": {
+    "model": "xaa-batch-smoke",
+    "workspace": ".acceptance\\live-batch-867e886cefeb4972a446bf15d0dbbcf4\\workspace",
+    "mode": "observe",
+    "max_iterations": 2,
+    "max_seconds": 180,
+    "max_output_tokens": null
+  },
+  "created_at": "2026-11-07T20:56:59Z",
+  "cases": [
+    {
+      "id": "answer-check",
+      "objective": "Reply with exactly the text XAA_BATCH_OK.",
+      "acceptance_criteria": [
+        "The final answer is exactly XAA_BATCH_OK."
+      ],
+      "run_id": "2fc4f7d8-9e89-471e-a191-d62f6e1fd8a3",
+      "state": "verifying",
+      "trajectory": {
+        "path": "trajectories\\answer-check.json",
+        "size_bytes": 3098,
+        "sha256": "4e07b544acc13b6a6dfdf210067bc5971c833914519f4624c2f5813f7d4965a3"
+      }
+    }
+  ],
+  "timed_out": false,
+  "summary": {
+    "verifying": 1
+  }
+}
