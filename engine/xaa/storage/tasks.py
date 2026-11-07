@@ -535,6 +535,27 @@ class TaskStore:
             and event["payload"].get("inference_id") not in answered_inferences
         ]
         tokens_reserved = sum(item.get("reserved_tokens", 0) for item in pending_reservations)
+        run = self.runs.get_run(run_id)
+        assert run is not None
+        run_events = self.runs.list_events(run_id)
+        planning_starts = [
+            event["created_at"]
+            for event in run_events
+            if event["event_type"] == "run.state_changed"
+            and event["payload"].get("to") == "planning"
+        ]
+        elapsed = (
+            datetime.now(UTC)
+            - datetime.fromisoformat(planning_starts[0] if planning_starts else run["created_at"])
+        ).total_seconds()
+        run_usage = self.runs.token_usage(run_id)
+        shared_limit = run["limits"]["max_total_tokens"]
+        run_budget_available = (
+            self.runs.inference_attempts(run_id) < run["limits"]["max_iterations"]
+            and elapsed < run["limits"]["max_seconds"]
+            and self.runs.usage_report(run_id)["outstanding_reserved_tokens"] == 0
+            and (shared_limit is None or run_usage["total_tokens"] < shared_limit)
+        )
         summary: dict[str, Any] = {
             "task_id": task_id,
             "status": task["status"],
@@ -545,7 +566,12 @@ class TaskStore:
             ),
             "pending_model_tool_calls": pending_calls,
             "unresolved_tool_calls": len(unresolved),
-            "safe_to_resume": safe_boundary and candidate is None and tokens_reserved == 0,
+            "safe_to_resume": (
+                safe_boundary
+                and candidate is None
+                and tokens_reserved == 0
+                and run_budget_available
+            ),
             "consumed_iterations": sum(
                 event["event_type"] == "task.inference.started" for event in events
             ),

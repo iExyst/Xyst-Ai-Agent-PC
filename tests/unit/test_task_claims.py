@@ -192,6 +192,51 @@ def test_lost_worker_with_unanswered_token_reservation_is_not_safe_to_resume(wor
         tasks.resolve_lost_worker(run_id, parent, "read", "resume")
 
 
+def test_lost_worker_cannot_resume_when_shared_run_budget_is_exhausted(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "exhausted-recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=1,
+        max_total_tokens=1,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="read", objective="Read evidence", max_iterations=1)],
+    )
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "read", "inference_id": "inference-complete"},
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "inference-complete",
+                "message": {"role": "assistant", "content": ""},
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+            },
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    summary = tasks.recovery_summary(run_id, "read")
+    assert summary["safe_to_resume"] is False
+    with pytest.raises(ValueError, match="Review the saved candidate"):
+        tasks.resolve_lost_worker(run_id, parent, "read", "resume")
+
+
 def test_lost_worker_pending_tool_call_cannot_be_resumed(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "uncertain-recovery.sqlite3")
     run_id = runs.create_run(
