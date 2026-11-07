@@ -237,6 +237,54 @@ def test_lost_worker_cannot_resume_when_shared_run_budget_is_exhausted(workspace
         tasks.resolve_lost_worker(run_id, parent, "read", "resume")
 
 
+@pytest.mark.parametrize("exhausted_limit", ["iterations", "tokens"])
+def test_lost_worker_cannot_resume_when_specialist_budget_is_exhausted(
+    workspace_tmp_path, exhausted_limit
+):
+    runs = RunStore(workspace_tmp_path / f"task-budget-{exhausted_limit}.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+        max_total_tokens=8,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    budgets = {"max_iterations": 1 if exhausted_limit == "iterations" else 4}
+    if exhausted_limit == "tokens":
+        budgets["max_total_tokens"] = 1
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="read", objective="Read evidence", **budgets)],
+    )
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "read", "inference_id": "task-budget-inference"},
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "task-budget-inference",
+                "message": {"role": "assistant", "content": ""},
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+            },
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    assert tasks.recovery_summary(run_id, "read")["safe_to_resume"] is False
+
+
 def test_lost_worker_pending_tool_call_cannot_be_resumed(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "uncertain-recovery.sqlite3")
     run_id = runs.create_run(

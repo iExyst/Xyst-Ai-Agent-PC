@@ -535,6 +535,25 @@ class TaskStore:
             and event["payload"].get("inference_id") not in answered_inferences
         ]
         tokens_reserved = sum(item.get("reserved_tokens", 0) for item in pending_reservations)
+        task_attempts = sum(event["event_type"] == "task.inference.started" for event in events)
+        task_answers = [
+            event
+            for event in events
+            if event["event_type"] in {"task.model.message", "task.model.incomplete"}
+        ]
+        task_token_limit = task["budgets"].get("max_total_tokens")
+        task_reported_tokens = sum(
+            event["payload"]["usage"]["total_tokens"]
+            for event in task_answers
+            if event["payload"].get("usage") is not None
+        )
+        task_usage_unknown = task_attempts > len(task_answers) or any(
+            event["payload"].get("usage") is None for event in task_answers
+        )
+        task_budget_available = task_attempts < task["budgets"]["max_iterations"] and (
+            task_token_limit is None
+            or (not task_usage_unknown and task_reported_tokens < task_token_limit)
+        )
         run = self.runs.get_run(run_id)
         assert run is not None
         run_events = self.runs.list_events(run_id)
@@ -570,11 +589,10 @@ class TaskStore:
                 safe_boundary
                 and candidate is None
                 and tokens_reserved == 0
+                and task_budget_available
                 and run_budget_available
             ),
-            "consumed_iterations": sum(
-                event["event_type"] == "task.inference.started" for event in events
-            ),
+            "consumed_iterations": task_attempts,
             "run_measured_tokens": self.runs.token_usage(run_id)["total_tokens"],
             "reserved_tokens": tokens_reserved,
         }
