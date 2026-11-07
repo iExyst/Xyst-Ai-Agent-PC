@@ -423,6 +423,8 @@ class TaskStore:
                 record["blocked_reason"] = "worker_lost_reconciliation_required"
             elif "ContextLimitError" in outcome.get("causes", []):
                 record["blocked_reason"] = "prompt_count_mismatch"
+            elif "ReviewerEvidenceMissing" in outcome.get("causes", []):
+                record["blocked_reason"] = "review_evidence_missing"
             elif "TaskTokenBudgetExceeded" in outcome.get("causes", []):
                 record["blocked_reason"] = "token_budget_exhausted_or_unmeasured"
             elif any(

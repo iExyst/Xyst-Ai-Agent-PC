@@ -131,6 +131,7 @@ class PlanTaskRecord(BaseModel):
             "execution_blocked",
             "worker_lost_reconciliation_required",
             "prompt_count_mismatch",
+            "review_evidence_missing",
         ]
         | None
     ) = None

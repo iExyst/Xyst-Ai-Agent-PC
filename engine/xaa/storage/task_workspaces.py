@@ -389,3 +389,55 @@ class TaskWorkspaces:
                 }
             )
         return changes
+
+    def read_dependency_change(
+        self,
+        run_id: str,
+        parent_token: str,
+        reviewer_id: str,
+        reviewer_token: str,
+        dependency_id: str,
+        path: str,
+    ) -> dict[str, Any]:
+        """Read one completed dependency's changed private file for its assigned reviewer."""
+        checked = checked_path(path).as_posix()
+        with self.store.connection() as connection:
+            self.store.require_lease(connection, run_id, parent_token)
+            self.store.require_task_read_scope(connection, run_id, reviewer_id, reviewer_token)
+            relation = connection.execute(
+                "SELECT reviewer.assigned_role,dependency.status FROM tasks AS reviewer "
+                "JOIN task_dependencies AS edge ON edge.task_id=reviewer.id "
+                "JOIN tasks AS dependency ON dependency.id=edge.depends_on_task_id "
+                "WHERE reviewer.id=? AND reviewer.run_id=? AND dependency.id=?",
+                (f"{run_id}:{reviewer_id}", run_id, f"{run_id}:{dependency_id}"),
+            ).fetchone()
+            if relation is None or relation["assigned_role"] != "reviewer":
+                raise PermissionError("Only a reviewer may inspect a declared dependency artifact.")
+            if relation["status"] != "completed":
+                raise PermissionError("Dependency artifacts are available only after task review.")
+            base, files = self.view(connection, run_id, dependency_id)
+            original = {item.path: item.content for item in base.files}
+            if original.get(checked) == files.get(checked):
+                raise PermissionError("The selected path is not a changed dependency artifact.")
+            content = files.get(checked)
+            if content is None:
+                previous = original.get(checked)
+                if previous is None:
+                    raise FileNotFoundError(checked)
+                return {
+                    "dependency_id": dependency_id,
+                    "path": checked,
+                    "deleted": True,
+                    "base_sha256": hashlib.sha256(previous).hexdigest(),
+                    "trust": "untrusted_specialist_artifact",
+                }
+            if len(content) > 65536:
+                raise ValueError("Reviewer artifact reads are limited to 64 KiB.")
+            return {
+                "dependency_id": dependency_id,
+                "path": checked,
+                "text": content.decode("utf-8", errors="strict"),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "deleted": False,
+                "trust": "untrusted_specialist_artifact",
+            }

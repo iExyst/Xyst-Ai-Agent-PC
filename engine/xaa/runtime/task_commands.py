@@ -80,6 +80,72 @@ def command_evidence(store: RunStore, run_id: str, task_id: str) -> list[dict[st
     return evidence
 
 
+def read_dependency_command_output(
+    store: RunStore,
+    scope: TaskReadScope,
+    dependency_id: str,
+    artifact_id: str,
+    *,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    """Read a bounded byte range from validation output of a reviewed dependency."""
+    if offset < 0 or not 1 <= limit <= 16384:
+        raise ValueError("Reviewer output reads require a valid offset and a 16 KiB maximum.")
+    with store.connection() as connection:
+        store.require_lease(connection, scope.run_id, scope.parent_token)
+        store.require_task_read_scope(connection, scope.run_id, scope.task_id, scope.task_token)
+        relation = connection.execute(
+            "SELECT reviewer.assigned_role,dependency.status FROM tasks AS reviewer "
+            "JOIN task_dependencies AS edge ON edge.task_id=reviewer.id "
+            "JOIN tasks AS dependency ON dependency.id=edge.depends_on_task_id "
+            "WHERE reviewer.id=? AND reviewer.run_id=? AND dependency.id=?",
+            (
+                f"{scope.run_id}:{scope.task_id}",
+                scope.run_id,
+                f"{scope.run_id}:{dependency_id}",
+            ),
+        ).fetchone()
+        if relation is None or relation["assigned_role"] != "reviewer":
+            raise PermissionError("Only a reviewer may inspect a declared dependency artifact.")
+        if relation["status"] != "completed":
+            raise PermissionError("Validation output is available only after task review.")
+    evidence = command_evidence(store, scope.run_id, dependency_id)
+    if not any(
+        artifact_id in {item["stdout_artifact_id"], item["stderr_artifact_id"]} for item in evidence
+    ):
+        raise PermissionError(
+            "Output artifact is not part of this dependency's validation evidence."
+        )
+    artifact = store.get_artifact(artifact_id)
+    root = command_artifact_root(store)
+    if (
+        artifact is None
+        or artifact["run_id"] != scope.run_id
+        or Path(artifact["storage_key"]).name != artifact["storage_key"]
+        or not str(artifact["provenance"]).startswith("execution.")
+    ):
+        raise PermissionError("Validation output artifact is unavailable.")
+    with open_for_read(root / artifact["storage_key"]) as source:
+        if not opened_file_path(source).is_relative_to(root):
+            raise PermissionError("Validation output escaped managed storage.")
+        if source.seek(0, 2) != artifact["size_bytes"]:
+            raise ValueError("Validation output size changed after execution.")
+        source.seek(offset)
+        data = source.read(limit)
+    return {
+        "dependency_id": dependency_id,
+        "artifact_id": artifact_id,
+        "offset": offset,
+        "total_bytes": artifact["size_bytes"],
+        "bytes_read": len(data),
+        "sha256": artifact["sha256"],
+        "text": data.decode("utf-8", errors="replace"),
+        "trust": "untrusted_test_output",
+        "eof": offset + len(data) >= artifact["size_bytes"],
+    }
+
+
 async def execute_task_command(
     store: RunStore,
     scope: TaskReadScope,

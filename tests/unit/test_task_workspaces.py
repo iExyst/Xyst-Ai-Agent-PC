@@ -5,11 +5,14 @@ import time
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
+from xaa.runtime.command_controller import CommandController
 from xaa.runtime.specialists import SpecialistRunner
+from xaa.runtime.states import RunState
+from xaa.runtime.task_commands import read_dependency_command_output
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.task_review import candidate_evidence
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.task_workspaces import TaskWorkspaces
 from xaa.storage.tasks import TaskStore
 
@@ -43,6 +46,213 @@ def setup(root):
         ],
     )
     return store, run_id, owner, tasks, project
+
+
+async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outputs(
+    workspace_tmp_path,
+):
+    from test_command_controller import FixtureTransport
+    from test_command_controller import setup as setup_command
+
+    controller, store, run_id, parent, _ = setup_command(workspace_tmp_path, FixtureTransport())
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="implementation",
+                objective="Edit and validate the private project",
+                permissions=["workspace.read", "workspace.write", "workspace.command"],
+                max_iterations=3,
+            ),
+            TaskDefinition(
+                id="review",
+                objective="Independently inspect the implementation and test output",
+                role="reviewer",
+                dependencies=["implementation"],
+                permissions=["workspace.read"],
+                max_iterations=4,
+            ),
+        ],
+    )
+    implementation = tasks.claim_ready(run_id, parent)
+    assert implementation is not None
+    worker = implementation["token"]
+    for call_id, operation, arguments in [
+        ("branch-init", "branch_init", {}),
+        (
+            "branch-edit",
+            "branch_write",
+            {
+                "path": "fixture.txt",
+                "content": "reviewed implementation",
+                "expected_sha256": hashlib.sha256(b"fixture").hexdigest(),
+            },
+        ),
+    ]:
+        await execute_filesystem(
+            store,
+            run_id,
+            parent,
+            call_id,
+            operation,
+            arguments,
+            idempotency_key=call_id,
+            internal=True,
+            task_id="implementation",
+            task_token=worker,
+        )
+    command = await CommandController(
+        store,
+        controller.transport,
+        task_scope=TaskReadScope(run_id, parent, "implementation", worker),
+    ).execute(
+        run_id,
+        parent,
+        "test-command",
+        {"argv": ["fixture"]},
+        idempotency_key="test-command",
+        deadline=time.monotonic() + 15,
+    )
+    tasks.record_read_worker_event(
+        run_id,
+        parent,
+        "implementation",
+        worker,
+        "task.tool.result",
+        {
+            "task_id": "implementation",
+            "call_id": "test-call",
+            "journal_id": "test-command",
+            "result": command,
+        },
+    )
+    tasks.record_outcome(
+        run_id,
+        parent,
+        "implementation",
+        worker,
+        state="verifying",
+        result={"candidate": "The check passed."},
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE tasks SET status='completed' WHERE id=?", (f"{run_id}:implementation",)
+        )
+    review = tasks.claim_ready(run_id, parent)
+    assert review is not None
+    review_token = review["token"]
+    runner = SpecialistRunner(store, LMStudioProvider())
+    gaps = runner._review_evidence_gaps(run_id, review["task"])
+    assert "artifact:implementation:fixture.txt" in gaps
+    assert f"test-output:implementation:{command['stdout_artifact_id']}" in gaps
+    assert f"test-output:implementation:{command['stderr_artifact_id']}" in gaps
+    tasks.record_read_worker_event(
+        run_id,
+        parent,
+        "review",
+        review_token,
+        "task.tool.result",
+        {
+            "task_id": "review",
+            "journal_id": "review-output-shortcut",
+            "reviewed_dependency_output": {
+                "dependency_id": "implementation",
+                "artifact_id": command["stdout_artifact_id"],
+                "offset": command["stdout_bytes"] + 1,
+                "total_bytes": command["stdout_bytes"],
+                "bytes_read": 0,
+                "eof": True,
+            },
+        },
+    )
+    assert (
+        f"test-output:implementation:{command['stdout_artifact_id']}"
+        in runner._review_evidence_gaps(run_id, review["task"])
+    )
+    file_result = TaskWorkspaces(store).read_dependency_change(
+        run_id, parent, "review", review_token, "implementation", "fixture.txt"
+    )
+    assert file_result["text"] == "reviewed implementation"
+    assert file_result["sha256"] == hashlib.sha256(b"reviewed implementation").hexdigest()
+    tasks.record_read_worker_event(
+        run_id,
+        parent,
+        "review",
+        review_token,
+        "task.tool.result",
+        {
+            "task_id": "review",
+            "journal_id": "review-file-read",
+            "reviewed_dependency_artifact": {
+                "dependency_id": "implementation",
+                "path": "fixture.txt",
+            },
+        },
+    )
+
+    stdout_id = command["stdout_artifact_id"]
+    chunks = []
+    offset = 0
+    while True:
+        chunk = read_dependency_command_output(
+            store,
+            TaskReadScope(run_id, parent, "review", review_token),
+            "implementation",
+            stdout_id,
+            offset=offset,
+            limit=5,
+        )
+        chunks.append(chunk["text"])
+        offset += len(chunk["text"].encode("utf-8"))
+        if chunk["eof"]:
+            break
+    assert "".join(chunks) == "untrusted command bytes"
+    for artifact_id in (stdout_id, command["stderr_artifact_id"]):
+        output = read_dependency_command_output(
+            store,
+            TaskReadScope(run_id, parent, "review", review_token),
+            "implementation",
+            artifact_id,
+            offset=0,
+            limit=16_384,
+        )
+        assert output["eof"]
+        tasks.record_read_worker_event(
+            run_id,
+            parent,
+            "review",
+            review_token,
+            "task.tool.result",
+            {
+                "task_id": "review",
+                "journal_id": f"review-output-{artifact_id}",
+                "reviewed_dependency_output": {
+                    "dependency_id": "implementation",
+                    "artifact_id": artifact_id,
+                    "offset": 0,
+                    "total_bytes": output["total_bytes"],
+                    "bytes_read": output["bytes_read"],
+                    "eof": True,
+                },
+            },
+        )
+    assert runner._review_evidence_gaps(run_id, review["task"]) == []
+    snapshot_id = next(
+        item["id"]
+        for item in store.list_artifacts(run_id)
+        if item["id"] != stdout_id and item["id"] != command["stderr_artifact_id"]
+    )
+    with pytest.raises(PermissionError, match="validation evidence"):
+        read_dependency_command_output(
+            store,
+            TaskReadScope(run_id, parent, "review", review_token),
+            "implementation",
+            snapshot_id,
+            offset=0,
+            limit=16,
+        )
 
 
 async def test_real_workers_keep_each_private_edit_and_original_project_separate(
@@ -236,7 +446,6 @@ async def test_private_delete_replay_rejects_mismatched_expected_hash_in_journal
 
 
 async def test_specialist_deletion_stays_private_until_review_authorizes_it(workspace_tmp_path):
-    from xaa.runtime.states import RunState
     from xaa.runtime.task_integration import preview
     from xaa.runtime.task_review import TaskReviewDecision, review_candidate
 
@@ -380,7 +589,6 @@ async def test_private_change_limit_counts_deletions_and_can_return_under_limit(
 async def test_reviewed_deletion_conflict_requires_choice_and_rejects_stale_hash(
     workspace_tmp_path,
 ):
-    from xaa.runtime.states import RunState
     from xaa.runtime.task_integration import IntegrationResolution, preview
     from xaa.runtime.task_review import TaskReviewDecision, review_candidate
 
@@ -502,7 +710,6 @@ async def test_integration_recovery_never_replays_uncertain_or_completed_writes(
     workspace_tmp_path, monkeypatch, failure
 ):
     from xaa.runtime import task_integration
-    from xaa.runtime.states import RunState
 
     store, run_id, owner, tasks, project = setup(workspace_tmp_path)
     claim = tasks.claim_ready(run_id, owner)
@@ -730,7 +937,6 @@ async def test_review_integrates_only_approved_changes_and_requires_explicit_con
     workspace_tmp_path,
     choice,
 ):
-    from xaa.runtime.states import RunState
     from xaa.runtime.task_integration import IntegrationResolution, preview
     from xaa.runtime.task_review import TaskReviewDecision, review_candidate
 
