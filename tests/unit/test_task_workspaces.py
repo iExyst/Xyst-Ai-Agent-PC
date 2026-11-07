@@ -55,6 +55,8 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     from test_command_controller import setup as setup_command
 
     controller, store, run_id, parent, _ = setup_command(workspace_tmp_path, FixtureTransport())
+    with store.connection() as connection:
+        connection.execute("UPDATE run_limits SET max_iterations=30 WHERE run_id=?", (run_id,))
     tasks = TaskStore(store)
     tasks.save_plan(
         run_id,
@@ -72,7 +74,7 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
                 role="reviewer",
                 dependencies=["implementation"],
                 permissions=["workspace.read"],
-                max_iterations=4,
+                max_iterations=16,
             ),
         ],
     )
@@ -143,7 +145,8 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     review = tasks.claim_ready(run_id, parent)
     assert review is not None
     review_token = review["token"]
-    runner = SpecialistRunner(store, LMStudioProvider())
+    idle_provider = LMStudioProvider()
+    runner = SpecialistRunner(store, idle_provider)
     gaps = runner._review_evidence_gaps(run_id, review["task"])
     assert "artifact:implementation:fixture.txt" in gaps
     assert f"test-output:implementation:{command['stdout_artifact_id']}" in gaps
@@ -176,22 +179,6 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     )
     assert file_result["text"] == "reviewed implementation"
     assert file_result["sha256"] == hashlib.sha256(b"reviewed implementation").hexdigest()
-    tasks.record_read_worker_event(
-        run_id,
-        parent,
-        "review",
-        review_token,
-        "task.tool.result",
-        {
-            "task_id": "review",
-            "journal_id": "review-file-read",
-            "reviewed_dependency_artifact": {
-                "dependency_id": "implementation",
-                "path": "fixture.txt",
-            },
-        },
-    )
-
     stdout_id = command["stdout_artifact_id"]
     chunks = []
     offset = 0
@@ -209,36 +196,6 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
         if chunk["eof"]:
             break
     assert "".join(chunks) == "untrusted command bytes"
-    for artifact_id in (stdout_id, command["stderr_artifact_id"]):
-        output = read_dependency_command_output(
-            store,
-            TaskReadScope(run_id, parent, "review", review_token),
-            "implementation",
-            artifact_id,
-            offset=0,
-            limit=16_384,
-        )
-        assert output["eof"]
-        tasks.record_read_worker_event(
-            run_id,
-            parent,
-            "review",
-            review_token,
-            "task.tool.result",
-            {
-                "task_id": "review",
-                "journal_id": f"review-output-{artifact_id}",
-                "reviewed_dependency_output": {
-                    "dependency_id": "implementation",
-                    "artifact_id": artifact_id,
-                    "offset": 0,
-                    "total_bytes": output["total_bytes"],
-                    "bytes_read": output["bytes_read"],
-                    "eof": True,
-                },
-            },
-        )
-    assert runner._review_evidence_gaps(run_id, review["task"]) == []
     snapshot_id = next(
         item["id"]
         for item in store.list_artifacts(run_id)
@@ -253,6 +210,101 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
             offset=0,
             limit=16,
         )
+
+    calls = [
+        {
+            "name": "review_dependency_file",
+            "arguments": {"dependency_id": "implementation", "path": "fixture.txt"},
+        }
+    ]
+    for artifact_id, size in (
+        (command["stdout_artifact_id"], command["stdout_bytes"]),
+        (command["stderr_artifact_id"], command["stderr_bytes"]),
+    ):
+        for offset in range(0, max(size, 1), 5):
+            calls.append(
+                {
+                    "name": "review_dependency_output",
+                    "arguments": {
+                        "dependency_id": "implementation",
+                        "artifact_id": artifact_id,
+                        "offset": offset,
+                        "limit": 5,
+                    },
+                }
+            )
+
+    class Reviewer(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.steps = iter(calls)
+            self.first_response = True
+
+        async def chat(self, *, model, messages, tools=None, **kwargs):
+            assert model is None
+            names = {item["function"]["name"] for item in tools or []}
+            assert {"review_dependency_file", "review_dependency_output"} <= names
+            if self.first_response:
+                self.first_response = False
+                message = {"role": "assistant", "content": "I reviewed the proposed change."}
+            else:
+                call = next(self.steps, None)
+                if call is None:
+                    message = {
+                        "role": "assistant",
+                        "content": "The implementation and validation evidence support the candidate.",
+                    }
+                else:
+                    index = len(messages)
+                    message = {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": f"review-{index}",
+                                "type": "function",
+                                "function": {
+                                    "name": call["name"],
+                                    "arguments": json.dumps(call["arguments"]),
+                                },
+                            }
+                        ],
+                    }
+            return {"choices": [{"message": message}]}
+
+    provider = Reviewer()
+    runner.provider = provider
+    try:
+        await runner.run_claim(
+            run_id,
+            parent,
+            review,
+            deadline=time.monotonic() + 120,
+        )
+    finally:
+        await provider.close()
+        await idle_provider.close()
+    # The first premature candidate must be rejected, then the actual tool loop reads each page.
+    review_events = [
+        event["payload"]
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.tool.result" and event["payload"].get("task_id") == "review"
+    ]
+    assert any(item.get("reviewed_dependency_artifact") for item in review_events), (
+        [(item["local_id"], item["status"], item["result"]) for item in tasks.records(run_id)],
+        review_events,
+    )
+    assert (
+        sum(
+            bool(item.get("reviewed_dependency_output"))
+            for item in review_events
+            if "call_id" in item
+        )
+        == len(calls) - 1
+    )
+    assert runner._review_evidence_gaps(run_id, review["task"]) == []
+    assert next(row for row in tasks.records(run_id) if row["local_id"] == "review")["status"] == (
+        "verifying"
+    )
 
 
 async def test_real_workers_keep_each_private_edit_and_original_project_separate(
