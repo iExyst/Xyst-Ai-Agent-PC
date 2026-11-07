@@ -72,9 +72,75 @@ def child(root: Path, run_id: str) -> None:
     )
 
 
+def recover(root: Path, run_id: str) -> None:
+    """Recover from a fresh process after the run-owning process was killed."""
+    store = RunStore(root / "runs.sqlite3")
+    saved = store.get_run(run_id)
+    assert saved is not None
+    remaining = (
+        datetime.fromisoformat(saved["lease_expires_at"]) - datetime.now(UTC)
+    ).total_seconds()
+    if remaining > 0:
+        time.sleep(min(remaining + 0.05, 2))
+    recovered = store.recover_abandoned_runs()
+    saved = store.get_run(run_id)
+    assert saved is not None and saved["state"] == "blocked"
+    store.transition(run_id, RunState.QUEUED, reason="operator_requested_reconciliation")
+    token = store.acquire_lease(run_id, "recovery-worker")
+    assert token is not None
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    owned = os.environ.get("XAA_CRASH_RECONCILE_WORKER") == "1"
+    frozen = os.environ.get("XAA_FROZEN_WORKER") == "1"
+    with ExitStack() as stack:
+        if frozen:
+            if not owned:
+                raise ValueError("Frozen recovery requires worker reconciliation.")
+            stack.enter_context(patch.object(tool_worker.sys, "frozen", True, create=True))
+            stack.enter_context(
+                patch.object(
+                    tool_worker.sys,
+                    "executable",
+                    str(Path("build/native-dev/xaa-engine.exe").resolve()),
+                )
+            )
+        outcomes = (
+            asyncio.run(
+                tool_worker.execute_filesystem(
+                    store,
+                    run_id,
+                    token,
+                    "reconcile",
+                    "reconcile",
+                    {},
+                    idempotency_key="reconcile",
+                    internal=True,
+                )
+            )
+            if owned
+            else WorkspaceExecutor(store).reconcile_writes(run_id, token)
+        )
+    if store.unresolved_tool_calls(run_id):
+        store.transition(
+            run_id, RunState.BLOCKED, reason="tool_reconciliation_required", owner=token
+        )
+    store.release_lease(run_id, token)
+    saved_after = store.get_run(run_id)
+    assert saved_after is not None
+    result: dict[str, Any] = {
+        "automatically_requeued_run_ids": recovered,
+        "state": saved_after["state"],
+        "outcomes": outcomes,
+        "has_unresolved_tool_calls": bool(store.unresolved_tool_calls(run_id)),
+    }
+    (root / "recovery.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--child":
         child(Path(sys.argv[2]), sys.argv[3])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "--recover":
+        recover(Path(sys.argv[2]), sys.argv[3])
         return
     root = (Path(".acceptance") / str(uuid4())).resolve()
     root.mkdir(parents=True)
@@ -113,70 +179,47 @@ def main() -> None:
                 process.kill()
                 process.wait(timeout=5)
     before_recovery_mtime = target.stat().st_mtime_ns
-    saved = store.get_run(run_id)
-    assert saved is not None
-    remaining = (
-        datetime.fromisoformat(saved["lease_expires_at"]) - datetime.now(UTC)
-    ).total_seconds()
-    if remaining > 0:
-        time.sleep(min(remaining + 0.05, 2))
-    store.recover_abandoned_runs()
-    saved = store.get_run(run_id)
-    assert saved is not None and saved["state"] == "blocked"
-    store.transition(run_id, RunState.QUEUED, reason="operator_requested_reconciliation")
-    token = store.acquire_lease(run_id, "recovery-worker")
-    assert token is not None
-    owned = os.environ.get("XAA_CRASH_RECONCILE_WORKER") == "1"
-    frozen = os.environ.get("XAA_FROZEN_WORKER") == "1"
-    with ExitStack() as stack:
-        if frozen:
-            if not owned:
-                raise ValueError("Frozen recovery requires worker reconciliation.")
-            stack.enter_context(patch.object(tool_worker.sys, "frozen", True, create=True))
-            stack.enter_context(
-                patch.object(
-                    tool_worker.sys,
-                    "executable",
-                    str(Path("build/native-dev/xaa-engine.exe").resolve()),
-                )
-            )
-        outcomes = (
-            asyncio.run(
-                tool_worker.execute_filesystem(
-                    store,
-                    run_id,
-                    token,
-                    "reconcile",
-                    "reconcile",
-                    {},
-                    idempotency_key="reconcile",
-                    internal=True,
-                )
-            )
-            if owned
-            else WorkspaceExecutor(store).reconcile_writes(run_id, token)
-        )
+    recovery_process = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--recover", str(root), run_id],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    if recovery_process.returncode != 0:
+        raise RuntimeError("Fresh recovery process failed: " + recovery_process.stderr[-1000:])
+    recovery = json.loads((root / "recovery.json").read_text(encoding="utf-8"))
+    outcomes = recovery["outcomes"]
     early = os.environ.get("XAA_CRASH_BOUNDARY") == "created"
     passed = (
-        outcomes == {"edit-1": "conflicting" if early else "applied"}
+        process.returncode not in (0, None)
+        and recovery_process.returncode == 0
+        and outcomes == {"edit-1": "conflicting" if early else "applied"}
         and target.read_bytes() == (b"" if early else b"verified-after-crash")
         and target.stat().st_mtime_ns == before_recovery_mtime
-        and bool(store.unresolved_tool_calls(run_id)) == early
+        and recovery["has_unresolved_tool_calls"] == early
+        and recovery["state"] == ("blocked" if early else "planning")
+        and run_id not in recovery["automatically_requeued_run_ids"]
     )
-    store.release_lease(run_id, token)
     report = {
         "passed": passed,
         "operation": "create" if create else "edit",
-        "reconciliation_worker": owned,
-        "frozen_worker": frozen,
-        "interruption": "real worker killed after create before content/execution event"
+        "reconciliation_worker": os.environ.get("XAA_CRASH_RECONCILE_WORKER") == "1",
+        "frozen_worker": os.environ.get("XAA_FROZEN_WORKER") == "1",
+        "run_owner_exit_code": process.returncode,
+        "interruption": "run-owning process killed after create before content/execution event"
         if early
-        else "real worker killed after fsync before result",
+        else "run-owning process killed after fsync before result",
+        "recovery_in_fresh_process": recovery_process.returncode == 0,
+        "automatically_requeued_run_ids": recovery["automatically_requeued_run_ids"],
         "initial_recovery_state": "blocked",
+        "state_after_reconciliation": recovery["state"],
+        "unresolved_after_reconciliation": recovery["has_unresolved_tool_calls"],
         "outcomes": outcomes,
         "rewritten": target.stat().st_mtime_ns != before_recovery_mtime,
     }
-    if frozen:
+    if os.environ.get("XAA_FROZEN_WORKER") == "1":
         report["build_sha256"] = json.loads(
             Path("build/native-dev/manifest.json").read_text(encoding="utf-8")
         )
