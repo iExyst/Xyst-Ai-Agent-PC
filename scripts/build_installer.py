@@ -60,6 +60,7 @@ def main() -> None:
         for name, source in {
             "THIRD_PARTY_NOTICES.md": "docs/releases/THIRD_PARTY_NOTICES.md",
             "dependency-inventory.md": "docs/releases/dependency-inventory.md",
+            "release-notes-0.1.1.md": "docs/releases/0.1.1.md",
         }.items()
     }
     for path in notices.values():

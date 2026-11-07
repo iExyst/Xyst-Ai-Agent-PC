@@ -65,7 +65,7 @@ try {
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
     if ((Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.desktop.sha256 -or (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.engine.sha256) { throw 'Installed binary checksums do not match the manifest.' }
     $xaaReport.installed_binary_hashes_match = $true
-    foreach ($xaaNoticeName in @('THIRD_PARTY_NOTICES.md', 'dependency-inventory.md')) {
+    foreach ($xaaNoticeName in @('THIRD_PARTY_NOTICES.md', 'dependency-inventory.md', 'release-notes-0.1.1.md')) {
         $xaaNotice = Join-Path $xaaInstallDir $xaaNoticeName
         $xaaNoticeMetadata = $xaaManifest.notices.$xaaNoticeName
         if (-not $xaaNoticeMetadata -or -not (Test-Path -LiteralPath $xaaNotice)) { throw "Installed release notice missing: $xaaNoticeName" }

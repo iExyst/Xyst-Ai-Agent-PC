@@ -12,7 +12,7 @@ Windows-first desktop agent under development. The native app, local engine and 
 
 ## Unsigned Windows development installer
 
-The latest successful [Engine checks run](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions) provides an `xaa-windows-installer-unsigned` artifact (14-day retention). Its setup bundles the engine; Python and Node are not runtime prerequisites. LM Studio remains a separate installation. The disposable hosted Windows test verifies installation, actual GUI/API startup, shutdown, uninstall and data preservation. This remains an unsigned development build; upgrade and clean normal-user-machine acceptance are incomplete. See [installer evidence and limitations](docs/releases/windows-installer.md).
+The latest successful [Engine checks run](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions) provides an `xaa-windows-installer-unsigned` artifact (14-day retention). Its setup bundles the engine; Python and Node are not runtime prerequisites. LM Studio remains a separate installation. The disposable hosted Windows test verifies installation, actual GUI/API startup, shutdown, uninstall and data preservation. This remains an unsigned development build; upgrade and clean normal-user-machine acceptance are incomplete. Read the [0.1.1 development build notes](docs/releases/0.1.1.md) and [installer evidence and limitations](docs/releases/windows-installer.md).
 
 ## Development use
 
