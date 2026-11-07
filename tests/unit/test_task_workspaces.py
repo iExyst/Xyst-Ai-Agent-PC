@@ -54,7 +54,10 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     from test_command_controller import FixtureTransport
     from test_command_controller import setup as setup_command
 
-    controller, store, run_id, parent, _ = setup_command(workspace_tmp_path, FixtureTransport())
+    controller, store, run_id, parent, project = setup_command(
+        workspace_tmp_path, FixtureTransport()
+    )
+    (project / "removed.txt").write_text("remove this file", encoding="utf-8")
     with store.connection() as connection:
         connection.execute("UPDATE run_limits SET max_iterations=30 WHERE run_id=?", (run_id,))
     tasks = TaskStore(store)
@@ -90,6 +93,14 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
                 "path": "fixture.txt",
                 "content": "reviewed implementation",
                 "expected_sha256": hashlib.sha256(b"fixture").hexdigest(),
+            },
+        ),
+        (
+            "branch-delete",
+            "branch_delete",
+            {
+                "path": "removed.txt",
+                "expected_sha256": hashlib.sha256(b"remove this file").hexdigest(),
             },
         ),
     ]:
@@ -149,6 +160,7 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     runner = SpecialistRunner(store, idle_provider)
     gaps = runner._review_evidence_gaps(run_id, review["task"])
     assert "artifact:implementation:fixture.txt" in gaps
+    assert "artifact:implementation:removed.txt" in gaps
     assert f"test-output:implementation:{command['stdout_artifact_id']}" in gaps
     assert f"test-output:implementation:{command['stderr_artifact_id']}" in gaps
     tasks.record_read_worker_event(
@@ -179,6 +191,10 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     )
     assert file_result["text"] == "reviewed implementation"
     assert file_result["sha256"] == hashlib.sha256(b"reviewed implementation").hexdigest()
+    deleted_result = TaskWorkspaces(store).read_dependency_change(
+        run_id, parent, "review", review_token, "implementation", "removed.txt"
+    )
+    assert deleted_result["deleted"] is True
     stdout_id = command["stdout_artifact_id"]
     chunks = []
     offset = 0
@@ -223,6 +239,13 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
         }
         for offset in range(0, len(file_result["text"]), 5)
     ]
+    file_page_count = len(calls)
+    calls.append(
+        {
+            "name": "review_dependency_file",
+            "arguments": {"dependency_id": "implementation", "path": "removed.txt"},
+        }
+    )
     for artifact_id, size in (
         (command["stdout_artifact_id"], command["stdout_bytes"]),
         (command["stderr_artifact_id"], command["stderr_bytes"]),
@@ -301,11 +324,16 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     )
     assert (
         sum(bool(item.get("reviewed_dependency_artifact")) for item in review_events)
-        == len(file_result["text"]) // 5 + 1
+        == file_page_count + 1
     )
-    assert sum(
-        bool(item.get("reviewed_dependency_output")) for item in review_events if "call_id" in item
-    ) == len(calls) - (len(file_result["text"]) // 5 + 1)
+    assert (
+        sum(
+            bool(item.get("reviewed_dependency_output"))
+            for item in review_events
+            if "call_id" in item
+        )
+        == len(calls) - file_page_count - 1
+    )
     assert runner._review_evidence_gaps(run_id, review["task"]) == []
     assert next(row for row in tasks.records(run_id) if row["local_id"] == "review")["status"] == (
         "verifying"
