@@ -191,7 +191,7 @@ async def diagnose(
             command_grant=grant,
         )["id"]
         report["run_id"] = run_id
-        acquired = store.acquire_lease(run_id, "specialist-variant-fixture", seconds=300)
+        acquired = store.acquire_lease(run_id, "specialist-variant-fixture", seconds=600)
         assert acquired is not None
         parent = acquired
         tasks = TaskStore(store)
