@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Self
 from uuid import uuid4
@@ -72,7 +73,7 @@ class AcceptingTelegramApi(TelegramBotApi):
         return 73
 
 
-def prepare_database(root: Path) -> str:
+def prepare_database(root: Path, *, scheduled: bool) -> tuple[str, str | None]:
     runs = RunStore(root / "runs.sqlite3")
     channel = TelegramStore(runs)
     channel.save_bot(IDENTITY)
@@ -91,19 +92,53 @@ def prepare_database(root: Path) -> str:
     )
     if paired["state"] != "paired":
         raise RuntimeError("Could not prepare a paired disposable Telegram identity.")
-    queued = channel.process_update(
-        IDENTITY,
-        {
-            "update_id": 2,
-            "message": {
-                "text": "Prepare the harmless crash-recovery fixture.",
-                "from": {"id": 9001},
-                "chat": {"id": 9001, "type": "private"},
+    execution_id: str | None = None
+    if scheduled:
+        from xaa.scheduler.service import ScheduleService
+        from xaa.storage.schedules import ScheduleStore
+
+        current = datetime.now(UTC).replace(second=0, microsecond=0)
+        schedule = ScheduleStore(runs).create(
+            objective="Prepare the scheduled crash-recovery fixture.",
+            acceptance_criteria=[],
+            workspace=None,
+            model="diagnostic-model",
+            start_at=current.replace(tzinfo=None),
+            frequency="once",
+            timezone="UTC",
+            missed_run_policy="skip",
+            max_iterations=4,
+            max_seconds=60,
+            delivery_destination=f"telegram:{IDENTITY.account_id}:9001",
+        )
+        generated = ScheduleService(runs, lambda _run_id: None).tick(current)
+        if len(generated) != 1:
+            raise RuntimeError("Could not create the scheduled acceptance run.")
+        run_id = generated[0]
+        with runs.connection() as connection:
+            row = connection.execute(
+                "SELECT id FROM schedule_executions WHERE schedule_id=? AND run_id=?",
+                (schedule["id"], run_id),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("The scheduled delivery execution was not persisted.")
+        execution_id = str(row["id"])
+        expected_text = "Scheduled result."
+    else:
+        queued = channel.process_update(
+            IDENTITY,
+            {
+                "update_id": 2,
+                "message": {
+                    "text": "Prepare the harmless crash-recovery fixture.",
+                    "from": {"id": 9001},
+                    "chat": {"id": 9001, "type": "private"},
+                },
             },
-        },
-        model="diagnostic-model",
-    )
-    run_id = str(queued["run_id"])
+            model="diagnostic-model",
+        )
+        run_id = str(queued["run_id"])
+        expected_text = "Diagnostic result."
     with runs.connection() as connection:
         connection.execute(
             "UPDATE runs SET state='completed',updated_at=? WHERE id=?", (utc_now(), run_id)
@@ -112,9 +147,9 @@ def prepare_database(root: Path) -> str:
             connection,
             run_id,
             "model.message",
-            {"message": {"role": "assistant", "content": "Diagnostic result."}},
+            {"message": {"role": "assistant", "content": expected_text}},
         )
-    return run_id
+    return run_id, execution_id
 
 
 def make_service(root: Path, *, block_after_accept: bool) -> TelegramService:
@@ -130,23 +165,31 @@ def make_service(root: Path, *, block_after_accept: bool) -> TelegramService:
     )
 
 
-def child(root: Path) -> None:
+def child(root: Path, *, scheduled: bool) -> None:
+    del scheduled
     asyncio.run(make_service(root, block_after_accept=True).cycle())
 
 
 def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "--child":
-        child(Path(sys.argv[2]))
+    scheduled = "--scheduled" in sys.argv
+    if "--child" in sys.argv:
+        child(Path(sys.argv[sys.argv.index("--child") + 1]), scheduled=scheduled)
         return
 
     root = (Path(".acceptance") / f"telegram-crash-{uuid4()}").resolve()
     root.mkdir(parents=True)
     accepted_log = root / "accepted.jsonl"
     accepted_log.write_text("", encoding="utf-8")
-    run_id = prepare_database(root)
+    run_id, execution_id = prepare_database(root, scheduled=scheduled)
     with (root / "worker.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve()), "--child", str(root)],
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--child",
+                str(root),
+                *(["--scheduled"] if scheduled else []),
+            ],
             stdout=log,
             stderr=log,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
@@ -172,33 +215,56 @@ def main() -> None:
     accepted_before = accepted_log.read_text(encoding="utf-8").splitlines()
     reopened = RunStore(root / "runs.sqlite3")
     with reopened.connection() as connection:
-        before_reconcile = str(
-            connection.execute(
-                "SELECT delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
-                (IDENTITY.account_id,),
-            ).fetchone()[0]
-        )
+        if scheduled:
+            assert execution_id is not None
+            before_reconcile = str(
+                connection.execute(
+                    "SELECT state FROM schedule_deliveries WHERE execution_id=?",
+                    (execution_id,),
+                ).fetchone()[0]
+            )
+        else:
+            before_reconcile = str(
+                connection.execute(
+                    "SELECT delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
+                    (IDENTITY.account_id,),
+                ).fetchone()[0]
+            )
     asyncio.run(make_service(root, block_after_accept=False).cycle())
     accepted_after = accepted_log.read_text(encoding="utf-8").splitlines()
     with reopened.connection() as connection:
-        after_reconcile = str(
-            connection.execute(
-                "SELECT delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
-                (IDENTITY.account_id,),
-            ).fetchone()[0]
-        )
+        if scheduled:
+            assert execution_id is not None
+            after_reconcile = str(
+                connection.execute(
+                    "SELECT state FROM schedule_deliveries WHERE execution_id=?",
+                    (execution_id,),
+                ).fetchone()[0]
+            )
+        else:
+            after_reconcile = str(
+                connection.execute(
+                    "SELECT delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
+                    (IDENTITY.account_id,),
+                ).fetchone()[0]
+            )
     passed = (
         before_reconcile == "sending"
         and after_reconcile == "unknown"
         and len(accepted_before) == 1
         and accepted_after == accepted_before
         and json.loads(accepted_after[0])
-        == {"sequence": 1, "chat_id": "9001", "text": "Diagnostic result."}
+        == {
+            "sequence": 1,
+            "chat_id": "9001",
+            "text": "Scheduled result." if scheduled else "Diagnostic result.",
+        }
     )
     report: dict[str, Any] = {
         "passed": passed,
         "transport": "deterministic fsynced local acceptor; no Telegram endpoint or bot used",
         "crash_boundary": "send accepted durably before delivery journal completion",
+        "delivery_kind": "scheduled outbox" if scheduled else "inbound reply",
         "run_id": run_id,
         "delivery_state_before_restart": before_reconcile,
         "delivery_state_after_restart": after_reconcile,

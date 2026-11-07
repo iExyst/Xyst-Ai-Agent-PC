@@ -55,6 +55,9 @@ jobs:
       - name: Verify Telegram delivery recovery after worker process death
         run: uv run python scripts/telegram_crash_diagnostic.py
         timeout-minutes: 2
+      - name: Verify scheduled Telegram outbox recovery after worker process death
+        run: uv run python scripts/telegram_crash_diagnostic.py --scheduled
+        timeout-minutes: 2
 
   windows-installer:
     needs: windows
