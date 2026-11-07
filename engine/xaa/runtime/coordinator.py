@@ -177,6 +177,7 @@ class Coordinator:
                     max_output_tokens=DIAGNOSTIC_OUTPUT_TOKENS,
                 )
             except ContextLimitError as exc:
+                self._record_context_admission_failure(run_id, token, exc)
                 if exc.measured_usage is not None:
                     self.store.append_worker_event(
                         run_id,

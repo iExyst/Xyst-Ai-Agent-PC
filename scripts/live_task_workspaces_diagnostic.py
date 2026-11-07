@@ -308,6 +308,13 @@ async def diagnose(
             unresolved_calls=len(store.unresolved_tool_calls(run_id)),
             task_results=task_results,
         )
+        admission_failures = [
+            event["payload"]
+            for event in store.list_events(run_id)
+            if event["event_type"] == "context.admission_failed"
+        ]
+        if admission_failures:
+            report["context_admission_failures"] = admission_failures[-8:]
         if isinstance(exc.__cause__, httpx.HTTPStatusError):
             response = exc.__cause__.response
             report["provider_http_status"] = response.status_code

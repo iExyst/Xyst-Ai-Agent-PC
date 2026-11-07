@@ -357,6 +357,48 @@ async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
     }
 
 
+async def test_tool_diagnostic_records_exact_counter_failure(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "diagnostic-count-unavailable.sqlite3")
+    run = store.create_run(
+        objective="Return a short answer",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_total_tokens=1000,
+        pre_inference_token_reservations=True,
+    )
+
+    class UnavailableCounter(LMStudioProvider):
+        async def _count_prompt_owned(self, request):
+            raise PromptCountError(
+                "fixture failure",
+                worker_error_type="LMStudioWebsocketError",
+                worker_error_stage="model_inventory",
+                worker_error_code="websocket_timeout",
+            )
+
+        async def _chat(self, **kwargs):
+            raise AssertionError("Uncounted diagnostic inference must not be sent")
+
+    provider = UnavailableCounter(exact_context=False)
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+
+    events = store.list_events(run["id"])
+    assert store.get_run(run["id"])["state"] == "blocked"
+    failure = next(event for event in events if event["event_type"] == "context.admission_failed")
+    assert failure["payload"] == {
+        "reason": "prompt_count_unavailable",
+        "counter_error_type": "LMStudioWebsocketError",
+        "counter_error_stage": "model_inventory",
+        "counter_error_code": "websocket_timeout",
+    }
+    assert not any(event["event_type"] == "diagnostic.inference.completed" for event in events)
+
+
 async def test_run_blocks_on_prompt_count_mismatch_and_accounts_discarded_usage(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "count-mismatch.sqlite3")
     run = store.create_run(
