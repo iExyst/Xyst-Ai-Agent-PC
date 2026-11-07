@@ -190,6 +190,149 @@ async def test_model_can_correct_rejected_plan_without_uncertain_actions(
     ] == ["invalid", "corrected"]
 
 
+async def test_malformed_plan_tool_batch_cannot_persist_partial_graph(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "plan-batch.sqlite3")
+    target = workspace_tmp_path / "must-not-read.txt"
+    target.write_text("do not touch", encoding="utf-8")
+    run_id = store.create_run(
+        objective="Save a plan and do not read files.",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+        max_seconds=600,
+    )["id"]
+    valid = {
+        "tasks": [
+            {
+                "id": "inspect",
+                "objective": "Inspect the requested evidence.",
+                "dependencies": [],
+                "acceptance_criteria": ["Evidence recorded."],
+                "max_iterations": 1,
+                "max_seconds": 60,
+            }
+        ]
+    }
+
+    class BatchPlanner(LMStudioProvider):
+        calls = 0
+
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                assert TaskStore(store).records(run_id) == []
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "batch-plan-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "plan_save",
+                                            "arguments": json.dumps(valid),
+                                        },
+                                    },
+                                    {
+                                        "id": "batch-plan-2",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "plan_save",
+                                            "arguments": json.dumps(valid),
+                                        },
+                                    },
+                                    {
+                                        "id": "batch-read",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "workspace_read_file",
+                                            "arguments": json.dumps({"path": target.name}),
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    ]
+                }
+            if self.calls == 2:
+                assert TaskStore(store).records(run_id) == []
+                results = [
+                    json.loads(message["content"])
+                    for message in messages[-3:]
+                    if message["role"] == "tool"
+                ]
+                assert [message["tool_call_id"] for message in messages[-3:]] == [
+                    "batch-plan-1",
+                    "batch-plan-2",
+                    "batch-read",
+                ]
+                assert [result["code"] for result in results[:2]] == [
+                    "plan_save_must_be_unique_final_call",
+                    "plan_save_must_be_unique_final_call",
+                ]
+                assert all(
+                    "exactly one plan_save call, as the final tool call" in result["message"]
+                    for result in results[:2]
+                )
+                assert results[2]["error"]["code"] == "invalid_plan_tool_batch"
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "corrected-plan",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "plan_save",
+                                            "arguments": json.dumps(valid),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            assert messages[-1]["tool_call_id"] == "corrected-plan"
+            return {"choices": [{"message": {"role": "assistant", "content": "Plan saved."}}]}
+
+    provider = BatchPlanner()
+    try:
+        await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+
+    assert provider.calls == 3
+    assert store.get_run(run_id)["state"] == "verifying"
+    assert TaskStore(store).readiness(run_id) == (["inspect"], [])
+    assert target.read_text(encoding="utf-8") == "do not touch"
+    assert store.unresolved_tool_calls(run_id) == []
+    rejected_read_intent = next(
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "tool.intended"
+        and event["payload"].get("call_id") == "batch-read"
+    )
+    assert rejected_read_intent["payload"]["tool"] == "model.plan_batch_rejected"
+    assert not any(
+        event["event_type"] == "tool.completed" and event["payload"].get("call_id") == "batch-read"
+        for event in store.list_events(run_id)
+    )
+    assert [
+        message["tool_call_id"]
+        for message in store.conversation_messages(run_id)
+        if message["role"] == "tool"
+    ] == ["batch-plan-1", "batch-plan-2", "batch-read", "corrected-plan"]
+
+
 async def test_repeated_plan_rejections_stop_at_shared_budget(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "bounded.sqlite3")
     run_id = store.create_run(

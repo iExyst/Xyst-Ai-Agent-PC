@@ -8,7 +8,7 @@ import re
 import time
 from datetime import UTC, datetime
 from functools import partial
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -30,6 +30,7 @@ from xaa.runtime.executor import (
     ApplyPatchArguments,
     CreateFileArguments,
     ReadFileArguments,
+    ReconciliationRequired,
     ReplaceTextArguments,
     WriteFileArguments,
 )
@@ -401,6 +402,7 @@ class Coordinator:
                 raise ValueError("Procedure resource read requires reconciliation.")
             self.store.record_tool_result(run_id, token, call["id"], result)
             return result
+
         if name == "procedure_view":
             trial = self.store.procedure_trial(run_id)
             if trial is None:
@@ -616,6 +618,71 @@ class Coordinator:
             idempotency_key=f"{iteration}:{call['id']}",
             timeout=min(10, max(0, deadline - time.monotonic())),
         )
+
+    def _reject_plan_tool_batch(
+        self,
+        run_id: str,
+        token: str,
+        iteration: int,
+        calls: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Resolve every proposal without effects when plan_save is not a unique final call."""
+        results: list[dict[str, Any]] = []
+        message = (
+            "No tool from this assistant response was executed because plan_save must appear "
+            "once, as the final tool call. Correct the response and retry."
+        )
+        for call in calls:
+            function = call["function"]
+            call_id = call["id"]
+            name = function["name"]
+            if name == "plan_save":
+                try:
+                    parsed: Any = json.loads(function["arguments"])
+                except (TypeError, json.JSONDecodeError):
+                    parsed = {"invalid_arguments": True}
+                proposal: dict[str, Any] = (
+                    cast(dict[str, Any], parsed)
+                    if isinstance(parsed, dict)
+                    else {"invalid_proposal": parsed}
+                )
+                result = reject_model_plan(
+                    self.store,
+                    run_id,
+                    token,
+                    call_id,
+                    proposal,
+                    code="plan_save_must_be_unique_final_call",
+                )
+            else:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call_id,
+                    tool="model.plan_batch_rejected",
+                    version="1",
+                    arguments={"requested_tool": name, "reason": "invalid_plan_tool_batch"},
+                    idempotency_key=f"{iteration}:{call_id}",
+                ):
+                    raise ReconciliationRequired(
+                        "Rejected plan-batch call already journaled; inspect saved state."
+                    )
+                result = self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call_id,
+                    code="invalid_plan_tool_batch",
+                    message=message,
+                )
+            results.append(result)
+        return results
+
+    @staticmethod
+    def _has_malformed_plan_batch(calls: list[dict[str, Any]]) -> bool:
+        positions = [
+            index for index, call in enumerate(calls) if call["function"]["name"] == "plan_save"
+        ]
+        return bool(positions) and (len(positions) != 1 or positions[0] != len(calls) - 1)
 
     async def continue_plan(self, run_id: str, token: str) -> None:
         """Continue user-dispatched specialists under ownership reserved by the API."""
@@ -1277,6 +1344,18 @@ class Coordinator:
                     continue
                 if len(calls) > 8:
                     raise ValueError("Model exceeded the per-turn tool-call limit.")
+                if self._has_malformed_plan_batch(calls):
+                    self.store.check_token_budget(run_id, token, before_inference=False)
+                    results = self._reject_plan_tool_batch(run_id, token, iteration, calls)
+                    messages.extend(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "content": json.dumps(result),
+                        }
+                        for call, result in zip(calls, results, strict=True)
+                    )
+                    continue
                 for call in calls:
                     if not any(
                         tool["function"]["name"] == call["function"]["name"] for tool in tools

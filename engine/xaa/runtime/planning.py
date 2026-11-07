@@ -56,10 +56,19 @@ def reject_model_plan(
         raise ReconciliationRequired("Rejected proposal already journaled; inspect saved state.")
     run = store.get_run(run_id)
     assert run is not None
+    message = (
+        "No plan was saved. Correct schema, dependencies, permissions and budgets before proposing again. "
+        "Each attempt consumes the shared run budget."
+    )
+    if code == "plan_save_must_be_unique_final_call":
+        message = (
+            "No tool from this assistant response was executed and no plan was saved. Retry with "
+            "exactly one plan_save call, as the final tool call in the response."
+        )
     result: dict[str, Any] = {
         "status": "rejected",
         "code": code,
-        "message": "No plan was saved. Correct schema, dependencies, permissions and budgets before proposing again. Each attempt consumes the shared run budget.",
+        "message": message,
         "remaining_child_iterations": max(
             0, run["limits"]["max_iterations"] - store.inference_attempts(run_id) - 1
         ),
