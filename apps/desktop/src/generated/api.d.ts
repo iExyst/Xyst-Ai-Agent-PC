@@ -464,6 +464,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/memory/knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Sourced Knowledge */
+        post: operations["create_sourced_knowledge_memory_knowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/knowledge/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit Sourced Knowledge */
+        put: operations["edit_sourced_knowledge_memory_knowledge__memory_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/memory/{memory_id}": {
         parameters: {
             query?: never;
@@ -1880,6 +1914,8 @@ export interface components {
             schema_version: number;
             /** Scope */
             scope: string;
+            /** Source Uri */
+            source_uri?: string | null;
             /**
              * Updated At
              * Format: date-time
@@ -2625,6 +2661,13 @@ export interface components {
             skill_id: string;
             /** Version */
             version: number;
+        };
+        /** SourcedKnowledgeRequest */
+        SourcedKnowledgeRequest: {
+            /** Content */
+            content: string;
+            /** Source Uri */
+            source_uri: string;
         };
         /** SpecialistIdentityRequest */
         SpecialistIdentityRequest: {
@@ -3842,6 +3885,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryRecord"][];
+                };
+            };
+        };
+    };
+    create_sourced_knowledge_memory_knowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcedKnowledgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_sourced_knowledge_memory_knowledge__memory_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcedKnowledgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

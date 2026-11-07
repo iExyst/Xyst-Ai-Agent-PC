@@ -109,6 +109,7 @@ class MemoryRecord(BaseModel):
     created_at: datetime
     updated_at: datetime
     schema_version: int
+    source_uri: str | None = None
 
 
 class PlanTaskRecord(BaseModel):

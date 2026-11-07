@@ -27,6 +27,24 @@ class MemoryStore:
                 used += size
         return {"items": selected, "omitted": len(rows) - len(selected), "bytes": used}
 
+    def recall_sourced_knowledge(self, scope: str, *, max_bytes: int = 4096) -> dict[str, Any]:
+        if max_bytes < 1:
+            raise ValueError("Recall budget must be positive.")
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT id,content,source_uri FROM memories WHERE scope=? AND kind='knowledge' AND provenance='user_source' ORDER BY updated_at DESC,id",
+                (scope,),
+            ).fetchall()
+        selected: list[dict[str, str]] = []
+        used = 0
+        for row in rows:
+            item = {"id": row["id"], "content": row["content"], "source_uri": row["source_uri"]}
+            size = len(json.dumps(item, ensure_ascii=False).encode("utf-8")) + 2
+            if used + size <= max_bytes:
+                selected.append(item)
+                used += size
+        return {"items": selected, "omitted": len(rows) - len(selected), "bytes": used}
+
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
         with runs.connection() as connection:
@@ -64,8 +82,47 @@ class MemoryStore:
                     raise KeyError(identity)
             else:
                 connection.execute(
-                    "INSERT INTO memories VALUES (?, 'preference', ?, ?, 'user', 1.0, ?, ?, 1)",
+                    "INSERT INTO memories(id,kind,scope,content,provenance,confidence,created_at,updated_at,schema_version,source_uri) VALUES (?, 'preference', ?, ?, 'user', 1.0, ?, ?, 1, NULL)",
                     (identity, scope, content, now, now),
+                )
+            row = connection.execute(
+                "SELECT * FROM memories WHERE id=? AND scope=?", (identity, scope)
+            ).fetchone()
+        return dict(row)
+
+    def save_sourced_knowledge(
+        self,
+        scope: str,
+        content: str,
+        source_uri: str,
+        *,
+        memory_id: str | None = None,
+    ) -> dict[str, Any]:
+        if (
+            not scope
+            or not content.strip()
+            or len(content.encode("utf-8")) > 16384
+            or not source_uri.strip()
+            or len(source_uri.encode("utf-8")) > 2048
+        ):
+            raise ValueError(
+                "Sourced knowledge requires a scope, 1–16384 bytes of content, and a 1–2048 byte source reference."
+            )
+        identity = memory_id or str(uuid4())
+        now = utc_now()
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if memory_id:
+                changed = connection.execute(
+                    "UPDATE memories SET content=?, source_uri=?, updated_at=? WHERE id=? AND scope=? AND kind='knowledge' AND provenance='user_source'",
+                    (content, source_uri.strip(), now, identity, scope),
+                ).rowcount
+                if not changed:
+                    raise KeyError(identity)
+            else:
+                connection.execute(
+                    "INSERT INTO memories(id,kind,scope,content,provenance,confidence,created_at,updated_at,schema_version,source_uri) VALUES (?, 'knowledge', ?, ?, 'user_source', 1.0, ?, ?, 1, ?)",
+                    (identity, scope, content, now, now, source_uri.strip()),
                 )
             row = connection.execute(
                 "SELECT * FROM memories WHERE id=? AND scope=?", (identity, scope)

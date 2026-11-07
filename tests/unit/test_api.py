@@ -273,6 +273,46 @@ def test_memory_controls_are_authenticated_and_remove_search_results(workspace_t
         assert client.get("/memory?q=TypeScript", headers=headers).json() == []
 
 
+def test_sourced_knowledge_api_is_authenticated_editable_and_exported(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "sourced-memory-api.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        assert (
+            client.post(
+                "/memory/knowledge", json={"content": "WAL", "source_uri": "manual"}
+            ).status_code
+            == 401
+        )
+        response = client.post(
+            "/memory/knowledge",
+            headers=headers,
+            json={
+                "content": "WAL permits concurrent readers",
+                "source_uri": "https://sqlite.org/wal.html",
+            },
+        )
+        assert response.status_code == 201
+        item = response.json()
+        assert item["kind"] == "knowledge"
+        assert item["provenance"] == "user_source"
+        assert item["source_uri"] == "https://sqlite.org/wal.html"
+        assert client.get("/memory?q=concurrent", headers=headers).json()[0]["id"] == item["id"]
+        updated = client.put(
+            f"/memory/knowledge/{item['id']}",
+            headers=headers,
+            json={
+                "content": "WAL allows concurrent readers",
+                "source_uri": "SQLite WAL documentation",
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["source_uri"] == "SQLite WAL documentation"
+        exported = client.get("/memory/export", headers=headers).json()
+        assert len(exported) == 1 and exported[0]["source_uri"] == "SQLite WAL documentation"
+        assert client.delete(f"/memory/{item['id']}", headers=headers).status_code == 204
+        assert client.get("/memory?q=concurrent", headers=headers).json() == []
+
+
 def test_artifact_download_requires_auth_and_rejects_tampering(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "artifacts.sqlite3")
     run_id = store.create_run(

@@ -16,6 +16,10 @@ const logDirectory = path.join(localAppData, 'dev.xyst.xaa', 'logs');
 const unique = `native-memory-${randomUUID()}`;
 const initialPreference = `Saved preference ${unique}: use concise explanations.`;
 const updatedPreference = `Saved preference ${unique}: show one concrete example.`;
+const initialKnowledge = `Sourced knowledge ${unique}: SQLite has a write-ahead log.`;
+const updatedKnowledge = `Sourced knowledge ${unique}: readers can coexist with a WAL writer.`;
+const initialSource = `https://example.test/${unique}`;
+const updatedSource = `https://sqlite.org/wal.html#${unique}`;
 let desktop;
 let browser;
 let connection;
@@ -49,16 +53,19 @@ function cleanTestLaunchCredentials() {
 }
 
 try {
-  const debugServer = await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') return reject(new Error('No debug port was allocated.'));
-      const port = address.port;
-      server.close(error => error ? reject(error) : resolve(port));
+  const configuredDebugPort = Number(process.env.XAA_NATIVE_DEBUG_PORT);
+  const debugServer = Number.isInteger(configuredDebugPort) && configuredDebugPort > 0 && configuredDebugPort < 65536
+    ? configuredDebugPort
+    : await new Promise((resolve, reject) => {
+      const server = createServer();
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (!address || typeof address === 'string') return reject(new Error('No debug port was allocated.'));
+        const port = address.port;
+        server.close(error => error ? reject(error) : resolve(port));
+      });
     });
-  });
   const webviewProfile = path.join(root, 'webview-profile');
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())));
   env.PATH = path.join(process.env.SystemRoot, 'System32');
@@ -125,22 +132,55 @@ try {
   stored = await (await fetch(`${connection.base_url}/memory?q=${encodeURIComponent(unique)}`, { headers })).json();
   if (stored.length !== 1 || stored[0].id !== preferenceId || stored[0].content !== updatedPreference) throw new Error('Native UI edit did not preserve the preference identity and updated content.');
 
-  await preferenceRow.getByRole('button', { name: 'Delete preference', exact: true }).click();
+  await preferenceRow.getByRole('button', { name: 'Delete memory', exact: true }).click();
   await expect(page.locator('li').filter({ hasText: unique })).toHaveCount(0);
   const searchAfterDelete = await (await fetch(`${connection.base_url}/memory?q=${encodeURIComponent(unique)}`, { headers })).json();
   const exportAfterDelete = await (await fetch(`${connection.base_url}/memory/export`, { headers })).json();
   if (searchAfterDelete.length !== 0 || exportAfterDelete.some(item => item.id === preferenceId)) {
     throw new Error('Deleted native preference remained in memory search or export.');
   }
+  await page.locator('#memory-knowledge').fill(initialKnowledge);
+  await page.locator('#memory-source').fill(initialSource);
+  await page.getByRole('button', { name: 'Save sourced knowledge', exact: true }).click();
+  let knowledgeRow = page.locator('li').filter({ hasText: unique });
+  await expect(knowledgeRow).toContainText(initialKnowledge);
+  await expect(knowledgeRow).toContainText(initialSource);
+  let storedKnowledge = await (await fetch(`${connection.base_url}/memory?q=${encodeURIComponent(unique)}`, { headers })).json();
+  if (storedKnowledge.length !== 1 || storedKnowledge[0].kind !== 'knowledge' || storedKnowledge[0].source_uri !== initialSource) {
+    throw new Error('Native sourced-knowledge save did not preserve its source reference in the authenticated API.');
+  }
+  const knowledgeId = storedKnowledge[0].id;
+  await knowledgeRow.getByRole('button', { name: 'Edit sourced knowledge', exact: true }).click();
+  await page.locator('#memory-knowledge').fill(updatedKnowledge);
+  await page.locator('#memory-source').fill(updatedSource);
+  await page.getByRole('button', { name: 'Update sourced knowledge', exact: true }).click();
+  knowledgeRow = page.locator('li').filter({ hasText: unique });
+  await expect(knowledgeRow).toContainText(updatedKnowledge);
+  await expect(knowledgeRow).toContainText(updatedSource);
+  storedKnowledge = await (await fetch(`${connection.base_url}/memory?q=${encodeURIComponent(unique)}`, { headers })).json();
+  if (storedKnowledge.length !== 1 || storedKnowledge[0].id !== knowledgeId || storedKnowledge[0].source_uri !== updatedSource) {
+    throw new Error('Native sourced-knowledge edit did not preserve identity and update source metadata.');
+  }
+  await knowledgeRow.getByRole('button', { name: 'Delete memory', exact: true }).click();
+  await expect(page.locator('li').filter({ hasText: unique })).toHaveCount(0);
+  const knowledgeSearchAfterDelete = await (await fetch(`${connection.base_url}/memory?q=${encodeURIComponent(unique)}`, { headers })).json();
+  const knowledgeExportAfterDelete = await (await fetch(`${connection.base_url}/memory/export`, { headers })).json();
+  if (knowledgeSearchAfterDelete.length !== 0 || knowledgeExportAfterDelete.some(item => item.id === knowledgeId)) {
+    throw new Error('Deleted sourced knowledge remained in memory search or export.');
+  }
   report = {
     passed: true,
-    scenario: 'native Tauri preference panel create, edit, search, delete and retrieval-index verification',
+    scenario: 'native Tauri preference and sourced-knowledge save, edit, search, delete and retrieval-index verification',
     preference_id: preferenceId,
     initial_preference_saved: true,
     edit_preserved_identity: true,
     post_edit_search_verified: true,
     deleted_preference_absent_from_search: true,
     deleted_preference_absent_from_export: true,
+    sourced_knowledge_id: knowledgeId,
+    sourced_knowledge_create_edit_search_delete_verified: true,
+    source_reference_edit_preserved_record_identity: true,
+    deleted_knowledge_absent_from_search_and_export: true,
     model_inference_requested: false,
   };
   await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));

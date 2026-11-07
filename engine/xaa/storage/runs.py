@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 18
+DATABASE_SCHEMA_VERSION = 19
 
 
 @dataclass(frozen=True)
@@ -318,7 +318,8 @@ class RunStore:
                     confidence REAL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    schema_version INTEGER NOT NULL DEFAULT 1
+                    schema_version INTEGER NOT NULL DEFAULT 1,
+                    source_uri TEXT
                 );
                 CREATE TABLE IF NOT EXISTS skills (
                     id TEXT PRIMARY KEY,
@@ -605,6 +606,11 @@ class RunStore:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN endpoint TEXT")
             if connection.execute("PRAGMA user_version").fetchone()[0] < 3:
                 install_index(connection)
+            memory_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(memories)")
+            }
+            if "source_uri" not in memory_columns:
+                connection.execute("ALTER TABLE memories ADD COLUMN source_uri TEXT")
             connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")
 
     @contextmanager

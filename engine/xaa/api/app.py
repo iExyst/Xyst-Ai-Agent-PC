@@ -163,6 +163,12 @@ class PreferenceRequest(BaseModel):
     content: str = Field(min_length=1, max_length=16384)
 
 
+class SourcedKnowledgeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=16384)
+    source_uri: str = Field(min_length=1, max_length=2048)
+
+
 class CLIChatTurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     run_id: str = Field(min_length=1, max_length=64)
@@ -825,6 +831,32 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             return memory_store.save_preference("local-user", payload.content)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/memory/knowledge", response_model=MemoryRecord, status_code=201)
+    def create_sourced_knowledge(
+        payload: SourcedKnowledgeRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            return memory_store.save_sourced_knowledge(
+                "local-user", payload.content, payload.source_uri
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.put("/memory/knowledge/{memory_id}", response_model=MemoryRecord)
+    def edit_sourced_knowledge(
+        memory_id: str,
+        payload: SourcedKnowledgeRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return memory_store.save_sourced_knowledge(
+                "local-user", payload.content, payload.source_uri, memory_id=memory_id
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Sourced knowledge not found.") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

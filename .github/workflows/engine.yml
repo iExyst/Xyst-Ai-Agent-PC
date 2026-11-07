@@ -116,7 +116,7 @@ jobs:
             Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
           }
         timeout-minutes: 5
-      - name: Verify saved-preference controls in native Tauri desktop
+      - name: Verify preference and sourced-knowledge controls in native Tauri desktop
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

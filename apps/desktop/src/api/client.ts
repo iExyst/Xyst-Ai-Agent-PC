@@ -265,6 +265,11 @@ export class EngineClient {
 
   memories(query = ''): Promise<Memory[]> { return this.#request(`/memory?q=${encodeURIComponent(query)}`); }
   savePreference(content: string, id?: string): Promise<Memory> { return this.#request(id ? `/memory/${encodeURIComponent(id)}` : '/memory', { method: 'POST', body: JSON.stringify({content}) }); }
+  saveSourcedKnowledge(content: string, source_uri: string, id?: string): Promise<Memory> {
+    return this.#request(id ? `/memory/knowledge/${encodeURIComponent(id)}` : '/memory/knowledge', {
+      method: id ? 'PUT' : 'POST', body: JSON.stringify({content, source_uri}),
+    });
+  }
   deleteMemory(id: string): Promise<void> { return this.#request(`/memory/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
   exportMemory(): Promise<Memory[]> { return this.#request('/memory/export'); }
 

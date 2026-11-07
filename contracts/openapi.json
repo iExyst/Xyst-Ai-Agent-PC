@@ -1520,6 +1520,17 @@
             "title": "Scope",
             "type": "string"
           },
+          "source_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Uri"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -3698,6 +3709,29 @@
         "title": "SkillVersion",
         "type": "object"
       },
+      "SourcedKnowledgeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "source_uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Source Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "source_uri"
+        ],
+        "title": "SourcedKnowledgeRequest",
+        "type": "object"
+      },
       "SpecialistIdentityRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5846,6 +5880,103 @@
           }
         ],
         "summary": "Export Memory"
+      }
+    },
+    "/memory/knowledge": {
+      "post": {
+        "operationId": "create_sourced_knowledge_memory_knowledge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcedKnowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Sourced Knowledge"
+      }
+    },
+    "/memory/knowledge/{memory_id}": {
+      "put": {
+        "operationId": "edit_sourced_knowledge_memory_knowledge__memory_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcedKnowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Edit Sourced Knowledge"
       }
     },
     "/memory/{memory_id}": {
