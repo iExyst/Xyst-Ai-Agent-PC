@@ -77,6 +77,11 @@ jobs:
             apps/desktop/src-tauri/target
           key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - run: npm run build:installer
+      - name: Verify frozen specialist recovery after API process death
+        run: uv run python scripts/frozen_specialist_restart_diagnostic.py
+        env:
+          XAA_FROZEN_API_EXECUTABLE: build/native-release/xaa-engine.exe
+        timeout-minutes: 3
       - name: Verify frozen ACP entry point and packaged version metadata
         run: uv run python scripts/frozen_acp_diagnostic.py --engine apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe
         timeout-minutes: 2
