@@ -86,6 +86,9 @@ jobs:
             apps/desktop/src-tauri/target
           key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - run: npm run build:installer
+      - name: Verify recovery after native Tauri desktop process death
+        run: node scripts/native_restart_smoke.mjs build/native-release/xaa-desktop.exe
+        timeout-minutes: 5
       - name: Verify frozen specialist recovery after API process death
         run: uv run python scripts/frozen_specialist_restart_diagnostic.py
         env:
