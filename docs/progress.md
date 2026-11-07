@@ -2,6 +2,10 @@
 
 Updated 2026-11-07.
 
+## Windows installer includes third-party notices (2026-11-07)
+
+The release NSIS bundle now installs `THIRD_PARTY_NOTICES.md` and `dependency-inventory.md` beside the application binaries. The staged installer manifest records each document's byte length and SHA-256; hosted installer acceptance checks both installed files against those hashes. A local Windows build completed successfully (66.02 MiB); a disposable local install verified both exact hashes and a successful uninstall with binaries removed. One initial path assumption in the local check was corrected: Tauri installs explicitly mapped resources at the install root. The host-only end-to-end install check has not run because the existing full acceptance script is restricted to GitHub Actions. This packages the provisional notice text; it does not settle the X.A.A. application license, complete the legal review, or close Phase 10. Overall completion remains approximately 16%.
+
 ## Current local-model evaluation and benchmark safety (2026-11-07)
 
 Refreshed the three-model real LM Studio benchmark at 16,384 requested context after runtime diagnostic/accounting changes. The 12 trials completed with 0.5B 1/4, 0.6B 0/4 and 9B 1/4; all 19 parseable proposals were schema-valid, yet only two runs reached the required exact result. The run was not an idle-hardware comparison: multiple model instances were already resident and host GPU memory sampled around 15.4 GiB / 16.3 GiB, with GPU use shared across instances. A separate post-fix 9B sample reused an existing 16,384-context instance, and both tasks failed (provider error, timeout). Evidence and limitations are in `docs/evaluations/local-model-baseline.md`, `.acceptance/a5144fab-5e9d-4f65-ab40-e87aae067e24/` and `.acceptance/ad33a895-0772-448a-b994-d431395a95e3/`. No production default was selected.

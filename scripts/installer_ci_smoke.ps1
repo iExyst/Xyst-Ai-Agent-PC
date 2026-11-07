@@ -65,6 +65,13 @@ try {
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
     if ((Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.desktop.sha256 -or (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.engine.sha256) { throw 'Installed binary checksums do not match the manifest.' }
     $xaaReport.installed_binary_hashes_match = $true
+    foreach ($xaaNoticeName in @('THIRD_PARTY_NOTICES.md', 'dependency-inventory.md')) {
+        $xaaNotice = Join-Path $xaaInstallDir $xaaNoticeName
+        $xaaNoticeMetadata = $xaaManifest.notices.$xaaNoticeName
+        if (-not $xaaNoticeMetadata -or -not (Test-Path -LiteralPath $xaaNotice)) { throw "Installed release notice missing: $xaaNoticeName" }
+        if ((Get-FileHash -LiteralPath $xaaNotice -Algorithm SHA256).Hash -ne $xaaNoticeMetadata.sha256) { throw "Installed release notice checksum mismatch: $xaaNoticeName" }
+    }
+    $xaaReport.installed_release_notices_verified = $true
     $xaaReport.upgrade_verified = [bool]$xaaPriorInstaller
     $xaaAcpHelp = & $xaaEngine --cli acp --help 2>&1
     if ($LASTEXITCODE -ne 0 -or -not (($xaaAcpHelp | Out-String) -match 'usage: xaa acp')) { throw 'Installed ACP CLI entry point failed.' }
@@ -116,7 +123,7 @@ try {
         $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
     }
     $xaaReport.user_data_preserved = (Test-Path -LiteralPath $xaaMarker) -and (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash -eq $xaaMarkerHash
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified))
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     Remove-Item Env:XAA_NATIVE_ACCEPTANCE_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue

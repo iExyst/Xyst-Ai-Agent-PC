@@ -55,6 +55,16 @@ def main() -> None:
         "desktop": Path("apps/desktop/src-tauri/target/release/xaa-desktop.exe"),
         "engine": Path("apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe"),
     }
+    notices = {
+        name: Path(source)
+        for name, source in {
+            "THIRD_PARTY_NOTICES.md": "docs/releases/THIRD_PARTY_NOTICES.md",
+            "dependency-inventory.md": "docs/releases/dependency-inventory.md",
+        }.items()
+    }
+    for path in notices.values():
+        if not path.is_file() or path.stat().st_size == 0:
+            raise RuntimeError(f"Required release notice is missing or empty: {path}")
     manifest = {
         "version": version,
         "target": "x86_64-pc-windows-msvc",
@@ -67,6 +77,14 @@ def main() -> None:
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
             for name, path in binaries.items()
+        },
+        "notices": {
+            name: {
+                "filename": path.name,
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for name, path in notices.items()
         },
     }
     native = Path("build/native-release")

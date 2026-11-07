@@ -1,6 +1,10 @@
 {
   "bundle": {
     "active": true,
+    "resources": {
+      "../../../docs/releases/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../../../docs/releases/dependency-inventory.md": "dependency-inventory.md"
+    },
     "targets": [
       "nsis"
     ],
