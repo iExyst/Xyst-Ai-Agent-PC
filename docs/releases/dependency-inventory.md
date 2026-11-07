@@ -4,7 +4,7 @@ Snapshot date: 2026-11-07. This is an inventory of the current lockfiles and bui
 
 ## Scope and collection
 
-- Python: `uv.lock`; 69 installed distribution records from `uv run --with pip-licenses pip-licenses --format=json --with-urls` (pip-licenses 5.5.5).
+- Python: `uv.lock`; 69 installed distribution records from `uv run --with pip-licenses pip-licenses --format=json --with-urls` (pip-licenses 5.5.5). This environment scan omits some lockfile entries that are not installed on this host and includes the three `jaraco.*` records using their original dotted names; the lockfile itself contains those names normalized with hyphens. The package table is a metadata inventory merged from lock metadata and installed records, not a host-complete installed-file/license-text audit.
 - JavaScript: `package-lock.json`; 6 runtime dependency records and 61 total records from `npx license-checker@25.0.1 --production --json` and `npx license-checker@25.0.1 --json`.
 - Rust: `apps/desktop/src-tauri/Cargo.lock`; 411 package records from `cargo metadata --format-version 1 --locked` (Cargo 1.99.1). Target-specific and build dependencies are included.
 - Combined table: 540 unique ecosystem/name/version/license/source rows. Raw command outputs are retained at `.acceptance/dependency-inventory-971fa5b/`.
@@ -14,9 +14,9 @@ License expressions below are copied from package metadata without normalization
 ## Release review findings
 
 - The repository has no root `LICENSE` or `NOTICE`; `pyproject.toml` and `Cargo.toml` also omit a license for X.A.A. The Python and Rust project records therefore have unknown license metadata. The private npm workspace is marked `UNLICENSED`. The owner must choose and record the application license before distribution; this inventory does not make that choice.
-- `agent-client-protocol==0.9.0` has unknown PyPI license metadata. Its [upstream Python SDK repository](https://github.com/agentclientprotocol/python-sdk) identifies Apache-2.0; confirm the exact pinned source carries that license in the release notice review.
+- `agent-client-protocol==0.9.0` has unknown PyPI license metadata. The installed pinned distribution's `.dist-info/licenses/LICENSE` was inspected and contains the Apache License 2.0 text; its [upstream Python SDK repository](https://github.com/agentclientprotocol/python-sdk) also identifies Apache-2.0.
 - `pyinstaller==6.22.3` reports GPLv2 metadata, and `pyinstaller-hooks-contrib==2026.9` reports Apache/GPLv2 metadata. Review and preserve their packaging exception and copyright/license texts before release.
-- The inventory does not bundle full third-party license texts or copyright notices. A packaged `THIRD_PARTY_NOTICES` artifact and clean installer verification remain required.
+- A provisional full-text notice draft is now in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). It groups 248 byte-identical license-text groups from Python development packages, npm runtime packages, and Windows-target Cargo sources. Six Windows-target crates have license metadata but no matching text file in their downloaded source; the root application license is undecided. The draft is deliberately not wired into the installer and is not release-complete.
 - `npm audit --json` reported zero vulnerabilities across the current lockfile on 2026-11-07; raw output is `.acceptance/dependency-inventory-971fa5b/npm-audit.json`. The locked `openapi-typescript` → `@redocly/openapi-core` → `minimatch` versions from the 2026-11-03 report are still present, so this closes the current scanner finding without claiming that the dependency chain changed. Re-audit after lockfile updates.
 
 ## Package records
