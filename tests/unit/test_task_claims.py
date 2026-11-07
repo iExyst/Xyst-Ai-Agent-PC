@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from xaa.runtime.task_graph import TaskDefinition
@@ -70,7 +71,11 @@ def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_
     )["id"]
     parent = runs.acquire_lease(run_id, "parent")
     tasks = TaskStore(runs)
-    tasks.save_plan(run_id, parent, [TaskDefinition(id="read", objective="Read evidence")])
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="read", objective="Read evidence", max_seconds=120)],
+    )
     claim = tasks.claim_ready(run_id, parent)
     with runs.connection() as connection:
         runs.record_event(
@@ -126,6 +131,10 @@ def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_
                 "result": {"text": "actual", "sha256": "abc"},
             },
         )
+        connection.execute(
+            "UPDATE run_events SET created_at=? WHERE run_id=? AND event_type='task.claimed'",
+            ((datetime.now(UTC) - timedelta(seconds=10)).isoformat(), run_id),
+        )
         connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
     assert tasks.recover_expired(run_id, parent) == ["read"]
     summary = tasks.recovery_summary(run_id, "read")
@@ -138,6 +147,7 @@ def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_
     assert recovered is not None
     assert recovered["task"]["status"] == "running"
     assert recovered["task"]["local_id"] == "read"
+    assert 100 < recovered["task"]["budgets"]["max_seconds"] <= 110
     assert recovered["token"] != claim["token"]
 
 

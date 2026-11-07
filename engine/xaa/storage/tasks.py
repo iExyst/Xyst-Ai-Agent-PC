@@ -18,6 +18,29 @@ class TaskStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
 
+    @staticmethod
+    def _task_elapsed_seconds(events: list[dict[str, Any]]) -> float:
+        elapsed = 0.0
+        started_at: datetime | None = None
+        for event in events:
+            if event["payload"].get("task_id") is None:
+                continue
+            if event["event_type"] == "task.claimed" and started_at is None:
+                started_at = datetime.fromisoformat(event["created_at"])
+            elif started_at is not None and event["event_type"] in {
+                "task.blocked",
+                "task.result",
+                "task.recovery_decided",
+            }:
+                elapsed += max(
+                    0.0,
+                    (datetime.fromisoformat(event["created_at"]) - started_at).total_seconds(),
+                )
+                started_at = None
+        if started_at is not None:
+            elapsed += max(0.0, (datetime.now(UTC) - started_at).total_seconds())
+        return elapsed
+
     def record_read_worker_event(
         self,
         run_id: str,
@@ -235,6 +258,16 @@ class TaskStore:
             }
             local_id = next((identity for identity in ready if identity in recovered_ids), ready[0])
             record = next(row for row in records if row["local_id"] == local_id)
+            if local_id in recovered_ids:
+                task_events = [
+                    event
+                    for event in self.runs.list_events(run_id)
+                    if event["payload"].get("task_id") == local_id
+                ]
+                task_elapsed = self._task_elapsed_seconds(task_events)
+                record["budgets"]["max_seconds"] = max(
+                    0.0, record["budgets"]["max_seconds"] - task_elapsed
+                )
             identity = record["id"]
             token = str(uuid4())
             expires = (datetime.now(UTC) + timedelta(seconds=30)).isoformat()
@@ -550,9 +583,13 @@ class TaskStore:
         task_usage_unknown = task_attempts > len(task_answers) or any(
             event["payload"].get("usage") is None for event in task_answers
         )
-        task_budget_available = task_attempts < task["budgets"]["max_iterations"] and (
-            task_token_limit is None
-            or (not task_usage_unknown and task_reported_tokens < task_token_limit)
+        task_budget_available = (
+            task_attempts < task["budgets"]["max_iterations"]
+            and (
+                task_token_limit is None
+                or (not task_usage_unknown and task_reported_tokens < task_token_limit)
+            )
+            and self._task_elapsed_seconds(events) < task["budgets"]["max_seconds"]
         )
         run = self.runs.get_run(run_id)
         assert run is not None
