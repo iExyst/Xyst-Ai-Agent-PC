@@ -133,7 +133,10 @@ async function availablePort() {
 }
 
 async function startDesktop(label) {
-  const debugPort = await availablePort();
+  const configuredDebugPort = Number(process.env.XAA_NATIVE_DEBUG_PORT);
+  const debugPort = Number.isInteger(configuredDebugPort) && configuredDebugPort > 0 && configuredDebugPort < 65536
+    ? configuredDebugPort
+    : await availablePort();
   const proc = spawn(desktopExecutable, [], {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -159,11 +162,11 @@ async function startDesktop(label) {
         break;
       } catch (error) {
         lastError = String(error);
-        if (proc.exitCode !== null) throw new Error(`${label} desktop exited during startup: ${lastError}`);
+        if (proc.exitCode !== null) throw new Error(`${label} desktop exited during startup: ${lastError}; stdout=${stdout}; stderr=${stderr}`);
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
-    if (!browser) throw new Error(`${label} desktop WebView did not become available: ${lastError}`);
+    if (!browser) throw new Error(`${label} desktop WebView did not become available: ${lastError}; stdout=${stdout}; stderr=${stderr}`);
     const page = browser.contexts().flatMap(context => context.pages())[0];
     if (!page) throw new Error(`${label} desktop did not expose a WebView page`);
     await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
