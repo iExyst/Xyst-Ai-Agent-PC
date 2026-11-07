@@ -654,6 +654,50 @@ async def test_discovery_uses_smallest_context_for_ambiguous_base_alias():
         await provider.close()
 
 
+@pytest.mark.parametrize("loaded_first", [False, True])
+async def test_discovery_merges_duplicate_native_catalog_rows(loaded_first):
+    import httpx
+
+    unloaded = {
+        "key": "fixture",
+        "max_context_length": 32768,
+        "size_bytes": 100,
+        "capabilities": {"vision": True, "trained_for_tool_use": True},
+        "loaded_instances": [],
+    }
+    loaded = {
+        "key": "fixture",
+        "max_context_length": 65536,
+        "size_bytes": 90,
+        "capabilities": {"vision": True, "trained_for_tool_use": True},
+        "loaded_instances": [{"id": "fixture:loaded", "config": {"context_length": 16384}}],
+    }
+    entries = [loaded, unloaded] if loaded_first else [unloaded, loaded]
+
+    def handle(request):
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "fixture"}]})
+        return httpx.Response(200, json={"models": entries})
+
+    provider = LMStudioProvider()
+    await provider._client.aclose()
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url, transport=httpx.MockTransport(handle)
+    )
+    try:
+        models = await provider.models()
+        model = next(item for item in models if item.id == "fixture")
+        assert model.loaded is True
+        assert model.context_length == 32768
+        assert model.size_bytes == 100
+        assert model.capabilities.vision is True
+        assert model.capabilities.trained_for_tool_use is True
+        assert provider.context_limit_for("fixture") == 16384
+        assert provider.context_limit_for("fixture:loaded") == 16384
+    finally:
+        await provider.close()
+
+
 async def test_streamed_default_cap_is_verified_after_assembly():
     import json
 

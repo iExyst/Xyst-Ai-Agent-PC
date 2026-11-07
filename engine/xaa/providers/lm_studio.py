@@ -285,7 +285,71 @@ class LMStudioProvider:
             try:
                 native = await self._client.get("/api/v1/models")
                 native.raise_for_status()
-                metadata = {item["key"]: item for item in native.json().get("models", [])}
+                metadata: dict[str, dict[str, Any]] = {}
+                native_payload: object = native.json()
+                raw_native_models: object = (
+                    cast(dict[str, Any], native_payload).get("models", [])
+                    if isinstance(native_payload, dict)
+                    else []
+                )
+                if not isinstance(raw_native_models, list):
+                    raw_native_models = []
+                for raw_item in cast(list[object], raw_native_models):
+                    if not isinstance(raw_item, dict):
+                        continue
+                    item = cast(dict[str, Any], raw_item)
+                    key_value = item.get("key")
+                    if not isinstance(key_value, str):
+                        continue
+                    key = key_value
+                    current = metadata.get(key)
+                    if current is None:
+                        metadata[key] = item.copy()
+                        continue
+
+                    # LM Studio can return duplicate catalog rows for one model key
+                    # (for example, a local and hosted catalog entry). Preserve every
+                    # loaded instance instead of letting the last, often unloaded, row
+                    # erase the active instance and its context limit.
+                    loaded_instances: list[object] = []
+                    for source in (current, item):
+                        raw_instances = source.get("loaded_instances")
+                        if isinstance(raw_instances, list):
+                            loaded_instances.extend(cast(list[object], raw_instances))
+                    current["loaded_instances"] = loaded_instances
+
+                    context_lengths: list[int] = []
+                    sizes: list[int] = []
+                    for source in (current, item):
+                        context = source.get("max_context_length")
+                        size = source.get("size_bytes")
+                        if type(context) is int and context > 0:
+                            context_lengths.append(context)
+                        if type(size) is int and size >= 0:
+                            sizes.append(size)
+                    if context_lengths:
+                        current["max_context_length"] = min(context_lengths)
+                    if sizes:
+                        current["size_bytes"] = max(sizes)
+                    current_caps_raw = current.get("capabilities")
+                    item_caps_raw = item.get("capabilities")
+                    current_caps = (
+                        cast(dict[str, object], current_caps_raw)
+                        if isinstance(current_caps_raw, dict)
+                        else {}
+                    )
+                    item_caps = (
+                        cast(dict[str, object], item_caps_raw)
+                        if isinstance(item_caps_raw, dict)
+                        else {}
+                    )
+                    current["capabilities"] = {
+                        capability_name: bool(
+                            current_caps.get(capability_name) is True
+                            and item_caps.get(capability_name) is True
+                        )
+                        for capability_name in ("vision", "trained_for_tool_use")
+                    }
                 instance_limits: dict[str, int] = {}
                 model_limits: dict[str, int] = {}
                 for model in result:
