@@ -21,6 +21,8 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.storage.runs import RunStore
 
 CRASH_WRITE_CONTENT = "after-api-crash:" + "x" * (65_536 - len("after-api-crash:"))
+RESULT_CRASH_CONTENT = "after-api-result-crash:" + "y" * (65_536 - len("after-api-result-crash:"))
+RESULT_CRASH_BEFORE = b"before-api-result-crash"
 CRASH_DIRECTORY_PARTS = tuple(f"dir{index:02d}" for index in range(24))
 CRASH_CREATE_PATH = "/".join((*CRASH_DIRECTORY_PARTS, "created.txt"))
 
@@ -111,10 +113,14 @@ class RestartDiagnosticProvider(LMStudioProvider):
             ),
             encoding="utf-8",
         )
-        if self.scenario in {"write", "write_crash"} and self.phase == "effect" and self.calls == 1:
+        if (
+            self.scenario in {"write", "write_crash", "write_result_crash"}
+            and self.phase == "effect"
+            and self.calls == 1
+        ):
             before = (
                 (self.root / "workspace" / "fixture.txt").read_bytes()
-                if self.scenario == "write"
+                if self.scenario in {"write", "write_result_crash"}
                 else b""
             )
             tool_name = (
@@ -127,7 +133,11 @@ class RestartDiagnosticProvider(LMStudioProvider):
                 if self.scenario == "write_crash"
                 else {
                     "path": "fixture.txt",
-                    "content": "after-api-restart",
+                    "content": (
+                        RESULT_CRASH_CONTENT
+                        if self.scenario == "write_result_crash"
+                        else "after-api-restart"
+                    ),
                     "expected_sha256": hashlib.sha256(before).hexdigest(),
                 }
             )
@@ -154,7 +164,8 @@ class RestartDiagnosticProvider(LMStudioProvider):
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
         if (self.phase == "crash" and self.scenario == "inference") or (
-            self.phase == "effect" and self.scenario in {"write", "write_crash"}
+            self.phase == "effect"
+            and self.scenario in {"write", "write_crash", "write_result_crash"}
         ):
             # In write mode, the first response's real filesystem effect and tool result
             # are already durable before the API is killed on the next inference.
@@ -278,19 +289,22 @@ def main() -> None:
         return
 
     scenario = os.environ.get("XAA_API_RESTART_SCENARIO", "inference")
-    if scenario not in {"inference", "write", "write_crash"}:
-        raise ValueError("XAA_API_RESTART_SCENARIO must be inference, write, or write_crash.")
-    if scenario == "write_crash" and os.name != "nt":
-        raise ValueError("The write_crash scenario requires Windows process-tree semantics.")
+    if scenario not in {"inference", "write", "write_crash", "write_result_crash"}:
+        raise ValueError(
+            "XAA_API_RESTART_SCENARIO must be inference, write, write_crash, or write_result_crash."
+        )
+    if scenario in {"write_crash", "write_result_crash"} and os.name != "nt":
+        raise ValueError("The write crash scenarios require Windows process-tree semantics.")
     root = (Path(".acceptance") / f"api-restart-{uuid4()}").resolve()
     root.mkdir(parents=True)
     token = secrets.token_urlsafe(48)
     objective = f"Restart fixture {uuid4()}"
     workspace = root / "workspace"
-    if scenario in {"write", "write_crash"}:
+    if scenario in {"write", "write_crash", "write_result_crash"}:
         workspace.mkdir()
-    if scenario == "write":
-        (workspace / "fixture.txt").write_bytes(b"before-api-restart")
+    if scenario in {"write", "write_result_crash"}:
+        initial = RESULT_CRASH_BEFORE if scenario == "write_result_crash" else b"before-api-restart"
+        (workspace / "fixture.txt").write_bytes(initial)
     elif scenario == "write_crash":
         workspace.joinpath(*CRASH_DIRECTORY_PARTS).mkdir(parents=True)
     (root / "api-token.txt").write_text(token, encoding="utf-8")
@@ -359,7 +373,59 @@ def main() -> None:
                     ):
                         target_mtime_after_write = target.stat().st_mtime_ns
                         break
-                elif "tool.intended" in event_types:
+                elif scenario == "write_result_crash" and "tool.executing" in event_types:
+                    if lock_connection is None:
+                        lock_connection = sqlite3.connect(
+                            root / "runs.sqlite3", timeout=5, isolation_level=None
+                        )
+                        lock_connection.execute("BEGIN IMMEDIATE")
+                    if "tool.completed" in event_types:
+                        raise RuntimeError(
+                            "The existing-file write result committed before the crash lock."
+                        )
+                    if target.read_bytes() == RESULT_CRASH_CONTENT.encode():
+                        time.sleep(0.1)
+                        event_types = {
+                            row[0]
+                            for row in monitor_connection.execute(
+                                "SELECT DISTINCT event_type FROM run_events WHERE run_id=? "
+                                "AND event_type IN ('tool.executing','tool.completed')",
+                                (run_id,),
+                            )
+                        }
+                        if (
+                            "tool.executing" not in event_types
+                            or "tool.completed" in event_types
+                            or len(journal.unresolved_tool_calls(run_id)) != 1
+                            or target.read_bytes() != RESULT_CRASH_CONTENT.encode()
+                        ):
+                            raise RuntimeError(
+                                "Existing-file write did not pause after fsync and before journaling."
+                            )
+                        target_mtime_after_write = target.stat().st_mtime_ns
+                        kill_server_tree(first)
+                        first_exit = first.returncode
+                        if first_exit in (0, None):
+                            raise RuntimeError("The API did not terminate after the fsynced write.")
+                        lock_connection.rollback()
+                        lock_connection.close()
+                        lock_connection = None
+                        time.sleep(0.2)
+                        post_kill_events = journal.list_events(run_id)
+                        if (
+                            any(
+                                event["event_type"] == "tool.completed"
+                                for event in post_kill_events
+                            )
+                            or len(journal.unresolved_tool_calls(run_id)) != 1
+                            or target.read_bytes() != RESULT_CRASH_CONTENT.encode()
+                            or target.stat().st_mtime_ns != target_mtime_after_write
+                        ):
+                            raise RuntimeError(
+                                "Killed worker changed or journaled the fsynced write after restart boundary."
+                            )
+                        break
+                elif scenario == "write_crash" and "tool.intended" in event_types:
                     if lock_connection is None:
                         lock_connection = sqlite3.connect(
                             root / "runs.sqlite3", timeout=5, isolation_level=None
@@ -418,7 +484,7 @@ def main() -> None:
                                 "The killed worker advanced the side effect after lock release."
                             )
                         break
-            time.sleep(0.001 if scenario == "write_crash" else 0.05)
+            time.sleep(0.001 if scenario in {"write_crash", "write_result_crash"} else 0.05)
         else:
             raise TimeoutError("First API never reached the controlled crash boundary.")
         if first.poll() is None:
@@ -430,7 +496,7 @@ def main() -> None:
         wait_for_api(client, time.monotonic() + 20)
         deadline = time.monotonic() + 40
         resumed: dict[str, Any] | None = None
-        if scenario == "write_crash":
+        if scenario in {"write_crash", "write_result_crash"}:
             while time.monotonic() < deadline:
                 response = client.get(f"/runs/{run_id}", timeout=3)
                 response.raise_for_status()
@@ -489,17 +555,12 @@ def main() -> None:
             if message.get("role") == "assistant"
             for call in message.get("tool_calls", [])
         ]
-        reconciliation_retry_observed = scenario != "write_crash" or (
-            any(
-                event["payload"].get("from") == "blocked" and event["payload"].get("to") == "queued"
-                for event in state_changes
-            )
-            and any(
-                event["payload"].get("from") == "planning"
-                and event["payload"].get("to") == "blocked"
-                and event["payload"].get("reason") == "tool_reconciliation_required"
-                for event in state_changes
-            )
+        reconciliation_retry_observed = scenario not in {
+            "write_crash",
+            "write_result_crash",
+        } or any(
+            event["payload"].get("from") == "blocked" and event["payload"].get("to") == "queued"
+            for event in state_changes
         )
         expected_history = 0 if scenario in {"inference", "write_crash"} else 1
         expected_starts = 1 if scenario == "write_crash" else 3 if scenario == "write" else 2
@@ -508,7 +569,7 @@ def main() -> None:
         tool_executions = [event for event in events if event["event_type"] == "tool.executing"]
         tool_completions = [event for event in events if event["event_type"] == "tool.completed"]
         target_unchanged_after_restart = True
-        if scenario in {"write", "write_crash"}:
+        if scenario in {"write", "write_crash", "write_result_crash"}:
             target = (
                 workspace.joinpath(*CRASH_DIRECTORY_PARTS, "created.txt")
                 if scenario == "write_crash"
@@ -517,7 +578,15 @@ def main() -> None:
             target_unchanged_after_restart = (
                 target_mtime_after_write is not None
                 and target.read_bytes()
-                == (b"" if scenario == "write_crash" else b"after-api-restart")
+                == (
+                    b""
+                    if scenario == "write_crash"
+                    else (
+                        RESULT_CRASH_CONTENT.encode()
+                        if scenario == "write_result_crash"
+                        else b"after-api-restart"
+                    )
+                )
                 and target.stat().st_mtime_ns == target_mtime_after_write
             )
         report.update(
@@ -528,7 +597,7 @@ def main() -> None:
                 and recovered[0]["payload"]["reason"]
                 == (
                     "tool_reconciliation_required"
-                    if scenario == "write_crash"
+                    if scenario in {"write_crash", "write_result_crash"}
                     else "expired_worker"
                 )
                 and len(starts) == expected_starts
@@ -550,7 +619,7 @@ def main() -> None:
                 and resume_probe["tool_history_messages"] == expected_history
                 and resume_probe["assistant_tool_calls"] == expected_history
                 and resume_probe["assistant_tool_names"]
-                == (["workspace_write_file"] if scenario == "write" else [])
+                == (["workspace_write_file"] if scenario in {"write", "write_result_crash"} else [])
                 and resume_probe["tool_result_count"] == expected_history
                 and (
                     scenario in {"inference", "write_crash"}
@@ -560,21 +629,32 @@ def main() -> None:
                         and hashlib.sha256(
                             CRASH_WRITE_CONTENT.encode()
                             if scenario == "write_crash"
-                            else b"after-api-restart"
+                            else (
+                                RESULT_CRASH_CONTENT.encode()
+                                if scenario == "write_result_crash"
+                                else b"after-api-restart"
+                            )
                         ).hexdigest()
                         in resume_probe["tool_result_contents"][0]
                         and str(
-                            len(CRASH_WRITE_CONTENT.encode()) if scenario == "write_crash" else 17
+                            len(CRASH_WRITE_CONTENT.encode())
+                            if scenario == "write_crash"
+                            else (
+                                len(RESULT_CRASH_CONTENT.encode())
+                                if scenario == "write_result_crash"
+                                else 17
+                            )
                         )
                         in resume_probe["tool_result_contents"][0]
                         and (
-                            scenario != "write_crash"
+                            scenario not in {"write_crash", "write_result_crash"}
                             or '"reconciled": true' in resume_probe["tool_result_contents"][0]
                         )
                     )
                 )
                 and len(unresolved) == (1 if scenario == "write_crash" else 0)
-                and len(tool_intents) == (1 if scenario in {"write", "write_crash"} else 0)
+                and len(tool_intents)
+                == (1 if scenario in {"write", "write_crash", "write_result_crash"} else 0)
                 and len(tool_executions) == (0 if scenario == "write_crash" else expected_history)
                 and len(tool_completions) == (0 if scenario == "write_crash" else expected_history)
                 and target_unchanged_after_restart
