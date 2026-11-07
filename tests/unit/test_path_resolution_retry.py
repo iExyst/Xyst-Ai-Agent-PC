@@ -109,8 +109,10 @@ def test_read_records_preflight_retry_and_still_journals_one_intent(
 
 
 def test_path_escape_is_not_retried(workspace_tmp_path, monkeypatch):
-    store, run_id, token = setup_run(workspace_tmp_path)
-    outside = workspace_tmp_path.parent / "outside.txt"
+    workspace = workspace_tmp_path / "workspace"
+    workspace.mkdir()
+    store, run_id, token = setup_run(workspace)
+    outside = workspace_tmp_path / "outside.txt"
     outside.write_text("private", encoding="utf-8")
     original_resolve = Path.resolve
     calls = []
@@ -124,6 +126,6 @@ def test_path_escape_is_not_retried(workspace_tmp_path, monkeypatch):
         WorkspaceExecutor(store).read_file(
             run_id, token, "escape", {"path": "../outside.txt"}, idempotency_key="escape"
         )
-    assert workspace_tmp_path / ".." / "outside.txt" in calls
+    assert workspace / ".." / "outside.txt" in calls
     assert not any(event["event_type"] == "tool.read_retry" for event in store.list_events(run_id))
     assert not store.unresolved_tool_calls(run_id)

@@ -12,6 +12,15 @@ from typing import BinaryIO
 from xaa.runtime.mutation_policy import require_mutable_destination
 
 
+def is_transient_read_error(exc: OSError) -> bool:
+    return getattr(exc, "winerror", None) in {32, 33, 121, 1237} or exc.errno in {
+        errno.EAGAIN,
+        errno.EINTR,
+        errno.ETIMEDOUT,
+        errno.ESTALE,
+    }
+
+
 def resolve_read_path(
     path: Path,
     *,
@@ -22,19 +31,33 @@ def resolve_read_path(
         try:
             return path.resolve(strict=True)
         except OSError as exc:
-            transient = getattr(exc, "winerror", None) in {32, 33, 121, 1237} or exc.errno in {
-                errno.EAGAIN,
-                errno.EINTR,
-                errno.ETIMEDOUT,
-                errno.ESTALE,
-            }
-            if not transient or attempt == 2:
+            if not is_transient_read_error(exc) or attempt == 2:
                 raise
             delay_ms = 50 * 2**attempt
             if on_retry is not None:
                 on_retry(attempt + 1, delay_ms)
             time.sleep(delay_ms / 1000)
     raise RuntimeError("Path resolution retry loop exhausted without a result.")
+
+
+def stat_read_path(
+    path: Path,
+    *,
+    before_attempt: Callable[[], None],
+    on_retry: Callable[[int, int], None],
+) -> os.stat_result:
+    """Inspect the resolved read target while retaining lease and retry limits."""
+    for attempt in range(3):
+        before_attempt()
+        try:
+            return path.stat()
+        except OSError as exc:
+            if not is_transient_read_error(exc) or attempt == 2:
+                raise
+            delay_ms = 50 * 2**attempt
+            on_retry(attempt + 1, delay_ms)
+            time.sleep(delay_ms / 1000)
+    raise RuntimeError("Metadata retry loop exhausted without a result.")
 
 
 @contextmanager

@@ -4,15 +4,17 @@ import ctypes
 import errno
 import json
 import os
+import stat
 import struct
 import time
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.executor import ReconciliationRequired
-from xaa.runtime.file_handles import resolve_read_path
+from xaa.runtime.file_handles import resolve_read_path, stat_read_path
 from xaa.storage.runs import RunStore
 
 
@@ -143,7 +145,7 @@ def list_directory(
     if not run["workspace"] or run["mode"] not in {"observe", "workspace", "authorized_automation"}:
         raise PermissionError("Select a workspace with read permission.")
 
-    def path_retry(attempt: int, delay_ms: int) -> None:
+    def path_retry(stage: str, attempt: int, delay_ms: int) -> None:
         store.append_worker_event(
             run_id,
             token,
@@ -152,16 +154,26 @@ def list_directory(
                 "call_id": call_id,
                 "attempt": attempt,
                 "delay_ms": delay_ms,
-                "stage": "path_resolution",
+                "stage": stage,
             },
         )
 
-    root = resolve_read_path(Path(run["workspace"]), on_retry=path_retry)
+    def require_owner() -> None:
+        with store.connection() as connection:
+            store.require_lease(connection, run_id, token)
+
+    root = resolve_read_path(
+        Path(run["workspace"]), on_retry=partial(path_retry, "path_resolution")
+    )
     requested = Path(parsed.path)
     if requested.is_absolute():
         raise PermissionError("Use a relative directory path.")
-    target = resolve_read_path(root / requested, on_retry=path_retry)
-    if not target.is_relative_to(root) or not target.is_dir():
+    target = resolve_read_path(root / requested, on_retry=partial(path_retry, "path_resolution"))
+    if not target.is_relative_to(root) or not stat.S_ISDIR(
+        stat_read_path(
+            target, before_attempt=require_owner, on_retry=partial(path_retry, "metadata")
+        ).st_mode
+    ):
         raise PermissionError("Directory is outside the workspace.")
     if not store.record_tool_intent(
         run_id,

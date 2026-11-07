@@ -3,8 +3,10 @@
 import errno
 import hashlib
 import os
+import stat
 import time
 from contextlib import ExitStack
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ from xaa.runtime.file_handles import (
     open_for_read,
     opened_file_path,
     resolve_read_path,
+    stat_read_path,
 )
 from xaa.runtime.unified_patch import apply_unified_patch
 from xaa.storage.runs import RunStore
@@ -130,7 +133,7 @@ class WorkspaceExecutor:
         if not run["workspace"]:
             raise PermissionError("Select a workspace before reading files.")
 
-        def path_retry(attempt: int, delay_ms: int) -> None:
+        def path_retry(stage: str, attempt: int, delay_ms: int) -> None:
             self.store.append_worker_event(
                 run_id,
                 token,
@@ -139,16 +142,28 @@ class WorkspaceExecutor:
                     "call_id": call_id,
                     "attempt": attempt,
                     "delay_ms": delay_ms,
-                    "stage": "path_resolution",
+                    "stage": stage,
                 },
             )
 
-        root = resolve_read_path(Path(run["workspace"]), on_retry=path_retry)
+        def require_owner() -> None:
+            with self.store.connection() as connection:
+                self.store.require_lease(connection, run_id, token)
+
+        root = resolve_read_path(
+            Path(run["workspace"]), on_retry=partial(path_retry, "path_resolution")
+        )
         requested = Path(parsed.path)
         if requested.is_absolute():
             raise PermissionError("Use a path relative to the selected workspace.")
-        target = resolve_read_path(root / requested, on_retry=path_retry)
-        if not target.is_relative_to(root) or not target.is_file():
+        target = resolve_read_path(
+            root / requested, on_retry=partial(path_retry, "path_resolution")
+        )
+        if not target.is_relative_to(root) or not stat.S_ISREG(
+            stat_read_path(
+                target, before_attempt=require_owner, on_retry=partial(path_retry, "metadata")
+            ).st_mode
+        ):
             raise PermissionError("Requested file is outside the selected workspace.")
         fresh = self.store.record_tool_intent(
             run_id,

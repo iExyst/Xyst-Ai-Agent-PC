@@ -36,6 +36,37 @@ def verify_literal_module(data: bytes, value: str) -> None:
     )
 
 
+def selected_instance_context(inventory: object, model: str, instance: str) -> int:
+    """Verify the selected identifier and actual context in fresh native inventory."""
+    if not isinstance(inventory, dict):
+        raise TypeError("Native model inventory is invalid.")
+    raw_models: object = cast(dict[str, Any], inventory).get("models")
+    if not isinstance(raw_models, list):
+        raise TypeError("Native model inventory has no model list.")
+    matches: list[int] = []
+    for entry in cast(list[object], raw_models):
+        if not isinstance(entry, dict) or cast(dict[str, Any], entry).get("key") != model:
+            continue
+        instances: object = cast(dict[str, Any], entry).get("loaded_instances")
+        if not isinstance(instances, list):
+            raise TypeError("Native model inventory has no loaded instance list.")
+        for loaded in cast(list[object], instances):
+            if not isinstance(loaded, dict) or cast(dict[str, Any], loaded).get("id") != instance:
+                continue
+            config: object = cast(dict[str, Any], loaded).get("config")
+            context: object = (
+                cast(dict[str, Any], config).get("context_length")
+                if isinstance(config, dict)
+                else None
+            )
+            if type(context) is not int or context <= 0:
+                raise ValueError("Selected instance has no valid context length.")
+            matches.append(context)
+    if len(matches) != 1:
+        raise ValueError("Selected instance is missing or ambiguous in native inventory.")
+    return matches[0]
+
+
 async def diagnose(
     root: Path,
     model: str,
@@ -57,47 +88,9 @@ async def diagnose(
         grant = {"distribution": distribution, "profile_sha256": transport.profile_sha256}
         (project / "validate.py").write_bytes(validator)
     store = RunStore(root / "data" / "XAA" / "xaa.sqlite3")
-    run_id = store.create_run(
-        objective="Compare alternative implementations in private specialist copies and explicitly choose which version to integrate.",
-        acceptance_criteria=[],
-        workspace=str(project),
-        mode="workspace",
-        model=model,
-        max_iterations=16,
-        max_seconds=600,
-        max_output_tokens=512,
-        command_grant=grant,
-    )["id"]
-    parent = store.acquire_lease(run_id, "specialist-variant-fixture", seconds=300)
-    assert parent is not None
+    run_id = ""
+    parent = ""
     tasks = TaskStore(store)
-    tasks.save_plan(
-        run_id,
-        parent,
-        [
-            TaskDefinition(
-                id=name,
-                objective=f"Use the portable relative path 'shared.py' exactly for every file tool; never add a leading slash or use an absolute path. Read shared.py, then use workspace_write_lines with separate source lines and final_newline true to change value() so it returns exactly {code!r}. Keep only this one function in the module. Copy the sha256 from the read result. Your changes belong only in your private working tree. Supply the actual Python file text: after JSON decoding, content must have real line breaks and normal Python quotes, not literal backslash-n sequences or extra backslashes before quotes. After writing, read shared.py once to check the actual saved text. If that read confirms the requested text and value, do not write again. "
-                + (
-                    f"Then call workspace_run_command with argv ['/usr/bin/python3', '-I', 'validate.py', '{code}'] and max_seconds 15 to run the provided validator against your private edits. The provided validate.py is already in your private tree; do not list directories, inspect it, or alter it. Inspect the actual exit code and output. On success, immediately submit the candidate answer with that evidence and no further tool calls. On failure, fix shared.py and rerun validation within the saved allowance. "
-                    if distribution
-                    else ""
-                )
-                + "Finally submit a candidate naming shared.py and its new return value. Do not create other files or repeat completed writes.",
-                acceptance_criteria=(
-                    f"Private shared.py defines value() returning exactly {code}",
-                ),
-                role="developer",
-                permissions=("workspace.read", "workspace.write", "workspace.command")
-                if distribution
-                else ("workspace.read", "workspace.write"),
-                max_iterations=8,
-                max_seconds=300,
-                max_output_tokens=512,
-            )
-            for name, code in codes.items()
-        ],
-    )
     provider = LMStudioProvider(exact_context=True)
     instance = None
     owned_instance = False
@@ -105,12 +98,12 @@ async def diagnose(
         "passed": False,
         "model": model,
         "root": str(root),
-        "run_id": run_id,
         "codes": codes,
         "scope": "Real source model specialists with private snapshot working trees; scripted fixture plan and explicitly automated review, no autonomous reviewer/native inference claim",
         "fixture_review_automated": not prepare_only,
         "prepare_only": prepare_only,
         "validation_distribution": distribution,
+        "requested_context_length": context_length,
     }
     stage = "model_inventory"
     try:
@@ -177,10 +170,67 @@ async def diagnose(
             owned_instance = True
             report["reused_preloaded_instance"] = False
         await provider.models()
-        report["context_length"] = context_length
+        async with httpx.AsyncClient(base_url=provider.base_url, timeout=10) as client:
+            verification_response = await client.get("/api/v1/models")
+            verification_response.raise_for_status()
+        actual_context = selected_instance_context(verification_response.json(), model, instance)
+        if actual_context != context_length:
+            raise RuntimeError("Selected instance context differs from requested context.")
+        report["selected_instance_id"] = instance
+        report["selected_context_length"] = actual_context
+        stage = "fixture_setup"
+        run_id = store.create_run(
+            objective="Compare alternative implementations in private specialist copies and explicitly choose which version to integrate.",
+            acceptance_criteria=[],
+            workspace=str(project),
+            mode="workspace",
+            model=instance,
+            max_iterations=16,
+            max_seconds=600,
+            max_output_tokens=512,
+            command_grant=grant,
+        )["id"]
+        report["run_id"] = run_id
+        acquired = store.acquire_lease(run_id, "specialist-variant-fixture", seconds=300)
+        assert acquired is not None
+        parent = acquired
+        tasks = TaskStore(store)
+        tasks.save_plan(
+            run_id,
+            parent,
+            [
+                TaskDefinition(
+                    id=name,
+                    objective=f"Use the portable relative path 'shared.py' exactly for every file tool; never add a leading slash or use an absolute path. Read shared.py, then use workspace_write_lines with separate source lines and final_newline true to change value() so it returns exactly {code!r}. Keep only this one function in the module. Copy the sha256 from the read result. Your changes belong only in your private working tree. Supply the actual Python file text: after JSON decoding, content must have real line breaks and normal Python quotes, not literal backslash-n sequences or extra backslashes before quotes. After writing, read shared.py once to check the actual saved text. If that read confirms the requested text and value, do not write again. "
+                    + (
+                        f"Then call workspace_run_command with argv ['/usr/bin/python3', '-I', 'validate.py', '{code}'] and max_seconds 15 to run the provided validator against your private edits. The provided validate.py is already in your private tree; do not list directories, inspect it, or alter it. Inspect the actual exit code and output. On success, immediately submit the candidate answer with that evidence and no further tool calls. On failure, fix shared.py and rerun validation within the saved allowance. "
+                        if distribution
+                        else ""
+                    )
+                    + "Finally submit a candidate naming shared.py and its new return value. Do not create other files or repeat completed writes.",
+                    acceptance_criteria=(
+                        f"Private shared.py defines value() returning exactly {code}",
+                    ),
+                    role="developer",
+                    permissions=("workspace.read", "workspace.write", "workspace.command")
+                    if distribution
+                    else ("workspace.read", "workspace.write"),
+                    max_iterations=8,
+                    max_seconds=300,
+                    max_output_tokens=512,
+                )
+                for name, code in codes.items()
+            ],
+        )
+        task_routes = {row["local_id"]: row["model_route"] for row in tasks.records(run_id)}
+        if set(task_routes) != set(codes) or any(
+            route != instance for route in task_routes.values()
+        ):
+            raise RuntimeError("Specialist routes do not match the selected loaded instance.")
+        report["task_model_routes"] = task_routes
         stage = "parent_tool_diagnostic"
         store.transition(run_id, RunState.PLANNING, owner=parent)
-        await Coordinator(store, provider).diagnose_run_tools(run_id, parent, model)
+        await Coordinator(store, provider).diagnose_run_tools(run_id, parent, instance)
         store.transition(run_id, RunState.RUNNING, owner=parent)
         stage = "specialist_execution"
         statuses = await SpecialistRunner(store, provider).run_ready(
@@ -289,9 +339,9 @@ async def diagnose(
             usage=store.token_usage(run_id),
         )
     except Exception as exc:
-        current_run = store.get_run(run_id)
+        current_run = store.get_run(run_id) if run_id else None
         task_results: list[dict[str, Any]] = []
-        for task in tasks.records(run_id):
+        for task in tasks.records(run_id) if run_id else []:
             raw_result = task.get("result")
             try:
                 result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
@@ -305,12 +355,12 @@ async def diagnose(
             error_type=type(exc).__name__,
             error_message=str(exc)[:512],
             run_state=current_run["state"] if current_run else None,
-            unresolved_calls=len(store.unresolved_tool_calls(run_id)),
+            unresolved_calls=len(store.unresolved_tool_calls(run_id)) if run_id else 0,
             task_results=task_results,
         )
         admission_failures = [
             event["payload"]
-            for event in store.list_events(run_id)
+            for event in (store.list_events(run_id) if run_id else [])
             if event["event_type"] == "context.admission_failed"
         ]
         if admission_failures:
@@ -332,7 +382,8 @@ async def diagnose(
                     report["provider_error_detail"] = detail[:512]
         raise
     finally:
-        store.release_lease(run_id, parent)
+        if run_id and parent:
+            store.release_lease(run_id, parent)
         try:
             if owned_instance and instance is not None:
                 await provider.unload_model(instance)
