@@ -202,6 +202,45 @@ def test_lost_worker_with_unanswered_token_reservation_is_not_safe_to_resume(wor
         tasks.resolve_lost_worker(run_id, parent, "read", "resume")
 
 
+def test_lost_worker_cannot_resume_after_specialist_time_budget_is_exhausted(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "task-time-budget.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="read", objective="Read evidence", max_seconds=1)],
+    )
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "prior-empty-message",
+                "message": {"role": "assistant", "content": ""},
+                "usage": None,
+            },
+        )
+        connection.execute(
+            "UPDATE run_events SET created_at=? WHERE run_id=? AND event_type='task.claimed'",
+            ((datetime.now(UTC) - timedelta(seconds=10)).isoformat(), run_id),
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    assert tasks.recovery_summary(run_id, "read")["safe_to_resume"] is False
+
+
 def test_lost_worker_cannot_resume_when_shared_run_budget_is_exhausted(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "exhausted-recovery.sqlite3")
     run_id = runs.create_run(
