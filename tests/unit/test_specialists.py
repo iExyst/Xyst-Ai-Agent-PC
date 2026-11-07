@@ -3,7 +3,7 @@ import json
 import time
 
 import pytest
-from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
@@ -190,6 +190,50 @@ async def test_specialist_write_request_fails_without_modifying_file(workspace_t
         next(row for row in tasks.records(run_id) if row["local_id"] == "read")["result"]
     )
     assert failure["causes"] == ["PermissionError"]
+
+
+async def test_context_budget_reason_is_persisted_for_blocked_specialist(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "context-block.sqlite3")
+    run_id = store.create_run(
+        objective="Bounded context",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="limited", objective="Read evidence")])
+
+    class ContextLimitedProvider(LMStudioProvider):
+        async def chat(self, **kwargs):
+            raise ContextLimitError(
+                "Fixture context limit",
+                reason="prompt_count_unavailable",
+                counter_error_type="PromptCounterUnavailable",
+                counter_error_stage="model_inventory",
+                counter_error_code="websocket_timeout",
+            )
+
+    provider = ContextLimitedProvider()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+    assert statuses == [{"task_id": "limited", "status": "blocked"}]
+    result = json.loads(tasks.records(run_id)[0]["result"])
+    assert result["causes"] == ["ContextLimitError"]
+    assert result["failure_codes"] == ["prompt_count_unavailable", "websocket_timeout"]
+    assert result["failure_details"] == [
+        {
+            "reason": "prompt_count_unavailable",
+            "counter_error_type": "PromptCounterUnavailable",
+            "counter_error_stage": "model_inventory",
+            "counter_error_code": "websocket_timeout",
+        }
+    ]
 
 
 async def test_shared_budget_is_charged_before_specialist_inference(workspace_tmp_path):

@@ -87,8 +87,36 @@ def _failure_codes(error: BaseException) -> list[str]:
     if isinstance(error, BaseExceptionGroup):
         group = cast(BaseExceptionGroup[BaseException], error)
         return sorted({code for child in group.exceptions for code in _failure_codes(child)})[:8]
-    code = getattr(error, "code", None)
-    return [str(code)] if isinstance(code, str) else []
+    codes = {
+        value
+        for value in (
+            getattr(error, "code", None),
+            getattr(error, "reason", None),
+            getattr(error, "counter_error_code", None),
+        )
+        if isinstance(value, str)
+    }
+    return sorted(codes)[:8]
+
+
+def _failure_details(error: BaseException) -> list[dict[str, str | int]]:
+    if isinstance(error, BaseExceptionGroup):
+        group = cast(BaseExceptionGroup[BaseException], error)
+        return [detail for child in group.exceptions for detail in _failure_details(child)][:8]
+    fields = (
+        "reason",
+        "counter_error_type",
+        "counter_error_stage",
+        "counter_error_code",
+        "counted_prompt_tokens",
+        "reported_prompt_tokens",
+    )
+    detail = {
+        field: value
+        for field in fields
+        if isinstance((value := getattr(error, field, None)), (str, int))
+    }
+    return [detail] if detail else []
 
 
 RUN_READY_TOOL = {
@@ -202,6 +230,7 @@ class SpecialistRunner:
                     "error": type(exc).__name__,
                     "causes": causes,
                     **({"failure_codes": _failure_codes(exc)} if _failure_codes(exc) else {}),
+                    **({"failure_details": _failure_details(exc)} if _failure_details(exc) else {}),
                 },
             )
 

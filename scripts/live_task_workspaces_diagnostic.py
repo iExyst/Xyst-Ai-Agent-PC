@@ -65,7 +65,7 @@ async def diagnose(
         model=model,
         max_iterations=16,
         max_seconds=480,
-        max_output_tokens=2048,
+        max_output_tokens=512,
         command_grant=grant,
     )["id"]
     parent = store.acquire_lease(run_id, "specialist-variant-fixture", seconds=300)
@@ -93,7 +93,7 @@ async def diagnose(
                 else ("workspace.read", "workspace.write"),
                 max_iterations=6,
                 max_seconds=180,
-                max_output_tokens=2048,
+                max_output_tokens=512,
             )
             for name, code in codes.items()
         ],
@@ -290,13 +290,39 @@ async def diagnose(
         )
     except Exception as exc:
         current_run = store.get_run(run_id)
+        task_results: list[dict[str, Any]] = []
+        for task in tasks.records(run_id):
+            raw_result = task.get("result")
+            try:
+                result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
+            except json.JSONDecodeError:
+                result = {"unparsed_result": str(raw_result)[:512]}
+            task_results.append(
+                {"task_id": task["local_id"], "status": task["status"], "result": result}
+            )
         report.update(
             failure_stage=stage,
             error_type=type(exc).__name__,
             error_message=str(exc)[:512],
             run_state=current_run["state"] if current_run else None,
             unresolved_calls=len(store.unresolved_tool_calls(run_id)),
+            task_results=task_results,
         )
+        if isinstance(exc.__cause__, httpx.HTTPStatusError):
+            response = exc.__cause__.response
+            report["provider_http_status"] = response.status_code
+            try:
+                body: object = response.json()
+            except ValueError:
+                body = None
+            if isinstance(body, dict):
+                error: object = cast(dict[str, Any], body).get("error")
+                if isinstance(error, dict):
+                    detail = cast(dict[str, Any], error).get("message")
+                else:
+                    detail = error
+                if isinstance(detail, str):
+                    report["provider_error_detail"] = detail[:512]
         raise
     finally:
         store.release_lease(run_id, parent)
