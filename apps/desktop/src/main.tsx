@@ -139,6 +139,7 @@ function App() {
           context_budget_exceeded: 'The request and output allowance do not fit the loaded context. Reduce input or the output limit, or load a larger context.',
           prompt_count_unavailable: 'LM Studio could not count this prompt exactly, so X.A.A. blocked the request before sending it. Confirm the selected model is loaded and supports this prompt format.',
           prompt_count_model_mismatch: 'LM Studio counted a different model instance than the one selected. X.A.A. blocked the request before sending it; reload the selected model and retry.',
+          prompt_count_mismatch: 'LM Studio reported a different prompt token count than the exact preflight count. X.A.A. discarded the response and did not run its tools. The measured usage was saved for the token budget.',
           specialist_tasks_blocked: 'Specialist work is blocked and no candidate or ready task remains. Inspect the task plan before starting a new objective.',
           diagnostic_output_limit: 'The tool-use check reached its output limit or was filtered. Tools remain disabled; choose another model or retry the objective.',
           model_length: 'The model reached its output limit. Start a new objective with a larger output limit.',

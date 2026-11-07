@@ -240,6 +240,70 @@ async def test_per_request_exact_count_failure_blocks_before_prediction():
         await provider.close()
 
 
+async def test_exact_count_mismatch_discards_response_and_preserves_measured_usage():
+    provider = CountedProvider()
+    provider.release.set()
+
+    async def mismatching_chat(**kwargs):
+        provider.predictions.append(kwargs)
+        return {
+            "choices": [{"message": {"role": "assistant", "tool_calls": []}}],
+            "usage": {"prompt_tokens": 21, "completion_tokens": 1, "total_tokens": 22},
+        }
+
+    provider._chat = mismatching_chat
+    try:
+        with pytest.raises(ContextLimitError) as failure:
+            await provider.chat(
+                model="fixture",
+                messages=[{"role": "user", "content": "hello"}],
+                require_exact_context=True,
+            )
+        assert failure.value.reason == "prompt_count_mismatch"
+        assert failure.value.counted_prompt_tokens == 20
+        assert failure.value.reported_prompt_tokens == 21
+        assert failure.value.measured_usage == {
+            "prompt_tokens": 21,
+            "completion_tokens": 1,
+            "total_tokens": 22,
+        }
+        assert len(provider.predictions) == 1
+    finally:
+        await provider.close()
+
+
+async def test_exact_count_mismatch_in_stream_discards_final_chunk():
+    import json
+
+    provider = CountedProvider()
+    provider.release.set()
+
+    async def stream(**kwargs):
+        yield json.dumps({"choices": [{"delta": {"content": "candidate"}}]})
+        yield json.dumps(
+            {
+                "choices": [],
+                "usage": {"prompt_tokens": 21, "completion_tokens": 1, "total_tokens": 22},
+            }
+        )
+
+    provider._stream = stream
+    try:
+        with pytest.raises(ContextLimitError) as failure:
+            _ = [
+                chunk
+                async for chunk in provider.stream(
+                    model="fixture",
+                    messages=[{"role": "user", "content": "hello"}],
+                    require_exact_context=True,
+                )
+            ]
+        assert failure.value.reason == "prompt_count_mismatch"
+        assert provider.predictions == []
+    finally:
+        await provider.close()
+
+
 async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
     workspace_tmp_path,
 ):
@@ -287,6 +351,67 @@ async def test_run_reports_exact_count_unavailable_instead_of_context_overflow(
         "counter_error_stage": "tokenization",
         "counter_error_code": "generic.tokenizeFailed",
     }
+
+
+async def test_run_blocks_on_prompt_count_mismatch_and_accounts_discarded_usage(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "count-mismatch.sqlite3")
+    run = store.create_run(
+        objective="Return a short answer",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_total_tokens=1000,
+        pre_inference_token_reservations=True,
+    )
+
+    class MismatchingProvider(CountedProvider):
+        async def _chat(self, **kwargs):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "never-run",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "workspace_read_file",
+                                        "arguments": '{"path":"secret.txt"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 21, "completion_tokens": 1, "total_tokens": 22},
+            }
+
+    provider = MismatchingProvider(exact_context=False)
+    provider.release.set()
+    try:
+        await Coordinator(store, provider).execute(run["id"])
+    finally:
+        await provider.close()
+
+    events = store.list_events(run["id"])
+    assert store.get_run(run["id"])["state"] == "blocked"
+    assert not any(event["event_type"] in {"model.message", "tool.intended"} for event in events)
+    assert not store.unresolved_tool_calls(run["id"])
+    failed = next(event for event in events if event["event_type"] == "context.admission_failed")
+    assert failed["payload"] == {
+        "reason": "prompt_count_mismatch",
+        "counted_prompt_tokens": 20,
+        "reported_prompt_tokens": 21,
+    }
+    assert store.token_usage(run["id"]) == {
+        "prompt_tokens": 21,
+        "completion_tokens": 1,
+        "total_tokens": 22,
+        "unmeasured_calls": 0,
+    }
+    assert store.usage_report(run["id"])["outstanding_reservations"] == 0
 
 
 async def test_conservative_context_estimate_bounds_image_data_url():

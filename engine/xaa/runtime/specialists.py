@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict
 
 from xaa.providers.contracts import TokenUsage, validate_completion
-from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
@@ -162,7 +162,12 @@ class SpecialistRunner:
                 identity,
                 worker,
                 state="blocked"
-                if {"TaskTokenBudgetExceeded", "TokenBudgetExceeded"} & set(_failure_types(exc))
+                if {
+                    "TaskTokenBudgetExceeded",
+                    "TokenBudgetExceeded",
+                    "ContextLimitError",
+                }
+                & set(_failure_types(exc))
                 else "failed",
                 result={
                     "error": type(exc).__name__,
@@ -170,6 +175,32 @@ class SpecialistRunner:
                     **({"failure_codes": _failure_codes(exc)} if _failure_codes(exc) else {}),
                 },
             )
+
+    def _record_prompt_mismatch_usage(
+        self,
+        run_id: str,
+        parent_token: str,
+        task_id: str,
+        task_token: str,
+        inference_id: str,
+        exc: ContextLimitError,
+    ) -> None:
+        if exc.reason != "prompt_count_mismatch" or exc.measured_usage is None:
+            return
+        self.tasks.record_read_worker_event(
+            run_id,
+            parent_token,
+            task_id,
+            task_token,
+            "task.model.incomplete",
+            {
+                "task_id": task_id,
+                "inference_id": inference_id,
+                "reason": exc.reason,
+                "usage": exc.measured_usage,
+                "response_discarded": True,
+            },
+        )
 
     async def _execute(
         self, run_id: str, parent: str, task: dict[str, Any], worker: str, *, deadline: float
@@ -408,15 +439,26 @@ class SpecialistRunner:
                         stream_retried = True
                         continue
                     raise
+                except ContextLimitError as exc:
+                    self._record_prompt_mismatch_usage(
+                        run_id, parent, identity, worker, inference_id, exc
+                    )
+                    raise
                 if pending:
                     emit(pending, inference_id)
             else:
-                response = await self.provider.chat(
-                    model=task["model_route"],
-                    messages=messages,
-                    tools=tools,
-                    **options,
-                )
+                try:
+                    response = await self.provider.chat(
+                        model=task["model_route"],
+                        messages=messages,
+                        tools=tools,
+                        **options,
+                    )
+                except ContextLimitError as exc:
+                    self._record_prompt_mismatch_usage(
+                        run_id, parent, identity, worker, inference_id, exc
+                    )
+                    raise
             choice = validate_completion(response)
             usage = (
                 TokenUsage.model_validate(response["usage"]).model_dump()
@@ -457,6 +499,7 @@ class SpecialistRunner:
                     result={"candidate": message["content"]},
                 )
                 return
+
             if len(calls) > 8:
                 raise ValueError("Specialist exceeded tool call limit.")
             for call in calls:

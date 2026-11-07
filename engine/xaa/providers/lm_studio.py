@@ -51,12 +51,18 @@ class ContextLimitError(ProviderError):
         counter_error_type: str | None = None,
         counter_error_stage: str | None = None,
         counter_error_code: str | None = None,
+        counted_prompt_tokens: int | None = None,
+        reported_prompt_tokens: int | None = None,
+        measured_usage: dict[str, int] | None = None,
     ) -> None:
         super().__init__(message)
         self.reason = reason
         self.counter_error_type = counter_error_type
         self.counter_error_stage = counter_error_stage
         self.counter_error_code = counter_error_code
+        self.counted_prompt_tokens = counted_prompt_tokens
+        self.reported_prompt_tokens = reported_prompt_tokens
+        self.measured_usage = measured_usage
 
 
 class ModelCapabilities(BaseModel):
@@ -409,7 +415,7 @@ class LMStudioProvider:
         async with self._inference_queue.slot(
             self._queue_weight(model, messages, prepared, max_output_tokens)
         ):
-            await self._admit_context(
+            counted = await self._admit_context(
                 model,
                 messages,
                 prepared,
@@ -417,7 +423,9 @@ class LMStudioProvider:
                 on_admission=on_admission,
                 require_exact_context=exact_context,
             )
-            return await self._chat(model=model, messages=messages, tools=prepared, **options)
+            response = await self._chat(model=model, messages=messages, tools=prepared, **options)
+            self._validate_prompt_usage(counted, response.get("usage"))
+            return response
 
     async def _admit_context(
         self,
@@ -428,11 +436,11 @@ class LMStudioProvider:
         max_output_tokens: int | None,
         on_admission: AdmissionCallback | None = None,
         require_exact_context: bool = False,
-    ) -> None:
+    ) -> PromptCount | None:
         # Caller owns the inference queue slot throughout counting and prediction.
         if not (self.exact_context or require_exact_context):
             self._check_context(model, messages, tools, max_output_tokens=max_output_tokens)
-            return
+            return None
         from pydantic import ValidationError
 
         from xaa.providers.tokenization import PromptCountError, PromptCountRequest
@@ -471,6 +479,29 @@ class LMStudioProvider:
             )
         if on_admission is not None:
             on_admission(counted.prompt_tokens, max_output_tokens)
+        return counted
+
+    @staticmethod
+    def _validate_prompt_usage(counted: PromptCount | None, usage: Any) -> None:
+        if counted is None or not isinstance(usage, dict):
+            return
+        reported_value = cast(dict[str, Any], usage).get("prompt_tokens")
+        reported = reported_value if type(reported_value) is int else None
+        if reported is None or reported == counted.prompt_tokens:
+            return
+        measured_usage: dict[str, int] | None = None
+        try:
+            measured_usage = TokenUsage.model_validate(usage).model_dump()
+        except (ValueError, TypeError):  # Invalid optional usage cannot be safely accounted.
+            measured_usage = None
+        raise ContextLimitError(
+            "LM Studio's reported prompt usage differed from the exact pre-inference count. "
+            "The response was discarded before its tools could run.",
+            reason="prompt_count_mismatch",
+            counted_prompt_tokens=counted.prompt_tokens,
+            reported_prompt_tokens=reported,
+            measured_usage=measured_usage,
+        )
 
     async def _count_prompt_owned(self, request: PromptCountRequest) -> PromptCount:
         from xaa.providers.tokenization import PromptCountError, count_prompt
@@ -650,7 +681,7 @@ class LMStudioProvider:
         async with self._inference_queue.slot(
             self._queue_weight(model, messages, prepared, max_output_tokens)
         ):
-            await self._admit_context(
+            counted = await self._admit_context(
                 model,
                 messages,
                 prepared,
@@ -661,6 +692,15 @@ class LMStudioProvider:
             generator = self._stream(model=model, messages=messages, tools=prepared, **options)
             try:
                 async for chunk in generator:
+                    if counted is not None:
+                        try:
+                            parsed_chunk = json.loads(chunk)
+                        except (TypeError, ValueError):
+                            parsed_chunk = None
+                        if isinstance(parsed_chunk, dict):
+                            self._validate_prompt_usage(
+                                counted, cast(dict[str, Any], parsed_chunk).get("usage")
+                            )
                     yield chunk
             finally:
                 await generator.aclose()

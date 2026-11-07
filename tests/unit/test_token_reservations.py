@@ -42,6 +42,20 @@ def answer(store, run, token, identity, total):
     )
 
 
+def incomplete(store, run, token, identity, total):
+    store.append_worker_event(
+        run,
+        token,
+        "model.incomplete",
+        {
+            "inference_id": identity,
+            "reason": "prompt_count_mismatch",
+            "response_discarded": True,
+            "usage": {"prompt_tokens": total - 1, "completion_tokens": 1, "total_tokens": total},
+        },
+    )
+
+
 def test_reservations_survive_reopen_and_release_only_for_durable_measured_answer(
     workspace_tmp_path,
 ):
@@ -76,6 +90,19 @@ def test_old_unknown_attempt_cannot_be_hidden_by_new_reservation(workspace_tmp_p
     start(store, run, token, "current")
     with pytest.raises(TokenBudgetExceeded):
         store.reserve_tokens(run, token, "current", 1, 1)
+
+
+def test_measured_discarded_mismatch_releases_hold_and_counts_tokens(workspace_tmp_path):
+    store, run = create(workspace_tmp_path)
+    token = store.acquire_lease(run, "worker")
+    start(store, run, token, "mismatch")
+    store.reserve_tokens(run, token, "mismatch", 100, 30)
+    incomplete(store, run, token, "mismatch", 110)
+    report = store.usage_report(run)
+    assert report["total_tokens"] == 110
+    assert report["unmeasured_calls"] == 0
+    assert report["outstanding_reservations"] == 0
+    assert report["outstanding_reserved_tokens"] == 0
 
 
 @pytest.mark.parametrize("limit,predictions", [(129, 0), (130, 1)])

@@ -1615,7 +1615,10 @@ class RunStore:
             if event["event_type"] == "diagnostic.inference.completed"
         }
         child_attempts = sum(event["event_type"] == "task.inference.started" for event in events)
-        child_answers = sum(event["event_type"] == "task.model.message" for event in events)
+        child_answers = sum(
+            event["event_type"] in {"task.model.message", "task.model.incomplete"}
+            for event in events
+        )
         totals["unmeasured_calls"] = (
             len(diagnostic_attempts - diagnostic_answers)
             + len(parent_attempts - parent_answers)
@@ -1626,6 +1629,7 @@ class RunStore:
                 "model.message",
                 "model.incomplete",
                 "task.model.message",
+                "task.model.incomplete",
                 "diagnostic.inference.completed",
             }:
                 continue
@@ -1649,6 +1653,7 @@ class RunStore:
                 "model.message",
                 "model.incomplete",
                 "task.model.message",
+                "task.model.incomplete",
                 "diagnostic.inference.completed",
             }
             and event["payload"].get("usage") is not None
@@ -1711,6 +1716,7 @@ class RunStore:
                     "model.message",
                     "model.incomplete",
                     "task.model.message",
+                    "task.model.incomplete",
                     "diagnostic.inference.completed",
                 }
                 and e["payload"].get("usage") is not None
@@ -1743,7 +1749,7 @@ class RunStore:
                 own_total = sum(
                     e["payload"]["usage"]["total_tokens"]
                     for e in events
-                    if e["event_type"] == "task.model.message"
+                    if e["event_type"] in {"task.model.message", "task.model.incomplete"}
                     and e["payload"].get("task_id") == task_id
                     and e["payload"].get("usage") is not None
                 )

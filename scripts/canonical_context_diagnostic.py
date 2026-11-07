@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from xaa.providers.lm_studio import AdmissionCallback, LMStudioProvider
+from xaa.providers.lm_studio import AdmissionCallback, ContextLimitError, LMStudioProvider
 from xaa.providers.tokenization import PromptCount, PromptCountRequest
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
@@ -33,14 +33,31 @@ class AuditedProvider(LMStudioProvider):
         on_admission: AdmissionCallback | None = None,
         require_exact_context: bool = False,
     ) -> dict[str, Any]:
-        response = await super().chat(
-            model=model,
-            messages=messages,
-            tools=tools,
-            max_output_tokens=max_output_tokens,
-            on_admission=on_admission,
-            require_exact_context=require_exact_context,
-        )
+        try:
+            response = await super().chat(
+                model=model,
+                messages=messages,
+                tools=tools,
+                max_output_tokens=max_output_tokens,
+                on_admission=on_admission,
+                require_exact_context=require_exact_context,
+            )
+        except ContextLimitError as exc:
+            if exc.reason != "prompt_count_mismatch":
+                raise
+            assert exc.counted_prompt_tokens is not None
+            assert exc.reported_prompt_tokens is not None
+            self.extra_fields.add("response_discarded_before_tool_execution")
+            self.rows.append(
+                {
+                    "request_index": len(self.rows) + 1,
+                    "sdk_prompt_tokens": exc.counted_prompt_tokens,
+                    "http_prompt_tokens": exc.reported_prompt_tokens,
+                    "match": False,
+                    "response_discarded": True,
+                }
+            )
+            raise
         counted = self.last_count
         assert counted is not None
         raw = response["choices"][0]["message"]
@@ -99,16 +116,13 @@ async def main() -> None:
         except Exception as exc:  # noqa: BLE001 - acceptance reports bounded failure classes
             # Preserve a useful bounded acceptance result when model inference or
             # the tool diagnostic fails, instead of leaving only a traceback.
-            mismatch = any(row["match"] is False for row in provider.rows)
-            report["failure_type"] = (
-                "SDKHTTPPromptCountMismatch" if mismatch else type(exc).__name__
-            )
+            report["failure_type"] = type(exc).__name__
             report["failure_stage"] = "coordinator_execution"
         events = store.list_events(run["id"])
         event_types = [event["event_type"] for event in events]
         if "failure_type" in report:
             report["failure_stage"] = (
-                "normal_model_prompt_count_parity"
+                "normal_model_prompt_count_parity_fail_closed"
                 if any(row["match"] is False for row in provider.rows)
                 else "harmless_tool_diagnostic_inference"
                 if "diagnostic.inference.started" in event_types
@@ -142,6 +156,21 @@ async def main() -> None:
             fixture_mtime_unchanged=fixture.stat().st_mtime_ns == stamp,
         )
         report["passed"] = (
+            saved["state"] == "blocked"
+            and any(row["match"] is False for row in provider.rows)
+            and any(
+                e["event_type"] == "context.admission_failed"
+                and e["payload"].get("reason") == "prompt_count_mismatch"
+                for e in events
+            )
+            and any(
+                e["event_type"] == "model.incomplete"
+                and e["payload"].get("response_discarded") is True
+                and e["payload"].get("usage") is not None
+                for e in events
+            )
+            and not any(e["event_type"] == "tool.intended" for e in events)
+        ) or (
             saved["state"] == "verifying"
             and nonce in (messages[-1].get("content") or "")
             and public_only

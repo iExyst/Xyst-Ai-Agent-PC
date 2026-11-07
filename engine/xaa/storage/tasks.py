@@ -26,6 +26,7 @@ class TaskStore:
         kind: Literal[
             "task.model.delta",
             "task.model.message",
+            "task.model.incomplete",
             "task.model.stream_rejected",
             "task.tool.result",
             "task.response_requested",
@@ -38,6 +39,7 @@ class TaskStore:
             not in {
                 "task.model.delta",
                 "task.model.message",
+                "task.model.incomplete",
                 "task.model.stream_rejected",
                 "task.tool.result",
                 "task.response_requested",
@@ -64,7 +66,11 @@ class TaskStore:
             if event["payload"].get("task_id") == task_id
         ]
         attempts = sum(event["event_type"] == "task.inference.started" for event in events)
-        answers = [event for event in events if event["event_type"] == "task.model.message"]
+        answers = [
+            event
+            for event in events
+            if event["event_type"] in {"task.model.message", "task.model.incomplete"}
+        ]
         unknown = attempts > len(answers) or any(
             event["payload"].get("usage") is None for event in answers
         )
@@ -408,6 +414,8 @@ class TaskStore:
             outcome: dict[str, Any] = json.loads(record["result"]) if record["result"] else {}
             if record["local_id"] in recovery_reasons:
                 record["blocked_reason"] = "worker_lost_reconciliation_required"
+            elif "ContextLimitError" in outcome.get("causes", []):
+                record["blocked_reason"] = "prompt_count_mismatch"
             elif "TaskTokenBudgetExceeded" in outcome.get("causes", []):
                 record["blocked_reason"] = "token_budget_exhausted_or_unmeasured"
             elif any(

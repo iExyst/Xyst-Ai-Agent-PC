@@ -1916,7 +1916,7 @@ export interface components {
             /** Assigned Role */
             assigned_role: string;
             /** Blocked Reason */
-            blocked_reason?: ("token_budget_exhausted_or_unmeasured" | "dependency_failed" | "execution_blocked" | "worker_lost_reconciliation_required") | null;
+            blocked_reason?: ("token_budget_exhausted_or_unmeasured" | "dependency_failed" | "execution_blocked" | "worker_lost_reconciliation_required" | "prompt_count_mismatch") | null;
             budgets: components["schemas"]["TaskBudgets"];
             /** Dependencies */
             dependencies: string[];

@@ -167,13 +167,28 @@ class Coordinator:
                 )
             if require_exact:
                 admission["require_exact_context"] = True
-            response = await self.provider.chat(
-                **admission,
-                model=selected,
-                messages=messages,
-                tools=tools,
-                max_output_tokens=DIAGNOSTIC_OUTPUT_TOKENS,
-            )
+            try:
+                response = await self.provider.chat(
+                    **admission,
+                    model=selected,
+                    messages=messages,
+                    tools=tools,
+                    max_output_tokens=DIAGNOSTIC_OUTPUT_TOKENS,
+                )
+            except ContextLimitError as exc:
+                if exc.measured_usage is not None:
+                    self.store.append_worker_event(
+                        run_id,
+                        token,
+                        "diagnostic.inference.completed",
+                        {
+                            "inference_id": identity,
+                            "model": selected,
+                            "usage": exc.measured_usage,
+                            "response_discarded": True,
+                        },
+                    )
+                raise
             usage = (
                 TokenUsage.model_validate(response["usage"]).model_dump()
                 if response.get("usage") is not None
@@ -212,7 +227,13 @@ class Coordinator:
         if require_exact:
             options["require_exact_context"] = True
         if not self.stream_responses:
-            return await self.provider.chat(model=model, messages=messages, tools=tools, **options)
+            try:
+                return await self.provider.chat(
+                    model=model, messages=messages, tools=tools, **options
+                )
+            except ContextLimitError as exc:
+                self._record_prompt_mismatch_usage(run_id, token, inference_id, exc)
+                raise
         pending = ""
         last_emit = time.monotonic() - 1
 
@@ -226,9 +247,13 @@ class Coordinator:
                 pending = ""
                 last_emit = time.monotonic()
 
-        response = await self.provider.chat_streamed(
-            model=model, messages=messages, tools=tools, on_content=progress, **options
-        )
+        try:
+            response = await self.provider.chat_streamed(
+                model=model, messages=messages, tools=tools, on_content=progress, **options
+            )
+        except ContextLimitError as exc:
+            self._record_prompt_mismatch_usage(run_id, token, inference_id, exc)
+            raise
         if pending:
             self.store.append_worker_event(
                 run_id, token, "model.delta", {"inference_id": inference_id, "text": pending}
@@ -240,14 +265,71 @@ class Coordinator:
     ) -> None:
         if not exc.reason.startswith("prompt_count_"):
             return
-        payload: dict[str, str] = {"reason": exc.reason}
+        payload: dict[str, Any] = {"reason": exc.reason}
         if exc.counter_error_type is not None:
             payload["counter_error_type"] = exc.counter_error_type
         if exc.counter_error_stage is not None:
             payload["counter_error_stage"] = exc.counter_error_stage
         if exc.counter_error_code is not None:
             payload["counter_error_code"] = exc.counter_error_code
+        if exc.counted_prompt_tokens is not None:
+            payload["counted_prompt_tokens"] = exc.counted_prompt_tokens
+        if exc.reported_prompt_tokens is not None:
+            payload["reported_prompt_tokens"] = exc.reported_prompt_tokens
         self.store.append_worker_event(run_id, token, "context.admission_failed", payload)
+
+    def _record_prompt_mismatch_usage(
+        self, run_id: str, token: str, inference_id: str, exc: ContextLimitError
+    ) -> None:
+        if exc.reason != "prompt_count_mismatch" or exc.measured_usage is None:
+            return
+        self.store.append_worker_event(
+            run_id,
+            token,
+            "model.incomplete",
+            {
+                "inference_id": inference_id,
+                "reason": exc.reason,
+                "usage": exc.measured_usage,
+                "response_discarded": True,
+            },
+        )
+
+    def _record_diagnostic_mismatch_usage(
+        self, run_id: str, token: str, exc: ContextLimitError
+    ) -> None:
+        if exc.measured_usage is None:
+            return
+        events = self.store.list_events(run_id)
+        starts = [
+            event for event in events if event["event_type"] == "diagnostic.inference.started"
+        ]
+        completed = {
+            event["payload"].get("inference_id")
+            for event in events
+            if event["event_type"] == "diagnostic.inference.completed"
+        }
+        started = next(
+            (
+                event["payload"]
+                for event in reversed(starts)
+                if event["payload"].get("inference_id") not in completed
+            ),
+            None,
+        )
+        if started is None:
+            return
+        self.store.append_worker_event(
+            run_id,
+            token,
+            "diagnostic.inference.completed",
+            {
+                "inference_id": started["inference_id"],
+                "model": started["model"],
+                "usage": exc.measured_usage,
+                "response_discarded": True,
+            },
+        )
 
     def _propose_plan(
         self, run_id: str, token: str, call_id: str, arguments: str, tools: list[dict[str, Any]]
@@ -579,6 +661,8 @@ class Coordinator:
             )
         except ContextLimitError as exc:
             self._record_context_admission_failure(run_id, token, exc)
+            if exc.reason == "prompt_count_mismatch" and exc.measured_usage is not None:
+                self._record_diagnostic_mismatch_usage(run_id, token, exc)
             self.store.transition(run_id, RunState.BLOCKED, reason=exc.reason, owner=token)
         except DiagnosticLimitError:
             self.store.transition(

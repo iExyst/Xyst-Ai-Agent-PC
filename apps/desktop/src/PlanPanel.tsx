@@ -21,6 +21,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
           </dl>
           {task.status==='blocked' && <p>{task.blocked_reason==='token_budget_exhausted_or_unmeasured'
             ? 'The reported token allowance was reached, or usage could not be measured. Start a new objective to change its allowance.'
+            : task.blocked_reason==='prompt_count_mismatch' ? 'LM Studio reported a different prompt count than the exact preflight count. The response was discarded before tools ran; measured usage was saved.'
             : task.blocked_reason==='dependency_failed' ? 'A prerequisite task is blocked or failed. This task cannot proceed.'
             : task.blocked_reason==='worker_lost_reconciliation_required' ? 'The specialist worker stopped while this task may have been in flight. Its lease was fenced; inspect the task activity and reconcile its journal before continuing.'
             : 'Task execution is blocked. Inspect the activity before starting a new objective.'}</p>}

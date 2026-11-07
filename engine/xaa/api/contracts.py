@@ -130,6 +130,7 @@ class PlanTaskRecord(BaseModel):
             "dependency_failed",
             "execution_blocked",
             "worker_lost_reconciliation_required",
+            "prompt_count_mismatch",
         ]
         | None
     ) = None
