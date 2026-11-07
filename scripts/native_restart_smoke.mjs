@@ -335,7 +335,9 @@ try {
     if (dispatch.status !== 202) throw new Error(`Could not dispatch the saved specialist: ${await dispatch.text()}`);
     const blockedDeadline = Date.now() + 30000;
     while (!fakeState.specialistResultBlocked && Date.now() < blockedDeadline) await new Promise(resolve => setTimeout(resolve, 50));
-    if (!fakeState.specialistResultBlocked || fakeState.rolePromptChecks !== 1) throw new Error('The native specialist did not read the fixture and reach the saved-result boundary with its snapshotted role prompt.');
+    if (!fakeState.specialistResultBlocked || fakeState.rolePromptChecks !== 2) {
+      throw new Error(`The native specialist missed its saved-result boundary: ${JSON.stringify({ rolePromptChecks: fakeState.rolePromptChecks, readProposals: fakeState.specialistReadProposals, resultRequests: fakeState.specialistResultRequests, resultBlocked: fakeState.specialistResultBlocked })}`);
+    }
     const firstEvents = await (await fetch(`${first.connection.base_url}/runs/${encodeURIComponent(run.id)}/events`, { headers: first.headers })).json();
     const firstReadResults = firstEvents.filter(event => event.event_type === 'task.tool.result' && event.payload.task_id === 'reader');
     if (firstReadResults.length !== 1 || !JSON.stringify(firstReadResults[0].payload).includes(specialistNonce)) throw new Error('The specialist did not durably save exactly one exact fixture read before process death.');
@@ -403,7 +405,7 @@ try {
     const events = await (await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(run.id)}/events`, { headers: second.headers })).json();
     const readResults = events.filter(event => event.event_type === 'task.tool.result' && event.payload.task_id === 'reader');
     const recoveryDecisions = events.filter(event => event.event_type === 'task.recovery_decided' && event.payload.task_id === 'reader');
-    if (readResults.length !== 1 || recoveryDecisions.length !== 1 || recoveryDecisions[0].payload.decision !== 'resume' || fakeState.specialistReadProposals !== 1 || fakeState.specialistResultRequests !== 2 || fakeState.rolePromptChecks !== 2) {
+    if (readResults.length !== 1 || recoveryDecisions.length !== 1 || recoveryDecisions[0].payload.decision !== 'resume' || fakeState.specialistReadProposals !== 1 || fakeState.specialistResultRequests !== 2 || fakeState.rolePromptChecks !== 3) {
       throw new Error('Specialist recovery replayed the workspace read, lost its saved role prompt, or omitted the explicit recovery decision.');
     }
     const fixtureAfter = await readFile(path.join(fixtureWorkspace, 'fixture.txt'), 'utf8');
