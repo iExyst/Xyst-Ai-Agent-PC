@@ -119,7 +119,7 @@ async def test_cancelled_count_releases_owner_without_prediction():
         await provider.close()
 
 
-async def test_inventory_websocket_count_error_retries_once_within_deadline(monkeypatch):
+async def test_inventory_websocket_count_error_retries_twice_within_deadline(monkeypatch):
     from xaa.providers import tokenization
 
     provider = LMStudioProvider()
@@ -136,7 +136,7 @@ async def test_inventory_websocket_count_error_retries_once_within_deadline(monk
         assert credential is None
         calls += 1
         timeouts.append(timeout)
-        if calls == 1:
+        if calls < 3:
             raise PromptCountError(
                 "safe failure",
                 worker_error_type="LMStudioWebsocketError",
@@ -150,9 +150,36 @@ async def test_inventory_websocket_count_error_retries_once_within_deadline(monk
     try:
         result = await provider._count_prompt_owned(request)
         assert result.prompt_tokens == 1
-        assert calls == 2
-        assert timeouts[0] == 20
-        assert 0 < timeouts[1] <= 20
+        assert calls == 3
+        assert 0 < timeouts[0] <= 20
+        assert timeouts[0] > timeouts[1] > timeouts[2] > 0
+    finally:
+        await provider.close()
+
+
+async def test_inventory_websocket_count_error_stops_after_two_retries(monkeypatch):
+    from xaa.providers import tokenization
+
+    provider = LMStudioProvider()
+    request = PromptCountRequest.model_validate(
+        {"model": "fixture", "messages": [{"role": "user", "content": "hello"}]}
+    )
+    calls = 0
+
+    async def count_prompt(base_url, payload, credential, *, timeout):
+        nonlocal calls
+        calls += 1
+        raise PromptCountError(
+            "safe failure",
+            worker_error_type="LMStudioWebsocketError",
+            worker_error_stage="model_inventory",
+        )
+
+    monkeypatch.setattr(tokenization, "count_prompt", count_prompt)
+    try:
+        with pytest.raises(PromptCountError, match="safe failure"):
+            await provider._count_prompt_owned(request)
+        assert calls == 3
     finally:
         await provider.close()
 

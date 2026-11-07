@@ -64,7 +64,7 @@ async def diagnose(
         mode="workspace",
         model=model,
         max_iterations=16,
-        max_seconds=480,
+        max_seconds=600,
         max_output_tokens=512,
         command_grant=grant,
     )["id"]
@@ -77,7 +77,7 @@ async def diagnose(
         [
             TaskDefinition(
                 id=name,
-                objective=f"Use the portable relative path 'shared.py' exactly for every file tool; never add a leading slash or use an absolute path. Read shared.py, then use workspace_write_lines with separate source lines and final_newline true to change value() so it returns exactly {code!r}. Keep only this one function in the module. Copy the sha256 from the read result. Your changes belong only in your private working tree. Supply the actual Python file text: after JSON decoding, content must have real line breaks and normal Python quotes, not literal backslash-n sequences or extra backslashes before quotes. After writing, read shared.py once to check the actual saved text. "
+                objective=f"Use the portable relative path 'shared.py' exactly for every file tool; never add a leading slash or use an absolute path. Read shared.py, then use workspace_write_lines with separate source lines and final_newline true to change value() so it returns exactly {code!r}. Keep only this one function in the module. Copy the sha256 from the read result. Your changes belong only in your private working tree. Supply the actual Python file text: after JSON decoding, content must have real line breaks and normal Python quotes, not literal backslash-n sequences or extra backslashes before quotes. After writing, read shared.py once to check the actual saved text. If that read confirms the requested text and value, do not write again. "
                 + (
                     f"Then call workspace_run_command with argv ['/usr/bin/python3', '-I', 'validate.py', '{code}'] and max_seconds 15 to run the provided validator against your private edits. The provided validate.py is already in your private tree; do not list directories, inspect it, or alter it. Inspect the actual exit code and output. On success, immediately submit the candidate answer with that evidence and no further tool calls. On failure, fix shared.py and rerun validation within the saved allowance. "
                     if distribution
@@ -91,8 +91,8 @@ async def diagnose(
                 permissions=("workspace.read", "workspace.write", "workspace.command")
                 if distribution
                 else ("workspace.read", "workspace.write"),
-                max_iterations=6,
-                max_seconds=180,
+                max_iterations=8,
+                max_seconds=300,
                 max_output_tokens=512,
             )
             for name, code in codes.items()

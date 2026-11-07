@@ -506,21 +506,32 @@ class LMStudioProvider:
     async def _count_prompt_owned(self, request: PromptCountRequest) -> PromptCount:
         from xaa.providers.tokenization import PromptCountError, count_prompt
 
+        loop = asyncio.get_running_loop()
         deadline = asyncio.get_running_loop().time() + 20
-        try:
-            return await count_prompt(self.base_url, request, self._credential, timeout=20)
-        except PromptCountError as exc:
-            if (
-                exc.worker_error_type != "LMStudioWebsocketError"
-                or exc.worker_error_stage != "model_inventory"
-            ):
-                raise
-            remaining = deadline - asyncio.get_running_loop().time()
+        last_error: PromptCountError | None = None
+        for attempt in range(3):
+            remaining = deadline - loop.time()
             if remaining <= 0:
-                raise
-            # Listing already-loaded models is read-only; retry one dropped SDK socket
-            # within the original count deadline before failing the inference closed.
-            return await count_prompt(self.base_url, request, self._credential, timeout=remaining)
+                assert last_error is not None
+                raise last_error
+            try:
+                return await count_prompt(
+                    self.base_url, request, self._credential, timeout=remaining
+                )
+            except PromptCountError as exc:
+                if (
+                    exc.worker_error_type != "LMStudioWebsocketError"
+                    or exc.worker_error_stage != "model_inventory"
+                    or attempt == 2
+                ):
+                    raise
+                last_error = exc
+                # Listing already-loaded models is read-only. Retry dropped SDK sockets
+                # with short backoff, while all attempts share the original deadline.
+                delay = CHAT_RETRY_DELAY_SECONDS * (2**attempt)
+                await asyncio.sleep(min(delay, max(0, deadline - loop.time())))
+        assert last_error is not None
+        raise last_error
 
     def _check_context(
         self,
