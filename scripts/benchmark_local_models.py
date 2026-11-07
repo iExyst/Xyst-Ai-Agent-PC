@@ -10,9 +10,10 @@ import statistics
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
+import httpx
 from pydantic import BaseModel, ConfigDict
 from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import AdmissionCallback, LMStudioProvider
@@ -157,7 +158,66 @@ def resources() -> dict[str, Any]:
     return snapshot
 
 
-async def trial(root: Path, model: str, case: str, repetition: int, address: str) -> dict[str, Any]:
+async def native_loaded_instances(address: str) -> dict[str, list[tuple[str, int | None]]]:
+    """Read loaded instance IDs so a benchmark never unloads an instance the user already had."""
+    async with httpx.AsyncClient(base_url=address.rstrip("/"), timeout=10) as client:
+        response = await client.get("/api/v1/models")
+        response.raise_for_status()
+    payload: object = response.json()
+    if not isinstance(payload, dict):
+        raise TypeError(
+            "LM Studio native model inventory is unavailable; refusing lifecycle changes."
+        )
+    payload_dict = cast(dict[str, Any], payload)
+    raw_models: object = payload_dict.get("models")
+    if not isinstance(raw_models, list):
+        raise TypeError(
+            "LM Studio native model inventory is unavailable; refusing lifecycle changes."
+        )
+    loaded: dict[str, list[tuple[str, int | None]]] = {}
+    for raw_item in cast(list[object], raw_models):
+        if not isinstance(raw_item, dict):
+            continue
+        raw_model = cast(dict[str, Any], raw_item)
+        if not isinstance(raw_model.get("key"), str):
+            continue
+        instances: list[tuple[str, int | None]] = []
+        raw_instances = raw_model.get("loaded_instances")
+        for raw_instance_item in (
+            cast(list[object], raw_instances) if isinstance(raw_instances, list) else []
+        ):
+            if not isinstance(raw_instance_item, dict):
+                continue
+            raw_instance = cast(dict[str, Any], raw_instance_item)
+            if not isinstance(raw_instance.get("id"), str):
+                continue
+            raw_config: object = raw_instance.get("config")
+            config = cast(dict[str, Any], raw_config) if isinstance(raw_config, dict) else {}
+            context: object = config.get("context_length")
+            instances.append((raw_instance["id"], context if type(context) is int else None))
+        loaded[raw_model["key"]] = instances
+    return loaded
+
+
+def choose_loaded_instance(
+    instances: list[tuple[str, int | None]], preferred_context: int
+) -> tuple[str, int | None] | None:
+    """Prefer an existing instance at the requested context without changing its configuration."""
+    return next(
+        (item for item in instances if item[1] == preferred_context),
+        instances[0] if instances else None,
+    )
+
+
+async def trial(
+    root: Path,
+    model: str,
+    inference_model: str,
+    context_length: int | None,
+    case: str,
+    repetition: int,
+    address: str,
+) -> dict[str, Any]:
     folder = root / f"trial-{uuid4()}"
     workspace = folder / "workspace"
     workspace.mkdir(parents=True)
@@ -176,7 +236,7 @@ async def trial(root: Path, model: str, case: str, repetition: int, address: str
         acceptance_criteria=["Exact fixture result and preserved neighbor"],
         workspace=str(workspace),
         mode="workspace" if case == "targeted_edit" else "observe",
-        model=model,
+        model=inference_model,
         max_iterations=6,
         max_seconds=45,
         file_checks=[{"path": "input.txt", "expected_content": expected.decode()}]
@@ -222,6 +282,8 @@ async def trial(root: Path, model: str, case: str, repetition: int, address: str
     )
     return {
         "model": model,
+        "inference_model": inference_model,
+        "context_length": context_length,
         "case": case,
         "repetition": repetition,
         "passed": passed,
@@ -270,7 +332,7 @@ async def main() -> None:
     report: dict[str, Any] = {
         "benchmark_complete": False,
         "production_default_selected": False,
-        "context_length": 16384,
+        "requested_context_length": 16384,
         "trial_limits": {"iterations": 6, "seconds": 45},
         "hardware": {"platform": platform.platform(), "processor": platform.processor()},
         "trials": trials,
@@ -289,20 +351,47 @@ async def main() -> None:
     save()
     try:
         installed = {model.id for model in await loader.models()}
+        loaded_instances = await native_loaded_instances(address)
         if set(args.models) - installed:
             raise ValueError(
                 "Benchmark requested a model not already installed; no downloads are allowed."
             )
+        if missing_inventory := set(args.models) - loaded_instances.keys():
+            raise TypeError(
+                "LM Studio native model inventory omitted requested model(s); "
+                f"refusing lifecycle changes: {', '.join(sorted(missing_inventory))}."
+            )
         for model in args.models:
             instance = None
-            load_started = time.monotonic()
+            owned_instance = False
+            existing = choose_loaded_instance(
+                loaded_instances.get(model, []), report["requested_context_length"]
+            )
             try:
-                instance = await loader.load_model(model, context_length=16384)
-                load_seconds = time.monotonic() - load_started
+                if existing is not None:
+                    instance, actual_context = existing
+                    load_seconds = 0.0
+                else:
+                    load_started = time.monotonic()
+                    instance = await loader.load_model(
+                        model, context_length=report["requested_context_length"]
+                    )
+                    actual_context = report["requested_context_length"]
+                    load_seconds = time.monotonic() - load_started
+                    owned_instance = True
                 for repetition in range(1, args.repetitions + 1):
                     for case in ["read_nonce", "targeted_edit"]:
-                        result = await trial(root, model, case, repetition, address)
+                        result = await trial(
+                            root,
+                            model,
+                            instance,
+                            actual_context,
+                            case,
+                            repetition,
+                            address,
+                        )
                         result["model_load_seconds"] = load_seconds
+                        result["used_preexisting_instance"] = existing is not None
                         trials.append(result)
                         save()
                         print(
@@ -323,7 +412,7 @@ async def main() -> None:
                             flush=True,
                         )
             finally:
-                if instance is not None:
+                if owned_instance and instance is not None:
                     await loader.unload_model(instance)
         summary: list[dict[str, Any]] = []
         for model in args.models:

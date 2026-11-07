@@ -2,6 +2,12 @@
 
 Updated 2026-11-07.
 
+## Current local-model evaluation and benchmark safety (2026-11-07)
+
+Refreshed the three-model real LM Studio benchmark at 16,384 requested context after runtime diagnostic/accounting changes. The 12 trials completed with 0.5B 1/4, 0.6B 0/4 and 9B 1/4; all 19 parseable proposals were schema-valid, yet only two runs reached the required exact result. The run was not an idle-hardware comparison: multiple model instances were already resident and host GPU memory sampled around 15.4 GiB / 16.3 GiB, with GPU use shared across instances. A separate post-fix 9B sample reused an existing 16,384-context instance, and both tasks failed (provider error, timeout). Evidence and limitations are in `docs/evaluations/local-model-baseline.md`, `.acceptance/a5144fab-5e9d-4f65-ab40-e87aae067e24/` and `.acceptance/ad33a895-0772-448a-b994-d431395a95e3/`. No production default was selected.
+
+Fixed the benchmark lifecycle to inspect LM Studio's native loaded-instance list, refuse incomplete native inventory, prefer an already-loaded instance at the requested context, record the actual selected instance/context, and unload only instances created by the benchmark. The post-fix live run left existing instance counts/configurations unchanged. Verification: Ruff formatting/lint and strict Pyright pass; the full engine suite passes with 711 passed, one skipped and one existing Starlette/httpx deprecation warning when run with an isolated pytest basetemp. The initial shared-temp run produced 22 setup-only `PermissionError`s under `%LOCALAPPDATA%/Temp/pytest-of-hicks`; the isolated run had no such errors. This makes future measurements less disruptive; an idle, repeated comparison and peak per-process resource metrics are still needed before default-model selection.
+
 
 ## Release dependency and license inventory (2026-11-07)
 
