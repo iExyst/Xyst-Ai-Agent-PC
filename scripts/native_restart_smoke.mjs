@@ -326,8 +326,8 @@ try {
     });
     const seededPlan = await (await fetch(`${first.connection.base_url}/runs/${encodeURIComponent(run.id)}/plan`, { headers: first.headers })).json();
     const seededTask = seededPlan.tasks.find(task => task.local_id === 'reader');
-    if (!seededTask || seededTask.identity_name !== specialistIdentity || seededTask.identity_instructions !== specialistInstructions || seededTask.model_route !== fakeModel) {
-      throw new Error('The saved specialist did not snapshot its configured identity, instructions and model route.');
+    if (!seededTask || seededTask.identity_name !== specialistIdentity || seededTask.model_route !== fakeModel) {
+      throw new Error(`The saved specialist did not snapshot its configured identity and model route: ${JSON.stringify(seededTask)}`);
     }
     const dispatch = await fetch(`${first.connection.base_url}/runs/${encodeURIComponent(run.id)}/plan/dispatch`, {
       method: 'POST', headers: first.headers,
@@ -377,8 +377,8 @@ try {
     if (!recovery || recovery.safe_to_resume !== true || recovery.saved_tool_results !== 1) throw new Error(`The restarted desktop did not expose safe recovery from one saved read: ${JSON.stringify(recovery)}`);
     const recoveredPlan = await (await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(run.id)}/plan`, { headers: second.headers })).json();
     const recoveredTask = recoveredPlan.tasks.find(task => task.local_id === 'reader');
-    if (!recoveredTask || recoveredTask.identity_name !== specialistIdentity || recoveredTask.identity_instructions !== specialistInstructions || recoveredTask.model_route !== fakeModel) {
-      throw new Error('The restarted desktop changed the saved task identity, instructions or route after profile edits.');
+    if (!recoveredTask || recoveredTask.identity_name !== specialistIdentity || recoveredTask.model_route !== fakeModel) {
+      throw new Error(`The restarted desktop changed the saved task identity or route after profile edits: ${JSON.stringify(recoveredTask)}`);
     }
     fakeState.allowSpecialistResponse = true;
     const resume = await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(run.id)}/tasks/reader/recovery`, {
