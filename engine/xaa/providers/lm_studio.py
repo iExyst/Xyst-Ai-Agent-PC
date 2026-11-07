@@ -286,6 +286,8 @@ class LMStudioProvider:
                 native = await self._client.get("/api/v1/models")
                 native.raise_for_status()
                 metadata = {item["key"]: item for item in native.json().get("models", [])}
+                instance_limits: dict[str, int] = {}
+                model_limits: dict[str, int] = {}
                 for model in result:
                     details = metadata.get(model.id, {})
                     model.context_length = details.get("max_context_length")
@@ -301,6 +303,7 @@ class LMStudioProvider:
                         else None
                     )
                     model.loaded = bool(instances) if instances is not None else None
+                    limits: list[int] = []
                     for raw_instance in instances or []:
                         if not isinstance(raw_instance, dict):
                             continue
@@ -311,10 +314,22 @@ class LMStudioProvider:
                         )
                         limit: object = config.get("context_length")
                         if type(limit) is int and limit > 0:
+                            limits.append(limit)
                             instance_id: object = instance.get("id")
                             if isinstance(instance_id, str):
-                                self._context_limits[instance_id] = limit
-                            self._context_limits[model.id] = limit
+                                # Preserve the exact loaded instance's limit even when
+                                # its ID is also the base model ID. Conflicting IDs
+                                # are conservatively bounded by the smaller value.
+                                instance_limits[instance_id] = min(
+                                    limit, instance_limits.get(instance_id, limit)
+                                )
+                    if limits:
+                        # A base alias without an exact instance ID may route to
+                        # any loaded instance, so use the smallest known context.
+                        model_limits[model.id] = min(limits)
+                # Replace the previous native snapshot so unloaded or externally
+                # reconfigured instances do not retain a stale context limit.
+                self._context_limits = {**model_limits, **instance_limits}
             except (httpx.HTTPError, ValueError, KeyError):
                 # Older LM Studio servers may only expose the OpenAI-compatible endpoint.
                 pass
@@ -329,7 +344,6 @@ class LMStudioProvider:
             instance = await self._load_model(model, context_length=context_length)
             self._diagnosed_models.discard(model)
             if context_length is not None:
-                self._context_limits[model] = context_length
                 self._context_limits[instance] = context_length
             await self.models()
             return instance
@@ -386,6 +400,10 @@ class LMStudioProvider:
         if type(limit) is not int or not 1 <= limit <= 1_000_000:
             raise ValueError("Output token limit must be an integer from 1 to 1000000.")
         return {"max_output_tokens": limit}
+
+    def context_limit_for(self, model_instance: str) -> int | None:
+        """Return the known conservative limit for an exact loaded instance ID."""
+        return self._context_limits.get(model_instance)
 
     @staticmethod
     def verify_output_limit(response: dict[str, Any], limit: int | None) -> dict[str, Any]:

@@ -40,14 +40,21 @@ def test_selected_instance_context_checks_exact_identity():
         diagnostic.selected_instance_context(duplicate, "fixture", "fixture:2")
 
 
+@pytest.mark.parametrize(
+    "conservative,matching_limit", [(False, True), (True, True), (True, False)]
+)
 async def test_fixture_routes_selected_instance_to_saved_run_and_diagnostic(
-    workspace_tmp_path, monkeypatch
+    workspace_tmp_path, monkeypatch, conservative, matching_limit
 ):
     class Provider:
         base_url = "http://127.0.0.1:1234"
 
         def __init__(self, **kwargs):
-            assert kwargs == {"exact_context": True}
+            assert kwargs == {"exact_context": not conservative}
+            self._context_limits = {"fixture:2": 4096 if matching_limit else 2048}
+
+        def context_limit_for(self, instance):
+            return self._context_limits.get(instance)
 
         async def models(self):
             return [SimpleNamespace(id="fixture")]
@@ -83,9 +90,21 @@ async def test_fixture_routes_selected_instance_to_saved_run_and_diagnostic(
     monkeypatch.setattr(diagnostic.httpx, "AsyncClient", Client)
     monkeypatch.setattr(diagnostic, "Coordinator", Coordinator)
     root = workspace_tmp_path / ".acceptance" / "routing"
-    with pytest.raises(RuntimeError, match="stop after route verification"):
-        await diagnostic.diagnose(root, "fixture", False, context_length=4096)
+    expected = (
+        "stop after route verification"
+        if matching_limit
+        else "Conservative admission has no matching instance context limit"
+    )
+    with pytest.raises(RuntimeError, match=expected):
+        await diagnostic.diagnose(
+            root, "fixture", False, context_length=4096, conservative_context=conservative
+        )
     report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+    assert report["context_admission"] == ("conservative" if conservative else "exact_sdk")
+    if not matching_limit:
+        assert "run_id" not in report
+        assert report["failure_stage"] == "model_inventory"
+        return
     assert report["selected_instance_id"] == "fixture:2"
     assert report["selected_context_length"] == 4096
     assert report["task_model_routes"] == {"alpha": "fixture:2", "beta": "fixture:2"}

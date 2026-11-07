@@ -73,6 +73,7 @@ async def diagnose(
     prepare_only: bool,
     distribution: str | None = None,
     context_length: int = 16384,
+    conservative_context: bool = False,
 ) -> None:
     root = root.resolve()
     root.relative_to((Path.cwd() / ".acceptance").resolve())
@@ -91,7 +92,7 @@ async def diagnose(
     run_id = ""
     parent = ""
     tasks = TaskStore(store)
-    provider = LMStudioProvider(exact_context=True)
+    provider = LMStudioProvider(exact_context=not conservative_context)
     instance = None
     owned_instance = False
     report: dict[str, Any] = {
@@ -104,6 +105,7 @@ async def diagnose(
         "prepare_only": prepare_only,
         "validation_distribution": distribution,
         "requested_context_length": context_length,
+        "context_admission": "conservative" if conservative_context else "exact_sdk",
     }
     stage = "model_inventory"
     try:
@@ -176,6 +178,8 @@ async def diagnose(
         actual_context = selected_instance_context(verification_response.json(), model, instance)
         if actual_context != context_length:
             raise RuntimeError("Selected instance context differs from requested context.")
+        if conservative_context and provider.context_limit_for(instance) != actual_context:
+            raise RuntimeError("Conservative admission has no matching instance context limit.")
         report["selected_instance_id"] = instance
         report["selected_context_length"] = actual_context
         stage = "fixture_setup"
@@ -401,9 +405,21 @@ if __name__ == "__main__":
     parser.add_argument("--context-length", type=int, default=16384)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument(
+        "--conservative-context",
+        action="store_true",
+        help="Use the default conservative context admission instead of exact SDK counting.",
+    )
+    parser.add_argument(
         "--distribution", help="Explicit installed WSL distribution for private validation"
     )
     args = parser.parse_args()
     asyncio.run(
-        diagnose(args.root, args.model, args.prepare_only, args.distribution, args.context_length)
+        diagnose(
+            args.root,
+            args.model,
+            args.prepare_only,
+            args.distribution,
+            args.context_length,
+            args.conservative_context,
+        )
     )

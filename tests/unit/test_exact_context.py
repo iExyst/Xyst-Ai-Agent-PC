@@ -578,6 +578,82 @@ async def test_conservative_context_estimate_bounds_image_data_url():
         await provider.close()
 
 
+@pytest.mark.parametrize("reverse_instances", [False, True])
+async def test_discovery_preserves_loaded_instance_context_boundaries(reverse_instances):
+    import httpx
+    from xaa.providers.lm_studio import ContextLimitError
+
+    instances = [
+        {"id": "fixture", "config": {"context_length": 4096}},
+        {"id": "fixture:2", "config": {"context_length": 16384}},
+    ]
+    if reverse_instances:
+        instances.reverse()
+
+    def handle(request):
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "fixture"}]})
+        return httpx.Response(
+            200,
+            json={"models": [{"key": "fixture", "loaded_instances": instances}]},
+        )
+
+    provider = LMStudioProvider()
+    await provider._client.aclose()
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url, transport=httpx.MockTransport(handle)
+    )
+    try:
+        await provider.models()
+        messages = [{"role": "user", "content": "x" * 4500}]
+        with pytest.raises(ContextLimitError):
+            provider._check_context("fixture", messages, None, max_output_tokens=512)
+        provider._check_context("fixture:2", messages, None, max_output_tokens=512)
+
+        instances.clear()
+        await provider.models()
+        assert "fixture" not in provider._context_limits
+        assert "fixture:2" not in provider._context_limits
+    finally:
+        await provider.close()
+
+
+async def test_discovery_uses_smallest_context_for_ambiguous_base_alias():
+    import httpx
+    from xaa.providers.lm_studio import ContextLimitError
+
+    def handle(request):
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "fixture"}]})
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "key": "fixture",
+                        "loaded_instances": [
+                            {"id": "fixture:1", "config": {"context_length": 4096}},
+                            {"id": "fixture:2", "config": {"context_length": 16384}},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    provider = LMStudioProvider()
+    await provider._client.aclose()
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url, transport=httpx.MockTransport(handle)
+    )
+    try:
+        await provider.models()
+        with pytest.raises(ContextLimitError):
+            provider._check_context("fixture", [{"role": "user", "content": "x" * 4500}], None)
+        provider._check_context("fixture:2", [{"role": "user", "content": "x" * 4500}], None)
+    finally:
+        await provider.close()
+
+
 async def test_streamed_default_cap_is_verified_after_assembly():
     import json
 
