@@ -74,6 +74,7 @@ async def diagnose(
     distribution: str | None = None,
     context_length: int = 16384,
     conservative_context: bool = False,
+    max_output_tokens: int = 512,
 ) -> None:
     root = root.resolve()
     root.relative_to((Path.cwd() / ".acceptance").resolve())
@@ -191,7 +192,7 @@ async def diagnose(
             model=instance,
             max_iterations=16,
             max_seconds=600,
-            max_output_tokens=512,
+            max_output_tokens=max_output_tokens,
             command_grant=grant,
         )["id"]
         report["run_id"] = run_id
@@ -221,7 +222,7 @@ async def diagnose(
                     else ("workspace.read", "workspace.write"),
                     max_iterations=8,
                     max_seconds=300,
-                    max_output_tokens=512,
+                    max_output_tokens=max_output_tokens,
                 )
                 for name, code in codes.items()
             ],
@@ -403,6 +404,12 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=Path, default=Path(".acceptance") / str(uuid4()))
     parser.add_argument("--model", default="qwen/qwen3.5-9b")
     parser.add_argument("--context-length", type=int, default=16384)
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=512,
+        help="Parent and specialist response cap for this live acceptance.",
+    )
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument(
         "--conservative-context",
@@ -421,5 +428,6 @@ if __name__ == "__main__":
             args.distribution,
             args.context_length,
             args.conservative_context,
+            args.max_output_tokens,
         )
     )
