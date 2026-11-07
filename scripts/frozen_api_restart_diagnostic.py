@@ -429,7 +429,8 @@ def main() -> None:
                     raise RuntimeError(
                         "Frozen create advanced before the boundary lock was acquired."
                     )
-            time.sleep(0.001)
+            if scenario == "write_result_crash":
+                time.sleep(0.001)
         else:
             raise TimeoutError("Frozen API never reached the selected filesystem crash boundary.")
 
