@@ -17,6 +17,7 @@ class BatchClient:
         self.requests: dict[str, dict[str, Any]] = {}
         self.run_states: dict[str, str] = {}
         self.exports: dict[str, bytes] = {}
+        self.initial_state = "completed"
 
     def __enter__(self) -> Self:
         return self
@@ -35,7 +36,7 @@ class BatchClient:
                 "payload": json,
             }
             self.requests[request_id] = record
-            self.run_states[record["id"]] = "completed"
+            self.run_states[record["id"]] = self.initial_state
             self.exports[record["id"]] = json_bytes(
                 {"format": "xaa-trajectory", "objective": json["objective"]}
             )
@@ -125,6 +126,31 @@ def test_batch_runs_and_exports_each_case_then_resumes_without_resubmitting(
     resumed = execute_batch(client, **options, resume=True)
     assert resumed["summary"] == {"completed": 2}
     assert len([call for call in client.calls if call[0] == "POST"]) == post_count
+
+
+def test_batch_returns_review_pending_candidate_without_timing_out(
+    workspace_tmp_path: Path,
+) -> None:
+    input_path = workspace_tmp_path / "batch.json"
+    output_dir = workspace_tmp_path / "batch-output"
+    write_batch(input_path)
+    client = BatchClient()
+    client.initial_state = "verifying"
+    options = {
+        "input_path": input_path,
+        "output_dir": output_dir,
+        "model": "fixture-model",
+        "workspace": None,
+        "mode": "observe",
+        "max_iterations": 4,
+        "max_seconds": 60,
+        "max_output_tokens": 128,
+        "timeout_seconds": 1,
+        "poll_interval": 0.001,
+    }
+    report = execute_batch(client, **options, resume=False)
+    assert report["timed_out"] is False
+    assert report["summary"] == {"verifying": 2}
 
 
 def test_batch_input_rejects_duplicate_case_ids(workspace_tmp_path: Path) -> None:

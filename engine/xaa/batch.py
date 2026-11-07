@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 MAX_BATCH_BYTES = 1_048_576
 MAX_BATCH_CASES = 32
 MAX_TRAJECTORY_BYTES = 10 * 1024 * 1024
-ACTIVE_RUN_STATES = {"queued", "planning", "running", "verifying"}
+ACTIVE_RUN_STATES = {"queued", "planning", "running"}
 CASE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 
 

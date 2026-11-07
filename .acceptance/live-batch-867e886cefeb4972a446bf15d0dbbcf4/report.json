@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "recorded_at": "2026-11-07T20:58:55.396856+00:00",
+  "model": "xaa-batch-smoke",
+  "batch_id": "17b4da55ecf2407b80c0f58599b6da41",
+  "run_id": "2fc4f7d8-9e89-471e-a191-d62f6e1fd8a3",
+  "final_candidate": "XAA_BATCH_OK",
+  "state": "verifying",
+  "timed_out": false,
+  "trajectory_size_bytes": 3098,
+  "trajectory_sha256": "4e07b544acc13b6a6dfdf210067bc5971c833914519f4624c2f5813f7d4965a3",
+  "evidence": {
+    "manifest": "results/batch.json",
+    "trajectory": "results/trajectories/answer-check.json"
+  },
+  "limits": "One observe-mode answer smoke; no tool execution, multi-case performance, or user review decision was exercised."
+}
