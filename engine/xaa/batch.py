@@ -19,12 +19,93 @@ ACTIVE_RUN_STATES = {"queued", "planning", "running"}
 CASE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 
 
+class BatchCheck(BaseModel):
+    """Deterministic check applied to the public trajectory after the run stops."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["final_equals", "final_contains", "tool_called", "tool_completed", "state_equals"]
+    expected: str = Field(min_length=1, max_length=10_000)
+
+
+class BatchCheckResult(BaseModel):
+    kind: Literal["final_equals", "final_contains", "tool_called", "tool_completed", "state_equals"]
+    expected: str
+    actual: str | bool
+    passed: bool
+
+
+class BatchEvaluationSummary(BaseModel):
+    evaluated_cases: int = 0
+    passed_cases: int = 0
+    failed_cases: int = 0
+    passed_checks: int = 0
+    failed_checks: int = 0
+
+
+class _TrajectoryToolFunction(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    name: str
+
+
+class _TrajectoryToolCall(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    function: _TrajectoryToolFunction
+
+
+def _empty_trajectory_tool_calls() -> list[_TrajectoryToolCall]:
+    return []
+
+
+class _TrajectoryMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    content: str | None = None
+    tool_calls: list[_TrajectoryToolCall] = Field(default_factory=_empty_trajectory_tool_calls)
+
+
+class _TrajectoryPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    message: _TrajectoryMessage | None = None
+    call_id: str | None = None
+    tool: str | None = None
+    internal: bool | None = None
+
+
+class _TrajectoryEvent(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    event_type: str
+    payload: _TrajectoryPayload
+
+
+class _TrajectoryRun(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    state: str
+
+
+class _TrajectoryDocument(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    run: _TrajectoryRun
+    events: list[_TrajectoryEvent]
+
+
+def _empty_batch_checks() -> list[BatchCheck]:
+    return []
+
+
 class BatchInputCase(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     id: str = Field(pattern=CASE_ID_PATTERN)
     objective: str = Field(min_length=1, max_length=10_000)
     acceptance_criteria: list[str] = Field(max_length=50)
+    checks: list[BatchCheck] = Field(default_factory=_empty_batch_checks, max_length=20)
 
     @field_validator("objective")
     @classmethod
@@ -72,10 +153,16 @@ class TrajectoryInfo(BaseModel):
     sha256: str
 
 
+def _empty_batch_check_results() -> list[BatchCheckResult]:
+    return []
+
+
 class BatchCase(BatchInputCase):
     run_id: str | None = None
     state: str = "not_submitted"
     trajectory: TrajectoryInfo | None = None
+    check_results: list[BatchCheckResult] = Field(default_factory=_empty_batch_check_results)
+    evaluation: Literal["not_evaluated", "passed", "failed"] = "not_evaluated"
 
 
 class BatchManifest(BaseModel):
@@ -90,6 +177,52 @@ class BatchManifest(BaseModel):
     cases: list[BatchCase]
     timed_out: bool = False
     summary: dict[str, int] = Field(default_factory=dict)
+    evaluation_summary: BatchEvaluationSummary = Field(default_factory=BatchEvaluationSummary)
+
+
+def score_trajectory(case: BatchCase, content: bytes) -> list[BatchCheckResult]:
+    if not case.checks:
+        return []
+    trajectory = _TrajectoryDocument.model_validate_json(content)
+    final_content = ""
+    tool_names: set[str] = set()
+    intended_tools: dict[str, str] = {}
+    completed_call_ids: set[str] = set()
+    for event in trajectory.events:
+        if event.event_type == "model.message" and event.payload.message is not None:
+            message = event.payload.message
+            if message.content:
+                final_content = message.content
+            tool_names.update(call.function.name for call in message.tool_calls)
+        elif event.payload.internal is False and event.payload.call_id:
+            if event.event_type == "tool.intended" and event.payload.tool:
+                intended_tools[event.payload.call_id] = event.payload.tool
+            elif event.event_type == "tool.completed":
+                completed_call_ids.add(event.payload.call_id)
+    completed_tools = {
+        intended_tools[call_id] for call_id in completed_call_ids if call_id in intended_tools
+    }
+    results: list[BatchCheckResult] = []
+    for check in case.checks:
+        if check.kind == "final_equals":
+            actual: str | bool = final_content == check.expected
+        elif check.kind == "final_contains":
+            actual = check.expected in final_content
+        elif check.kind == "tool_called":
+            actual = check.expected in tool_names
+        elif check.kind == "tool_completed":
+            actual = check.expected in completed_tools
+        else:
+            actual = trajectory.run.state
+        results.append(
+            BatchCheckResult(
+                kind=check.kind,
+                expected=check.expected,
+                actual=actual,
+                passed=actual is True if isinstance(actual, bool) else actual == check.expected,
+            )
+        )
+    return results
 
 
 def load_batch(path: Path) -> tuple[BatchInput, str]:
@@ -161,7 +294,7 @@ def execute_batch(
                 "Cannot resume: batch input or run settings differ from the saved checkpoint."
             )
         saved_cases = [
-            case.model_dump(include={"id", "objective", "acceptance_criteria"})
+            case.model_dump(include={"id", "objective", "acceptance_criteria", "checks"})
             for case in manifest.cases
         ]
         if saved_cases != [case.model_dump() for case in batch_input.cases]:
@@ -250,9 +383,26 @@ def execute_batch(
             size_bytes=len(content),
             sha256=hashlib.sha256(content).hexdigest(),
         )
+        case.check_results = score_trajectory(case, content)
+        if case.check_results:
+            case.evaluation = (
+                "passed" if all(result.passed for result in case.check_results) else "failed"
+            )
     states = {case.state for case in manifest.cases}
     manifest.summary = {
         state: sum(case.state == state for case in manifest.cases) for state in states
     }
+    evaluated_cases = [case for case in manifest.cases if case.check_results]
+    manifest.evaluation_summary = BatchEvaluationSummary(
+        evaluated_cases=len(evaluated_cases),
+        passed_cases=sum(case.evaluation == "passed" for case in evaluated_cases),
+        failed_cases=sum(case.evaluation == "failed" for case in evaluated_cases),
+        passed_checks=sum(
+            result.passed for case in evaluated_cases for result in case.check_results
+        ),
+        failed_checks=sum(
+            not result.passed for case in evaluated_cases for result in case.check_results
+        ),
+    )
     _write_manifest(manifest_path, manifest)
     return manifest.model_dump(mode="json")

@@ -1,0 +1,65 @@
+{
+  "format": "xaa-batch",
+  "version": 1,
+  "batch_id": "b999cbca7a0d48f49c8427a06a3eb902",
+  "input_digest": "3f96515281b6a5150c0f447758235195d0c94d937f60f205b9d70040ad809ee7",
+  "settings": {
+    "model": "xaa-batch-eval",
+    "workspace": ".acceptance\\live-batch-eval-0fc5a2606f6342c184a5f5789a844ed4\\workspace",
+    "mode": "observe",
+    "max_iterations": 3,
+    "max_seconds": 240,
+    "max_output_tokens": 256
+  },
+  "created_at": "2026-11-07T21:13:58Z",
+  "cases": [
+    {
+      "id": "exact",
+      "objective": "Reply with exactly the text LIVE_BATCH_CASE_ALPHA.",
+      "acceptance_criteria": [
+        "The final answer is exactly LIVE_BATCH_CASE_ALPHA."
+      ],
+      "run_id": "69a92f08-ebc7-4c84-9757-d9f9b8d54e5e",
+      "state": "verifying",
+      "trajectory": {
+        "path": "trajectories\\exact.json",
+        "size_bytes": 3259,
+        "sha256": "50dc9380953a0e361375830b96f8e3e2bac1520bef4314035fff07895de05b41"
+      }
+    },
+    {
+      "id": "arithmetic",
+      "objective": "Compute 17 multiplied by 19. Reply with exactly the digits 323.",
+      "acceptance_criteria": [
+        "The final answer is exactly 323."
+      ],
+      "run_id": "aedac54a-e9c6-457a-a2c8-c582b6d3b6cb",
+      "state": "verifying",
+      "trajectory": {
+        "path": "trajectories\\arithmetic.json",
+        "size_bytes": 3139,
+        "sha256": "0e9fe1425ba5520a95c243150e293d9d82842d0e9586c1a8116f9e7d88d51664"
+      }
+    },
+    {
+      "id": "workspace-read",
+      "objective": "Use workspace_list_directory and workspace_read_file to read nonce.txt from the workspace, then reply with exactly the nonce found there: LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e",
+      "acceptance_criteria": [
+        "The final answer is exactly LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e.",
+        "The saved tool journal contains a successful workspace read."
+      ],
+      "run_id": "5b1860e0-124c-4605-9ed4-e04072a88ea3",
+      "state": "blocked",
+      "trajectory": {
+        "path": "trajectories\\workspace-read.json",
+        "size_bytes": 3112,
+        "sha256": "fb600423e1a9bca7d25f64f87cc450935924c856573d0dc4698fb559d881567b"
+      }
+    }
+  ],
+  "timed_out": false,
+  "summary": {
+    "verifying": 2,
+    "blocked": 1
+  }
+}

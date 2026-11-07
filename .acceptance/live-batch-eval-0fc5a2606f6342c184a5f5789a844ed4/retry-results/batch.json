@@ -1,0 +1,36 @@
+{
+  "format": "xaa-batch",
+  "version": 1,
+  "batch_id": "769727d8fbb2404abf1289f6c14bcd64",
+  "input_digest": "8e9d39f5232f692d55352e77615644447bd8892108169d2f060e3784fba9c771",
+  "settings": {
+    "model": "xaa-batch-eval",
+    "workspace": ".acceptance\\live-batch-eval-0fc5a2606f6342c184a5f5789a844ed4\\workspace",
+    "mode": "observe",
+    "max_iterations": 3,
+    "max_seconds": 240,
+    "max_output_tokens": 1024
+  },
+  "created_at": "2026-11-07T21:14:49Z",
+  "cases": [
+    {
+      "id": "read-retry",
+      "objective": "Read nonce.txt from the selected workspace and return its contents exactly, with no punctuation.",
+      "acceptance_criteria": [
+        "Final answer exactly equals LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e.",
+        "A successful workspace-read tool result is present."
+      ],
+      "run_id": "68f0b36c-f851-49a8-b69f-2c71a42d7923",
+      "state": "verifying",
+      "trajectory": {
+        "path": "trajectories\\read-retry.json",
+        "size_bytes": 3303,
+        "sha256": "a58b06bbe15e74aae544089f685ef8f93eccba0ee29d48693fb211e32eb73084"
+      }
+    }
+  ],
+  "timed_out": false,
+  "summary": {
+    "verifying": 1
+  }
+}

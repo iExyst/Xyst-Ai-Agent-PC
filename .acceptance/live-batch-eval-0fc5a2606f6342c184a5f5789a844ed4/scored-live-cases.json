@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "scored-read",
+      "objective": "Read nonce.txt in the selected workspace and return the nonce in your answer.",
+      "acceptance_criteria": [
+        "A successful workspace read occurs and the returned candidate contains the exact nonce."
+      ],
+      "checks": [
+        {
+          "kind": "final_contains",
+          "expected": "LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e"
+        },
+        {
+          "kind": "tool_called",
+          "expected": "workspace_read_file"
+        },
+        {
+          "kind": "tool_completed",
+          "expected": "workspace.read_file"
+        },
+        {
+          "kind": "state_equals",
+          "expected": "verifying"
+        }
+      ]
+    }
+  ]
+}

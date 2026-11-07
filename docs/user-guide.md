@@ -70,7 +70,10 @@ uv run xaa status RUN_ID
 uv run xaa events RUN_ID
 uv run xaa history --scope conversation --query "deployment details"
 uv run xaa export RUN_ID --output C:\path\to\run.json
+uv run xaa batch C:\path\to\cases.json --output C:\path\to\batch-results --model MODEL_ID --workspace C:\path\to\project
 ```
+
+Batch JSON cases can include deterministic checks for final text, proposed/completed tool calls, and run state; the report does not auto-approve candidates. Use `--resume` with the same input and settings after interruption. See the [batch evaluation guide](evaluations/batches.md) for the input schema and scoring rules.
 
 For interactive terminal conversation:
 

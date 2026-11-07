@@ -1,0 +1,152 @@
+{
+  "recorded_at": "2026-11-07T21:17:21.988902+00:00",
+  "model": "qwen3-0.6b",
+  "identifier": "xaa-batch-eval",
+  "device": "LM Studio Local",
+  "load_report": "609.82 MiB; 1.35 seconds (LM Studio CLI output)",
+  "context_length": 8192,
+  "method": "Authenticated local X.A.A. API and xaa batch CLI, observe mode; exact output cases, arithmetic, and a workspace nonce read. Initial workspace-read run capped at 256 output tokens and blocked on length; retry used 1024. User review was not submitted; verifying is a review-pending candidate.",
+  "attempt_count": 6,
+  "candidate_count": 5,
+  "blocked_count": 1,
+  "strict_exact_passes": 1,
+  "semantic_content_matches": 4,
+  "workspace_read_successes": 2,
+  "reported_token_total": 19415,
+  "duration_total_seconds": 30.006,
+  "cases": [
+    {
+      "case": "single-answer-smoke",
+      "run_id": "2fc4f7d8-9e89-471e-a191-d62f6e1fd8a3",
+      "state": "verifying",
+      "expected": "XAA_BATCH_OK",
+      "final_candidate": "XAA_BATCH_OK",
+      "strict_exact_match": true,
+      "semantic_content_match": true,
+      "tool_calls": [],
+      "tool_result_count": 0,
+      "total_reported_tokens": 2709,
+      "duration_seconds": 2.671,
+      "trajectory_path": "..\\live-batch-867e886cefeb4972a446bf15d0dbbcf4\\results\\trajectories\\answer-check.json",
+      "trajectory_sha256": "4e07b544acc13b6a6dfdf210067bc5971c833914519f4624c2f5813f7d4965a3"
+    },
+    {
+      "case": "exact",
+      "run_id": "69a92f08-ebc7-4c84-9757-d9f9b8d54e5e",
+      "state": "verifying",
+      "expected": "LIVE_BATCH_CASE_ALPHA",
+      "final_candidate": "The requested text \"LIVE_BATCH_CASE_ALPHA\" cannot be generated using the provided tools. No relevant function is available for outputting this specific string.",
+      "strict_exact_match": false,
+      "semantic_content_match": false,
+      "tool_calls": [],
+      "tool_result_count": 0,
+      "total_reported_tokens": 2731,
+      "duration_seconds": 6.369,
+      "trajectory_path": "results\\trajectories\\exact.json",
+      "trajectory_sha256": "50dc9380953a0e361375830b96f8e3e2bac1520bef4314035fff07895de05b41"
+    },
+    {
+      "case": "arithmetic",
+      "run_id": "aedac54a-e9c6-457a-a2c8-c582b6d3b6cb",
+      "state": "verifying",
+      "expected": "323",
+      "final_candidate": "The product of 17 multiplied by 19 is **323**.",
+      "strict_exact_match": false,
+      "semantic_content_match": true,
+      "tool_calls": [],
+      "tool_result_count": 0,
+      "total_reported_tokens": 2795,
+      "duration_seconds": 7.07,
+      "trajectory_path": "results\\trajectories\\arithmetic.json",
+      "trajectory_sha256": "0e9fe1425ba5520a95c243150e293d9d82842d0e9586c1a8116f9e7d88d51664"
+    },
+    {
+      "case": "workspace-read-short-budget",
+      "run_id": "5b1860e0-124c-4605-9ed4-e04072a88ea3",
+      "state": "blocked",
+      "expected": "LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e",
+      "final_candidate": "",
+      "strict_exact_match": false,
+      "semantic_content_match": false,
+      "tool_calls": [],
+      "tool_result_count": 0,
+      "total_reported_tokens": 2747,
+      "duration_seconds": 7.858,
+      "trajectory_path": "results\\trajectories\\workspace-read.json",
+      "trajectory_sha256": "fb600423e1a9bca7d25f64f87cc450935924c856573d0dc4698fb559d881567b"
+    },
+    {
+      "case": "workspace-read-retry",
+      "run_id": "68f0b36c-f851-49a8-b69f-2c71a42d7923",
+      "state": "verifying",
+      "expected": "LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e",
+      "final_candidate": "The contents of `nonce.txt` are:  \n**LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e**",
+      "strict_exact_match": false,
+      "semantic_content_match": true,
+      "tool_calls": [
+        "workspace_read_file"
+      ],
+      "tool_result_count": 1,
+      "total_reported_tokens": 3800,
+      "duration_seconds": 2.273,
+      "trajectory_path": "retry-results\\trajectories\\read-retry.json",
+      "trajectory_sha256": "a58b06bbe15e74aae544089f685ef8f93eccba0ee29d48693fb211e32eb73084"
+    },
+    {
+      "case": "scored-live-read",
+      "run_id": "2943b49b-dcc9-475b-a387-a5cc8e37ab37",
+      "state": "verifying",
+      "strict_exact_match": false,
+      "semantic_content_match": true,
+      "tool_calls": [
+        "workspace_read_file"
+      ],
+      "tool_result_count": 1,
+      "total_reported_tokens": 4633,
+      "duration_seconds": 3.765,
+      "trajectory_path": "scored-live-results/trajectories/scored-read.json",
+      "trajectory_sha256": "4764eb5009741ee23f0a75041b34b69a16e6008ff6f04e1abea6a6397c694940",
+      "structured_check_results": [
+        {
+          "kind": "final_contains",
+          "expected": "LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e",
+          "actual": true,
+          "passed": true
+        },
+        {
+          "kind": "tool_called",
+          "expected": "workspace_read_file",
+          "actual": true,
+          "passed": true
+        },
+        {
+          "kind": "tool_completed",
+          "expected": "workspace.read_file",
+          "actual": true,
+          "passed": true
+        },
+        {
+          "kind": "state_equals",
+          "expected": "verifying",
+          "actual": "verifying",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "One small model and five attempts do not establish broad reliability or comparative benchmarks.",
+    "Semantic content classification was checked against the recorded candidate and fixture nonce; the engine does not yet score acceptance criteria automatically.",
+    "All candidate runs remained verifying for explicit user review. The structured scorer records passed checks and does not approve any candidate.",
+    "The failed 256-token run is retained as a budget failure."
+  ],
+  "structured_scoring_smoke": {
+    "input": "scored-live-cases.json",
+    "batch_manifest": "scored-live-results/batch.json",
+    "passed_cases": 1,
+    "failed_cases": 0,
+    "passed_checks": 4,
+    "failed_checks": 0,
+    "run_id": "2943b49b-dcc9-475b-a387-a5cc8e37ab37"
+  }
+}

@@ -18,6 +18,7 @@ class BatchClient:
         self.run_states: dict[str, str] = {}
         self.exports: dict[str, bytes] = {}
         self.initial_state = "completed"
+        self.export_content: bytes | None = None
 
     def __enter__(self) -> Self:
         return self
@@ -37,7 +38,7 @@ class BatchClient:
             }
             self.requests[request_id] = record
             self.run_states[record["id"]] = self.initial_state
-            self.exports[record["id"]] = json_bytes(
+            self.exports[record["id"]] = self.export_content or json_bytes(
                 {"format": "xaa-trajectory", "objective": json["objective"]}
             )
         return response(record)
@@ -151,6 +152,106 @@ def test_batch_returns_review_pending_candidate_without_timing_out(
     report = execute_batch(client, **options, resume=False)
     assert report["timed_out"] is False
     assert report["summary"] == {"verifying": 2}
+
+
+def test_batch_scores_structured_checks_against_exported_trajectory(
+    workspace_tmp_path: Path,
+) -> None:
+    input_path = workspace_tmp_path / "scored-batch.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "cases": [
+                    {
+                        "id": "checked",
+                        "objective": "Read the fixture nonce",
+                        "acceptance_criteria": ["Read and return the nonce"],
+                        "checks": [
+                            {"kind": "final_equals", "expected": "NONCE-42"},
+                            {"kind": "final_contains", "expected": "NONCE-42"},
+                            {"kind": "tool_called", "expected": "workspace_read_file"},
+                            {"kind": "tool_completed", "expected": "workspace.read_file"},
+                            {"kind": "state_equals", "expected": "completed"},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = workspace_tmp_path / "scored-output"
+    client = BatchClient()
+    client.export_content = json_bytes(
+        {
+            "format": "xaa-trajectory",
+            "run": {"state": "completed"},
+            "events": [
+                {
+                    "event_type": "model.message",
+                    "payload": {
+                        "message": {
+                            "role": "assistant",
+                            "content": "The fixture says NONCE-42.",
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "function": {"name": "workspace_read_file"},
+                                }
+                            ],
+                        }
+                    },
+                },
+                {
+                    "event_type": "tool.intended",
+                    "payload": {
+                        "call_id": "call-1",
+                        "tool": "workspace.read_file",
+                        "internal": False,
+                    },
+                },
+                {
+                    "event_type": "tool.completed",
+                    "payload": {"call_id": "call-1", "internal": False},
+                },
+            ],
+        }
+    )
+
+    report = execute_batch(
+        client,
+        input_path=input_path,
+        output_dir=output_dir,
+        model="fixture-model",
+        workspace=None,
+        mode="observe",
+        max_iterations=2,
+        max_seconds=60,
+        max_output_tokens=128,
+        timeout_seconds=1,
+        poll_interval=0.001,
+        resume=False,
+    )
+
+    case = report["cases"][0]
+    assert case["evaluation"] == "failed"
+    assert [result["passed"] for result in case["check_results"]] == [
+        False,
+        True,
+        True,
+        True,
+        True,
+    ]
+    assert report["evaluation_summary"] == {
+        "evaluated_cases": 1,
+        "passed_cases": 0,
+        "failed_cases": 1,
+        "passed_checks": 4,
+        "failed_checks": 1,
+    }
+    submitted_payload = client.requests[next(iter(client.requests))]["payload"]
+    assert submitted_payload["objective"] == "Read the fixture nonce"
+    assert "checks" not in submitted_payload
 
 
 def test_batch_input_rejects_duplicate_case_ids(workspace_tmp_path: Path) -> None:

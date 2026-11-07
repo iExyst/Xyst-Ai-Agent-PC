@@ -1,0 +1,27 @@
+{
+  "cases": [
+    {
+      "objective": "Reply with exactly the text LIVE_BATCH_CASE_ALPHA.",
+      "id": "exact",
+      "acceptance_criteria": [
+        "The final answer is exactly LIVE_BATCH_CASE_ALPHA."
+      ]
+    },
+    {
+      "objective": "Compute 17 multiplied by 19. Reply with exactly the digits 323.",
+      "id": "arithmetic",
+      "acceptance_criteria": [
+        "The final answer is exactly 323."
+      ]
+    },
+    {
+      "objective": "Use workspace_list_directory and workspace_read_file to read nonce.txt from the workspace, then reply with exactly the nonce found there: LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e",
+      "id": "workspace-read",
+      "acceptance_criteria": [
+        "The final answer is exactly LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e.",
+        "The saved tool journal contains a successful workspace read."
+      ]
+    }
+  ],
+  "version": 1
+}

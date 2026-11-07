@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "read-retry",
+      "objective": "Read nonce.txt from the selected workspace and return its contents exactly, with no punctuation.",
+      "acceptance_criteria": [
+        "Final answer exactly equals LIVE_BATCH_NONCE_1b9dcea250314735bc0706b0c2163c0e.",
+        "A successful workspace-read tool result is present."
+      ]
+    }
+  ]
+}
