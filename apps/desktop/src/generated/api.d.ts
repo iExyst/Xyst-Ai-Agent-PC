@@ -896,6 +896,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/tasks/{task_id}/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Task Recovery */
+        get: operations["get_task_recovery_runs__run_id__tasks__task_id__recovery_get"];
+        put?: never;
+        /** Decide Task Recovery */
+        post: operations["decide_task_recovery_runs__run_id__tasks__task_id__recovery_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/tasks/{task_id}/review": {
         parameters: {
             query?: never;
@@ -2674,6 +2692,44 @@ export interface components {
             path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /** TaskRecoveryDecision */
+        TaskRecoveryDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "resume" | "review_candidate" | "fail";
+        };
+        /** TaskRecoverySummary */
+        TaskRecoverySummary: {
+            /** Candidate */
+            candidate: string | null;
+            /** Candidate Reviewable */
+            candidate_reviewable: boolean;
+            /** Consumed Iterations */
+            consumed_iterations: number;
+            /** Pending Model Tool Calls */
+            pending_model_tool_calls: {
+                [key: string]: string | null;
+            }[];
+            /** Reserved Tokens */
+            reserved_tokens: number;
+            /** Run Measured Tokens */
+            run_measured_tokens: number;
+            /** Safe To Resume */
+            safe_to_resume: boolean;
+            /** Saved Tool Results */
+            saved_tool_results: number;
+            /**
+             * Status
+             * @constant
+             */
+            status: "blocked";
+            /** Task Id */
+            task_id: string;
+            /** Unresolved Tool Calls */
+            unresolved_tool_calls: number;
         };
         /** TaskReviewDecision */
         TaskReviewDecision: {
@@ -4727,6 +4783,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrationPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_recovery_runs__run_id__tasks__task_id__recovery_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRecoverySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_task_recovery_runs__run_id__tasks__task_id__recovery_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskRecoveryDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanRecord"];
                 };
             };
             /** @description Validation Error */

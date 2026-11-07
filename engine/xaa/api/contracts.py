@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.states import RunState
@@ -140,6 +140,25 @@ class PlanRecord(BaseModel):
     tasks: list[PlanTaskRecord]
     ready: list[str]
     blocked: list[str]
+
+
+class TaskRecoverySummary(BaseModel):
+    task_id: str
+    status: Literal["blocked"]
+    candidate: str | None
+    candidate_reviewable: bool
+    saved_tool_results: int
+    pending_model_tool_calls: list[dict[str, str | None]]
+    unresolved_tool_calls: int
+    safe_to_resume: bool
+    consumed_iterations: int
+    run_measured_tokens: int
+    reserved_tokens: int
+
+
+class TaskRecoveryDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    decision: Literal["resume", "review_candidate", "fail"]
 
 
 class TaskEvidence(BaseModel):

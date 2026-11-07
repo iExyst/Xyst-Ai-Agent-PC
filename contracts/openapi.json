@@ -3933,6 +3933,109 @@
         "title": "TaskEvidence",
         "type": "object"
       },
+      "TaskRecoveryDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "resume",
+              "review_candidate",
+              "fail"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "TaskRecoveryDecision",
+        "type": "object"
+      },
+      "TaskRecoverySummary": {
+        "properties": {
+          "candidate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate"
+          },
+          "candidate_reviewable": {
+            "title": "Candidate Reviewable",
+            "type": "boolean"
+          },
+          "consumed_iterations": {
+            "title": "Consumed Iterations",
+            "type": "integer"
+          },
+          "pending_model_tool_calls": {
+            "items": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            "title": "Pending Model Tool Calls",
+            "type": "array"
+          },
+          "reserved_tokens": {
+            "title": "Reserved Tokens",
+            "type": "integer"
+          },
+          "run_measured_tokens": {
+            "title": "Run Measured Tokens",
+            "type": "integer"
+          },
+          "safe_to_resume": {
+            "title": "Safe To Resume",
+            "type": "boolean"
+          },
+          "saved_tool_results": {
+            "title": "Saved Tool Results",
+            "type": "integer"
+          },
+          "status": {
+            "const": "blocked",
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "unresolved_tool_calls": {
+            "title": "Unresolved Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_id",
+          "status",
+          "candidate",
+          "candidate_reviewable",
+          "saved_tool_results",
+          "pending_model_tool_calls",
+          "unresolved_tool_calls",
+          "safe_to_resume",
+          "consumed_iterations",
+          "run_measured_tokens",
+          "reserved_tokens"
+        ],
+        "title": "TaskRecoverySummary",
+        "type": "object"
+      },
       "TaskReviewDecision": {
         "additionalProperties": false,
         "properties": {
@@ -7114,6 +7217,120 @@
           }
         ],
         "summary": "Preview Task Integration"
+      }
+    },
+    "/runs/{run_id}/tasks/{task_id}/recovery": {
+      "get": {
+        "operationId": "get_task_recovery_runs__run_id__tasks__task_id__recovery_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecoverySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Recovery"
+      },
+      "post": {
+        "operationId": "decide_task_recovery_runs__run_id__tasks__task_id__recovery_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRecoveryDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Decide Task Recovery"
       }
     },
     "/runs/{run_id}/tasks/{task_id}/review": {

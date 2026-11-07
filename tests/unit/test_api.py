@@ -11,7 +11,10 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
+from xaa.runtime.states import RunState
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
+from xaa.storage.tasks import TaskStore
 from xaa.version import APP_VERSION
 
 
@@ -41,6 +44,53 @@ def test_openapi_advertises_packaged_engine_version(workspace_tmp_path) -> None:
         FakeProvider(), SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "api.sqlite3")
     )
     assert app.version == APP_VERSION
+
+
+def test_blocked_lost_specialist_can_be_inspected_and_explicitly_closed(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "task-recovery-api.sqlite3")
+    run = store.create_run(
+        objective="Recover task",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+    )
+    run_id = run["id"]
+    parent = store.acquire_lease(run_id, "setup")
+    assert parent
+    tasks = TaskStore(store)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="lost", objective="Inspect evidence")])
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim
+    with store.connection() as connection:
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["lost"]
+    store.transition(run_id, RunState.PLANNING, owner=parent)
+    store.transition(run_id, RunState.RUNNING, owner=parent)
+    store.transition(run_id, RunState.BLOCKED, reason="lost_worker", owner=parent)
+
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        inspected = client.get(f"/runs/{run_id}/tasks/lost/recovery", headers=headers)
+        refused = client.post(
+            f"/runs/{run_id}/tasks/lost/recovery",
+            headers=headers,
+            json={"decision": "resume"},
+        )
+        closed = client.post(
+            f"/runs/{run_id}/tasks/lost/recovery",
+            headers=headers,
+            json={"decision": "fail"},
+        )
+        unauthenticated = client.get(f"/runs/{run_id}/tasks/lost/recovery")
+
+    assert inspected.status_code == 200
+    assert inspected.json()["safe_to_resume"] is False
+    assert refused.status_code == 409
+    assert closed.status_code == 202
+    assert closed.json()["tasks"][0]["status"] == "failed"
+    assert unauthenticated.status_code == 401
 
 
 def test_public_tool_result_api_is_authenticated_and_excludes_internal_data(workspace_tmp_path):

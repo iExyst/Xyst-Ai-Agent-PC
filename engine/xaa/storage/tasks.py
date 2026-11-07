@@ -1,6 +1,7 @@
 """Durable specialist plans sharing the parent run's authority boundary."""
 
 import json
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -226,7 +227,13 @@ class TaskStore:
                 )
             if not ready:
                 return None
-            local_id = ready[0]
+            recovered_ids = {
+                event["payload"].get("task_id")
+                for event in self.runs.list_events(run_id)
+                if event["event_type"] == "task.recovery_decided"
+                and event["payload"].get("decision") == "resume"
+            }
+            local_id = next((identity for identity in ready if identity in recovered_ids), ready[0])
             record = next(row for row in records if row["local_id"] == local_id)
             identity = record["id"]
             token = str(uuid4())
@@ -426,6 +433,163 @@ class TaskStore:
             else:
                 record["blocked_reason"] = "execution_blocked"
         return records
+
+    def recovery_summary(self, run_id: str, task_id: str) -> dict[str, Any]:
+        """Summarize durable worker evidence without treating a missing result as success."""
+        task = next((row for row in self.records(run_id) if row["local_id"] == task_id), None)
+        if task is None:
+            raise KeyError(task_id)
+        if (
+            task["status"] != "blocked"
+            or task["blocked_reason"] != "worker_lost_reconciliation_required"
+        ):
+            raise ValueError("This task does not require lost-worker reconciliation.")
+        events = [
+            event
+            for event in self.runs.list_events(run_id)
+            if event["payload"].get("task_id") == task_id
+        ]
+        messages = [
+            {"sequence": event["sequence"], "message": event["payload"]["message"]}
+            for event in events
+            if event["event_type"] == "task.model.message"
+            and isinstance(event["payload"].get("message"), dict)
+        ]
+        calls: list[dict[str, Any]] = [
+            call
+            for item in messages
+            for call in cast(list[dict[str, Any]], item["message"].get("tool_calls", []))
+        ]
+        proposed_ids: Counter[str] = Counter()
+        completed_ids: Counter[str] = Counter(
+            event["payload"]["call_id"]
+            for event in events
+            if event["event_type"] == "task.tool.result"
+            and isinstance(event["payload"].get("call_id"), str)
+        )
+        pending_calls: list[dict[str, str | None]] = []
+        for call in calls:
+            call_id = call.get("id")
+            if not isinstance(call_id, str):
+                pending_calls.append({"call_id": None, "name": None})
+                continue
+            proposed_ids[call_id] += 1
+            if completed_ids[call_id] < proposed_ids[call_id]:
+                function = cast(dict[str, Any], call.get("function", {}))
+                name = function.get("name")
+                pending_calls.append(
+                    {"call_id": call_id, "name": name if isinstance(name, str) else None}
+                )
+        candidate_item = next(
+            (
+                item
+                for item in reversed(messages)
+                for message in [item["message"]]
+                if isinstance(message.get("content"), str)
+                and message["content"].strip()
+                and not message.get("tool_calls")
+            ),
+            None,
+        )
+        candidate = candidate_item["message"]["content"] if candidate_item else None
+        last_message_sequence = messages[-1]["sequence"] if messages else -1
+        completed_results = [event for event in events if event["event_type"] == "task.tool.result"]
+        unresolved = [
+            item
+            for item in self.runs.unresolved_tool_calls(run_id)
+            if item.get("task_id") == task_id
+        ]
+        candidate_reviewable = bool(
+            candidate_item
+            and candidate_item["sequence"] == last_message_sequence
+            and not pending_calls
+            and not unresolved
+        )
+        safe_boundary = (
+            bool(messages)
+            and not pending_calls
+            and not unresolved
+            and (
+                not calls
+                or (
+                    all(completed_ids[call_id] >= count for call_id, count in proposed_ids.items())
+                    and completed_results
+                    and completed_results[-1]["sequence"] > last_message_sequence
+                )
+            )
+        )
+        with self.runs.connection() as connection:
+            tokens_reserved = connection.execute(
+                "SELECT COALESCE(SUM(json_extract(payload,'$.reserved_tokens')),0) FROM run_events WHERE run_id=? AND event_type='tokens.reserved' AND json_extract(payload,'$.task_id')=?",
+                (run_id, task_id),
+            ).fetchone()[0]
+        summary: dict[str, Any] = {
+            "task_id": task_id,
+            "status": task["status"],
+            "candidate": candidate,
+            "candidate_reviewable": candidate_reviewable and not unresolved,
+            "saved_tool_results": sum(
+                event["event_type"] == "task.tool.result" for event in events
+            ),
+            "pending_model_tool_calls": pending_calls,
+            "unresolved_tool_calls": len(unresolved),
+            "safe_to_resume": safe_boundary and candidate is None,
+            "consumed_iterations": sum(
+                event["event_type"] == "task.inference.started" for event in events
+            ),
+            "run_measured_tokens": self.runs.token_usage(run_id)["total_tokens"],
+            "reserved_tokens": tokens_reserved,
+        }
+        return summary
+
+    def resolve_lost_worker(self, run_id: str, token: str, task_id: str, decision: str) -> None:
+        if decision not in {"resume", "review_candidate", "fail"}:
+            raise ValueError("Choose resume, review_candidate, or fail.")
+        summary = self.recovery_summary(run_id, task_id)
+        if decision == "resume" and not summary["safe_to_resume"]:
+            raise ValueError(
+                "Review the saved candidate or reconcile pending work before resuming."
+            )
+        if decision == "review_candidate" and not summary["candidate_reviewable"]:
+            raise ValueError("No final candidate is available without later or unresolved work.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, token)
+            current = next(row for row in self.records(run_id) if row["local_id"] == task_id)
+            if (
+                current["status"] != "blocked"
+                or current["blocked_reason"] != "worker_lost_reconciliation_required"
+            ):
+                raise ValueError("Task recovery state changed; refresh the plan.")
+            destination = {
+                "resume": "queued",
+                "review_candidate": "verifying",
+                "fail": "failed",
+            }[decision]
+            changed = connection.execute(
+                "UPDATE tasks SET status=?,result=CASE WHEN ?='review_candidate' THEN ? ELSE result END,updated_at=? WHERE id=? AND run_id=? AND status='blocked'",
+                (
+                    destination,
+                    decision,
+                    json.dumps({"candidate": summary["candidate"]}),
+                    utc_now(),
+                    f"{run_id}:{task_id}",
+                    run_id,
+                ),
+            ).rowcount
+            if changed != 1:
+                raise ValueError("Task recovery state changed; refresh the plan.")
+            self.runs.record_event(
+                connection,
+                run_id,
+                "task.recovery_decided",
+                {
+                    "task_id": task_id,
+                    "decision": decision,
+                    "actor": "local-user",
+                    "evidence": summary,
+                },
+            )
 
     def readiness(self, run_id: str) -> tuple[list[str], list[str]]:
         records = self.records(run_id)

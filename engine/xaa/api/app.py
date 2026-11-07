@@ -13,6 +13,7 @@ import sqlite3
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
@@ -34,6 +35,8 @@ from xaa.api.contracts import (
     RunHistory,
     RunRecord,
     TaskCandidate,
+    TaskRecoveryDecision,
+    TaskRecoverySummary,
     UsageReport,
 )
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
@@ -1674,6 +1677,132 @@ def create_app(
         records = tasks.records(run_id)
         ready, blocked = tasks.readiness(run_id) if records else ([], [])
         return {"tasks": records, "ready": ready, "blocked": blocked}
+
+    @app.get(
+        "/runs/{run_id}/tasks/{task_id}/recovery",
+        response_model=TaskRecoverySummary,
+    )
+    def get_task_recovery(
+        run_id: str, task_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            return TaskStore(run_store).recovery_summary(run_id, task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post(
+        "/runs/{run_id}/tasks/{task_id}/recovery",
+        response_model=PlanRecord,
+        status_code=202,
+    )
+    async def decide_task_recovery(
+        run_id: str,
+        task_id: str,
+        payload: TaskRecoveryDecision,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        run = run_store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run["state"] != "blocked":
+            raise HTTPException(status_code=409, detail="The run must be blocked for recovery.")
+        try:
+            summary = TaskStore(run_store).recovery_summary(run_id, task_id)
+            if payload.decision == "resume" and not summary["safe_to_resume"]:
+                raise ValueError(
+                    "Saved history has an uncertain boundary or candidate; inspect it instead of resuming."
+                )
+            if payload.decision == "resume":
+                attempts = run_store.inference_attempts(run_id)
+                start_events = [
+                    event["created_at"]
+                    for event in run_store.list_events(run_id)
+                    if event["event_type"] == "run.state_changed"
+                    and event["payload"].get("to") == "planning"
+                ]
+                elapsed = (
+                    datetime.now(UTC)
+                    - datetime.fromisoformat(start_events[0] if start_events else run["created_at"])
+                ).total_seconds()
+                pending_reservations = run_store.usage_report(run_id)["outstanding_reserved_tokens"]
+                usage = run_store.token_usage(run_id)
+                if (
+                    attempts >= run["limits"]["max_iterations"]
+                    or elapsed >= run["limits"]["max_seconds"]
+                    or pending_reservations > 0
+                    or (
+                        run["limits"]["max_total_tokens"] is not None
+                        and usage["total_tokens"] >= run["limits"]["max_total_tokens"]
+                    )
+                ):
+                    raise ValueError("The shared run iteration or time budget is exhausted.")
+            lease = run_store.acquire_blocked_run_recovery(
+                run_id, "local-user-task-recovery", seconds=180
+            )
+            if lease is None:
+                raise ValueError("A worker still owns the run.")
+            try:
+                TaskStore(run_store).resolve_lost_worker(run_id, lease, task_id, payload.decision)
+                if payload.decision == "resume":
+                    run_store.transition(
+                        run_id, RunState.PLANNING, reason="recovery_dispatch", owner=lease
+                    )
+                    run_store.transition(
+                        run_id, RunState.RUNNING, reason="recovery_dispatch", owner=lease
+                    )
+                    if not supervisor.submit_plan(run_id, lease):
+                        run_store.transition(
+                            run_id, RunState.BLOCKED, reason="worker_still_active", owner=lease
+                        )
+                        raise ValueError("A worker is still stopping.")
+                elif payload.decision == "review_candidate":
+                    run_store.transition(
+                        run_id,
+                        RunState.PLANNING,
+                        reason="user_selected_saved_specialist_candidate",
+                        owner=lease,
+                    )
+                    run_store.transition(
+                        run_id,
+                        RunState.VERIFYING,
+                        reason="user_selected_saved_specialist_candidate",
+                        owner=lease,
+                    )
+                else:
+                    records = TaskStore(run_store).records(run_id)
+                    ready, newly_blocked = TaskStore(run_store).readiness(run_id)
+                    del newly_blocked
+                    verifying = any(row["status"] == "verifying" for row in records)
+                    next_state = RunState.VERIFYING if ready or verifying else RunState.BLOCKED
+                    run_store.transition(
+                        run_id,
+                        RunState.PLANNING,
+                        reason="user_reconciled_lost_specialist",
+                        owner=lease,
+                    )
+                    if next_state == RunState.VERIFYING:
+                        run_store.transition(
+                            run_id,
+                            RunState.RUNNING,
+                            reason="user_reconciled_lost_specialist",
+                            owner=lease,
+                        )
+                    run_store.transition(
+                        run_id,
+                        next_state,
+                        reason="user_reconciled_lost_specialist",
+                        owner=lease,
+                    )
+            except BaseException:
+                run_store.release_lease(run_id, lease)
+                raise
+            return get_plan(run_id, None)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found.") from exc
+        except (ValueError, LeaseLost, InvalidTransition) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/runs/{run_id}/tasks/{task_id}/candidate", response_model=TaskCandidate)
     def get_candidate(run_id: str, task_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:

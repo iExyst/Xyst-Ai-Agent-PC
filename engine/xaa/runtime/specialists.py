@@ -224,7 +224,17 @@ class SpecialistRunner:
             raise PermissionError("Specialist has no workspace read permission.")
         isolated = "workspace.write" in task["permission_scope"]
         commands = isolated and "workspace.command" in task["permission_scope"]
-        if isolated:
+        task_events = [
+            event
+            for event in self.store.list_events(run_id)
+            if event["payload"].get("task_id") == identity
+        ]
+        recovering = any(
+            event["event_type"] == "task.recovery_decided"
+            and event["payload"].get("decision") == "resume"
+            for event in task_events
+        )
+        if isolated and not recovering:
             await execute_filesystem(
                 self.store,
                 run_id,
@@ -272,6 +282,29 @@ class SpecialistRunner:
                 ),
             },
         ]
+        if recovering:
+            recovered_messages: list[dict[str, Any]] = []
+            for event in task_events:
+                if event["event_type"] == "task.model.message":
+                    message = event["payload"].get("message")
+                    if isinstance(message, dict):
+                        recovered_messages.append(cast(dict[str, Any], message))
+                elif event["event_type"] == "task.tool.result":
+                    payload = event["payload"]
+                    call_id = payload.get("call_id")
+                    if isinstance(call_id, str):
+                        recovered_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": json.dumps(payload.get("result"), ensure_ascii=False),
+                            }
+                        )
+                elif event["event_type"] == "task.response_requested":
+                    message = event["payload"].get("message")
+                    if isinstance(message, dict):
+                        recovered_messages.append(cast(dict[str, Any], message))
+            messages.extend(recovered_messages)
         recalled = self.memory.recall_preferences(
             f"specialist:{task['assigned_role']}", max_bytes=4096
         )

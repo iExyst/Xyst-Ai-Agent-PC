@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
@@ -54,3 +56,198 @@ def test_claims_are_distinct_and_failed_dependency_is_blocked(workspace_tmp_path
         second.record_outcome(run_id, parent, "b", b["token"], state="verifying", result={})
     assert second.claim_ready(run_id, parent) is None
     assert second.recover_expired(run_id, parent) == []
+
+
+def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=12,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="read", objective="Read evidence")])
+    claim = tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {
+                "task_id": "read",
+                "inference_id": "inference-1",
+            },
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "inference-1",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": '{"path":"README.md"}',
+                            },
+                        },
+                    ],
+                },
+                "usage": None,
+            },
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.tool.result",
+            {
+                "task_id": "read",
+                "call_id": "call-1",
+                "journal_id": "read-1",
+                "result": {"text": "actual", "sha256": "abc"},
+            },
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    summary = tasks.recovery_summary(run_id, "read")
+    assert summary["safe_to_resume"] is True
+    assert summary["saved_tool_results"] == 1
+    assert summary["pending_model_tool_calls"] == []
+    tasks.resolve_lost_worker(run_id, parent, "read", "resume")
+    recovered = tasks.claim_ready(run_id, parent)
+    assert recovered is not None
+    assert recovered["task"]["status"] == "running"
+    assert recovered["task"]["local_id"] == "read"
+    assert recovered["token"] != claim["token"]
+
+
+def test_lost_worker_pending_tool_call_cannot_be_resumed(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "uncertain-recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=12,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="read", objective="Read evidence")])
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "earlier",
+                "message": {"role": "assistant", "content": "An earlier answer."},
+                "usage": None,
+            },
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "inference-1",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": '{"path":"README.md"}',
+                            },
+                        },
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": '{"path":"README.md"}',
+                            },
+                        },
+                    ],
+                },
+                "usage": None,
+            },
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.tool.result",
+            {
+                "task_id": "read",
+                "call_id": "call-1",
+                "journal_id": "read-1",
+                "result": {"text": "done"},
+            },
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    summary = tasks.recovery_summary(run_id, "read")
+    assert summary["safe_to_resume"] is False
+    assert summary["candidate_reviewable"] is False
+    assert summary["pending_model_tool_calls"] == [
+        {"call_id": "call-1", "name": "workspace_read_file"}
+    ]
+    with pytest.raises(ValueError, match="Review the saved candidate"):
+        tasks.resolve_lost_worker(run_id, parent, "read", "resume")
+
+
+def test_lost_worker_final_candidate_enters_existing_review_state(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "candidate-recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=["Report evidence"],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=12,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="read", objective="Read evidence", acceptance_criteria=["Report evidence"]
+            )
+        ],
+    )
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "inference-1",
+                "message": {"role": "assistant", "content": "The file says hello."},
+                "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12},
+            },
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    assert tasks.recovery_summary(run_id, "read")["candidate_reviewable"] is True
+    tasks.resolve_lost_worker(run_id, parent, "read", "review_candidate")
+    recovered = next(row for row in tasks.records(run_id) if row["local_id"] == "read")
+    assert recovered["status"] == "verifying"
+    assert json.loads(recovered["result"]) == {"candidate": "The file says hello."}

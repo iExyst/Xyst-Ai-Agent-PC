@@ -1051,6 +1051,45 @@ class RunStore:
                 )
             return token if changed == 1 else None
 
+    def acquire_blocked_run_recovery(
+        self, run_id: str, owner: str, *, seconds: int = 180
+    ) -> str | None:
+        """Atomically move a blocked run to queued and reserve its explicit recovery decision."""
+        if not owner or not 1 <= seconds <= 3600:
+            raise ValueError("Lease requires an owner and duration between 1 and 3600 seconds.")
+        now = datetime.now(UTC)
+        expires = (now + timedelta(seconds=seconds)).isoformat()
+        token = str(uuid.uuid4())
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            changed = connection.execute(
+                "UPDATE runs SET state='queued',lease_owner=?,lease_expires_at=?,updated_at=?,revision=revision+1 "
+                "WHERE id=? AND state='blocked' AND (lease_owner IS NULL OR lease_expires_at<=?)",
+                (token, expires, now.isoformat(), run_id, now.isoformat()),
+            ).rowcount
+            if changed != 1:
+                return None
+            self.record_event(
+                connection,
+                run_id,
+                "run.state_changed",
+                {
+                    "from": "blocked",
+                    "to": "queued",
+                    "reason": "user_started_task_recovery",
+                },
+            )
+            self.record_event(
+                connection,
+                run_id,
+                "run.lease_acquired",
+                {
+                    "owner": owner,
+                    "expires_at": expires,
+                },
+            )
+        return token
+
     def renew_lease(self, run_id: str, token: str, *, seconds: int = 30) -> None:
         """Extend a live ownership period without changing its fencing token."""
         if not 1 <= seconds <= 3600:

@@ -220,6 +220,14 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(runId)}/plan`, signal ? { signal } : {});
   }
 
+  taskRecovery(runId:string,taskId:string):Promise<components['schemas']['TaskRecoverySummary']> {
+    return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/recovery`);
+  }
+
+  decideTaskRecovery(runId:string,taskId:string,decision:'resume'|'review_candidate'|'fail'):Promise<Plan> {
+    return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/recovery`,{method:'POST',body:JSON.stringify({decision})});
+  }
+
   integrationPreview(runId:string,taskId:string):Promise<components['schemas']['IntegrationPreview']> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/integration-preview`,{method:'POST'});
   }

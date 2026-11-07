@@ -1,5 +1,6 @@
 import { EngineClient, type Plan } from './api/client.ts';
 import { TaskReviewPanel } from './TaskReviewPanel.tsx';
+import { TaskRecoveryPanel } from './TaskRecoveryPanel.tsx';
 import './plan.css';
 
 export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; partials:Record<string,string>; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
@@ -29,6 +30,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
           {task.acceptance_criteria.length ? <ul>{task.acceptance_criteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ul> : <p>No criteria recorded.</p>}
           {partials[task.local_id]&&<article aria-live="polite"><h4>Partial specialist draft · unverified</h4><p style={{whiteSpace:'pre-wrap'}}>{partials[task.local_id]}</p></article>}
           {task.status==='verifying'&&<TaskReviewPanel client={client} runId={runId} taskId={task.local_id} onReviewed={onReviewed}/>}
+          {task.status==='blocked'&&task.blocked_reason==='worker_lost_reconciliation_required'&&<TaskRecoveryPanel client={client} runId={runId} taskId={task.local_id} onUpdated={onReviewed}/>}
         </article>;
       })}</div>
     </>}

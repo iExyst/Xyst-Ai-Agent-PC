@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 test('explain a fenced specialist after its worker is lost',async({page})=>{
-  const run={id:'recovery-run',objective:'Inspect the fixture',state:'verifying',acceptance_criteria:[],revision:1};
+  const run={id:'recovery-run',objective:'Inspect the fixture',state:'blocked',acceptance_criteria:[],revision:1};
   const task={id:'recovery-run:inspect',local_id:'inspect',objective:'Inspect the fixture',acceptance_criteria:['Report actual evidence'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'blocked',blocked_reason:'worker_lost_reconciliation_required'};
   const plan={tasks:[task],ready:[],blocked:[]};
   await page.route('http://127.0.0.1:8765/**',async route=>{
@@ -13,6 +13,8 @@ test('explain a fenced specialist after its worker is lost',async({page})=>{
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
+    if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:{task_id:'inspect',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[{call_id:'call-1',name:'workspace_read_file'}],unresolved_tool_calls:0,safe_to_resume:false,consumed_iterations:1,run_measured_tokens:15,reserved_tokens:0},headers});
+    if(path.endsWith('/recovery')&&request.method()==='POST')return route.fulfill({status:202,json:{...plan,tasks:[{...task,status:'failed',blocked_reason:null}]},headers});
     if(path.endsWith('/plan'))return route.fulfill({json:plan,headers});
     if(path.endsWith('/events/stream'))return route.fulfill({body:'event: done\ndata: {}\n\n',contentType:'text/event-stream',headers});
     return route.fulfill({json:run,headers});
@@ -28,4 +30,9 @@ test('explain a fenced specialist after its worker is lost',async({page})=>{
   await expect(card).toContainText('blocked');
   await expect(card).toContainText('The specialist worker stopped while this task may have been in flight. Its lease was fenced; inspect the task activity and reconcile its journal before continuing.');
   await expect(card.getByRole('button',{name:'Run ready specialists'})).toHaveCount(0);
+  await card.getByRole('button',{name:'Inspect saved task journal'}).click();
+  await expect(card).toContainText('workspace_read_file');
+  await expect(card.getByRole('button',{name:'Resume from saved results'})).toBeDisabled();
+  await card.getByRole('button',{name:'Mark task failed'}).click();
+  await expect(card).toContainText('failed');
 });
