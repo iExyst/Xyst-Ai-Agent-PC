@@ -520,11 +520,21 @@ class TaskStore:
                 )
             )
         )
-        with self.runs.connection() as connection:
-            tokens_reserved = connection.execute(
-                "SELECT COALESCE(SUM(json_extract(payload,'$.reserved_tokens')),0) FROM run_events WHERE run_id=? AND event_type='tokens.reserved' AND json_extract(payload,'$.task_id')=?",
-                (run_id, task_id),
-            ).fetchone()[0]
+        answered_inferences = {
+            event["payload"].get("inference_id")
+            for event in events
+            if event["event_type"] in {"task.model.message", "task.model.incomplete"}
+            and event["payload"].get("task_id") == task_id
+            and event["payload"].get("usage") is not None
+        }
+        pending_reservations = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "tokens.reserved"
+            and event["payload"].get("task_id") == task_id
+            and event["payload"].get("inference_id") not in answered_inferences
+        ]
+        tokens_reserved = sum(item.get("reserved_tokens", 0) for item in pending_reservations)
         summary: dict[str, Any] = {
             "task_id": task_id,
             "status": task["status"],
@@ -535,7 +545,7 @@ class TaskStore:
             ),
             "pending_model_tool_calls": pending_calls,
             "unresolved_tool_calls": len(unresolved),
-            "safe_to_resume": safe_boundary and candidate is None,
+            "safe_to_resume": safe_boundary and candidate is None and tokens_reserved == 0,
             "consumed_iterations": sum(
                 event["event_type"] == "task.inference.started" for event in events
             ),

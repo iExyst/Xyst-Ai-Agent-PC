@@ -85,6 +85,16 @@ def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_
         runs.record_event(
             connection,
             run_id,
+            "tokens.reserved",
+            {
+                "task_id": "read",
+                "inference_id": "inference-1",
+                "reserved_tokens": 9,
+            },
+        )
+        runs.record_event(
+            connection,
+            run_id,
             "task.model.message",
             {
                 "task_id": "read",
@@ -102,7 +112,7 @@ def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_
                         },
                     ],
                 },
-                "usage": None,
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
             },
         )
         runs.record_event(
@@ -122,12 +132,64 @@ def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_
     assert summary["safe_to_resume"] is True
     assert summary["saved_tool_results"] == 1
     assert summary["pending_model_tool_calls"] == []
+    assert summary["reserved_tokens"] == 0
     tasks.resolve_lost_worker(run_id, parent, "read", "resume")
     recovered = tasks.claim_ready(run_id, parent)
     assert recovered is not None
     assert recovered["task"]["status"] == "running"
     assert recovered["task"]["local_id"] == "read"
     assert recovered["token"] != claim["token"]
+
+
+def test_lost_worker_with_unanswered_token_reservation_is_not_safe_to_resume(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "reservation-recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=12,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="read", objective="Read evidence")])
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "read", "inference_id": "inference-pending"},
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "tokens.reserved",
+            {
+                "task_id": "read",
+                "inference_id": "inference-pending",
+                "reserved_tokens": 11,
+            },
+        )
+        runs.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "read",
+                "inference_id": "prior-empty-message",
+                "message": {"role": "assistant", "content": ""},
+                "usage": None,
+            },
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    summary = tasks.recovery_summary(run_id, "read")
+    assert summary["reserved_tokens"] == 11
+    assert summary["safe_to_resume"] is False
+    with pytest.raises(ValueError, match="Review the saved candidate"):
+        tasks.resolve_lost_worker(run_id, parent, "read", "resume")
 
 
 def test_lost_worker_pending_tool_call_cannot_be_resumed(workspace_tmp_path):
