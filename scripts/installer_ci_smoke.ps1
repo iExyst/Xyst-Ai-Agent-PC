@@ -63,7 +63,15 @@ try {
     $xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
-    if ((Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.desktop.sha256 -or (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.engine.sha256) { throw 'Installed binary checksums do not match the manifest.' }
+    $xaaDesktopHash = (Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash
+    $xaaEngineHash = (Get-FileHash -LiteralPath $xaaEngine -Algorithm SHA256).Hash
+    $xaaReport.installed_binary_hashes = @{
+        desktop = @{ expected = $xaaManifest.artifacts.desktop.sha256; actual = $xaaDesktopHash }
+        engine = @{ expected = $xaaManifest.artifacts.engine.sha256; actual = $xaaEngineHash }
+    }
+    if ($xaaDesktopHash -ne $xaaManifest.artifacts.desktop.sha256 -or $xaaEngineHash -ne $xaaManifest.artifacts.engine.sha256) {
+        throw "Installed binary checksums do not match the manifest. Desktop expected $($xaaManifest.artifacts.desktop.sha256), actual $xaaDesktopHash; engine expected $($xaaManifest.artifacts.engine.sha256), actual $xaaEngineHash."
+    }
     $xaaReport.installed_binary_hashes_match = $true
     foreach ($xaaNoticeName in @('THIRD_PARTY_NOTICES.md', 'dependency-inventory.md', 'release-notes-0.1.1.md')) {
         $xaaNotice = Join-Path $xaaInstallDir $xaaNoticeName
