@@ -427,8 +427,12 @@ class TaskStore:
             recovery_reasons = {
                 str(item[0])
                 for item in connection.execute(
-                    "SELECT json_extract(payload,'$.task_id') FROM run_events WHERE run_id=? AND event_type='task.blocked' AND json_extract(payload,'$.reason')=?",
-                    (run_id, "worker_lost_reconciliation_required"),
+                    "SELECT json_extract(payload,'$.task_id') FROM run_events WHERE run_id=? AND event_type='task.blocked' AND json_extract(payload,'$.reason') IN (?,?)",
+                    (
+                        run_id,
+                        "worker_lost_reconciliation_required",
+                        "parent_worker_lost_reconciliation_required",
+                    ),
                 ).fetchall()
                 if item[0] is not None
             }

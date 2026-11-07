@@ -33,7 +33,12 @@ def test_parent_expiry_fences_live_child_lease_and_blocks_replay(workspace_tmp_p
     reopened = RunStore(store.path)
     assert reopened.recover_abandoned_runs() == []
     assert reopened.get_run(run_id)["state"] == "blocked"
-    assert TaskStore(reopened).records(run_id)[0]["status"] == "blocked"
+    recovered_tasks = TaskStore(reopened)
+    task = recovered_tasks.records(run_id)[0]
+    assert task["status"] == "blocked"
+    assert task["blocked_reason"] == "worker_lost_reconciliation_required"
+    summary = recovered_tasks.recovery_summary(run_id, "task")
+    assert summary["safe_to_resume"] is False
     with reopened.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0] == 0
     reopened.transition(run_id, RunState.QUEUED)
