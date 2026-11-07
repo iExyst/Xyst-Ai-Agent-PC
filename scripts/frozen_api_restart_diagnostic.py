@@ -26,14 +26,17 @@ from xaa.storage.runs import RunStore
 CRASH_DIRECTORY_PARTS = tuple(f"dir{index:02d}" for index in range(24))
 CREATE_PATH = "/".join((*CRASH_DIRECTORY_PARTS, "created.txt"))
 CREATE_CONTENT = "frozen-api-crash-boundary"
+WRITE_BEFORE = b"frozen-api-write-before"
+WRITE_CONTENT = "frozen-api-write-after:" + "z" * (65_536 - len("frozen-api-write-after:"))
 
 
 class FixtureLMStudio(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self) -> None:
+    def __init__(self, scenario: str) -> None:
         super().__init__(("127.0.0.1", 0), FixtureLMStudioHandler)
+        self.scenario = scenario
         self.workspace_tool_requests = 0
 
 
@@ -104,7 +107,10 @@ class FixtureLMStudioHandler(BaseHTTPRequestHandler):
                 ],
             }
             finish_reason = "tool_calls"
-        elif "workspace_create_file" in tool_names:
+        elif (
+            "workspace_create_file" in tool_names
+            and cast(FixtureLMStudio, self.server).scenario == "create"
+        ):
             fixture = cast(FixtureLMStudio, self.server)
             fixture.workspace_tool_requests += 1
             message = {
@@ -117,6 +123,32 @@ class FixtureLMStudioHandler(BaseHTTPRequestHandler):
                             "name": "workspace_create_file",
                             "arguments": json.dumps(
                                 {"path": CREATE_PATH, "content": CREATE_CONTENT}
+                            ),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        elif (
+            "workspace_write_file" in tool_names
+            and cast(FixtureLMStudio, self.server).scenario == "write_result_crash"
+        ):
+            fixture = cast(FixtureLMStudio, self.server)
+            fixture.workspace_tool_requests += 1
+            message = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "frozen-restart-write-1",
+                        "type": "function",
+                        "function": {
+                            "name": "workspace_write_file",
+                            "arguments": json.dumps(
+                                {
+                                    "path": "fixture.txt",
+                                    "content": WRITE_CONTENT,
+                                    "expected_sha256": hashlib.sha256(WRITE_BEFORE).hexdigest(),
+                                }
                             ),
                         },
                     }
@@ -231,14 +263,21 @@ def main() -> None:
     ):
         raise RuntimeError("An API launch credential already exists; refusing to overwrite it.")
 
+    scenario = os.environ.get("XAA_FROZEN_API_RESTART_SCENARIO", "create")
+    if scenario not in {"create", "write_result_crash"}:
+        raise ValueError("XAA_FROZEN_API_RESTART_SCENARIO must be create or write_result_crash.")
+
     root = (Path(".acceptance") / f"frozen-api-restart-{uuid4()}").resolve()
     root.mkdir(parents=True)
     workspace = root / "workspace"
     workspace.mkdir()
-    workspace.joinpath(*CRASH_DIRECTORY_PARTS).mkdir(parents=True)
+    if scenario == "create":
+        workspace.joinpath(*CRASH_DIRECTORY_PARTS).mkdir(parents=True)
+    else:
+        (workspace / "fixture.txt").write_bytes(WRITE_BEFORE)
     token = secrets.token_urlsafe(48)
     api_port = free_port()
-    fixture = FixtureLMStudio()
+    fixture = FixtureLMStudio(scenario)
     lm_port = fixture.server_address[1]
     fake_thread = threading.Thread(target=fixture.serve_forever, daemon=True)
     fake_thread.start()
@@ -248,11 +287,15 @@ def main() -> None:
     second: subprocess.Popen[bytes] | None = None
     monitor: sqlite3.Connection | None = None
     lock: sqlite3.Connection | None = None
-    target = workspace.joinpath(*CRASH_DIRECTORY_PARTS, "created.txt")
+    target = (
+        workspace.joinpath(*CRASH_DIRECTORY_PARTS, "created.txt")
+        if scenario == "create"
+        else workspace / "fixture.txt"
+    )
     target_mtime: int | None = None
     report: dict[str, Any] = {
         "passed": False,
-        "scenario": "frozen API plus worker crash during exclusive create",
+        "scenario": f"frozen API plus worker crash during {scenario}",
         "provider": "local OpenAI-compatible fixture; no LM Studio server/model used",
         "frozen_engine_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
     }
@@ -262,7 +305,7 @@ def main() -> None:
         response = client.post(
             "/runs",
             json={
-                "objective": "Create the frozen restart diagnostic fixture.",
+                "objective": "Perform the frozen restart diagnostic filesystem action.",
                 "acceptance_criteria": ["The interrupted create remains unconfirmed."],
                 "workspace": str(workspace),
                 "mode": "workspace",
@@ -277,6 +320,7 @@ def main() -> None:
         database = root / "data" / "XAA" / "xaa.sqlite3"
         journal = RunStore(database)
         monitor = sqlite3.connect(database, timeout=5)
+        lock = sqlite3.connect(database, timeout=5, isolation_level=None)
         lock_deadline = time.monotonic() + 45
         while time.monotonic() < lock_deadline:
             if first.poll() is not None:
@@ -289,8 +333,53 @@ def main() -> None:
                     (run_id,),
                 )
             }
-            if "tool.intended" in event_types:
-                lock = sqlite3.connect(database, timeout=5, isolation_level=None)
+            if scenario == "write_result_crash" and "tool.executing" in event_types:
+                assert lock is not None
+                lock.execute("BEGIN IMMEDIATE")
+                if "tool.completed" in event_types:
+                    raise RuntimeError(
+                        "Frozen write completed before the journal lock was acquired."
+                    )
+                if target.read_bytes() == WRITE_CONTENT.encode():
+                    time.sleep(0.1)
+                    event_types = {
+                        row[0]
+                        for row in monitor.execute(
+                            "SELECT DISTINCT event_type FROM run_events WHERE run_id=? "
+                            "AND event_type IN ('tool.executing','tool.completed')",
+                            (run_id,),
+                        )
+                    }
+                    if (
+                        "tool.executing" not in event_types
+                        or "tool.completed" in event_types
+                        or len(journal.unresolved_tool_calls(run_id)) != 1
+                        or target.read_bytes() != WRITE_CONTENT.encode()
+                    ):
+                        raise RuntimeError(
+                            "Frozen write did not pause after fsync before journaling."
+                        )
+                    target_mtime = target.stat().st_mtime_ns
+                    kill_api_tree(first)
+                    if first.returncode in (0, None):
+                        raise RuntimeError("Frozen API did not terminate after the fsynced write.")
+                    lock.rollback()
+                    lock.close()
+                    lock = None
+                    time.sleep(0.2)
+                    post_kill_events = journal.list_events(run_id)
+                    if (
+                        any(event["event_type"] == "tool.completed" for event in post_kill_events)
+                        or len(journal.unresolved_tool_calls(run_id)) != 1
+                        or target.read_bytes() != WRITE_CONTENT.encode()
+                        or target.stat().st_mtime_ns != target_mtime
+                    ):
+                        raise RuntimeError(
+                            "Frozen write advanced after its process tree was killed."
+                        )
+                    break
+            elif scenario == "create" and "tool.intended" in event_types:
+                assert lock is not None
                 lock.execute("BEGIN IMMEDIATE")
                 if "tool.executing" in event_types or "tool.completed" in event_types:
                     raise RuntimeError(
@@ -336,15 +425,13 @@ def main() -> None:
                         )
                     break
                 lock.rollback()
-                lock.close()
-                lock = None
                 if "tool.executing" in event_types or "tool.completed" in event_types:
                     raise RuntimeError(
                         "Frozen create advanced before the boundary lock was acquired."
                     )
             time.sleep(0.001)
         else:
-            raise TimeoutError("Frozen API never reached the exclusive-create boundary.")
+            raise TimeoutError("Frozen API never reached the selected filesystem crash boundary.")
 
         saved = journal.get_run(run_id)
         if saved is None:
@@ -387,12 +474,13 @@ def main() -> None:
                 event for event in events if event["event_type"] == "run.state_changed"
             ]
             retried_reconciliation = any(
-                event["payload"].get("from") == "planning"
-                and event["payload"].get("to") == "blocked"
-                and event["payload"].get("reason") == "tool_reconciliation_required"
+                event["payload"].get("from") == "blocked" and event["payload"].get("to") == "queued"
                 for event in state_changes
             )
-            if current["state"] == "blocked" and retried_reconciliation:
+            if retried_reconciliation and (
+                current["state"] == "blocked"
+                or (scenario == "write_result_crash" and current["state"] == "verifying")
+            ):
                 break
             time.sleep(0.15)
         else:
@@ -416,13 +504,14 @@ def main() -> None:
                 and first.pid != second.pid
                 and len(recovered) == 1
                 and recovered[0]["payload"]["reason"] == "tool_reconciliation_required"
-                and current["state"] == "blocked"
-                and len(unresolved) == 1
+                and current["state"] == ("blocked" if scenario == "create" else "verifying")
+                and len(unresolved) == (1 if scenario == "create" else 0)
                 and len(intents) == 1
-                and len(executions) == 0
-                and len(completions) == 0
-                and tool_names == ["workspace_create_file"]
-                and target.read_bytes() == b""
+                and len(executions) == (0 if scenario == "create" else 1)
+                and len(completions) == (0 if scenario == "create" else 1)
+                and tool_names
+                == ["workspace_create_file" if scenario == "create" else "workspace_write_file"]
+                and target.read_bytes() == (b"" if scenario == "create" else WRITE_CONTENT.encode())
                 and target.stat().st_mtime_ns == target_mtime
                 and fixture.workspace_tool_requests == 1
             ),
@@ -438,10 +527,15 @@ def main() -> None:
             tool_completions=len(completions),
             saved_assistant_tool_names=tool_names,
             fixture_model_workspace_requests=fixture.workspace_tool_requests,
-            empty_create_unchanged=target.read_bytes() == b""
+            target_unchanged=target.read_bytes()
+            == (b"" if scenario == "create" else WRITE_CONTENT.encode())
             and target.stat().st_mtime_ns == target_mtime,
             authenticated_resume_reconciliation=retried_reconciliation,
-            final_decision="blocked; incomplete create remains unresolved for user inspection",
+            final_decision=(
+                "blocked; incomplete create remains unresolved for user inspection"
+                if scenario == "create"
+                else "verifying; fsynced write reconciled without replay"
+            ),
         )
 
         shutdown_response = client.post("/shutdown", timeout=5)
