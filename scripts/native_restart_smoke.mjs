@@ -178,6 +178,7 @@ async function startDesktop(label) {
     if (!page) throw new Error(`${label} desktop did not expose a WebView page; stdout=${stdout}; stderr=${stderr}`);
     await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
     const connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
+    launchCredentials.push(connection);
     const headers = { Authorization: `Bearer ${connection.token}` };
     const apiDeadline = Date.now() + 30000;
     while (Date.now() < apiDeadline) {
@@ -199,6 +200,32 @@ async function startDesktop(label) {
 let first;
 let second;
 let report;
+const launchCredentials = [];
+
+function cleanTestLaunchCredentials() {
+  const latest = launchCredentials.at(-1);
+  if (!latest) return true;
+  const cleanup = [
+    'import sys',
+    'from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE, CredentialStore',
+    'store = CredentialStore()',
+    'clean = True',
+    'for profile, expected in ((API_LAUNCH_TOKEN_PROFILE, sys.argv[1]), (API_LAUNCH_URL_PROFILE, sys.argv[2])):',
+    '    current = store.get(profile)',
+    '    if current == expected: store.delete(profile)',
+    '    elif current is not None: clean = False',
+    'print(clean)',
+  ].join('\n');
+  try {
+    const result = execFileSync('uv', ['run', 'python', '-c', cleanup, latest.token, latest.base_url], {
+      windowsHide: true, encoding: 'utf8', timeout: 30000, env: process.env,
+    }).trim();
+    return result === 'True';
+  } catch {
+    return false;
+  }
+}
+
 try {
   first = await startDesktop('First');
   const configResponse = await fetch(`${first.connection.base_url}/providers/lm-studio/config`, {
@@ -286,6 +313,7 @@ try {
     final_state: recovered.state,
     tool_effects: 0,
     workspace_unchanged: true,
+    launch_credentials_cleaned: false,
     desktop_sha256: createHash('sha256').update(await readFile(desktopExecutable)).digest('hex'),
     engine_sha256: createHash('sha256').update(await readFile(path.join(path.dirname(desktopExecutable), 'xaa-engine.exe'))).digest('hex'),
   };
@@ -303,5 +331,13 @@ try {
   for (const item of [first, second]) {
     if (item?.proc.exitCode === null) execFileSync('taskkill', ['/PID', String(item.proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
   }
+  const credentialsCleaned = cleanTestLaunchCredentials();
+  if (report && credentialsCleaned !== report.launch_credentials_cleaned) {
+    report.launch_credentials_cleaned = credentialsCleaned;
+    const serialized = JSON.stringify(report, null, 2);
+    await writeFile(path.join(root, 'report.json'), serialized);
+    await writeFile('build/installer/native-restart-acceptance.json', serialized);
+  }
+  if (!credentialsCleaned) throw new Error('The native restart acceptance could not clean its own API launch credential pair.');
   await new Promise(resolve => modelServer.close(resolve));
 }
