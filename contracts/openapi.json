@@ -3451,9 +3451,21 @@
             ],
             "title": "Active Version"
           },
+          "category": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Category",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Description",
             "type": "string"
           },
           "id": {

@@ -2513,10 +2513,20 @@ export interface components {
             /** Active Version */
             active_version: number | null;
             /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Id */
             id: string;
             /** Latest Version */

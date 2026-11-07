@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react';
 import {EngineClient} from './api/client.ts';
+import {suggestActiveProcedures,type ProcedureSuggestion} from './procedureSuggestions.ts';
 import type {components} from './generated/api.js';
 
 type Summary=components['schemas']['SkillSummary'];
@@ -12,7 +13,7 @@ function importedRequirementsJson(raw:string|undefined):string {
     return 'Unavailable';
   }
 }
-export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onTrial:(selection:ProcedureTrialSelection)=>void;refreshKey:number}){
+export function SkillsPanel({client,onTrial,refreshKey,objective}:{client:EngineClient;onTrial:(selection:ProcedureTrialSelection)=>void;refreshKey:number;objective:string}){
   const [items,setItems]=useState<Summary[]>([]);
   const [selected,setSelected]=useState<Summary>();
   const [version,setVersion]=useState(1);
@@ -29,10 +30,12 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
   const [criteria,setCriteria]=useState(''),[rationale,setRationale]=useState('');
   const [lifecycle,setLifecycle]=useState<components['schemas']['SkillLifecycleEvent'][]>([]);
   const [lifecycleReason,setLifecycleReason]=useState('');
+  const [suggestions,setSuggestions]=useState<ProcedureSuggestion<Summary>[]>();
   const [confirmed,setConfirmed]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   async function refresh(){const rows=await client.skills();if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');setItems(rows);}
   useEffect(()=>{let active=true;void client.skills().then(rows=>{if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');if(active)setItems(rows);}).catch(failure=>{if(active)setError(String(failure));});return()=>{active=false;};},[client,refreshKey]);
+  useEffect(()=>setSuggestions(undefined),[objective]);
   function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setTrials([]);setSelected(undefined);setVersion(1);setName('');setDescription('');setCategory('');setContent('');setTools('');setRead(false);setWrite(false);setError('');}
   async function inspect(item:Summary,revision=item.latest_version){
     setBusy(true);setError('');
@@ -64,6 +67,7 @@ export function SkillsPanel({client,onTrial,refreshKey}:{client:EngineClient;onT
   async function exportVersion(){if(!selected)return;setBusy(true);try{const blob=await client.exportSkillPackage(selected.id,version);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`procedure-${selected.id}-v${version}.zip`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(failure){setError(String(failure));}finally{setBusy(false);}}
   return <section aria-label="Procedure candidates"><h2>Procedure candidates</h2>
     <p>Draft reusable procedures here. Candidates are unverified. Select a version explicitly for an evaluation trial; declared tools and permissions grant no authority.</p>
+    <section aria-label="Active procedure suggestions"><h3>Find a verified procedure</h3><p>Suggestions use only objective and procedure metadata. They never select or load procedure instructions; inspect a match and choose its active version yourself.</p><button disabled={busy||!objective.trim()} onClick={()=>setSuggestions(suggestActiveProcedures(items,objective))}>Find matching active procedures</button>{suggestions&&<>{suggestions.length===0?<p>No clear active-procedure match. You can inspect the full library below.</p>:<ul>{suggestions.map(({item,matchedTerms})=><li key={item.id}>{item.name} v{item.active_version} · matched: {matchedTerms.join(', ')||'exact name'} <button disabled={busy} onClick={()=>void inspect(item,item.active_version??item.latest_version)}>Inspect active version</button></li>)}</ul>}</>}</section>
     <div className="controls"><button disabled={busy} onClick={reset}>New procedure</button>
     <button disabled={busy} onClick={()=>{setBusy(true);void refresh().then(()=>reset()).catch(failure=>setError(String(failure))).finally(()=>setBusy(false));}}>Refresh procedure list</button></div>
     <ul>{items.map(item=><li key={item.id}><button disabled={busy} onClick={()=>void inspect(item)}>Inspect {item.name}</button> · {item.lifecycle_state} &middot; latest version {item.latest_version} &middot; active version {item.active_version??'none'}</li>)}</ul>

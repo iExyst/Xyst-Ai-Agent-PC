@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EngineClient } from '../apps/desktop/src/api/client.ts';
 import { decodeRunEvents } from '../apps/desktop/src/api/events.ts';
+import { suggestActiveProcedures } from '../apps/desktop/src/procedureSuggestions.ts';
+
+test('procedure suggestions are conservative and include only active versions', () => {
+  const items = [
+    {id:'active',name:'Summarize Test Reports',description:'Summarize engineering test evidence',category:'testing',lifecycle_state:'active',active_version:2,latest_version:3},
+    {id:'candidate',name:'Summarize Test Reports',description:'Summarize engineering test evidence',category:'testing',lifecycle_state:'candidate',active_version:null,latest_version:1},
+    {id:'weak',name:'Workspace reader',description:'Read files',category:'files',lifecycle_state:'active',active_version:1,latest_version:1},
+  ];
+  const results = suggestActiveProcedures(items, 'Please summarize the engineering test reports');
+  assert.deepEqual(results.map(result => result.item.id), ['active']);
+  assert.deepEqual(results[0].matchedTerms, ['summarize','engineering','test','reports']);
+  assert.deepEqual(suggestActiveProcedures(items, 'Read a workspace'), []);
+});
 
 const wireEvent = sequence => `id: ${sequence}\nevent: run_event\ndata: ${JSON.stringify({sequence,event_type:'model.delta',payload:{text:String(sequence)},created_at:'2026-11-03T00:00:00Z'})}\n\n`;
 

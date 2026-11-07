@@ -305,6 +305,8 @@ class SkillRevision(SkillDraft):
 class SkillSummary(BaseModel):
     id: str
     name: str
+    description: str = Field(default="", max_length=1024)
+    category: str = Field(default="", max_length=64)
     lifecycle_state: Literal["candidate", "evaluated", "active", "deprecated"]
     active_version: int | None
     lifecycle_revision: int
@@ -573,7 +575,7 @@ class SkillStore:
             return [
                 dict(row)
                 for row in connection.execute(
-                    "SELECT skills.*,MAX(skill_versions.version) AS latest_version,(SELECT COALESCE(MAX(sequence),0) FROM skill_lifecycle_events WHERE skill_id=skills.id) AS lifecycle_revision FROM skills JOIN skill_versions ON skills.id=skill_versions.skill_id GROUP BY skills.id ORDER BY skills.updated_at DESC,skills.id LIMIT 100"
+                    "SELECT skills.*,MAX(skill_versions.version) AS latest_version,(SELECT COALESCE(MAX(sequence),0) FROM skill_lifecycle_events WHERE skill_id=skills.id) AS lifecycle_revision,(SELECT COALESCE(json_extract(v.evaluation_evidence,'$.description'),'') FROM skill_versions v WHERE v.skill_id=skills.id AND v.version=COALESCE(skills.active_version,(SELECT MAX(active.version) FROM skill_versions active WHERE active.skill_id=skills.id))) AS description,(SELECT COALESCE(json_extract(v.evaluation_evidence,'$.category'),'') FROM skill_versions v WHERE v.skill_id=skills.id AND v.version=COALESCE(skills.active_version,(SELECT MAX(active.version) FROM skill_versions active WHERE active.skill_id=skills.id))) AS category FROM skills JOIN skill_versions ON skills.id=skill_versions.skill_id GROUP BY skills.id ORDER BY skills.updated_at DESC,skills.id LIMIT 100"
                 )
             ]
 
