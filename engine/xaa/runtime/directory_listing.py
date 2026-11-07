@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.executor import ReconciliationRequired
+from xaa.runtime.file_handles import resolve_read_path
 from xaa.storage.runs import RunStore
 
 
@@ -141,11 +142,25 @@ def list_directory(
         raise KeyError(run_id)
     if not run["workspace"] or run["mode"] not in {"observe", "workspace", "authorized_automation"}:
         raise PermissionError("Select a workspace with read permission.")
-    root = Path(run["workspace"]).resolve(strict=True)
+
+    def path_retry(attempt: int, delay_ms: int) -> None:
+        store.append_worker_event(
+            run_id,
+            token,
+            "tool.read_retry",
+            {
+                "call_id": call_id,
+                "attempt": attempt,
+                "delay_ms": delay_ms,
+                "stage": "path_resolution",
+            },
+        )
+
+    root = resolve_read_path(Path(run["workspace"]), on_retry=path_retry)
     requested = Path(parsed.path)
     if requested.is_absolute():
         raise PermissionError("Use a relative directory path.")
-    target = (root / requested).resolve(strict=True)
+    target = resolve_read_path(root / requested, on_retry=path_retry)
     if not target.is_relative_to(root) or not target.is_dir():
         raise PermissionError("Directory is outside the workspace.")
     if not store.record_tool_intent(

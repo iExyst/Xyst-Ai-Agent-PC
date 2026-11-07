@@ -1,13 +1,40 @@
 """Resolve actual opened file destinations before consuming workspace data."""
 
 import ctypes
+import errno
 import os
+import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
 
 from xaa.runtime.mutation_policy import require_mutable_destination
+
+
+def resolve_read_path(
+    path: Path,
+    *,
+    on_retry: Callable[[int, int], None] | None = None,
+) -> Path:
+    """Resolve a read target, retrying only known transient filesystem errors."""
+    for attempt in range(3):
+        try:
+            return path.resolve(strict=True)
+        except OSError as exc:
+            transient = getattr(exc, "winerror", None) in {32, 33, 121, 1237} or exc.errno in {
+                errno.EAGAIN,
+                errno.EINTR,
+                errno.ETIMEDOUT,
+                errno.ESTALE,
+            }
+            if not transient or attempt == 2:
+                raise
+            delay_ms = 50 * 2**attempt
+            if on_retry is not None:
+                on_retry(attempt + 1, delay_ms)
+            time.sleep(delay_ms / 1000)
+    raise RuntimeError("Path resolution retry loop exhausted without a result.")
 
 
 @contextmanager
