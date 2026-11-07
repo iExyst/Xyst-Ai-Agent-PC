@@ -1,10 +1,14 @@
 import asyncio
+import time
 
 import pytest
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.specialists import SpecialistRunner
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
+from xaa.storage.tasks import TaskStore
 
 
 class CountedProvider(LMStudioProvider):
@@ -411,6 +415,73 @@ async def test_run_blocks_on_prompt_count_mismatch_and_accounts_discarded_usage(
         "total_tokens": 22,
         "unmeasured_calls": 0,
     }
+    assert store.usage_report(run["id"])["outstanding_reservations"] == 0
+
+
+async def test_specialist_mismatch_blocks_task_and_accounts_usage_without_tool_intent(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "specialist-count-mismatch.sqlite3")
+    run = store.create_run(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        max_total_tokens=1000,
+        max_output_tokens=100,
+        pre_inference_token_reservations=True,
+    )
+    parent = store.acquire_lease(run["id"], "coordinator")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run["id"],
+        parent,
+        [TaskDefinition(id="inspect", objective="Read input.txt", max_iterations=1)],
+    )
+
+    class MismatchingProvider(CountedProvider):
+        async def _chat(self, **kwargs):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "never-run",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "workspace_read_file",
+                                        "arguments": '{"path":"input.txt"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 21, "completion_tokens": 1, "total_tokens": 22},
+            }
+
+    provider = MismatchingProvider(exact_context=False)
+    provider.release.set()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run["id"], parent, deadline=time.monotonic() + 10
+        )
+    finally:
+        await provider.close()
+
+    assert statuses == [{"task_id": "inspect", "status": "blocked"}]
+    assert tasks.records(run["id"])[0]["blocked_reason"] == "prompt_count_mismatch"
+    events = store.list_events(run["id"])
+    assert not any(
+        event["event_type"] in {"task.model.message", "tool.intended"} for event in events
+    )
+    incomplete = next(event for event in events if event["event_type"] == "task.model.incomplete")
+    assert incomplete["payload"]["response_discarded"] is True
+    assert incomplete["payload"]["usage"]["total_tokens"] == 22
+    assert store.token_usage(run["id"])["total_tokens"] == 22
     assert store.usage_report(run["id"])["outstanding_reservations"] == 0
 
 
