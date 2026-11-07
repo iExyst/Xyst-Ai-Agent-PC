@@ -1443,6 +1443,8 @@ export interface components {
              * @default false
              */
             approved_web_search: boolean;
+            /** Client Request Id */
+            client_request_id?: string | null;
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /** Document */
             document?: string | null;

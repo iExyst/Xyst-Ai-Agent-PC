@@ -14,6 +14,7 @@ from urllib.parse import quote
 import httpx
 from keyring.errors import KeyringError
 
+from xaa.batch import execute_batch
 from xaa.credentials import (
     API_LAUNCH_TOKEN_PROFILE,
     API_LAUNCH_URL_PROFILE,
@@ -109,6 +110,20 @@ def main() -> None:
     )
     run.add_argument("--max-output-tokens", type=int, help="Per-request generated token limit")
     run.add_argument("--accept", action="append", default=[])
+    batch = commands.add_parser("batch", help="Run and capture a bounded JSON evaluation batch")
+    batch.add_argument("input", type=Path, help="Version 1 JSON file with up to 32 cases")
+    batch.add_argument(
+        "--output", type=Path, required=True, help="New or resumable output directory"
+    )
+    batch.add_argument("--model", required=True)
+    batch.add_argument("--workspace")
+    batch.add_argument("--mode", choices=["observe", "workspace"], default="observe")
+    batch.add_argument("--max-iterations", type=int, default=8, choices=range(1, 101))
+    batch.add_argument("--max-seconds", type=int, default=900, choices=range(1, 86401))
+    batch.add_argument("--max-output-tokens", type=int, choices=range(1, 1_000_001))
+    batch.add_argument("--timeout-seconds", type=int, default=3600, choices=range(1, 86401))
+    batch.add_argument("--poll-interval", type=float, default=2.0)
+    batch.add_argument("--resume", action="store_true", help="Resume the checkpoint in --output")
     chat = commands.add_parser("chat", help="Start an interactive terminal conversation")
     chat.add_argument("--model", required=True)
     chat.add_argument("--workspace")
@@ -136,6 +151,8 @@ def main() -> None:
             command.add_argument("--after", type=int, default=0)
     args = parser.parse_args()
     args.api_url = _resolve_api_url(args.command, args.api_url, os.environ.get("XAA_API_URL"))
+    if args.command == "batch" and not 0 < args.poll_interval <= 60:
+        parser.error("--poll-interval must be greater than 0 and at most 60 seconds")
     if args.command == "restore":
         try:
             restored = restore_database(args.snapshot, args.destination)
@@ -220,6 +237,23 @@ def main() -> None:
                         "pre_inference_token_reservations": args.reserve_tokens_before_inference,
                     },
                 )
+            elif args.command == "batch":
+                report = execute_batch(
+                    client,
+                    input_path=args.input,
+                    output_dir=args.output,
+                    model=args.model,
+                    workspace=args.workspace,
+                    mode=args.mode,
+                    max_iterations=args.max_iterations,
+                    max_seconds=args.max_seconds,
+                    max_output_tokens=args.max_output_tokens,
+                    timeout_seconds=args.timeout_seconds,
+                    poll_interval=args.poll_interval,
+                    resume=args.resume,
+                )
+                print(json.dumps(report, indent=2))
+                return
             elif args.command == "chat":
                 _interactive_chat(client, args)
                 return

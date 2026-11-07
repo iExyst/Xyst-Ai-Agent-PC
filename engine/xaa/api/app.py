@@ -140,6 +140,12 @@ class CreateRunRequest(BaseModel):
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
+    client_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
 
     @field_validator("approved_web_hosts")
     @classmethod
@@ -1619,6 +1625,12 @@ def create_app(
                 document_bytes=document_bytes,
                 document_media_type=document_type,
                 document_text=document_text,
+                client_request_id=payload.client_request_id,
+                request_digest=hashlib.sha256(
+                    payload.model_dump_json(exclude={"client_request_id"}).encode("utf-8")
+                ).hexdigest()
+                if payload.client_request_id is not None
+                else None,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc

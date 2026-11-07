@@ -273,6 +273,43 @@ def test_memory_controls_are_authenticated_and_remove_search_results(workspace_t
         assert client.get("/memory?q=TypeScript", headers=headers).json() == []
 
 
+def test_run_client_request_id_is_idempotent_and_rejects_payload_reuse(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "run-idempotency.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    payload = {
+        "objective": "Inspect the fixture",
+        "acceptance_criteria": ["Report the observation"],
+        "workspace": None,
+        "mode": "observe",
+        "model": None,
+        "client_request_id": "batch:00112233445566778899aabbccddeeff:case1",
+    }
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        first = client.post("/runs", headers=headers, json=payload)
+        replay = client.post("/runs", headers=headers, json=payload)
+        assert first.status_code == replay.status_code == 201
+        assert first.json()["id"] == replay.json()["id"]
+        changed = client.post(
+            "/runs", headers=headers, json={**payload, "objective": "Different objective"}
+        )
+        assert changed.status_code == 409
+    with store.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+
+
+def test_run_client_request_id_requires_safe_key(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "run-request-key.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    payload = {
+        "objective": "Inspect the fixture",
+        "model": None,
+        "mode": "observe",
+        "client_request_id": "../unsafe",
+    }
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        assert client.post("/runs", headers=headers, json=payload).status_code == 422
+
+
 def test_sourced_knowledge_api_is_authenticated_editable_and_exported(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "sourced-memory-api.sqlite3")
     headers = {"Authorization": f"Bearer {TOKEN}"}

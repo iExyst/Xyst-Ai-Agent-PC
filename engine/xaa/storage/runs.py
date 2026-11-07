@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 19
+DATABASE_SCHEMA_VERSION = 20
 
 
 @dataclass(frozen=True)
@@ -190,6 +190,11 @@ class RunStore:
                     revision INTEGER NOT NULL DEFAULT 0,
                     lease_owner TEXT,
                     lease_expires_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS idempotent_run_requests (
+                    request_id TEXT PRIMARY KEY,
+                    payload_digest TEXT NOT NULL,
+                    run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS runs_state_updated ON runs(state, updated_at);
                 CREATE TABLE IF NOT EXISTS run_limits (
@@ -694,7 +699,32 @@ class RunStore:
         document_bytes: bytes | None = None,
         document_media_type: str | None = None,
         document_text: str | None = None,
+        client_request_id: str | None = None,
+        request_digest: str | None = None,
     ) -> dict[str, Any]:
+        if (client_request_id is None) != (request_digest is None):
+            raise ValueError(
+                "Idempotent run requests require both a request ID and payload digest."
+            )
+        if client_request_id is not None:
+            if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", client_request_id) is None:
+                raise ValueError("Client request ID must contain 1–128 safe characters.")
+            if re.fullmatch(r"[0-9a-f]{64}", request_digest or "") is None:
+                raise ValueError("Client request payload digest must be a SHA-256 hex value.")
+            with self._connection() as connection:
+                existing = connection.execute(
+                    "SELECT payload_digest,run_id FROM idempotent_run_requests WHERE request_id=?",
+                    (client_request_id,),
+                ).fetchone()
+            if existing is not None:
+                if existing["payload_digest"] != request_digest:
+                    raise ValueError(
+                        "Client request ID was already used for a different run payload."
+                    )
+                record = self.get_run(existing["run_id"])
+                if record is None:
+                    raise RuntimeError("Idempotent run request points to a missing run.")
+                return record
         if (image_bytes is None) != (image_media_type is None):
             raise ValueError("Image bytes and media type must be supplied together.")
         if image_media_type not in {None, "image/png", "image/jpeg"}:
@@ -806,6 +836,11 @@ class RunStore:
                     now,
                 ),
             )
+            if client_request_id is not None and request_digest is not None:
+                connection.execute(
+                    "INSERT INTO idempotent_run_requests(request_id,payload_digest,run_id) VALUES (?,?,?)",
+                    (client_request_id, request_digest, run_id),
+                )
             self.record_event(
                 connection,
                 run_id,

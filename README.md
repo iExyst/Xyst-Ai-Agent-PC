@@ -32,6 +32,8 @@ If LM Studio requires authentication, use `uv run xaa credentials set` to enter 
 
 Use `uv run xaa backup` to create an integrity-checked `.xaa-backup` bundle containing the SQLite database and managed artifacts. Stop X.A.A., then restore offline with `uv run xaa restore-bundle C:\path\to\backup.xaa-backup --destination C:\new-data\XAA`; set `XAA_DATA_DIR=C:\new-data` before starting the engine. The restore destination must not already exist. The older `xaa restore` command accepts a database-only snapshot and does not restore artifact files. See [backup and restore](docs/releases/backup-restore.md).
 
+For bounded evaluation batches, prepare a version 1 JSON file with a `cases` array (`id`, `objective`, `acceptance_criteria`) and run `uv run xaa batch cases.json --output .xaa-batch-results --model MODEL_ID --workspace C:\path\to\project`. Add `--resume` to continue the same checkpoint after interruption; each case receives an idempotent run request and a redacted trajectory export.
+
 Optional reported-token stop threshold: pass `--max-total-tokens 20000` to `xaa run`. This blocks further work based on saved provider usage; it is not a hard inference ceiling and includes run-triggered capability diagnostics. See [token threshold behavior](docs/architecture/token-thresholds.md).
 
 Use `--max-output-tokens 512` to request a generated-token cap on each parent/specialist model call. Capped responses require usage data; truncated responses cannot execute tools. This separate limit does not cap prompt tokens.

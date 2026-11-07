@@ -83,7 +83,11 @@ def test_schema_18_memory_rows_migrate_without_losing_data(workspace_tmp_path):
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(memories)")}
         record = connection.execute("SELECT * FROM memories WHERE id='legacy'").fetchone()
         schema = connection.execute("PRAGMA user_version").fetchone()[0]
+        idempotency_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='idempotent_run_requests'"
+        ).fetchone()
     assert "source_uri" in columns
     assert record["content"] == "Keep answers concise"
     assert record["source_uri"] is None
-    assert schema == 19
+    assert schema == 20
+    assert idempotency_table is not None
