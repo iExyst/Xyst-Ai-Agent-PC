@@ -63,6 +63,7 @@ for(const choice of ['current','proposed'] as const){
   test(`conflicted specialist edits require an explicit ${choice} integration choice`,async({page})=>{
     const run={id:`conflict-${choice}-run`,objective:'Review a conflicting private edit',state:'verifying',acceptance_criteria:[],revision:1};
     const task={id:`${run.id}:edit`,local_id:'edit',objective:'Propose a private file edit',acceptance_criteria:['The file evidence supports the proposed change'],dependencies:[],assigned_role:'developer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read','workspace.write'],budgets:{max_iterations:4,max_seconds:90},status:'verifying'};
+    const baseHash='c'.repeat(64);
     const currentHash='a'.repeat(64);
     const proposedHash='b'.repeat(64);
     let previewRequested=false;
@@ -80,10 +81,10 @@ for(const choice of ['current','proposed'] as const){
       if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
       if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
       if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-      if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'edit',status:'verifying',candidate:'The private candidate proposes a changed file.',acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'read-1',path:'shared.py',sha256:currentHash,excerpt:'Observed original source',excerpt_truncated:false}],workspace_changes:[{path:'shared.py',original_sha256:currentHash,proposed_sha256:proposedHash,diff:'-return "original"\n+return "proposed"',diff_truncated:false}]},headers});
+      if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'edit',status:'verifying',candidate:'The private candidate proposes a changed file.',acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'read-1',path:'shared.py',sha256:baseHash,excerpt:'Observed original source',excerpt_truncated:false}],workspace_changes:[{path:'shared.py',original_sha256:baseHash,proposed_sha256:proposedHash,diff:'-return "original"\n+return "proposed"',diff_truncated:false}]},headers});
       if(path.endsWith('/integration-preview')){
         previewRequested=true;
-        return route.fulfill({json:{task_id:'edit',changes:[{path:'shared.py',base_sha256:currentHash,current_sha256:currentHash,proposed_sha256:proposedHash,conflict:true,diff:'-return "original"\n+return "proposed"',diff_truncated:false,current_excerpt:'return "current project"',current_excerpt_truncated:false}]},headers});
+        return route.fulfill({json:{task_id:'edit',changes:[{path:'shared.py',base_sha256:baseHash,current_sha256:currentHash,proposed_sha256:proposedHash,conflict:true,diff:'-return "original"\n+return "proposed"',diff_truncated:false,current_excerpt:'return "current project"',current_excerpt_truncated:false}]},headers});
       }
       if(path.endsWith('/review')){
         expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'I inspected the current and proposed versions.',confirmed_criteria:[0],evidence_call_ids:['read-1'],changes_confirmed:true,resolutions:[{path:'shared.py',expected_current_sha256:currentHash,choice}]});
