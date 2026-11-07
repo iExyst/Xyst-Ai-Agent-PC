@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -18,6 +19,10 @@ from uuid import uuid4
 import httpx
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.storage.runs import RunStore
+
+CRASH_WRITE_CONTENT = "after-api-crash:" + "x" * (65_536 - len("after-api-crash:"))
+CRASH_DIRECTORY_PARTS = tuple(f"dir{index:02d}" for index in range(24))
+CRASH_CREATE_PATH = "/".join((*CRASH_DIRECTORY_PARTS, "created.txt"))
 
 
 class ShortLeaseRunStore(RunStore):
@@ -70,7 +75,7 @@ class RestartDiagnosticProvider(LMStudioProvider):
             for message in messages
         )
         digest = hashlib.sha256(json.dumps(messages, sort_keys=True).encode()).hexdigest()
-        marker = self.root / f"{self.phase}-inference.json"
+        marker = self.root / f"{self.phase}-inference-{self.calls}.json"
         marker.write_text(
             json.dumps(
                 {
@@ -106,8 +111,26 @@ class RestartDiagnosticProvider(LMStudioProvider):
             ),
             encoding="utf-8",
         )
-        if self.scenario == "write" and self.phase == "effect" and self.calls == 1:
-            before = (self.root / "workspace" / "fixture.txt").read_bytes()
+        if self.scenario in {"write", "write_crash"} and self.phase == "effect" and self.calls == 1:
+            before = (
+                (self.root / "workspace" / "fixture.txt").read_bytes()
+                if self.scenario == "write"
+                else b""
+            )
+            tool_name = (
+                "workspace_create_file"
+                if self.scenario == "write_crash"
+                else "workspace_write_file"
+            )
+            arguments = (
+                {"path": CRASH_CREATE_PATH, "content": CRASH_WRITE_CONTENT}
+                if self.scenario == "write_crash"
+                else {
+                    "path": "fixture.txt",
+                    "content": "after-api-restart",
+                    "expected_sha256": hashlib.sha256(before).hexdigest(),
+                }
+            )
             return {
                 "choices": [
                     {
@@ -119,16 +142,8 @@ class RestartDiagnosticProvider(LMStudioProvider):
                                     "id": "restart-write-1",
                                     "type": "function",
                                     "function": {
-                                        "name": "workspace_write_file",
-                                        "arguments": json.dumps(
-                                            {
-                                                "path": "fixture.txt",
-                                                "content": "after-api-restart",
-                                                "expected_sha256": hashlib.sha256(
-                                                    before
-                                                ).hexdigest(),
-                                            }
-                                        ),
+                                        "name": tool_name,
+                                        "arguments": json.dumps(arguments),
                                     },
                                 }
                             ],
@@ -139,7 +154,7 @@ class RestartDiagnosticProvider(LMStudioProvider):
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
         if (self.phase == "crash" and self.scenario == "inference") or (
-            self.phase == "effect" and self.scenario == "write"
+            self.phase == "effect" and self.scenario in {"write", "write_crash"}
         ):
             # In write mode, the first response's real filesystem effect and tool result
             # are already durable before the API is killed on the next inference.
@@ -238,22 +253,46 @@ def stop_server(client: httpx.Client, process: subprocess.Popen[bytes]) -> None:
                 process.wait(timeout=5)
 
 
+def kill_server_tree(process: subprocess.Popen[bytes]) -> None:
+    """Kill the API and its owned filesystem worker at a controlled crash boundary."""
+    if process.poll() is not None:
+        return
+    if os.name != "nt":
+        raise RuntimeError("The write-crash API scenario requires Windows process-tree killing.")
+    result = subprocess.run(
+        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    if result.returncode != 0 and process.poll() is None:
+        raise RuntimeError("Could not terminate the API and filesystem worker process tree.")
+    process.wait(timeout=8)
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--server":
         run_server(Path(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5])
         return
 
     scenario = os.environ.get("XAA_API_RESTART_SCENARIO", "inference")
-    if scenario not in {"inference", "write"}:
-        raise ValueError("XAA_API_RESTART_SCENARIO must be 'inference' or 'write'.")
+    if scenario not in {"inference", "write", "write_crash"}:
+        raise ValueError("XAA_API_RESTART_SCENARIO must be inference, write, or write_crash.")
+    if scenario == "write_crash" and os.name != "nt":
+        raise ValueError("The write_crash scenario requires Windows process-tree semantics.")
     root = (Path(".acceptance") / f"api-restart-{uuid4()}").resolve()
     root.mkdir(parents=True)
     token = secrets.token_urlsafe(48)
     objective = f"Restart fixture {uuid4()}"
     workspace = root / "workspace"
-    if scenario == "write":
+    if scenario in {"write", "write_crash"}:
         workspace.mkdir()
+    if scenario == "write":
         (workspace / "fixture.txt").write_bytes(b"before-api-restart")
+    elif scenario == "write_crash":
+        workspace.joinpath(*CRASH_DIRECTORY_PARTS).mkdir(parents=True)
     (root / "api-token.txt").write_text(token, encoding="utf-8")
     os.environ["XAA_DIAGNOSTIC_OBJECTIVE"] = objective
     with socket.socket() as listener:
@@ -270,6 +309,8 @@ def main() -> None:
     }
     run_id: str | None = None
     target_mtime_after_write: int | None = None
+    lock_connection: sqlite3.Connection | None = None
+    monitor_connection: sqlite3.Connection | None = None
     try:
         first_phase = "crash" if scenario == "inference" else "effect"
         first = start_server(root, port, first_phase, scenario)
@@ -279,8 +320,8 @@ def main() -> None:
             json={
                 "objective": objective,
                 "acceptance_criteria": ["The restarted coordinator returns its saved candidate."],
-                "workspace": str(workspace) if scenario == "write" else None,
-                "mode": "workspace" if scenario == "write" else "observe",
+                "workspace": str(workspace) if scenario != "inference" else None,
+                "mode": "observe" if scenario == "inference" else "workspace",
                 "model": "restart-diagnostic-model",
                 "max_iterations": 3,
                 "max_seconds": 120,
@@ -290,36 +331,133 @@ def main() -> None:
         response.raise_for_status()
         run_id = response.json()["id"]
         assert isinstance(run_id, str)
-        marker = root / f"{first_phase}-inference.json"
+        marker = root / f"{first_phase}-inference-1.json"
         deadline = time.monotonic() + 30
-        tool_events: list[dict[str, Any]] = []
+        journal = RunStore(root / "runs.sqlite3")
+        monitor_connection = sqlite3.connect(root / "runs.sqlite3", timeout=5)
         while time.monotonic() < deadline:
             if first.poll() is not None:
                 raise RuntimeError("First API process exited before reaching the crash boundary.")
             if marker.exists():
                 if scenario == "inference":
                     break
-                events_response = client.get(f"/runs/{run_id}/events", timeout=3)
-                events_response.raise_for_status()
-                tool_events = [
-                    event
-                    for event in events_response.json()
-                    if event["event_type"] == "tool.completed"
-                ]
-                if tool_events and (workspace / "fixture.txt").read_bytes() == b"after-api-restart":
-                    target_mtime_after_write = (workspace / "fixture.txt").stat().st_mtime_ns
-                    break
-            time.sleep(0.05)
+                event_types = {
+                    row[0]
+                    for row in monitor_connection.execute(
+                        "SELECT DISTINCT event_type FROM run_events WHERE run_id=? "
+                        "AND event_type IN ('tool.intended','tool.executing','tool.completed')",
+                        (run_id,),
+                    )
+                }
+                target = workspace / "fixture.txt"
+                if scenario == "write":
+                    next_inference_started = (root / f"{first_phase}-inference-2.json").exists()
+                    if (
+                        "tool.completed" in event_types
+                        and next_inference_started
+                        and target.read_bytes() == b"after-api-restart"
+                    ):
+                        target_mtime_after_write = target.stat().st_mtime_ns
+                        break
+                elif "tool.intended" in event_types:
+                    if lock_connection is None:
+                        lock_connection = sqlite3.connect(
+                            root / "runs.sqlite3", timeout=5, isolation_level=None
+                        )
+                        lock_connection.execute("BEGIN IMMEDIATE")
+                    if "tool.completed" in event_types:
+                        raise RuntimeError(
+                            "The write result committed before the crash-boundary lock was acquired."
+                        )
+                    target = workspace.joinpath(*CRASH_DIRECTORY_PARTS, "created.txt")
+                    target_size = target.stat().st_size if target.exists() else None
+                    if target_size == 0:
+                        # Exclusive creation precedes tool.executing and content. Holding the
+                        # SQLite writer lock pauses the worker at that durable side-effect edge.
+                        time.sleep(0.2)
+                        event_types = {
+                            row[0]
+                            for row in monitor_connection.execute(
+                                "SELECT DISTINCT event_type FROM run_events WHERE run_id=? "
+                                "AND event_type IN ('tool.executing','tool.completed')",
+                                (run_id,),
+                            )
+                        }
+                        unresolved = journal.unresolved_tool_calls(run_id)
+                        if (
+                            "tool.executing" in event_types
+                            or "tool.completed" in event_types
+                            or len(unresolved) != 1
+                            or target.stat().st_size != 0
+                        ):
+                            raise RuntimeError(
+                                "The created file advanced past the intended crash boundary."
+                            )
+                        target_mtime_after_write = target.stat().st_mtime_ns
+                        kill_server_tree(first)
+                        first_exit = first.returncode
+                        if first_exit in (0, None):
+                            raise RuntimeError("The API did not terminate at the write boundary.")
+                        if target.read_bytes() != b"":
+                            raise RuntimeError("The incomplete create changed during process kill.")
+                        lock_connection.rollback()
+                        lock_connection.close()
+                        lock_connection = None
+                        time.sleep(0.2)
+                        post_kill_events = journal.list_events(run_id)
+                        if (
+                            any(
+                                event["event_type"] in {"tool.executing", "tool.completed"}
+                                for event in post_kill_events
+                            )
+                            or len(journal.unresolved_tool_calls(run_id)) != 1
+                            or target.read_bytes() != b""
+                            or target.stat().st_mtime_ns != target_mtime_after_write
+                        ):
+                            raise RuntimeError(
+                                "The killed worker advanced the side effect after lock release."
+                            )
+                        break
+            time.sleep(0.001 if scenario == "write_crash" else 0.05)
         else:
             raise TimeoutError("First API never reached the controlled crash boundary.")
-        first.kill()
-        first.wait(timeout=5)
+        if first.poll() is None:
+            first.kill()
+            first.wait(timeout=5)
         first_exit = first.returncode
 
         second = start_server(root, port, "resume", scenario)
         wait_for_api(client, time.monotonic() + 20)
         deadline = time.monotonic() + 40
         resumed: dict[str, Any] | None = None
+        if scenario == "write_crash":
+            while time.monotonic() < deadline:
+                response = client.get(f"/runs/{run_id}", timeout=3)
+                response.raise_for_status()
+                current = response.json()
+                if current["state"] == "blocked":
+                    events_response = client.get(f"/runs/{run_id}/events", timeout=3)
+                    events_response.raise_for_status()
+                    events = events_response.json()
+                    recovered_event = next(
+                        (event for event in events if event["event_type"] == "run.recovered"),
+                        None,
+                    )
+                    if recovered_event is not None:
+                        if recovered_event["payload"]["reason"] != "tool_reconciliation_required":
+                            raise RuntimeError(
+                                "Crash recovery did not quarantine the unresolved write."
+                            )
+                        break
+                if second.poll() is not None:
+                    raise RuntimeError(
+                        "Restarted API exited before quarantining the unresolved write."
+                    )
+                time.sleep(0.15)
+            else:
+                raise TimeoutError("Restarted API did not quarantine the unresolved write.")
+            resume_response = client.post(f"/runs/{run_id}/resume", timeout=5)
+            resume_response.raise_for_status()
         while time.monotonic() < deadline:
             response = client.get(f"/runs/{run_id}", timeout=3)
             response.raise_for_status()
@@ -336,23 +474,50 @@ def main() -> None:
         events_response.raise_for_status()
         events = events_response.json()
         recovered = [event for event in events if event["event_type"] == "run.recovered"]
+        state_changes = [event for event in events if event["event_type"] == "run.state_changed"]
         starts = [event for event in events if event["event_type"] == "model.inference.started"]
         answers = [event for event in events if event["event_type"] == "model.message"]
-        resume_probe = json.loads((root / "resume-inference.json").read_text(encoding="utf-8"))
+        probe_phase = "effect" if scenario == "write_crash" else "resume"
+        resume_probe = json.loads(
+            (root / f"{probe_phase}-inference-1.json").read_text(encoding="utf-8")
+        )
         store = RunStore(root / "runs.sqlite3")
         unresolved = store.unresolved_tool_calls(run_id)
-        expected_history = 0 if scenario == "inference" else 1
-        expected_starts = 2
-        expected_answers = 1 if scenario == "inference" else 2
+        saved_tool_names = [
+            call.get("function", {}).get("name")
+            for message in store.conversation_messages(run_id)
+            if message.get("role") == "assistant"
+            for call in message.get("tool_calls", [])
+        ]
+        reconciliation_retry_observed = scenario != "write_crash" or (
+            any(
+                event["payload"].get("from") == "blocked" and event["payload"].get("to") == "queued"
+                for event in state_changes
+            )
+            and any(
+                event["payload"].get("from") == "planning"
+                and event["payload"].get("to") == "blocked"
+                and event["payload"].get("reason") == "tool_reconciliation_required"
+                for event in state_changes
+            )
+        )
+        expected_history = 0 if scenario in {"inference", "write_crash"} else 1
+        expected_starts = 1 if scenario == "write_crash" else 3 if scenario == "write" else 2
+        expected_answers = 1 if scenario in {"inference", "write_crash"} else 2
         tool_intents = [event for event in events if event["event_type"] == "tool.intended"]
         tool_executions = [event for event in events if event["event_type"] == "tool.executing"]
         tool_completions = [event for event in events if event["event_type"] == "tool.completed"]
         target_unchanged_after_restart = True
-        if scenario == "write":
-            target = workspace / "fixture.txt"
+        if scenario in {"write", "write_crash"}:
+            target = (
+                workspace.joinpath(*CRASH_DIRECTORY_PARTS, "created.txt")
+                if scenario == "write_crash"
+                else workspace / "fixture.txt"
+            )
             target_unchanged_after_restart = (
                 target_mtime_after_write is not None
-                and target.read_bytes() == b"after-api-restart"
+                and target.read_bytes()
+                == (b"" if scenario == "write_crash" else b"after-api-restart")
                 and target.stat().st_mtime_ns == target_mtime_after_write
             )
         report.update(
@@ -360,31 +525,58 @@ def main() -> None:
                 first_exit not in (0, None)
                 and first.pid != second.pid
                 and len(recovered) == 1
-                and recovered[0]["payload"]["reason"] == "expired_worker"
+                and recovered[0]["payload"]["reason"]
+                == (
+                    "tool_reconciliation_required"
+                    if scenario == "write_crash"
+                    else "expired_worker"
+                )
                 and len(starts) == expected_starts
                 and len(answers) == expected_answers
-                and resumed["state"] == "verifying"
+                and resumed["state"] == ("blocked" if scenario == "write_crash" else "verifying")
+                and reconciliation_retry_observed
+                and saved_tool_names
+                == (
+                    []
+                    if scenario == "inference"
+                    else [
+                        "workspace_create_file"
+                        if scenario == "write_crash"
+                        else "workspace_write_file"
+                    ]
+                )
                 and resume_probe["objective_occurrences"] == 1
                 and resume_probe["assistant_history_messages"] == expected_history
                 and resume_probe["tool_history_messages"] == expected_history
                 and resume_probe["assistant_tool_calls"] == expected_history
                 and resume_probe["assistant_tool_names"]
-                == ([] if scenario == "inference" else ["workspace_write_file"])
+                == (["workspace_write_file"] if scenario == "write" else [])
                 and resume_probe["tool_result_count"] == expected_history
                 and (
-                    scenario == "inference"
+                    scenario in {"inference", "write_crash"}
                     or (
                         len(resume_probe["tool_result_contents"]) == 1
                         and "fixture.txt" in resume_probe["tool_result_contents"][0]
-                        and hashlib.sha256(b"after-api-restart").hexdigest()
+                        and hashlib.sha256(
+                            CRASH_WRITE_CONTENT.encode()
+                            if scenario == "write_crash"
+                            else b"after-api-restart"
+                        ).hexdigest()
                         in resume_probe["tool_result_contents"][0]
-                        and "17" in resume_probe["tool_result_contents"][0]
+                        and str(
+                            len(CRASH_WRITE_CONTENT.encode()) if scenario == "write_crash" else 17
+                        )
+                        in resume_probe["tool_result_contents"][0]
+                        and (
+                            scenario != "write_crash"
+                            or '"reconciled": true' in resume_probe["tool_result_contents"][0]
+                        )
                     )
                 )
-                and len(unresolved) == 0
-                and len(tool_intents) == expected_history
-                and len(tool_executions) == expected_history
-                and len(tool_completions) == expected_history
+                and len(unresolved) == (1 if scenario == "write_crash" else 0)
+                and len(tool_intents) == (1 if scenario in {"write", "write_crash"} else 0)
+                and len(tool_executions) == (0 if scenario == "write_crash" else expected_history)
+                and len(tool_completions) == (0 if scenario == "write_crash" else expected_history)
                 and target_unchanged_after_restart
             ),
             run_id=run_id,
@@ -398,11 +590,17 @@ def main() -> None:
             resumed_objective_occurrences=resume_probe["objective_occurrences"],
             resumed_prior_assistant_messages=resume_probe["assistant_history_messages"],
             unresolved_tool_calls=len(unresolved),
+            saved_assistant_tool_names=saved_tool_names,
+            reconciliation_retry_observed=reconciliation_retry_observed,
             side_effect_intents=len(tool_intents),
             tool_executions=len(tool_executions),
             tool_completions=len(tool_completions),
             side_effect_unchanged_after_restart=target_unchanged_after_restart,
-            final_decision="verifying; user review remains required",
+            final_decision=(
+                "blocked; incomplete create remains unresolved for user inspection"
+                if scenario == "write_crash"
+                else "verifying; user review remains required"
+            ),
             provider="deterministic fake; no LM Studio request",
         )
         stop_server(client, second)
@@ -416,8 +614,16 @@ def main() -> None:
         if second is not None and second.poll() is None:
             stop_server(client, second)
         if first is not None and first.poll() is None:
-            first.kill()
-            first.wait(timeout=5)
+            if scenario == "write_crash":
+                kill_server_tree(first)
+            else:
+                first.kill()
+                first.wait(timeout=5)
+        if lock_connection is not None:
+            lock_connection.rollback()
+            lock_connection.close()
+        if monitor_connection is not None:
+            monitor_connection.close()
         client.close()
         (root / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({**report, "evidence": str(root)}, indent=2))
