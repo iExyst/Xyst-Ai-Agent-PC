@@ -1,8 +1,8 @@
 # Provisional third-party notices
 
-Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources. License texts are reproduced from the package metadata or source files available in this checkout. Package groups share byte-identical license text; every package attribution in each group is retained.
+Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained.
 
-**This is a provisional source-tree notice file, not release approval.** The application license remains undecided, six Windows-target Cargo packages below have declared SPDX metadata but no license text in their downloaded crate source, and the installer has not yet been changed or verified to ship this file. Review package-specific exceptions and copyright notices before distribution.
+**This is a provisional source-tree notice file, not release approval.** The application license remains undecided, six Windows-target Cargo crate archives omit license files; their declared license texts are now represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below, and the installer has not yet been changed or verified to ship this file. Review package-specific exceptions and copyright notices before distribution.
 
 Python development tools are included because they are present in the locked development environment; this may overinclude tools absent from the installed product. The npm list is runtime-only. Rust entries are filtered for `x86_64-pc-windows-msvc`. The comprehensive lockfile inventory is in [`dependency-inventory.md`](dependency-inventory.md).
 
@@ -7892,7 +7892,7 @@ END OF TERMS AND CONDITIONS
 
 ### 95. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
-**Packages:** `tauri-build@2.7.4`, `tauri-codegen@2.7.4`, `tauri-macros@2.7.4`, `tauri-plugin-dialog@2.8.4`, `tauri-plugin-fs@2.7.1`, `tauri-runtime-wry@2.12.3`, `tauri-runtime@2.12.2`, `tauri-utils@2.10.2`, `tauri@2.12.5`
+**Packages:** `tauri-build@2.7.4`, `tauri-codegen@2.7.4`, `tauri-macros@2.7.4`, `tauri-plugin-dialog@2.8.4`, `tauri-plugin-fs@2.7.1`, `tauri-runtime-wry@2.12.3`, `tauri-runtime@2.12.2`, `tauri-utils@2.10.2`, `tauri@2.12.5`, `tauri-plugin@2.7.2`
 
 ```text
 MIT License
@@ -8469,7 +8469,7 @@ THE SOFTWARE.
 
 ### 109. Rust/Cargo (Windows target) — BSD-3-Clause/MIT
 
-**Packages:** `brotli-decompressor@6.2.0`
+**Packages:** `brotli-decompressor@6.2.0`, `alloc-stdlib@0.3.0`
 
 ```text
 Copyright (c) 2016 Dropbox, Inc.
@@ -16292,7 +16292,7 @@ SOFTWARE.
 
 ### 224. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
 
-**Packages:** `miniz_oxide@0.8.9`, `miniz_oxide@0.9.1`
+**Packages:** `miniz_oxide@0.8.9`, `miniz_oxide@0.9.1`, `tauri-plugin@2.7.2`
 
 ```text
 Apache License
@@ -17082,7 +17082,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### 234. Rust/Cargo (Windows target) — MPL-2.0
 
-**Packages:** `cssparser-macros@0.7.1`, `cssparser@0.37.0`
+**Packages:** `cssparser-macros@0.7.1`, `cssparser@0.37.0`, `selectors@0.38.0`
 
 ```text
 Mozilla Public License Version 2.0
@@ -18695,17 +18695,44 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-## Missing source license texts
+### 249. Rust/Cargo (Windows target) — MIT
 
-These packages declare a license but no matching license/notice file was found in the downloaded source or package metadata. Obtain and verify the exact version’s text before treating the notice set as complete.
+**Packages:** `webview2-com@0.39.1`, `webview2-com-macros@0.8.1`, `webview2-com-sys@0.39.1`
 
-| Ecosystem | Package | Version | Declared license | Source |
-|---|---|---:|---|---|
-| Rust/Cargo (Windows target) | alloc-stdlib | 0.3.0 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
-| Rust/Cargo (Windows target) | selectors | 0.38.0 | MPL-2.0 | https://github.com/servo/stylo |
-| Rust/Cargo (Windows target) | tauri-plugin | 2.7.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| Rust/Cargo (Windows target) | webview2-com | 0.39.1 | MIT | https://github.com/wravery/webview2-rs |
-| Rust/Cargo (Windows target) | webview2-com-macros | 0.8.1 | MIT | https://github.com/wravery/webview2-rs |
-| Rust/Cargo (Windows target) | webview2-com-sys | 0.39.1 | MIT | https://github.com/wravery/webview2-rs |
+```text
+MIT License
+
+Copyright (c) 2021 Bill Avery
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Source archive omissions and recovered texts
+
+The six Windows-target crate archives omit matching license files. Their declared license texts are represented above using the exact crate VCS source where available; `selectors` uses Mozilla's official MPL-2.0 text because the pinned Stylo source omits it ([upstream issue #317](https://github.com/servo/stylo/issues/317)). The crates.io archive hashes match Cargo.lock, and upstream license files were checked against each crate's `.cargo_vcs_info.json` revision. The verification report and source copies are retained under `.acceptance/dependency-license-upstream-20261107/verification.json`. Package copyright coverage and exceptions still need release review.
+
+| Package | Declared license | Retrieved text source |
+|---|---|---|
+| `alloc-stdlib@0.3.0` | BSD-3-Clause | [Exact upstream license file](https://github.com/dropbox/rust-alloc-no-stdlib/blob/0a81fd6928ea3b33c8cd484aa4575d50ffb98012/LICENSE) |
+| `selectors@0.38.0` | MPL-2.0 | [Mozilla MPL-2.0 text](https://www.mozilla.org/en-US/MPL/2.0/) |
+| `tauri-plugin@2.7.2` | Apache-2.0 OR MIT | [Apache-2.0 text](https://github.com/tauri-apps/tauri/blob/59b63ab500da9859f12d8888c3298bc29bba0b92/LICENSE-APACHE-2.0), [MIT text](https://github.com/tauri-apps/tauri/blob/59b63ab500da9859f12d8888c3298bc29bba0b92/LICENSE-MIT) |
+| `webview2-com@0.39.1`, `webview2-com-sys@0.39.1` | MIT | [Exact upstream license file](https://github.com/wravery/webview2-rs/blob/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE) |
+| `webview2-com-macros@0.8.1` | MIT | [Exact upstream license file](https://github.com/wravery/webview2-rs/blob/dffa41a8a46d3f5565eefbff2de57d38d399f158/LICENSE) |
 
 X.A.A. itself is excluded from the third-party package list. No application license is selected in this repository.
