@@ -60,7 +60,6 @@ jobs:
         timeout-minutes: 2
 
   windows-installer:
-    needs: windows
     if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 30
