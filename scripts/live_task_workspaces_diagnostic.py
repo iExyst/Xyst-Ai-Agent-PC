@@ -7,9 +7,10 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
+import httpx
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
@@ -36,7 +37,11 @@ def verify_literal_module(data: bytes, value: str) -> None:
 
 
 async def diagnose(
-    root: Path, model: str, prepare_only: bool, distribution: str | None = None
+    root: Path,
+    model: str,
+    prepare_only: bool,
+    distribution: str | None = None,
+    context_length: int = 16384,
 ) -> None:
     root = root.resolve()
     root.relative_to((Path.cwd() / ".acceptance").resolve())
@@ -95,6 +100,7 @@ async def diagnose(
     )
     provider = LMStudioProvider(exact_context=True)
     instance = None
+    owned_instance = False
     report: dict[str, Any] = {
         "passed": False,
         "model": model,
@@ -106,13 +112,77 @@ async def diagnose(
         "prepare_only": prepare_only,
         "validation_distribution": distribution,
     }
+    stage = "model_inventory"
     try:
         if not any(item.id == model for item in await provider.models()):
             raise RuntimeError("Selected model is not installed; no automatic download")
-        instance = await provider.load_model(model, context_length=32768)
+        async with httpx.AsyncClient(base_url=provider.base_url, timeout=10) as client:
+            inventory_response = await client.get("/api/v1/models")
+            inventory_response.raise_for_status()
+        raw_inventory: object = inventory_response.json()
+        if not isinstance(raw_inventory, dict):
+            raise TypeError(
+                "LM Studio native inventory is incomplete; refusing model lifecycle changes."
+            )
+        inventory = cast(dict[str, Any], raw_inventory)
+        raw_models: object = inventory.get("models")
+        if not isinstance(raw_models, list):
+            raise TypeError(
+                "LM Studio native inventory is incomplete; refusing model lifecycle changes."
+            )
+        model_entry: dict[str, Any] | None = None
+        for raw_model_entry in cast(list[object], raw_models):
+            if not isinstance(raw_model_entry, dict):
+                continue
+            typed_model_entry = cast(dict[str, Any], raw_model_entry)
+            if typed_model_entry.get("key") == model:
+                model_entry = typed_model_entry
+                break
+        if model_entry is None:
+            raise RuntimeError(
+                f"LM Studio native inventory omitted {model!r}; refusing model lifecycle changes."
+            )
+        raw_loaded: object = model_entry.get("loaded_instances")
+        if not isinstance(raw_loaded, list):
+            raise TypeError(
+                f"LM Studio native inventory omitted loaded instances for {model!r}; refusing model lifecycle changes."
+            )
+        loaded: list[dict[str, Any]] = []
+        for item in cast(list[object], raw_loaded):
+            if isinstance(item, dict):
+                loaded.append(cast(dict[str, Any], item))
+        existing: dict[str, Any] | None = None
+        for item in loaded:
+            raw_config: object = item.get("config")
+            config = cast(dict[str, Any], raw_config) if isinstance(raw_config, dict) else {}
+            if isinstance(item.get("id"), str) and config.get("context_length") == context_length:
+                existing = item
+                break
+        if existing is not None:
+            instance_id = existing.get("id")
+            assert isinstance(instance_id, str)
+            instance = instance_id
+            report["reused_preloaded_instance"] = True
+        elif loaded:
+            contexts: list[object] = []
+            for item in loaded:
+                raw_config = item.get("config")
+                if isinstance(raw_config, dict):
+                    contexts.append(cast(dict[str, Any], raw_config).get("context_length"))
+            raise RuntimeError(
+                f"{model} is already loaded at contexts {contexts}; refusing to load a second instance at {context_length}."
+            )
+        else:
+            instance = await provider.load_model(model, context_length=context_length)
+            owned_instance = True
+            report["reused_preloaded_instance"] = False
+        await provider.models()
+        report["context_length"] = context_length
+        stage = "parent_tool_diagnostic"
         store.transition(run_id, RunState.PLANNING, owner=parent)
         await Coordinator(store, provider).diagnose_run_tools(run_id, parent, model)
         store.transition(run_id, RunState.RUNNING, owner=parent)
+        stage = "specialist_execution"
         statuses = await SpecialistRunner(store, provider).run_ready(
             run_id, parent, deadline=time.monotonic() + 360
         )
@@ -218,10 +288,20 @@ async def diagnose(
             parent_history_unchanged=True,
             usage=store.token_usage(run_id),
         )
+    except Exception as exc:
+        current_run = store.get_run(run_id)
+        report.update(
+            failure_stage=stage,
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:512],
+            run_state=current_run["state"] if current_run else None,
+            unresolved_calls=len(store.unresolved_tool_calls(run_id)),
+        )
+        raise
     finally:
         store.release_lease(run_id, parent)
         try:
-            if instance is not None:
+            if owned_instance and instance is not None:
                 await provider.unload_model(instance)
                 report["owned_model_unloaded"] = True
         finally:
@@ -234,9 +314,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(".acceptance") / str(uuid4()))
     parser.add_argument("--model", default="qwen/qwen3.5-9b")
+    parser.add_argument("--context-length", type=int, default=16384)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument(
         "--distribution", help="Explicit installed WSL distribution for private validation"
     )
     args = parser.parse_args()
-    asyncio.run(diagnose(args.root, args.model, args.prepare_only, args.distribution))
+    asyncio.run(
+        diagnose(args.root, args.model, args.prepare_only, args.distribution, args.context_length)
+    )
