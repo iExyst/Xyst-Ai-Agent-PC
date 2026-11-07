@@ -1589,8 +1589,16 @@ def create_app(
                     document_type = "text/plain"
                 elif payload.document.startswith("data:text/markdown;base64,"):
                     document_type = "text/markdown"
+                elif payload.document.startswith(
+                    "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,"
+                ):
+                    document_type = (
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
                 else:
-                    raise ValueError("Document must be a PDF, UTF-8 text file or Markdown file.")
+                    raise ValueError(
+                        "Document must be a PDF, DOCX, UTF-8 text file or Markdown file."
+                    )
                 try:
                     document_bytes = base64.b64decode(
                         payload.document.split(",", 1)[1], validate=True
@@ -2055,6 +2063,7 @@ def create_app(
             "image/png": "png",
             "image/jpeg": "jpg",
             "application/pdf": "pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
             "text/markdown": "md",
         }.get(metadata["media_type"], "txt")
         return Response(

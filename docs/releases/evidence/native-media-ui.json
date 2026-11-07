@@ -6,9 +6,9 @@
   "vision_advertised": true,
   "native_tool_diagnostic": true,
   "image": {
-    "run_id": "2673db26-aae3-45c9-b70a-23c49b89dc5b",
+    "run_id": "ea4949ed-61a9-47c3-acfa-ce9d3e06662f",
     "state": "verifying",
-    "answer": "2 red circles",
+    "answer": "2 red",
     "tool_call_count": 0,
     "artifact_provenance": "user.input_image",
     "artifact_bytes": 458,
@@ -16,7 +16,7 @@
     "workspace_unchanged": true
   },
   "document": {
-    "run_id": "7a985a1f-372f-4429-80ea-99422243c9c8",
+    "run_id": "259d2219-36af-4b88-863a-bd2ec88af6fd",
     "state": "verifying",
     "answer_matched_random_pdf_marker": true,
     "tool_call_count": 0,
@@ -25,9 +25,24 @@
       "user.input_document_text"
     ],
     "source_pdf_bytes": 647,
-    "source_pdf_sha256": "05908c184f0f34cf9d42317711a65c48985c22d1cc759e500e0f44f20ac3c676",
+    "source_pdf_sha256": "b975a528a59b5899917670a11fd763f3d475b34c9d1970fcea29ea38b25b67e7",
     "extracted_text_bytes": 75,
-    "extracted_text_sha256": "1151c5ef57d854f9407b24ecbe4fb565908668c3bb46053cded306129c779419",
+    "extracted_text_sha256": "455c6c4fc056d28f2e900f8aeb1ff648618d16ffc50bb80f24917720049b77c4",
+    "workspace_unchanged": true
+  },
+  "docx": {
+    "run_id": "521daa0b-b9f2-49c5-b00e-22f6f9f29c64",
+    "state": "verifying",
+    "answer_matched_random_docx_marker": true,
+    "tool_call_count": 0,
+    "artifact_provenance": [
+      "user.input_document",
+      "user.input_document_text"
+    ],
+    "source_docx_bytes": 1287,
+    "source_docx_sha256": "379fcd2cfddb254caecf8747b70472bdcd4c50722069d5e100ad69e7a7d8507a",
+    "extracted_text_bytes": 67,
+    "extracted_text_sha256": "0cf494767348039a2fdbd00437d761ae90c69b4a12d5ba6f509ddb90acc745ab",
     "workspace_unchanged": true
   },
   "review_state": "pending",
@@ -36,8 +51,9 @@
   "engine_stopped": true,
   "graceful_shutdown": true,
   "native_build_sha256": {
-    "xaa-desktop.exe": "be5f51b249fff3606426711c6e3017e45de95c6016c814e1c6bd7b15f55f181f",
-    "xaa-engine.exe": "e08008ca5d66fb60214068f66cd5d0544536754fa3ffce3cb233985c9338b113"
+    "xaa-desktop.exe": "088fb2af5d78135bccea69d137a6b51512ebe6a15e358fb898cf45406667240b",
+    "xaa-engine.exe": "d7f6344688d835e888a5dc261ec50a8d9ef9c3e753ee041ea5af012bc1992d78"
   },
-  "scope": "One synthetic PNG and one text PDF passed through the actual Tauri UI on one local vision model. Does not establish broad media accuracy, OCR, scanned document support, other formats/model families, or final review acceptance."
+  "scope": "One synthetic PNG, one text PDF and one DOCX passed through the actual Tauri UI on one local vision model. Does not establish broad media accuracy, OCR, scanned document support, spreadsheets, other model families, or final review acceptance.",
+  "latest_report": ".acceptance/native-media-186bfa25-ae0f-4ae2-960a-5752e94f2072/report.json"
 }

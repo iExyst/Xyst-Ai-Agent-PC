@@ -741,7 +741,12 @@ class RunStore:
         if document_bytes is not None:
             if image_bytes is not None:
                 raise ValueError("A run can attach one image or one document, not both.")
-            if document_media_type not in {"application/pdf", "text/plain", "text/markdown"}:
+            if document_media_type not in {
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "text/plain",
+                "text/markdown",
+            }:
                 raise ValueError("Unsupported document media type.")
             if not document_bytes or len(document_bytes) > 4 * 1024 * 1024:
                 raise ValueError("Documents must be between 1 byte and 4 MiB.")
@@ -789,6 +794,7 @@ class RunStore:
                 "image/png": "png",
                 "image/jpeg": "jpg",
                 "application/pdf": "pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
                 "text/plain": "txt",
                 "text/markdown": "md",
             }[media_type]

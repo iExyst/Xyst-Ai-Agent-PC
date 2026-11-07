@@ -83,6 +83,78 @@ function makeTextPdf(text) {
   return Buffer.concat([...parts, ...lines]);
 }
 
+function makeDocx(text) {
+  const document = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      `<w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`,
+  );
+  const contentTypes = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>',
+  );
+  const relationships = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>',
+  );
+  const entries = [
+    ['[Content_Types].xml', contentTypes],
+    ['_rels/.rels', relationships],
+    ['word/document.xml', document],
+  ];
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const [name, data] of entries) {
+    const filename = Buffer.from(name);
+    const checksum = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(filename.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, filename, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(filename.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, filename);
+    offset += local.length + filename.length + data.length;
+  }
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
 const imageBytes = makeImage();
 const imagePath = path.join(input, 'two-red-circles.png');
 await writeFile(imagePath, imageBytes);
@@ -90,6 +162,10 @@ const marker = `DOC-${randomUUID().replaceAll('-', '').toUpperCase()}`;
 const pdfBytes = makeTextPdf(`Document verification marker: ${marker}`);
 const pdfPath = path.join(input, 'verification.pdf');
 await writeFile(pdfPath, pdfBytes);
+const docxMarker = `DOCX-${randomUUID().replaceAll('-', '').toUpperCase()}`;
+const docxBytes = makeDocx(`Document verification marker: ${docxMarker}`);
+const docxPath = path.join(input, 'verification.docx');
+await writeFile(docxPath, docxBytes);
 
 const manifest = JSON.parse(await readFile('build/native-dev/manifest.json', 'utf8'));
 const nativeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())));
@@ -110,7 +186,11 @@ async function api(pathname, init = {}) {
   return response;
 }
 
-async function finishRun(page, objective, fileInput, filePath, attachedText, expectedAnswer, expectedArtifacts) {
+async function finishRun(
+  page, objective, fileInput, filePath, attachedText, expectedAnswer, expectedArtifacts,
+  sourceDocumentBytes = pdfBytes, expectedTextMarker = marker,
+  screenshot = fileInput === '#run-image' ? 'image-run.png' : 'pdf-run.png',
+) {
   await page.locator(fileInput).setInputFiles(filePath);
   await expect(page.getByText(attachedText, { exact: false })).toBeVisible({ timeout: 10000 });
   await page.getByLabel('Objective', { exact: true }).fill(objective);
@@ -147,13 +227,13 @@ async function finishRun(page, objective, fileInput, filePath, attachedText, exp
       sha256: createHash('sha256').update(bytes).digest('hex'),
     };
     if (artifact.provenance === 'user.input_image' && !bytes.equals(imageBytes)) throw new Error('Image artifact bytes changed.');
-    if (artifact.provenance === 'user.input_document' && !bytes.equals(pdfBytes)) throw new Error('PDF artifact bytes changed.');
-    if (artifact.provenance === 'user.input_document_text' && !bytes.toString('utf8').includes(marker)) {
-      throw new Error('Extracted-text artifact lost the PDF marker.');
+    if (artifact.provenance === 'user.input_document' && !bytes.equals(sourceDocumentBytes)) throw new Error('Document artifact bytes changed.');
+    if (artifact.provenance === 'user.input_document_text' && !bytes.toString('utf8').includes(expectedTextMarker)) {
+      throw new Error('Extracted-text artifact lost its verification marker.');
     }
   }
   await expect(page.getByText(expectedAnswer, { exact: false }).last()).toBeVisible({ timeout: 10000 });
-  await page.screenshot({ path: path.join(root, `${fileInput === '#run-image' ? 'image' : 'pdf'}-run.png`), fullPage: true });
+  await page.screenshot({ path: path.join(root, screenshot), fullPage: true });
   const workspaceFiles = await readdir(workspace);
   if (workspaceFiles.length !== 0) throw new Error('Read-only media task changed the workspace.');
   Object.assign(result, {
@@ -198,6 +278,12 @@ try {
     '#run-document', pdfPath, 'Attached: verification.pdf', marker,
     ['user.input_document', 'user.input_document_text'],
   );
+  const docxResult = await finishRun(
+    page,
+    'Read the attached Word document and report the exact value after “Document verification marker:”. Reply with the value only.',
+    '#run-document', docxPath, 'Attached: verification.docx', docxMarker,
+    ['user.input_document', 'user.input_document_text'], docxBytes, docxMarker, 'docx-run.png',
+  );
 
   const unloaded = await api('/models/unload', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instance_id: instance }),
@@ -227,6 +313,7 @@ try {
     native_tool_diagnostic: true,
     image: imageResult,
     document: documentResult,
+    docx: docxResult,
     final_review_left_pending: true,
     engine_stopped: engineStopped,
     graceful_shutdown: graceful,

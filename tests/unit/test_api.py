@@ -473,6 +473,46 @@ def test_run_text_document_is_extracted_and_persisted_for_recovery(workspace_tmp
             store.document_text(run_id)
 
 
+def test_run_docx_is_extracted_and_original_artifact_is_downloadable(workspace_tmp_path):
+    import base64
+    from io import BytesIO
+    from zipfile import ZIP_DEFLATED, ZipFile
+
+    media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Override PartName="/word/document.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            "</Types>",
+        )
+        archive.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body><w:p><w:r><w:t>DOCX-API-MARKER-7E93</w:t></w:r></w:p></w:body></w:document>",
+        )
+    source = output.getvalue()
+    encoded = f"data:{media_type};base64," + base64.b64encode(source).decode("ascii")
+    store = RunStore(workspace_tmp_path / "run-docx.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Report the DOCX marker", "document": encoded},
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert "DOCX-API-MARKER-7E93" in store.document_text(run_id)
+        artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
+        original = next(item for item in artifacts if item["provenance"] == "user.input_document")
+        downloaded = client.get(f"/artifacts/{original['id']}", headers=headers)
+        assert downloaded.content == source
+        assert downloaded.headers["content-type"].split(";", 1)[0] == media_type
+
+
 def test_shutdown_pauses_worker_before_signalling_server(workspace_tmp_path):
     provider = WaitingProvider()
     store = RunStore(workspace_tmp_path / "shutdown.sqlite3")
