@@ -39,6 +39,14 @@ def test_parent_expiry_fences_live_child_lease_and_blocks_replay(workspace_tmp_p
     assert task["blocked_reason"] == "worker_lost_reconciliation_required"
     summary = recovered_tasks.recovery_summary(run_id, "task")
     assert summary["safe_to_resume"] is False
+    token = "restart-recovery-test-token-long-enough"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=reopened)) as client:
+        response = client.get(
+            f"/runs/{run_id}/tasks/task/recovery",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200
+    assert response.json()["safe_to_resume"] is False
     with reopened.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0] == 0
     reopened.transition(run_id, RunState.QUEUED)
