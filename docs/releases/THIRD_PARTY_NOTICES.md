@@ -2,7 +2,7 @@
 
 Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained.
 
-**This is a provisional source-tree notice file, not release approval.** The application license remains undecided, six Windows-target Cargo crate archives omit license files; their declared license texts are now represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below, and the installer has not yet been changed or verified to ship this file. Review package-specific exceptions and copyright notices before distribution.
+**This is a provisional third-party notice file, not release approval.** The application license remains undecided, and six Windows-target Cargo crate archives omit license files; their declared license texts are represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below. The unsigned installer stages this file with the dependency inventory and release notes; install acceptance checks each document against its manifest hash. Review package-specific exceptions and copyright notices before distribution.
 
 Python development tools are included because they are present in the locked development environment; this may overinclude tools absent from the installed product. The npm list is runtime-only. Rust entries are filtered for `x86_64-pc-windows-msvc`. The comprehensive lockfile inventory is in [`dependency-inventory.md`](dependency-inventory.md).
 
