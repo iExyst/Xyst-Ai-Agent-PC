@@ -64,6 +64,33 @@ def test_blocked_lost_specialist_can_be_inspected_and_explicitly_closed(workspac
     claim = tasks.claim_ready(run_id, parent)
     assert claim
     with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "lost", "inference_id": "inference-pending"},
+        )
+        store.record_event(
+            connection,
+            run_id,
+            "tokens.reserved",
+            {
+                "task_id": "lost",
+                "inference_id": "inference-pending",
+                "reserved_tokens": 11,
+            },
+        )
+        store.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "lost",
+                "inference_id": "prior-empty-message",
+                "message": {"role": "assistant", "content": ""},
+                "usage": None,
+            },
+        )
         connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
     assert tasks.recover_expired(run_id, parent) == ["lost"]
     store.transition(run_id, RunState.PLANNING, owner=parent)
@@ -87,6 +114,7 @@ def test_blocked_lost_specialist_can_be_inspected_and_explicitly_closed(workspac
 
     assert inspected.status_code == 200
     assert inspected.json()["safe_to_resume"] is False
+    assert inspected.json()["reserved_tokens"] == 11
     assert refused.status_code == 409
     assert closed.status_code == 202
     assert closed.json()["tasks"][0]["status"] == "failed"
