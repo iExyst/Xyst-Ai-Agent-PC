@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-07",
+  "passed": true,
+  "desktop": "Tauri development build with bundled engine",
+  "model": "qwen/qwen3.5-9b",
+  "vision_advertised": true,
+  "native_tool_diagnostic": true,
+  "image": {
+    "run_id": "2673db26-aae3-45c9-b70a-23c49b89dc5b",
+    "state": "verifying",
+    "answer": "2 red circles",
+    "tool_call_count": 0,
+    "artifact_provenance": "user.input_image",
+    "artifact_bytes": 458,
+    "artifact_sha256": "e595d243fe8c81f6728388a39a08e191fba3a2f4bd5aad8f86d4b38ae0f55533",
+    "workspace_unchanged": true
+  },
+  "document": {
+    "run_id": "7a985a1f-372f-4429-80ea-99422243c9c8",
+    "state": "verifying",
+    "answer_matched_random_pdf_marker": true,
+    "tool_call_count": 0,
+    "artifact_provenance": [
+      "user.input_document",
+      "user.input_document_text"
+    ],
+    "source_pdf_bytes": 647,
+    "source_pdf_sha256": "05908c184f0f34cf9d42317711a65c48985c22d1cc759e500e0f44f20ac3c676",
+    "extracted_text_bytes": 75,
+    "extracted_text_sha256": "1151c5ef57d854f9407b24ecbe4fb565908668c3bb46053cded306129c779419",
+    "workspace_unchanged": true
+  },
+  "review_state": "pending",
+  "model_unloaded_before_window_close": true,
+  "desktop_exit_code": 0,
+  "engine_stopped": true,
+  "graceful_shutdown": true,
+  "native_build_sha256": {
+    "xaa-desktop.exe": "be5f51b249fff3606426711c6e3017e45de95c6016c814e1c6bd7b15f55f181f",
+    "xaa-engine.exe": "e08008ca5d66fb60214068f66cd5d0544536754fa3ffce3cb233985c9338b113"
+  },
+  "scope": "One synthetic PNG and one text PDF passed through the actual Tauri UI on one local vision model. Does not establish broad media accuracy, OCR, scanned document support, other formats/model families, or final review acceptance."
+}
