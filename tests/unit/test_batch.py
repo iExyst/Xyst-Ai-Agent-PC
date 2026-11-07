@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -8,7 +9,16 @@ import httpx
 import pytest
 from xaa import batch as batch_module
 from xaa import cli
-from xaa.batch import execute_batch, load_batch
+from xaa.batch import (
+    BatchCase,
+    BatchCheck,
+    BatchManifest,
+    BatchSettings,
+    TrajectoryInfo,
+    execute_batch,
+    export_training_jsonl,
+    load_batch,
+)
 
 
 class BatchClient:
@@ -185,7 +195,11 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
     client.export_content = json_bytes(
         {
             "format": "xaa-trajectory",
-            "run": {"state": "completed"},
+            "run": {
+                "id": "fixture-run",
+                "objective": "Read the fixture nonce",
+                "state": "completed",
+            },
             "events": [
                 {
                     "event_type": "model.message",
@@ -252,6 +266,97 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
     submitted_payload = client.requests[next(iter(client.requests))]["payload"]
     assert submitted_payload["objective"] == "Read the fixture nonce"
     assert "checks" not in submitted_payload
+
+
+def _training_fixture(batch_dir: Path) -> None:
+    batch_dir.mkdir()
+    (batch_dir / "trajectories").mkdir()
+    run_id = "run-reviewed"
+    trajectory = json_bytes(
+        {
+            "format": "xaa-trajectory",
+            "run": {"id": run_id, "objective": "Summarize the safe fixture", "state": "completed"},
+            "events": [
+                {
+                    "event_type": "model.message",
+                    "payload": {"message": {"content": "The fixture is safe."}},
+                }
+            ],
+        }
+    )
+    path = batch_dir / "trajectories" / "reviewed.json"
+    path.write_bytes(trajectory)
+    case = BatchCase(
+        id="reviewed",
+        objective="Private manifest objective must not be exported",
+        acceptance_criteria=[],
+        checks=[BatchCheck(kind="final_equals", expected="The fixture is safe.")],
+        run_id=run_id,
+        state="completed",
+        trajectory=TrajectoryInfo(
+            path="trajectories/reviewed.json",
+            size_bytes=len(trajectory),
+            sha256=hashlib.sha256(trajectory).hexdigest(),
+        ),
+        evaluation="passed",
+    )
+    manifest = BatchManifest(
+        batch_id="batch-fixture",
+        input_digest="0" * 64,
+        settings=BatchSettings(model="fixture", mode="observe", max_iterations=1, max_seconds=1),
+        created_at="2026-11-07T00:00:00Z",
+        cases=[case],
+    )
+    (batch_dir / "batch.json").write_text(manifest.model_dump_json(), encoding="utf-8")
+
+
+def test_training_export_includes_only_accepted_scored_text_and_refuses_overwrite(
+    workspace_tmp_path: Path,
+) -> None:
+    batch_dir = workspace_tmp_path / "batch"
+    _training_fixture(batch_dir)
+    output = workspace_tmp_path / "training.jsonl"
+    report = export_training_jsonl(batch_dir, output)
+    assert report["included_case_ids"] == ["reviewed"]
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "messages": [
+            {"role": "user", "content": "Summarize the safe fixture"},
+            {"role": "assistant", "content": "The fixture is safe."},
+        ]
+    }
+    assert "Private manifest objective" not in output.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="overwrite"):
+        export_training_jsonl(batch_dir, output)
+
+
+def test_training_export_rejects_trajectory_integrity_mismatch(workspace_tmp_path: Path) -> None:
+    batch_dir = workspace_tmp_path / "batch"
+    _training_fixture(batch_dir)
+    trajectory = batch_dir / "trajectories" / "reviewed.json"
+    trajectory.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="integrity"):
+        export_training_jsonl(batch_dir, workspace_tmp_path / "out.jsonl")
+
+
+def test_training_export_cli_is_local_and_does_not_need_api_token(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    batch_dir = workspace_tmp_path / "batch"
+    _training_fixture(batch_dir)
+    monkeypatch.delenv("XAA_API_TOKEN", raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "xaa",
+            "export-training",
+            str(batch_dir),
+            "--output",
+            str(workspace_tmp_path / "out.jsonl"),
+        ],
+    )
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["included_examples"] == 1
 
 
 def test_batch_input_rejects_duplicate_case_ids(workspace_tmp_path: Path) -> None:

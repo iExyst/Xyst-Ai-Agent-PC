@@ -75,6 +75,8 @@ uv run xaa batch C:\path\to\cases.json --output C:\path\to\batch-results --model
 
 Batch JSON cases can include deterministic checks for final text, proposed/completed tool calls, and run state; the report does not auto-approve candidates. Use `--resume` with the same input and settings after interruption. See the [batch evaluation guide](evaluations/batches.md) for the input schema and scoring rules.
 
+After accepting a candidate, refresh its batch checkpoint with `--resume`. `xaa export-training BATCH_DIR --output FILE.jsonl` then exports only accepted, check-passing, text-only examples. It works offline and locally, skips tool-use traces, and will not overwrite an existing file. See the [training export details](evaluations/batches.md#reviewed-text-only-training-export).
+
 For interactive terminal conversation:
 
 ```powershell

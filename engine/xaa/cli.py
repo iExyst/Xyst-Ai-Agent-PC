@@ -14,7 +14,7 @@ from urllib.parse import quote
 import httpx
 from keyring.errors import KeyringError
 
-from xaa.batch import execute_batch
+from xaa.batch import execute_batch, export_training_jsonl
 from xaa.credentials import (
     API_LAUNCH_TOKEN_PROFILE,
     API_LAUNCH_URL_PROFILE,
@@ -124,6 +124,11 @@ def main() -> None:
     batch.add_argument("--timeout-seconds", type=int, default=3600, choices=range(1, 86401))
     batch.add_argument("--poll-interval", type=float, default=2.0)
     batch.add_argument("--resume", action="store_true", help="Resume the checkpoint in --output")
+    training = commands.add_parser(
+        "export-training", help="Export reviewed, scored text-only batch examples as JSONL"
+    )
+    training.add_argument("batch_dir", type=Path, help="Batch directory containing batch.json")
+    training.add_argument("--output", type=Path, required=True, help="New JSONL file path")
     chat = commands.add_parser("chat", help="Start an interactive terminal conversation")
     chat.add_argument("--model", required=True)
     chat.add_argument("--workspace")
@@ -151,6 +156,13 @@ def main() -> None:
             command.add_argument("--after", type=int, default=0)
     args = parser.parse_args()
     args.api_url = _resolve_api_url(args.command, args.api_url, os.environ.get("XAA_API_URL"))
+    if args.command == "export-training":
+        try:
+            report = export_training_jsonl(args.batch_dir, args.output)
+        except (OSError, TypeError, ValueError) as exc:
+            parser.exit(1, f"Training export failed: {exc}\n")
+        print(json.dumps(report, indent=2))
+        return
     if args.command == "batch" and not 0 < args.poll_interval <= 60:
         parser.error("--poll-interval must be greater than 0 and at most 60 seconds")
     if args.command == "restore":

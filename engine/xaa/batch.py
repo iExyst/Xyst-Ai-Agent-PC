@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import time
 from pathlib import Path
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 MAX_BATCH_BYTES = 1_048_576
 MAX_BATCH_CASES = 32
 MAX_TRAJECTORY_BYTES = 10 * 1024 * 1024
+MAX_TRAINING_EXPORT_BYTES = 10 * 1024 * 1024
 ACTIVE_RUN_STATES = {"queued", "planning", "running"}
 CASE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 
@@ -85,12 +87,15 @@ class _TrajectoryEvent(BaseModel):
 class _TrajectoryRun(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
+    id: str
+    objective: str
     state: str
 
 
 class _TrajectoryDocument(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
+    format: Literal["xaa-trajectory"]
     run: _TrajectoryRun
     events: list[_TrajectoryEvent]
 
@@ -249,6 +254,117 @@ def _write_manifest(path: Path, manifest: BatchManifest) -> None:
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def export_training_jsonl(batch_dir: Path, output_path: Path) -> dict[str, Any]:
+    """Export only reviewed, scored, text-only examples from a batch checkpoint."""
+    root = batch_dir.resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("Batch path must be a directory.")
+    manifest_path = root / "batch.json"
+    try:
+        manifest = BatchManifest.model_validate_json(manifest_path.read_bytes())
+    except (OSError, ValidationError) as exc:
+        raise ValueError("Cannot export training data: batch checkpoint is invalid.") from exc
+
+    rows: list[str] = []
+    included_case_ids: list[str] = []
+    skipped: dict[str, int] = {}
+    for case in manifest.cases:
+        if case.state != "completed":
+            reason = "awaiting_or_rejected_review"
+        elif case.evaluation != "passed" or not case.checks:
+            reason = "evaluation_not_passed"
+        elif case.run_id is None or case.trajectory is None:
+            reason = "missing_trajectory"
+        else:
+            trajectory_path = (root / case.trajectory.path).resolve(strict=True)
+            if not trajectory_path.is_relative_to(root):
+                raise ValueError(f"Trajectory path escapes batch output for case {case.id}.")
+            content = trajectory_path.read_bytes()
+            if (
+                not content
+                or len(content) > MAX_TRAJECTORY_BYTES
+                or len(content) != case.trajectory.size_bytes
+                or hashlib.sha256(content).hexdigest() != case.trajectory.sha256
+            ):
+                raise ValueError(f"Trajectory integrity check failed for case {case.id}.")
+            trajectory = _TrajectoryDocument.model_validate_json(content)
+            if trajectory.run.id != case.run_id:
+                raise ValueError(f"Trajectory run identity does not match case {case.id}.")
+            if trajectory.run.state != "completed":
+                raise ValueError(
+                    f"Trajectory for case {case.id} does not show accepted completion."
+                )
+            checks = score_trajectory(case, content)
+            if not checks or not all(check.passed for check in checks):
+                reason = "evaluation_not_passed"
+            elif any(
+                call
+                for event in trajectory.events
+                if event.event_type == "model.message" and event.payload.message is not None
+                for call in event.payload.message.tool_calls
+            ):
+                reason = "tool_trace_not_supported"
+            else:
+                final_content = ""
+                for event in trajectory.events:
+                    if (
+                        event.event_type == "model.message"
+                        and event.payload.message is not None
+                        and event.payload.message.content
+                    ):
+                        final_content = event.payload.message.content
+                objective = trajectory.run.objective.strip()
+                if not objective or not final_content.strip():
+                    reason = "empty_text"
+                else:
+                    rows.append(
+                        json.dumps(
+                            {
+                                "messages": [
+                                    {"role": "user", "content": objective},
+                                    {"role": "assistant", "content": final_content},
+                                ]
+                            },
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                    )
+                    included_case_ids.append(case.id)
+                    continue
+        skipped[reason] = skipped.get(reason, 0) + 1
+
+    if not rows:
+        raise ValueError(
+            "No user-accepted, check-passing, text-only examples are eligible for training export."
+        )
+    payload = ("\n".join(rows) + "\n").encode("utf-8")
+    if len(payload) > MAX_TRAINING_EXPORT_BYTES:
+        raise ValueError("Training export exceeds the 10 MiB limit.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_name(f".{output_path.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("xb") as target:
+            target.write(payload)
+            target.flush()
+            os.fsync(target.fileno())
+        try:
+            os.link(temporary, output_path)
+        except FileExistsError as exc:
+            raise ValueError("Refusing to overwrite an existing training export.") from exc
+        temporary.unlink()
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {
+        "source_batch_id": manifest.batch_id,
+        "output": str(output_path),
+        "size_bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "included_case_ids": included_case_ids,
+        "included_examples": len(included_case_ids),
+        "skipped_cases": skipped,
+    }
 
 
 def execute_batch(
