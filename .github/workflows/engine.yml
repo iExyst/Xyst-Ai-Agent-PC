@@ -116,6 +116,36 @@ jobs:
             Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
           }
         timeout-minutes: 5
+      - name: Verify saved-preference controls in native Tauri desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $debugPort = 19226
+          $env:XAA_NATIVE_DEBUG_PORT = [string]$debugPort
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $elevated = ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          $policyPath = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          $policyCreated = $false
+          $valueCreated = $false
+          try {
+            if ($elevated) {
+              $existing = Get-Item -LiteralPath $policyPath -ErrorAction SilentlyContinue
+              if ($existing -and $existing.GetValueNames() -contains 'xaa-desktop.exe') { throw 'Refusing to replace existing app debugging configuration.' }
+              if (-not $existing) { New-Item -Path $policyPath -Force | Out-Null; $policyCreated = $true }
+              New-ItemProperty -LiteralPath $policyPath -Name 'xaa-desktop.exe' -Value "--remote-debugging-port=$debugPort" -PropertyType String | Out-Null
+              $valueCreated = $true
+            }
+            node scripts/native_memory_smoke.mjs build/native-release/xaa-desktop.exe
+            if ($LASTEXITCODE -ne 0) { throw "Native memory acceptance exited with code $LASTEXITCODE." }
+          } finally {
+            if ($valueCreated) { Remove-ItemProperty -LiteralPath $policyPath -Name 'xaa-desktop.exe' }
+            if ($policyCreated -and (Test-Path -LiteralPath $policyPath)) {
+              $remainingValues = (Get-Item -LiteralPath $policyPath).GetValueNames()
+              if ($remainingValues.Count -eq 0) { Remove-Item -LiteralPath $policyPath }
+            }
+            Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
+          }
+        timeout-minutes: 5
       - name: Verify named specialist recovery after native Tauri desktop process death
         shell: pwsh
         run: |

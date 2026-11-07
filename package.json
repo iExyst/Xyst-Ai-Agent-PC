@@ -8,6 +8,7 @@
     "test:browser": "playwright test",
     "test:native:commands": "node scripts/native_command_smoke.mjs",
     "test:native:mcp": "node scripts/native_mcp_smoke.mjs",
+    "test:native:memory": "node scripts/native_memory_smoke.mjs",
     "test:native:restart": "node scripts/native_restart_smoke.mjs",
     "dev:desktop": "vite apps/desktop --host 127.0.0.1",
     "build:desktop": "npm run typecheck && vite build apps/desktop",
