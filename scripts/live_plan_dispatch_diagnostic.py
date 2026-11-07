@@ -39,8 +39,9 @@ async def main() -> None:
         run = store.create_run(
             objective=(
                 f"First list the workspace root using workspace_list_directory. Then use plan_save "
-                f"to save exactly two tasks: inspect (researcher, no dependencies) and review "
-                f"(reviewer, depends on inspect). Include the actual discovered filename {filename} "
+                f"to save exactly two tasks: name the researcher task inspect (no dependencies) "
+                f"and name the reviewer task review (depends on inspect). Include the actual "
+                f"discovered filename {filename} "
                 f"in the inspect objective and require the researcher to read it and return its "
                 f"exact text. Require the reviewer to independently read the same file and compare "
                 f"it with inspect's candidate. Give each task max_iterations 4, max_seconds 150, "
@@ -67,15 +68,16 @@ async def main() -> None:
             if event["event_type"] == "model.message"
             for call in event["payload"]["message"].get("tool_calls", [])
         ]
-        by_id = {item["local_id"]: item for item in planned}
+        by_role = {item["assigned_role"]: item for item in planned}
         saved = store.get_run(run_id)
         if (
             saved is None
             or saved["state"] != RunState.VERIFYING
-            or set(by_id) != {"inspect", "review"}
-            or filename not in by_id["inspect"]["objective"]
-            or by_id["review"]["dependencies"] != ["inspect"]
-            or tasks.readiness(run_id) != (["inspect"], [])
+            or set(by_role) != {"researcher", "reviewer"}
+            or len(planned) != 2
+            or filename not in by_role["researcher"]["objective"]
+            or by_role["reviewer"]["dependencies"] != [by_role["researcher"]["local_id"]]
+            or tasks.readiness(run_id) != ([by_role["researcher"]["local_id"]], [])
             or calls != ["workspace_list_directory", "plan_save"]
         ):
             raise RuntimeError("Model did not save the expected dependency graph.")
@@ -89,19 +91,22 @@ async def main() -> None:
         )
         await coordinator.continue_plan(run_id, parent)
 
-        source = candidate_evidence(store, run_id, "inspect")
+        inspect_id = by_role["researcher"]["local_id"]
+        review_id = by_role["reviewer"]["local_id"]
+        source = candidate_evidence(store, run_id, inspect_id)
         source_candidate = source.get("candidate")
         source_reads = [
             event
             for event in store.list_events(run_id)
             if event["event_type"] == "task.tool.result"
-            and event["payload"].get("task_id") == "inspect"
+            and event["payload"].get("task_id") == inspect_id
             and event["payload"].get("result", {}).get("path") == filename
         ]
         source_statuses = {item["local_id"]: item["status"] for item in tasks.records(run_id)}
         if (
-            source_statuses != {"inspect": "verifying", "review": "queued"}
-            or source_candidate != expected
+            source_statuses != {inspect_id: "verifying", review_id: "queued"}
+            or not isinstance(source_candidate, str)
+            or expected not in source_candidate
             or len(source_reads) != 1
             or source["status"] != "verifying"
         ):
@@ -113,11 +118,11 @@ async def main() -> None:
         await review_candidate(
             store,
             run_id,
-            "inspect",
+            inspect_id,
             TaskReviewDecision(
                 decision="accept",
                 rationale="Harness compared the candidate byte-for-byte with saved file-read evidence.",
-                confirmed_criteria=[0],
+                confirmed_criteria=list(range(len(source["acceptance_criteria"]))),
                 evidence_call_ids=evidence_ids,
             ),
         )
@@ -130,12 +135,12 @@ async def main() -> None:
         )
         await coordinator.continue_plan(run_id, parent)
 
-        reviewer = candidate_evidence(store, run_id, "review")
+        reviewer = candidate_evidence(store, run_id, review_id)
         review_reads = [
             event
             for event in store.list_events(run_id)
             if event["event_type"] == "task.tool.result"
-            and event["payload"].get("task_id") == "review"
+            and event["payload"].get("task_id") == review_id
             and event["payload"].get("result", {}).get("path") == filename
         ]
         final_records = tasks.records(run_id)
@@ -145,8 +150,8 @@ async def main() -> None:
         passed = (
             final_run is not None
             and final_run["state"] == RunState.VERIFYING
-            and final_by_id["inspect"]["status"] == "completed"
-            and final_by_id["review"]["status"] == "verifying"
+            and final_by_id[inspect_id]["status"] == "completed"
+            and final_by_id[review_id]["status"] == "verifying"
             and reviewer["status"] == "verifying"
             and isinstance(reviewer_candidate, str)
             and expected in reviewer_candidate
@@ -168,7 +173,7 @@ async def main() -> None:
             review_candidate=reviewer_candidate,
             review_read_count=len(review_reads),
             final_task_statuses={key: value["status"] for key, value in final_by_id.items()},
-            final_review_left_pending=(final_by_id["review"]["status"] == "verifying"),
+            final_review_left_pending=(final_by_id[review_id]["status"] == "verifying"),
             unresolved_tool_calls=len(store.unresolved_tool_calls(run_id)),
             token_usage=store.token_usage(run_id),
         )
