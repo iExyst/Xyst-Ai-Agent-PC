@@ -8,8 +8,9 @@ import path from 'node:path';
 if (process.platform !== 'win32') throw new Error('Native restart acceptance requires Windows.');
 
 const desktopExecutable = path.resolve(process.argv[2] ?? 'build/native-dev/xaa-desktop.exe');
-const specialistMode = process.argv.includes('--specialist');
-const root = path.resolve('.acceptance', `${specialistMode ? 'native-specialist-restart' : 'native-restart'}-${randomUUID()}`);
+const liveSpecialistMode = process.argv.includes('--live-specialist');
+const specialistMode = process.argv.includes('--specialist') || liveSpecialistMode;
+const root = path.resolve('.acceptance', `${liveSpecialistMode ? 'native-live-specialist-restart' : specialistMode ? 'native-specialist-restart' : 'native-restart'}-${randomUUID()}`);
 const profile = path.join(root, 'profile');
 const localAppData = path.join(profile, 'localappdata');
 const appData = path.join(profile, 'appdata');
@@ -17,7 +18,7 @@ const logDirectory = path.join(localAppData, 'dev.xyst.xaa', 'logs');
 const database = path.join(localAppData, 'XAA', 'xaa.sqlite3');
 const fixtureWorkspace = path.join(root, 'workspace');
 const engineLog = path.join(logDirectory, 'engine.log');
-const fakeModel = 'xaa-native-restart-fixture';
+const fakeModel = liveSpecialistMode ? (process.env.XAA_NATIVE_LIVE_MODEL ?? 'qwen3-0.6b') : 'xaa-native-restart-fixture';
 const fakeState = {
   runStarted: false,
   allowRunResponse: false,
@@ -30,11 +31,19 @@ const fakeState = {
   specialistResultBlocked: false,
   allowSpecialistResponse: false,
   rolePromptChecks: 0,
+  liveToolProposals: 0,
+  liveResultBlocked: false,
+  liveResumeAllowed: false,
+  liveResultFollowups: 0,
+  liveSavedResultResumePrompts: 0,
 };
+const liveProviderEndpoint = 'http://127.0.0.1:1234';
 let diagnosticsNonce;
 const specialistNonce = `native-specialist-evidence-${randomUUID()}`;
 const specialistIdentity = `Evidence Reader ${randomUUID().slice(0, 8)}`;
-const specialistInstructions = `Use workspace_read_file and quote this saved result exactly for ${specialistNonce}.`;
+const specialistInstructions = liveSpecialistMode
+  ? `Call workspace_read_file for fixture.txt exactly once. After it returns, do not call tools again. Quote the exact text field from that saved result, including ${specialistNonce}. If the conversation already contains a tool result for this file, use it immediately and do not reread.`
+  : `Use workspace_read_file and quote this saved result exactly for ${specialistNonce}.`;
 
 await Promise.all([root, localAppData, appData, logDirectory, fixtureWorkspace].map(directory => mkdir(directory, { recursive: true })));
 await writeFile(path.join(fixtureWorkspace, 'fixture.txt'), specialistMode ? specialistNonce : 'native restart fixture remains unchanged\n');
@@ -74,6 +83,53 @@ function streamedToolCall(response, callId, name, argumentsJson) {
 }
 
 const modelServer = createServer(async (request, response) => {
+  if (liveSpecialistMode) {
+    let raw = '';
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      for await (const chunk of request) raw += chunk.toString();
+    }
+    let body;
+    try { body = raw ? JSON.parse(raw) : undefined; }
+    catch { reply(response, 400, { error: 'invalid JSON from the desktop engine' }); return; }
+    const messages = body?.messages ?? [];
+    const taskSystem = messages.find(message => message.role === 'system' && typeof message.content === 'string' && message.content.includes(specialistIdentity));
+    const hasSavedToolResult = messages.some(message => message.role === 'tool');
+    if (taskSystem && messages.some(message => String(message.content).includes(specialistInstructions))) {
+      fakeState.rolePromptChecks += 1;
+      if (hasSavedToolResult) {
+        fakeState.liveResultFollowups += 1;
+        if (fakeState.liveResumeAllowed && messages.filter(message => message.role === 'tool').some(message => String(message.content).includes(specialistNonce))) {
+          fakeState.liveSavedResultResumePrompts += 1;
+        }
+        if (!fakeState.liveResumeAllowed && !fakeState.liveResultBlocked) {
+          fakeState.liveResultBlocked = true;
+          response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+          return;
+        }
+      }
+    }
+    let upstream;
+    try {
+      upstream = await fetch(`${liveProviderEndpoint}${request.url}`, {
+        method: request.method,
+        headers: { 'content-type': request.headers['content-type'] ?? 'application/json' },
+        ...(raw ? { body: raw } : {}),
+        signal: AbortSignal.timeout(180000),
+      });
+      const bytes = Buffer.from(await upstream.arrayBuffer());
+      const contentType = upstream.headers.get('content-type') ?? 'application/json';
+      response.writeHead(upstream.status, { 'content-type': contentType, 'cache-control': 'no-store' });
+      response.end(bytes);
+      if (taskSystem && request.url === '/v1/chat/completions') {
+        const text = bytes.toString('utf8');
+        fakeState.liveToolProposals += [...text.matchAll(/workspace_read_file/g)].length;
+      }
+    } catch (error) {
+      if (!response.headersSent) reply(response, 502, { error: `local LM Studio proxy failed: ${String(error)}` });
+      else response.destroy(error instanceof Error ? error : undefined);
+    }
+    return;
+  }
   if (request.method === 'GET' && request.url === '/v1/models') {
     reply(response, 200, { data: [{ id: fakeModel, object: 'model' }] });
     return;
@@ -181,6 +237,7 @@ await new Promise((resolve, reject) => {
 });
 const modelPort = modelServer.address().port;
 const providerEndpoint = `http://127.0.0.1:${modelPort}`;
+let liveModelContextLength;
 
 const appEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())));
 appEnv.PATH = path.join(process.env.SystemRoot, 'System32');
@@ -307,6 +364,15 @@ try {
   if (!diagnosticResponse.ok) throw new Error(`The native provider diagnostic failed: ${await diagnosticResponse.text()}`);
   const diagnosticResult = await diagnosticResponse.json();
   if (diagnosticResult.tool_round_trip_verified !== true) throw new Error('The native provider diagnostic did not complete its harmless tool round trip.');
+  if (liveSpecialistMode) {
+    const liveCatalog = await (await fetch(`${liveProviderEndpoint}/api/v1/models`)).json();
+    const liveModel = liveCatalog.models?.find(model => model.key === fakeModel);
+    const liveInstance = liveModel?.loaded_instances?.find(instance => instance.id === fakeModel);
+    liveModelContextLength = liveInstance?.config?.context_length;
+    if (!Number.isInteger(liveModelContextLength) || liveModelContextLength < 8192) {
+      throw new Error(`Live specialist recovery requires ${fakeModel} loaded with at least 8192 context tokens; observed ${liveModelContextLength ?? 'no loaded instance'}.`);
+    }
+  }
   if (specialistMode) {
     const createResponse = await fetch(`${first.connection.base_url}/runs`, {
       method: 'POST', headers: { ...first.headers, 'Content-Type': 'application/json' },
@@ -333,9 +399,13 @@ try {
       method: 'POST', headers: first.headers,
     });
     if (dispatch.status !== 202) throw new Error(`Could not dispatch the saved specialist: ${await dispatch.text()}`);
-    const blockedDeadline = Date.now() + 30000;
-    while (!fakeState.specialistResultBlocked && Date.now() < blockedDeadline) await new Promise(resolve => setTimeout(resolve, 50));
-    if (!fakeState.specialistResultBlocked || fakeState.rolePromptChecks !== 2) {
+    const blockedDeadline = Date.now() + (liveSpecialistMode ? 180000 : 30000);
+    while (!(liveSpecialistMode ? fakeState.liveResultBlocked : fakeState.specialistResultBlocked) && Date.now() < blockedDeadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (liveSpecialistMode) {
+      if (!fakeState.liveResultBlocked || fakeState.liveResultFollowups !== 1 || fakeState.rolePromptChecks !== 2 || fakeState.liveToolProposals < 1) {
+        throw new Error(`The live model did not read once and reach the blocked continuation: ${JSON.stringify({ rolePromptChecks: fakeState.rolePromptChecks, liveToolProposals: fakeState.liveToolProposals, liveResultFollowups: fakeState.liveResultFollowups, liveResultBlocked: fakeState.liveResultBlocked })}`);
+      }
+    } else if (!fakeState.specialistResultBlocked || fakeState.rolePromptChecks !== 2) {
       throw new Error(`The native specialist missed its saved-result boundary: ${JSON.stringify({ rolePromptChecks: fakeState.rolePromptChecks, readProposals: fakeState.specialistReadProposals, resultRequests: fakeState.specialistResultRequests, resultBlocked: fakeState.specialistResultBlocked })}`);
     }
     const firstEvents = await (await fetch(`${first.connection.base_url}/runs/${encodeURIComponent(run.id)}/events`, { headers: first.headers })).json();
@@ -382,13 +452,14 @@ try {
     if (!recoveredTask || recoveredTask.identity_name !== specialistIdentity || recoveredTask.model_route !== fakeModel) {
       throw new Error(`The restarted desktop changed the saved task identity or route after profile edits: ${JSON.stringify(recoveredTask)}`);
     }
-    fakeState.allowSpecialistResponse = true;
+    if (liveSpecialistMode) fakeState.liveResumeAllowed = true;
+    else fakeState.allowSpecialistResponse = true;
     const resume = await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(run.id)}/tasks/reader/recovery`, {
       method: 'POST', headers: { ...second.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ decision: 'resume' }),
     });
     if (resume.status !== 202) throw new Error(`Could not resume the saved specialist journal: ${await resume.text()}`);
-    const candidateDeadline = Date.now() + 45000;
+    const candidateDeadline = Date.now() + (liveSpecialistMode ? 180000 : 45000);
     let candidate;
     let recoveredRun;
     while (Date.now() < candidateDeadline) {
@@ -405,8 +476,10 @@ try {
     const events = await (await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(run.id)}/events`, { headers: second.headers })).json();
     const readResults = events.filter(event => event.event_type === 'task.tool.result' && event.payload.task_id === 'reader');
     const recoveryDecisions = events.filter(event => event.event_type === 'task.recovery_decided' && event.payload.task_id === 'reader');
-    if (readResults.length !== 1 || recoveryDecisions.length !== 1 || recoveryDecisions[0].payload.decision !== 'resume' || fakeState.specialistReadProposals !== 1 || fakeState.specialistResultRequests !== 2 || fakeState.rolePromptChecks !== 3) {
-      throw new Error('Specialist recovery replayed the workspace read, lost its saved role prompt, or omitted the explicit recovery decision.');
+    if (recoveryDecisions.length !== 1 || recoveryDecisions[0].payload.decision !== 'resume' || (liveSpecialistMode
+      ? readResults.length < 1 || fakeState.rolePromptChecks < 3 || fakeState.liveResultFollowups < 2 || fakeState.liveSavedResultResumePrompts < 1 || fakeState.liveToolProposals < 1
+      : readResults.length !== 1 || fakeState.rolePromptChecks !== 3 || fakeState.specialistReadProposals !== 1 || fakeState.specialistResultRequests !== 2)) {
+      throw new Error(`Specialist recovery lost its saved result or explicit decision: ${JSON.stringify({ readResults: readResults.length, rolePromptChecks: fakeState.rolePromptChecks, resultFollowups: fakeState.liveResultFollowups, savedResultResumePrompts: fakeState.liveSavedResultResumePrompts, recoveryDecisions: recoveryDecisions.length })}`);
     }
     const fixtureAfter = await readFile(path.join(fixtureWorkspace, 'fixture.txt'), 'utf8');
     if (fixtureAfter !== specialistNonce) throw new Error('The read-only specialist recovery fixture changed.');
@@ -414,7 +487,8 @@ try {
     report = {
       passed: true,
       scenario: 'Windows Tauri desktop and bundled engine process death during named specialist inference, same-profile restart, explicit task recovery and candidate review',
-      provider: 'deterministic local OpenAI-compatible fixture; no LM Studio or external provider',
+      provider: liveSpecialistMode ? `LM Studio local model ${fakeModel} via a local interruption proxy` : 'deterministic local OpenAI-compatible fixture; no LM Studio or external provider',
+      ...(liveSpecialistMode ? { model_context_length: liveModelContextLength } : {}),
       run_id: run.id,
       task_id: 'reader',
       specialist_identity: specialistIdentity,
@@ -422,8 +496,10 @@ try {
       specialist_instructions_snapshot_verified: true,
       profile_mutation_did_not_change_saved_task: true,
       task_read_results: readResults.length,
-      task_read_proposals: fakeState.specialistReadProposals,
-      task_result_followups: fakeState.specialistResultRequests,
+      task_read_results_before_restart: firstReadResults.length,
+      ...(liveSpecialistMode ? { resumed_reads: readResults.length - firstReadResults.length, resumed_prompt_contains_saved_result: fakeState.liveSavedResultResumePrompts > 0 } : {}),
+      task_read_proposals: liveSpecialistMode ? fakeState.liveToolProposals : fakeState.specialistReadProposals,
+      task_result_followups: liveSpecialistMode ? fakeState.liveResultFollowups : fakeState.specialistResultRequests,
       role_prompt_checks: fakeState.rolePromptChecks,
       safe_recovery_summary: recovery,
       explicit_recovery_decision: recoveryDecisions[0].payload.decision,
@@ -436,7 +512,7 @@ try {
     };
     await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
     await mkdir('build/installer', { recursive: true });
-    await writeFile('build/installer/native-specialist-restart-acceptance.json', JSON.stringify(report, null, 2));
+    await writeFile(`build/installer/${liveSpecialistMode ? 'native-live-specialist-restart' : 'native-specialist-restart'}-acceptance.json`, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
   } else {
   const fixtureReadme = path.join(fixtureWorkspace, 'fixture.txt');
@@ -522,7 +598,7 @@ try {
   console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
   }
 } catch (error) {
-  const detail = { passed: false, error: String(error), root, provider_requests: fakeState.accepts, diagnostic_requests: fakeState.diagnostics };
+  const detail = { passed: false, error: String(error), root, provider_requests: fakeState.accepts, diagnostic_requests: fakeState.diagnostics, live_result_followups: fakeState.liveResultFollowups, live_result_blocked: fakeState.liveResultBlocked, role_prompt_checks: fakeState.rolePromptChecks };
   await writeFile(path.join(root, 'report.json'), JSON.stringify(detail, null, 2)).catch(() => {});
   throw error;
 } finally {
@@ -536,7 +612,7 @@ try {
     report.launch_credentials_cleaned = credentialsCleaned;
     const serialized = JSON.stringify(report, null, 2);
     await writeFile(path.join(root, 'report.json'), serialized);
-    await writeFile(`build/installer/${specialistMode ? 'native-specialist-restart' : 'native-restart'}-acceptance.json`, serialized);
+    await writeFile(`build/installer/${liveSpecialistMode ? 'native-live-specialist-restart' : specialistMode ? 'native-specialist-restart' : 'native-restart'}-acceptance.json`, serialized);
   }
   if (!credentialsCleaned) throw new Error('The native restart acceptance could not clean its own API launch credential pair.');
   await new Promise(resolve => modelServer.close(resolve));
