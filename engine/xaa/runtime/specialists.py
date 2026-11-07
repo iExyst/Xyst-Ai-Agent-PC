@@ -25,6 +25,7 @@ from xaa.runtime.line_edit import WriteLinesArguments
 from xaa.runtime.task_commands import execute_task_command, read_dependency_command_output
 from xaa.runtime.task_review import candidate_evidence
 from xaa.runtime.tool_worker import FilesystemOperation, execute_filesystem
+from xaa.runtime.workspace_snapshot import checked_path
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import LeaseLost, RunStore, TaskReadScope
 from xaa.storage.task_workspaces import TaskWorkspaces
@@ -919,6 +920,35 @@ class SpecialistRunner:
                     )
                     continue
                 if name == "workspace_read_file":
+                    if isolated:
+                        try:
+                            arguments["path"] = checked_path(arguments.get("path")).as_posix()
+                        except ValueError:
+                            result = {
+                                "error": "invalid_path",
+                                "message": "Use a portable relative path within the private workspace.",
+                            }
+                            self.tasks.record_read_worker_event(
+                                run_id,
+                                parent,
+                                identity,
+                                worker,
+                                "task.tool.result",
+                                {
+                                    "task_id": identity,
+                                    "call_id": call["id"],
+                                    "journal_id": journal_id,
+                                    "result": result,
+                                },
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": call["id"],
+                                    "content": json.dumps(result),
+                                }
+                            )
+                            continue
                     operation = "branch_read" if isolated else "read"
                 elif name == "workspace_list_directory":
                     operation = "branch_list" if isolated else "list"

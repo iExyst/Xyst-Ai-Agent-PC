@@ -8,6 +8,7 @@ from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.runtime.task_review import candidate_evidence
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import RunStore
 from xaa.storage.specialist_profiles import SpecialistProfileStore
@@ -234,6 +235,102 @@ async def test_context_budget_reason_is_persisted_for_blocked_specialist(workspa
             "counter_error_code": "websocket_timeout",
         }
     ]
+
+
+async def test_invalid_private_read_path_returns_tool_error_and_can_be_corrected(
+    workspace_tmp_path,
+):
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    (project / "evidence.txt").write_text("private evidence", encoding="utf-8")
+    data = workspace_tmp_path / "data"
+    data.mkdir()
+    store = RunStore(data / "invalid-private-read.sqlite3")
+    run_id = store.create_run(
+        objective="Read the private evidence file",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="reader",
+                objective="Read evidence.txt and report its text",
+                permissions=("workspace.read", "workspace.write"),
+                max_iterations=4,
+            )
+        ],
+    )
+
+    class CorrectingProvider(LMStudioProvider):
+        async def chat(self, *, messages, **kwargs):
+            if messages[-1]["role"] == "user":
+                call = {
+                    "id": "bad-path",
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_read_file",
+                        "arguments": json.dumps({"path": "/evidence.txt"}),
+                    },
+                }
+                return {
+                    "choices": [{"message": {"role": "assistant", "tool_calls": [call]}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                }
+            result = json.loads(messages[-1]["content"])
+            if result.get("error") == "invalid_path":
+                call = {
+                    "id": "good-path",
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_read_file",
+                        "arguments": json.dumps({"path": "evidence.txt"}),
+                    },
+                }
+                return {
+                    "choices": [{"message": {"role": "assistant", "tool_calls": [call]}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                }
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "Read and confirmed: private evidence",
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+
+    provider = CorrectingProvider()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+
+    assert statuses == [{"task_id": "reader", "status": "verifying"}], json.dumps(
+        {"tasks": tasks.records(run_id), "events": store.list_events(run_id)}, indent=2
+    )
+    events = store.list_events(run_id)
+    invalid = next(
+        event["payload"]
+        for event in events
+        if event["event_type"] == "task.tool.result"
+        and event["payload"].get("call_id") == "bad-path"
+    )
+    assert invalid["result"]["error"] == "invalid_path"
+    evidence = candidate_evidence(store, run_id, "reader")
+    assert [item["path"] for item in evidence["evidence"]] == ["evidence.txt"]
+    assert not store.unresolved_tool_calls(run_id)
 
 
 async def test_shared_budget_is_charged_before_specialist_inference(workspace_tmp_path):
