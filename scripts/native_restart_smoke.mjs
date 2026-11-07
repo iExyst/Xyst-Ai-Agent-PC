@@ -167,8 +167,15 @@ async function startDesktop(label) {
       }
     }
     if (!browser) throw new Error(`${label} desktop WebView did not become available: ${lastError}; stdout=${stdout}; stderr=${stderr}`);
-    const page = browser.contexts().flatMap(context => context.pages())[0];
-    if (!page) throw new Error(`${label} desktop did not expose a WebView page`);
+    const pageDeadline = Date.now() + 20000;
+    let page;
+    while (Date.now() < pageDeadline) {
+      page = browser.contexts().flatMap(context => context.pages())[0];
+      if (page) break;
+      if (proc.exitCode !== null) throw new Error(`${label} desktop exited before its WebView page appeared; stdout=${stdout}; stderr=${stderr}`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (!page) throw new Error(`${label} desktop did not expose a WebView page; stdout=${stdout}; stderr=${stderr}`);
     await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
     const connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
     const headers = { Authorization: `Bearer ${connection.token}` };
