@@ -214,8 +214,14 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     calls = [
         {
             "name": "review_dependency_file",
-            "arguments": {"dependency_id": "implementation", "path": "fixture.txt"},
+            "arguments": {
+                "dependency_id": "implementation",
+                "path": "fixture.txt",
+                "offset": offset,
+                "limit": 5,
+            },
         }
+        for offset in range(0, len(file_result["text"]), 5)
     ]
     for artifact_id, size in (
         (command["stdout_artifact_id"], command["stdout_bytes"]),
@@ -294,13 +300,12 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
         review_events,
     )
     assert (
-        sum(
-            bool(item.get("reviewed_dependency_output"))
-            for item in review_events
-            if "call_id" in item
-        )
-        == len(calls) - 1
+        sum(bool(item.get("reviewed_dependency_artifact")) for item in review_events)
+        == len(file_result["text"]) // 5 + 1
     )
+    assert sum(
+        bool(item.get("reviewed_dependency_output")) for item in review_events if "call_id" in item
+    ) == len(calls) - (len(file_result["text"]) // 5 + 1)
     assert runner._review_evidence_gaps(run_id, review["task"]) == []
     assert next(row for row in tasks.records(run_id) if row["local_id"] == "review")["status"] == (
         "verifying"

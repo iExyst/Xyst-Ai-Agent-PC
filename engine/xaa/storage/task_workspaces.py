@@ -398,8 +398,13 @@ class TaskWorkspaces:
         reviewer_token: str,
         dependency_id: str,
         path: str,
+        *,
+        offset: int = 0,
+        limit: int = 16_384,
     ) -> dict[str, Any]:
         """Read one completed dependency's changed private file for its assigned reviewer."""
+        if offset < 0 or offset > 4_194_304 or not 1 <= limit <= 16_384:
+            raise ValueError("Reviewer file reads require a valid offset and a 16 KiB page limit.")
         checked = checked_path(path).as_posix()
         with self.store.connection() as connection:
             self.store.require_lease(connection, run_id, parent_token)
@@ -427,16 +432,26 @@ class TaskWorkspaces:
                 return {
                     "dependency_id": dependency_id,
                     "path": checked,
+                    "offset": 0,
+                    "total_characters": 0,
+                    "characters_read": 0,
+                    "eof": True,
                     "deleted": True,
                     "base_sha256": hashlib.sha256(previous).hexdigest(),
                     "trust": "untrusted_specialist_artifact",
                 }
-            if len(content) > 65536:
-                raise ValueError("Reviewer artifact reads are limited to 64 KiB.")
+            text = content.decode("utf-8", errors="strict")
+            if offset > len(text):
+                raise ValueError("Reviewer file offset exceeds the changed file length.")
+            page = text[offset : offset + limit]
             return {
                 "dependency_id": dependency_id,
                 "path": checked,
-                "text": content.decode("utf-8", errors="strict"),
+                "offset": offset,
+                "total_characters": len(text),
+                "characters_read": len(page),
+                "eof": offset + len(page) >= len(text),
+                "text": page,
                 "sha256": hashlib.sha256(content).hexdigest(),
                 "deleted": False,
                 "trust": "untrusted_specialist_artifact",
