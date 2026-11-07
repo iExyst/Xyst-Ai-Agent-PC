@@ -611,7 +611,18 @@ class LMStudioProvider:
                 response.raise_for_status()
                 return self.verify_output_limit(response.json(), max_output_tokens)
             except httpx.HTTPStatusError as exc:
-                if attempt == 0 and exc.response.status_code in {408, 429, 500, 502, 503, 504}:
+                retryable_server_status = exc.response.status_code in {
+                    408,
+                    429,
+                    500,
+                    502,
+                    503,
+                    504,
+                }
+                retryable_engine_fetch = (
+                    exc.response.status_code == 400 and self._is_engine_fetch_failure(exc)
+                )
+                if attempt == 0 and (retryable_server_status or retryable_engine_fetch):
                     await asyncio.sleep(CHAT_RETRY_DELAY_SECONDS)
                     continue
                 raise ProviderError(
@@ -630,6 +641,20 @@ class LMStudioProvider:
                     "LM Studio chat request failed; check the local server status."
                 ) from exc
         raise ProviderError("LM Studio chat request failed after one transient retry.")
+
+    @staticmethod
+    def _is_engine_fetch_failure(error: httpx.HTTPStatusError) -> bool:
+        """Recognize LM Studio's transient internal inference-fetch failure safely."""
+        try:
+            payload: object = error.response.json()
+        except ValueError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        detail: object = cast(dict[str, Any], payload).get("error")
+        if isinstance(detail, dict):
+            detail = cast(dict[str, Any], detail).get("message")
+        return detail == "Engine protocol predict request failed: fetch failed"
 
     async def chat_streamed(
         self,

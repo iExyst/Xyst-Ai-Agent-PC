@@ -133,6 +133,52 @@ async def test_tool_diagnostic_does_not_retry_a_permanent_chat_rejection():
         await provider.close()
 
 
+async def test_tool_diagnostic_retries_lm_studio_engine_fetch_failure_once():
+    requests = []
+
+    def handle(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if len(requests) == 1:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "Engine protocol predict request failed: fetch failed"}},
+            )
+        if payload.get("tools"):
+            nonce = re.search(r"value ([0-9a-f]{32})", payload["messages"][0]["content"]).group(1)
+            message = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "echo",
+                        "type": "function",
+                        "function": {"name": "xaa_echo", "arguments": json.dumps({"value": nonce})},
+                    }
+                ],
+            }
+        else:
+            message = {"role": "assistant", "content": payload["messages"][-1]["content"]}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": message, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+            },
+        )
+
+    provider = LMStudioProvider()
+    await provider._client.aclose()
+    provider._client = httpx.AsyncClient(
+        base_url="http://127.0.0.1:1234", transport=httpx.MockTransport(handle)
+    )
+    try:
+        assert await provider.diagnose_tools("fixture")
+        assert len(requests) == 3
+        assert "fixture" in provider._diagnosed_models
+    finally:
+        await provider.close()
+
+
 async def test_truncated_run_diagnostic_records_usage_and_blocks_before_tools(workspace_tmp_path):
     class Truncated(LMStudioProvider):
         async def chat(self, *, model, messages, tools=None, max_output_tokens=None):
