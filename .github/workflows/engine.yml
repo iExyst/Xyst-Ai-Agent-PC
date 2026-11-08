@@ -79,7 +79,7 @@ jobs:
           path: .acceptance/browser-redirect-edge-*/report.json
           if-no-files-found: error
           include-hidden-files: true
-      - name: Verify cancellation of live Microsoft Edge navigation
+      - name: Verify cancellation and timeout of live Microsoft Edge navigation
         run: uv run python scripts/browser_cancel_smoke.py
         timeout-minutes: 2
       - uses: actions/upload-artifact@v4

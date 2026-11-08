@@ -40,7 +40,7 @@ Local Windows acceptance runs the actual managed Edge worker against Postman Ech
 
 ## Managed-browser cancellation
 
-Local real-Edge acceptance starts a delayed HTTPBin navigation, cancels the owned browser call, and confirms cancellation is journaled as a completed `cancelled` result. Worker cleanup completed in 293 ms (`../../.acceptance/browser-cancel-edge-a6b0035bf8554515a3f40cfc757c2a36/report.json`). Hosted Windows run [42529651768](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42529651768) passed both jobs and confirmed the durable canceled result with 108 ms cleanup (`../../.acceptance/hosted-edge-cancel-42529651768/`). This verifies the live source worker only; frozen-worker cancellation and cancellation at additional browser lifecycle boundaries remain open.
+Local real-Edge acceptance starts a delayed HTTPBin navigation and verifies both explicit cancellation and deadline timeout. Owner cancellation is journaled as `cancelled`; timeout becomes `read_failed` with a clear time-limit error, and both wait for owned-worker cleanup. Local report: [`browser-cancel-edge-be177c58f85e4ce9ba3f9b2758d80e74/report.json`](../../.acceptance/browser-cancel-edge-be177c58f85e4ce9ba3f9b2758d80e74/report.json). Hosted Windows run [42529651768](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42529651768) passed the cancellation case; hosted repetition including timeout is pending. Frozen-worker cancellation and other lifecycle boundaries remain open.
 
 ## Workspace read preflight retry follow-up
 

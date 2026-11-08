@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
+import sqlite3
 import sys
 import time
+from contextlib import closing
 from types import SimpleNamespace
 from typing import Any
 
@@ -73,6 +76,52 @@ def test_browser_worker_receives_only_os_runtime_environment(
 ) -> None:
     monkeypatch.setenv("XAA_TEST_BROWSER_SECRET", "must-not-be-inherited")
     assert "XAA_TEST_BROWSER_SECRET" not in _worker_environment()
+
+
+@pytest.mark.asyncio
+async def test_browser_timeout_returns_actionable_error_and_journals_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    store = RunStore(tmp_path / "browser-timeout.sqlite3")
+    run = store.create_run(
+        objective="Verify managed browser timeout handling",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-timeout-test", seconds=30)
+    assert token is not None
+
+    async def timeout_worker(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        del payload, timeout
+        raise TimeoutError
+
+    monkeypatch.setattr(browser_runtime, "_execute_worker", timeout_worker)
+    result = await browser_runtime.run_approved_browser(
+        store,
+        run["id"],
+        token,
+        "browser-timeout-call",
+        {"url": "https://docs.example.com/slow"},
+        ["docs.example.com"],
+        deadline=time.monotonic() + 5,
+    )
+
+    assert result == {
+        "status": "read_failed",
+        "error": "Browser navigation exceeded its time limit.",
+        "trust": "untrusted_web_content",
+    }
+    with closing(sqlite3.connect(tmp_path / "browser-timeout.sqlite3")) as connection:
+        row = connection.execute(
+            "SELECT state, result FROM tool_calls WHERE provider_call_id=?",
+            ("browser-timeout-call",),
+        ).fetchone()
+    assert row is not None and row[0] == "completed"
+    assert json.loads(row[1]) == result
 
 
 def test_browser_url_uses_exact_approved_hosts_and_web_url_policy() -> None:

@@ -211,7 +211,13 @@ async def run_approved_browser(
         except LeaseLost:
             pass
         raise
-    except (OSError, ValueError, PermissionError, RuntimeError, TimeoutError) as error:
+    except TimeoutError:
+        result = {
+            "status": "read_failed",
+            "error": "Browser navigation exceeded its time limit.",
+            "trust": "untrusted_web_content",
+        }
+    except (OSError, ValueError, PermissionError, RuntimeError) as error:
         result = {
             "status": "read_failed",
             "error": str(error)[:500],
