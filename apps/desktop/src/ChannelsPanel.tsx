@@ -21,6 +21,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [identitySource,setIdentitySource]=useState('');
   const [identityTarget,setIdentityTarget]=useState('');
   const [sharedHistoryBinding,setSharedHistoryBinding]=useState('');
+  const [identityAddSelections,setIdentityAddSelections]=useState<Record<string,string>>({});
   const [confirmIdentityRevoke,setConfirmIdentityRevoke]=useState('');
   const [webhookSecret,setWebhookSecret]=useState('');
   const [emailAddress,setEmailAddress]=useState('');
@@ -129,6 +130,15 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function addChannelIdentity(linkId:string) {
+    const bindingId=identityAddSelections[linkId];
+    if(!bindingId)return;
+    setBusy(true);setError('');
+    try {await client.addChannelIdentityLinkMember(linkId,bindingId);setIdentityAddSelections(current=>({...current,[linkId]:''}));await refresh();}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not add this account to the linked conversation.');}
+    finally {setBusy(false);}
+  }
+
   async function saveEmail() {
     setBusy(true);setError('');
     try {setEmail(await client.setEmailAccount({address:emailAddress,password:emailPassword,imap_host:imapHost,smtp_host:smtpHost,allowed_senders:allowedSenders.split(',').map(value=>value.trim()).filter(Boolean),imap_port:993,smtp_port:587,smtp_security:'starttls',authserv_id:authservId}));setEmailPassword('');}
@@ -182,10 +192,16 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
           {[identitySource,identityTarget].map(id=>{const binding=available.find(item=>item.id===id);return binding?<label key={id}><input type="radio" name="shared-history" value={id} checked={sharedHistoryBinding===id} onChange={()=>setSharedHistoryBinding(id)} disabled={busy}/>{binding.channel} · {binding.external_identity} · {binding.title??'saved session'}</label>:null;})}
         </fieldset>}
         <button type="button" onClick={()=>void linkChannelIdentities()} disabled={busy||!identitySource||!identityTarget||!sharedHistoryBinding}>Link accounts and share selected history</button>
-        {groups.size>0&&<ul aria-label="Active cross-channel identity links">{[...groups].map(([linkId,members])=><li key={linkId}>
-          <span>{members.map(binding=>`${binding.channel}: ${binding.external_identity}${binding.authorized?'':' (not currently authorized)'}`).join(' ↔ ')} · shared history from {members[0]?.session_channel}</span>
-          {confirmIdentityRevoke===linkId?<div role="alertdialog" aria-label="Confirm unlink accounts"><p>Both accounts will get separate new conversations. The shared session remains in local history.</p><button type="button" onClick={()=>void unlinkChannelIdentities(linkId)} disabled={busy}>Confirm unlink</button><button type="button" onClick={()=>setConfirmIdentityRevoke('')} disabled={busy}>Cancel</button></div>:<button type="button" onClick={()=>setConfirmIdentityRevoke(linkId)} disabled={busy}>Unlink these accounts</button>}
-        </li>)}</ul>}
+        {groups.size>0&&<ul aria-label="Active cross-channel identity links">{[...groups].map(([linkId,members])=>{
+          const memberChannels=new Set(members.map(binding=>binding.channel));
+          const additions=available.filter(binding=>!memberChannels.has(binding.channel));
+          const addLabel=`Account to add to ${members.map(binding=>binding.external_identity).join(' and ')}`;
+          return <li key={linkId}>
+            <span>{members.map(binding=>`${binding.channel}: ${binding.external_identity}${binding.authorized?'':' (not currently authorized)'}`).join(' ↔ ')} · shared history from {members[0]?.session_channel}</span>
+            {additions.length>0&&<div><label htmlFor={`identity-add-${linkId}`}>{addLabel}</label><select id={`identity-add-${linkId}`} value={identityAddSelections[linkId]??''} onChange={event=>setIdentityAddSelections(current=>({...current,[linkId]:event.target.value}))} disabled={busy}><option value="">Choose another channel account</option>{additions.map(binding=><option key={binding.id} value={binding.id}>{binding.channel} · {binding.external_identity} · account {binding.account_id}</option>)}</select><button type="button" onClick={()=>void addChannelIdentity(linkId)} disabled={busy||!identityAddSelections[linkId]}>Add account to linked conversation</button></div>}
+            {confirmIdentityRevoke===linkId?<div role="alertdialog" aria-label="Confirm unlink accounts"><p>All linked accounts will get separate new conversations. The shared session remains in local history.</p><button type="button" onClick={()=>void unlinkChannelIdentities(linkId)} disabled={busy}>Confirm unlink</button><button type="button" onClick={()=>setConfirmIdentityRevoke('')} disabled={busy}>Cancel</button></div>:<button type="button" onClick={()=>setConfirmIdentityRevoke(linkId)} disabled={busy}>Unlink these accounts</button>}
+          </li>;
+        })}</ul>}
       </>;
     })()}
     <h3>Discord (private DMs)</h3>

@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 21
+DATABASE_SCHEMA_VERSION = 22
 
 
 @dataclass(frozen=True)
@@ -163,7 +163,8 @@ class RunStore:
         self.path = path or default_database_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
-            if connection.execute("PRAGMA user_version").fetchone()[0] > DATABASE_SCHEMA_VERSION:
+            previous_schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if previous_schema_version > DATABASE_SCHEMA_VERSION:
                 raise RuntimeError(
                     "Database schema is newer than this engine; upgrade the engine before opening it."
                 )
@@ -425,7 +426,7 @@ class RunStore:
                 CREATE TABLE IF NOT EXISTS channel_identity_link_events (
                     id TEXT PRIMARY KEY,
                     link_id TEXT NOT NULL,
-                    action TEXT NOT NULL CHECK(action IN ('created','revoked')),
+                    action TEXT NOT NULL CHECK(action IN ('created','member_added','revoked')),
                     details TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -656,6 +657,28 @@ class RunStore:
             }
             if "source_uri" not in memory_columns:
                 connection.execute("ALTER TABLE memories ADD COLUMN source_uri TEXT")
+            identity_event_schema = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='channel_identity_link_events'"
+            ).fetchone()
+            if identity_event_schema is not None and "member_added" not in str(
+                identity_event_schema["sql"]
+            ):
+                connection.execute(
+                    "ALTER TABLE channel_identity_link_events RENAME TO channel_identity_link_events_v21"
+                )
+                connection.execute(
+                    """CREATE TABLE channel_identity_link_events (
+                           id TEXT PRIMARY KEY,
+                           link_id TEXT NOT NULL,
+                           action TEXT NOT NULL CHECK(action IN ('created','member_added','revoked')),
+                           details TEXT NOT NULL,
+                           created_at TEXT NOT NULL
+                       )"""
+                )
+                connection.execute(
+                    "INSERT INTO channel_identity_link_events SELECT * FROM channel_identity_link_events_v21"
+                )
+                connection.execute("DROP TABLE channel_identity_link_events_v21")
             connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")
 
     @contextmanager

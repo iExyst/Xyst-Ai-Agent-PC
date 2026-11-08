@@ -55,6 +55,7 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
         for channel, account, identity in (
             ("telegram", "bot-1", "1001"),
             ("email", "mailbox-1", "person@example.test"),
+            ("discord", "bot-2", "3001"),
         ):
             session_id = f"session-{channel}"
             binding_id = f"binding-{channel}"
@@ -73,7 +74,7 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
         assert client.get("/channels/identity-bindings").status_code == 401
         listed = client.get("/channels/identity-bindings", headers=headers)
         assert listed.status_code == 200
-        assert {item["channel"] for item in listed.json()} == {"telegram", "email"}
+        assert {item["channel"] for item in listed.json()} == {"telegram", "email", "discord"}
 
         created = client.post(
             "/channels/identity-links",
@@ -85,6 +86,18 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
         )
         assert created.status_code == 201, created.text
         link_id = created.json()["id"]
+        linked = client.get("/channels/identity-bindings", headers=headers).json()
+        linked_members = [item for item in linked if item["identity_link_id"] == link_id]
+        assert len(linked_members) == 2
+        assert {item["session_id"] for item in linked_members} == {bindings[0][1]}
+
+        added = client.post(
+            f"/channels/identity-links/{link_id}/members",
+            headers=headers,
+            json={"binding_id": bindings[2][0], "confirmed": True},
+        )
+        assert added.status_code == 201, added.text
+        assert added.json()["shared_session_id"] == bindings[0][1]
         linked = client.get("/channels/identity-bindings", headers=headers).json()
         assert {item["identity_link_id"] for item in linked} == {link_id}
         assert {item["session_id"] for item in linked} == {bindings[0][1]}
@@ -103,10 +116,10 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
             json={"confirmed": True},
         )
         assert revoked.status_code == 200
-        assert revoked.json() == {"unlinked_bindings": 2}
+        assert revoked.json() == {"unlinked_bindings": 3}
         separated = client.get("/channels/identity-bindings", headers=headers).json()
         assert all(item["identity_link_id"] is None for item in separated)
-        assert len({item["session_id"] for item in separated}) == 2
+        assert len({item["session_id"] for item in separated}) == 3
         assert (
             client.request(
                 "DELETE",

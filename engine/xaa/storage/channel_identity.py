@@ -78,6 +78,53 @@ class ChannelIdentityLinks:
             )
         return link_id
 
+    def add_member(self, link_id: str, binding_id: str) -> str:
+        now = utc_now()
+        with self.store.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            link = connection.execute(
+                "SELECT shared_session_id FROM channel_identity_links WHERE id=? AND revoked_at IS NULL",
+                (link_id,),
+            ).fetchone()
+            if link is None:
+                raise ValueError("The cross-channel identity link is no longer active.")
+            binding = connection.execute(
+                "SELECT id,channel,authorized,identity_link_id FROM channel_bindings WHERE id=?",
+                (binding_id,),
+            ).fetchone()
+            if binding is None or binding["authorized"] != 1:
+                raise ValueError("The additional channel identity must be currently authorized.")
+            if binding["identity_link_id"] is not None:
+                raise ValueError("The additional identity is already linked.")
+            existing_channel = connection.execute(
+                "SELECT 1 FROM channel_bindings WHERE identity_link_id=? AND channel=? LIMIT 1",
+                (link_id, binding["channel"]),
+            ).fetchone()
+            if existing_channel is not None:
+                raise ValueError("A link can include only one identity from each channel.")
+            session_id = str(link["shared_session_id"])
+            changed = connection.execute(
+                "UPDATE channel_bindings SET identity_link_id=?,session_id=? WHERE id=? AND identity_link_id IS NULL AND authorized=1",
+                (link_id, session_id, binding_id),
+            ).rowcount
+            if changed != 1:
+                raise ValueError(
+                    "The additional identity changed while the link was being updated."
+                )
+            connection.execute(
+                "INSERT INTO channel_identity_link_events(id,link_id,action,details,created_at) VALUES(?,?,'member_added',?,?)",
+                (
+                    uuid4().hex,
+                    link_id,
+                    json.dumps(
+                        {"binding_id": binding_id, "channel": binding["channel"]},
+                        separators=(",", ":"),
+                    ),
+                    now,
+                ),
+            )
+        return session_id
+
     def revoke_link(self, link_id: str) -> int:
         now = utc_now()
         with self.store.connection() as connection:

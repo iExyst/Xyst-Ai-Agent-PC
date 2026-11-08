@@ -340,6 +340,52 @@
         "title": "ChannelIdentityBinding",
         "type": "object"
       },
+      "ChannelIdentityLinkMemberRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "binding_id",
+          "confirmed"
+        ],
+        "title": "ChannelIdentityLinkMemberRequest",
+        "type": "object"
+      },
+      "ChannelIdentityLinkMemberResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "link_id": {
+            "title": "Link Id",
+            "type": "string"
+          },
+          "shared_session_id": {
+            "title": "Shared Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "binding_id",
+          "shared_session_id"
+        ],
+        "title": "ChannelIdentityLinkMemberResponse",
+        "type": "object"
+      },
       "ChannelIdentityLinkRecord": {
         "additionalProperties": false,
         "properties": {
@@ -6088,6 +6134,60 @@
           }
         ],
         "summary": "Revoke Channel Identity Link"
+      }
+    },
+    "/channels/identity-links/{link_id}/members": {
+      "post": {
+        "operationId": "add_channel_identity_link_member_channels_identity_links__link_id__members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelIdentityLinkMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelIdentityLinkMemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Channel Identity Link Member"
       }
     },
     "/channels/telegram": {

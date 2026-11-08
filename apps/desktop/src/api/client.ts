@@ -272,12 +272,22 @@ export class EngineClient {
     return this.#request('/channels/telegram/linked-users');
   }
 
-  channelIdentityBindings(): Promise<ChannelIdentityBinding[]> {
-    return this.#request('/channels/identity-bindings');
+  async channelIdentityBindings(): Promise<ChannelIdentityBinding[]> {
+    const value=await this.#request<unknown>('/channels/identity-bindings');
+    if(!Array.isArray(value)||value.some(item=>{
+      if(typeof item!=='object'||item===null)return true;
+      const binding=item as Record<string,unknown>;
+      return typeof binding.id!=='string'||typeof binding.channel!=='string'||typeof binding.account_id!=='string'||typeof binding.external_identity!=='string'||typeof binding.session_id!=='string'||typeof binding.session_channel!=='string'||typeof binding.authorized!=='boolean'||!(binding.identity_link_id===null||typeof binding.identity_link_id==='string')||!(binding.title===null||typeof binding.title==='string')||!(binding.link_created_at===null||typeof binding.link_created_at==='string');
+    }))throw new Error('The engine returned an invalid channel identity list.');
+    return value as ChannelIdentityBinding[];
   }
 
   createChannelIdentityLink(bindingIds: [string,string], sharedHistoryBindingId: string): Promise<components['schemas']['ChannelIdentityLinkRecord']> {
     return this.#request('/channels/identity-links',{method:'POST',body:JSON.stringify({binding_ids:bindingIds,shared_history_binding_id:sharedHistoryBindingId})});
+  }
+
+  addChannelIdentityLinkMember(linkId: string, bindingId: string): Promise<components['schemas']['ChannelIdentityLinkMemberResponse']> {
+    return this.#request(`/channels/identity-links/${encodeURIComponent(linkId)}/members`,{method:'POST',body:JSON.stringify({binding_id:bindingId,confirmed:true})});
   }
 
   revokeChannelIdentityLink(linkId: string): Promise<components['schemas']['RevokeChannelIdentityLinkResponse']> {

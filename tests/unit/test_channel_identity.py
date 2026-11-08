@@ -162,6 +162,31 @@ def test_linked_discord_ingress_uses_the_selected_shared_session(workspace_tmp_p
     assert message["content"] == "message from Discord"
 
 
+def test_link_can_add_more_channels_and_unlink_all_members(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "identity-link-members.sqlite3")
+    telegram, session_id = _binding(store, "telegram", "bot-1", "1001")
+    email, _ = _binding(store, "email", "mailbox", "owner@example.test")
+    discord, _ = _binding(store, "discord", "bot-2", "3001")
+    other_telegram, _ = _binding(store, "telegram", "bot-3", "1002")
+    links = ChannelIdentityLinks(store)
+    link_id = links.create_link((telegram, email), telegram)
+
+    assert links.add_member(link_id, discord) == session_id
+    members = [item for item in links.list_bindings() if item["identity_link_id"] == link_id]
+    assert {item["channel"] for item in members} == {"telegram", "email", "discord"}
+    assert {item["session_id"] for item in members} == {session_id}
+    with pytest.raises(ValueError, match="only one identity from each channel"):
+        links.add_member(link_id, other_telegram)
+    assert links.revoke_link(link_id) == 3
+    with store.connection() as connection:
+        events = connection.execute(
+            "SELECT action FROM channel_identity_link_events WHERE link_id=? ORDER BY created_at,id",
+            (link_id,),
+        ).fetchall()
+    assert {row["action"] for row in events} == {"created", "member_added", "revoked"}
+    assert len(events) == 3
+
+
 @pytest.mark.parametrize(
     "channels,authorized,linked,same_channel",
     [
@@ -227,6 +252,47 @@ def test_schema_20_database_migrates_identity_link_tables_without_losing_binding
         binding = connection.execute(
             "SELECT id FROM channel_bindings WHERE id=?", (binding_id,)
         ).fetchone()
-    assert version == 21
+    assert version == 22
     assert {"channel_identity_links", "channel_identity_link_events"} <= tables
     assert binding["id"] == binding_id
+
+
+def test_schema_21_identity_link_audit_table_migrates_for_member_additions(workspace_tmp_path):
+    database = workspace_tmp_path / "identity-link-events-upgrade.sqlite3"
+    store = RunStore(database)
+    first, session_id = _binding(store, "telegram", "bot", "1001")
+    second, _ = _binding(store, "email", "mailbox", "owner@example.test")
+    link_id = ChannelIdentityLinks(store).create_link((first, second), first)
+    with store.connection() as connection:
+        connection.execute(
+            "ALTER TABLE channel_identity_link_events RENAME TO channel_identity_link_events_v22"
+        )
+        connection.execute(
+            """CREATE TABLE channel_identity_link_events (
+                   id TEXT PRIMARY KEY,
+                   link_id TEXT NOT NULL,
+                   action TEXT NOT NULL CHECK(action IN ('created','revoked')),
+                   details TEXT NOT NULL,
+                   created_at TEXT NOT NULL
+               )"""
+        )
+        connection.execute(
+            "INSERT INTO channel_identity_link_events SELECT * FROM channel_identity_link_events_v22"
+        )
+        connection.execute("DROP TABLE channel_identity_link_events_v22")
+        connection.execute("PRAGMA user_version=21")
+
+    upgraded = RunStore(database)
+    with upgraded.connection() as connection:
+        events = connection.execute(
+            "SELECT action FROM channel_identity_link_events WHERE link_id=?", (link_id,)
+        ).fetchall()
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE name='channel_identity_link_events'"
+        ).fetchone()["sql"]
+        saved_link = connection.execute(
+            "SELECT shared_session_id FROM channel_identity_links WHERE id=?", (link_id,)
+        ).fetchone()
+    assert [row["action"] for row in events] == ["created"]
+    assert "member_added" in table_sql
+    assert saved_link["shared_session_id"] == session_id

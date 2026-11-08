@@ -486,6 +486,19 @@ class ChannelIdentityLinkRecord(BaseModel):
     shared_history_binding_id: str
 
 
+class ChannelIdentityLinkMemberRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    binding_id: str = Field(min_length=1, max_length=64)
+    confirmed: Literal[True]
+
+
+class ChannelIdentityLinkMemberResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    link_id: str
+    binding_id: str
+    shared_session_id: str
+
+
 class RevokeChannelIdentityLinkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmed: Literal[True]
@@ -1449,6 +1462,26 @@ def create_app(
         return {
             "id": link_id,
             "shared_history_binding_id": payload.shared_history_binding_id,
+        }
+
+    @app.post(
+        "/channels/identity-links/{link_id}/members",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ChannelIdentityLinkMemberResponse,
+    )
+    def add_channel_identity_link_member(
+        link_id: str,
+        payload: ChannelIdentityLinkMemberRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, str]:
+        try:
+            session_id = channel_identity_links.add_member(link_id, payload.binding_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "link_id": link_id,
+            "binding_id": payload.binding_id,
+            "shared_session_id": session_id,
         }
 
     @app.delete(

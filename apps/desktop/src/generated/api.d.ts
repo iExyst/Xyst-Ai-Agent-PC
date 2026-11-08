@@ -222,6 +222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/identity-links/{link_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Channel Identity Link Member */
+        post: operations["add_channel_identity_link_member_channels_identity_links__link_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram": {
         parameters: {
             query?: never;
@@ -1831,6 +1848,25 @@ export interface components {
             session_id: string;
             /** Title */
             title: string | null;
+        };
+        /** ChannelIdentityLinkMemberRequest */
+        ChannelIdentityLinkMemberRequest: {
+            /** Binding Id */
+            binding_id: string;
+            /**
+             * Confirmed
+             * @constant
+             */
+            confirmed: true;
+        };
+        /** ChannelIdentityLinkMemberResponse */
+        ChannelIdentityLinkMemberResponse: {
+            /** Binding Id */
+            binding_id: string;
+            /** Link Id */
+            link_id: string;
+            /** Shared Session Id */
+            shared_session_id: string;
         };
         /** ChannelIdentityLinkRecord */
         ChannelIdentityLinkRecord: {
@@ -4091,6 +4127,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevokeChannelIdentityLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_channel_identity_link_member_channels_identity_links__link_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelIdentityLinkMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelIdentityLinkMemberResponse"];
                 };
             };
             /** @description Validation Error */
