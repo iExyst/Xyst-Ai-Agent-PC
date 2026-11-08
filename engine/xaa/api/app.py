@@ -1562,8 +1562,13 @@ def create_app(
     def create_discord_pairing(_: None = Depends(authenticate)) -> dict[str, str]:
         if credential_store is None or credential_store.get("discord-bot") is None:
             raise HTTPException(status_code=409, detail="Configure a Discord bot token first.")
+        account_id = credential_store.get("discord-bot-account")
+        if account_id is None:
+            raise HTTPException(
+                status_code=409, detail="The configured Discord bot identity is unavailable."
+            )
         code = secrets.token_urlsafe(32)
-        return {"code": code, "expires_at": discord_store.create_pairing(code)}
+        return {"code": code, "expires_at": discord_store.create_pairing(account_id, code)}
 
     @app.delete("/channels/discord/links", response_model=DiscordLinkRevocation)
     def revoke_discord_links(_: None = Depends(authenticate)) -> dict[str, int]:

@@ -99,6 +99,7 @@ class DiscordStore:
                 );
                 CREATE TABLE IF NOT EXISTS discord_pairing_codes (
                     code_hash TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     consumed_at TEXT
@@ -121,18 +122,20 @@ class DiscordStore:
     def hash_pairing_code(code: str) -> str:
         return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
-    def create_pairing(self, code: str, *, ttl: timedelta = timedelta(minutes=5)) -> str:
+    def create_pairing(
+        self, account_id: str, code: str, *, ttl: timedelta = timedelta(minutes=5)
+    ) -> str:
         now = datetime.now(UTC)
         expires = now + ttl
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
-                "DELETE FROM discord_pairing_codes WHERE expires_at<=? OR consumed_at IS NOT NULL",
-                (now.isoformat(),),
+                "DELETE FROM discord_pairing_codes WHERE account_id=? AND (expires_at<=? OR consumed_at IS NOT NULL)",
+                (account_id, now.isoformat()),
             )
             connection.execute(
-                "INSERT INTO discord_pairing_codes VALUES (?,?,?,NULL)",
-                (self.hash_pairing_code(code), now.isoformat(), expires.isoformat()),
+                "INSERT INTO discord_pairing_codes VALUES (?,?,?,?,NULL)",
+                (self.hash_pairing_code(code), account_id, now.isoformat(), expires.isoformat()),
             )
         return expires.isoformat()
 
@@ -190,7 +193,9 @@ class DiscordStore:
     def revoke_users(self, account_id: str) -> int:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute("DELETE FROM discord_pairing_codes")
+            connection.execute(
+                "DELETE FROM discord_pairing_codes WHERE account_id=?", (account_id,)
+            )
             return int(
                 connection.execute(
                     "UPDATE channel_bindings SET authorized=0 WHERE channel='discord' AND account_id=? AND authorized=1",
@@ -206,7 +211,7 @@ class DiscordStore:
         model: str | None,
     ) -> dict[str, Any]:
         """Consume a DM once; only a valid one-time code may link a Discord user."""
-        if not message.message_id or len(message.message_id) > 32:
+        if not re.fullmatch(r"[0-9]{1,20}", message.message_id):
             return {"state": "invalid", "run_id": None}
         if not message.author_id.isdecimal() or not message.channel_id.isdecimal():
             return {"state": "invalid", "run_id": None}
@@ -243,8 +248,8 @@ class DiscordStore:
                 if pair:
                     code_hash = self.hash_pairing_code(pair.group(1))
                     pairing = connection.execute(
-                        "SELECT code_hash FROM discord_pairing_codes WHERE code_hash=? AND expires_at>? AND consumed_at IS NULL",
-                        (code_hash, now),
+                        "SELECT code_hash FROM discord_pairing_codes WHERE account_id=? AND code_hash=? AND expires_at>? AND consumed_at IS NULL",
+                        (identity.account_id, code_hash, now),
                     ).fetchone()
                     if pairing:
                         connection.execute(

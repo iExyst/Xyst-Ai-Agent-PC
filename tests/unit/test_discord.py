@@ -23,7 +23,7 @@ def test_discord_pairing_is_one_time_and_private_only(tmp_path) -> None:
     runs = RunStore(tmp_path / "discord.sqlite3")
     channel = DiscordStore(runs)
     channel.save_bot(IDENTITY)
-    channel.create_pairing("X" * 32)
+    channel.create_pairing(IDENTITY.account_id, "X" * 32)
 
     guild = channel.process_message(
         IDENTITY,
@@ -47,7 +47,7 @@ def test_discord_message_is_idempotent_and_runs_observe_only(tmp_path) -> None:
     runs = RunStore(tmp_path / "discord-idempotency.sqlite3")
     channel = DiscordStore(runs)
     channel.save_bot(IDENTITY)
-    channel.create_pairing("Y" * 32, ttl=timedelta(minutes=5))
+    channel.create_pairing(IDENTITY.account_id, "Y" * 32, ttl=timedelta(minutes=5))
     channel.process_message(
         IDENTITY, message(10, 300000000000000003, "/pair " + "Y" * 32), model="test/model"
     )
@@ -83,7 +83,7 @@ def test_discord_unlinked_user_and_model_unavailable_cannot_start_runs(tmp_path)
         IDENTITY, message(20, 300000000000000003, "Do work"), model="test/model"
     )
     assert unlinked["state"] == "ignored"
-    channel.create_pairing("Z" * 32)
+    channel.create_pairing(IDENTITY.account_id, "Z" * 32)
     channel.process_message(
         IDENTITY, message(21, 300000000000000003, "/pair " + "Z" * 32), model="test/model"
     )
@@ -99,7 +99,7 @@ def test_discord_revocation_disables_existing_binding(tmp_path) -> None:
     runs = RunStore(tmp_path / "discord-revoke.sqlite3")
     channel = DiscordStore(runs)
     channel.save_bot(IDENTITY)
-    channel.create_pairing("Q" * 32)
+    channel.create_pairing(IDENTITY.account_id, "Q" * 32)
     channel.process_message(
         IDENTITY, message(30, 300000000000000003, "/pair " + "Q" * 32), model="test/model"
     )
@@ -110,3 +110,37 @@ def test_discord_revocation_disables_existing_binding(tmp_path) -> None:
     )
     assert revoked_message["state"] == "ignored"
     assert channel.profile()["linked_users"] == 0
+
+
+def test_discord_pairing_code_is_bound_to_bot_account(tmp_path) -> None:
+    runs = RunStore(tmp_path / "discord-account-scope.sqlite3")
+    channel = DiscordStore(runs)
+    second_bot = DiscordIdentity("100000000000000002", "xaa-other")
+    channel.save_bot(IDENTITY)
+    channel.create_pairing(IDENTITY.account_id, "R" * 32)
+
+    wrong_bot = channel.process_message(
+        second_bot,
+        message(40, 300000000000000003, "/pair " + "R" * 32),
+        model="test/model",
+    )
+    right_bot = channel.process_message(
+        IDENTITY,
+        message(41, 300000000000000003, "/pair " + "R" * 32),
+        model="test/model",
+    )
+
+    assert wrong_bot["state"] == "pairing_rejected"
+    assert right_bot["state"] == "paired"
+    assert channel.linked_users(IDENTITY.account_id) == ["300000000000000003"]
+    assert channel.linked_users(second_bot.account_id) == []
+
+
+def test_discord_rejects_malformed_event_identifiers(tmp_path) -> None:
+    channel = DiscordStore(RunStore(tmp_path / "discord-malformed.sqlite3"))
+    malformed = DiscordMessage("message-id", "300000000000000003", "200000000000000002", "hi", True)
+
+    assert channel.process_message(IDENTITY, malformed, model="test/model") == {
+        "state": "invalid",
+        "run_id": None,
+    }
