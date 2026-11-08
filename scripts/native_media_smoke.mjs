@@ -265,10 +265,20 @@ async function finishRun(
     throw new Error(`New media run did not reach review: ${run?.state ?? 'missing'}`);
   }
   const events = await (await api(`/runs/${run.id}/events`)).json();
+  const usage = await (await api(`/runs/${run.id}/usage`)).json();
   const messages = events.filter(event => event.event_type === 'model.message').map(event => event.payload.message);
   const finalMessage = messages.at(-1);
   const answer = finalMessage?.content ?? '';
   const calls = messages.flatMap(message => message.tool_calls ?? []);
+  const ocrUsage = events
+    .filter(event => event.event_type === 'diagnostic.inference.completed' && event.payload.purpose === 'scanned_pdf_ocr')
+    .map(event => event.payload.usage);
+  if (expectedArtifacts.includes('user.input_document_page:1')) {
+    const measuredOcr = ocrUsage.reduce((total, item) => total + item.total_tokens, 0);
+    if (ocrUsage.length === 0 || usage.total_tokens < measuredOcr) {
+      throw new Error('Scanned PDF OCR usage was not included in run totals.');
+    }
+  }
   const answerAccepted = expectedAnswer instanceof RegExp ? expectedAnswer.test(answer) : answer.includes(expectedAnswer);
   const result = {
     run_id: run.id,
@@ -277,6 +287,8 @@ async function finishRun(
     expected_answer: typeof expectedAnswer === 'string' ? expectedAnswer : null,
     answer_matches_expected: answerAccepted,
     tool_call_count: calls.length,
+    measured_usage: usage,
+    scanned_pdf_ocr_usage: ocrUsage,
   };
   runs.push(result);
   if (!answerAccepted) throw new Error(`Model answer omitted expected media evidence: ${answer}`);
@@ -329,7 +341,16 @@ try {
   if (selected.loaded) throw new Error('Refusing media acceptance because the selected model was already loaded before this harness owned it.');
   const load = await api('/models/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, context_length: 16384 }) });
   instance = (await load.json()).instance_id;
+  const clearSelection = page.waitForResponse(response =>
+    response.url().endsWith('/providers/lm-studio/selection') && response.request().method() === 'PUT',
+  );
+  await page.getByLabel('Local model').selectOption('');
+  await clearSelection;
+  const saveSelection = page.waitForResponse(response =>
+    response.url().endsWith('/providers/lm-studio/selection') && response.request().method() === 'PUT',
+  );
   await page.getByLabel('Local model').selectOption(model);
+  await saveSelection;
   await expect.poll(async () => (await (await api('/providers/lm-studio/config')).json()).selected_model).toBe(model);
   await page.getByText('Run limits', { exact: true }).click();
   await page.getByLabel('Output tokens per request (optional)').fill('512');

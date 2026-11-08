@@ -24,7 +24,11 @@ async def test_scanned_page_transcription_uses_native_vision_with_reasoning_off(
             200,
             json={
                 "output": [{"type": "message", "content": "marker 1234"}],
-                "stats": {"reasoning_output_tokens": 0},
+                "stats": {
+                    "input_tokens": 100,
+                    "total_output_tokens": 4,
+                    "reasoning_output_tokens": 0,
+                },
             },
         )
 
@@ -34,13 +38,14 @@ async def test_scanned_page_transcription_uses_native_vision_with_reasoning_off(
     )
     png = b"\x89PNG\r\n\x1a\nfixture"
     try:
-        result = await provider.transcribe_scanned_pages(
+        result, usage = await provider.transcribe_scanned_pages(
             model="vision", objective="Read the code", pages=[(3, png)]
         )
     finally:
         await provider.close()
 
     assert result == "[Scanned PDF OCR — page 3]\nmarker 1234"
+    assert usage == [(usage[0][0], {"prompt_tokens": 100, "completion_tokens": 4, "total_tokens": 104})]
     path, payload = requests[0]
     assert path == "/api/v1/chat"
     assert payload["reasoning"] == "off"

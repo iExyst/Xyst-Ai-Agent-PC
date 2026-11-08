@@ -528,6 +528,8 @@ def test_scanned_pdf_requires_vision_and_retains_page_preview_artifact(workspace
     headers = {"Authorization": f"Bearer {TOKEN}"}
 
     class VisionProvider(FakeProvider):
+        ocr_calls = 0
+
         async def models(self) -> list[ModelInfo]:
             return [ModelInfo(id="fixture", capabilities=ModelCapabilities(vision=True))]
 
@@ -535,7 +537,14 @@ def test_scanned_pdf_requires_vision_and_retains_page_preview_artifact(workspace
             assert model == "fixture"
             assert objective == "Read the scan"
             assert len(pages) == 1
-            return "[Scanned PDF OCR — page 1]\nfixture OCR"
+            self.ocr_calls += 1
+            return "[Scanned PDF OCR — page 1]\nfixture OCR", [
+                ("8bd0368a-c3f8-4ca5-aa58-0f6b0eef2676", {
+                    "prompt_tokens": 80,
+                    "completion_tokens": 4,
+                    "total_tokens": 84,
+                })
+            ]
 
     nonvision_store = RunStore(workspace_tmp_path / "scanned-no-vision.sqlite3")
     with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=nonvision_store)) as client:
@@ -548,7 +557,21 @@ def test_scanned_pdf_requires_vision_and_retains_page_preview_artifact(workspace
         assert "vision support" in rejected.json()["detail"]
 
     store = RunStore(workspace_tmp_path / "scanned-vision.sqlite3")
-    with TestClient(create_app(VisionProvider(), SecretStr(TOKEN), store=store)) as client:
+    vision_provider = VisionProvider()
+    with TestClient(create_app(vision_provider, SecretStr(TOKEN), store=store)) as client:
+        too_small = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Read the scan",
+                "model": "fixture",
+                "max_total_tokens": 4607,
+                "document": encoded,
+            },
+        )
+        assert too_small.status_code == 409
+        assert "at least 4608 tokens" in too_small.json()["detail"]
+        assert vision_provider.ocr_calls == 0
         response = client.post(
             "/runs",
             headers=headers,
@@ -558,6 +581,11 @@ def test_scanned_pdf_requires_vision_and_retains_page_preview_artifact(workspace
         run_id = response.json()["id"]
         assert "no embedded text" in store.document_text(run_id)
         assert "fixture OCR" in store.document_text(run_id)
+        assert vision_provider.ocr_calls == 1
+        usage = store.token_usage(run_id)
+        assert usage["prompt_tokens"] == 80
+        assert usage["completion_tokens"] == 4
+        assert usage["total_tokens"] == 84
         pages = store.document_page_images(run_id)
         assert len(pages) == 1 and pages[0][0] == 1
         page_bytes = base64.b64decode(pages[0][1].split(",", 1)[1])

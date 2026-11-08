@@ -104,6 +104,8 @@ from xaa.storage.tasks import TaskStore
 from xaa.storage.trajectory import export_trajectory
 from xaa.version import APP_VERSION
 
+SCANNED_PAGE_OCR_TOKEN_RESERVATION = 4_608
+
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -1552,6 +1554,7 @@ def create_app(
             document_type: str | None = None
             document_text: str | None = None
             document_page_images: list[tuple[int, bytes]] = []
+            document_ocr_usage: list[tuple[str, dict[str, int]]] = []
             if payload.image is not None and payload.document is not None:
                 raise ValueError("Attach one image or one document per run.")
             if payload.image is not None:
@@ -1645,15 +1648,23 @@ def create_app(
                         raise ValueError(
                             "The selected LM Studio model does not advertise vision support for scanned PDFs."
                         )
-                    document_text = (
-                        (document_text or "")
-                        + "\n\n"
-                        + await provider.transcribe_scanned_pages(
-                            model=payload.model,
-                            objective=payload.objective,
-                            pages=document_page_images,
-                        )
+                    ocr_reservation = (
+                        len(document_page_images) * SCANNED_PAGE_OCR_TOKEN_RESERVATION
                     )
+                    if (
+                        payload.max_total_tokens is not None
+                        and payload.max_total_tokens < ocr_reservation
+                    ):
+                        raise ValueError(
+                            "The run token budget is too small for scanned PDF OCR; allow at least "
+                            f"{ocr_reservation} tokens for {len(document_page_images)} scanned page(s)."
+                        )
+                    ocr_text, document_ocr_usage = await provider.transcribe_scanned_pages(
+                        model=payload.model,
+                        objective=payload.objective,
+                        pages=document_page_images,
+                    )
+                    document_text = (document_text or "") + "\n\n" + ocr_text
             if payload.command_grant is not None:
                 execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(
@@ -1682,6 +1693,7 @@ def create_app(
                 document_media_type=document_type,
                 document_text=document_text,
                 document_page_images=document_page_images,
+                document_ocr_usage=document_ocr_usage,
                 client_request_id=payload.client_request_id,
                 request_digest=hashlib.sha256(
                     payload.model_dump_json(exclude={"client_request_id"}).encode("utf-8")

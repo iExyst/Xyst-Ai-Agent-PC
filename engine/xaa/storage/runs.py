@@ -700,6 +700,7 @@ class RunStore:
         document_media_type: str | None = None,
         document_text: str | None = None,
         document_page_images: list[tuple[int, bytes]] | None = None,
+        document_ocr_usage: list[tuple[str, dict[str, int]]] | None = None,
         client_request_id: str | None = None,
         request_digest: str | None = None,
     ) -> dict[str, Any]:
@@ -707,6 +708,21 @@ class RunStore:
             raise ValueError(
                 "Idempotent run requests require both a request ID and payload digest."
             )
+        document_ocr_usage = document_ocr_usage or []
+        if document_ocr_usage and (model is None or not document_page_images):
+            raise ValueError("Measured scanned PDF OCR requires a selected model and page artifacts.")
+        for inference_id, usage in document_ocr_usage:
+            if (
+                re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    inference_id,
+                )
+                is None
+                or set(usage) != {"prompt_tokens", "completion_tokens", "total_tokens"}
+                or any(type(value) is not int or value < 0 for value in usage.values())
+                or usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]
+            ):
+                raise ValueError("Scanned PDF OCR usage is invalid.")
         if client_request_id is not None:
             if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", client_request_id) is None:
                 raise ValueError("Client request ID must contain 1–128 safe characters.")
@@ -885,6 +901,29 @@ class RunStore:
                     "pre_inference_token_reservations": pre_inference_token_reservations,
                 },
             )
+            for inference_id, usage in document_ocr_usage:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "diagnostic.inference.started",
+                    {
+                        "inference_id": inference_id,
+                        "model": model,
+                        "max_output_tokens": 512,
+                        "purpose": "scanned_pdf_ocr",
+                    },
+                )
+                self.record_event(
+                    connection,
+                    run_id,
+                    "diagnostic.inference.completed",
+                    {
+                        "inference_id": inference_id,
+                        "model": model,
+                        "usage": usage,
+                        "purpose": "scanned_pdf_ocr",
+                    },
+                )
             for artifact_id, filename, media_type, content, provenance in staged_artifacts:
                 connection.execute(
                     "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",

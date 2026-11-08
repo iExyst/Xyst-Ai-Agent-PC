@@ -15,41 +15,48 @@
       "state": "verifying",
       "answer_matches_random_marker": true,
       "artifact_provenances": ["user.input_document", "user.input_document_text"],
-      "source_sha256": "02dec3f209f9f040c3c122fa16b58eb8dbf52e351080e8d96c5d50e363665ced"
+      "source_sha256": "277bc01961d38dfb656320387c40d903e4b3c6873ea1da64e56431a13783c442"
     },
     "scanned_pdf": {
       "state": "verifying",
-      "answer": "A8DF2F44",
+      "answer": "815B33AF",
       "answer_matches_random_marker": true,
       "tool_call_count": 0,
+      "ocr_usage": {
+        "prompt_tokens": 512,
+        "completion_tokens": 8,
+        "total_tokens": 520
+      },
+      "run_total_tokens": 1871,
+      "unmeasured_calls": 0,
       "artifact_provenances": [
         "user.input_document",
         "user.input_document_text",
         "user.input_document_page:1"
       ],
-      "source_sha256": "06d6dc32bbb72ed46015f078e7956d809343639caa98d25294980ebac50b96d3",
-      "page_png_sha256": "b771b6fcc77caa29ad7e589392bdfd81a48798b71502fb873012eccc023ca070"
+      "source_sha256": "6cdfc543b5f10de2810226f9125c1ecfcf9fb1b6e8f825e4d356f1d738ba425f",
+      "page_png_sha256": "3e98ef504c6c2f9488359e7e44e2ee05f16b3e706186cbb5f5579da9ead5057a"
     },
     "docx": {
       "state": "verifying",
       "answer_matches_random_marker": true,
       "artifact_provenances": ["user.input_document", "user.input_document_text"],
-      "source_sha256": "050705e642bd4ccdf43b4461157513ff7adb9d9d1fabc007f8dd482250dedfdf"
+      "source_sha256": "ab84e20547178542b598ab2f7ec2c0a1b4d656d54d56cbef65cd815d5d36c3b0"
     },
     "xlsx": {
       "state": "verifying",
       "answer_matches_random_cell_marker": true,
       "artifact_provenances": ["user.input_document", "user.input_document_text"],
-      "source_sha256": "c90b3b635168c6dda2b28553de11a826a096dcd4bc5bab2741e10fcc70a36182"
+      "source_sha256": "35a7747f1ba5d84566462a56cac87f0c3964bd6feaddfc2a5cbbe88fc70c555d"
     }
   },
   "model_unloaded_before_window_close": true,
   "engine_stopped": true,
   "graceful_shutdown": true,
   "build_sha256": {
-      "xaa-desktop.exe": "1a9714c53a0817ebc12f102f2769e161b40273d817f396561188f9ad0de2e8cb",
-    "xaa-engine.exe": "b8deb86dd430ee6254b23f4e1882ef1bac56c13d92caeb9c410fa804efd3e5ba"
+    "xaa-desktop.exe": "7223a5045332540125f58012f6ddeeb97d9b98a0359fc1b7d10ded17ec839886",
+    "xaa-engine.exe": "0f04318d7b4188d590039f7ae41e2ebe3f2d73fe3955d9024b941b4021530c86"
   },
-  "scope": "Actual Windows Tauri upload and agent runs passed for one synthetic image, one text PDF, one scanned PDF, one DOCX and one XLSX on one local vision model. The scanned page was OCR-transcribed through LM Studio native vision with reasoning disabled; its original PDF, OCR text and rendered page PNG were retained as checksummed artifacts. This is a single synthetic OCR case on google/gemma-4-e4b, not broad OCR accuracy or a guarantee for other models. XLSX covers cached cell text only. Runs stopped at verifying for independent review.",
-  "latest_report": ".acceptance/native-media-6b7ae02c-a34d-42de-ac53-84400ab40416/report.json"
+  "scope": "Actual Windows Tauri upload and agent runs passed for one synthetic image, one text PDF, one scanned PDF, one DOCX and one XLSX on google/gemma-4-e4b. The scanned page used LM Studio native vision with reasoning disabled; its 520 OCR tokens are included in the 1,871-token run total and the 4,608-token per-page budget floor prevents undersized run budgets from starting OCR. Original PDF, OCR text and rendered page PNG were retained as checksummed artifacts. This is one synthetic OCR case, not broad accuracy or a guarantee for other models. XLSX covers cached cell text only. Runs stopped at verifying for independent review.",
+  "latest_report": ".acceptance/native-media-a50dce5d-bf05-41c4-8706-aa05868f2271/report.json"
 }
