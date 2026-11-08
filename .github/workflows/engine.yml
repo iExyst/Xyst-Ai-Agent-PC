@@ -93,18 +93,44 @@ jobs:
       - uses: actions/cache/restore@v4
         id: nsis-cache
         with:
-          path: |
-            ~/AppData/Local/tauri/NSIS
-            apps/desktop/src-tauri/target/release/.tauri/NSIS
+          path: ~/AppData/Local/tauri/NSIS
           key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
-      - run: npm run build:installer
+      - name: Prepare verified Tauri NSIS tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nsisPath = Join-Path $env:LOCALAPPDATA 'tauri\NSIS'
+          $utilityPath = Join-Path $nsisPath 'Plugins\x86-unicode\additional\nsis_tauri_utils.dll'
+          $requiredFiles = @('NSIS.exe', 'makensis.exe', 'Bin/makensis.exe', 'Stubs/lzma-x86-unicode', 'Stubs/lzma_solid-x86-unicode', 'Plugins/x86-unicode/additional/nsis_tauri_utils.dll', 'Include/MUI2.nsh', 'Include/FileFunc.nsh', 'Include/x64.nsh', 'Include/nsDialogs.nsh', 'Include/WinMessages.nsh', 'Include/Win/COM.nsh', 'Include/Win/Propkey.nsh', 'Include/Win/RestartManager.nsh')
+          $missingFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $nsisPath $_)) })
+          $nsisHash = '6D45D4E8CCF18FE1FDAC9164058F356102A2ECF2'
+          $utilityHash = '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          $nsisValid = ($missingFiles.Count -eq 0) -and
+            (Get-FileHash -LiteralPath (Join-Path $nsisPath 'NSIS.exe') -Algorithm SHA1).Hash -eq $nsisHash -and
+            (Get-FileHash -LiteralPath $utilityPath -Algorithm SHA1).Hash -eq $utilityHash
+          if (-not $nsisValid) {
+            $archive = Join-Path $env:RUNNER_TEMP 'xaa-nsis-3.13.zip'
+            $extractRoot = Join-Path $env:RUNNER_TEMP 'xaa-nsis-3.13'
+            Invoke-WebRequest -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip' -OutFile $archive
+            if ((Get-FileHash -LiteralPath $archive -Algorithm SHA1).Hash -ne 'DB14F8AF2EA346B786C6AE19343F61AAF5E09B8E') { throw 'Tauri NSIS archive SHA-1 mismatch.' }
+            if (Test-Path -LiteralPath $extractRoot) { Remove-Item -LiteralPath $extractRoot -Recurse -Force }
+            Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot
+            $extractedNsis = Join-Path $extractRoot 'nsis-3.13'
+            if (-not (Test-Path -LiteralPath (Join-Path $extractedNsis 'NSIS.exe'))) { throw 'Tauri NSIS archive layout changed.' }
+            if (Test-Path -LiteralPath $nsisPath) { Remove-Item -LiteralPath $nsisPath -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $nsisPath) | Out-Null
+            Move-Item -LiteralPath $extractedNsis -Destination $nsisPath
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $utilityPath) | Out-Null
+            Copy-Item -LiteralPath '.github/vendor/nsis_tauri_utils-v0.5.3.dll' -Destination $utilityPath
+            if ((Get-FileHash -LiteralPath (Join-Path $nsisPath 'NSIS.exe') -Algorithm SHA1).Hash -ne $nsisHash) { throw 'Tauri NSIS executable SHA-1 mismatch.' }
+            if ((Get-FileHash -LiteralPath $utilityPath -Algorithm SHA1).Hash -ne $utilityHash) { throw 'Tauri NSIS utility DLL SHA-1 mismatch.' }
+          }
       - uses: actions/cache/save@v4
         if: success() && steps.nsis-cache.outputs.cache-hit != 'true'
         with:
-          path: |
-            ~/AppData/Local/tauri/NSIS
-            apps/desktop/src-tauri/target/release/.tauri/NSIS
+          path: ~/AppData/Local/tauri/NSIS
           key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+      - run: npm run build:installer
       - name: Verify recovery after native Tauri desktop process death
         shell: pwsh
         run: |

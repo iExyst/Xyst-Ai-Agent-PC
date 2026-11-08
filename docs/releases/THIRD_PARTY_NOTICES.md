@@ -6,6 +6,10 @@ Generated 2026-11-07 from the locked Python environment, npm runtime dependencie
 
 Python development tools are included because they are present in the locked development environment; this may overinclude tools absent from the installed product. The npm list is runtime-only. Rust entries are filtered for `x86_64-pc-windows-msvc`. The comprehensive lockfile inventory is in [`dependency-inventory.md`](dependency-inventory.md).
 
+## Additional Windows installer build asset
+
+The repository carries the official `nsis_tauri_utils.dll` v0.5.3 release binary at [`.github/vendor/nsis_tauri_utils-v0.5.3.dll`](../../.github/vendor/nsis_tauri_utils-v0.5.3.dll) solely to seed the Tauri Windows build cache. Its upstream SHA-1 is `75197FEE3C6A814FE035788D1C34EAD39349B860`. The source release is [tauri-apps/nsis-tauri-utils v0.5.3](https://github.com/tauri-apps/nsis-tauri-utils/releases/tag/nsis_tauri_utils-v0.5.3), licensed MIT OR Apache-2.0; the full license texts are in the [pinned upstream source](https://github.com/tauri-apps/nsis-tauri-utils/tree/nsis_tauri_utils-v0.5.3). The workflow verifies this digest and the NSIS archive/executable digests before caching the toolset. This is a build-time installer plugin attribution; the general package and copyright review remains open.
+
 ## License texts
 
 ### 1. npm (runtime dependencies) — Apache-2.0 OR MIT
