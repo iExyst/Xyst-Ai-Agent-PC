@@ -1,6 +1,6 @@
 # Xyst AI Agent user guide
 
-**Development preview · updated 2026-11-05**
+**Development preview · updated 2026-11-08**
 
 Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends model requests to the LM Studio server you configure, records runs in SQLite, and requires explicit review before accepting agent results. The product is still under development; this guide describes behavior currently present in the repository and does not claim full Hermes parity or production release readiness.
 
@@ -10,7 +10,7 @@ Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends mode
 - LM Studio installed separately, with its local server started and a model loaded when you want to run an objective.
 - A model that supports the required tool calls for the selected workflow. X.A.A. discovers model IDs; it does not download or select a model automatically.
 
-The current Windows installer is an unsigned development build. Open the repository's [GitHub Actions runs](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions), select a successful **Engine checks** run, and download its `xaa-windows-installer-unsigned` artifact while it is retained. The installer bundles X.A.A.'s engine; Python and Node are not runtime prerequisites. Installer upgrades and clean normal-user-machine acceptance remain incomplete. See [installer scope and evidence](releases/windows-installer.md).
+The current Windows installer is an unsigned development build. Open the repository's [GitHub Actions runs](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions), select a successful **Engine checks** run, and download its `xaa-windows-installer-unsigned` artifact while it is retained. The installer bundles X.A.A.'s engine; Python and Node are not runtime prerequisites. Hosted acceptance covers current-user installation, upgrade from a retained prior build, desktop boot, backup/restore, uninstall and user-data preservation on a clean GitHub runner. These checks use synthetic data and a short-lived CI baseline; they do not establish signed distribution or recovery of a real user's profile. See [installer scope and evidence](releases/windows-installer.md).
 
 For a development build, follow the commands in the repository [README](../README.md). Do not run the source checkout as if it were an installed production release.
 
@@ -48,7 +48,7 @@ The **Saved runs** panel reopens prior run records without repeating execution. 
 
 In **Memory preferences**, save, edit, search, export or delete preferences that you want the parent agent to recall. In **Specialist identities and model routes**, choose a discovered model, edit role instructions, and save or delete explicit per-role memories. Routes and instructions are snapshotted into newly saved plans. Saved memories are bounded context; they do not grant tools or permissions.
 
-**Reusable procedures** are versioned text procedures. A procedure trial is shown as unverified data. Only procedures that have the required evaluation evidence can be activated for reuse. Review the procedure's version and declared requirements before selecting it for a run.
+**Reusable procedures** are versioned packages. A procedure trial is shown as unverified data, and only a procedure with the required evaluation evidence can be activated for reuse. Review the version and declared requirements before selecting it for a run. Optional per-run grants can let the model draft a new candidate, revise the selected procedure text, create or replace up to eight linked UTF-8 text files in one atomic edit, or separately remove one linked file. Each grant is distinct and off by default. Model edits create an inactive, unevaluated version; they do not activate it or change the previous version. Review and evaluate the candidate through the procedure library before activation. Linked resources are untrusted reference data, and script assets remain inert.
 
 ## Optional integrations
 
@@ -108,4 +108,4 @@ The local API is authenticated and binds to loopback by default. Do not expose i
 
 ## Current limits
 
-X.A.A. is not a production release. The installer is unsigned; version-to-version upgrade and clean normal-user-machine recovery acceptance remain open. Live interactive CLI model use, broad optional-provider routing, media/document support, several Hermes capability families, session unification between CLI and desktop, and full packaged/release acceptance are incomplete. Consult the [progress record](progress.md) and [capability matrix](parity/hermes-matrix.md) for the verified scope and remaining gaps.
+X.A.A. is not a production release. The installer is unsigned, and clean normal-user-machine recovery with real user data remains open. Voice, broad media accuracy, live third-party channel acceptance, broad Hermes capability families, session unification between CLI and desktop, licensing review and full release acceptance are incomplete. Consult the [progress record](progress.md) and [capability matrix](parity/hermes-matrix.md) for the verified scope and remaining gaps.
