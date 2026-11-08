@@ -65,9 +65,9 @@ test('final review requires selected validation for the current integrated proje
   const accept=panel.getByRole('button',{name:'Accept and complete run',exact:true});await expect(accept).toBeDisabled();await panel.getByLabel('Reviewed successful current validation check-1').check();await expect(accept).toBeEnabled();await accept.click();await expect(page.getByRole('heading',{name:'Active run completed'})).toBeVisible();expect(accepted).toBe(true);
 });
 
-test('automatically runs one unambiguous suggested check under the existing command grant',async({page})=>{
+test('automatically runs one unambiguous Swift package check under the existing command grant',async({page})=>{
   const run={id:'automatic-validation-run',objective:'Validate the edited project',state:'verifying',revision:5,acceptance_criteria:['The check passes']};
-  const suggestion={label:'Python tests (pytest)',rationale:'pyproject.toml was found.',argv:['/usr/bin/python3','-I','-m','pytest','-q']};
+  const suggestion={label:'Swift tests (Swift Package Manager) — apps/ios',rationale:'apps/ios/Package.swift was found.',argv:['/usr/bin/env','swift','test','--package-path','apps/ios']};
   const evidence={call_id:'automatic-check',argv:suggestion.argv,snapshot_sha256:'b'.repeat(64),matches_current_project:true,succeeded:true,exit_code:0,termination_reason:'finished',stdout_excerpt:'3 passed',stderr_excerpt:'',stdout_artifact_id:'out',stderr_artifact_id:'err'};
   let dispatches=0;
   await page.route('http://127.0.0.1:8765/**',async route=>{
