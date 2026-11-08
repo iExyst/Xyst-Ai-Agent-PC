@@ -2,6 +2,10 @@
 
 Updated 2026-11-08.
 
+## Specialist inference timeout classification (2026-11-08)
+
+Specialist model-call `TimeoutError`s are now persisted with the bounded stage `chat` or `chat_streamed` and a stable error class; raw exception text is not saved. This improves diagnosis without automatically replaying an inference whose usage may be unknown. The focused specialist suite passes (11 tests), Ruff and formatting pass, and strict Pyright passes. A new real Qwen3.5 9B attempt stopped earlier in the harmless parent tool-use diagnostic because the model did not return the expected tool result; both specialists remained queued, there were no unresolved calls or workspace changes, and the owned instance was unloaded. It does not validate the new specialist timeout classification. Evidence: `.acceptance/live-task-workspaces-timeout-classification-20261108/report.json`. Hosted checks are pending.
+
 ## Phase 4 repeat acceptance timeout (2026-11-08)
 
 A second isolated live Qwen3.5 9B specialist-conflict attempt ran both independent specialists in private workspace snapshots. `beta` edited its snapshot and passed the Ubuntu-24.04 validator; `alpha` completed its private edit, then its later model turn failed with `ExceptionGroup` containing `TimeoutError`. The parent stopped before conflict review, and the original fixture remained unchanged. This attempt did not pass the Phase 4 gate; it shows that one successful integration sample does not yet establish repeatability. Sanitized summary: `docs/releases/evidence/live-task-workspaces-repeat.json`; full disposable run database and artifacts: `.acceptance/live-task-workspaces-repeat-20261108/`.

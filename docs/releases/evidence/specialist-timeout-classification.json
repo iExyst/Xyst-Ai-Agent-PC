@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-08",
+  "change": "Classify specialist provider timeouts by bounded inference stage without persisting raw exception text or automatically replaying unmeasured inference.",
+  "local_verification": {
+    "specialist_tests": "11 passed",
+    "ruff": "passed",
+    "format": "passed",
+    "pyright": "passed"
+  },
+  "live_acceptance": {
+    "model": "qwen/qwen3.5-9b",
+    "passed": false,
+    "failure_stage": "parent_tool_diagnostic",
+    "failure": "Model did not finish with the correct tool result.",
+    "specialists_started": false,
+    "unresolved_calls": 0,
+    "workspace_changed": false,
+    "owned_model_unloaded": true,
+    "report": ".acceptance/live-task-workspaces-timeout-classification-20261108/report.json"
+  },
+  "scope": "The live sample did not exercise specialist timeout classification."
+}
