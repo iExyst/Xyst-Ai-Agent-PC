@@ -8,7 +8,12 @@ use std::{
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
-use tauri::Manager;
+use tauri::{
+    image::Image,
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    Manager, WindowEvent,
+};
 
 #[cfg(windows)]
 mod confinement;
@@ -66,6 +71,64 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
         .env("XAA_STREAM_RESPONSES", "1");
 }
 
+fn tray_image() -> Image<'static> {
+    const SIZE: u32 = 32;
+    let mut pixels = vec![0; (SIZE * SIZE * 4) as usize];
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            if x.abs_diff(y) <= 2 || x.abs_diff(SIZE - 1 - y) <= 2 {
+                let start = ((y * SIZE + x) * 4) as usize;
+                pixels[start..start + 4].copy_from_slice(&[142, 219, 196, 255]);
+            }
+        }
+    }
+    Image::new_owned(pixels, SIZE, SIZE)
+}
+
+fn install_system_tray(app: &tauri::App) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Open Xyst AI Agent", true, None::<&str>)?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        "Quit and stop the agent",
+        true,
+        None::<&str>,
+    )?;
+    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let tray = TrayIconBuilder::new()
+        .icon(tray_image())
+        .tooltip("Xyst AI Agent is running in the background")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => {
+                let _ = restore_main_window(app.clone());
+            }
+            "quit" => quit_application(app.clone()),
+            _ => {}
+        })
+        .build(app)?;
+    let _ = app.manage(tray);
+    Ok(())
+}
+
+#[tauri::command]
+fn restore_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "The main window is unavailable".to_string())?;
+    window
+        .show()
+        .map_err(|_| "The main window could not be restored".to_string())?;
+    window
+        .set_focus()
+        .map_err(|_| "The main window could not receive focus".to_string())
+}
+
+#[tauri::command]
+fn quit_application(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 fn selected_log_directory(
     hidden_acceptance: bool,
     requested: Option<PathBuf>,
@@ -81,7 +144,7 @@ fn selected_log_directory(
 
 #[cfg(test)]
 mod tests {
-    use super::configure_engine_environment;
+    use super::{configure_engine_environment, tray_image};
     use std::process::Command;
 
     #[test]
@@ -107,6 +170,16 @@ mod tests {
             super::selected_log_directory(true, Some(requested.clone()), default),
             requested
         );
+    }
+
+    #[test]
+    fn tray_icon_is_a_transparent_rgba_x_mark() {
+        let icon = tray_image();
+
+        assert_eq!((icon.width(), icon.height()), (32, 32));
+        assert_eq!(icon.rgba().len(), 32 * 32 * 4);
+        assert_eq!(icon.rgba()[(10 * 32) * 4 + 3], 0);
+        assert_eq!(icon.rgba()[(16 * 32 + 16) * 4 + 3], 255);
     }
 }
 
@@ -160,6 +233,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            install_system_tray(app)?;
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let port = listener.local_addr()?.port();
             let token = uuid::Uuid::new_v4().simple().to_string();
@@ -203,7 +277,20 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![engine_connection])
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            engine_connection,
+            restore_main_window,
+            quit_application
+        ])
         .build(tauri::generate_context!())
         .expect("X.A.A. desktop failed to start")
         .run(|app, event| {

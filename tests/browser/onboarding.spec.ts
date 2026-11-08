@@ -13,7 +13,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     if(path==='/providers/lm-studio/config'&&request.method()==='GET')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/selection')return route.fulfill({json:{model:request.postDataJSON().model},headers});
-    if(path==='/providers/lm-studio/diagnostics')return route.fulfill({json:{model:'fixture/model',tool_round_trip_verified:true},headers});
+    if(path==='/providers/diagnostics')return route.fulfill({json:{model:'fixture/model',tool_round_trip_verified:true},headers});
     if(path==='/execution/distributions')return route.fulfill({json:{state:'unsupported',distributions:[]},headers});
     if(path==='/runs'&&request.method()==='POST'){created=request.postDataJSON();return route.fulfill({json:run,headers});}
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
@@ -22,6 +22,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     return route.fulfill({json:[],headers});
   });
   await page.goto('/');
+  await expect(page.getByRole('note')).toContainText('keeps it running in the system tray');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   const demo=page.getByRole('button',{name:'Start read-only onboarding demonstration'});
