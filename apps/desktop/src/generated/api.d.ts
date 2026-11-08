@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/discord/deliveries/{message_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Discord Delivery */
+        post: operations["reconcile_discord_delivery_channels_discord_deliveries__message_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/discord/links": {
         parameters: {
             query?: never;
@@ -1926,10 +1943,29 @@ export interface components {
             bot_username: string | null;
             /** Configured */
             configured: boolean;
+            /** Deliveries */
+            deliveries: {
+                [key: string]: number;
+            };
             /** Linked Users */
             linked_users: number;
             /** Processed Messages */
             processed_messages: number;
+            /** Unknown Deliveries */
+            unknown_deliveries: components["schemas"]["DiscordUnknownDelivery"][];
+        };
+        /** DiscordDeliveryReconciliation */
+        DiscordDeliveryReconciliation: {
+            /**
+             * Confirmed Destination Checked
+             * @constant
+             */
+            confirmed_destination_checked: true;
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "delivered" | "retry";
         };
         /** DiscordLinkRevocation */
         DiscordLinkRevocation: {
@@ -1944,6 +1980,17 @@ export interface components {
             code: string;
             /** Expires At */
             expires_at: string;
+        };
+        /** DiscordUnknownDelivery */
+        DiscordUnknownDelivery: {
+            /** Message Id */
+            message_id: string;
+            /** Run Id */
+            run_id: string | null;
+            /** Updated At */
+            updated_at: string;
+            /** User Id */
+            user_id: string | null;
         };
         /** DistributionInventory */
         DistributionInventory: {
@@ -3680,6 +3727,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscordCredentialStatus"];
+                };
+            };
+        };
+    };
+    reconcile_discord_delivery_channels_discord_deliveries__message_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscordDeliveryReconciliation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

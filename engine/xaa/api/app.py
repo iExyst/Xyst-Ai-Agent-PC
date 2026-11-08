@@ -381,6 +381,14 @@ class DiscordCredentialRequest(BaseModel):
     token: SecretStr = Field(min_length=1, max_length=512)
 
 
+class DiscordUnknownDelivery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message_id: str
+    user_id: str | None
+    run_id: str | None
+    updated_at: str
+
+
 class DiscordCredentialStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     configured: bool
@@ -388,6 +396,14 @@ class DiscordCredentialStatus(BaseModel):
     bot_username: str | None
     linked_users: int
     processed_messages: int
+    deliveries: dict[str, int]
+    unknown_deliveries: list[DiscordUnknownDelivery]
+
+
+class DiscordDeliveryReconciliation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resolution: Literal["delivered", "retry"]
+    confirmed_destination_checked: Literal[True]
 
 
 class DiscordPairingCode(BaseModel):
@@ -1522,6 +1538,31 @@ def create_app(
         account_id = credential_store.get("discord-bot-account")
         profile = discord_store.profile(account_id)
         return {**profile, "configured": credential_store.get("discord-bot") is not None}
+
+    @app.post(
+        "/channels/discord/deliveries/{message_id}/reconcile",
+        response_model=DiscordCredentialStatus,
+    )
+    def reconcile_discord_delivery(
+        message_id: str,
+        payload: DiscordDeliveryReconciliation,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if credential_store is None or credential_store.get("discord-bot") is None:
+            raise HTTPException(
+                status_code=409, detail="Connect the Discord bot before reconciling a reply."
+            )
+        account_id = credential_store.get("discord-bot-account")
+        if account_id is None:
+            raise HTTPException(
+                status_code=409, detail="The configured Discord bot identity is unavailable."
+            )
+        if not discord_store.reconcile_delivery(account_id, message_id, payload.resolution):
+            raise HTTPException(
+                status_code=409,
+                detail="This reply is no longer awaiting reconciliation or cannot be retried.",
+            )
+        return discord_store.profile(account_id)
 
     @app.put("/channels/discord/credential", response_model=DiscordCredentialStatus)
     async def set_discord_credential(

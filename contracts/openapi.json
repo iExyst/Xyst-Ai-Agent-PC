@@ -789,6 +789,13 @@
             "title": "Configured",
             "type": "boolean"
           },
+          "deliveries": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Deliveries",
+            "type": "object"
+          },
           "linked_users": {
             "title": "Linked Users",
             "type": "integer"
@@ -796,6 +803,13 @@
           "processed_messages": {
             "title": "Processed Messages",
             "type": "integer"
+          },
+          "unknown_deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/DiscordUnknownDelivery"
+            },
+            "title": "Unknown Deliveries",
+            "type": "array"
           }
         },
         "required": [
@@ -803,9 +817,35 @@
           "bot_id",
           "bot_username",
           "linked_users",
-          "processed_messages"
+          "processed_messages",
+          "deliveries",
+          "unknown_deliveries"
         ],
         "title": "DiscordCredentialStatus",
+        "type": "object"
+      },
+      "DiscordDeliveryReconciliation": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_destination_checked": {
+            "const": true,
+            "title": "Confirmed Destination Checked",
+            "type": "boolean"
+          },
+          "resolution": {
+            "enum": [
+              "delivered",
+              "retry"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "confirmed_destination_checked"
+        ],
+        "title": "DiscordDeliveryReconciliation",
         "type": "object"
       },
       "DiscordLinkRevocation": {
@@ -844,6 +884,49 @@
           "expires_at"
         ],
         "title": "DiscordPairingCode",
+        "type": "object"
+      },
+      "DiscordUnknownDelivery": {
+        "additionalProperties": false,
+        "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "message_id",
+          "user_id",
+          "run_id",
+          "updated_at"
+        ],
+        "title": "DiscordUnknownDelivery",
         "type": "object"
       },
       "DistributionInventory": {
@@ -5477,6 +5560,60 @@
           }
         ],
         "summary": "Set Discord Credential"
+      }
+    },
+    "/channels/discord/deliveries/{message_id}/reconcile": {
+      "post": {
+        "operationId": "reconcile_discord_delivery_channels_discord_deliveries__message_id__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordDeliveryReconciliation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Discord Delivery"
       }
     },
     "/channels/discord/links": {

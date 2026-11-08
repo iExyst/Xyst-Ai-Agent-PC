@@ -11,7 +11,12 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
-from xaa.channels.discord import DiscordIdentity, dm_only_intents
+from xaa.channels.discord import (
+    DiscordIdentity,
+    DiscordMessage,
+    DiscordStore,
+    dm_only_intents,
+)
 from xaa.channels.webhook import sign_webhook
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.runtime.states import RunState
@@ -60,6 +65,7 @@ def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_p
         return DiscordIdentity("100000000000000001", "xaa-test")
 
     monkeypatch.setattr("xaa.api.app.DiscordBotApi.get_me", fake_get_me)
+    monkeypatch.setattr("xaa.api.app.DiscordGatewayService.start", lambda self: None)
     credentials = Credentials()
     store = RunStore(workspace_tmp_path / "discord-api.sqlite3")
     app = create_app(
@@ -77,6 +83,8 @@ def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_p
             "bot_username": None,
             "linked_users": 0,
             "processed_messages": 0,
+            "deliveries": {},
+            "unknown_deliveries": [],
         }
         saved = client.put(
             "/channels/discord/credential",
@@ -89,8 +97,54 @@ def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_p
         pairing = client.post("/channels/discord/pairing", headers=headers)
         assert pairing.status_code == 201
         assert len(pairing.json()["code"]) >= 32
+
+        discord = DiscordStore(store)
+        identity = DiscordIdentity("100000000000000001", "xaa-test")
+        discord.process_message(
+            identity,
+            DiscordMessage(
+                "1",
+                "300000000000000003",
+                "200000000000000002",
+                f"/pair {pairing.json()['code']}",
+                True,
+            ),
+            model="fixture/model",
+        )
+        queued = discord.process_message(
+            identity,
+            DiscordMessage("2", "300000000000000003", "200000000000000002", "hello", True),
+            model="fixture/model",
+        )
+        with store.connection() as connection:
+            connection.execute(
+                "UPDATE runs SET state='completed',updated_at=? WHERE id=?",
+                ("2026-11-08T12:00:00+00:00", queued["run_id"]),
+            )
+            RunStore.record_event(
+                connection,
+                queued["run_id"],
+                "model.message",
+                {"message": {"role": "assistant", "content": "answer"}},
+            )
+        assert discord.claim_delivery(identity.account_id) is not None
+        assert discord.reconcile_abandoned_sends() == 1
+        unresolved = "/channels/discord/deliveries/2/reconcile"
+        assert (
+            client.post(
+                unresolved,
+                headers=headers,
+                json={"resolution": "retry", "confirmed_destination_checked": False},
+            ).status_code
+            == 422
+        )
+        assert client.post(
+            unresolved,
+            headers=headers,
+            json={"resolution": "delivered", "confirmed_destination_checked": True},
+        ).json()["deliveries"] == {"sent": 1}
         revoked = client.delete("/channels/discord/links", headers=headers)
-        assert revoked.json() == {"revoked_users": 0, "linked_users": 0}
+        assert revoked.json() == {"revoked_users": 1, "linked_users": 0}
         cleared = client.delete("/channels/discord/credential", headers=headers)
         assert cleared.status_code == 200
         assert cleared.json()["configured"] is False

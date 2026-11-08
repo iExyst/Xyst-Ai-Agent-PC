@@ -3,7 +3,7 @@ import {expect,test} from '@playwright/test';
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
-  let discordStatus:any={configured:false,bot_id:null,bot_username:null,linked_users:0,processed_messages:0};
+  let discordStatus:any={configured:false,bot_id:null,bot_username:null,linked_users:0,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let webhookStatus:any={configured:false};
   await page.on('pageerror',error=>errors.push(error.message));
@@ -23,7 +23,12 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/channels/discord'&&request.method()==='GET')return route.fulfill({json:discordStatus,headers});
     if(path==='/channels/discord/credential'&&request.method()==='PUT'){
       const body=request.postDataJSON();requests.push(body);expect(body.token).toBe('discord-test-secret');
-      discordStatus={configured:true,bot_id:'100000000000000001',bot_username:'xaa-test',linked_users:0,processed_messages:0};
+      discordStatus={configured:true,bot_id:'100000000000000001',bot_username:'xaa-test',linked_users:0,processed_messages:0,deliveries:{unknown:1},unknown_deliveries:[{message_id:'51',user_id:'300000000000000003',run_id:'discord-run',updated_at:'2026-11-08T12:00:00Z'}]};
+      return route.fulfill({json:discordStatus,headers});
+    }
+    if(path==='/channels/discord/deliveries/51/reconcile'&&request.method()==='POST'){
+      expect(request.postDataJSON()).toEqual({resolution:'retry',confirmed_destination_checked:true});
+      discordStatus={...discordStatus,deliveries:{pending:1},unknown_deliveries:[]};
       return route.fulfill({json:discordStatus,headers});
     }
     if(path==='/channels/discord/credential'&&request.method()==='DELETE'){
@@ -94,6 +99,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Verify and save Discord bot token',exact:true}).click();
   await expect(panel.getByLabel('Discord bot token',{exact:true})).toHaveValue('');
   await expect(panel.getByText('Connected bot: xaa-test')).toBeVisible();
+  await expect(panel.getByRole('region',{name:'Discord replies needing review'})).toBeVisible();
+  await panel.getByRole('button',{name:'I checked; retry Discord reply'}).click();
+  await panel.getByRole('button',{name:'Confirm Discord retry'}).click();
+  await expect(panel.getByRole('region',{name:'Discord replies needing review'})).toHaveCount(0);
   await panel.getByRole('button',{name:'Generate one-time Discord pairing code',exact:true}).click();
   await expect(panel.getByLabel('Discord pairing instructions')).toContainText('/pair discord-one-time-code');
   await panel.getByRole('button',{name:'Refresh Discord status',exact:true}).click();

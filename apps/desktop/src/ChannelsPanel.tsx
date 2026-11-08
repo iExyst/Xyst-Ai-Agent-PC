@@ -11,6 +11,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [busy,setBusy]=useState(false);
   const [confirmRevoke,setConfirmRevoke]=useState(false);
   const [confirmDiscordRevoke,setConfirmDiscordRevoke]=useState(false);
+  const [discordReconcileChoice,setDiscordReconcileChoice]=useState<{messageId:string;resolution:'delivered'|'retry'}>();
   const [reconcileChoice,setReconcileChoice]=useState<{updateId:number;resolution:'delivered'|'retry'}>();
   const [emailReconcileChoice,setEmailReconcileChoice]=useState<{uidValidity:string;uid:string;resolution:'delivered'|'retry'}>();
   const [error,setError]=useState('');
@@ -62,6 +63,14 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     setBusy(true);setError('');
     try {await client.revokeDiscordLinks();setDiscord(await client.discordStatus());setDiscordPairing(undefined);setConfirmDiscordRevoke(false);}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not revoke Discord links.');}
+    finally {setBusy(false);}
+  }
+
+  async function reconcileDiscordDelivery() {
+    if(!discordReconcileChoice)return;
+    setBusy(true);setError('');
+    try {setDiscord(await client.reconcileDiscordDelivery(discordReconcileChoice.messageId,discordReconcileChoice.resolution));setDiscordReconcileChoice(undefined);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not reconcile the Discord reply.');}
     finally {setBusy(false);}
   }
   async function clearToken() {
@@ -142,6 +151,23 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     {discord&&<p role="status">{discord.configured?<>Connected bot: {discord.bot_username??discord.bot_id}</>:'Discord bot is not configured'} · {discord.linked_users} linked user(s) · {discord.processed_messages} processed message(s)</p>}
     {discord?.configured&&<>
       <button type="button" onClick={()=>void makeDiscordPairing()} disabled={busy}>Generate one-time Discord pairing code</button>
+      {discord.deliveries&&Object.keys(discord.deliveries).length>0&&<p>Reply deliveries: {Object.entries(discord.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}</p>}
+      {(discord.unknown_deliveries??[]).length>0&&<section aria-label="Discord replies needing review">
+        <h4>Unconfirmed Discord replies</h4>
+        <p>Check the private Discord chat before choosing. A retry may duplicate a reply if Discord accepted the first send outside its short deduplication window.</p>
+        <ul>{(discord.unknown_deliveries??[]).map(delivery=><li key={delivery.message_id}>
+          <span>Message {delivery.message_id} · Discord user {delivery.user_id??'unknown'} · run {delivery.run_id??'unavailable'} · {new Date(delivery.updated_at).toLocaleString()}</span>
+          <div className="controls">
+            <button type="button" onClick={()=>setDiscordReconcileChoice({messageId:delivery.message_id,resolution:'delivered'})} disabled={busy}>I checked; mark Discord reply delivered</button>
+            <button type="button" onClick={()=>setDiscordReconcileChoice({messageId:delivery.message_id,resolution:'retry'})} disabled={busy}>I checked; retry Discord reply</button>
+          </div>
+          {discordReconcileChoice?.messageId===delivery.message_id&&<div role="alertdialog" aria-label="Confirm Discord delivery reconciliation">
+            <p>{discordReconcileChoice.resolution==='retry'?'Retrying can send a duplicate if Discord accepted the first reply.':'This records that you found the reply in the private chat.'} Confirm that you checked the destination.</p>
+            <button type="button" onClick={()=>void reconcileDiscordDelivery()} disabled={busy}>Confirm Discord {discordReconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+            <button type="button" onClick={()=>setDiscordReconcileChoice(undefined)} disabled={busy}>Cancel</button>
+          </div>}
+        </li>)}</ul>
+      </section>}
       {discord.linked_users>0&&<div className="controls">
         {confirmDiscordRevoke?<><span>This prevents linked Discord users from submitting new objectives. Saved runs remain available.</span><button type="button" onClick={()=>void revokeDiscordLinks()} disabled={busy}>Confirm revoke Discord links</button><button type="button" onClick={()=>setConfirmDiscordRevoke(false)} disabled={busy}>Keep links</button></>:<button type="button" onClick={()=>setConfirmDiscordRevoke(true)} disabled={busy}>Revoke all Discord users</button>}
       </div>}
