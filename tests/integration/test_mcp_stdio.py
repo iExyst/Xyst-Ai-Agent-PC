@@ -142,35 +142,56 @@ async def test_coordinator_journals_disconnected_call_without_corrupting_run(
     tool = next(item for item in registry.list_tools(server.id) if item.name == "add")
     registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
     qualified = registry.list_tools(server.id)[0].qualified_name
+
+    class DisconnectingProvider(LMStudioProvider):
+        calls = 0
+
+        async def chat(self, *, model, messages, tools=None):
+            del model
+            if self.calls == 0:
+                self.calls += 1
+                assert tools is not None
+                assert qualified in {item["function"]["name"] for item in tools}
+                await manager.disconnect_server(server.id)
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "mcp-disconnect-call",
+                                        "type": "function",
+                                        "function": {
+                                            "name": qualified,
+                                            "arguments": '{"left": 2, "right": 3}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            assert messages[-1]["role"] == "tool"
+            assert messages[-1]["tool_call_id"] == "mcp-disconnect-call"
+            assert '"status": "not_connected"' in messages[-1]["content"]
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Run continued safely."}}]
+            }
+
     run = store.create_run(
         objective="Call the configured MCP read tool",
         acceptance_criteria=[],
         workspace=None,
         mode="observe",
-        model=None,
+        model="fixture/disconnect",
+        approved_mcp_tools=[qualified],
     )
-    lease = store.acquire_lease(run["id"], "mcp-disconnect-test")
-    assert lease is not None
-    coordinator = Coordinator(store, LMStudioProvider(), mcp_manager=manager)
-    advertised = manager.tools_for_run(set())
-    await manager.disconnect_server(server.id)
+    coordinator = Coordinator(store, DisconnectingProvider(), mcp_manager=manager)
     try:
-        result = await coordinator._execute_tool(
-            run["id"],
-            lease,
-            run,
-            1,
-            time.monotonic() + 10,
-            {
-                "id": "mcp-disconnect-call",
-                "function": {
-                    "name": qualified,
-                    "arguments": '{"left": 2, "right": 3}',
-                },
-            },
-            advertised,
-        )
-        assert result["status"] == "not_connected"
+        await coordinator.execute(run["id"])
+        final_run = store.get_run(run["id"])
+        assert final_run is not None and final_run["state"] == "verifying"
         assert store.unresolved_tool_calls(run["id"]) == []
         with store.connection() as connection:
             saved = connection.execute(
@@ -179,8 +200,12 @@ async def test_coordinator_journals_disconnected_call_without_corrupting_run(
             ).fetchone()
         assert saved["state"] == "completed"
         assert '"status": "not_connected"' in saved["result"]
+        assert any(
+            event["event_type"] == "model.message"
+            and event["payload"]["message"].get("content") == "Run continued safely."
+            for event in store.list_events(run["id"])
+        )
     finally:
-        store.release_lease(run["id"], lease)
         await manager.close()
 
 
