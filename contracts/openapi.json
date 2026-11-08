@@ -260,6 +260,131 @@
         "title": "CLIChatTurnRequest",
         "type": "object"
       },
+      "ChannelIdentityBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "authorized": {
+            "title": "Authorized",
+            "type": "boolean"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "external_identity": {
+            "title": "External Identity",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "identity_link_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Link Id"
+          },
+          "link_created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Created At"
+          },
+          "session_channel": {
+            "title": "Session Channel",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "account_id",
+          "external_identity",
+          "session_id",
+          "session_channel",
+          "identity_link_id",
+          "authorized",
+          "title",
+          "link_created_at"
+        ],
+        "title": "ChannelIdentityBinding",
+        "type": "object"
+      },
+      "ChannelIdentityLinkRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "shared_history_binding_id": {
+            "title": "Shared History Binding Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "shared_history_binding_id"
+        ],
+        "title": "ChannelIdentityLinkRecord",
+        "type": "object"
+      },
+      "ChannelIdentityLinkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Binding Ids",
+            "type": "array"
+          },
+          "shared_history_binding_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Shared History Binding Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_ids",
+          "shared_history_binding_id"
+        ],
+        "title": "ChannelIdentityLinkRequest",
+        "type": "object"
+      },
       "ChatRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3026,6 +3151,35 @@
           "checks"
         ],
         "title": "ReadinessResult",
+        "type": "object"
+      },
+      "RevokeChannelIdentityLinkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirmed"
+        ],
+        "title": "RevokeChannelIdentityLinkRequest",
+        "type": "object"
+      },
+      "RevokeChannelIdentityLinkResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "unlinked_bindings": {
+            "title": "Unlinked Bindings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unlinked_bindings"
+        ],
+        "title": "RevokeChannelIdentityLinkResponse",
         "type": "object"
       },
       "RunEvent": {
@@ -5810,6 +5964,130 @@
           }
         ],
         "summary": "Reconcile Email Delivery"
+      }
+    },
+    "/channels/identity-bindings": {
+      "get": {
+        "operationId": "list_channel_identity_bindings_channels_identity_bindings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelIdentityBinding"
+                  },
+                  "title": "Response List Channel Identity Bindings Channels Identity Bindings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Channel Identity Bindings"
+      }
+    },
+    "/channels/identity-links": {
+      "post": {
+        "operationId": "create_channel_identity_link_channels_identity_links_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelIdentityLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelIdentityLinkRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Channel Identity Link"
+      }
+    },
+    "/channels/identity-links/{link_id}": {
+      "delete": {
+        "operationId": "revoke_channel_identity_link_channels_identity_links__link_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeChannelIdentityLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeChannelIdentityLinkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Channel Identity Link"
       }
     },
     "/channels/telegram": {

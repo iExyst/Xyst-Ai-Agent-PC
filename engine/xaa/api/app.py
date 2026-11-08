@@ -93,6 +93,7 @@ from xaa.runtime.web_fetch import normalize_approved_hosts
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import create_backup_bundle
+from xaa.storage.channel_identity import ChannelIdentityLinks
 from xaa.storage.cli_chat import CLIChatStore
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import list_runs
@@ -459,6 +460,42 @@ class TelegramLinkedUser(BaseModel):
     user_id: str
 
 
+class ChannelIdentityBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    channel: str
+    account_id: str
+    external_identity: str
+    session_id: str
+    session_channel: str
+    identity_link_id: str | None
+    authorized: bool
+    title: str | None
+    link_created_at: str | None
+
+
+class ChannelIdentityLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    binding_ids: list[str] = Field(min_length=2, max_length=2)
+    shared_history_binding_id: str = Field(min_length=1, max_length=64)
+
+
+class ChannelIdentityLinkRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    shared_history_binding_id: str
+
+
+class RevokeChannelIdentityLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed: Literal[True]
+
+
+class RevokeChannelIdentityLinkResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unlinked_bindings: int
+
+
 class EmailCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     address: str = Field(min_length=3, max_length=320)
@@ -550,6 +587,7 @@ def create_app(
             )
 
     run_store = store or RunStore()
+    channel_identity_links = ChannelIdentityLinks(run_store)
     cli_chat_store = CLIChatStore(run_store)
     specialist_profiles = SpecialistProfileStore(run_store)
     mcp_manager = MCPManager(run_store, credential_store)
@@ -1385,6 +1423,48 @@ def create_app(
                 (utc_now(),),
             )
         return {"model": payload.model}
+
+    @app.get("/channels/identity-bindings", response_model=list[ChannelIdentityBinding])
+    def list_channel_identity_bindings(
+        _: None = Depends(authenticate),
+    ) -> list[dict[str, Any]]:
+        return channel_identity_links.list_bindings()
+
+    @app.post(
+        "/channels/identity-links",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ChannelIdentityLinkRecord,
+    )
+    def create_channel_identity_link(
+        payload: ChannelIdentityLinkRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, str]:
+        try:
+            link_id = channel_identity_links.create_link(
+                (payload.binding_ids[0], payload.binding_ids[1]),
+                payload.shared_history_binding_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "id": link_id,
+            "shared_history_binding_id": payload.shared_history_binding_id,
+        }
+
+    @app.delete(
+        "/channels/identity-links/{link_id}",
+        response_model=RevokeChannelIdentityLinkResponse,
+    )
+    def revoke_channel_identity_link(
+        link_id: str,
+        payload: RevokeChannelIdentityLinkRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, int]:
+        del payload
+        unlinked = channel_identity_links.revoke_link(link_id)
+        if unlinked == 0:
+            raise HTTPException(status_code=404, detail="Active identity link was not found.")
+        return {"unlinked_bindings": unlinked}
 
     @app.get("/channels/telegram", response_model=TelegramCredentialStatus)
     def telegram_status(_: None = Depends(authenticate)) -> dict[str, Any]:

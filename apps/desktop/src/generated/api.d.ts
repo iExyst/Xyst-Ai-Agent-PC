@@ -171,6 +171,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/identity-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Channel Identity Bindings */
+        get: operations["list_channel_identity_bindings_channels_identity_bindings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/identity-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Channel Identity Link */
+        post: operations["create_channel_identity_link_channels_identity_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/identity-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Channel Identity Link */
+        delete: operations["revoke_channel_identity_link_channels_identity_links__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram": {
         parameters: {
             query?: never;
@@ -1758,6 +1809,43 @@ export interface components {
             /** Workspace */
             workspace?: string | null;
         };
+        /** ChannelIdentityBinding */
+        ChannelIdentityBinding: {
+            /** Account Id */
+            account_id: string;
+            /** Authorized */
+            authorized: boolean;
+            /** Channel */
+            channel: string;
+            /** External Identity */
+            external_identity: string;
+            /** Id */
+            id: string;
+            /** Identity Link Id */
+            identity_link_id: string | null;
+            /** Link Created At */
+            link_created_at: string | null;
+            /** Session Channel */
+            session_channel: string;
+            /** Session Id */
+            session_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** ChannelIdentityLinkRecord */
+        ChannelIdentityLinkRecord: {
+            /** Id */
+            id: string;
+            /** Shared History Binding Id */
+            shared_history_binding_id: string;
+        };
+        /** ChannelIdentityLinkRequest */
+        ChannelIdentityLinkRequest: {
+            /** Binding Ids */
+            binding_ids: string[];
+            /** Shared History Binding Id */
+            shared_history_binding_id: string;
+        };
         /** ChatRequest */
         ChatRequest: {
             /** Messages */
@@ -2748,6 +2836,19 @@ export interface components {
              * @enum {string}
              */
             state: "ready" | "unavailable" | "unsupported" | "busy";
+        };
+        /** RevokeChannelIdentityLinkRequest */
+        RevokeChannelIdentityLinkRequest: {
+            /**
+             * Confirmed
+             * @constant
+             */
+            confirmed: true;
+        };
+        /** RevokeChannelIdentityLinkResponse */
+        RevokeChannelIdentityLinkResponse: {
+            /** Unlinked Bindings */
+            unlinked_bindings: number;
         };
         /** RunEvent */
         RunEvent: {
@@ -3902,6 +4003,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmailCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_channel_identity_bindings_channels_identity_bindings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelIdentityBinding"][];
+                };
+            };
+        };
+    };
+    create_channel_identity_link_channels_identity_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelIdentityLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelIdentityLinkRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_channel_identity_link_channels_identity_links__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeChannelIdentityLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeChannelIdentityLinkResponse"];
                 };
             };
             /** @description Validation Error */

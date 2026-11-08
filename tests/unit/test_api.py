@@ -47,6 +47,77 @@ class FakeProvider(LMStudioProvider):
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 
 
+def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "identity-links-api.sqlite3")
+    now = "2026-11-08T00:00:00+00:00"
+    bindings: list[tuple[str, str]] = []
+    with store.connection() as connection:
+        for channel, account, identity in (
+            ("telegram", "bot-1", "1001"),
+            ("email", "mailbox-1", "person@example.test"),
+        ):
+            session_id = f"session-{channel}"
+            binding_id = f"binding-{channel}"
+            bindings.append((binding_id, session_id))
+            connection.execute(
+                "INSERT INTO sessions(id,channel,account_id,title,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (session_id, channel, account, f"{channel} history", now, now),
+            )
+            connection.execute(
+                "INSERT INTO channel_bindings(id,channel,account_id,external_identity,session_id,authorized,created_at) VALUES(?,?,?,?,?,1,?)",
+                (binding_id, channel, account, identity, session_id, now),
+            )
+
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        assert client.get("/channels/identity-bindings").status_code == 401
+        listed = client.get("/channels/identity-bindings", headers=headers)
+        assert listed.status_code == 200
+        assert {item["channel"] for item in listed.json()} == {"telegram", "email"}
+
+        created = client.post(
+            "/channels/identity-links",
+            headers=headers,
+            json={
+                "binding_ids": [bindings[0][0], bindings[1][0]],
+                "shared_history_binding_id": bindings[0][0],
+            },
+        )
+        assert created.status_code == 201, created.text
+        link_id = created.json()["id"]
+        linked = client.get("/channels/identity-bindings", headers=headers).json()
+        assert {item["identity_link_id"] for item in linked} == {link_id}
+        assert {item["session_id"] for item in linked} == {bindings[0][1]}
+
+        denied = client.request(
+            "DELETE",
+            f"/channels/identity-links/{link_id}",
+            headers=headers,
+            json={"confirmed": False},
+        )
+        assert denied.status_code == 422
+        revoked = client.request(
+            "DELETE",
+            f"/channels/identity-links/{link_id}",
+            headers=headers,
+            json={"confirmed": True},
+        )
+        assert revoked.status_code == 200
+        assert revoked.json() == {"unlinked_bindings": 2}
+        separated = client.get("/channels/identity-bindings", headers=headers).json()
+        assert all(item["identity_link_id"] is None for item in separated)
+        assert len({item["session_id"] for item in separated}) == 2
+        assert (
+            client.request(
+                "DELETE",
+                f"/channels/identity-links/{link_id}",
+                headers=headers,
+                json={"confirmed": True},
+            ).status_code
+            == 404
+        )
+
+
 def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_path, monkeypatch):
     class Credentials:
         def __init__(self):

@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 20
+DATABASE_SCHEMA_VERSION = 21
 
 
 @dataclass(frozen=True)
@@ -416,6 +416,21 @@ class RunStore:
                     created_at TEXT NOT NULL,
                     UNIQUE(channel, account_id, external_identity)
                 );
+                CREATE TABLE IF NOT EXISTS channel_identity_links (
+                    id TEXT PRIMARY KEY,
+                    shared_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    revoked_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS channel_identity_link_events (
+                    id TEXT PRIMARY KEY,
+                    link_id TEXT NOT NULL,
+                    action TEXT NOT NULL CHECK(action IN ('created','revoked')),
+                    details TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS channel_bindings_identity_link_idx
+                    ON channel_bindings(identity_link_id);
                 CREATE TABLE IF NOT EXISTS telegram_pairing_codes (
                     code_hash TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,

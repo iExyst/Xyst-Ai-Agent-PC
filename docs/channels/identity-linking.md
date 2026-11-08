@@ -1,0 +1,11 @@
+# Cross-channel identity links
+
+The authenticated desktop can link two already-authorized channel identities from different channels. The owner selects both identities and explicitly chooses which existing session history to share. The other identity's earlier session is retained separately; X.A.A. does not merge its previous conversation into the selected session.
+
+After linking, both channel bindings point to the selected session. Telegram, Email, and Discord ingress read the binding's session ID before creating a run, so later messages from either linked identity continue the same conversation context. Delivery remains bound to the channel and account that received the message; identity links do not change destinations, credentials, permissions, workspace grants, or run mode.
+
+Unlinking requires a separate confirmation. In one SQLite transaction, X.A.A. creates a new empty session for every binding in the link, clears their link IDs, marks the link revoked, and records an audit event. The old shared session and its messages remain in local history. This prevents future cross-channel context while preserving the conversation record.
+
+Version 1 links exactly two identities. It does not merge existing identity groups or permit adding a third identity to a link. Only authorized identities not already linked can be selected. If one member's channel authorization is revoked, the active link remains visible in the desktop, including that member's authorization state, until the owner explicitly unlinks it.
+
+The authenticated API exposes `GET /channels/identity-bindings`, `POST /channels/identity-links`, and confirmed `DELETE /channels/identity-links/{link_id}`. The list reveals channel/account identifiers only on the authenticated loopback interface. Storage/API tests verify ownership checks, cross-channel restriction, selected-history behavior, unlink isolation, schema migration and audit records. Deterministic Telegram, Email and Discord adapter tests verify both ingress paths use the same session; the desktop browser workflow covers explicit linking and unlinking with a mocked API. These checks make no model calls and do not establish live third-party interoperability.

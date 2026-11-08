@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import type {DiscordChannelStatus,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
+import type {ChannelIdentityBinding,DiscordChannelStatus,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 
 export function ChannelsPanel({client}:{client:EngineClient}) {
   const [status,setStatus]=useState<TelegramChannelStatus>();
@@ -17,6 +17,11 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [error,setError]=useState('');
   const [email,setEmail]=useState<EmailChannelStatus>();
   const [webhook,setWebhook]=useState<WebhookChannelStatus>();
+  const [identityBindings,setIdentityBindings]=useState<ChannelIdentityBinding[]>([]);
+  const [identitySource,setIdentitySource]=useState('');
+  const [identityTarget,setIdentityTarget]=useState('');
+  const [sharedHistoryBinding,setSharedHistoryBinding]=useState('');
+  const [confirmIdentityRevoke,setConfirmIdentityRevoke]=useState('');
   const [webhookSecret,setWebhookSecret]=useState('');
   const [emailAddress,setEmailAddress]=useState('');
   const [emailPassword,setEmailPassword]=useState('');
@@ -26,7 +31,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
-    try {setStatus(await client.telegramStatus());setDiscord(await client.discordStatus());setWebhook(await client.webhookStatus());setError('');}
+    try {setStatus(await client.telegramStatus());setDiscord(await client.discordStatus());setWebhook(await client.webhookStatus());setIdentityBindings(await client.channelIdentityBindings());setError('');}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
   useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
@@ -109,6 +114,21 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function linkChannelIdentities() {
+    if(!identitySource||!identityTarget||identitySource===identityTarget||!sharedHistoryBinding)return;
+    setBusy(true);setError('');
+    try {await client.createChannelIdentityLink([identitySource,identityTarget],sharedHistoryBinding);setIdentitySource('');setIdentityTarget('');setSharedHistoryBinding('');await refresh();}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not link these channel identities.');}
+    finally {setBusy(false);}
+  }
+
+  async function unlinkChannelIdentities(linkId:string) {
+    setBusy(true);setError('');
+    try {await client.revokeChannelIdentityLink(linkId);setConfirmIdentityRevoke('');await refresh();}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not unlink these channel identities.');}
+    finally {setBusy(false);}
+  }
+
   async function saveEmail() {
     setBusy(true);setError('');
     try {setEmail(await client.setEmailAccount({address:emailAddress,password:emailPassword,imap_host:imapHost,smtp_host:smtpHost,allowed_senders:allowedSenders.split(',').map(value=>value.trim()).filter(Boolean),imap_port:993,smtp_port:587,smtp_security:'starttls',authserv_id:authservId}));setEmailPassword('');}
@@ -139,6 +159,35 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
 
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
+    <h3>Cross-channel identity links</h3>
+    <p>Link only accounts you control. Linking shares the selected account's saved conversation history and future conversation context with both accounts. The other account's previous history is not merged. Unlinking starts separate empty conversations; the shared history stays available in local session history.</p>
+    {(()=>{
+      const available=identityBindings.filter(binding=>binding.identity_link_id===null&&binding.authorized);
+      const source=available.find(binding=>binding.id===identitySource);
+      const targets=available.filter(binding=>binding.id!==identitySource&&binding.channel!==source?.channel);
+      const groups=new Map<string,ChannelIdentityBinding[]>();
+      for(const binding of identityBindings)if(binding.identity_link_id){groups.set(binding.identity_link_id,[...(groups.get(binding.identity_link_id)??[]),binding]);}
+      return <>
+        <label htmlFor="identity-link-source">First authorized account</label>
+        <select id="identity-link-source" value={identitySource} onChange={event=>{setIdentitySource(event.target.value);setIdentityTarget('');setSharedHistoryBinding(event.target.value);}} disabled={busy}>
+          <option value="">Choose an account</option>
+          {available.map(binding=><option key={binding.id} value={binding.id}>{binding.channel} · {binding.external_identity} · account {binding.account_id}</option>)}
+        </select>
+        <label htmlFor="identity-link-target">Second account from another channel</label>
+        <select id="identity-link-target" value={identityTarget} onChange={event=>setIdentityTarget(event.target.value)} disabled={busy||!source}>
+          <option value="">Choose a different channel account</option>
+          {targets.map(binding=><option key={binding.id} value={binding.id}>{binding.channel} · {binding.external_identity} · account {binding.account_id}</option>)}
+        </select>
+        {identitySource&&identityTarget&&<fieldset><legend>Conversation history to share</legend>
+          {[identitySource,identityTarget].map(id=>{const binding=available.find(item=>item.id===id);return binding?<label key={id}><input type="radio" name="shared-history" value={id} checked={sharedHistoryBinding===id} onChange={()=>setSharedHistoryBinding(id)} disabled={busy}/>{binding.channel} · {binding.external_identity} · {binding.title??'saved session'}</label>:null;})}
+        </fieldset>}
+        <button type="button" onClick={()=>void linkChannelIdentities()} disabled={busy||!identitySource||!identityTarget||!sharedHistoryBinding}>Link accounts and share selected history</button>
+        {groups.size>0&&<ul aria-label="Active cross-channel identity links">{[...groups].map(([linkId,members])=><li key={linkId}>
+          <span>{members.map(binding=>`${binding.channel}: ${binding.external_identity}${binding.authorized?'':' (not currently authorized)'}`).join(' ↔ ')} · shared history from {members[0]?.session_channel}</span>
+          {confirmIdentityRevoke===linkId?<div role="alertdialog" aria-label="Confirm unlink accounts"><p>Both accounts will get separate new conversations. The shared session remains in local history.</p><button type="button" onClick={()=>void unlinkChannelIdentities(linkId)} disabled={busy}>Confirm unlink</button><button type="button" onClick={()=>setConfirmIdentityRevoke('')} disabled={busy}>Cancel</button></div>:<button type="button" onClick={()=>setConfirmIdentityRevoke(linkId)} disabled={busy}>Unlink these accounts</button>}
+        </li>)}</ul>}
+      </>;
+    })()}
     <h3>Discord (private DMs)</h3>
     <p>Connect a Discord bot token. X.A.A. stores it in Windows Credential Manager and listens only for direct messages. Guild messages are ignored; message content intent is not requested. A paired user can submit Observe-mode runs.</p>
     <label htmlFor="discord-token">Discord bot token</label>

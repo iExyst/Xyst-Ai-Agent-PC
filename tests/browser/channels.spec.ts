@@ -6,6 +6,11 @@ test('save Telegram token securely, pair an account and clear the credential',as
   let discordStatus:any={configured:false,bot_id:null,bot_username:null,linked_users:0,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let webhookStatus:any={configured:false};
+  let identityBindings:any[]=[
+    {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
+    {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
+  ];
+  let identityLinkId='';
   await page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
@@ -17,6 +22,18 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
     if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/channels/identity-bindings'&&request.method()==='GET')return route.fulfill({json:identityBindings,headers});
+    if(path==='/channels/identity-links'&&request.method()==='POST'){
+      const body=request.postDataJSON();expect(body.binding_ids).toEqual(['telegram-binding','email-binding']);expect(body.shared_history_binding_id).toBe('telegram-binding');
+      identityLinkId='shared-identity-link';const selected=identityBindings.find(binding=>binding.id==='telegram-binding');
+      identityBindings=identityBindings.map(binding=>({...binding,identity_link_id:identityLinkId,session_id:selected.session_id,session_channel:selected.session_channel}));
+      return route.fulfill({status:201,json:{id:identityLinkId,shared_history_binding_id:'telegram-binding'},headers});
+    }
+    if(path==='/channels/identity-links/shared-identity-link'&&request.method()==='DELETE'){
+      expect(request.postDataJSON()).toEqual({confirmed:true});
+      identityBindings=identityBindings.map((binding,index)=>({...binding,identity_link_id:null,session_id:`unlinked-session-${index}`,session_channel:binding.channel}));
+      return route.fulfill({json:{unlinked_bindings:2},headers});
+    }
     if(path==='/memory'||path==='/memory/export')return route.fulfill({json:[],headers});
     if(path.startsWith('/execution/'))return route.fulfill({json:[],headers});
     if(path==='/channels/telegram'&&request.method()==='GET')return route.fulfill({json:status,headers});
@@ -95,6 +112,14 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.locator('summary').filter({hasText:'Messaging channels'}).click();
   const panel=page.getByRole('region',{name:'Messaging channels',exact:true});
+  await panel.getByLabel('First authorized account').selectOption('telegram-binding');
+  await panel.getByLabel('Second account from another channel').selectOption('email-binding');
+  await panel.getByRole('radio',{name:/telegram · 456/}).check();
+  await panel.getByRole('button',{name:'Link accounts and share selected history'}).click();
+  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('telegram: 456 ↔ email: owner@example.test');
+  await panel.getByRole('button',{name:'Unlink these accounts'}).click();
+  await panel.getByRole('button',{name:'Confirm unlink'}).click();
+  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toHaveCount(0);
   await panel.getByLabel('Discord bot token',{exact:true}).fill('discord-test-secret');
   await panel.getByRole('button',{name:'Verify and save Discord bot token',exact:true}).click();
   await expect(panel.getByLabel('Discord bot token',{exact:true})).toHaveValue('');

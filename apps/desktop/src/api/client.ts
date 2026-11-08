@@ -26,6 +26,7 @@ export type DiscordChannelStatus = components['schemas']['DiscordCredentialStatu
 export type EmailChannelStatus = components['schemas']['EmailCredentialStatus'];
 export type WebhookChannelStatus = components['schemas']['WebhookChannelStatus'];
 export type WebhookCredential = components['schemas']['WebhookCredentialRecord'];
+export type ChannelIdentityBinding = components['schemas']['ChannelIdentityBinding'];
 export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
@@ -269,6 +270,18 @@ export class EngineClient {
 
   telegramLinkedUsers(): Promise<components['schemas']['TelegramLinkedUser'][]> {
     return this.#request('/channels/telegram/linked-users');
+  }
+
+  channelIdentityBindings(): Promise<ChannelIdentityBinding[]> {
+    return this.#request('/channels/identity-bindings');
+  }
+
+  createChannelIdentityLink(bindingIds: [string,string], sharedHistoryBindingId: string): Promise<components['schemas']['ChannelIdentityLinkRecord']> {
+    return this.#request('/channels/identity-links',{method:'POST',body:JSON.stringify({binding_ids:bindingIds,shared_history_binding_id:sharedHistoryBindingId})});
+  }
+
+  revokeChannelIdentityLink(linkId: string): Promise<components['schemas']['RevokeChannelIdentityLinkResponse']> {
+    return this.#request(`/channels/identity-links/${encodeURIComponent(linkId)}`,{method:'DELETE',body:JSON.stringify({confirmed:true})});
   }
 
   revokeTelegramLinks(): Promise<components['schemas']['TelegramLinkRevocation']> {
