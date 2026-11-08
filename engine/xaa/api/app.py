@@ -3189,8 +3189,12 @@ def create_app(
 
     @app.post("/runs/{run_id}/pause", response_model=RunRecord)
     async def pause_run(run_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
-        record = transition_run(run_id, RunState.PAUSED, "user_requested")
         await supervisor.stop(run_id)
+        record = run_store.get_run(run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if record["state"] not in {RunState.PAUSED.value, RunState.COMPLETED.value}:
+            record = transition_run(run_id, RunState.PAUSED, "user_requested")
         return record
 
     @app.post("/runs/{run_id}/resume", response_model=RunRecord)
@@ -3202,8 +3206,12 @@ def create_app(
 
     @app.post("/runs/{run_id}/cancel", response_model=RunRecord)
     async def cancel_run(run_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
-        record = transition_run(run_id, RunState.CANCELLED, "user_requested")
         await supervisor.stop(run_id)
+        record = run_store.get_run(run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if record["state"] not in {RunState.CANCELLED.value, RunState.COMPLETED.value}:
+            record = transition_run(run_id, RunState.CANCELLED, "user_requested")
         return record
 
     @app.post("/chat/stream")

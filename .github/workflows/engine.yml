@@ -88,6 +88,15 @@ jobs:
           path: .acceptance/browser-cancel-edge-*/report.json
           if-no-files-found: error
           include-hidden-files: true
+      - name: Verify authenticated API cancellation of managed browser worker
+        run: uv run python scripts/browser_api_cancel_smoke.py
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-api-cancel-${{ github.run_id }}
+          path: .acceptance/browser-api-cancel-${{ github.run_id }}/report.json
+          if-no-files-found: error
+          include-hidden-files: true
       - uses: actions/cache/save@v6
         if: success() && steps.uv-cache.outputs.cache-hit != 'true'
         with:

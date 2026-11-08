@@ -23,6 +23,7 @@ This is not an OS-level isolated browser. Edge runs under the current Windows ac
 - `uv run python scripts/browser_popup_smoke.py` launches installed Microsoft Edge, opens a local `about:blank` popup, and verifies the managed callback closes it while preserving the primary page.
 - `uv run python scripts/browser_redirect_smoke.py` verifies an approved cross-host redirect and that an unapproved redirect fails without returning destination content. It uses the [Postman Echo API](https://learning.postman.com/docs/reference/developer-resources/echo-api) redirect endpoint and a fixture page from HTTPBin.
 - `uv run python scripts/browser_cancel_smoke.py` starts delayed HTTPBin navigations, verifies both owner cancellation and deadline timeout stop the Edge worker, and checks the durable results.
+- `uv run python scripts/browser_api_cancel_smoke.py` drives a deterministic fake provider through the authenticated run API, cancels its active real Edge worker, and verifies the terminal `cancelled` result is durably journaled without model inference.
 - `uv run python scripts/build_engine.py` builds the frozen Windows engine including Playwright resources.
 - `uv run python scripts/frozen_browser_diagnostic.py` launches the packaged worker against `example.com`, verifies page text and PNG output, then terminates a delayed packaged navigation through its owned Windows process tree.
 
