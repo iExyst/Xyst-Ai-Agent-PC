@@ -89,7 +89,7 @@ Each turn creates a durable run. A live one-turn acceptance on qwen/qwen3.5-9b r
 
 - Use pause/resume when the run should retain its saved state and continue later.
 - Use cancel to stop a run. Cancellation cannot reverse an external action that already completed.
-- If a command or MCP write ends with an unknown outcome, inspect the saved event and reconciliation controls before deciding what to do. X.A.A. avoids automatically repeating ambiguous external writes.
+- If a command or MCP write ends with an unknown outcome, inspect the saved event and reconciliation controls before deciding what to do. For MCP writes, the run blocks, later calls in that same model response are recorded as not started, and you must inspect the external system and reconcile before resuming. X.A.A. does not automatically repeat the ambiguous write.
 - Create a portable backup before a significant upgrade or data move. `uv run xaa backup` writes a `.xaa-backup` bundle containing the SQLite snapshot and referenced managed artifacts.
 - Restore a bundle offline into a new, nonexistent directory:
 

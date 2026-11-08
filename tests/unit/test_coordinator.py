@@ -2,6 +2,7 @@ import json
 
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.states import RunState
 from xaa.storage.runs import RunStore
 from xaa.storage.skills import SkillDraft, SkillStore, host_platform_name
 
@@ -69,6 +70,98 @@ class EditingProvider(ScriptedProvider):
                 }
             ]
         }
+
+
+class UnknownMCPWriteProvider(ScriptedProvider):
+    async def chat(self, *, model, messages, tools=None):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "mcp-write-1",
+                                "type": "function",
+                                "function": {
+                                    "name": f"mcp_{'a' * 32}_write",
+                                    "arguments": "{}",
+                                },
+                            },
+                            {
+                                "id": "mcp-write-2",
+                                "type": "function",
+                                "function": {
+                                    "name": f"mcp_{'a' * 32}_followup",
+                                    "arguments": "{}",
+                                },
+                            },
+                        ],
+                    }
+                }
+            ]
+        }
+
+
+class UnknownMCPWriteManager:
+    def __init__(self):
+        self.calls = []
+
+    def tools_for_run(self, approved):
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": "Fixture",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+            for name in (f"mcp_{'a' * 32}_write", f"mcp_{'a' * 32}_followup")
+            if name in approved
+        ]
+
+    def is_tool_authorized_for_run(self, name, approved):
+        return name in approved
+
+    async def call_tool(self, name, arguments):
+        self.calls.append(name)
+        return {"status": "unknown_outcome", "trust": "untrusted_mcp_output"}
+
+
+async def test_unknown_mcp_write_blocks_run_and_skips_remaining_batch_calls(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "mcp-unknown-batch.sqlite3")
+    run = store.create_run(
+        objective="Update an external system",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        approved_mcp_tools=[f"mcp_{'a' * 32}_write", f"mcp_{'a' * 32}_followup"],
+    )
+    manager = UnknownMCPWriteManager()
+    provider = UnknownMCPWriteProvider()
+    try:
+        await Coordinator(store, provider, mcp_manager=manager).execute(run["id"])
+    finally:
+        await provider.close()
+
+    assert manager.calls == [f"mcp_{'a' * 32}_write"]
+    assert store.get_run(run["id"])["state"] == RunState.BLOCKED
+    assert store.unresolved_tool_calls(run["id"]) == []
+    messages = store.conversation_messages(run["id"])
+    tool_results = [message for message in messages if message["role"] == "tool"]
+    assert [message["tool_call_id"] for message in tool_results] == [
+        "mcp-write-1",
+        "mcp-write-2",
+    ]
+    assert '"status": "unknown_outcome"' in tool_results[0]["content"]
+    assert '"effect": "not_started"' in tool_results[1]["content"]
+    assert any(
+        event["event_type"] == "run.state_changed"
+        and event["payload"].get("reason") == "mcp_effect_reconciliation_required"
+        for event in store.list_events(run["id"])
+    )
 
 
 async def test_workspace_coordinator_reads_then_edits_with_returned_hash(workspace_tmp_path):

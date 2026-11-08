@@ -976,6 +976,103 @@ class Coordinator:
         ]
         return bool(positions) and (len(positions) != 1 or positions[0] != len(calls) - 1)
 
+    def _record_mcp_batch_skips(
+        self, run_id: str, token: str, calls: list[dict[str, Any]], *, reason: str
+    ) -> list[dict[str, Any]]:
+        """Close a model tool-call batch tail without executing it."""
+        results: list[dict[str, Any]] = []
+        for call in calls:
+            function = call.get("function", {})
+            name = function.get("name", "unknown_tool")
+            try:
+                arguments = json.loads(function.get("arguments", "{}"))
+            except (TypeError, json.JSONDecodeError):
+                arguments = {}
+            if not isinstance(arguments, dict):
+                arguments = {}
+            arguments = cast(dict[str, Any], arguments)
+            call_id = call["id"]
+            self.store.require_new_tool_call(run_id, token, call_id)
+            if not self.store.record_tool_intent(
+                run_id,
+                token,
+                call_id=call_id,
+                tool=name,
+                version="1",
+                arguments=arguments,
+                idempotency_key=call_id,
+            ):
+                raise ValueError("Skipped model tool call requires reconciliation.")
+            results.append(
+                self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call_id,
+                    code="not_started_pending_mcp_reconciliation",
+                    message=reason,
+                )
+            )
+        return results
+
+    async def _execute_tool_batch(
+        self,
+        run_id: str,
+        token: str,
+        run: dict[str, Any],
+        iteration: int,
+        deadline: float,
+        calls: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+    ) -> bool:
+        if len(calls) > 8:
+            raise ValueError("Model exceeded the per-turn tool-call limit.")
+        if self._has_malformed_plan_batch(calls):
+            self.store.check_token_budget(run_id, token, before_inference=False)
+            results = self._reject_plan_tool_batch(run_id, token, iteration, calls)
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps(result),
+                }
+                for call, result in zip(calls, results, strict=True)
+            )
+            return True
+
+        for index, call in enumerate(calls):
+            if not any(tool["function"]["name"] == call["function"]["name"] for tool in tools):
+                raise PermissionError("Tool is not authorized in the current catalog.")
+            self.store.check_token_budget(run_id, token, before_inference=False)
+            result = await self._execute_tool(run_id, token, run, iteration, deadline, call, tools)
+            messages.append(
+                {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)}
+            )
+            if result.get("status") not in {"unknown_outcome", "cancelled_unknown_outcome"}:
+                continue
+            reason = (
+                "This call was not started because an earlier MCP write has an unknown outcome. "
+                "Inspect and reconcile that effect before resuming."
+            )
+            tail = calls[index + 1 :]
+            skipped = self._record_mcp_batch_skips(run_id, token, tail, reason=reason)
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": skipped_call["id"],
+                    "content": json.dumps(skipped_result),
+                }
+                for skipped_call, skipped_result in zip(tail, skipped, strict=True)
+            )
+            self.store.transition(
+                run_id,
+                RunState.BLOCKED,
+                reason="mcp_effect_reconciliation_required",
+                owner=token,
+            )
+            return False
+        return True
+
     async def continue_plan(self, run_id: str, token: str) -> None:
         """Continue user-dispatched specialists under ownership reserved by the API."""
         try:
@@ -1733,32 +1830,10 @@ class Coordinator:
                     ):
                         return
                     continue
-                if len(calls) > 8:
-                    raise ValueError("Model exceeded the per-turn tool-call limit.")
-                if self._has_malformed_plan_batch(calls):
-                    self.store.check_token_budget(run_id, token, before_inference=False)
-                    results = self._reject_plan_tool_batch(run_id, token, iteration, calls)
-                    messages.extend(
-                        {
-                            "role": "tool",
-                            "tool_call_id": call["id"],
-                            "content": json.dumps(result),
-                        }
-                        for call, result in zip(calls, results, strict=True)
-                    )
-                    continue
-                for call in calls:
-                    if not any(
-                        tool["function"]["name"] == call["function"]["name"] for tool in tools
-                    ):
-                        raise PermissionError("Tool is not authorized in the current catalog.")
-                    self.store.check_token_budget(run_id, token, before_inference=False)
-                    result = await self._execute_tool(
-                        run_id, token, run, iteration, deadline, call, tools
-                    )
-                    messages.append(
-                        {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)}
-                    )
+                if not await self._execute_tool_batch(
+                    run_id, token, run, iteration, deadline, calls, tools, messages
+                ):
+                    return
             self.store.transition(
                 run_id, RunState.BLOCKED, reason="iteration_budget_exhausted", owner=token
             )
