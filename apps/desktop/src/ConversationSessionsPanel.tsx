@@ -59,9 +59,21 @@ export function ConversationSessionsPanel({
     finally{setBusy(false);}
   }
 
+  async function deleteCurrent() {
+    if(!sessionId||!session)return;
+    if(!window.confirm(`Delete shared conversation “${sessionId}” and its saved turns? This cannot be undone.`))return;
+    setBusy(true);setError('');
+    try {
+      await client.deleteChatSession(sessionId);
+      setItems(current=>current.filter(item=>item.session_id!==sessionId));
+      setSessionId('');setSession(undefined);selection.current('',undefined);
+    } catch(failure){setError(String(failure));}
+    finally{setBusy(false);}
+  }
+
   return <section aria-label="Shared conversation sessions">
     <h2>Shared conversation</h2>
-    <p>Continue a text conversation saved by the desktop or <code>xaa chat</code>. Each turn still runs through the durable coordinator; session context is bounded and treated as untrusted history.</p>
+    <p>Continue a text conversation saved by the desktop or <code>xaa chat</code>. Each turn still runs through the durable coordinator; session context is bounded and treated as untrusted history. Deleting a session removes it for both interfaces after confirmation.</p>
     {!loaded&&<button type="button" disabled={busy} onClick={()=>setLoaded(true)}>Load shared conversations</button>}
     {loaded&&<>
     <label htmlFor="shared-chat-session">Saved terminal and desktop sessions</label>
@@ -74,6 +86,7 @@ export function ConversationSessionsPanel({
     {session&&<>
       <p>Session <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
       <p>Continue this same history in a terminal with <code>xaa chat --model "{session.model}"{session.workspace?` --workspace "${session.workspace}"`:''} --mode "{session.mode}" --session "{session.session_id}"</code>.</p>
+      <button type="button" disabled={busy} onClick={()=>void deleteCurrent()}>Delete shared conversation</button>
       <ol aria-label="Saved conversation turns">{session.messages.map((message,index)=><li key={`${message.run_id}:${index}`}><strong>{message.role==='user'?'You':'X.A.A.'}</strong><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{message.content}</pre></li>)}</ol>
     </>}
     </>}

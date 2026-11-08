@@ -100,11 +100,13 @@ test('desktop uses the authenticated shared chat-session API', async () => {
   await client.openChatSession('shared',{model:'fixture/model',workspace:'C:\\fixture',mode:'observe'});
   await client.chatSession('shared');
   await client.appendChatTurn('shared',{run_id:'run-1',model:'fixture/model',workspace:'C:\\fixture',mode:'observe',user_message:'Continue',assistant_message:'Saved'});
+  await client.deleteChatSession('shared');
   assert.deepEqual(requests.map(item=>[item.url,item.method]),[
     ['/chat/sessions','GET'],
     ['/chat/sessions/shared','POST'],
     ['/chat/sessions/shared','GET'],
     ['/chat/sessions/shared/turn','POST'],
+    ['/chat/sessions/shared','DELETE'],
   ]);
   assert.ok(requests.every(item=>item.authorization===`Bearer ${'x'.repeat(32)}`));
   assert.deepEqual(requests[1].body,{model:'fixture/model',workspace:'C:\\fixture',mode:'observe'});

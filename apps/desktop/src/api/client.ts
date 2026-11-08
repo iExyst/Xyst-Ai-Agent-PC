@@ -78,6 +78,9 @@ export class EngineClient {
   appendChatTurn(sessionId: string, input: components['schemas']['CLIChatTurnRequest']): Promise<ChatSession> {
     return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}/turn`, {method:'POST',body:JSON.stringify(input)});
   }
+  deleteChatSession(sessionId: string): Promise<void> {
+    return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}`, {method:'DELETE'});
+  }
 
   usage(id: string, signal?: AbortSignal): Promise<components['schemas']['UsageReport']> {
     return this.#request(`/runs/${encodeURIComponent(id)}/usage`, {signal});

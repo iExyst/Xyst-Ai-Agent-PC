@@ -11,6 +11,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   let submittedObjective='';
   let savedUserMessage='';
   let savedAssistantMessage='';
+  let deleted=false;
   const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
   page.on('pageerror',error=>{throw error;});
   await page.route('http://127.0.0.1:8765/**',async route=>{
@@ -25,6 +26,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
     if(path==='/memory'||path==='/skills'||path==='/specialists/profiles'||path==='/schedules'||path==='/mcp/servers'||path==='/extensions/packages/discover')return route.fulfill({json:[],headers});
     if(path==='/chat/sessions'&&request.method()==='GET')return route.fulfill({json:[{session_id:'terminal-chat',model:'fixture/model',workspace:'C:\\fixture',mode:'observe',updated_at:stamp}],headers});
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='GET')return route.fulfill({json:{session_id:'terminal-chat',model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});
+    if(path==='/chat/sessions/terminal-chat'&&request.method()==='DELETE'){deleted=true;messages=[];return route.fulfill({status:204,headers});}
     if(path==='/chat/sessions/terminal-chat/turn'&&request.method()==='POST'){
       const turn=request.postDataJSON();savedUserMessage=turn.user_message;savedAssistantMessage=turn.assistant_message;
       messages=[...messages,{role:'user',content:turn.user_message,run_id:turn.run_id},{role:'assistant',content:turn.assistant_message,run_id:turn.run_id}];
@@ -62,4 +64,8 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await expect(page.getByRole('region',{name:'Active run'}).getByText('Desktop continued the saved conversation.',{exact:true})).toBeVisible();
   await expect(page.getByText('Earlier reply',{exact:true})).toBeVisible();
   await expect(page.getByRole('list',{name:'Saved conversation turns'}).getByText('Continue it',{exact:true})).toBeVisible();
+  page.once('dialog',dialog=>void dialog.accept());
+  await page.getByRole('button',{name:'Delete shared conversation'}).click();
+  await expect.poll(()=>deleted).toBe(true);
+  await expect(page.getByRole('list',{name:'Saved conversation turns'})).toHaveCount(0);
 });
