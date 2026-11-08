@@ -5,6 +5,7 @@ import time
 import pytest
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.streaming import StreamAssemblyError
+from xaa.runtime import specialists as specialist_module
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.task_graph import TaskDefinition
@@ -21,6 +22,7 @@ from xaa.storage.tasks import TaskStore
 )
 async def test_independent_specialists_read_scoped_files_without_polluting_parent_history(
     workspace_tmp_path,
+    monkeypatch,
     threshold,
     output_limit,
     pre_reserve,
@@ -54,6 +56,22 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
             for name in ("a", "b")
         ],
     )
+
+    active_workspace_calls = 0
+    max_active_workspace_calls = 0
+    execute_filesystem = specialist_module.execute_filesystem
+
+    async def delayed_filesystem(*args, **kwargs):
+        nonlocal active_workspace_calls, max_active_workspace_calls
+        active_workspace_calls += 1
+        max_active_workspace_calls = max(max_active_workspace_calls, active_workspace_calls)
+        try:
+            await asyncio.sleep(0.03)
+            return await execute_filesystem(*args, **kwargs)
+        finally:
+            active_workspace_calls -= 1
+
+    monkeypatch.setattr(specialist_module, "execute_filesystem", delayed_filesystem)
 
     class Reader(LMStudioProvider):
         async def chat(
@@ -117,6 +135,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
     assert store.conversation_messages(run_id) == []
     assert not store.unresolved_tool_calls(run_id)
     assert store.token_usage(run_id)["total_tokens"] == 20
+    assert (max_active_workspace_calls > 1) is (threshold is None or pre_reserve)
     if pre_reserve:
         report = store.usage_report(run_id)
         assert report["outstanding_reservations"] == 0

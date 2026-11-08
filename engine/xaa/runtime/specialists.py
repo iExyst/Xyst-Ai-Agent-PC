@@ -148,6 +148,7 @@ class SpecialistRunner:
         self.tasks = TaskStore(store)
         self.provider = provider
         self.stream_responses = stream_responses
+        self._budgeted_inference_lock = asyncio.Lock()
 
     async def _heartbeat(self, run_id: str, parent: str, task_id: str, worker: str) -> None:
         while True:
@@ -379,6 +380,134 @@ class SpecialistRunner:
             if not complete:
                 missing.append(f"test-output:{dependency_id}:{artifact_id}")
         return missing[:32]
+
+    async def _request_and_record(
+        self,
+        run_id: str,
+        parent: str,
+        task: dict[str, Any],
+        worker: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        options: dict[str, Any],
+        *,
+        remaining: int,
+        stream_retried: bool,
+    ) -> tuple[dict[str, Any], str | None] | None:
+        """Serialize budget admission through durable response settlement."""
+        identity = task["local_id"]
+        self.store.check_token_budget(run_id, parent, before_inference=True)
+        self.tasks.check_token_budget(run_id, identity, before_inference=True)
+        inference_id = self.tasks.reserve_inference(run_id, parent, identity, worker)
+        if options.get("require_exact_context") is True or self.provider.exact_context:
+            options["on_admission"] = partial(
+                self.tasks.reserve_tokens,
+                run_id,
+                parent,
+                inference_id,
+                task_id=identity,
+                task_token=worker,
+            )
+        if self.stream_responses:
+            pending = ""
+            last_emit = time.monotonic() - 1
+
+            def emit(text: str, active_inference_id: str) -> None:
+                self.tasks.record_read_worker_event(
+                    run_id,
+                    parent,
+                    identity,
+                    worker,
+                    "task.model.delta",
+                    {
+                        "task_id": identity,
+                        "inference_id": active_inference_id,
+                        "text": text,
+                    },
+                )
+
+            def progress(piece: str, *, active_inference_id: str = inference_id) -> None:
+                nonlocal pending, last_emit
+                pending += piece
+                while len(pending) >= 128:
+                    emit(pending[:128], active_inference_id)
+                    pending = pending[128:]
+                    last_emit = time.monotonic()
+                if pending and time.monotonic() - last_emit >= 0.2:
+                    emit(pending, active_inference_id)
+                    pending = ""
+                    last_emit = time.monotonic()
+
+            try:
+                response = await self.provider.chat_streamed(
+                    model=task["model_route"],
+                    messages=messages,
+                    tools=tools,
+                    on_content=progress,
+                    **options,
+                )
+            except StreamAssemblyError as exc:
+                recovered = self._record_stream_rejection(
+                    run_id,
+                    parent,
+                    identity,
+                    worker,
+                    inference_id,
+                    exc,
+                    messages,
+                    retry_available=not stream_retried and remaining > 1,
+                )
+                if recovered:
+                    return None
+                raise
+            except ContextLimitError as exc:
+                self._record_prompt_mismatch_usage(
+                    run_id, parent, identity, worker, inference_id, exc
+                )
+                raise
+            except TimeoutError as exc:
+                raise SpecialistInferenceTimeout("chat_streamed") from exc
+            if pending:
+                emit(pending, inference_id)
+        else:
+            try:
+                response = await self.provider.chat(
+                    model=task["model_route"],
+                    messages=messages,
+                    tools=tools,
+                    **options,
+                )
+            except ContextLimitError as exc:
+                self._record_prompt_mismatch_usage(
+                    run_id, parent, identity, worker, inference_id, exc
+                )
+                raise
+            except TimeoutError as exc:
+                raise SpecialistInferenceTimeout("chat") from exc
+        choice = validate_completion(response)
+        usage = (
+            TokenUsage.model_validate(response["usage"]).model_dump()
+            if response.get("usage") is not None
+            else None
+        )
+        message = choice.message.model_dump(exclude_none=True)
+        self.tasks.renew_worker(run_id, parent, identity, worker)
+        self.tasks.record_read_worker_event(
+            run_id,
+            parent,
+            identity,
+            worker,
+            "task.model.message",
+            {
+                "task_id": identity,
+                "inference_id": inference_id,
+                "message": message,
+                "usage": usage,
+            },
+        )
+        self.tasks.check_token_budget(run_id, identity, before_inference=False)
+        self.store.check_token_budget(run_id, parent, before_inference=False)
+        return message, choice.finish_reason
 
     async def _execute(
         self, run_id: str, parent: str, task: dict[str, Any], worker: str, *, deadline: float
@@ -660,119 +789,36 @@ class SpecialistRunner:
                     else "Avoid redundant reads or repeated completed checks."
                 )
             )
-            self.store.check_token_budget(run_id, parent, before_inference=True)
-            self.tasks.check_token_budget(run_id, identity, before_inference=True)
-            inference_id = self.tasks.reserve_inference(run_id, parent, identity, worker)
-            if self.provider.exact_context or require_exact:
-                options["on_admission"] = partial(
-                    self.tasks.reserve_tokens,
+            if require_exact:
+                async with self._budgeted_inference_lock:
+                    request_result = await self._request_and_record(
+                        run_id,
+                        parent,
+                        task,
+                        worker,
+                        messages,
+                        tools,
+                        options,
+                        remaining=remaining,
+                        stream_retried=stream_retried,
+                    )
+            else:
+                request_result = await self._request_and_record(
                     run_id,
                     parent,
-                    inference_id,
-                    task_id=identity,
-                    task_token=worker,
+                    task,
+                    worker,
+                    messages,
+                    tools,
+                    options,
+                    remaining=remaining,
+                    stream_retried=stream_retried,
                 )
-            if self.stream_responses:
-                pending = ""
-                last_emit = time.monotonic() - 1
-
-                def emit(text: str, active_inference_id: str) -> None:
-                    self.tasks.record_read_worker_event(
-                        run_id,
-                        parent,
-                        identity,
-                        worker,
-                        "task.model.delta",
-                        {
-                            "task_id": identity,
-                            "inference_id": active_inference_id,
-                            "text": text,
-                        },
-                    )
-
-                def progress(piece: str, *, active_inference_id: str = inference_id) -> None:
-                    nonlocal pending, last_emit
-                    pending += piece
-                    while len(pending) >= 128:
-                        emit(pending[:128], active_inference_id)
-                        pending = pending[128:]
-                        last_emit = time.monotonic()
-                    if pending and time.monotonic() - last_emit >= 0.2:
-                        emit(pending, active_inference_id)
-                        pending = ""
-                        last_emit = time.monotonic()
-
-                try:
-                    response = await self.provider.chat_streamed(
-                        model=task["model_route"],
-                        messages=messages,
-                        tools=tools,
-                        on_content=progress,
-                        **options,
-                    )
-                except StreamAssemblyError as exc:
-                    recovered = self._record_stream_rejection(
-                        run_id,
-                        parent,
-                        identity,
-                        worker,
-                        inference_id,
-                        exc,
-                        messages,
-                        retry_available=not stream_retried and remaining > 1,
-                    )
-                    if recovered:
-                        stream_retried = True
-                        continue
-                    raise
-                except ContextLimitError as exc:
-                    self._record_prompt_mismatch_usage(
-                        run_id, parent, identity, worker, inference_id, exc
-                    )
-                    raise
-                except TimeoutError as exc:
-                    raise SpecialistInferenceTimeout("chat_streamed") from exc
-                if pending:
-                    emit(pending, inference_id)
-            else:
-                try:
-                    response = await self.provider.chat(
-                        model=task["model_route"],
-                        messages=messages,
-                        tools=tools,
-                        **options,
-                    )
-                except ContextLimitError as exc:
-                    self._record_prompt_mismatch_usage(
-                        run_id, parent, identity, worker, inference_id, exc
-                    )
-                    raise
-                except TimeoutError as exc:
-                    raise SpecialistInferenceTimeout("chat") from exc
-            choice = validate_completion(response)
-            usage = (
-                TokenUsage.model_validate(response["usage"]).model_dump()
-                if response.get("usage") is not None
-                else None
-            )
-            message = choice.message.model_dump(exclude_none=True)
-            self.tasks.renew_worker(run_id, parent, identity, worker)
-            self.tasks.record_read_worker_event(
-                run_id,
-                parent,
-                identity,
-                worker,
-                "task.model.message",
-                {
-                    "task_id": identity,
-                    "inference_id": inference_id,
-                    "message": message,
-                    "usage": usage,
-                },
-            )
-            self.tasks.check_token_budget(run_id, identity, before_inference=False)
-            self.store.check_token_budget(run_id, parent, before_inference=False)
-            if choice.finish_reason in {"length", "content_filter"}:
+            if request_result is None:
+                stream_retried = True
+                continue
+            message, finish_reason = request_result
+            if finish_reason in {"length", "content_filter"}:
                 raise ValueError("Specialist model response was incomplete.")
             messages.append(message)
             calls = message.get("tool_calls", [])
@@ -1055,12 +1101,13 @@ class SpecialistRunner:
         run = self.store.get_run(run_id)
         assert run is not None
         budgeted = run["limits"]["max_total_tokens"] is not None
+        reserved = run["limits"].get("pre_inference_token_reservations") is True
         claims: list[dict[str, Any]] = []
         for _ in range(2):
             claim = self.tasks.claim_ready(run_id, parent)
             if claim is None:
                 break
-            if budgeted:
+            if budgeted and not reserved:
                 # Claim immediately before execution so the second lease cannot
                 # expire while waiting behind the first full assignment.
                 await self.run_claim(run_id, parent, claim, deadline=deadline)

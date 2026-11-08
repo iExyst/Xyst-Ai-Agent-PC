@@ -2,6 +2,10 @@
 
 Updated 2026-11-08.
 
+## Reserved specialist throughput (2026-11-08)
+
+Runs with exact pre-inference token reservations can now execute two independent specialist assignments concurrently. Each model request remains serialized from the shared-budget check through prompt/output reservation, inference, and durable usage recording; non-inference work such as workspace reads and private edits overlaps between specialists. Reported-token runs without exact reservations retain their conservative serial policy. The regression uses delayed workspace operations to prove overlap in both unlimited and reservation-backed modes while confirming hard-budget reported-only work stays serial. Focused specialist, token-reservation and specialist-quota suites pass (27 tests); Ruff and strict Pyright pass. This increases useful specialist throughput while preserving the local provider's single-inference behavior. Broad model reliability, external-client accounting and Phase 4 parity remain open; overall completion remains approximately 16%.
+
 ## WSL specialist command setup and Phase 4 repeat (2026-11-08)
 
 Live Phase 4 repeat attempts showed a repeatable setup cost in `WSLTransport.discover`: it launched one WSL process for each of five resource paths, each capped at 10 seconds. Discovery now maps all five paths inside one bounded WSL launch (up to 30 seconds), then rechecks the resource fingerprint before returning the transport. Twelve focused WSL transport tests pass; Ruff, formatting, and strict Pyright pass. Hosted run [42453419338](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42453419338) passed both Windows jobs, including the full Python suite and installer recovery/upgrade acceptance.
