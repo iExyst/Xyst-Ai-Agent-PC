@@ -46,6 +46,12 @@ from xaa.api.contracts import (
     WebhookCredentialRecord,
     WebhookReceipt,
 )
+from xaa.channels.discord import (
+    DiscordApiError,
+    DiscordBotApi,
+    DiscordGatewayService,
+    DiscordStore,
+)
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
@@ -370,6 +376,32 @@ class TelegramCredentialRequest(BaseModel):
     token: SecretStr = Field(min_length=1, max_length=512)
 
 
+class DiscordCredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: SecretStr = Field(min_length=1, max_length=512)
+
+
+class DiscordCredentialStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configured: bool
+    bot_id: str | None
+    bot_username: str | None
+    linked_users: int
+    processed_messages: int
+
+
+class DiscordPairingCode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    expires_at: str
+
+
+class DiscordLinkRevocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revoked_users: int
+    linked_users: int
+
+
 class TelegramUnknownDelivery(BaseModel):
     model_config = ConfigDict(extra="forbid")
     update_id: int
@@ -524,6 +556,12 @@ def create_app(
         if credential_store is not None
         else None
     )
+    discord_store = DiscordStore(run_store)
+    discord_service = (
+        DiscordGatewayService(run_store, credential_store, supervisor.submit)
+        if credential_store is not None
+        else None
+    )
     email_store = EmailStore(run_store)
     email_service = (
         EmailService(run_store, credential_store, supervisor.submit)
@@ -570,11 +608,15 @@ def create_app(
         schedule_service.start()
         if telegram_service is not None:
             telegram_service.start()
+        if discord_service is not None:
+            discord_service.start()
         if email_service is not None:
             email_service.start()
         yield
         if telegram_service is not None:
             await telegram_service.close()
+        if discord_service is not None:
+            await discord_service.close()
         if email_service is not None:
             await email_service.close()
         await schedule_service.close()
@@ -1472,6 +1514,69 @@ def create_app(
         code = secrets.token_urlsafe(32)
         expires_at = telegram_store.create_pairing(code)
         return {"code": code, "expires_at": expires_at}
+
+    @app.get("/channels/discord", response_model=DiscordCredentialStatus)
+    def discord_status(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        account_id = credential_store.get("discord-bot-account")
+        profile = discord_store.profile(account_id)
+        return {**profile, "configured": credential_store.get("discord-bot") is not None}
+
+    @app.put("/channels/discord/credential", response_model=DiscordCredentialStatus)
+    async def set_discord_credential(
+        payload: DiscordCredentialRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        token = payload.token.get_secret_value()
+        try:
+            identity = await DiscordBotApi(token).get_me()
+            credential_store.set(token, profile="discord-bot")
+            credential_store.set(identity.account_id, profile="discord-bot-account")
+            discord_store.save_bot(identity)
+        except (DiscordApiError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="Discord rejected the bot token or is unavailable."
+            ) from exc
+        return discord_store.profile(identity.account_id)
+
+    @app.delete("/channels/discord/credential", response_model=DiscordCredentialStatus)
+    def clear_discord_credential(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        account_id = credential_store.get("discord-bot-account")
+        try:
+            credential_store.delete("discord-bot")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return {**discord_store.profile(account_id), "configured": False}
+
+    @app.post(
+        "/channels/discord/pairing",
+        status_code=status.HTTP_201_CREATED,
+        response_model=DiscordPairingCode,
+    )
+    def create_discord_pairing(_: None = Depends(authenticate)) -> dict[str, str]:
+        if credential_store is None or credential_store.get("discord-bot") is None:
+            raise HTTPException(status_code=409, detail="Configure a Discord bot token first.")
+        code = secrets.token_urlsafe(32)
+        return {"code": code, "expires_at": discord_store.create_pairing(code)}
+
+    @app.delete("/channels/discord/links", response_model=DiscordLinkRevocation)
+    def revoke_discord_links(_: None = Depends(authenticate)) -> dict[str, int]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        account_id = credential_store.get("discord-bot-account")
+        if account_id is None:
+            return {"revoked_users": 0, "linked_users": 0}
+        revoked = discord_store.revoke_users(account_id)
+        return {
+            "revoked_users": revoked,
+            "linked_users": discord_store.profile(account_id)["linked_users"],
+        }
 
     @app.get("/channels/webhook", response_model=WebhookChannelStatus)
     def webhook_status(_: None = Depends(authenticate)) -> WebhookChannelStatus:

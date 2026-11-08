@@ -1,12 +1,16 @@
 import {useEffect,useState} from 'react';
-import type {EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
+import type {DiscordChannelStatus,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 
 export function ChannelsPanel({client}:{client:EngineClient}) {
   const [status,setStatus]=useState<TelegramChannelStatus>();
+  const [discord,setDiscord]=useState<DiscordChannelStatus>();
   const [token,setToken]=useState('');
+  const [discordToken,setDiscordToken]=useState('');
   const [pairing,setPairing]=useState<{code:string;expires_at:string}>();
+  const [discordPairing,setDiscordPairing]=useState<{code:string;expires_at:string}>();
   const [busy,setBusy]=useState(false);
   const [confirmRevoke,setConfirmRevoke]=useState(false);
+  const [confirmDiscordRevoke,setConfirmDiscordRevoke]=useState(false);
   const [reconcileChoice,setReconcileChoice]=useState<{updateId:number;resolution:'delivered'|'retry'}>();
   const [emailReconcileChoice,setEmailReconcileChoice]=useState<{uidValidity:string;uid:string;resolution:'delivered'|'retry'}>();
   const [error,setError]=useState('');
@@ -21,7 +25,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
-    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setError('');}
+    try {setStatus(await client.telegramStatus());setDiscord(await client.discordStatus());setWebhook(await client.webhookStatus());setError('');}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
   useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
@@ -30,6 +34,34 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     setBusy(true);setError('');
     try {setStatus(await client.setTelegramToken(token));setToken('');setPairing(undefined);}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not verify or save the Telegram bot token.');}
+    finally {setBusy(false);}
+  }
+
+  async function saveDiscordToken() {
+    setBusy(true);setError('');
+    try {setDiscord(await client.setDiscordToken(discordToken));setDiscordToken('');setDiscordPairing(undefined);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not verify or save the Discord bot token.');}
+    finally {setBusy(false);}
+  }
+
+  async function clearDiscordToken() {
+    setBusy(true);setError('');
+    try {setDiscord(await client.clearDiscordToken());setDiscordPairing(undefined);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not clear the Discord bot token.');}
+    finally {setBusy(false);}
+  }
+
+  async function makeDiscordPairing() {
+    setBusy(true);setError('');
+    try {setDiscordPairing(await client.discordPairing());}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not create a Discord pairing code.');}
+    finally {setBusy(false);}
+  }
+
+  async function revokeDiscordLinks() {
+    setBusy(true);setError('');
+    try {await client.revokeDiscordLinks();setDiscord(await client.discordStatus());setDiscordPairing(undefined);setConfirmDiscordRevoke(false);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not revoke Discord links.');}
     finally {setBusy(false);}
   }
   async function clearToken() {
@@ -98,6 +130,23 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
 
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
+    <h3>Discord (private DMs)</h3>
+    <p>Connect a Discord bot token. X.A.A. stores it in Windows Credential Manager and listens only for direct messages. Guild messages are ignored; message content intent is not requested. A paired user can submit Observe-mode runs.</p>
+    <label htmlFor="discord-token">Discord bot token</label>
+    <input id="discord-token" type="password" autoComplete="new-password" maxLength={512} value={discordToken} onChange={event=>setDiscordToken(event.target.value)} disabled={busy}/>
+    <div className="controls">
+      <button type="button" onClick={()=>void saveDiscordToken()} disabled={busy||!discordToken.trim()}>Verify and save Discord bot token</button>
+      {discord?.configured&&<button type="button" onClick={()=>void clearDiscordToken()} disabled={busy}>Clear saved Discord token</button>}
+      <button type="button" onClick={()=>void client.discordStatus().then(setDiscord).catch(failure=>setError(String(failure)))} disabled={busy}>Refresh Discord status</button>
+    </div>
+    {discord&&<p role="status">{discord.configured?<>Connected bot: {discord.bot_username??discord.bot_id}</>:'Discord bot is not configured'} · {discord.linked_users} linked user(s) · {discord.processed_messages} processed message(s)</p>}
+    {discord?.configured&&<>
+      <button type="button" onClick={()=>void makeDiscordPairing()} disabled={busy}>Generate one-time Discord pairing code</button>
+      {discord.linked_users>0&&<div className="controls">
+        {confirmDiscordRevoke?<><span>This prevents linked Discord users from submitting new objectives. Saved runs remain available.</span><button type="button" onClick={()=>void revokeDiscordLinks()} disabled={busy}>Confirm revoke Discord links</button><button type="button" onClick={()=>setConfirmDiscordRevoke(false)} disabled={busy}>Keep links</button></>:<button type="button" onClick={()=>setConfirmDiscordRevoke(true)} disabled={busy}>Revoke all Discord users</button>}
+      </div>}
+      {discordPairing&&<div aria-label="Discord pairing instructions"><p>Within five minutes, send this exact command in a private DM to the bot:</p><code>/pair {discordPairing.code}</code><p>Expires {new Date(discordPairing.expires_at).toLocaleString()}.</p></div>}
+    </>}
     <h3>Telegram (private chats)</h3>
     <p>Connect a bot token from BotFather. X.A.A. stores it in Windows Credential Manager. A paired private Telegram account can submit objectives as Observe-mode runs and receive their final answers.</p>
     <p>Pairing is required before messages can create runs. Group chats and unpaired users are ignored. An unclear send result is recorded without automatic retry.</p>

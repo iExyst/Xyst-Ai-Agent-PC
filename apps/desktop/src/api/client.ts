@@ -22,6 +22,7 @@ export type ProjectValidation = components['schemas']['ProjectValidationSummary'
 export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
 export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
+export type DiscordChannelStatus = components['schemas']['DiscordCredentialStatus'];
 export type EmailChannelStatus = components['schemas']['EmailCredentialStatus'];
 export type WebhookChannelStatus = components['schemas']['WebhookChannelStatus'];
 export type WebhookCredential = components['schemas']['WebhookCredentialRecord'];
@@ -242,6 +243,24 @@ export class EngineClient {
 
   telegramPairing(): Promise<components['schemas']['TelegramPairingCode']> {
     return this.#request('/channels/telegram/pairing',{method:'POST',body:JSON.stringify({})});
+  }
+
+  discordStatus(): Promise<DiscordChannelStatus> { return this.#request('/channels/discord'); }
+
+  setDiscordToken(token:string): Promise<DiscordChannelStatus> {
+    return this.#request('/channels/discord/credential',{method:'PUT',body:JSON.stringify({token})});
+  }
+
+  clearDiscordToken(): Promise<DiscordChannelStatus> {
+    return this.#request('/channels/discord/credential',{method:'DELETE'});
+  }
+
+  discordPairing(): Promise<components['schemas']['DiscordPairingCode']> {
+    return this.#request('/channels/discord/pairing',{method:'POST',body:JSON.stringify({})});
+  }
+
+  revokeDiscordLinks(): Promise<components['schemas']['DiscordLinkRevocation']> {
+    return this.#request('/channels/discord/links',{method:'DELETE'});
   }
 
   telegramLinkedUsers(): Promise<components['schemas']['TelegramLinkedUser'][]> {

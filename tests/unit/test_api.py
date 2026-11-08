@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.channels.discord import DiscordIdentity, dm_only_intents
 from xaa.channels.webhook import sign_webhook
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.runtime.states import RunState
@@ -39,6 +40,65 @@ class FakeProvider(LMStudioProvider):
 
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
+
+
+def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_path, monkeypatch):
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    async def fake_get_me(self):
+        return DiscordIdentity("100000000000000001", "xaa-test")
+
+    monkeypatch.setattr("xaa.api.app.DiscordBotApi.get_me", fake_get_me)
+    credentials = Credentials()
+    store = RunStore(workspace_tmp_path / "discord-api.sqlite3")
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        assert client.get("/channels/discord").status_code == 401
+        assert client.get("/channels/discord", headers=headers).json() == {
+            "configured": False,
+            "bot_id": None,
+            "bot_username": None,
+            "linked_users": 0,
+            "processed_messages": 0,
+        }
+        saved = client.put(
+            "/channels/discord/credential",
+            headers=headers,
+            json={"token": "secret-discord-bot-token"},
+        )
+        assert saved.status_code == 200
+        assert "secret-discord-bot-token" not in saved.text
+        assert credentials.values["discord-bot"] == "secret-discord-bot-token"
+        pairing = client.post("/channels/discord/pairing", headers=headers)
+        assert pairing.status_code == 201
+        assert len(pairing.json()["code"]) >= 32
+        revoked = client.delete("/channels/discord/links", headers=headers)
+        assert revoked.json() == {"revoked_users": 0, "linked_users": 0}
+        cleared = client.delete("/channels/discord/credential", headers=headers)
+        assert cleared.status_code == 200
+        assert cleared.json()["configured"] is False
+
+    intents = dm_only_intents()
+    assert intents.dm_messages is True
+    assert intents.guild_messages is False
+    assert intents.message_content is False
 
 
 def test_openapi_advertises_packaged_engine_version(workspace_tmp_path) -> None:

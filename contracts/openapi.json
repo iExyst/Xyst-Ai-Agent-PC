@@ -742,6 +742,110 @@
         "title": "CreateScheduleRequest",
         "type": "object"
       },
+      "DiscordCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "DiscordCredentialRequest",
+        "type": "object"
+      },
+      "DiscordCredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "bot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Id"
+          },
+          "bot_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Username"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "linked_users": {
+            "title": "Linked Users",
+            "type": "integer"
+          },
+          "processed_messages": {
+            "title": "Processed Messages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "bot_id",
+          "bot_username",
+          "linked_users",
+          "processed_messages"
+        ],
+        "title": "DiscordCredentialStatus",
+        "type": "object"
+      },
+      "DiscordLinkRevocation": {
+        "additionalProperties": false,
+        "properties": {
+          "linked_users": {
+            "title": "Linked Users",
+            "type": "integer"
+          },
+          "revoked_users": {
+            "title": "Revoked Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revoked_users",
+          "linked_users"
+        ],
+        "title": "DiscordLinkRevocation",
+        "type": "object"
+      },
+      "DiscordPairingCode": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "expires_at"
+        ],
+        "title": "DiscordPairingCode",
+        "type": "object"
+      },
       "DistributionInventory": {
         "additionalProperties": false,
         "properties": {
@@ -5286,6 +5390,139 @@
           }
         ],
         "summary": "Create Backup"
+      }
+    },
+    "/channels/discord": {
+      "get": {
+        "operationId": "discord_status_channels_discord_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discord Status"
+      }
+    },
+    "/channels/discord/credential": {
+      "delete": {
+        "operationId": "clear_discord_credential_channels_discord_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear Discord Credential"
+      },
+      "put": {
+        "operationId": "set_discord_credential_channels_discord_credential_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Discord Credential"
+      }
+    },
+    "/channels/discord/links": {
+      "delete": {
+        "operationId": "revoke_discord_links_channels_discord_links_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLinkRevocation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Discord Links"
+      }
+    },
+    "/channels/discord/pairing": {
+      "post": {
+        "operationId": "create_discord_pairing_channels_discord_pairing_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordPairingCode"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Discord Pairing"
       }
     },
     "/channels/email": {
