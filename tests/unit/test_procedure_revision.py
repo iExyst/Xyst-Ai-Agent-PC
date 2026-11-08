@@ -81,7 +81,13 @@ def _targeted_patch(
     )
 
 
-def _resource_revision_run(store: RunStore, skill_id: str, version: int = 1) -> tuple[str, str]:
+def _resource_revision_run(
+    store: RunStore,
+    skill_id: str,
+    version: int = 1,
+    *,
+    removal_authorized: bool = False,
+) -> tuple[str, str]:
     run = store.create_run(
         objective="Improve one linked procedure resource.",
         acceptance_criteria=[],
@@ -90,6 +96,7 @@ def _resource_revision_run(store: RunStore, skill_id: str, version: int = 1) -> 
         model="fixture",
         procedure_trial={"skill_id": skill_id, "version": version},
         allow_procedure_resource_revision=True,
+        allow_procedure_resource_removal=removal_authorized,
     )
     owner = store.acquire_lease(str(run["id"]), "procedure-resource-test")
     assert owner is not None
@@ -319,6 +326,33 @@ def test_model_resource_revision_writes_multiple_files_in_one_candidate_version(
             content="First.",
             additional_resources=[{"path": "same.txt", "content": "Duplicate."}],
         )
+    with pytest.raises(ValidationError, match="only once"):
+        SkillResourceRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            path="same.txt",
+            content="Replace this.",
+            remove_paths=["same.txt"],
+        )
+    with pytest.raises(ValidationError, match="at most eight"):
+        SkillResourceRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            path="write-0.txt",
+            content="Write.",
+            additional_resources=[
+                {"path": f"write-{index}.txt", "content": "Write."} for index in range(1, 8)
+            ],
+            remove_paths=["remove.txt"],
+        )
+    with pytest.raises(ValidationError):
+        SkillResourceRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            path="write.txt",
+            content="Write.",
+            remove_paths=["remove-one.txt", "remove-two.txt"],
+        )
     with pytest.raises(ValidationError):
         SkillResourceRevision(
             skill_id=entry["id"],
@@ -329,6 +363,87 @@ def test_model_resource_revision_writes_multiple_files_in_one_candidate_version(
                 {"path": f"extra-{index}.txt", "content": "More."} for index in range(8)
             ],
         )
+
+
+def test_model_resource_batch_atomically_replaces_and_removes_with_both_grants(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-mixed-batch.sqlite3")
+    skills = SkillStore(store)
+    original = _draft()
+    original.assets = [
+        SkillAsset(
+            path="references/replace.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"old").hexdigest(),
+            content_base64=base64.b64encode(b"old").decode("ascii"),
+        ),
+        SkillAsset(
+            path="references/remove.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"obsolete").hexdigest(),
+            content_base64=base64.b64encode(b"obsolete").decode("ascii"),
+        ),
+    ]
+    entry = skills.create(original)
+    before = skills.version(entry["id"], 1)
+    write_only_run, write_only_owner = _resource_revision_run(store, entry["id"])
+    with pytest.raises(PermissionError, match="separate user grant"):
+        skills.create_model_resource_revision_from_run(
+            write_only_run,
+            write_only_owner,
+            "ungranted-removal",
+            SkillResourceRevision(
+                skill_id=entry["id"],
+                expected_version=1,
+                path="references/replace.md",
+                content="must not write",
+                remove_paths=["references/remove.md"],
+            ),
+        )
+    assert skills.get(entry["id"])["latest_version"] == 1
+    run_id, owner = _resource_revision_run(store, entry["id"], removal_authorized=True)
+    missing = SkillResourceRevision(
+        skill_id=entry["id"],
+        expected_version=1,
+        path="references/replace.md",
+        content="must roll back",
+        remove_paths=["references/missing.md"],
+    )
+    with pytest.raises(SkillConflict, match="no linked resource"):
+        skills.create_model_resource_revision_from_run(run_id, owner, "missing-remove", missing)
+    assert skills.get(entry["id"])["latest_version"] == 1
+    assert skills.version(entry["id"], 1) == before
+
+    revision = SkillResourceRevision(
+        skill_id=entry["id"],
+        expected_version=1,
+        path="references/replace.md",
+        content="updated",
+        remove_paths=["references/remove.md"],
+    )
+    result = skills.create_model_resource_revision_from_run(run_id, owner, "mixed-edit", revision)
+
+    after = skills.version(entry["id"], 2)
+    assert result["resource_edit_count"] == 2
+    assert result["resources"] == [
+        {
+            "path": "references/replace.md",
+            "sha256": hashlib.sha256(b"updated").hexdigest(),
+            "edit": "replaced",
+        },
+        {
+            "path": "references/remove.md",
+            "sha256": hashlib.sha256(b"obsolete").hexdigest(),
+            "edit": "removed",
+        },
+    ]
+    assert [asset["path"] for asset in after["assets"]] == ["references/replace.md"]
+    assert base64.b64decode(after["assets"][0]["content_base64"]) == b"updated"
+    assert after["content"] == before["content"]
+    assert after["evaluation_evidence"]["provenance"] == "model_resource_batch_edit"
+    assert skills.version(entry["id"], 1) == before
+    assert skills.get(entry["id"])["active_version"] is None
 
 
 def test_model_resource_removal_preserves_previous_version_and_other_package_fields(
@@ -808,6 +923,92 @@ async def test_coordinator_exposes_and_executes_separately_granted_resource_remo
     saved = skills.version(entry["id"], 2)
     assert saved["assets"] == []
     assert saved["evaluation_evidence"]["state"] == "candidate"
+    assert not store.unresolved_tool_calls(str(run["id"]))
+
+
+@pytest.mark.asyncio
+async def test_coordinator_exposes_mixed_resource_edit_only_with_both_grants(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-mixed-coordinator.sqlite3")
+    draft = _draft()
+    draft.assets = [
+        SkillAsset(
+            path="references/replace.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"old").hexdigest(),
+            content_base64=base64.b64encode(b"old").decode("ascii"),
+        ),
+        SkillAsset(
+            path="references/remove.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"obsolete").hexdigest(),
+            content_base64=base64.b64encode(b"obsolete").decode("ascii"),
+        ),
+    ]
+    skills = SkillStore(store)
+    entry = skills.create(draft)
+    before = skills.version(entry["id"], 1)
+    run = store.create_run(
+        objective="Update and remove the selected linked references in one candidate.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_resource_revision=True,
+        allow_procedure_resource_removal=True,
+    )
+    revision = SkillResourceRevision(
+        skill_id=entry["id"],
+        expected_version=1,
+        path="references/replace.md",
+        content="updated",
+        remove_paths=["references/remove.md"],
+    )
+
+    class MixedResourceEditProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            available = {tool["function"]["name"]: tool for tool in (tools or [])}
+            assert "procedure_resource_revise" in available
+            assert "procedure_resource_remove" not in available
+            schema = available["procedure_resource_revise"]["function"]["parameters"]
+            assert schema["properties"]["remove_paths"]
+            call = {
+                "id": "mixed-resource-edit-call",
+                "type": "function",
+                "function": {
+                    "name": "procedure_resource_revise",
+                    "arguments": json.dumps(revision.model_dump(mode="json")),
+                },
+            }
+            if not any(message.get("role") == "tool" for message in messages):
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": [call]}}]}
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Mixed candidate saved."}}]
+            }
+
+    provider = MixedResourceEditProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+
+    saved = skills.version(entry["id"], 2)
+    assert [asset["path"] for asset in saved["assets"]] == ["references/replace.md"]
+    assert base64.b64decode(saved["assets"][0]["content_base64"]) == b"updated"
+    assert skills.version(entry["id"], 1)["assets"] == before["assets"]
+    assert saved["evaluation_evidence"]["provenance"] == "model_resource_batch_edit"
     assert not store.unresolved_tool_calls(str(run["id"]))
 
 

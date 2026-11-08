@@ -257,7 +257,7 @@ class SkillResourceText(BaseModel):
 
 
 class SkillResourceRevision(BaseModel):
-    """Write up to eight normalized UTF-8 resources in one candidate version."""
+    """Edit up to eight linked resources in one candidate version."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str = Field(min_length=1, max_length=128)
@@ -267,6 +267,7 @@ class SkillResourceRevision(BaseModel):
     additional_resources: list[SkillResourceText] = Field(
         default_factory=list[SkillResourceText], max_length=7
     )
+    remove_paths: list[str] = Field(default_factory=list[str], max_length=1)
 
     @model_validator(mode="after")
     def bounded_resource(self) -> "SkillResourceRevision":
@@ -274,8 +275,18 @@ class SkillResourceRevision(BaseModel):
             SkillResourceText(path=self.path, content=self.content),
             *self.additional_resources,
         ]
-        if len({resource.path for resource in resources}) != len(resources):
+        for path in self.remove_paths:
+            SkillAsset(
+                path=path,
+                content_base64="",
+                media_type="text/plain",
+                sha256=hashlib.sha256(b"").hexdigest(),
+            )
+        paths = [resource.path for resource in resources] + self.remove_paths
+        if len(set(paths)) != len(paths):
             raise ValueError("Each linked resource path may appear only once in an edit.")
+        if len(paths) > 8:
+            raise ValueError("A linked resource edit can contain at most eight operations.")
         return self
 
 
@@ -862,7 +873,7 @@ class SkillStore:
     def create_model_resource_revision_from_run(
         self, run_id: str, owner: str, call_id: str, revision: SkillResourceRevision
     ) -> dict[str, Any]:
-        """Create a candidate version with one changed UTF-8 resource under a separate grant."""
+        """Create a candidate version with an atomic linked-resource edit."""
         if self.runs.task_scope is not None:
             raise PermissionError("Specialists cannot revise user-library procedure resources.")
         if not call_id or len(call_id) > 128:
@@ -898,6 +909,22 @@ class SkillStore:
                 or json.loads(selected[0][0]).get("version") != revision.expected_version
             ):
                 raise PermissionError("Procedure resource edit exceeds the selected run grant.")
+            if revision.remove_paths:
+                removal_grants = connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_removal_granted'",
+                    (run_id,),
+                ).fetchall()
+                if len(removal_grants) != 1:
+                    raise PermissionError(
+                        "Linked-resource removal requires its separate user grant."
+                    )
+                removal_grant = json.loads(removal_grants[0][0])
+                if (
+                    removal_grant.get("actor") != "local_user"
+                    or removal_grant.get("skill_id") != revision.skill_id
+                    or removal_grant.get("expected_version") != revision.expected_version
+                ):
+                    raise PermissionError("Resource removal exceeds the selected run grant.")
             if connection.execute(
                 "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
                 (run_id, call_id),
@@ -942,6 +969,13 @@ class SkillStore:
                 for item in prior_assets
             }
             edit_records: list[dict[str, str]] = []
+            removed_records: list[dict[str, str]] = []
+            for path in revision.remove_paths:
+                asset = asset_map.get(path)
+                if asset is None:
+                    raise SkillConflict(f"The procedure has no linked resource at {path!r}.")
+                removed_records.append({"path": path, "sha256": asset.sha256, "edit": "removed"})
+                del asset_map[path]
             for resource in changed_resources:
                 raw_content = resource.content.encode("utf-8")
                 asset = SkillAsset(
@@ -962,6 +996,7 @@ class SkillStore:
                     }
                 )
                 asset_map[resource.path] = asset
+            edit_records.extend(removed_records)
             try:
                 draft = SkillDraft(
                     name=entry["name"],
@@ -978,8 +1013,12 @@ class SkillStore:
                 ) from exc
             evidence: dict[str, Any] = {
                 "state": "candidate",
-                "provenance": "model_resource_revision",
-                "resource_count": len(changed_resources),
+                "provenance": (
+                    "model_resource_batch_edit"
+                    if revision.remove_paths
+                    else "model_resource_revision"
+                ),
+                "resource_count": len(edit_records),
                 "source": {
                     **{
                         str(key): value
@@ -988,6 +1027,7 @@ class SkillStore:
                     },
                     "resource_revision_run_id": run_id,
                     "resource_revision_call_id": call_id,
+                    "resource_removal_paths": json.dumps(revision.remove_paths),
                     "parent_version": str(current_version),
                     "parent_provenance": str(prior_evidence.get("provenance", "user")),
                 },
@@ -1018,7 +1058,7 @@ class SkillStore:
                 "resource_edit_count": len(edit_records),
                 "trust": "untrusted_model_resource_revision",
                 "requires_user_review": True,
-                "notice": "Only the listed linked UTF-8 resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
+                "notice": "Only the listed linked resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
             }
             connection.execute(
                 "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.resource_revise','1',?,?,'completed',?,NULL,?,?,?)",
@@ -1047,7 +1087,7 @@ class SkillStore:
                     "skill_id": revision.skill_id,
                     "version": next_version,
                     "parent_version": current_version,
-                    "paths": [resource.path for resource in changed_resources],
+                    "operations": edit_records,
                     "call_id": call_id,
                 },
             )

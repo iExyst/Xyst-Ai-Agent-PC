@@ -73,7 +73,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('2');
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   const revisionGrant=page.getByLabel('Allow this run to draft a new version of this procedure');
-  const resourceRevisionGrant=page.getByLabel('Allow this run to write up to 8 linked UTF-8 resources in one edit');
+  const resourceRevisionGrant=page.getByLabel('Allow this run to create or replace linked UTF-8 resources (up to 8 operations)');
   const resourceRemovalGrant=page.getByLabel('Allow this run to remove one linked resource');
   await expect(revisionGrant).toBeEnabled();
   await expect(resourceRevisionGrant).toBeEnabled();
@@ -105,10 +105,18 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   expect(runSubmissions[2].allow_procedure_resource_removal).toBe(false);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   await resourceRemovalGrant.check();
-  await expect(resourceRevisionGrant).toBeDisabled();
   await page.getByLabel('Objective',{exact:true}).fill('Remove one obsolete linked procedure resource');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
   expect(runSubmissions[3].allow_procedure_resource_removal).toBe(true);
+  await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await expect(resourceRevisionGrant).not.toBeChecked();
+  await resourceRevisionGrant.check();
+  await expect(resourceRemovalGrant).toBeEnabled();
+  await resourceRemovalGrant.check();
+  await page.getByLabel('Objective',{exact:true}).fill('Replace one resource and remove one obsolete resource atomically');
+  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  expect(runSubmissions[4].allow_procedure_resource_revision).toBe(true);
+  expect(runSubmissions[4].allow_procedure_resource_removal).toBe(true);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   await expect(resourceRevisionGrant).not.toBeChecked();
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('1');

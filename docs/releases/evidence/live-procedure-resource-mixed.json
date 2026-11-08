@@ -1,0 +1,48 @@
+{
+  "passed": true,
+  "verified_at": "2026-11-08T04:47:07.075268+00:00",
+  "model": "qwen/qwen3.5-9b",
+  "provider": "LM Studio local API",
+  "model_context_length": 16384,
+  "run_state": "verifying",
+  "candidate_version": 2,
+  "tool_calls": [
+    {
+      "tool": "procedure.view",
+      "state": "completed"
+    },
+    {
+      "tool": "procedure.read_resource",
+      "state": "completed"
+    },
+    {
+      "tool": "procedure.read_resource",
+      "state": "completed"
+    },
+    {
+      "tool": "procedure.resource_revise",
+      "state": "completed"
+    }
+  ],
+  "resource_operations": [
+    {
+      "path": "references/guide.md",
+      "sha256": "a980e883bc803a28ab5c605315daa02f75a7201677fdc339f62e778e60a5834b",
+      "edit": "replaced"
+    },
+    {
+      "path": "references/obsolete.md",
+      "sha256": "e3fb911592573f7ff06352d0a41fb62edbdcd90d9570bc4d31dd172041f4e7a9",
+      "edit": "removed"
+    }
+  ],
+  "replacement_bytes_match": true,
+  "removed_path_absent": true,
+  "original_version_unchanged": true,
+  "candidate_inactive_and_unevaluated": true,
+  "unresolved_tool_calls": 0,
+  "workspace_files": [],
+  "local_inference_only": true,
+  "user_project_modified": false,
+  "local_report": ".acceptance/live-procedure-resource-mixed-d971809c-2bd6-45f1-a92b-6f5229ff7c49/report.json"
+}

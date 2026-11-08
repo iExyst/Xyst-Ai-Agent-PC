@@ -708,15 +708,8 @@ class RunStore:
         client_request_id: str | None = None,
         request_digest: str | None = None,
     ) -> dict[str, Any]:
-        if (
-            sum(
-                (
-                    allow_procedure_revision,
-                    allow_procedure_resource_revision,
-                    allow_procedure_resource_removal,
-                )
-            )
-            > 1
+        if allow_procedure_revision and (
+            allow_procedure_resource_revision or allow_procedure_resource_removal
         ):
             raise ValueError("Choose only one procedure edit permission for a run.")
         if (client_request_id is None) != (request_digest is None):
