@@ -8,8 +8,17 @@ if (-not $xaaLocalAppData.StartsWith($xaaRunnerRoot, [StringComparison]::Ordinal
     throw 'Isolated application data profile must be a new directory under RUNNER_TEMP.'
 }
 New-Item -ItemType Directory -Path $xaaLocalAppData | Out-Null
+$xaaRoamingAppData = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-isolated-appdata'))
+if (-not $xaaRoamingAppData.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaRoamingAppData)) {
+    throw 'Isolated roaming application data profile must be a new directory under RUNNER_TEMP.'
+}
+New-Item -ItemType Directory -Path $xaaRoamingAppData | Out-Null
 $xaaPriorLocalAppData = $env:LOCALAPPDATA
+$xaaPriorAppData = $env:APPDATA
+$xaaPriorTestConfigDirectory = $env:XAA_TEST_CONFIG_DIR
+$xaaPriorExpectedCloseBehavior = $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR
 $env:LOCALAPPDATA = $xaaLocalAppData
+$env:APPDATA = $xaaRoamingAppData
 $xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-installer-test'))
 if (-not $xaaInstallDir.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaInstallDir)) {
     throw 'Installer test destination must be a new directory under RUNNER_TEMP.'
@@ -41,6 +50,7 @@ $xaaAcceptanceParent = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path '.a
 if (-not $xaaAcceptanceRoot.StartsWith($xaaAcceptanceParent, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaAcceptanceRoot)) { throw 'Installed backup evidence path must be new and inside .acceptance.' }
 New-Item -ItemType Directory -Path $xaaAcceptanceRoot | Out-Null
 $xaaBackupFixture = Join-Path $xaaAcceptanceRoot 'fixture.json'
+$xaaDesktopSettings = Join-Path $xaaRoamingAppData 'dev.xyst.xaa\desktop-settings.json'
 $xaaReport = @{ passed = $false; environment = 'disposable hosted Windows runner'; unsigned = $true }
 try {
     if ($xaaPriorInstaller) {
@@ -106,6 +116,8 @@ try {
         }
         $env:XAA_NATIVE_ACCEPTANCE_ROOT = $xaaAcceptanceRoot
         $env:XAA_NATIVE_BACKUP_FIXTURE = $xaaBackupFixture
+        $env:XAA_TEST_CONFIG_DIR = Split-Path -Parent $xaaDesktopSettings
+        $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR = 'keep_running'
         & node scripts/native_boot_smoke.mjs $xaaDesktop
         $xaaBootExitCode = $LASTEXITCODE
     } finally {
@@ -117,6 +129,7 @@ try {
     }
     if ($xaaBootExitCode -ne 0) { throw 'Installed application boot/shutdown test failed.' }
     $xaaReport.native_acceptance = Get-Content -LiteralPath (Join-Path $xaaAcceptanceRoot 'report.json') -Raw | ConvertFrom-Json
+    if ($xaaReport.native_acceptance.initial_close_behavior -ne 'keep_running') { throw 'Installed desktop did not load its isolated default close behavior.' }
     $xaaReport.installed_backup_restore_verified = [bool]$xaaReport.native_acceptance.installed_backup_restore_verified
     if (-not $xaaReport.installed_backup_restore_verified -or -not $xaaReport.native_acceptance.backup_acceptance.verification.passed) { throw 'Installed backup/restore evidence was incomplete.' }
     $xaaReport.upgrade_data_verified = [bool]$xaaPriorInstaller -and [bool]$xaaReport.upgrade_data_fixture_seeded_before_upgrade -and $xaaReport.installed_backup_restore_verified
@@ -132,10 +145,17 @@ try {
         $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
     }
     $xaaReport.user_data_preserved = (Test-Path -LiteralPath $xaaMarker) -and (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash -eq $xaaMarkerHash
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified))
+    $xaaReport.desktop_settings_preserved = $false
+    if (Test-Path -LiteralPath $xaaDesktopSettings) {
+        try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
+    }
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     Remove-Item Env:XAA_NATIVE_ACCEPTANCE_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue
+    if ($null -eq $xaaPriorTestConfigDirectory) { Remove-Item Env:XAA_TEST_CONFIG_DIR -ErrorAction SilentlyContinue } else { $env:XAA_TEST_CONFIG_DIR = $xaaPriorTestConfigDirectory }
+    if ($null -eq $xaaPriorExpectedCloseBehavior) { Remove-Item Env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR = $xaaPriorExpectedCloseBehavior }
     $env:LOCALAPPDATA = $xaaPriorLocalAppData
+    $env:APPDATA = $xaaPriorAppData
 }
 if (-not $xaaReport.passed) { throw 'Install/uninstall or data preservation verification failed.' }

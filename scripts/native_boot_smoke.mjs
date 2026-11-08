@@ -17,7 +17,8 @@ const started=Date.now();let stdout='',stderr='';
 const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
 const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
-const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
+const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;
@@ -74,6 +75,15 @@ try{
   const startupMilliseconds=Date.now()-started;
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
   await page.screenshot({path:path.join(root,'release-boot.png'),fullPage:true});
+  const closeBehavior=page.getByLabel('When the main window closes');
+  const initialCloseBehavior=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_close_behavior'));
+  const expectedInitialCloseBehavior=process.env.XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR||'keep_running';
+  if(initialCloseBehavior!==expectedInitialCloseBehavior)throw new Error(`Expected initial close behavior ${expectedInitialCloseBehavior}, received ${initialCloseBehavior}`);
+  await expect(closeBehavior).toHaveValue(expectedInitialCloseBehavior);
+  if(initialCloseBehavior!=='keep_running'){
+    await closeBehavior.selectOption('keep_running');
+    await expect(page.getByText('Close behavior saved.',{exact:true})).toBeVisible();
+  }
   await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('restore_main_window'));
   const closeStarted=Date.now();
   await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'}));
@@ -89,7 +99,6 @@ try{
   const restoreDeadline=Date.now()+10000;
   while(!await isWindowVisible()&&Date.now()<restoreDeadline)await new Promise(resolve=>setTimeout(resolve,100));
   if(!await isWindowVisible())throw new Error('The hidden window did not restore');
-  const closeBehavior=page.getByLabel('When the main window closes');
   if(await closeBehavior.inputValue()!=='keep_running')throw new Error('The default close behavior must keep the agent running');
   await closeBehavior.selectOption('exit_on_close');
   await expect(page.getByText('Close behavior saved.',{exact:true})).toBeVisible();
@@ -103,7 +112,7 @@ try{
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,initial_close_behavior:initialCloseBehavior,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;
