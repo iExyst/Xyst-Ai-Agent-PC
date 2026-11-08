@@ -102,19 +102,25 @@ async def main() -> None:
             and event["payload"].get("task_id") == inspect_id
             and event["payload"].get("result", {}).get("path") == filename
         ]
+        source_read_results = [event["payload"]["result"] for event in source_reads]
         source_statuses = {item["local_id"]: item["status"] for item in tasks.records(run_id)}
         if (
             source_statuses != {inspect_id: "verifying", review_id: "queued"}
             or not isinstance(source_candidate, str)
             or expected not in source_candidate
-            or len(source_reads) != 1
+            or not source_read_results
+            or any(
+                result.get("text") != expected or result.get("truncated") is not False
+                for result in source_read_results
+            )
             or source["status"] != "verifying"
         ):
             raise RuntimeError("The dispatched researcher did not produce exact read evidence.")
 
         evidence_ids = [item["call_id"] for item in source["evidence"]]
-        if len(evidence_ids) != 1:
-            raise RuntimeError("Research candidate did not have exactly one evidence call.")
+        source_read_ids = {event["payload"]["call_id"] for event in source_reads}
+        if not evidence_ids or not set(evidence_ids) <= source_read_ids:
+            raise RuntimeError("Research candidate did not cite its saved file-read evidence.")
         await review_candidate(
             store,
             run_id,
@@ -169,6 +175,7 @@ async def main() -> None:
             ],
             inspect_candidate=source_candidate,
             inspect_read_count=len(source_reads),
+            inspect_evidence_count=len(evidence_ids),
             inspect_user_review="accepted against persisted read evidence",
             review_candidate=reviewer_candidate,
             review_read_count=len(review_reads),
