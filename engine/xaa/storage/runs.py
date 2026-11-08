@@ -696,6 +696,7 @@ class RunStore:
         approved_mcp_tools: list[str] | None = None,
         allow_procedure_drafting: bool = False,
         allow_procedure_revision: bool = False,
+        allow_procedure_resource_revision: bool = False,
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
         document_bytes: bytes | None = None,
@@ -706,6 +707,8 @@ class RunStore:
         client_request_id: str | None = None,
         request_digest: str | None = None,
     ) -> dict[str, Any]:
+        if allow_procedure_revision and allow_procedure_resource_revision:
+            raise ValueError("Choose either procedure-text or linked-resource revision for a run.")
         if (client_request_id is None) != (request_digest is None):
             raise ValueError(
                 "Idempotent run requests require both a request ID and payload digest."
@@ -877,10 +880,10 @@ class RunStore:
                     mode=mode,
                     workspace=workspace,
                 )
-            if allow_procedure_revision:
+            if allow_procedure_revision or allow_procedure_resource_revision:
                 if selected_trial is None:
                     raise ValueError(
-                        "Model procedure revision requires a selected procedure version."
+                        "Model procedure revisions require a selected procedure version."
                     )
                 if selected_trial.version >= 128:
                     raise ValueError(
@@ -1029,6 +1032,17 @@ class RunStore:
                     connection,
                     run_id,
                     "procedure.revision_granted",
+                    {
+                        "actor": "local_user",
+                        "skill_id": selected_trial.skill_id,
+                        "expected_version": selected_trial.version,
+                    },
+                )
+            if allow_procedure_resource_revision and selected_trial is not None:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "procedure.resource_revision_granted",
                     {
                         "actor": "local_user",
                         "skill_id": selected_trial.skill_id,
@@ -1213,6 +1227,24 @@ class RunStore:
             and revision_payload.get("actor") == "local_user"
             and revision_payload.get("skill_id") == record["procedure_trial"]["skill_id"]
             and revision_payload.get("expected_version") == record["procedure_trial"]["version"]
+        )
+        with self._connection() as connection:
+            resource_revision_grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_revision_granted'",
+                (run_id,),
+            ).fetchall()
+        resource_revision_payload: dict[str, Any] = {}
+        if len(resource_revision_grants) == 1:
+            parsed_payload: Any = json.loads(resource_revision_grants[0][0])
+            if isinstance(parsed_payload, dict):
+                resource_revision_payload = cast(dict[str, Any], parsed_payload)
+        record["allow_procedure_resource_revision"] = bool(
+            len(resource_revision_grants) == 1
+            and record["procedure_trial"] is not None
+            and resource_revision_payload.get("actor") == "local_user"
+            and resource_revision_payload.get("skill_id") == record["procedure_trial"]["skill_id"]
+            and resource_revision_payload.get("expected_version")
+            == record["procedure_trial"]["version"]
         )
         record["acceptance_criteria"] = json.loads(record["acceptance_criteria"])
         with self._connection() as connection:

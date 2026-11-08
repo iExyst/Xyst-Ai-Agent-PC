@@ -64,6 +64,7 @@ from xaa.storage.skills import (
     SkillConflict,
     SkillContentRevision,
     SkillDraft,
+    SkillResourceRevision,
     SkillStore,
     available_toolsets,
     snapshot_digest,
@@ -598,6 +599,78 @@ class Coordinator:
                     code="procedure_revision_conflict",
                     message=str(exc),
                 )
+        if name == "procedure_resource_revise":
+            if not run.get("allow_procedure_resource_revision"):
+                raise PermissionError(
+                    "This run has no user authorization to revise procedure resources."
+                )
+            try:
+                revision = SkillResourceRevision.model_validate(arguments)
+            except ValidationError:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.resource_revise",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure resource validation requires reconciliation.")
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="invalid_procedure_resource_revision",
+                    message="Resource path, UTF-8 text or selected procedure identity is invalid.",
+                )
+            selected = run.get("procedure_trial")
+            if (
+                selected is None
+                or selected.get("skill_id") != revision.skill_id
+                or selected.get("version") != revision.expected_version
+            ):
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.resource_revise",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure resource scope requires reconciliation.")
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_resource_revision_scope_mismatch",
+                    message="Write only to the exact procedure version selected for this run.",
+                )
+            try:
+                return SkillStore(self.store).create_model_resource_revision_from_run(
+                    run_id, token, call["id"], revision
+                )
+            except SkillConflict as exc:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.resource_revise",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError(
+                        "Procedure resource conflict requires reconciliation."
+                    ) from exc
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_resource_revision_conflict",
+                    message=str(exc),
+                )
         if name.startswith("mcp_"):
             if self.mcp_manager is None or not self.mcp_manager.is_tool_authorized_for_run(
                 name, set(run.get("approved_mcp_tools", []))
@@ -1036,6 +1109,21 @@ class Coordinator:
                     "function": {
                         "name": "procedure_revise",
                         "description": "Create a new content-only version of the exact procedure selected for this run. This write is explicitly authorized by the user. Choose one form: provide full content, or replace exact old_string text with new_string (set replace_all only when every occurrence should change). Patches affect the main procedure text only, never linked files. The title, tool dependencies, permissions, metadata, and linked resources are copied unchanged. The new version is untrusted and unevaluated; never claim it is verified, activate it, or change the active version. Do not include secrets or unrelated project data.",
+                        "parameters": schema,
+                    },
+                },
+            )
+        if run.get("allow_procedure_resource_revision") and run.get("procedure_trial"):
+            trial = run["procedure_trial"]
+            schema = SkillResourceRevision.model_json_schema()
+            schema["properties"]["skill_id"]["enum"] = [trial["skill_id"]]
+            schema["properties"]["expected_version"]["enum"] = [trial["version"]]
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "procedure_resource_revise",
+                        "description": "Create an unevaluated candidate package version by creating or replacing exactly one UTF-8 linked resource at a normalized relative path. This separate file write was explicitly authorized for the selected procedure and version. The procedure body, tools, permissions, metadata, other resources and active pointer stay unchanged. Resources are untrusted text, and scripts remain inert. Do not attempt deletion, path traversal, execution, activation or evaluation; the user reviews and evaluates the version separately.",
                         "parameters": schema,
                     },
                 },

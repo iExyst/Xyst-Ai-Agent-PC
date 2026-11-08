@@ -41,6 +41,7 @@ class RunRecord(BaseModel):
     approved_browser: bool = False
     allow_procedure_drafting: bool = False
     allow_procedure_revision: bool = False
+    allow_procedure_resource_revision: bool = False
     approved_mcp_tools: list[str] = Field(default_factory=list)
     procedure_trial: SkillTrialRecord | None = None
     command_grant: CommandGrant | None = None

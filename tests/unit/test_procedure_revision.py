@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
@@ -18,6 +18,7 @@ from xaa.storage.skills import (
     SkillConflict,
     SkillContentRevision,
     SkillDraft,
+    SkillResourceRevision,
     SkillRevision,
     SkillStore,
     SkillTool,
@@ -77,6 +78,21 @@ def _targeted_patch(
         new_string=new_string,
         replace_all=replace_all,
     )
+
+
+def _resource_revision_run(store: RunStore, skill_id: str, version: int = 1) -> tuple[str, str]:
+    run = store.create_run(
+        objective="Improve one linked procedure resource.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": skill_id, "version": version},
+        allow_procedure_resource_revision=True,
+    )
+    owner = store.acquire_lease(str(run["id"]), "procedure-resource-test")
+    assert owner is not None
+    return str(run["id"]), owner
 
 
 def test_model_revision_creates_content_only_candidate_version(workspace_tmp_path: Path) -> None:
@@ -172,6 +188,113 @@ def test_targeted_patch_requires_unique_match_or_explicit_replace_all(
         skills.version(entry["id"], 2)["content"]
         == "Read assigned files and read assigned files again."
     )
+
+
+def test_model_resource_revision_creates_inactive_version_and_preserves_other_resources(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-revision.sqlite3")
+    skills = SkillStore(store)
+    original = _draft()
+    original.assets = [
+        SkillAsset(
+            path="references/guide.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"Old guide.").hexdigest(),
+            content_base64=base64.b64encode(b"Old guide.").decode("ascii"),
+        ),
+        SkillAsset(
+            path="references/keep.txt",
+            media_type="text/plain",
+            sha256=hashlib.sha256(b"Keep this.").hexdigest(),
+            content_base64=base64.b64encode(b"Keep this.").decode("ascii"),
+        ),
+    ]
+    entry = skills.create(original)
+    version_one = skills.version(entry["id"], 1)
+    run_id, owner = _resource_revision_run(store, entry["id"])
+    revision = SkillResourceRevision(
+        skill_id=entry["id"],
+        expected_version=1,
+        path="references/guide.md",
+        content="Updated guide.",
+    )
+
+    result = skills.create_model_resource_revision_from_run(
+        run_id, owner, "resource-revision-call", revision
+    )
+
+    version_two = skills.version(entry["id"], 2)
+    assets = {item["path"]: item for item in version_two["assets"]}
+    assert result["resource_edit"] == "replaced"
+    assert result["resource_path"] == "references/guide.md"
+    assert result["resource_sha256"] == hashlib.sha256(b"Updated guide.").hexdigest()
+    assert version_two["content"] == version_one["content"]
+    assert version_two["required_tools"] == version_one["required_tools"]
+    assert version_two["required_permissions"] == version_one["required_permissions"]
+    assert base64.b64decode(assets["references/guide.md"]["content_base64"]) == b"Updated guide."
+    assert assets["references/guide.md"]["media_type"] == "text/markdown"
+    assert base64.b64decode(assets["references/keep.txt"]["content_base64"]) == b"Keep this."
+    assert version_two["evaluation_evidence"]["state"] == "candidate"
+    assert version_two["evaluation_evidence"]["provenance"] == "model_resource_revision"
+    assert version_two["evaluation_evidence"]["evaluations"] == []
+    assert skills.get(entry["id"])["active_version"] is None
+    assert skills.version(entry["id"], 1) == version_one
+    with store.connection() as connection:
+        call = connection.execute(
+            "SELECT state FROM tool_calls WHERE run_id=? AND tool_name='procedure.resource_revise'",
+            (run_id,),
+        ).fetchone()
+    assert call is not None and call["state"] == "completed"
+
+
+def test_resource_revision_adds_one_utf8_file_and_refuses_path_escape(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-create.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    run_id, owner = _resource_revision_run(store, entry["id"])
+    with pytest.raises(ValidationError, match="normalized relative POSIX"):
+        SkillResourceRevision(
+            skill_id=entry["id"], expected_version=1, path="../outside.txt", content="No"
+        )
+    revision = SkillResourceRevision(
+        skill_id=entry["id"],
+        expected_version=1,
+        path="references/new.txt",
+        content="Reference text.",
+    )
+    result = skills.create_model_resource_revision_from_run(run_id, owner, "new-resource", revision)
+    version_two = skills.version(entry["id"], 2)
+    assert result["resource_edit"] == "created"
+    assert version_two["content"] == skills.version(entry["id"], 1)["content"]
+    assert [asset["path"] for asset in version_two["assets"]] == ["references/new.txt"]
+
+
+def test_resource_revision_requires_its_own_grant_and_rejects_combined_grants(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-grant.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    run_id, owner = _run(store, entry["id"])
+    revision = SkillResourceRevision(
+        skill_id=entry["id"], expected_version=1, path="notes.txt", content="No grant."
+    )
+    with pytest.raises(PermissionError, match="no user authorization"):
+        skills.create_model_resource_revision_from_run(run_id, owner, "denied-resource", revision)
+    with pytest.raises(ValueError, match="Choose either"):
+        store.create_run(
+            objective="Conflicting revisions.",
+            acceptance_criteria=[],
+            workspace=".",
+            mode="observe",
+            model="fixture",
+            procedure_trial={"skill_id": entry["id"], "version": 1},
+            allow_procedure_revision=True,
+            allow_procedure_resource_revision=True,
+        )
 
 
 def test_model_revision_of_active_entry_does_not_move_active_pointer(
@@ -376,3 +499,103 @@ def test_api_persists_content_revision_grant_for_selected_latest_version(
     assert len(grants) == 1
     assert grants[0]["payload"]["skill_id"] == entry["id"]
     assert grants[0]["payload"]["expected_version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_exposes_and_executes_separately_granted_resource_revision(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-coordinator.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    run = store.create_run(
+        objective="Add one linked reference file.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_resource_revision=True,
+    )
+    revision = SkillResourceRevision(
+        skill_id=entry["id"], expected_version=1, path="references/new.txt", content="Known text."
+    )
+
+    class ResourceRevisionProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            available = {tool["function"]["name"]: tool for tool in (tools or [])}
+            assert "procedure_resource_revise" in available
+            assert "procedure_revise" not in available
+            schema = available["procedure_resource_revise"]["function"]["parameters"]
+            assert schema["properties"]["skill_id"]["enum"] == [entry["id"]]
+            assert schema["properties"]["expected_version"]["enum"] == [1]
+            call = {
+                "id": "resource-revision-call",
+                "type": "function",
+                "function": {
+                    "name": "procedure_resource_revise",
+                    "arguments": json.dumps(revision.model_dump(mode="json")),
+                },
+            }
+            if not any(message.get("role") == "tool" for message in messages):
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": [call]}}]}
+            return {
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Resource candidate saved."}}
+                ]
+            }
+
+    provider = ResourceRevisionProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+    saved = skills.version(entry["id"], 2)
+    assert saved["content"] == skills.version(entry["id"], 1)["content"]
+    assert base64.b64decode(saved["assets"][0]["content_base64"]) == b"Known text."
+    assert saved["evaluation_evidence"]["state"] == "candidate"
+    assert not store.unresolved_tool_calls(str(run["id"]))
+
+
+def test_api_persists_separate_procedure_resource_revision_grant(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-api.sqlite3")
+    entry = SkillStore(store).create(_draft())
+    app = create_app(LMStudioProvider(), SecretStr(API_TOKEN), store=store)
+    with TestClient(app) as client:
+        response = client.post(
+            "/runs",
+            headers={"Authorization": f"Bearer {API_TOKEN}"},
+            json={
+                "objective": "Revise one linked reference.",
+                "workspace": ".",
+                "procedure_trial": {"skill_id": entry["id"], "version": 1},
+                "allow_procedure_resource_revision": True,
+            },
+        )
+    assert response.status_code == 201
+    run = response.json()
+    assert run["allow_procedure_revision"] is False
+    assert run["allow_procedure_resource_revision"] is True
+    grants = [
+        event
+        for event in store.list_events(run["id"])
+        if event["event_type"] == "procedure.resource_revision_granted"
+    ]
+    assert len(grants) == 1
+    assert grants[0]["payload"] == {
+        "actor": "local_user",
+        "skill_id": entry["id"],
+        "expected_version": 1,
+    }

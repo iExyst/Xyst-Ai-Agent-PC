@@ -53,6 +53,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
       expect(request.postDataJSON().approved_browser).toBe(true);
       expect(request.postDataJSON().allow_procedure_drafting).toBe(true);
       expect(request.postDataJSON().allow_procedure_revision).toBe(false);
+      expect(request.postDataJSON().allow_procedure_resource_revision).toBe(false);
       expect(request.postDataJSON().file_checks).toEqual([{path: 'input.txt', expected_content: 'fixture\n'}]);
       if (runSubmissions === 1) return route.fulfill({status:503,body:'temporary unavailable',headers});
       return route.fulfill({ json: run, headers });

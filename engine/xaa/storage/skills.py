@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Literal, cast
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from xaa.storage.runs import RunStore, utc_now
 
@@ -229,6 +229,32 @@ class SkillContentRevision(BaseModel):
             for value in (self.old_string, self.new_string)
         ):
             raise ValueError("Targeted replacement strings exceed the procedure byte limit.")
+        return self
+
+
+class SkillResourceRevision(BaseModel):
+    """Write one normalized UTF-8 resource into a new candidate package version."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    skill_id: str = Field(min_length=1, max_length=128)
+    expected_version: int = Field(ge=1, le=127)
+    path: str = Field(min_length=1, max_length=512)
+    content: str = Field(max_length=64 * 1024)
+
+    @model_validator(mode="after")
+    def bounded_resource(self) -> "SkillResourceRevision":
+        try:
+            raw = self.content.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Procedure resources must be valid UTF-8 text.") from exc
+        if len(raw) > 64 * 1024:
+            raise ValueError("Procedure resources are limited to 64 KiB.")
+        SkillAsset(
+            path=self.path,
+            content_base64=base64.b64encode(raw).decode("ascii"),
+            media_type="text/plain",
+            sha256=hashlib.sha256(raw).hexdigest(),
+        )
         return self
 
 
@@ -785,6 +811,188 @@ class SkillStore:
                     "skill_id": revision.skill_id,
                     "version": next_version,
                     "parent_version": current_version,
+                    "call_id": call_id,
+                },
+            )
+            self.runs.record_event(
+                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
+            )
+        return result
+
+    def create_model_resource_revision_from_run(
+        self, run_id: str, owner: str, call_id: str, revision: SkillResourceRevision
+    ) -> dict[str, Any]:
+        """Create a candidate version with one changed UTF-8 resource under a separate grant."""
+        if self.runs.task_scope is not None:
+            raise PermissionError("Specialists cannot revise user-library procedure resources.")
+        if not call_id or len(call_id) > 128:
+            raise ValueError("Procedure resource revision call identity is invalid.")
+        raw_content = revision.content.encode("utf-8")
+        now = utc_now()
+        encoded_arguments = json.dumps(revision.model_dump(mode="json"), sort_keys=True)
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, owner)
+            grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_revision_granted'",
+                (run_id,),
+            ).fetchall()
+            selected = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.selected'",
+                (run_id,),
+            ).fetchall()
+            if len(grants) != 1:
+                raise PermissionError(
+                    "This run has no user authorization to revise procedure resources."
+                )
+            grant = json.loads(grants[0][0])
+            if (
+                grant.get("actor") != "local_user"
+                or grant.get("skill_id") != revision.skill_id
+                or grant.get("expected_version") != revision.expected_version
+                or len(selected) != 1
+                or json.loads(selected[0][0]).get("skill_id") != revision.skill_id
+                or json.loads(selected[0][0]).get("version") != revision.expected_version
+            ):
+                raise PermissionError("Procedure resource edit exceeds the selected run grant.")
+            if connection.execute(
+                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run_id, call_id),
+            ).fetchone():
+                raise SkillConflict("The model procedure-resource call was already used.")
+            entry = connection.execute(
+                "SELECT name,lifecycle_state,active_version FROM skills WHERE id=?",
+                (revision.skill_id,),
+            ).fetchone()
+            latest = connection.execute(
+                "SELECT * FROM skill_versions WHERE skill_id=? ORDER BY version DESC LIMIT 1",
+                (revision.skill_id,),
+            ).fetchone()
+            if entry is None or latest is None:
+                raise SkillConflict("The selected procedure no longer exists.")
+            current_version = int(latest["version"])
+            if entry["lifecycle_state"] == "deprecated":
+                raise SkillConflict(
+                    "Deprecated procedures cannot receive model resource revisions."
+                )
+            if current_version != revision.expected_version:
+                raise SkillConflict("Procedure changed; reload its latest version before revising.")
+            if current_version >= 128:
+                raise SkillConflict("A procedure cannot exceed 128 versions.")
+            prior_evidence: dict[str, Any] = json.loads(latest["evaluation_evidence"])
+            raw_prior_source = prior_evidence.get("source")
+            prior_source: dict[str, Any] = (
+                cast(dict[str, Any], raw_prior_source) if isinstance(raw_prior_source, dict) else {}
+            )
+            prior_assets = connection.execute(
+                "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
+                "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                (revision.skill_id, current_version),
+            ).fetchall()
+            asset_map = {
+                str(item["relative_path"]): SkillAsset(
+                    path=item["relative_path"],
+                    media_type=item["media_type"],
+                    sha256=item["sha256"],
+                    content_base64=base64.b64encode(item["content"]).decode("ascii"),
+                )
+                for item in prior_assets
+            }
+            asset = SkillAsset(
+                path=revision.path,
+                media_type=(
+                    asset_map[revision.path].media_type
+                    if revision.path in asset_map
+                    else "text/plain"
+                ),
+                sha256=hashlib.sha256(raw_content).hexdigest(),
+                content_base64=base64.b64encode(raw_content).decode("ascii"),
+            )
+            edit_mode = "replaced" if revision.path in asset_map else "created"
+            asset_map[revision.path] = asset
+            try:
+                draft = SkillDraft(
+                    name=entry["name"],
+                    content=latest["content"],
+                    description=prior_evidence.get("description", ""),
+                    category=prior_evidence.get("category", ""),
+                    required_tools=json.loads(latest["required_tools"]),
+                    required_permissions=json.loads(latest["required_permissions"]),
+                    assets=list(asset_map.values()),
+                )
+            except ValidationError as exc:
+                raise SkillConflict(
+                    "The resource edit exceeds procedure package limits or has invalid metadata."
+                ) from exc
+            evidence: dict[str, Any] = {
+                "state": "candidate",
+                "provenance": "model_resource_revision",
+                "source": {
+                    **{
+                        str(key): value
+                        for key, value in prior_source.items()
+                        if isinstance(value, str)
+                    },
+                    "resource_revision_run_id": run_id,
+                    "resource_revision_call_id": call_id,
+                    "parent_version": str(current_version),
+                    "parent_provenance": str(prior_evidence.get("provenance", "user")),
+                },
+                "evaluations": [],
+            }
+            next_version = current_version + 1
+            self._insert_version(connection, revision.skill_id, next_version, draft, evidence)
+            connection.execute(
+                "UPDATE skills SET updated_at=? WHERE id=?", (now, revision.skill_id)
+            )
+            summary = {
+                "id": revision.skill_id,
+                "name": entry["name"],
+                "description": draft.description,
+                "category": draft.category,
+                "lifecycle_state": entry["lifecycle_state"],
+                "active_version": entry["active_version"],
+                "latest_version": next_version,
+            }
+            result = {
+                "status": "candidate_version_created",
+                "procedure": summary,
+                "version": next_version,
+                "resource_path": asset.path,
+                "resource_sha256": asset.sha256,
+                "resource_edit": edit_mode,
+                "trust": "untrusted_model_resource_revision",
+                "requires_user_review": True,
+                "notice": "Only this linked UTF-8 resource changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
+            }
+            connection.execute(
+                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.resource_revise','1',?,?,'completed',?,NULL,?,?,?)",
+                (
+                    str(uuid4()),
+                    run_id,
+                    encoded_arguments,
+                    call_id,
+                    json.dumps(result),
+                    now,
+                    now,
+                    call_id,
+                ),
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "tool.intended",
+                {"call_id": call_id, "tool": "procedure.resource_revise", "internal": False},
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "procedure.resource_version_drafted",
+                {
+                    "skill_id": revision.skill_id,
+                    "version": next_version,
+                    "parent_version": current_version,
+                    "path": asset.path,
                     "call_id": call_id,
                 },
             )
