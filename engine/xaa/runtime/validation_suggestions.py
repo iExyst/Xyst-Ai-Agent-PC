@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import PurePosixPath
+from typing import cast
 
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 
@@ -46,6 +48,67 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
             {
                 "label": f"JavaScript tests (npm){suffix}",
                 "rationale": f"{package} was found. This runs the package's configured test script; confirm npm and dependencies are available in the restricted WSL environment.",
+                "argv": argv,
+            }
+        )
+
+    maven_projects = [path for key, path in paths.items() if PurePosixPath(key).name == "pom.xml"]
+    for pom in sorted(maven_projects, key=str.casefold):
+        suggestions.append(
+            {
+                "label": f"Java tests (Maven) — {PurePosixPath(pom).parent}",
+                "rationale": f"{pom} was found. Offline mode prevents dependency downloads; confirm Maven and all required artifacts are available in the restricted WSL environment.",
+                "argv": ["/usr/bin/env", "mvn", "-B", "-o", "-f", pom, "test"],
+            }
+        )
+
+    gradle_files = [
+        path
+        for key, path in paths.items()
+        if PurePosixPath(key).name in {"build.gradle", "build.gradle.kts"}
+    ]
+    for build_file in sorted(gradle_files, key=str.casefold):
+        directory = str(PurePosixPath(build_file).parent)
+        argv = ["/usr/bin/env", "gradle", "--offline"]
+        if directory != ".":
+            argv.extend(["--project-dir", directory])
+        argv.extend(["--build-file", PurePosixPath(build_file).name, "test"])
+        suggestions.append(
+            {
+                "label": f"Java tests (Gradle) — {directory}",
+                "rationale": f"{build_file} was found. Offline mode prevents dependency downloads; confirm Gradle and all required artifacts are available in the restricted WSL environment.",
+                "argv": argv,
+            }
+        )
+
+    composer_projects = [
+        path for key, path in paths.items() if PurePosixPath(key).name == "composer.json"
+    ]
+    for composer_file in sorted(composer_projects, key=str.casefold):
+        try:
+            content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == composer_file.casefold()
+            )
+            parsed: object = json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        manifest = cast(dict[str, object], parsed)
+        scripts = manifest.get("scripts")
+        if not isinstance(scripts, dict) or "test" not in cast(dict[str, object], scripts):
+            continue
+        directory = str(PurePosixPath(composer_file).parent)
+        argv = ["/usr/bin/env", "composer"]
+        if directory != ".":
+            argv.extend(["--working-dir", directory])
+        argv.extend(["run-script", "test", "--no-interaction"])
+        suggestions.append(
+            {
+                "label": f"PHP tests (Composer) — {directory}",
+                "rationale": f"{composer_file} defines a test script. Confirm Composer and its dependencies are available in the restricted WSL environment.",
                 "argv": argv,
             }
         )

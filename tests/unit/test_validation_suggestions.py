@@ -60,6 +60,52 @@ def test_suggests_go_and_nested_dotnet_checks():
     ]
 
 
+def test_suggests_maven_gradle_and_declared_composer_test_scripts():
+    result = suggest_validation_commands(
+        snapshot(
+            ("services/java/pom.xml", b"<project />"),
+            ("apps/android/build.gradle.kts", b"plugins {}"),
+            ("apps/php/composer.json", b'{"scripts":{"test":"phpunit"}}'),
+            ("apps/php2/composer.json", b'{"require":{"php":"^8.3"}}'),
+            ("apps/bad/composer.json", b"not-json"),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "Java tests (Maven) — services/java",
+        "Java tests (Gradle) — apps/android",
+        "PHP tests (Composer) — apps/php",
+    ]
+    assert result[0]["argv"] == [
+        "/usr/bin/env",
+        "mvn",
+        "-B",
+        "-o",
+        "-f",
+        "services/java/pom.xml",
+        "test",
+    ]
+    assert result[1]["argv"] == [
+        "/usr/bin/env",
+        "gradle",
+        "--offline",
+        "--project-dir",
+        "apps/android",
+        "--build-file",
+        "build.gradle.kts",
+        "test",
+    ]
+    assert result[2]["argv"] == [
+        "/usr/bin/env",
+        "composer",
+        "--working-dir",
+        "apps/php",
+        "run-script",
+        "test",
+        "--no-interaction",
+    ]
+
+
 def test_suggests_every_supported_manifest_in_a_monorepo():
     result = suggest_validation_commands(
         snapshot(
