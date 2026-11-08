@@ -11,12 +11,25 @@ using System.Text;
 
 public static class XaaInstallerWindowApi {
     public delegate bool EnumChildCallback(IntPtr window, IntPtr parameter);
+    public delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
 
     [DllImport("user32.dll")]
     public static extern bool EnumChildWindows(IntPtr parent, EnumChildCallback callback, IntPtr parameter);
 
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr window);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
@@ -30,10 +43,27 @@ public static class XaaInstallerWindowApi {
         return windows.ToArray();
     }
 
+    public static IntPtr[] TopLevelWindows(int targetProcessId) {
+        var windows = new List<IntPtr>();
+        EnumWindows((window, parameter) => {
+            uint processId;
+            GetWindowThreadProcessId(window, out processId);
+            if (processId == (uint)targetProcessId) windows.Add(window);
+            return true;
+        }, IntPtr.Zero);
+        return windows.ToArray();
+    }
+
     public static string Text(IntPtr window) {
         var text = new StringBuilder(512);
         GetWindowText(window, text, text.Capacity);
         return text.ToString();
+    }
+
+    public static string ClassName(IntPtr window) {
+        var className = new StringBuilder(256);
+        GetClassName(window, className, className.Capacity);
+        return className.ToString();
     }
 }
 '@
@@ -93,8 +123,8 @@ try {
             $xaaReport.uninstaller_runtime_seconds = [Math]::Round(([DateTime]::UtcNow - $xaaStartedAt).TotalSeconds, 2)
             throw "Uninstaller exited before the data-removal choice (code $($xaaProcess.ExitCode), runtime $($xaaReport.uninstaller_runtime_seconds)s)."
         }
-        $xaaWindow = $xaaProcess.MainWindowHandle
-        if ($xaaWindow -ne [IntPtr]::Zero) {
+        $xaaWindows = [XaaInstallerWindowApi]::TopLevelWindows($xaaProcess.Id)
+        foreach ($xaaWindow in $xaaWindows) {
             $xaaControls = [XaaInstallerWindowApi]::ChildWindows($xaaWindow)
             $xaaCheckbox = $null
             $xaaUninstallButton = $null
@@ -111,11 +141,31 @@ try {
                 $xaaReport.explicit_delete_selected = $true
                 [void][XaaInstallerWindowApi]::SendMessage($xaaUninstallButton, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
                 $xaaConfirmClicked = $true
+                break
             }
         }
         if (-not $xaaConfirmClicked) { Start-Sleep -Milliseconds 250 }
     }
-    if (-not $xaaConfirmClicked) { throw 'Timed out finding the uninstaller data-removal checkbox and confirmation button.' }
+    if (-not $xaaConfirmClicked) {
+        $xaaReport.window_diagnostics = @(
+            foreach ($xaaWindow in [XaaInstallerWindowApi]::TopLevelWindows($xaaProcess.Id)) {
+                [pscustomobject]@{
+                    text = [XaaInstallerWindowApi]::Text($xaaWindow)
+                    class = [XaaInstallerWindowApi]::ClassName($xaaWindow)
+                    visible = [XaaInstallerWindowApi]::IsWindowVisible($xaaWindow)
+                    children = @(
+                        foreach ($xaaControl in [XaaInstallerWindowApi]::ChildWindows($xaaWindow)) {
+                            [pscustomobject]@{
+                                text = [XaaInstallerWindowApi]::Text($xaaControl)
+                                class = [XaaInstallerWindowApi]::ClassName($xaaControl)
+                            }
+                        }
+                    )
+                }
+            }
+        )
+        throw 'Timed out finding the uninstaller data-removal checkbox and confirmation button.'
+    }
     if (-not $xaaProcess.WaitForExit(120000)) { throw 'Uninstaller did not finish within 120 seconds.' }
     $xaaReport.uninstaller_exit_code = $xaaProcess.ExitCode
     $xaaReport.app_data_removed = -not (Test-Path -LiteralPath $xaaDataDir) -and -not (Test-Path -LiteralPath $xaaConfigDir)
