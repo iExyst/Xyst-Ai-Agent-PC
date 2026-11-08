@@ -14,11 +14,6 @@ $xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-install
 if (-not $xaaInstallDir.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaInstallDir)) {
     throw 'Installer test destination must be a new directory under RUNNER_TEMP.'
 }
-$xaaPriorInstallLog = Join-Path $env:RUNNER_TEMP 'xaa-prior-installer.log'
-$xaaCurrentInstallLog = Join-Path $env:RUNNER_TEMP 'xaa-current-installer.log'
-if ((Test-Path -LiteralPath $xaaPriorInstallLog) -or (Test-Path -LiteralPath $xaaCurrentInstallLog)) {
-    throw 'Installer log paths must be new files under RUNNER_TEMP.'
-}
 $xaaManifest = Get-Content -LiteralPath 'build/installer/manifest.json' -Raw | ConvertFrom-Json
 $xaaInstallerName = $xaaManifest.artifacts.installer.filename
 if ([IO.Path]::GetFileName($xaaInstallerName) -ne $xaaInstallerName) { throw 'Installer manifest filename escaped its staging directory.' }
@@ -49,7 +44,7 @@ $xaaBackupFixture = Join-Path $xaaAcceptanceRoot 'fixture.json'
 $xaaReport = @{ passed = $false; environment = 'disposable hosted Windows runner'; unsigned = $true }
 try {
     if ($xaaPriorInstaller) {
-        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S', "/D=$xaaInstallDir", "/LOG=$xaaPriorInstallLog") -WindowStyle Hidden -Wait -PassThru
+        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
         if ($xaaPriorSetup.ExitCode -ne 0) { throw "Prior installer exit code $($xaaPriorSetup.ExitCode)" }
         $xaaReport.prior_version = $xaaPriorManifest.version
         $xaaReport.prior_install_verified = (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
@@ -63,7 +58,7 @@ try {
     }
     [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
     $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
-    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir", "/LOG=$xaaCurrentInstallLog") -WindowStyle Hidden -Wait -PassThru
+    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
     if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
     $xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
@@ -129,14 +124,6 @@ try {
     $xaaReport.installed_boot_verified = $true
 } finally {
     $xaaInstallerLogDirectory = Join-Path (Get-Location).Path 'build/installer'
-    if (Test-Path -LiteralPath $xaaPriorInstallLog) {
-        Copy-Item -LiteralPath $xaaPriorInstallLog -Destination (Join-Path $xaaInstallerLogDirectory 'prior-installer.log')
-        $xaaReport.prior_installer_log = 'build/installer/prior-installer.log'
-    }
-    if (Test-Path -LiteralPath $xaaCurrentInstallLog) {
-        Copy-Item -LiteralPath $xaaCurrentInstallLog -Destination (Join-Path $xaaInstallerLogDirectory 'current-installer.log')
-        $xaaReport.current_installer_log = 'build/installer/current-installer.log'
-    }
     $xaaUninstaller = Join-Path $xaaInstallDir 'uninstall.exe'
     if (Test-Path -LiteralPath $xaaUninstaller) {
         $xaaUninstall = Start-Process -FilePath $xaaUninstaller -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
