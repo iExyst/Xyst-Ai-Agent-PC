@@ -33,7 +33,7 @@ Final project review now detects captured `Rakefile` test tasks declared as `tas
 
 ## Close unexpected managed-browser pages (2026-11-08)
 
-The disposable browser context now closes pages opened beyond the primary page. Popup requests still pass through the context-wide GET/HEAD and approved-host guard and the DNS-pinning proxy, while only the primary page can supply returned text or screenshots. A focused async unit regression verifies the primary page stays open and an additional page is closed. Real Edge popup and redirect-chain acceptance remains open; no live LLM inference is involved. See [`managed-browser.md`](architecture/managed-browser.md).
+The disposable browser context now closes pages opened beyond the primary page. Popup requests still pass through the context-wide GET/HEAD and approved-host guard and the DNS-pinning proxy, while only the primary page can supply returned text or screenshots. A focused async unit regression verifies the primary page stays open and an additional page is closed. Hosted run [42515425092](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42515425092) passed both Windows jobs, including the full Python suite and installer acceptance. Real Edge popup and redirect-chain acceptance remains open; no live LLM inference is involved. See [`managed-browser.md`](architecture/managed-browser.md).
 
 ## Complete pinned review of platform-category exclusions (2026-11-08)
 
