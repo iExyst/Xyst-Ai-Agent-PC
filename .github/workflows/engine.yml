@@ -109,22 +109,16 @@ jobs:
             (Get-FileHash -LiteralPath (Join-Path $nsisPath 'NSIS.exe') -Algorithm SHA1).Hash -eq $nsisHash -and
             (Get-FileHash -LiteralPath $utilityPath -Algorithm SHA1).Hash -eq $utilityHash
           if (-not $nsisValid) {
-            $archive = Join-Path $env:RUNNER_TEMP 'xaa-nsis-3.13.zip'
-            $extractRoot = Join-Path $env:RUNNER_TEMP 'xaa-nsis-3.13'
-            Invoke-WebRequest -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip' -OutFile $archive
-            if ((Get-FileHash -LiteralPath $archive -Algorithm SHA1).Hash -ne 'DB14F8AF2EA346B786C6AE19343F61AAF5E09B8E') { throw 'Tauri NSIS archive SHA-1 mismatch.' }
-            if (Test-Path -LiteralPath $extractRoot) { Remove-Item -LiteralPath $extractRoot -Recurse -Force }
-            Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot
-            $extractedNsis = Join-Path $extractRoot 'nsis-3.13'
-            if (-not (Test-Path -LiteralPath (Join-Path $extractedNsis 'NSIS.exe'))) { throw 'Tauri NSIS archive layout changed.' }
+            $archive = '.github/vendor/nsis-3.13-tools.zip'
+            if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'FCF5B13FD91D2D40BC425352277504DBE2E8BE43543474912C7BAD69DACE4B03') { throw 'Vendored Tauri NSIS cache SHA-256 mismatch.' }
             if (Test-Path -LiteralPath $nsisPath) { Remove-Item -LiteralPath $nsisPath -Recurse -Force }
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $nsisPath) | Out-Null
-            Move-Item -LiteralPath $extractedNsis -Destination $nsisPath
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $utilityPath) | Out-Null
-            Copy-Item -LiteralPath '.github/vendor/nsis_tauri_utils-v0.5.3.dll' -Destination $utilityPath
-            if ((Get-FileHash -LiteralPath (Join-Path $nsisPath 'NSIS.exe') -Algorithm SHA1).Hash -ne $nsisHash) { throw 'Tauri NSIS executable SHA-1 mismatch.' }
-            if ((Get-FileHash -LiteralPath $utilityPath -Algorithm SHA1).Hash -ne $utilityHash) { throw 'Tauri NSIS utility DLL SHA-1 mismatch.' }
+            Expand-Archive -LiteralPath $archive -DestinationPath $nsisPath
           }
+          $missingFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $nsisPath $_)) })
+          if ($missingFiles.Count -gt 0) { throw "Tauri NSIS cache is missing required files: $($missingFiles -join ', ')" }
+          if ((Get-FileHash -LiteralPath (Join-Path $nsisPath 'NSIS.exe') -Algorithm SHA1).Hash -ne $nsisHash) { throw 'Tauri NSIS executable SHA-1 mismatch.' }
+          if ((Get-FileHash -LiteralPath $utilityPath -Algorithm SHA1).Hash -ne $utilityHash) { throw 'Tauri NSIS utility DLL SHA-1 mismatch.' }
       - uses: actions/cache/save@v4
         if: success() && steps.nsis-cache.outputs.cache-hit != 'true'
         with:
