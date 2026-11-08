@@ -6,7 +6,7 @@ Updated 2026-11-08.
 
 Added `scripts/live_cli_chat_diagnostic.py` to exercise the actual `xaa chat` subprocess against a disposable authenticated X.A.A. API and a temporary workspace. A real LM Studio `qwen/qwen3.5-9b` run read a random fixture marker with `workspace.read_file`, returned the exact marker to the terminal, reached `verifying`, and persisted the user/assistant turn in the SQLite session. The stored tool record is `completed`; the workspace contained only the generated fixture; no user project changed. The model was unloaded after acceptance. Sanitized summary: `docs/releases/evidence/live-cli-chat.json`; full local report: `.acceptance/live-cli-chat-1c80e6f2-e1fc-4868-b4cb-6e9151998583/report.json`.
 
-Ruff, formatting and strict Pyright pass for the acceptance script. This verifies one model and one synthetic turn. Desktop-session unification and broad live CLI reliability remain open; overall release completion remains approximately 16%.
+Ruff, formatting and strict Pyright pass for the acceptance script, and all five CLI-session unit tests pass. Hosted run [42446607389](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42446607389) passed both source and installer jobs on rerun, including the full Python suite and installed-package checks. The initial source attempt had a 30-second Playwright timeout waiting for the engine-token field in the existing specialist review UI test; that same three-case suite passed locally and in the hosted rerun. This verifies one model and one synthetic turn. Desktop-session unification and broad live CLI reliability remain open; overall release completion remains approximately 16%.
 
 ## Atomic multi-resource procedure edits (2026-11-08)
 
