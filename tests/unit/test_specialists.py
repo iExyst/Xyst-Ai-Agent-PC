@@ -551,6 +551,11 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
         await provider.close()
     assert store.get_run(run_id)["state"] == "verifying"
     assert TaskStore(store).records(run_id)[0]["status"] == "verifying"
+    assert any(
+        event["event_type"] == "plan.execution_authorized"
+        and event["payload"] == {"actor": "coordinator", "source": "plan_run_ready"}
+        for event in store.list_events(run_id)
+    )
     assert len(store.conversation_messages(run_id)) == 3
     assert not store.unresolved_tool_calls(run_id)
     specialist_deltas = [

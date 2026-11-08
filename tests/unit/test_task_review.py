@@ -17,7 +17,7 @@ from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
 
-def setup_candidate(root):
+def setup_candidate(root, *, authorize_plan=False):
     target = root / "evidence.txt"
     target.write_bytes(b"actual evidence")
     store = RunStore(root / "review.sqlite3")
@@ -63,6 +63,13 @@ def setup_candidate(root):
     )
     store.transition(run_id, RunState.RUNNING, owner=parent)
     store.transition(run_id, RunState.VERIFYING, owner=parent)
+    if authorize_plan:
+        store.append_worker_event(
+            run_id,
+            parent,
+            "plan.execution_authorized",
+            {"actor": "local-user", "source": "plan_dispatch"},
+        )
     store.release_lease(run_id, parent)
     return store, run_id, target
 
@@ -233,7 +240,7 @@ def test_user_can_reject_candidate_without_claiming_verification(workspace_tmp_p
 
 
 def test_accepted_prerequisite_enables_supervised_dependent_dispatch(workspace_tmp_path):
-    store, run_id, _ = setup_candidate(workspace_tmp_path)
+    store, run_id, _ = setup_candidate(workspace_tmp_path, authorize_plan=True)
 
     class DependentReader(LMStudioProvider):
         def __init__(self):
@@ -288,9 +295,6 @@ def test_accepted_prerequisite_enables_supervised_dependent_dispatch(workspace_t
             },
         )
         assert accepted.status_code == 200
-        response = client.post(dispatch, headers=headers)
-        assert response.status_code == 202
-        assert response.json()["state"] == "running"
         assert provider.finished.wait(3)
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:

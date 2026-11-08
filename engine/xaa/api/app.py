@@ -1949,6 +1949,12 @@ def create_app(
             record = run_store.transition(
                 run_id, RunState.RUNNING, reason="user_dispatched_ready_tasks", owner=token
             )
+            run_store.append_worker_event(
+                run_id,
+                token,
+                "plan.execution_authorized",
+                {"actor": "local-user", "source": "plan_dispatch"},
+            )
             if not supervisor.submit_plan(run_id, token):
                 run_store.transition(
                     run_id, RunState.VERIFYING, reason="worker_still_active", owner=token
@@ -1988,6 +1994,50 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             await review_candidate(run_store, run_id, task_id, payload)
+            if payload.decision == "accept":
+                run = run_store.get_run(run_id)
+                execution_authorized = any(
+                    event["event_type"] == "plan.execution_authorized"
+                    for event in run_store.list_events(run_id)
+                )
+                ready, _blocked = TaskStore(run_store).readiness(run_id)
+                if (
+                    run is not None
+                    and run["state"] == "verifying"
+                    and execution_authorized
+                    and ready
+                ):
+                    token = run_store.acquire_lease(
+                        run_id, "accepted-dependency-dispatch", seconds=180
+                    )
+                    if token is not None:
+                        try:
+                            current = run_store.get_run(run_id)
+                            current_ready, _current_blocked = TaskStore(run_store).readiness(run_id)
+                            if (
+                                current is not None
+                                and current["state"] == "verifying"
+                                and current_ready
+                            ):
+                                run_store.transition(
+                                    run_id,
+                                    RunState.RUNNING,
+                                    reason="accepted_dependency_ready_tasks",
+                                    owner=token,
+                                )
+                                if not supervisor.submit_plan(run_id, token):
+                                    run_store.transition(
+                                        run_id,
+                                        RunState.VERIFYING,
+                                        reason="worker_still_active",
+                                        owner=token,
+                                    )
+                                    run_store.release_lease(run_id, token)
+                            else:
+                                run_store.release_lease(run_id, token)
+                        except BaseException:
+                            run_store.release_lease(run_id, token)
+                            raise
         except FilesystemWorkerError as exc:
             raise HTTPException(
                 status_code=409,

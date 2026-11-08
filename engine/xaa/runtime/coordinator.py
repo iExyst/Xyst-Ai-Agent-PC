@@ -687,6 +687,12 @@ class Coordinator:
                 idempotency_key=call["id"],
             ):
                 raise ValueError("Specialist dispatch requires reconciliation.")
+            self.store.append_worker_event(
+                run_id,
+                token,
+                "plan.execution_authorized",
+                {"actor": "coordinator", "source": "plan_run_ready"},
+            )
             statuses = await SpecialistRunner(
                 self.store, self.provider, stream_responses=self.stream_responses
             ).run_ready(run_id, token, deadline=deadline)
