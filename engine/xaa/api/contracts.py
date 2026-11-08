@@ -238,7 +238,9 @@ class ProjectValidationSummary(BaseModel):
     required: bool
     current_snapshot_sha256: str | None
     evidence: list[ProjectValidationEvidence]
-    suggestions: list[ProjectValidationSuggestion] = Field(default_factory=list)
+    suggestions: list[ProjectValidationSuggestion] = Field(
+        default_factory=lambda: list[ProjectValidationSuggestion]()
+    )
     unresolved_call_ids: list[str] = Field(default_factory=list)
 
 
