@@ -90,6 +90,27 @@ test('client sends bearer token and objective only to the loopback engine', asyn
   assert.equal(request.init.redirect, 'error');
 });
 
+test('desktop uses the authenticated shared chat-session API', async () => {
+  const requests=[];
+  const client=new EngineClient('http://127.0.0.1:8765','x'.repeat(32),async(url,init)=>{
+    requests.push({url:new URL(url).pathname,method:init.method??'GET',authorization:init.headers.get('Authorization'),body:init.body?JSON.parse(init.body):undefined});
+    return new Response(JSON.stringify({session_id:'shared',model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages:[]}),{headers:{'content-type':'application/json'}});
+  });
+  await client.chatSessions();
+  await client.openChatSession('shared',{model:'fixture/model',workspace:'C:\\fixture',mode:'observe'});
+  await client.chatSession('shared');
+  await client.appendChatTurn('shared',{run_id:'run-1',model:'fixture/model',workspace:'C:\\fixture',mode:'observe',user_message:'Continue',assistant_message:'Saved'});
+  assert.deepEqual(requests.map(item=>[item.url,item.method]),[
+    ['/chat/sessions','GET'],
+    ['/chat/sessions/shared','POST'],
+    ['/chat/sessions/shared','GET'],
+    ['/chat/sessions/shared/turn','POST'],
+  ]);
+  assert.ok(requests.every(item=>item.authorization===`Bearer ${'x'.repeat(32)}`));
+  assert.deepEqual(requests[1].body,{model:'fixture/model',workspace:'C:\\fixture',mode:'observe'});
+  assert.equal(requests[3].body.user_message,'Continue');
+});
+
 test('procedure package export is authenticated and remains binary', async () => {
   let request;
   const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async (url, init) => {

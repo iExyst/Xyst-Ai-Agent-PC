@@ -28,6 +28,8 @@ from starlette.middleware.cors import CORSMiddleware
 from xaa.api.contracts import (
     ArtifactRecord,
     CLIChatSessionRecord,
+    CLIChatSessionSettings,
+    CLIChatSessionSummary,
     MemoryRecord,
     PlanRecord,
     ProjectValidationSummary,
@@ -1512,6 +1514,29 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail="Chat session not found.")
         return record
+
+    @app.get("/chat/sessions", response_model=list[CLIChatSessionSummary])
+    def list_cli_chat_sessions(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        return cli_chat_store.list_sessions()
+
+    @app.post(
+        "/chat/sessions/{session_id}",
+        response_model=CLIChatSessionRecord,
+    )
+    def ensure_cli_chat_session(
+        session_id: str,
+        payload: CLIChatSessionSettings,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return cli_chat_store.ensure_session(
+                session_id,
+                model=payload.model,
+                workspace=payload.workspace,
+                mode=payload.mode,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post(
         "/chat/sessions/{session_id}/turn",

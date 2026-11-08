@@ -84,6 +84,22 @@ class CLIChatSessionRecord(BaseModel):
     messages: list[CLIChatMessageRecord]
 
 
+class CLIChatSessionSummary(BaseModel):
+    session_id: str
+    model: str
+    workspace: str | None
+    mode: Literal["observe", "workspace"]
+    updated_at: datetime
+
+
+class CLIChatSessionSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1, max_length=256)
+    workspace: str | None = Field(default=None, max_length=4096)
+    mode: Literal["observe", "workspace"]
+
+
 class UsageReport(BaseModel):
     prompt_tokens: int = Field(ge=0)
     completion_tokens: int = Field(ge=0)

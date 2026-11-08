@@ -60,6 +60,66 @@ class CLIChatStore:
             "messages": [dict(item) for item in reversed(messages)],
         }
 
+    def list_sessions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """List the most recently used local coordinator-backed chat sessions."""
+        if not 1 <= limit <= 100:
+            raise ValueError("Chat session page size must be 1–100.")
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT s.id AS session_id,c.model,c.workspace,c.mode,s.updated_at "
+                "FROM sessions AS s JOIN cli_chat_config AS c ON c.session_id=s.id "
+                "WHERE s.channel='cli' AND s.account_id='local-user' "
+                "ORDER BY s.updated_at DESC,s.id LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def ensure_session(
+        self,
+        session_id: str,
+        *,
+        model: str,
+        workspace: str | None,
+        mode: ChatMode,
+    ) -> dict[str, Any]:
+        """Create an empty named session or validate its immutable runtime settings."""
+        self.validate_id(session_id)
+        self._validate_settings(model, workspace, mode)
+        now = utc_now()
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT channel,account_id FROM sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if existing is not None and (
+                existing["channel"] != "cli" or existing["account_id"] != "local-user"
+            ):
+                raise ValueError("Chat session name is already used by another session.")
+            saved = connection.execute(
+                "SELECT model,workspace,mode FROM cli_chat_config WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            if saved is not None and (
+                saved["model"] != model or saved["workspace"] != workspace or saved["mode"] != mode
+            ):
+                raise ValueError(
+                    "Chat session settings changed. Reset the session or choose a new session ID."
+                )
+            if saved is None:
+                connection.execute(
+                    "INSERT INTO sessions(id,channel,account_id,title,created_at,updated_at) "
+                    "VALUES(?,'cli','local-user',?,?,?)",
+                    (session_id, f"Chat {session_id}", now, now),
+                )
+                connection.execute(
+                    "INSERT INTO cli_chat_config(session_id,model,workspace,mode) VALUES(?,?,?,?)",
+                    (session_id, model, workspace, mode),
+                )
+        result = self.get(session_id)
+        if result is None:
+            raise RuntimeError("Chat session disappeared after it was opened.")
+        return result
+
     def list_acp(
         self, *, model: str, workspace: str, mode: ChatMode, after: str = "", limit: int = 50
     ) -> list[dict[str, str]]:
@@ -92,12 +152,7 @@ class CLIChatStore:
         assistant_message: str,
     ) -> dict[str, Any]:
         self.validate_id(session_id)
-        if not model.strip() or len(model) > 256:
-            raise ValueError("Chat model identifier must contain 1–256 characters.")
-        if workspace is not None and len(workspace) > 4096:
-            raise ValueError("Chat workspace path exceeds 4,096 characters.")
-        if mode not in {"observe", "workspace"}:
-            raise ValueError("Unsupported chat mode.")
+        self._validate_settings(model, workspace, mode)
         if not user_message.strip() or len(user_message.encode("utf-8")) > 2000:
             raise ValueError("User chat message must contain 1–2,000 UTF-8 bytes.")
         if not assistant_message.strip() or len(assistant_message) > 16000:
@@ -133,8 +188,13 @@ class CLIChatStore:
                     "INSERT INTO cli_chat_config(session_id,model,workspace,mode) VALUES(?,?,?,?)",
                     (session_id, model, workspace, mode),
                 )
-            if connection.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
+            run = connection.execute(
+                "SELECT model,workspace,mode FROM runs WHERE id=?", (run_id,)
+            ).fetchone()
+            if run is None:
                 raise KeyError(run_id)
+            if run["model"] != model or run["workspace"] != workspace or run["mode"] != mode:
+                raise ValueError("Chat turn settings must match its coordinator run.")
             sequence = connection.execute(
                 "SELECT COALESCE(MAX(sequence),0)+1 FROM messages WHERE session_id=?",
                 (session_id,),
@@ -196,6 +256,15 @@ class CLIChatStore:
         if result is None:
             raise RuntimeError("Chat session disappeared after a committed turn.")
         return result
+
+    @staticmethod
+    def _validate_settings(model: str, workspace: str | None, mode: ChatMode) -> None:
+        if not model.strip() or len(model) > 256:
+            raise ValueError("Chat model identifier must contain 1–256 characters.")
+        if workspace is not None and len(workspace) > 4096:
+            raise ValueError("Chat workspace path exceeds 4,096 characters.")
+        if mode not in {"observe", "workspace"}:
+            raise ValueError("Unsupported chat mode.")
 
     def delete(self, session_id: str) -> bool:
         self.validate_id(session_id)

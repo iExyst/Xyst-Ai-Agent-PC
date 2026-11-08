@@ -2,6 +2,10 @@
 
 Updated 2026-11-08.
 
+## Desktop and terminal shared conversations (2026-11-08)
+
+The desktop can now explicitly load terminal or desktop chat sessions from the shared SQLite store, open a session bound to its original model/workspace/mode, and continue it through the normal run coordinator. It adds up to 5 KiB of bounded, untrusted prior text to the run and saves a public answer after it reaches review or completion. Shared turns are text-only and capped at 2,000 UTF-8 bytes; the session picker lists the latest 50 sessions. Focused API/storage and desktop browser coverage passed, along with TypeScript, generated-contract checks, Ruff, Pyright and the production desktop build. This proves deterministic session exchange, not another live-model or installed-desktop acceptance. Full session editing, attachments, cross-profile sync and broader conversation parity remain open; overall release completion remains approximately 16%.
+
 ## Specialist inference timeout classification (2026-11-08)
 
 Specialist model-call `TimeoutError`s are now persisted with the bounded stage `chat` or `chat_streamed` and a stable error class; raw exception text is not saved. This improves diagnosis without automatically replaying an inference whose usage may be unknown. The focused specialist suite passes (11 tests), Ruff and formatting pass, and strict Pyright passes. A new real Qwen3.5 9B attempt stopped earlier in the harmless parent tool-use diagnostic because the model did not return the expected tool result; both specialists remained queued, there were no unresolved calls or workspace changes, and the owned instance was unloaded. It does not validate the new specialist timeout classification. Evidence: `.acceptance/live-task-workspaces-timeout-classification-20261108/report.json`. Hosted run [42449682521](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42449682521) passed both Windows source and installer jobs, including the full Python suite and installed-package acceptance.

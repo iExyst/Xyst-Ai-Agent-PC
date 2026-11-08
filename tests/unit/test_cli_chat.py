@@ -24,6 +24,13 @@ def test_acp_session_listing_filters_scope_and_cursor(workspace_tmp_path):
         mode="observe",
         model="local/model",
     )["id"]
+    other_run_id = store.create_run(
+        objective="Other model fixture",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="other/model",
+    )["id"]
     for session_id, model in (
         ("a" * 32, "local/model"),
         ("b" * 32, "other/model"),
@@ -32,7 +39,7 @@ def test_acp_session_listing_filters_scope_and_cursor(workspace_tmp_path):
     ):
         chat.append_turn(
             session_id,
-            run_id=run_id,
+            run_id=other_run_id if model == "other/model" else run_id,
             model=model,
             workspace=str(workspace_tmp_path),
             mode="observe",
@@ -153,6 +160,126 @@ def test_cli_chat_session_persists_bounded_turns_and_rejects_config_change(works
         raise AssertionError("Session accepted a changed model without reset")
     assert reopened.delete("terminal")
     assert reopened.get("terminal") is None
+
+
+def test_chat_sessions_can_be_opened_for_desktop_and_listed_across_clients(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "shared-chat-session.sqlite3")
+    chat = CLIChatStore(store)
+    opened = chat.ensure_session(
+        "desktop-thread",
+        model="local/model",
+        workspace=None,
+        mode="observe",
+    )
+    assert opened == {
+        "session_id": "desktop-thread",
+        "model": "local/model",
+        "workspace": None,
+        "mode": "observe",
+        "messages": [],
+    }
+    listed = chat.list_sessions()
+    assert len(listed) == 1
+    assert listed[0]["session_id"] == "desktop-thread"
+    assert listed[0]["model"] == "local/model"
+    assert listed[0]["workspace"] is None
+    assert listed[0]["mode"] == "observe"
+    assert isinstance(listed[0]["updated_at"], str)
+    try:
+        chat.ensure_session(
+            "desktop-thread",
+            model="different/model",
+            workspace=None,
+            mode="observe",
+        )
+    except ValueError as exc:
+        assert "settings changed" in str(exc)
+    else:
+        raise AssertionError("Shared session accepted incompatible runtime settings")
+
+
+def test_chat_session_listing_api_is_authenticated_and_returns_shared_sessions(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "shared-chat-session-api.sqlite3")
+    with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
+        assert client.get("/chat/sessions").status_code == 401
+        assert client.get("/chat/sessions", headers=HEADERS).json() == []
+        opened = client.post(
+            "/chat/sessions/desktop-thread",
+            headers=HEADERS,
+            json={"model": "local/model", "workspace": None, "mode": "observe"},
+        )
+        assert opened.status_code == 200
+        assert opened.json()["messages"] == []
+        listed = client.get("/chat/sessions", headers=HEADERS)
+        assert listed.status_code == 200
+        assert len(listed.json()) == 1
+        assert listed.json()[0]["session_id"] == "desktop-thread"
+        conflict = client.post(
+            "/chat/sessions/desktop-thread",
+            headers=HEADERS,
+            json={"model": "other/model", "workspace": None, "mode": "observe"},
+        )
+        assert conflict.status_code == 409
+
+
+def test_desktop_api_continues_terminal_session_in_the_same_sqlite_history(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "terminal-desktop-shared.sqlite3")
+    chat = CLIChatStore(store)
+    first_run = store.create_run(
+        objective="Terminal first turn",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="local/model",
+    )["id"]
+    chat.append_turn(
+        "terminal-thread",
+        run_id=first_run,
+        model="local/model",
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        user_message="What is here?",
+        assistant_message="A fixture project.",
+    )
+    second_run = store.create_run(
+        objective="Desktop follow-up",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="local/model",
+    )["id"]
+    with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
+        listed = client.get("/chat/sessions", headers=HEADERS)
+        assert listed.status_code == 200
+        assert listed.json()[0]["session_id"] == "terminal-thread"
+        loaded = client.get("/chat/sessions/terminal-thread", headers=HEADERS)
+        assert [item["content"] for item in loaded.json()["messages"]] == [
+            "What is here?",
+            "A fixture project.",
+        ]
+        continued = client.post(
+            "/chat/sessions/terminal-thread/turn",
+            headers=HEADERS,
+            json={
+                "run_id": second_run,
+                "model": "local/model",
+                "workspace": str(workspace_tmp_path),
+                "mode": "observe",
+                "user_message": "Add details.",
+                "assistant_message": "It contains a sample file.",
+            },
+        )
+        assert continued.status_code == 200
+        assert [item["content"] for item in continued.json()["messages"]] == [
+            "What is here?",
+            "A fixture project.",
+            "Add details.",
+            "It contains a sample file.",
+        ]
+        assert {item["run_id"] for item in continued.json()["messages"]} == {
+            first_run,
+            second_run,
+        }
 
 
 def test_cli_chat_api_authenticates_and_keeps_messages_in_session_scope(workspace_tmp_path):

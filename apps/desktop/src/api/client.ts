@@ -29,6 +29,9 @@ export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
+export type ChatSession = components['schemas']['CLIChatSessionRecord'];
+export type ChatSessionSummary = components['schemas']['CLIChatSessionSummary'];
+export type ChatSessionSettings = components['schemas']['CLIChatSessionSettings'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -65,6 +68,15 @@ export class EngineClient {
 
   createRun(input: CreateRun, signal?: AbortSignal): Promise<Run> {
     return this.#request('/runs', { method: 'POST', body: JSON.stringify(input), ...(signal ? { signal } : {}) });
+  }
+
+  chatSessions(): Promise<ChatSessionSummary[]> { return this.#request('/chat/sessions'); }
+  chatSession(sessionId: string): Promise<ChatSession> { return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}`); }
+  openChatSession(sessionId: string, settings: ChatSessionSettings): Promise<ChatSession> {
+    return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}`, {method:'POST',body:JSON.stringify(settings)});
+  }
+  appendChatTurn(sessionId: string, input: components['schemas']['CLIChatTurnRequest']): Promise<ChatSession> {
+    return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}/turn`, {method:'POST',body:JSON.stringify(input)});
   }
 
   usage(id: string, signal?: AbortSignal): Promise<components['schemas']['UsageReport']> {

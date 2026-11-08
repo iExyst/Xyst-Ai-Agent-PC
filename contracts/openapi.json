@@ -120,6 +120,88 @@
         "title": "CLIChatSessionRecord",
         "type": "object"
       },
+      "CLIChatSessionSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "observe",
+              "workspace"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace"
+          }
+        },
+        "required": [
+          "model",
+          "mode"
+        ],
+        "title": "CLIChatSessionSettings",
+        "type": "object"
+      },
+      "CLIChatSessionSummary": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "observe",
+              "workspace"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace"
+          }
+        },
+        "required": [
+          "session_id",
+          "model",
+          "workspace",
+          "mode",
+          "updated_at"
+        ],
+        "title": "CLIChatSessionSummary",
+        "type": "object"
+      },
       "CLIChatTurnRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5092,6 +5174,33 @@
         "summary": "Delete Acp Chat Session"
       }
     },
+    "/chat/sessions": {
+      "get": {
+        "operationId": "list_cli_chat_sessions_chat_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CLIChatSessionSummary"
+                  },
+                  "title": "Response List Cli Chat Sessions Chat Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Cli Chat Sessions"
+      }
+    },
     "/chat/sessions/{session_id}": {
       "delete": {
         "operationId": "delete_cli_chat_session_chat_sessions__session_id__delete",
@@ -5169,6 +5278,58 @@
           }
         ],
         "summary": "Get Cli Chat Session"
+      },
+      "post": {
+        "operationId": "ensure_cli_chat_session_chat_sessions__session_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIChatSessionSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIChatSessionRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ensure Cli Chat Session"
       }
     },
     "/chat/sessions/{session_id}/turn": {

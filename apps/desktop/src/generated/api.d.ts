@@ -188,6 +188,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cli Chat Sessions */
+        get: operations["list_cli_chat_sessions_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -198,7 +215,8 @@ export interface paths {
         /** Get Cli Chat Session */
         get: operations["get_cli_chat_session_chat_sessions__session_id__get"];
         put?: never;
-        post?: never;
+        /** Ensure Cli Chat Session */
+        post: operations["ensure_cli_chat_session_chat_sessions__session_id__post"];
         /** Delete Cli Chat Session */
         delete: operations["delete_cli_chat_session_chat_sessions__session_id__delete"];
         options?: never;
@@ -1377,6 +1395,37 @@ export interface components {
             model: string;
             /** Session Id */
             session_id: string;
+            /** Workspace */
+            workspace: string | null;
+        };
+        /** CLIChatSessionSettings */
+        CLIChatSessionSettings: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "workspace";
+            /** Model */
+            model: string;
+            /** Workspace */
+            workspace?: string | null;
+        };
+        /** CLIChatSessionSummary */
+        CLIChatSessionSummary: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "workspace";
+            /** Model */
+            model: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Workspace */
             workspace: string | null;
         };
@@ -3326,6 +3375,26 @@ export interface operations {
             };
         };
     };
+    list_cli_chat_sessions_chat_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIChatSessionSummary"][];
+                };
+            };
+        };
+    };
     get_cli_chat_session_chat_sessions__session_id__get: {
         parameters: {
             query?: never;
@@ -3336,6 +3405,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIChatSessionRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ensure_cli_chat_session_chat_sessions__session_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIChatSessionSettings"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
