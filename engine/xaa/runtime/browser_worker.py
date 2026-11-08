@@ -55,12 +55,17 @@ def validate_url(url: str, hosts: set[str]) -> str:
     return url
 
 
-async def guard_browser_route(route: Any, hosts: set[str]) -> None:
+async def guard_browser_route(
+    route: Any, hosts: set[str], blocked_subresources: dict[str, int] | None = None
+) -> None:
     try:
         if route.request.method not in {"GET", "HEAD"}:
             raise PermissionError("Browser requests that can submit data are blocked.")
         validate_web_target(route.request.url, hosts)
     except (ValueError, PermissionError):
+        resource_type = getattr(route.request, "resource_type", "document")
+        if blocked_subresources is not None and resource_type != "document":
+            blocked_subresources[resource_type] = blocked_subresources.get(resource_type, 0) + 1
         await route.abort("blockedbyclient")
     else:
         await route.continue_()
@@ -173,6 +178,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
     hosts = set(request.approved_hosts)
     validate_url(request.url, hosts)
     budget = {"bytes": 0, "connections": 0}
+    blocked_subresources: dict[str, int] = {}
     server = await asyncio.start_server(
         lambda reader, writer: _proxy_client(reader, writer, hosts, budget), "127.0.0.1", 0
     )
@@ -200,7 +206,10 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                     ignore_https_errors=False,
                 )
                 try:
-                    await context.route("**/*", lambda route: guard_browser_route(route, hosts))
+                    await context.route(
+                        "**/*",
+                        lambda route: guard_browser_route(route, hosts, blocked_subresources),
+                    )
                     page = await context.new_page()
                     context.on("page", lambda opened: close_unexpected_page(page, opened))
                     await page.goto(request.url, wait_until="domcontentloaded", timeout=15000)
@@ -219,6 +228,10 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         "content": text,
                         "truncated": len(text) >= MAX_PAGE_TEXT,
                         "trust": "untrusted_web_content",
+                        "blocked_subresources": {
+                            "count": sum(blocked_subresources.values()),
+                            "resource_types": dict(sorted(blocked_subresources.items())),
+                        },
                     }
                     if request.inspect_forms:
                         result["forms"] = await page.locator("form").evaluate_all(

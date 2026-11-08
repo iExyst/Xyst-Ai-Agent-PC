@@ -11,6 +11,7 @@ from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -24,8 +25,11 @@ async def run_case(
     name: str,
     destination: str,
     approved_hosts: list[str],
+    start_url: str | None = None,
 ) -> dict[str, object]:
-    start_url = "https://postman-echo.com/redirect-to?" + urlencode({"url": destination})
+    start_url = start_url or (
+        "https://postman-echo.com/redirect-to?" + urlencode({"url": destination})
+    )
     store = RunStore(database)
     run = store.create_run(
         objective="Verify managed browser redirect policy",
@@ -72,9 +76,11 @@ async def run_case(
         "approved_hosts": approved_hosts,
         "destination": destination,
         "status": result.get("status"),
+        "error": result.get("error"),
         "final_url": result.get("url"),
         "content_has_fixture_marker": "Herman Melville - Moby-Dick"
         in str(result.get("content", "")),
+        "blocked_subresources": result.get("blocked_subresources", {}),
         "journal_state": row[1],
         "elapsed_ms": elapsed_ms,
     }
@@ -105,11 +111,28 @@ async def main() -> None:
         if blocked["status"] != "read_failed" or blocked["final_url"] is not None:
             raise AssertionError(f"An off-host redirect was not blocked: {blocked}")
 
+        subresources = await run_case(
+            root / "subresources.sqlite3",
+            name="unapproved_subresources",
+            destination="https://httpbin.org/",
+            approved_hosts=["postman-echo.com", "httpbin.org"],
+        )
+        blocked_resources = cast(dict[str, object], subresources.get("blocked_subresources", {}))
+        blocked_count = blocked_resources.get("count", 0)
+        if (
+            subresources["status"] != "ok"
+            or not isinstance(blocked_count, int)
+            or blocked_count < 1
+        ):
+            raise AssertionError(
+                f"Off-host subresources were not blocked and recorded: {subresources}"
+            )
+
     report = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
         "browser": "Microsoft Edge via managed Playwright worker",
         "fixture_service": "Postman Echo redirect-to endpoint",
-        "cases": [allowed, blocked],
+        "cases": [allowed, blocked, subresources],
         "source_sha256": {
             "browser_redirect_smoke.py": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "browser.py": hashlib.sha256(

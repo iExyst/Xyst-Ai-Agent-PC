@@ -90,6 +90,12 @@ class BrowserScreenshotArtifact(BaseModel):
     created_at: str = Field(min_length=20, max_length=64)
 
 
+class BrowserBlockedSubresources(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    count: int = Field(ge=0)
+    resource_types: dict[str, int]
+
+
 class BrowserOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     status: Literal["ok", "read_failed", "cancelled"]
@@ -98,6 +104,7 @@ class BrowserOutput(BaseModel):
     title: str | None = None
     content: str | None = Field(default=None, max_length=20_000)
     truncated: bool | None = None
+    blocked_subresources: BrowserBlockedSubresources | None = None
     forms: list[BrowserForm] | None = Field(default=None, max_length=20)
     screenshot_artifact: BrowserScreenshotArtifact | None = None
     error: str | None = Field(default=None, max_length=500)

@@ -193,8 +193,13 @@ async def test_browser_route_guard_applies_to_redirect_and_subresource_requests(
             self.action = ("continue", None)
 
     route = FakeRoute()
-    await browser_worker.guard_browser_route(route, {"docs.example.com"})
+    blocked_subresources: dict[str, int] = {}
+    await browser_worker.guard_browser_route(route, {"docs.example.com"}, blocked_subresources)
     assert route.action == (("continue", None) if allowed else ("abort", "blockedbyclient"))
+    if resource_type == "script" and not allowed:
+        assert blocked_subresources == {"script": 1}
+    else:
+        assert blocked_subresources == {}
 
 
 @pytest.mark.asyncio
