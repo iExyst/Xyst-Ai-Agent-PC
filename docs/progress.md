@@ -2,6 +2,10 @@
 
 Updated 2026-11-08.
 
+## Phase 4 repeat acceptance timeout (2026-11-08)
+
+A second isolated live Qwen3.5 9B specialist-conflict attempt ran both independent specialists in private workspace snapshots. `beta` edited its snapshot and passed the Ubuntu-24.04 validator; `alpha` completed its private edit, then its later model turn failed with `ExceptionGroup` containing `TimeoutError`. The parent stopped before conflict review, and the original fixture remained unchanged. This attempt did not pass the Phase 4 gate; it shows that one successful integration sample does not yet establish repeatability. Sanitized summary: `docs/releases/evidence/live-task-workspaces-repeat.json`; full disposable run database and artifacts: `.acceptance/live-task-workspaces-repeat-20261108/`.
+
 ## Live interactive terminal chat (2026-11-08)
 
 Added `scripts/live_cli_chat_diagnostic.py` to exercise the actual `xaa chat` subprocess against a disposable authenticated X.A.A. API and a temporary workspace. A real LM Studio `qwen/qwen3.5-9b` run read a random fixture marker with `workspace.read_file`, returned the exact marker to the terminal, reached `verifying`, and persisted the user/assistant turn in the SQLite session. The stored tool record is `completed`; the workspace contained only the generated fixture; no user project changed. The model was unloaded after acceptance. Sanitized summary: `docs/releases/evidence/live-cli-chat.json`; full local report: `.acceptance/live-cli-chat-1c80e6f2-e1fc-4868-b4cb-6e9151998583/report.json`.

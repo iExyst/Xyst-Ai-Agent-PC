@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-08",
+  "passed": false,
+  "model": "qwen/qwen3.5-9b",
+  "context_length": 16384,
+  "max_output_tokens": 1024,
+  "fixture": "Synthetic project under .acceptance/live-task-workspaces-repeat-20261108/",
+  "results": {
+    "alpha": {
+      "status": "failed",
+      "error": "ExceptionGroup containing TimeoutError",
+      "private_edit_completed": true,
+      "failure_stage": "later model turn after private edit"
+    },
+    "beta": {
+      "status": "verifying",
+      "private_edit_completed": true,
+      "validation": "passed in Ubuntu-24.04 restricted worker"
+    }
+  },
+  "conflict_review_reached": false,
+  "original_fixture_changed": false,
+  "evidence": ".acceptance/live-task-workspaces-repeat-20261108/data/XAA/xaa.sqlite3",
+  "scope": "Failed repeat sample; does not pass the Phase 4 integration gate."
+}
