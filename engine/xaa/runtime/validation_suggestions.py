@@ -40,6 +40,24 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
 
     packages = [path for key, path in paths.items() if PurePosixPath(key).name == "package.json"]
     for package in sorted(packages, key=str.casefold):
+        try:
+            content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == package.casefold()
+            )
+            parsed: object = json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        manifest = cast(dict[str, object], parsed)
+        scripts = manifest.get("scripts")
+        if not isinstance(scripts, dict):
+            continue
+        test_script = cast(dict[str, object], scripts).get("test")
+        if not isinstance(test_script, str) or not test_script.strip():
+            continue
         prefix = package.rpartition("/")[0]
         argv = ["/usr/bin/env", "npm", "test"]
         if prefix:
@@ -48,7 +66,7 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
         suggestions.append(
             {
                 "label": f"JavaScript tests (npm){suffix}",
-                "rationale": f"{package} was found. This runs the package's configured test script; confirm npm and dependencies are available in the restricted WSL environment.",
+                "rationale": f"{package} declares a test script. Confirm npm and dependencies are available in the restricted WSL environment.",
                 "argv": argv,
             }
         )
@@ -99,7 +117,17 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
             continue
         manifest = cast(dict[str, object], parsed)
         scripts = manifest.get("scripts")
-        if not isinstance(scripts, dict) or "test" not in cast(dict[str, object], scripts):
+        if not isinstance(scripts, dict):
+            continue
+        test_script = cast(dict[str, object], scripts).get("test")
+        valid_test_script = isinstance(test_script, str) and bool(test_script.strip())
+        valid_test_script_list = False
+        if isinstance(test_script, list):
+            commands = cast(list[object], test_script)
+            valid_test_script_list = len(commands) > 0 and all(
+                isinstance(command, str) and bool(command.strip()) for command in commands
+            )
+        if not (valid_test_script or valid_test_script_list):
             continue
         directory = str(PurePosixPath(composer_file).parent)
         argv = ["/usr/bin/env", "composer"]

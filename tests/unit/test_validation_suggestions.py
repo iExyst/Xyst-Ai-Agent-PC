@@ -19,7 +19,7 @@ def test_suggests_only_detected_manifests_and_supports_nested_packages():
     result = suggest_validation_commands(
         snapshot(
             ("pyproject.toml", b"[tool.pytest.ini_options]"),
-            ("apps/client/package.json", b"{}"),
+            ("apps/client/package.json", b'{"scripts":{"test":"vitest run"}}'),
             ("crates/worker/Cargo.toml", b"[package]"),
             ("docs/guide.md", b"example"),
         )
@@ -45,6 +45,21 @@ def test_no_manifest_means_no_suggestions():
     assert suggest_validation_commands(snapshot(("README.md", b"Documentation"))) == []
 
 
+def test_javascript_suggestions_require_a_declared_test_script():
+    result = suggest_validation_commands(
+        snapshot(
+            ("apps/valid/package.json", b'{"scripts":{"test":"vitest run"}}'),
+            ("apps/missing/package.json", b'{"scripts":{"build":"vite build"}}'),
+            ("apps/empty/package.json", b'{"scripts":{"test":"  "}}'),
+            ("apps/wrong-type/package.json", b'{"scripts":{"test":true}}'),
+            ("apps/malformed/package.json", b"not-json"),
+        )
+    )
+
+    assert [item["label"] for item in result] == ["JavaScript tests (npm) — apps/valid"]
+    assert result[0]["argv"] == ["/usr/bin/env", "npm", "--prefix", "apps/valid", "test"]
+
+
 def test_suggests_go_and_nested_dotnet_checks():
     result = suggest_validation_commands(
         snapshot(("go.mod", b"module example"), ("src/App.csproj", b"<Project />"))
@@ -66,7 +81,10 @@ def test_suggests_maven_gradle_and_declared_composer_test_scripts():
             ("services/java/pom.xml", b"<project />"),
             ("apps/android/build.gradle.kts", b"plugins {}"),
             ("apps/php/composer.json", b'{"scripts":{"test":"phpunit"}}'),
+            ("apps/php-array/composer.json", b'{"scripts":{"test":["phpunit", "phpstan"]}}'),
             ("apps/php2/composer.json", b'{"require":{"php":"^8.3"}}'),
+            ("apps/php-blank/composer.json", b'{"scripts":{"test":" "}}'),
+            ("apps/php-wrong-type/composer.json", b'{"scripts":{"test":true}}'),
             ("apps/bad/composer.json", b"not-json"),
         )
     )
@@ -74,6 +92,7 @@ def test_suggests_maven_gradle_and_declared_composer_test_scripts():
     assert [item["label"] for item in result] == [
         "Java tests (Maven) — services/java",
         "Java tests (Gradle) — apps/android",
+        "PHP tests (Composer) — apps/php-array",
         "PHP tests (Composer) — apps/php",
     ]
     assert result[0]["argv"] == [
@@ -96,6 +115,15 @@ def test_suggests_maven_gradle_and_declared_composer_test_scripts():
         "test",
     ]
     assert result[2]["argv"] == [
+        "/usr/bin/env",
+        "composer",
+        "--working-dir",
+        "apps/php-array",
+        "run-script",
+        "test",
+        "--no-interaction",
+    ]
+    assert result[3]["argv"] == [
         "/usr/bin/env",
         "composer",
         "--working-dir",
@@ -131,8 +159,8 @@ def test_suggests_swift_package_tests_at_root_and_nested_paths():
 def test_suggests_every_supported_manifest_in_a_monorepo():
     result = suggest_validation_commands(
         snapshot(
-            ("apps/one/package.json", b"{}"),
-            ("apps/two/package.json", b"{}"),
+            ("apps/one/package.json", b'{"scripts":{"test":"vitest run"}}'),
+            ("apps/two/package.json", b'{"scripts":{"test":"jest"}}'),
             ("services/one/pyproject.toml", b"[project]"),
             ("services/two/pyproject.toml", b"[project]"),
             ("crates/one/Cargo.toml", b"[package]"),
