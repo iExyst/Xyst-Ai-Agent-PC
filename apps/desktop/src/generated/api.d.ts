@@ -1175,6 +1175,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules/{schedule_id}/executions/{execution_id}/delivery/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Schedule Delivery */
+        post: operations["reconcile_schedule_delivery_schedules__schedule_id__executions__execution_id__delivery_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shutdown": {
         parameters: {
             query?: never;
@@ -2590,6 +2607,19 @@ export interface components {
             updated_at: string;
             /** Workspace */
             workspace: string | null;
+        };
+        /** ScheduleDeliveryReconciliationRequest */
+        ScheduleDeliveryReconciliationRequest: {
+            /**
+             * Confirmed Destination Checked
+             * @constant
+             */
+            confirmed_destination_checked: true;
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "delivered" | "retry";
         };
         /** ScheduleEnabledRequest */
         ScheduleEnabledRequest: {
@@ -5801,6 +5831,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ScheduleEnabledRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_schedule_delivery_schedules__schedule_id__executions__execution_id__delivery_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleDeliveryReconciliationRequest"];
             };
         };
         responses: {

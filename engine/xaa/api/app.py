@@ -353,6 +353,12 @@ class ScheduleEnabledRequest(BaseModel):
     enabled: bool = Field(strict=True)
 
 
+class ScheduleDeliveryReconciliationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resolution: Literal["delivered", "retry"]
+    confirmed_destination_checked: Literal[True]
+
+
 class TelegramCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: SecretStr = Field(min_length=1, max_length=512)
@@ -1645,6 +1651,51 @@ def create_app(
         result = schedule_store.get(schedule_id)
         assert result is not None
         return result
+
+    @app.post(
+        "/schedules/{schedule_id}/executions/{execution_id}/delivery/reconcile",
+        response_model=ScheduleRecord,
+    )
+    def reconcile_schedule_delivery(
+        schedule_id: str,
+        execution_id: str,
+        payload: ScheduleDeliveryReconciliationRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if credential_store is None or credential_store.get("telegram-bot") is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Configure the Telegram bot before reconciling a scheduled delivery.",
+            )
+        account_id = (
+            credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+        )
+        if account_id is None:
+            raise HTTPException(
+                status_code=409, detail="The configured Telegram account is unavailable."
+            )
+        result = schedule_store.reconcile_delivery(
+            schedule_id, execution_id, account_id, payload.resolution
+        )
+        if result == "not_unknown":
+            raise HTTPException(
+                status_code=409,
+                detail="This scheduled delivery is no longer awaiting reconciliation.",
+            )
+        if result == "attempt_limit":
+            raise HTTPException(
+                status_code=409,
+                detail="The three-attempt delivery limit has been reached.",
+            )
+        if result == "destination_revoked":
+            raise HTTPException(
+                status_code=409,
+                detail="The Telegram destination is no longer linked; retry is unavailable.",
+            )
+        schedule = schedule_store.get(schedule_id)
+        if schedule is None:
+            raise HTTPException(status_code=404, detail="Schedule not found.")
+        return schedule
 
     @app.post("/providers/diagnostics")
     @app.post("/providers/lm-studio/diagnostics", include_in_schema=False)

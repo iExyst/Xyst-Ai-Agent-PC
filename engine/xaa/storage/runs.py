@@ -399,6 +399,12 @@ class RunStore:
                 );
                 CREATE INDEX IF NOT EXISTS schedule_deliveries_pending
                     ON schedule_deliveries(account_id,state,created_at);
+                CREATE TABLE IF NOT EXISTS schedule_delivery_reconciliations (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL REFERENCES schedule_deliveries(execution_id) ON DELETE CASCADE,
+                    resolution TEXT NOT NULL CHECK (resolution IN ('delivered','retry')),
+                    resolved_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS channel_bindings (
                     id TEXT PRIMARY KEY,
                     channel TEXT NOT NULL,

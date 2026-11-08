@@ -18,13 +18,12 @@ import httpx
 
 from xaa.credentials import CredentialStore
 from xaa.storage.runs import RunState, RunStore, utc_now
-from xaa.storage.schedules import quiet_hours_active
+from xaa.storage.schedules import MAX_SCHEDULE_DELIVERY_ATTEMPTS, quiet_hours_active
 
 logger = logging.getLogger(__name__)
 PAIR_COMMAND = re.compile(r"^/pair(?:@[A-Za-z0-9_]+)?\s+([A-Za-z0-9_-]{24,128})$")
 MAX_TEXT_CHARS = 4096
 OFFSET_RESET_AFTER = timedelta(days=6)
-MAX_SCHEDULE_DELIVERY_ATTEMPTS = 3
 MAX_TELEGRAM_RETRY_AFTER_SECONDS = 300
 
 

@@ -17,6 +17,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [quietEnd,setQuietEnd]=useState('');
   const [telegramUsers,setTelegramUsers]=useState<string[]>([]);
   const [telegramDeliveryUser,setTelegramDeliveryUser]=useState('');
+  const [scheduleReconcileChoice,setScheduleReconcileChoice]=useState<{scheduleId:string;executionId:string;resolution:'delivered'|'retry'}>();
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
 
@@ -46,6 +47,17 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     setBusy(true);setError('');
     try {const updated=await client.setScheduleEnabled(item.id,!item.enabled);setItems(current=>current.map(value=>value.id===item.id?updated:value));}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not update the schedule.');}
+    finally {setBusy(false);}
+  }
+
+  async function reconcileScheduleDelivery() {
+    if(!scheduleReconcileChoice)return;
+    setBusy(true);setError('');
+    try {
+      const updated=await client.reconcileScheduleDelivery(scheduleReconcileChoice.scheduleId,scheduleReconcileChoice.executionId,scheduleReconcileChoice.resolution);
+      setItems(current=>current.map(item=>item.id===updated.id?updated:item));
+      setScheduleReconcileChoice(undefined);
+    } catch(failure) {setError(failure instanceof Error?failure.message:'Could not reconcile the scheduled Telegram delivery.');}
     finally {setBusy(false);}
   }
 
@@ -79,9 +91,24 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <button type="button" onClick={()=>void create()} disabled={busy||!objective.trim()||!model||!startAt||!timezone.trim()}>Create schedule</button>
     {items.length>0&&<ul>{items.map(item=><li key={item.id}>
       <p>{item.objective}</p>
-      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
+      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''}{item.delivery_destination?` · Telegram user ${item.delivery_destination.split(':')[2]}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
-      {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>{execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''}{execution.delivery_attempt_count!==null?` · send attempts ${execution.delivery_attempt_count}/3`:''}{execution.delivery_next_attempt_at?` · retry after ${execution.delivery_next_attempt_at}`:''} · {execution.created_at}</li>)}</ul></details>}
+      {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>
+        {execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''}{execution.delivery_attempt_count!==null?` · send attempts ${execution.delivery_attempt_count}/3`:''}{execution.delivery_next_attempt_at?` · retry after ${execution.delivery_next_attempt_at}`:''} · {execution.created_at}
+        {execution.delivery_evidence==='unknown'&&<>
+          <p>Check the selected Telegram chat before resolving this uncertain scheduled send.</p>
+          <div className="controls">
+            <button type="button" disabled={busy} onClick={()=>setScheduleReconcileChoice({scheduleId:item.id,executionId:execution.id,resolution:'delivered'})}>I checked; mark delivered</button>
+            <button type="button" disabled={busy||execution.delivery_attempt_count===null||execution.delivery_attempt_count>=3} onClick={()=>setScheduleReconcileChoice({scheduleId:item.id,executionId:execution.id,resolution:'retry'})}>I checked; retry scheduled message</button>
+          </div>
+          {execution.delivery_attempt_count!==null&&execution.delivery_attempt_count>=3&&<p>The three-attempt limit has been reached; retry is unavailable.</p>}
+          {scheduleReconcileChoice?.scheduleId===item.id&&scheduleReconcileChoice.executionId===execution.id&&<div role="alertdialog" aria-label="Confirm scheduled Telegram delivery reconciliation">
+            <p>{scheduleReconcileChoice.resolution==='retry'?'Retrying may send a duplicate if Telegram accepted the first message.':'This records that you found the scheduled message in Telegram.'} Confirm that you checked the destination chat.</p>
+            <button type="button" disabled={busy} onClick={()=>void reconcileScheduleDelivery()}>Confirm {scheduleReconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+            <button type="button" disabled={busy} onClick={()=>setScheduleReconcileChoice(undefined)}>Cancel</button>
+          </div>}
+        </>}
+      </li>)}</ul></details>}
     </li>)}</ul>}
     <button type="button" disabled={busy} onClick={()=>void refresh()}>Refresh schedules</button>
     {error&&<p role="alert">{error}</p>}

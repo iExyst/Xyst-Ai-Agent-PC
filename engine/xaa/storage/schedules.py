@@ -15,6 +15,7 @@ from xaa.storage.runs import RunStore, utc_now
 
 ScheduleFrequency = Literal["once", "daily", "weekly"]
 OccurrenceOutcome = Literal["run", "missed", "overlap_skipped", "dst_skipped"]
+MAX_SCHEDULE_DELIVERY_ATTEMPTS = 3
 _QUIET_HOURS = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]-(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 
 
@@ -140,14 +141,56 @@ class ScheduleStore:
             if schedule is None:
                 return None
             executions = connection.execute(
-                "SELECT e.id,e.occurrence_id,e.run_id,e.state,e.delivery_evidence,e.created_at,e.completed_at,d.attempt_count AS delivery_attempt_count,d.next_attempt_at AS delivery_next_attempt_at FROM schedule_executions e LEFT JOIN schedule_deliveries d ON d.execution_id=e.id WHERE e.schedule_id=? ORDER BY e.created_at DESC LIMIT 20",
-                (schedule_id,),
+                "SELECT e.id,e.occurrence_id,e.run_id,e.state,e.delivery_evidence,e.created_at,e.completed_at,d.attempt_count AS delivery_attempt_count,d.next_attempt_at AS delivery_next_attempt_at FROM schedule_executions e LEFT JOIN schedule_deliveries d ON d.execution_id=e.id WHERE e.schedule_id=? AND (e.id IN (SELECT id FROM schedule_executions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20) OR e.delivery_evidence='unknown') ORDER BY e.created_at DESC",
+                (schedule_id, schedule_id),
             ).fetchall()
         result = dict(schedule)
         result["recurrence"] = json.loads(result["recurrence"])
         result["enabled"] = bool(result["enabled"])
         result["executions"] = [dict(item) for item in executions]
         return result
+
+    def reconcile_delivery(
+        self,
+        schedule_id: str,
+        execution_id: str,
+        account_id: str,
+        resolution: Literal["delivered", "retry"],
+    ) -> Literal["resolved", "not_unknown", "attempt_limit", "destination_revoked"]:
+        state = "sent" if resolution == "delivered" else "pending"
+        now = utc_now()
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            delivery = connection.execute(
+                "SELECT d.external_identity,d.attempt_count FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id WHERE d.execution_id=? AND e.schedule_id=? AND d.account_id=? AND d.state='unknown'",
+                (execution_id, schedule_id, account_id),
+            ).fetchone()
+            if delivery is None:
+                return "not_unknown"
+            if resolution == "retry":
+                if int(delivery["attempt_count"]) >= MAX_SCHEDULE_DELIVERY_ATTEMPTS:
+                    return "attempt_limit"
+                linked = connection.execute(
+                    "SELECT 1 FROM channel_bindings WHERE channel='telegram' AND account_id=? AND external_identity=? AND authorized=1",
+                    (account_id, delivery["external_identity"]),
+                ).fetchone()
+                if linked is None:
+                    return "destination_revoked"
+            changed = connection.execute(
+                "UPDATE schedule_deliveries SET state=?,next_attempt_at=NULL,updated_at=? WHERE execution_id=? AND account_id=? AND state='unknown'",
+                (state, now, execution_id, account_id),
+            ).rowcount
+            if changed != 1:
+                return "not_unknown"
+            connection.execute(
+                "UPDATE schedule_executions SET delivery_evidence=? WHERE id=?",
+                (state, execution_id),
+            )
+            connection.execute(
+                "INSERT INTO schedule_delivery_reconciliations (id,execution_id,resolution,resolved_at) VALUES (?,?,?,?)",
+                (str(uuid.uuid4()), execution_id, resolution, now),
+            )
+        return "resolved"
 
     def list(self) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:

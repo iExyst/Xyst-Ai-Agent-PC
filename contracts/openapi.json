@@ -3181,6 +3181,30 @@
         "title": "RunSummary",
         "type": "object"
       },
+      "ScheduleDeliveryReconciliationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_destination_checked": {
+            "const": true,
+            "title": "Confirmed Destination Checked",
+            "type": "boolean"
+          },
+          "resolution": {
+            "enum": [
+              "delivered",
+              "retry"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "confirmed_destination_checked"
+        ],
+        "title": "ScheduleDeliveryReconciliationRequest",
+        "type": "object"
+      },
       "ScheduleEnabledRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8734,6 +8758,69 @@
           }
         ],
         "summary": "Set Schedule Enabled"
+      }
+    },
+    "/schedules/{schedule_id}/executions/{execution_id}/delivery/reconcile": {
+      "post": {
+        "operationId": "reconcile_schedule_delivery_schedules__schedule_id__executions__execution_id__delivery_reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleDeliveryReconciliationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Schedule Delivery"
       }
     },
     "/shutdown": {

@@ -337,6 +337,65 @@ def test_scheduled_delivery_unknown_after_restart_is_never_retried(
         )
 
 
+def test_scheduled_delivery_reconciliation_is_scoped_audited_and_bounded(
+    workspace_tmp_path: Path,
+) -> None:
+    from xaa.storage.schedules import ScheduleStore
+
+    runs = RunStore(workspace_tmp_path / "scheduled-delivery-reconcile.sqlite3")
+    channel, schedule_id = queued_scheduled_delivery(runs)
+    delivery = channel.claim_schedule_delivery(IDENTITY.account_id)
+    assert delivery is not None
+    channel.finish_schedule_delivery(delivery["execution_id"], state="unknown")
+    schedule_store = ScheduleStore(runs)
+    schedule = schedule_store.get(schedule_id)
+    assert schedule is not None
+    execution_id = schedule["executions"][0]["id"]
+    with runs.connection() as connection:
+        for index in range(21):
+            connection.execute(
+                "INSERT INTO schedule_executions (id,schedule_id,occurrence_id,run_id,state,delivery_evidence,created_at,completed_at) VALUES (?,?,?,NULL,'overlap_skipped',NULL,?,?)",
+                (
+                    f"later-{index}",
+                    schedule_id,
+                    f"later-occurrence-{index}",
+                    utc_now(),
+                    utc_now(),
+                ),
+            )
+    schedule = schedule_store.get(schedule_id)
+    assert schedule is not None
+    assert execution_id in {item["id"] for item in schedule["executions"]}
+
+    assert schedule_store.reconcile_delivery(schedule_id, execution_id, "42", "retry") == "resolved"
+    assert (
+        schedule_store.reconcile_delivery(schedule_id, execution_id, "another-account", "delivered")
+        == "not_unknown"
+    )
+    with runs.connection() as connection:
+        audit = connection.execute(
+            "SELECT resolution FROM schedule_delivery_reconciliations WHERE execution_id=?",
+            (execution_id,),
+        ).fetchone()
+        state = connection.execute(
+            "SELECT state FROM schedule_deliveries WHERE execution_id=?", (execution_id,)
+        ).fetchone()[0]
+        connection.execute(
+            "UPDATE schedule_deliveries SET state='unknown',attempt_count=3 WHERE execution_id=?",
+            (execution_id,),
+        )
+    assert audit["resolution"] == "retry"
+    assert state == "pending"
+    assert (
+        schedule_store.reconcile_delivery(schedule_id, execution_id, "42", "retry")
+        == "attempt_limit"
+    )
+    assert (
+        schedule_store.reconcile_delivery(schedule_id, execution_id, "42", "delivered")
+        == "resolved"
+    )
+
+
 def test_service_cycle_reconciles_interrupted_scheduled_http_send_after_restart(
     workspace_tmp_path: Path,
 ) -> None:
@@ -849,6 +908,65 @@ def test_telegram_credential_and_pairing_api_never_returns_saved_token(
         ).status_code
         == 409
     )
+    from xaa.scheduler.service import ScheduleService
+    from xaa.storage.schedules import ScheduleStore
+
+    current = datetime.now(UTC)
+    schedule = ScheduleStore(runs).create(
+        objective="Scheduled status",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=current.replace(second=0, microsecond=0, tzinfo=None),
+        frequency="once",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+        delivery_destination="telegram:42:456",
+    )
+    scheduled_run = ScheduleService(runs, lambda _run_id: None).tick(current)[0]
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET state='completed',updated_at=? WHERE id=?",
+            (utc_now(), scheduled_run),
+        )
+        RunStore.record_event(
+            connection,
+            scheduled_run,
+            "model.message",
+            {"message": {"role": "assistant", "content": "Scheduled result."}},
+        )
+    schedule_execution = ScheduleStore(runs).get(schedule["id"])["executions"][0]["id"]
+    scheduled_delivery = telegram_store.claim_schedule_delivery(IDENTITY.account_id)
+    assert scheduled_delivery is not None
+    telegram_store.finish_schedule_delivery(scheduled_delivery["execution_id"], state="unknown")
+    schedule_response = client.post(
+        f"/schedules/{schedule['id']}/executions/{schedule_execution}/delivery/reconcile",
+        headers=HEADERS,
+        json={"resolution": "delivered", "confirmed_destination_checked": True},
+    )
+    assert schedule_response.status_code == 200
+    assert schedule_response.json()["executions"][0]["delivery_evidence"] == "sent"
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE schedule_deliveries SET state='unknown' WHERE execution_id=?",
+            (scheduled_delivery["execution_id"],),
+        )
+        connection.execute(
+            "UPDATE schedule_executions SET delivery_evidence='unknown' WHERE id=?",
+            (scheduled_delivery["execution_id"],),
+        )
+    schedule_retry = client.post(
+        f"/schedules/{schedule['id']}/executions/{schedule_execution}/delivery/reconcile",
+        headers=HEADERS,
+        json={"resolution": "retry", "confirmed_destination_checked": True},
+    )
+    assert schedule_retry.status_code == 200
+    retried_execution = next(
+        item for item in schedule_retry.json()["executions"] if item["id"] == schedule_execution
+    )
+    assert retried_execution["delivery_evidence"] == "pending"
     revoked = client.delete("/channels/telegram/links", headers=HEADERS)
     assert revoked.json() == {"revoked_users": 1, "linked_users": 0}
     assert (
