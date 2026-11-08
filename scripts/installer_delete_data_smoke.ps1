@@ -78,7 +78,10 @@ try {
     [IO.File]::WriteAllText($xaaConfigMarker, 'Disposable Tauri app-data removal fixture')
 
     $xaaStartedAt = [DateTime]::UtcNow
-    $xaaProcess = Start-Process -FilePath $xaaUninstaller -WindowStyle Normal -WorkingDirectory $xaaInstallDir -PassThru
+    # NSIS normally relaunches the uninstaller from a temporary copy and exits
+    # the original process. Its documented final _?= argument sets $INSTDIR and
+    # keeps the interactive UI in this process so the harness can observe it.
+    $xaaProcess = Start-Process -FilePath $xaaUninstaller -ArgumentList "_?=$xaaInstallDir" -WindowStyle Normal -WorkingDirectory $xaaInstallDir -PassThru
     $xaaReport.uninstaller_pid = $xaaProcess.Id
     Write-Output "Started interactive uninstaller process $($xaaProcess.Id)."
     $xaaDeadline = [DateTime]::UtcNow.AddSeconds(60)
