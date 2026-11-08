@@ -882,12 +882,8 @@ class SpecialistRunner:
                 name = call["function"]["name"]
                 arguments = json.loads(call["function"]["arguments"])
                 journal_id = (
-                    (
-                        "taskfs-"
-                        + hashlib.sha256(f"{run_id}:{identity}:{call['id']}".encode()).hexdigest()
-                    )
-                    if isolated
-                    else f"task-{uuid4()}"
+                    "taskfs-"
+                    + hashlib.sha256(f"{run_id}:{identity}:{call['id']}".encode()).hexdigest()
                 )
                 if name == "review_dependency_file":
                     if task["assigned_role"] != "reviewer":

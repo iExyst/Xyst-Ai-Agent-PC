@@ -1653,10 +1653,14 @@ class RunStore:
                 "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?", (run_id, call_id)
             ).fetchone():
                 raise ValueError("Tool call ID already belongs to another action in this run.")
+            task_key = (
+                f"{run_id}:{self.task_scope.task_id}" if self.task_scope is not None else None
+            )
             connection.execute(
-                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?, NULL, ?, ?, ?, ?, ?, 'intended', NULL, NULL, ?, ?, ?)",
+                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'intended', NULL, NULL, ?, ?, ?)",
                 (
                     str(uuid.uuid4()),
+                    task_key,
                     run_id,
                     tool,
                     version,

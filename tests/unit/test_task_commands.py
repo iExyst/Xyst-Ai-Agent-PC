@@ -283,6 +283,86 @@ async def test_lost_worker_can_attach_committed_private_file_result(workspace_tm
     assert recovered["recoverable_task_actions"] == []
 
 
+async def test_lost_read_only_worker_can_attach_saved_read_result(workspace_tmp_path):
+    transport = FixtureTransport()
+    _, store, run_id, owner, project = setup(workspace_tmp_path, transport)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [
+            TaskDefinition(
+                id="reader", objective="Read actual evidence", permissions=["workspace.read"]
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, owner)
+    assert claim is not None
+    scope = TaskReadScope(run_id, owner, "reader", claim["token"])
+    model_call_id = "model-read-only-1"
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": scope.task_id,
+                "inference_id": "inference-read-only-1",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": model_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": '{"path":"fixture.txt"}',
+                            },
+                        }
+                    ],
+                },
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+            },
+        )
+    journal_id = (
+        "taskfs-" + hashlib.sha256(f"{run_id}:{scope.task_id}:{model_call_id}".encode()).hexdigest()
+    )
+    result = await execute_filesystem(
+        store,
+        run_id,
+        owner,
+        journal_id,
+        "read",
+        {"path": "fixture.txt"},
+        idempotency_key=journal_id,
+        internal=True,
+        task_id=scope.task_id,
+        task_token=scope.task_token,
+    )
+    assert result["text"] == "fixture"
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
+            (f"{run_id}:{scope.task_id}",),
+        )
+    assert tasks.recover_expired(run_id, owner) == [scope.task_id]
+    summary = tasks.recovery_summary(run_id, scope.task_id)
+    assert summary["recoverable_task_actions"] == [
+        {
+            "model_call_id": model_call_id,
+            "journal_call_id": journal_id,
+            "tool_name": "workspace.read_file",
+        }
+    ]
+    tasks.record_recovered_task_action_result(
+        run_id, owner, scope.task_id, model_call_id, journal_id
+    )
+    recovered = tasks.recovery_summary(run_id, scope.task_id)
+    assert recovered["pending_model_tool_calls"] == []
+    assert recovered["saved_tool_results"] == 1
+    assert (project / "fixture.txt").read_text(encoding="utf-8") == "fixture"
+
+
 async def test_task_scope_is_required_for_snapshot_and_launch(workspace_tmp_path):
     transport = FixtureTransport()
     store, run_id, owner, _, scopes = await private_tasks(workspace_tmp_path, transport)

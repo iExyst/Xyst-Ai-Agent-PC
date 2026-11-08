@@ -596,36 +596,42 @@ class TaskStore:
             "workspace_delete_file": "workspace.delete_file",
         }
         recoverable_task_actions: list[dict[str, str]] = []
-        if "workspace.write" in task["permission_scope"]:
-            for call in calls:
-                model_call_id = call.get("id")
-                function = cast(dict[str, Any], call.get("function", {}))
-                tool_name = branch_tools.get(cast(str, function.get("name")))
-                if (
-                    not isinstance(model_call_id, str)
-                    or tool_name is None
-                    or proposed_ids[model_call_id] != 1
-                ):
-                    continue
-                journal_call_id = (
-                    "taskfs-"
-                    + hashlib.sha256(f"{run_id}:{task_id}:{model_call_id}".encode()).hexdigest()
-                )
-                saved = saved_commands.get(journal_call_id)
-                if (
-                    saved is None
-                    or saved["state"] != "completed"
-                    or saved["tool_name"] != tool_name
-                    or completed_ids[model_call_id] >= proposed_ids[model_call_id]
-                ):
-                    continue
-                recoverable_task_actions.append(
-                    {
-                        "model_call_id": model_call_id,
-                        "journal_call_id": journal_call_id,
-                        "tool_name": tool_name,
-                    }
-                )
+        scope_permissions = set(task["permission_scope"])
+        if "workspace.write" not in scope_permissions:
+            branch_tools = {
+                name: tool
+                for name, tool in branch_tools.items()
+                if name in {"workspace_read_file", "workspace_list_directory"}
+            }
+        for call in calls:
+            model_call_id = call.get("id")
+            function = cast(dict[str, Any], call.get("function", {}))
+            tool_name = branch_tools.get(cast(str, function.get("name")))
+            if (
+                not isinstance(model_call_id, str)
+                or tool_name is None
+                or proposed_ids[model_call_id] != 1
+            ):
+                continue
+            journal_call_id = (
+                "taskfs-"
+                + hashlib.sha256(f"{run_id}:{task_id}:{model_call_id}".encode()).hexdigest()
+            )
+            saved = saved_commands.get(journal_call_id)
+            if (
+                saved is None
+                or saved["state"] != "completed"
+                or saved["tool_name"] != tool_name
+                or completed_ids[model_call_id] >= proposed_ids[model_call_id]
+            ):
+                continue
+            recoverable_task_actions.append(
+                {
+                    "model_call_id": model_call_id,
+                    "journal_call_id": journal_call_id,
+                    "tool_name": tool_name,
+                }
+            )
         candidate_reviewable = bool(
             candidate_item
             and candidate_item["sequence"] == last_message_sequence
@@ -850,7 +856,9 @@ class TaskStore:
             if (
                 task is None
                 or task["status"] != "blocked"
-                or "workspace.write" not in json.loads(task["permission_scope"])
+                or not set(json.loads(task["permission_scope"])).intersection(
+                    {"workspace.read", "workspace.write"}
+                )
                 or blocked is None
                 or blocked[0] != "worker_lost_reconciliation_required"
             ):
@@ -888,6 +896,14 @@ class TaskStore:
             }.get(model_calls[0].get("function", {}).get("name"))
             if expected_tool != tool["tool_name"]:
                 raise PermissionError("Saved file result belongs to a different model action.")
+            required_permission = (
+                "workspace.write"
+                if tool["tool_name"]
+                in {"workspace.write_file", "workspace.create_file", "workspace.delete_file"}
+                else "workspace.read"
+            )
+            if required_permission not in json.loads(task["permission_scope"]):
+                raise PermissionError("Task did not have permission for the saved file action.")
             if connection.execute(
                 "SELECT 1 FROM run_events WHERE run_id=? AND event_type='task.tool.result' "
                 "AND json_extract(payload,'$.task_id')=? AND json_extract(payload,'$.call_id')=?",
