@@ -710,7 +710,9 @@ class RunStore:
             )
         document_ocr_usage = document_ocr_usage or []
         if document_ocr_usage and (model is None or not document_page_images):
-            raise ValueError("Measured scanned PDF OCR requires a selected model and page artifacts.")
+            raise ValueError(
+                "Measured scanned PDF OCR requires a selected model and page artifacts."
+            )
         for inference_id, usage in document_ocr_usage:
             if (
                 re.fullmatch(

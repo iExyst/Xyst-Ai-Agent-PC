@@ -539,11 +539,14 @@ def test_scanned_pdf_requires_vision_and_retains_page_preview_artifact(workspace
             assert len(pages) == 1
             self.ocr_calls += 1
             return "[Scanned PDF OCR — page 1]\nfixture OCR", [
-                ("8bd0368a-c3f8-4ca5-aa58-0f6b0eef2676", {
-                    "prompt_tokens": 80,
-                    "completion_tokens": 4,
-                    "total_tokens": 84,
-                })
+                (
+                    "8bd0368a-c3f8-4ca5-aa58-0f6b0eef2676",
+                    {
+                        "prompt_tokens": 80,
+                        "completion_tokens": 4,
+                        "total_tokens": 84,
+                    },
+                )
             ]
 
     nonvision_store = RunStore(workspace_tmp_path / "scanned-no-vision.sqlite3")

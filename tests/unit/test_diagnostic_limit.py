@@ -45,7 +45,9 @@ async def test_scanned_page_transcription_uses_native_vision_with_reasoning_off(
         await provider.close()
 
     assert result == "[Scanned PDF OCR — page 3]\nmarker 1234"
-    assert usage == [(usage[0][0], {"prompt_tokens": 100, "completion_tokens": 4, "total_tokens": 104})]
+    assert usage == [
+        (usage[0][0], {"prompt_tokens": 100, "completion_tokens": 4, "total_tokens": 104})
+    ]
     path, payload = requests[0]
     assert path == "/api/v1/chat"
     assert payload["reasoning"] == "off"

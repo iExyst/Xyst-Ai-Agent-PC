@@ -1648,9 +1648,7 @@ def create_app(
                         raise ValueError(
                             "The selected LM Studio model does not advertise vision support for scanned PDFs."
                         )
-                    ocr_reservation = (
-                        len(document_page_images) * SCANNED_PAGE_OCR_TOKEN_RESERVATION
-                    )
+                    ocr_reservation = len(document_page_images) * SCANNED_PAGE_OCR_TOKEN_RESERVATION
                     if (
                         payload.max_total_tokens is not None
                         and payload.max_total_tokens < ocr_reservation
