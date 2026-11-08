@@ -157,6 +157,12 @@ async def test_unknown_mcp_write_blocks_run_and_skips_remaining_batch_calls(work
     ]
     assert '"status": "unknown_outcome"' in tool_results[0]["content"]
     assert '"effect": "not_started"' in tool_results[1]["content"]
+    assert store.reconcile_mcp_outcome(run["id"], "mcp-write-1", "not_applied") is True
+    resumed_messages = [
+        message for message in store.conversation_messages(run["id"]) if message["role"] == "tool"
+    ]
+    assert '"status": "owner_confirmed_not_applied"' in resumed_messages[0]["content"]
+    assert '"effect": "not_started"' in resumed_messages[1]["content"]
     assert any(
         event["event_type"] == "run.state_changed"
         and event["payload"].get("reason") == "mcp_effect_reconciliation_required"
