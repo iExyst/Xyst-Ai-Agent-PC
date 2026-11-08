@@ -9,6 +9,56 @@ import time
 from pathlib import Path
 
 
+def _run_tauri_build(npm: str) -> None:
+    command = [
+        npm,
+        "exec",
+        "--",
+        "tauri",
+        "build",
+        "--ci",
+        "--config",
+        "src-tauri/tauri.release.conf.json",
+        "--bundles",
+        "nsis",
+        "--no-sign",
+        "--no-binary-patching",
+        "--",
+        "--locked",
+    ]
+    transient_http_errors = ("http status: 502", "http status: 503", "http status: 504")
+    for attempt in range(3):
+        process = subprocess.Popen(
+            command,
+            cwd="apps/desktop",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if process.stdout is None:
+            raise RuntimeError("Tauri build output stream was not created.")
+        output: list[str] = []
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            output.append(line)
+        process.stdout.close()
+        returncode = process.wait()
+        if returncode == 0:
+            return
+        captured = "".join(output)
+        lowered = captured.casefold()
+        if attempt < 2 and any(error in lowered for error in transient_http_errors):
+            delay = 5 * (attempt + 1)
+            print(
+                f"Tauri encountered a transient HTTP download failure; retrying installer build in {delay} seconds.",
+                flush=True,
+            )
+            time.sleep(delay)
+            continue
+        raise subprocess.CalledProcessError(returncode, command, output=captured)
+    raise AssertionError("Tauri build retry loop ended unexpectedly.")
+
+
 def main() -> None:
     if sys.platform != "win32":
         raise SystemExit("Build the Windows installer on Windows.")
@@ -18,26 +68,7 @@ def main() -> None:
     started_ns = time.time_ns()
     subprocess.run([npm, "run", "build:desktop"], check=True)
     subprocess.run([sys.executable, "scripts/build_engine.py"], check=True)
-    subprocess.run(
-        [
-            npm,
-            "exec",
-            "--",
-            "tauri",
-            "build",
-            "--ci",
-            "--config",
-            "src-tauri/tauri.release.conf.json",
-            "--bundles",
-            "nsis",
-            "--no-sign",
-            "--no-binary-patching",
-            "--",
-            "--locked",
-        ],
-        cwd="apps/desktop",
-        check=True,
-    )
+    _run_tauri_build(npm)
     config = json.loads(Path("apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
     version, product_name = config["version"], config["productName"]
     filename = f"{product_name}_{version}_x64-setup.exe"

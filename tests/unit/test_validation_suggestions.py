@@ -27,8 +27,8 @@ def test_suggests_only_detected_manifests_and_supports_nested_packages():
 
     assert [item["label"] for item in result] == [
         "Python tests (pytest)",
-        "JavaScript tests (npm)",
-        "Rust tests (Cargo)",
+        "JavaScript tests (npm) — apps/client",
+        "Rust tests (Cargo) — crates/worker",
     ]
     assert result[1]["argv"] == [
         "/usr/bin/env",
@@ -58,3 +58,24 @@ def test_suggests_go_and_nested_dotnet_checks():
         "src/App.csproj",
         "--no-restore",
     ]
+
+
+def test_suggests_every_supported_manifest_in_a_monorepo():
+    result = suggest_validation_commands(
+        snapshot(
+            ("apps/one/package.json", b"{}"),
+            ("apps/two/package.json", b"{}"),
+            ("services/one/pyproject.toml", b"[project]"),
+            ("services/two/pyproject.toml", b"[project]"),
+            ("crates/one/Cargo.toml", b"[package]"),
+            ("crates/two/Cargo.toml", b"[package]"),
+            ("services/one/go.mod", b"module one"),
+            ("services/two/go.mod", b"module two"),
+            ("dotnet/one.sln", b""),
+            ("dotnet/two.sln", b""),
+        )
+    )
+
+    assert len(result) == 10
+    assert len({tuple(item["argv"]) for item in result}) == 10
+    assert any("services/two" in str(item["argv"]) for item in result)
