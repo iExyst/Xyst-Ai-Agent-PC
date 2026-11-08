@@ -16,7 +16,7 @@ from xaa.runtime.task_commands import command_evidence
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.storage.commands import CommandJournal
-from xaa.storage.runs import TaskReadScope
+from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.tasks import TaskStore
 
 
@@ -262,6 +262,7 @@ async def test_lost_worker_can_attach_committed_private_file_result(workspace_tm
             "model_call_id": model_call_id,
             "journal_call_id": journal_id,
             "tool_name": "workspace.read_file",
+            "state": "completed",
         }
     ]
     store.transition(run_id, RunState.BLOCKED, reason="lost_specialist", owner=owner)
@@ -283,7 +284,8 @@ async def test_lost_worker_can_attach_committed_private_file_result(workspace_tm
     assert recovered["recoverable_task_actions"] == []
 
 
-async def test_lost_read_only_worker_can_attach_saved_read_result(workspace_tmp_path):
+@pytest.mark.parametrize("save_result", [True, False])
+async def test_lost_read_only_worker_can_reconcile_read(workspace_tmp_path, save_result: bool):
     transport = FixtureTransport()
     _, store, run_id, owner, project = setup(workspace_tmp_path, transport)
     tasks = TaskStore(store)
@@ -327,19 +329,32 @@ async def test_lost_read_only_worker_can_attach_saved_read_result(workspace_tmp_
     journal_id = (
         "taskfs-" + hashlib.sha256(f"{run_id}:{scope.task_id}:{model_call_id}".encode()).hexdigest()
     )
-    result = await execute_filesystem(
-        store,
-        run_id,
-        owner,
-        journal_id,
-        "read",
-        {"path": "fixture.txt"},
-        idempotency_key=journal_id,
-        internal=True,
-        task_id=scope.task_id,
-        task_token=scope.task_token,
-    )
-    assert result["text"] == "fixture"
+    if save_result:
+        result = await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            journal_id,
+            "read",
+            {"path": "fixture.txt"},
+            idempotency_key=journal_id,
+            internal=True,
+            task_id=scope.task_id,
+            task_token=scope.task_token,
+        )
+        assert result["text"] == "fixture"
+    else:
+        scoped_store = RunStore(store.path, task_scope=scope)
+        assert scoped_store.record_tool_intent(
+            run_id,
+            owner,
+            call_id=journal_id,
+            tool="workspace.read_file",
+            version="1",
+            arguments={"path": "fixture.txt"},
+            idempotency_key=journal_id,
+            internal=True,
+        )
     with store.connection() as connection:
         connection.execute(
             "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
@@ -347,19 +362,41 @@ async def test_lost_read_only_worker_can_attach_saved_read_result(workspace_tmp_
         )
     assert tasks.recover_expired(run_id, owner) == [scope.task_id]
     summary = tasks.recovery_summary(run_id, scope.task_id)
+    state = "completed" if save_result else "intended"
     assert summary["recoverable_task_actions"] == [
         {
             "model_call_id": model_call_id,
             "journal_call_id": journal_id,
             "tool_name": "workspace.read_file",
+            "state": state,
         }
     ]
-    tasks.record_recovered_task_action_result(
-        run_id, owner, scope.task_id, model_call_id, journal_id
-    )
+    if save_result:
+        tasks.record_recovered_task_action_result(
+            run_id, owner, scope.task_id, model_call_id, journal_id
+        )
+    else:
+        store.transition(run_id, RunState.BLOCKED, reason="lost_specialist", owner=owner)
+        token = "task-read-interruption-api-token-long-123456"
+        with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
+            response = client.post(
+                f"/runs/{run_id}/tasks/{scope.task_id}/recovery/actions/{model_call_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200, response.text
     recovered = tasks.recovery_summary(run_id, scope.task_id)
     assert recovered["pending_model_tool_calls"] == []
     assert recovered["saved_tool_results"] == 1
+    result_event = next(
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.tool.result"
+        and event["payload"].get("call_id") == model_call_id
+    )
+    if save_result:
+        assert result_event["payload"]["result"]["text"] == "fixture"
+    else:
+        assert result_event["payload"]["result"]["error"]["code"] == "interrupted_read"
     assert (project / "fixture.txt").read_text(encoding="utf-8") == "fixture"
 
 

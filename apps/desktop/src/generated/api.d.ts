@@ -3117,6 +3117,11 @@ export interface components {
             /** Model Call Id */
             model_call_id: string;
             /**
+             * State
+             * @enum {string}
+             */
+            state: "intended" | "completed" | "failed";
+            /**
              * Tool Name
              * @enum {string}
              */

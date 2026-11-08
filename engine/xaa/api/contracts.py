@@ -188,6 +188,7 @@ class TaskRecoverableCommand(BaseModel):
 class TaskRecoverableAction(BaseModel):
     model_call_id: str
     journal_call_id: str
+    state: Literal["intended", "completed", "failed"]
     tool_name: Literal[
         "workspace.read_file",
         "workspace.list_directory",

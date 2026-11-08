@@ -560,7 +560,7 @@ class TaskStore:
             saved_commands = {
                 row["provider_call_id"]: row
                 for row in connection.execute(
-                    "SELECT provider_call_id,tool_name,state,arguments FROM tool_calls "
+                    "SELECT provider_call_id,tool_name,state,arguments,result FROM tool_calls "
                     "WHERE run_id=? AND task_id=? AND tool_name IN "
                     "('workspace.run_command','workspace.read_file','workspace.list_directory',"
                     "'workspace.write_file','workspace.create_file','workspace.delete_file') "
@@ -620,16 +620,30 @@ class TaskStore:
             saved = saved_commands.get(journal_call_id)
             if (
                 saved is None
-                or saved["state"] != "completed"
                 or saved["tool_name"] != tool_name
                 or completed_ids[model_call_id] >= proposed_ids[model_call_id]
             ):
+                continue
+            recoverable_state = saved["state"]
+            can_attach_completed = recoverable_state == "completed" and saved["result"] is not None
+            can_seal_read = (
+                tool_name in {"workspace.read_file", "workspace.list_directory"}
+                and recoverable_state == "intended"
+            )
+            can_attach_interrupted = (
+                tool_name in {"workspace.read_file", "workspace.list_directory"}
+                and recoverable_state == "failed"
+                and saved["result"] is not None
+                and json.loads(saved["result"]).get("error", {}).get("code") == "interrupted_read"
+            )
+            if not (can_attach_completed or can_seal_read or can_attach_interrupted):
                 continue
             recoverable_task_actions.append(
                 {
                     "model_call_id": model_call_id,
                     "journal_call_id": journal_call_id,
                     "tool_name": tool_name,
+                    "state": recoverable_state,
                 }
             )
         candidate_reviewable = bool(
@@ -868,13 +882,59 @@ class TaskStore:
                 "WHERE run_id=? AND task_id=? AND provider_call_id=?",
                 (run_id, f"{run_id}:{task_id}", journal_call_id),
             ).fetchone()
-            if (
-                tool is None
-                or tool["tool_name"] not in allowed
-                or tool["state"] != "completed"
-                or tool["result"] is None
-            ):
+            if tool is None or tool["tool_name"] not in allowed:
                 raise ValueError("No completed private file action is available to attach.")
+            result: dict[str, Any]
+            if tool["state"] == "intended":
+                if tool["tool_name"] not in {"workspace.read_file", "workspace.list_directory"}:
+                    raise PermissionError("An interrupted write cannot be resolved as a read.")
+                if connection.execute(
+                    "SELECT 1 FROM run_events WHERE run_id=? AND event_type='tool.executing' "
+                    "AND json_extract(payload,'$.call_id')=?",
+                    (run_id, journal_call_id),
+                ).fetchone():
+                    raise ValueError("Read has execution evidence; inspect its saved result first.")
+                result = {
+                    "ok": False,
+                    "effect": "read_only",
+                    "error": {
+                        "code": "interrupted_read",
+                        "message": "This read-only operation has no saved result. Request a new read if still needed; no previous contents are assumed.",
+                    },
+                }
+                connection.execute(
+                    "UPDATE tool_calls SET state='failed',result=?,error=?,updated_at=? "
+                    "WHERE run_id=? AND provider_call_id=? AND state='intended'",
+                    (
+                        json.dumps(result),
+                        json.dumps(result["error"]),
+                        utc_now(),
+                        run_id,
+                        journal_call_id,
+                    ),
+                )
+                self.runs.record_event(
+                    connection,
+                    run_id,
+                    "tool.failed",
+                    {
+                        "call_id": journal_call_id,
+                        "internal": True,
+                        "effect": "read_only",
+                        "code": "interrupted_read",
+                    },
+                )
+            else:
+                if tool["result"] is None:
+                    raise ValueError("Saved file action has no durable result to attach.")
+                result = json.loads(tool["result"])
+                if (
+                    tool["state"] == "failed"
+                    and result.get("error", {}).get("code") != "interrupted_read"
+                ):
+                    raise ValueError(
+                        "Only a sealed interrupted read can be attached after failure."
+                    )
             model_calls = [
                 call
                 for row in connection.execute(
@@ -918,7 +978,7 @@ class TaskStore:
                     "task_id": task_id,
                     "call_id": model_call_id,
                     "journal_id": journal_call_id,
-                    "result": json.loads(tool["result"]),
+                    "result": result,
                     "recovered": True,
                 },
             )

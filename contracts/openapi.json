@@ -4413,6 +4413,15 @@
             "title": "Model Call Id",
             "type": "string"
           },
+          "state": {
+            "enum": [
+              "intended",
+              "completed",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
           "tool_name": {
             "enum": [
               "workspace.read_file",
@@ -4428,6 +4437,7 @@
         "required": [
           "model_call_id",
           "journal_call_id",
+          "state",
           "tool_name"
         ],
         "title": "TaskRecoverableAction",
