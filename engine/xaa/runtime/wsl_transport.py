@@ -61,16 +61,35 @@ class WSLTransport:
         digest, resources = profile_fingerprint()
         executable = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/wsl.exe")
         prefix = (executable, "--distribution", distribution, "--user", "root", "--exec")
+        mapper = (
+            "import json,subprocess,sys\n"
+            "paths=json.load(sys.stdin)\n"
+            "mapped=[]\n"
+            "for path in paths:\n"
+            " result=subprocess.run(['/usr/bin/wslpath','-a','-u',path],check=True,"
+            "stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)\n"
+            " mapped.append(result.stdout.strip())\n"
+            "sys.stdout.write(json.dumps(mapped))\n"
+        )
+        raw = await request_process(
+            (*prefix, "/usr/bin/python3", "-I", "-c", mapper),
+            json.dumps([str(path) for path in resources]).encode("utf-8"),
+            timeout=min(30, deadline - time.monotonic()),
+            output_limit=8192,
+        )
+        try:
+            decoded: object = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise TransportError("WSL returned invalid resource path data.") from exc
+        if not isinstance(decoded, list) or len(cast(list[object], decoded)) != len(resources):
+            raise TransportError("WSL returned an incomplete resource path list.")
         paths: list[str] = []
-        for path in resources:
-            raw = await request_process(
-                (*prefix, "/usr/bin/wslpath", "-a", "-u", str(path)),
-                b"",
-                timeout=min(10, deadline - time.monotonic()),
-                output_limit=8192,
-            )
-            value = raw.decode("utf-8").strip()
-            if not value.startswith("/") or any(char in value for char in "\r\n\0"):
+        for value in cast(list[object], decoded):
+            if (
+                not isinstance(value, str)
+                or not value.startswith("/")
+                or any(char in value for char in "\r\n\0")
+            ):
                 raise TransportError("WSL returned an invalid resource path.")
             paths.append(value)
         if profile_fingerprint()[0] != digest:

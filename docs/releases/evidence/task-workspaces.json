@@ -158,6 +158,37 @@
       "reason": "The independent SDK exact prompt counter failed during the harmless tool diagnostic before specialist execution or filesystem effects. The successful deletion attempt disabled exact-count admission for this focused behavior acceptance."
     }
   ],
+  "phase4_repeat_2026_11_08": {
+    "passed": true,
+    "report": ".acceptance/69f071a7-cf26-4a79-af90-4b9703d6ef1b/report.json",
+    "model": "qwen/qwen3.5-9b",
+    "context_length": 16384,
+    "context_admission": "conservative; LM Studio exact SDK count was unavailable on the preceding attempt",
+    "scope": "Real source-model specialists; independent private edits; Ubuntu-24.04 restricted validation; explicit conflict refusal and hash-backed beta integration",
+    "original_unchanged_before_review": true,
+    "private_command_validation_verified": true,
+    "both_tasks_completed": true,
+    "unresolved_calls": 0,
+    "owned_model_unloaded": true,
+    "diagnostic": "scripts/live_task_workspaces_diagnostic.py",
+    "transport_change": "WSL resource path discovery now maps all five files in one bounded WSL process instead of five independent launches",
+    "focused_tests": "tests/unit/test_wsl_transport.py: 12 passed",
+    "failed_attempts": [
+      {
+        "report": ".acceptance/1daa400f-58ac-4ca5-bed5-2144bd78ae56/report.json",
+        "reason": "512-token output cap ended one specialist response without a structured tool call; original unchanged and no unresolved calls"
+      },
+      {
+        "report": ".acceptance/4cf88d55-fdf6-470e-8eb1-924b01219dad/report.json",
+        "reason": "One specialist timed out before command reservation; the other completed validation; original unchanged and no unresolved calls"
+      },
+      {
+        "report": ".acceptance/b3050e75-7275-49f8-b4f5-d30e38656f60/report.json",
+        "reason": "LM Studio exact SDK counter could not count the harmless parent tool diagnostic; specialists remained queued"
+      }
+    ],
+    "limits": "A second live end-to-end sample does not establish broad model reliability or full Phase 4 parity."
+  },
   "verification": {
     "engine_tests": 447,
     "targeted_final_workspace_tests": 10,
