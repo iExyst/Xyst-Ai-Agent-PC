@@ -205,6 +205,7 @@ class TelegramStore:
         return str(row["account_id"]) if row is not None else None
 
     def profile(self, account_id: str | None = None) -> dict[str, Any]:
+        unknown_deliveries: list[sqlite3.Row]
         with self.runs.connection() as connection:
             if account_id is None:
                 bot = connection.execute(
@@ -217,6 +218,7 @@ class TelegramStore:
                 deliveries = connection.execute(
                     "SELECT delivery_state,count(*) AS amount FROM telegram_updates WHERE delivery_state IS NOT NULL GROUP BY delivery_state"
                 ).fetchall()
+                unknown_deliveries = []
             else:
                 bot = connection.execute(
                     "SELECT * FROM telegram_bots WHERE account_id=?", (account_id,)
@@ -232,13 +234,45 @@ class TelegramStore:
                     "SELECT delivery_state,count(*) AS amount FROM telegram_updates WHERE account_id=? AND delivery_state IS NOT NULL GROUP BY delivery_state",
                     (account_id,),
                 ).fetchall()
+                unknown_deliveries = connection.execute(
+                    "SELECT update_id,user_id,run_id,updated_at FROM telegram_updates WHERE account_id=? AND delivery_state='unknown' ORDER BY updated_at,update_id",
+                    (account_id,),
+                ).fetchall()
         return {
             "account_id": bot["account_id"] if bot else None,
             "username": bot["username"] if bot else None,
             "linked_users": int(bindings),
             "processed_updates": int(updates),
             "deliveries": {str(row["delivery_state"]): int(row["amount"]) for row in deliveries},
+            "unknown_deliveries": [
+                {
+                    "update_id": int(row["update_id"]),
+                    "user_id": str(row["user_id"]) if row["user_id"] is not None else None,
+                    "run_id": str(row["run_id"]) if row["run_id"] is not None else None,
+                    "updated_at": str(row["updated_at"]),
+                }
+                for row in unknown_deliveries
+            ],
         }
+
+    def reconcile_delivery(self, account_id: str, update_id: int, resolution: str) -> bool:
+        if resolution not in {"delivered", "retry"}:
+            raise ValueError("Invalid Telegram delivery reconciliation.")
+        now = utc_now()
+        state = "sent" if resolution == "delivered" else "pending"
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            changed = connection.execute(
+                "UPDATE telegram_updates SET delivery_state=?,updated_at=? WHERE account_id=? AND update_id=? AND delivery_state='unknown'",
+                (state, now, account_id, update_id),
+            ).rowcount
+            if changed != 1:
+                return False
+            connection.execute(
+                "INSERT INTO telegram_delivery_reconciliations (id,account_id,update_id,resolution,resolved_at) VALUES (?,?,?,?,?)",
+                (str(uuid4()), account_id, update_id, resolution, now),
+            )
+        return True
 
     def current_offset(self, account_id: str, now: datetime | None = None) -> int | None:
         current = now or datetime.now(UTC)

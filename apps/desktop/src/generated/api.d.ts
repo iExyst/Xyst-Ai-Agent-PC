@@ -103,6 +103,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/telegram/deliveries/{update_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Telegram Delivery */
+        post: operations["reconcile_telegram_delivery_channels_telegram_deliveries__update_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram/linked-users": {
         parameters: {
             query?: never;
@@ -3044,6 +3061,21 @@ export interface components {
             linked_users: number;
             /** Processed Updates */
             processed_updates: number;
+            /** Unknown Deliveries */
+            unknown_deliveries: components["schemas"]["TelegramUnknownDelivery"][];
+        };
+        /** TelegramDeliveryReconciliation */
+        TelegramDeliveryReconciliation: {
+            /**
+             * Confirmed Destination Checked
+             * @constant
+             */
+            confirmed_destination_checked: true;
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "delivered" | "retry";
         };
         /** TelegramLinkRevocation */
         TelegramLinkRevocation: {
@@ -3063,6 +3095,17 @@ export interface components {
             code: string;
             /** Expires At */
             expires_at: string;
+        };
+        /** TelegramUnknownDelivery */
+        TelegramUnknownDelivery: {
+            /** Run Id */
+            run_id: string | null;
+            /** Update Id */
+            update_id: number;
+            /** Updated At */
+            updated_at: string;
+            /** User Id */
+            user_id: string | null;
         };
         /** ToolCall */
         ToolCall: {
@@ -3327,6 +3370,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+        };
+    };
+    reconcile_telegram_delivery_channels_telegram_deliveries__update_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                update_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramDeliveryReconciliation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

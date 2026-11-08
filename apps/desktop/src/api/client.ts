@@ -219,6 +219,10 @@ export class EngineClient {
 
   telegramStatus(): Promise<TelegramChannelStatus> { return this.#request('/channels/telegram'); }
 
+  reconcileTelegramDelivery(updateId:number,resolution:'delivered'|'retry'): Promise<TelegramChannelStatus> {
+    return this.#request(`/channels/telegram/deliveries/${updateId}/reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_destination_checked:true})});
+  }
+
   setTelegramToken(token: string): Promise<TelegramChannelStatus> {
     return this.#request('/channels/telegram/credential',{method:'PUT',body:JSON.stringify({token})});
   }

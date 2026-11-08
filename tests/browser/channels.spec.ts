@@ -2,7 +2,7 @@ import {expect,test} from '@playwright/test';
 
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
-  let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{}};
+  let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
   let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{}};
   await page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**',async route=>{
@@ -20,7 +20,12 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/channels/telegram'&&request.method()==='GET')return route.fulfill({json:status,headers});
     if(path==='/channels/telegram/credential'&&request.method()==='PUT'){
       const body=request.postDataJSON();requests.push(body);expect(body.token).toBe('123456:telegram-test-secret');
-      status={configured:true,bot_username:'xaa_test_bot',linked_users:0,processed_updates:0,deliveries:{}};
+      status={configured:true,bot_username:'xaa_test_bot',linked_users:0,processed_updates:2,deliveries:{unknown:1},unknown_deliveries:[{update_id:17,user_id:'456',run_id:'fixture-run',updated_at:'2026-11-08T12:00:00Z'}]};
+      return route.fulfill({json:status,headers});
+    }
+    if(path==='/channels/telegram/deliveries/17/reconcile'&&request.method()==='POST'){
+      expect(request.postDataJSON()).toEqual({resolution:'retry',confirmed_destination_checked:true});
+      status={...status,deliveries:{pending:1},unknown_deliveries:[]};
       return route.fulfill({json:status,headers});
     }
     if(path==='/channels/telegram/credential'&&request.method()==='DELETE'){
@@ -59,6 +64,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   expect(requests).toHaveLength(1);
   await panel.getByRole('button',{name:'Generate one-time pairing code',exact:true}).click();
   await expect(panel.getByLabel('Telegram pairing instructions')).toContainText('/pair one-time-pair-code');
+  await expect(panel.getByText(/Update 17 · Telegram user 456/)).toBeVisible();
+  await panel.getByRole('button',{name:'I checked; retry reply',exact:true}).click();
+  await panel.getByRole('button',{name:'Confirm retry',exact:true}).click();
+  await expect(panel.getByText('Unconfirmed replies')).toHaveCount(0);
   await panel.getByRole('button',{name:'Refresh channel status',exact:true}).click();
   await panel.getByRole('button',{name:'Revoke all linked users',exact:true}).click();
   await panel.getByRole('button',{name:'Confirm revoke links',exact:true}).click();

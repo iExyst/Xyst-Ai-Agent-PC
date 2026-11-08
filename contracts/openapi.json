@@ -4578,15 +4578,47 @@
           "processed_updates": {
             "title": "Processed Updates",
             "type": "integer"
+          },
+          "unknown_deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/TelegramUnknownDelivery"
+            },
+            "title": "Unknown Deliveries",
+            "type": "array"
           }
         },
         "required": [
           "configured",
           "linked_users",
           "processed_updates",
-          "deliveries"
+          "deliveries",
+          "unknown_deliveries"
         ],
         "title": "TelegramCredentialStatus",
+        "type": "object"
+      },
+      "TelegramDeliveryReconciliation": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_destination_checked": {
+            "const": true,
+            "title": "Confirmed Destination Checked",
+            "type": "boolean"
+          },
+          "resolution": {
+            "enum": [
+              "delivered",
+              "retry"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "confirmed_destination_checked"
+        ],
+        "title": "TelegramDeliveryReconciliation",
         "type": "object"
       },
       "TelegramLinkRevocation": {
@@ -4639,6 +4671,49 @@
           "expires_at"
         ],
         "title": "TelegramPairingCode",
+        "type": "object"
+      },
+      "TelegramUnknownDelivery": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "update_id": {
+            "title": "Update Id",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "update_id",
+          "user_id",
+          "run_id",
+          "updated_at"
+        ],
+        "title": "TelegramUnknownDelivery",
         "type": "object"
       },
       "ToolCall": {
@@ -5061,6 +5136,60 @@
           }
         ],
         "summary": "Set Telegram Credential"
+      }
+    },
+    "/channels/telegram/deliveries/{update_id}/reconcile": {
+      "post": {
+        "operationId": "reconcile_telegram_delivery_channels_telegram_deliveries__update_id__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramDeliveryReconciliation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Telegram Delivery"
       }
     },
     "/channels/telegram/linked-users": {

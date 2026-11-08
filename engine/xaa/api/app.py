@@ -358,6 +358,14 @@ class TelegramCredentialRequest(BaseModel):
     token: SecretStr = Field(min_length=1, max_length=512)
 
 
+class TelegramUnknownDelivery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    update_id: int
+    user_id: str | None
+    run_id: str | None
+    updated_at: str
+
+
 class TelegramCredentialStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     configured: bool
@@ -365,6 +373,13 @@ class TelegramCredentialStatus(BaseModel):
     linked_users: int
     processed_updates: int
     deliveries: dict[str, int]
+    unknown_deliveries: list[TelegramUnknownDelivery]
+
+
+class TelegramDeliveryReconciliation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resolution: Literal["delivered", "retry"]
+    confirmed_destination_checked: Literal[True]
 
 
 class TelegramPairingCode(BaseModel):
@@ -1300,6 +1315,41 @@ def create_app(
             "linked_users": profile["linked_users"],
             "processed_updates": profile["processed_updates"],
             "deliveries": profile["deliveries"],
+            "unknown_deliveries": profile["unknown_deliveries"],
+        }
+
+    @app.post(
+        "/channels/telegram/deliveries/{update_id}/reconcile",
+        response_model=TelegramCredentialStatus,
+    )
+    def reconcile_telegram_delivery(
+        update_id: int,
+        payload: TelegramDeliveryReconciliation,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        if credential_store.get("telegram-bot") is None:
+            raise HTTPException(
+                status_code=409, detail="Connect the Telegram bot before reconciling a delivery."
+            )
+        account_id = credential_store.get("telegram-bot-account")
+        if account_id is None:
+            raise HTTPException(
+                status_code=409, detail="The configured Telegram bot account is unavailable."
+            )
+        if not telegram_store.reconcile_delivery(account_id, update_id, payload.resolution):
+            raise HTTPException(
+                status_code=409, detail="This delivery is no longer awaiting reconciliation."
+            )
+        profile = telegram_store.profile(account_id)
+        return {
+            "configured": True,
+            "bot_username": profile["username"],
+            "linked_users": profile["linked_users"],
+            "processed_updates": profile["processed_updates"],
+            "deliveries": profile["deliveries"],
+            "unknown_deliveries": profile["unknown_deliveries"],
         }
 
     @app.put("/channels/telegram/credential", response_model=TelegramCredentialStatus)
@@ -1326,6 +1376,7 @@ def create_app(
             "linked_users": profile["linked_users"],
             "processed_updates": profile["processed_updates"],
             "deliveries": profile["deliveries"],
+            "unknown_deliveries": profile["unknown_deliveries"],
         }
 
     @app.delete("/channels/telegram/credential", response_model=TelegramCredentialStatus)
@@ -1348,6 +1399,7 @@ def create_app(
             "linked_users": profile["linked_users"],
             "processed_updates": profile["processed_updates"],
             "deliveries": profile["deliveries"],
+            "unknown_deliveries": profile["unknown_deliveries"],
         }
 
     @app.delete("/channels/telegram/links", response_model=TelegramLinkRevocation)

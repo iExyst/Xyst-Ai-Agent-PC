@@ -438,6 +438,15 @@ class RunStore:
                 );
                 CREATE INDEX IF NOT EXISTS telegram_updates_delivery
                     ON telegram_updates(delivery_state, updated_at);
+                CREATE TABLE IF NOT EXISTS telegram_delivery_reconciliations (
+                    id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL,
+                    update_id INTEGER NOT NULL,
+                    resolution TEXT NOT NULL CHECK (resolution IN ('delivered','retry')),
+                    resolved_at TEXT NOT NULL,
+                    FOREIGN KEY(account_id, update_id)
+                        REFERENCES telegram_updates(account_id, update_id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS telegram_offsets (
                     account_id TEXT PRIMARY KEY,
                     next_offset INTEGER NOT NULL,

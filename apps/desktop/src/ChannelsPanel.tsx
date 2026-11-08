@@ -7,6 +7,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [pairing,setPairing]=useState<{code:string;expires_at:string}>();
   const [busy,setBusy]=useState(false);
   const [confirmRevoke,setConfirmRevoke]=useState(false);
+  const [reconcileChoice,setReconcileChoice]=useState<{updateId:number;resolution:'delivered'|'retry'}>();
   const [error,setError]=useState('');
   const [email,setEmail]=useState<EmailChannelStatus>();
   const [emailAddress,setEmailAddress]=useState('');
@@ -48,6 +49,14 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function reconcileTelegramDelivery() {
+    if(!reconcileChoice)return;
+    setBusy(true);setError('');
+    try {setStatus(await client.reconcileTelegramDelivery(reconcileChoice.updateId,reconcileChoice.resolution));setReconcileChoice(undefined);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not reconcile the Telegram delivery.');}
+    finally {setBusy(false);}
+  }
+
   async function saveEmail() {
     setBusy(true);setError('');
     try {setEmail(await client.setEmailAccount({address:emailAddress,password:emailPassword,imap_host:imapHost,smtp_host:smtpHost,allowed_senders:allowedSenders.split(',').map(value=>value.trim()).filter(Boolean),imap_port:993,smtp_port:587,smtp_security:'starttls',authserv_id:authservId}));setEmailPassword('');}
@@ -82,6 +91,22 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       </div>}
       {pairing&&<div aria-label="Telegram pairing instructions"><p>Within five minutes, send this exact command in a private chat with @{status.bot_username??'your bot'}:</p><code>/pair {pairing.code}</code><p>Expires {new Date(pairing.expires_at).toLocaleString()}.</p></div>}
       {status.deliveries&&Object.keys(status.deliveries).length>0&&<p>Delivery records: {Object.entries(status.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}</p>}
+      {(status.unknown_deliveries??[]).length>0&&<section aria-label="Telegram deliveries needing review">
+        <h4>Unconfirmed replies</h4>
+        <p>Open the listed private chat and check whether X.A.A.'s reply arrived before choosing an action. X.A.A. never retries an unclear send automatically.</p>
+        <ul>{(status.unknown_deliveries??[]).map(delivery=><li key={delivery.update_id}>
+          <span>Update {delivery.update_id} · Telegram user {delivery.user_id??'unknown'} · run {delivery.run_id??'unavailable'} · {new Date(delivery.updated_at).toLocaleString()}</span>
+          <div className="controls">
+            <button type="button" onClick={()=>setReconcileChoice({updateId:delivery.update_id,resolution:'delivered'})} disabled={busy}>I checked; mark delivered</button>
+            <button type="button" onClick={()=>setReconcileChoice({updateId:delivery.update_id,resolution:'retry'})} disabled={busy}>I checked; retry reply</button>
+          </div>
+          {reconcileChoice?.updateId===delivery.update_id&&<div role="alertdialog" aria-label="Confirm Telegram delivery reconciliation">
+            <p>{reconcileChoice.resolution==='retry'?'Retrying can send a duplicate if the first reply actually arrived.':'This records that you found the reply in Telegram.'} Confirm that you checked the destination chat.</p>
+            <button type="button" onClick={()=>void reconcileTelegramDelivery()} disabled={busy}>Confirm {reconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+            <button type="button" onClick={()=>setReconcileChoice(undefined)} disabled={busy}>Cancel</button>
+          </div>}
+        </li>)}</ul>
+      </section>}
     </>}
     <h3>Email (authorized senders)</h3>
     <p>Email uses IMAP over verified TLS and SMTP STARTTLS. Only exact allowed senders with a passing DMARC result from the configured receiving mail server can start Observe-mode runs. Replies are text only; ambiguous SMTP outcomes are never retried automatically.</p>

@@ -250,6 +250,45 @@ def test_unknown_delivery_is_never_automatically_retried(workspace_tmp_path: Pat
     assert channel.claim_delivery(IDENTITY.account_id) is None
 
 
+def test_unknown_delivery_reconciliation_is_account_scoped_atomic_and_audited(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-reconcile.sqlite3")
+    channel = TelegramStore(runs)
+    pair_user(channel)
+    queued = channel.process_update(
+        IDENTITY, private_update(2, 123, "Tell me something"), model="fixture/model"
+    )
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE telegram_updates SET delivery_state='unknown' WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        )
+    uncertain = channel.profile(IDENTITY.account_id)["unknown_deliveries"]
+    assert len(uncertain) == 1
+    assert uncertain[0]["update_id"] == 2
+    assert uncertain[0]["user_id"] == "123"
+    assert uncertain[0]["run_id"] == queued["run_id"]
+
+    assert channel.reconcile_delivery(IDENTITY.account_id, 2, "retry")
+    assert not channel.reconcile_delivery("another-account", 2, "delivered")
+    assert not channel.reconcile_delivery(IDENTITY.account_id, 2, "delivered")
+    profile = channel.profile(IDENTITY.account_id)
+    assert profile["unknown_deliveries"] == []
+    assert profile["deliveries"]["pending"] == 1
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT resolution FROM telegram_delivery_reconciliations WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        ).fetchone()
+        state = connection.execute(
+            "SELECT delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        ).fetchone()[0]
+    assert row["resolution"] == "retry"
+    assert state == "pending"
+
+
 def test_abandoned_send_intent_becomes_unknown_after_restart(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "telegram-recovery.sqlite3")
     channel = TelegramStore(runs)
@@ -777,6 +816,39 @@ def test_telegram_credential_and_pairing_api_never_returns_saved_token(
     assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == [
         {"user_id": "456"}
     ]
+    uncertain = telegram_store.process_update(
+        IDENTITY, private_update(12, 456, "uncertain reply"), model="fixture/model"
+    )
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE telegram_updates SET delivery_state='unknown' WHERE account_id=? AND update_id=12",
+            (IDENTITY.account_id,),
+        )
+    status = client.get("/channels/telegram", headers=HEADERS).json()
+    assert status["unknown_deliveries"][0]["update_id"] == 12
+    assert status["unknown_deliveries"][0]["run_id"] == uncertain["run_id"]
+    rejected = client.post(
+        "/channels/telegram/deliveries/12/reconcile",
+        headers=HEADERS,
+        json={"resolution": "retry", "confirmed_destination_checked": False},
+    )
+    assert rejected.status_code == 422
+    reconciled = client.post(
+        "/channels/telegram/deliveries/12/reconcile",
+        headers=HEADERS,
+        json={"resolution": "delivered", "confirmed_destination_checked": True},
+    )
+    assert reconciled.status_code == 200
+    assert reconciled.json()["unknown_deliveries"] == []
+    assert reconciled.json()["deliveries"]["sent"] == 1
+    assert (
+        client.post(
+            "/channels/telegram/deliveries/12/reconcile",
+            headers=HEADERS,
+            json={"resolution": "retry", "confirmed_destination_checked": True},
+        ).status_code
+        == 409
+    )
     revoked = client.delete("/channels/telegram/links", headers=HEADERS)
     assert revoked.json() == {"revoked_users": 1, "linked_users": 0}
     assert (
