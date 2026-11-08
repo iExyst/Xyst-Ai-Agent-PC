@@ -23,6 +23,7 @@ _JS_LOCKFILES = {
     "bun.lock": "bun",
     "bun.lockb": "bun",
 }
+_RAKE_TEST_TASK = re.compile(r"(?m)^\s*(?:Rake::TestTask\.new\b|task\s+(?::test\b|['\"]test['\"]))")
 
 
 def _javascript_package_manager(
@@ -235,6 +236,48 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
             {
                 "label": f"Swift tests (Swift Package Manager){suffix}",
                 "rationale": f"{manifest} was found. Confirm Swift and any required dependencies are available in the restricted WSL environment.",
+                "argv": argv,
+            }
+        )
+
+    rakefiles = [path for key, path in paths.items() if PurePosixPath(key).name == "rakefile"]
+    for rakefile in sorted(rakefiles, key=str.casefold):
+        try:
+            content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == rakefile.casefold()
+            )
+            rake_source = content.decode("utf-8")
+        except (StopIteration, UnicodeDecodeError):
+            continue
+        executable_lines = "\n".join(
+            line for line in rake_source.splitlines() if not line.lstrip().startswith("#")
+        )
+        if not _RAKE_TEST_TASK.search(executable_lines):
+            continue
+
+        directory = PurePosixPath(rakefile).parent
+        ancestors = (directory, *directory.parents)
+        gemfile = next(
+            (
+                paths[(ancestor / "Gemfile").as_posix().casefold()]
+                for ancestor in ancestors
+                if (ancestor / "Gemfile").as_posix().casefold() in paths
+            ),
+            None,
+        )
+        argv = ["/usr/bin/env"]
+        if gemfile is not None:
+            if f"{gemfile}.lock".casefold() not in paths:
+                continue
+            argv.extend([f"BUNDLE_GEMFILE={gemfile}", "bundle", "exec"])
+        argv.extend(["rake", "--rakefile", rakefile, "test"])
+        suffix = "" if str(directory) == "." else f" — {directory}"
+        suggestions.append(
+            {
+                "label": f"Ruby tests (Rake){suffix}",
+                "rationale": f"{rakefile} explicitly declares a test task. Confirm Ruby/Rake and any locked dependencies are available in the restricted network-disabled WSL environment.",
                 "argv": argv,
             }
         )

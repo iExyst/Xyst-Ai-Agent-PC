@@ -199,6 +199,37 @@ def test_suggests_swift_package_tests_at_root_and_nested_paths():
     assert result[1]["argv"] == ["/usr/bin/env", "swift", "test"]
 
 
+def test_suggests_rake_only_for_explicit_test_tasks_and_locked_bundles():
+    result = suggest_validation_commands(
+        snapshot(
+            ("Rakefile", b'task :test do\n  puts "testing"\nend\n'),
+            ("apps/locked/Gemfile", b'source "https://rubygems.org"\n'),
+            ("apps/locked/Gemfile.lock", b"GEM\n  specs:\n"),
+            ("apps/locked/Rakefile", b"Rake::TestTask.new(:test)\n"),
+            ("apps/unlocked/Gemfile", b'source "https://rubygems.org"\n'),
+            ("apps/unlocked/Rakefile", b"task :test\n"),
+            ("apps/comment-only/Rakefile", b"# task :test\n"),
+            ("apps/no-test/Rakefile", b"task :build\n"),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "Ruby tests (Rake) — apps/locked",
+        "Ruby tests (Rake)",
+    ]
+    assert result[0]["argv"] == [
+        "/usr/bin/env",
+        "BUNDLE_GEMFILE=apps/locked/Gemfile",
+        "bundle",
+        "exec",
+        "rake",
+        "--rakefile",
+        "apps/locked/Rakefile",
+        "test",
+    ]
+    assert result[1]["argv"] == ["/usr/bin/env", "rake", "--rakefile", "Rakefile", "test"]
+
+
 def test_suggests_every_supported_manifest_in_a_monorepo():
     result = suggest_validation_commands(
         snapshot(
