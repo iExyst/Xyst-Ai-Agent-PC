@@ -56,6 +56,7 @@ const edit = process.env.XAA_NATIVE_EDIT === '1' || finalReview || patchRequeste
 const specialists = process.env.XAA_NATIVE_SPECIALISTS === '1';
 const seededSpecialists = specialists && process.env.XAA_NATIVE_SPECIALIST_SEEDED === '1';
 const nativeSpecialistModel = process.env.XAA_NATIVE_SPECIALIST_MODEL || 'qwen/qwen3.5-9b';
+const nativePlanModel = process.env.XAA_NATIVE_PLAN_MODEL || 'qwen/qwen3.5-9b';
 let specialistStreamingVerified=false;
 const exactContextRequested=process.env.XAA_EXACT_CONTEXT==='1';
 const taskQuotaRequested=process.env.XAA_NATIVE_TASK_QUOTA==='1';
@@ -384,10 +385,10 @@ try {
       await page.getByLabel('Workspace path').fill(workspace);
       await page.getByRole('button',{name:`Open ${objective}`,exact:true}).click();
     } else {
-      const response = await fetch(connection.base_url + '/models/load', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'qwen/qwen3.5-9b', context_length: taskQuotaRequested ? 32768 : 16384 }) });
+      const response = await fetch(connection.base_url + '/models/load', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: nativePlanModel, context_length: taskQuotaRequested ? 32768 : 16384 }) });
       if (!response.ok) throw new Error('Native planning model loading failed');
       instance = (await response.json()).instance_id;
-      await page.getByLabel('Local model').selectOption('qwen/qwen3.5-9b');
+      await page.getByLabel('Local model').selectOption(nativePlanModel);
       await page.getByLabel('Workspace path').fill(workspace);
       const specialistRequirements = (specialists||taskQuotaRequested) ? 'Both task objectives must tell the assigned specialist to use workspace_read_file on the actual discovered filename and report the exact code in that file. For both tasks, acceptance_criteria must be exactly ["Report the exact code read from the fixture file."]. The reviewer must independently read the file. ' : '';
       const reservations = (specialists ? 'Give inspect max_iterations 4 and review max_iterations 4. ' : taskQuotaRequested ? 'Give inspect max_iterations 2 and review max_iterations 3. ' : 'Give each task max_iterations 2. ')+'The tasks[].id values must be exactly inspect and review, without suffixes. Set review dependencies to ["inspect"]. ';
