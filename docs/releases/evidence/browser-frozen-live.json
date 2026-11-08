@@ -1,6 +1,6 @@
 {
-  "checked_at_utc": "2026-11-05T15:26:22.588343+00:00",
-  "frozen_engine_sha256": "83c6d544d9766b9a5f847c2887588984c9c25f7fa09b9eff2604a934c34db5bf",
+  "checked_at_utc": "2026-11-08T22:42:04.735054+00:00",
+  "frozen_engine_sha256": "5e3427e8d184acf335b1bdee5170e804a8ae13dca2cc1e601f615184b21bdebf",
   "browser": "Microsoft Edge via packaged Playwright worker",
   "result": {
     "status": "ok",
@@ -9,5 +9,11 @@
     "content_characters": 917,
     "screenshot_bytes": 45368,
     "screenshot_sha256": "b1b3ed9e15bdab1237f3b29268f1937bde2a4e506ceb5f4735aa01359eadc846"
+  },
+  "cancellation": {
+    "url": "https://httpbin.org/delay/10",
+    "process_tree_terminated": true,
+    "exit_code": 1,
+    "cleanup_elapsed_ms": 473
   }
 }
