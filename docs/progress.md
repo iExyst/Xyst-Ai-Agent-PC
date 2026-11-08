@@ -2,6 +2,10 @@
 
 Updated 2026-11-08.
 
+## Validation and channel scope direction (2026-11-08)
+
+Per the owner's direction, defer additional live LLM testing until the final acceptance pass unless a specific implementation cannot be meaningfully verified without it. Continue deterministic fixtures, static checks, packaging checks and non-model integrations as needed; existing live-model reports remain historical evidence and must not be treated as a reason to keep running models now. Discord is one implementation choice for the objective's first messaging adapter, not a required platform named by the objective. Keep its current partial work accurately documented and avoid expanding Discord-specific scope unless a required acceptance gap or explicit owner priority calls for it.
+
 ## Completion accounting
 
 The rough percentage estimates in older entries below were copied forward without recalculation as implementation continued. They are historical and stale. A defensible current percentage requires a phase-gate audit with explicit weights; until then, this record does not claim a current numeric completion estimate.
