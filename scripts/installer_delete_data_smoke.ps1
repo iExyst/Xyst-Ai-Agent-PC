@@ -145,7 +145,7 @@ try {
             foreach ($xaaControl in $xaaControls) {
                 $xaaText = [XaaInstallerWindowApi]::Text($xaaControl)
                 if ($xaaText -eq 'Delete the application data') { $xaaCheckbox = $xaaControl }
-                if ($xaaText -eq 'Uninstall') { $xaaUninstallButton = $xaaControl }
+                if ($xaaText -in @('Uninstall', '&Uninstall')) { $xaaUninstallButton = $xaaControl }
             }
             if ($xaaCheckbox -ne $null -and $xaaUninstallButton -ne $null) {
                 [void][XaaInstallerWindowApi]::SendMessage($xaaCheckbox, 0x00F1, [IntPtr]::new(1), [IntPtr]::Zero)
