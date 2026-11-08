@@ -232,17 +232,15 @@ class SkillContentRevision(BaseModel):
         return self
 
 
-class SkillResourceRevision(BaseModel):
-    """Write one normalized UTF-8 resource into a new candidate package version."""
+class SkillResourceText(BaseModel):
+    """One normalized text file in a model-authored procedure package edit."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-    skill_id: str = Field(min_length=1, max_length=128)
-    expected_version: int = Field(ge=1, le=127)
     path: str = Field(min_length=1, max_length=512)
     content: str = Field(max_length=64 * 1024)
 
     @model_validator(mode="after")
-    def bounded_resource(self) -> "SkillResourceRevision":
+    def bounded_resource(self) -> "SkillResourceText":
         try:
             raw = self.content.encode("utf-8")
         except UnicodeEncodeError as exc:
@@ -255,6 +253,29 @@ class SkillResourceRevision(BaseModel):
             media_type="text/plain",
             sha256=hashlib.sha256(raw).hexdigest(),
         )
+        return self
+
+
+class SkillResourceRevision(BaseModel):
+    """Write up to eight normalized UTF-8 resources in one candidate version."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    skill_id: str = Field(min_length=1, max_length=128)
+    expected_version: int = Field(ge=1, le=127)
+    path: str = Field(min_length=1, max_length=512)
+    content: str = Field(max_length=64 * 1024)
+    additional_resources: list[SkillResourceText] = Field(
+        default_factory=list[SkillResourceText], max_length=7
+    )
+
+    @model_validator(mode="after")
+    def bounded_resource(self) -> "SkillResourceRevision":
+        resources = [
+            SkillResourceText(path=self.path, content=self.content),
+            *self.additional_resources,
+        ]
+        if len({resource.path for resource in resources}) != len(resources):
+            raise ValueError("Each linked resource path may appear only once in an edit.")
         return self
 
 
@@ -846,7 +867,10 @@ class SkillStore:
             raise PermissionError("Specialists cannot revise user-library procedure resources.")
         if not call_id or len(call_id) > 128:
             raise ValueError("Procedure resource revision call identity is invalid.")
-        raw_content = revision.content.encode("utf-8")
+        changed_resources = [
+            SkillResourceText(path=revision.path, content=revision.content),
+            *revision.additional_resources,
+        ]
         now = utc_now()
         encoded_arguments = json.dumps(revision.model_dump(mode="json"), sort_keys=True)
         with self.runs.connection() as connection:
@@ -917,18 +941,27 @@ class SkillStore:
                 )
                 for item in prior_assets
             }
-            asset = SkillAsset(
-                path=revision.path,
-                media_type=(
-                    asset_map[revision.path].media_type
-                    if revision.path in asset_map
-                    else "text/plain"
-                ),
-                sha256=hashlib.sha256(raw_content).hexdigest(),
-                content_base64=base64.b64encode(raw_content).decode("ascii"),
-            )
-            edit_mode = "replaced" if revision.path in asset_map else "created"
-            asset_map[revision.path] = asset
+            edit_records: list[dict[str, str]] = []
+            for resource in changed_resources:
+                raw_content = resource.content.encode("utf-8")
+                asset = SkillAsset(
+                    path=resource.path,
+                    media_type=(
+                        asset_map[resource.path].media_type
+                        if resource.path in asset_map
+                        else "text/plain"
+                    ),
+                    sha256=hashlib.sha256(raw_content).hexdigest(),
+                    content_base64=base64.b64encode(raw_content).decode("ascii"),
+                )
+                edit_records.append(
+                    {
+                        "path": resource.path,
+                        "sha256": asset.sha256,
+                        "edit": "replaced" if resource.path in asset_map else "created",
+                    }
+                )
+                asset_map[resource.path] = asset
             try:
                 draft = SkillDraft(
                     name=entry["name"],
@@ -946,6 +979,7 @@ class SkillStore:
             evidence: dict[str, Any] = {
                 "state": "candidate",
                 "provenance": "model_resource_revision",
+                "resource_count": len(changed_resources),
                 "source": {
                     **{
                         str(key): value
@@ -977,12 +1011,14 @@ class SkillStore:
                 "status": "candidate_version_created",
                 "procedure": summary,
                 "version": next_version,
-                "resource_path": asset.path,
-                "resource_sha256": asset.sha256,
-                "resource_edit": edit_mode,
+                "resource_path": edit_records[0]["path"],
+                "resource_sha256": edit_records[0]["sha256"],
+                "resource_edit": edit_records[0]["edit"],
+                "resources": edit_records,
+                "resource_edit_count": len(edit_records),
                 "trust": "untrusted_model_resource_revision",
                 "requires_user_review": True,
-                "notice": "Only this linked UTF-8 resource changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
+                "notice": "Only the listed linked UTF-8 resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
             }
             connection.execute(
                 "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.resource_revise','1',?,?,'completed',?,NULL,?,?,?)",
@@ -1011,7 +1047,7 @@ class SkillStore:
                     "skill_id": revision.skill_id,
                     "version": next_version,
                     "parent_version": current_version,
-                    "path": asset.path,
+                    "paths": [resource.path for resource in changed_resources],
                     "call_id": call_id,
                 },
             )

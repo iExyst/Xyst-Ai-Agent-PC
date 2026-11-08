@@ -273,6 +273,64 @@ def test_resource_revision_adds_one_utf8_file_and_refuses_path_escape(
     assert [asset["path"] for asset in version_two["assets"]] == ["references/new.txt"]
 
 
+def test_model_resource_revision_writes_multiple_files_in_one_candidate_version(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-batch.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    run_id, owner = _resource_revision_run(store, entry["id"])
+    revision = SkillResourceRevision(
+        skill_id=entry["id"],
+        expected_version=1,
+        path="references/guide.md",
+        content="Guide content.",
+        additional_resources=[
+            {"path": "templates/report.md", "content": "Template content."},
+            {"path": "examples/result.txt", "content": "Example content."},
+        ],
+    )
+
+    result = skills.create_model_resource_revision_from_run(
+        run_id, owner, "resource-batch-call", revision
+    )
+
+    version_two = skills.version(entry["id"], 2)
+    assert result["resource_edit_count"] == 3
+    assert [item["path"] for item in result["resources"]] == [
+        "references/guide.md",
+        "templates/report.md",
+        "examples/result.txt",
+    ]
+    assert {asset["path"] for asset in version_two["assets"]} == {
+        "references/guide.md",
+        "templates/report.md",
+        "examples/result.txt",
+    }
+    assert version_two["evaluation_evidence"]["state"] == "candidate"
+    assert version_two["evaluation_evidence"]["evaluations"] == []
+    assert skills.get(entry["id"])["latest_version"] == 2
+    assert skills.version(entry["id"], 1)["assets"] == []
+    with pytest.raises(ValidationError, match="only once"):
+        SkillResourceRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            path="same.txt",
+            content="First.",
+            additional_resources=[{"path": "same.txt", "content": "Duplicate."}],
+        )
+    with pytest.raises(ValidationError):
+        SkillResourceRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            path="first.txt",
+            content="First.",
+            additional_resources=[
+                {"path": f"extra-{index}.txt", "content": "More."} for index in range(8)
+            ],
+        )
+
+
 def test_model_resource_removal_preserves_previous_version_and_other_package_fields(
     workspace_tmp_path: Path,
 ) -> None:

@@ -73,7 +73,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('2');
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   const revisionGrant=page.getByLabel('Allow this run to draft a new version of this procedure');
-  const resourceRevisionGrant=page.getByLabel('Allow this run to write one linked UTF-8 resource');
+  const resourceRevisionGrant=page.getByLabel('Allow this run to write up to 8 linked UTF-8 resources in one edit');
   const resourceRemovalGrant=page.getByLabel('Allow this run to remove one linked resource');
   await expect(revisionGrant).toBeEnabled();
   await expect(resourceRevisionGrant).toBeEnabled();
