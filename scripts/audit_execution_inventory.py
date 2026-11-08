@@ -4,6 +4,7 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Any
 import yaml
 
 PIN = "1e208b280deb18f01d015b0acdf3ef3552d08039"
-ROOT = Path(".hermes-audit")
+ROOT = Path(os.environ.get("HERMES_AUDIT_ROOT", ".hermes-audit"))
 OUTPUT = Path("docs/parity/execution-inventory.json")
 BUILTINS = {
     "local": (

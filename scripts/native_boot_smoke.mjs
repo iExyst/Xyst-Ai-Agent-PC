@@ -16,7 +16,8 @@ const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH
 const started=Date.now();let stdout='',stderr='';
 const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
 const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
-const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:path.join(root,'local-app-data'),APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
+const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;

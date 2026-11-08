@@ -45,6 +45,11 @@ jobs:
           sparse-checkout: |
             skills
             optional-skills
+            agent
+            gateway
+            plugin-catalog
+            plugins/platforms
+            tools
           sparse-checkout-cone-mode: true
           persist-credentials: false
       - run: uv sync --locked
@@ -55,6 +60,10 @@ jobs:
           key: ${{ runner.os }}-windows-source-xaa-uv-${{ hashFiles('uv.lock') }}
       - name: Verify pinned Hermes skill imports
         run: uv run python scripts/audit_skill_import_compatibility.py --check
+      - name: Verify pinned Hermes channel inventory
+        run: uv run python scripts/audit_channel_inventory.py --check
+      - name: Verify pinned Hermes execution inventory
+        run: uv run python scripts/audit_execution_inventory.py --check
       - run: uv run ruff check engine scripts tests
       - run: uv run ruff format --check engine scripts tests
       - run: uv run pyright engine scripts
