@@ -3101,6 +3101,11 @@ export interface components {
             journal_call_id: string;
             /** Model Call Id */
             model_call_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "intended" | "completed" | "failed";
         };
         /** TaskRecoveryDecision */
         TaskRecoveryDecision: {
