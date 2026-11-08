@@ -2274,6 +2274,15 @@ export interface components {
             /** Request Id */
             request_id: string;
         };
+        /** ProjectValidationSuggestion */
+        ProjectValidationSuggestion: {
+            /** Argv */
+            argv: string[];
+            /** Label */
+            label: string;
+            /** Rationale */
+            rationale: string;
+        };
         /** ProjectValidationSummary */
         ProjectValidationSummary: {
             /** Available */
@@ -2284,6 +2293,8 @@ export interface components {
             evidence: components["schemas"]["ProjectValidationEvidence"][];
             /** Required */
             required: boolean;
+            /** Suggestions */
+            suggestions?: components["schemas"]["ProjectValidationSuggestion"][];
             /** Unresolved Call Ids */
             unresolved_call_ids?: string[];
         };

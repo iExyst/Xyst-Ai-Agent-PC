@@ -227,11 +227,18 @@ class ProjectValidationEvidence(BaseModel):
     stderr_artifact_id: str
 
 
+class ProjectValidationSuggestion(BaseModel):
+    label: str
+    rationale: str
+    argv: list[str]
+
+
 class ProjectValidationSummary(BaseModel):
     available: bool
     required: bool
     current_snapshot_sha256: str | None
     evidence: list[ProjectValidationEvidence]
+    suggestions: list[ProjectValidationSuggestion] = Field(default_factory=list)
     unresolved_call_ids: list[str] = Field(default_factory=list)
 
 

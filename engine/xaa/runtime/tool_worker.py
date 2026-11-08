@@ -214,6 +214,7 @@ def main() -> None:
         try:
             if request.operation == "project_hash":
                 from xaa.runtime.command_contracts import command_workspace
+                from xaa.runtime.validation_suggestions import suggest_validation_commands
                 from xaa.runtime.workspace_snapshot import capture_workspace
                 from xaa.storage.commands import CommandJournal
 
@@ -223,7 +224,11 @@ def main() -> None:
                 root = command_workspace(run["workspace"], executor.store.path, run["mode"])
                 snapshot = capture_workspace(root)
                 CommandJournal(executor.store).grant(request.run_id, owner=request.token)
-                result = {"sha256": snapshot.sha256, "files": len(snapshot.files)}
+                result = {
+                    "sha256": snapshot.sha256,
+                    "files": len(snapshot.files),
+                    "suggestions": suggest_validation_commands(snapshot),
+                }
             elif request.operation == "integrate":
                 from xaa.runtime.task_integration import integrate_file
 

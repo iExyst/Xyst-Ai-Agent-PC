@@ -49,7 +49,11 @@ async def summary(store: RunStore, run_id: str, owner: str) -> ProjectValidation
     required = validation_required(store, run_id)
     if run.get("command_grant") is None:
         return ProjectValidationSummary(
-            available=False, required=required, current_snapshot_sha256=None, evidence=[]
+            available=False,
+            required=required,
+            current_snapshot_sha256=None,
+            evidence=[],
+            suggestions=[],
         )
     journal = CommandJournal(store, purpose="project_validation")
     with store.connection() as connection:
@@ -100,6 +104,7 @@ async def summary(store: RunStore, run_id: str, owner: str) -> ProjectValidation
         required=required,
         current_snapshot_sha256=observed["sha256"],
         evidence=evidence,
+        suggestions=observed["suggestions"],
         unresolved_call_ids=unresolved,
     )
 
