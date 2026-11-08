@@ -25,7 +25,7 @@ The phases have very different scope, so counting these rows equally would produ
 
 ## Latest hosted verification (2026-11-08)
 
-Run [42475637744](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42475637744) passed both Windows jobs. Source validation passed the pinned Hermes import/channel/execution audits, Ruff, formatting, Pyright, API contracts, desktop client tests, specialist conflict UI coverage, the full Python suite, and Telegram/scheduled-delivery worker recovery. The installer built and passed native desktop/API restart recovery, preference and sourced-knowledge UI, specialist recovery, frozen ACP/snapshot/worker checks, private task command snapshot scopes, previous-version download, and install/boot/uninstall acceptance. The Node 24 action update is now hosted-verified.
+Run [42477643940](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42477643940) passed both Windows jobs. Source validation passed the pinned Hermes import/channel/execution audits, Ruff, formatting, Pyright, API contracts, desktop client and browser checks, the full Python suite, and Telegram/scheduled-delivery recovery. The installer built and passed native desktop/API restart recovery, preference and sourced-knowledge UI, specialist recovery, frozen ACP/snapshot/worker checks, private task command snapshot scopes, previous-version download, and install/boot/uninstall acceptance. This run also validates the Email reconciliation contract and UI.
 
 ## Telegram ambiguous reply reconciliation (2026-11-08)
 
@@ -33,11 +33,11 @@ The desktop now lists ordinary Telegram replies whose send outcome is unknown, s
 
 ## Email ambiguous reply reconciliation (2026-11-08)
 
-The configured mailbox now lists SMTP replies whose result is unknown, scoped to its saved address. The owner can inspect the Sent folder and destination, then explicitly mark delivered or return the existing reply to the outbox. The authenticated API requires a destination-checked confirmation, only transitions a still-unknown UID/UIDVALIDITY record, and stores each resolution in a durable audit table. Seven Email API/store tests pass, including both delivered and retry resolutions; desktop typecheck, generated contract check, Ruff and strict Pyright pass. The channel browser flow now exercises manual SMTP retry; hosted validation is pending. Live IMAP/SMTP interoperability remains unverified.
+The configured mailbox now lists SMTP replies whose result is unknown, scoped to its saved address. The owner can inspect the Sent folder and destination, then explicitly mark delivered or return the existing reply to the outbox. The authenticated API requires a destination-checked confirmation, only transitions a still-unknown UID/UIDVALIDITY record, and stores each resolution in a durable audit table. Seven Email API/store tests pass, including both delivered and retry resolutions; desktop typecheck, generated contract check, Ruff and strict Pyright pass. The channel browser flow now exercises manual SMTP retry. Hosted run [42477643940](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42477643940) passed both Windows jobs. Live IMAP/SMTP interoperability remains unverified.
 
 ## Current worktree verification (2026-11-08)
 
-Commit `acfb7e5` is the current hosted application baseline. Run [42476706237](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42476706237) passed both Windows jobs, including source validation, the full Python suite, installer packaging, native recovery checks and installed-package upgrade/boot/uninstall acceptance. Node 24 checkout, cache and setup-node actions are also hosted-verified. Live second-provider interoperability, clean normal-user setup, signing, application licensing and remaining objective gates remain open.
+Commit `6071eff` is the current hosted application baseline. Run [42477643940](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42477643940) passed both Windows jobs, including source validation, the full Python suite, installer packaging, native recovery checks and installed-package upgrade/boot/uninstall acceptance. Node 24 checkout, cache and setup-node actions are also hosted-verified. Live second-provider interoperability, clean normal-user setup, signing, application licensing and remaining objective gates remain open.
 
 ## CI-enforced pinned Hermes capability inventories (2026-11-08)
 
