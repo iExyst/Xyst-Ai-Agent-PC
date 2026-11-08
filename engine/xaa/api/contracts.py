@@ -195,6 +195,8 @@ class TaskRecoverableAction(BaseModel):
         "workspace.write_file",
         "workspace.create_file",
         "workspace.delete_file",
+        "review_dependency_file",
+        "review_dependency_output",
     ]
 
 
