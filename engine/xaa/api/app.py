@@ -30,6 +30,8 @@ from xaa.api.contracts import (
     CLIChatSessionRecord,
     CLIChatSessionSettings,
     CLIChatSessionSummary,
+    MCPReconciliationDecision,
+    MCPReconciliationItem,
     MemoryRecord,
     PlanRecord,
     ProjectValidationSummary,
@@ -2151,6 +2153,44 @@ def create_app(
         if run_store.get_run(run_id) is None:
             raise HTTPException(status_code=404, detail="Run not found.")
         return {"result": run_store.public_tool_result(run_id, call_id)}
+
+    @app.get(
+        "/runs/{run_id}/mcp-reconciliations",
+        response_model=list[MCPReconciliationItem],
+    )
+    async def get_mcp_reconciliations(
+        run_id: str, _: None = Depends(authenticate)
+    ) -> list[dict[str, Any]]:
+        if run_store.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        return run_store.mcp_reconciliation_items(run_id)
+
+    @app.post(
+        "/runs/{run_id}/tools/{call_id}/mcp-reconcile",
+        response_model=list[MCPReconciliationItem],
+    )
+    async def reconcile_mcp_effect(
+        run_id: str,
+        call_id: str,
+        payload: MCPReconciliationDecision,
+        _: None = Depends(authenticate),
+    ) -> list[dict[str, Any]]:
+        if not payload.confirmed_external_effect_reviewed:
+            raise HTTPException(
+                status_code=400,
+                detail="Inspect the external system before confirming its effect.",
+            )
+        try:
+            changed = run_store.reconcile_mcp_outcome(run_id, call_id, payload.resolution)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if not changed:
+            raise HTTPException(
+                status_code=409, detail="This MCP effect is no longer awaiting reconciliation."
+            )
+        return run_store.mcp_reconciliation_items(run_id)
 
     @app.get("/runs/{run_id}/export")
     def export_run_trajectory(run_id: str, _: None = Depends(authenticate)) -> Response:

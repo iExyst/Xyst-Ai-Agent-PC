@@ -917,6 +917,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/mcp-reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mcp Reconciliations */
+        get: operations["get_mcp_reconciliations_runs__run_id__mcp_reconciliations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/pause": {
         parameters: {
             query?: never;
@@ -1065,6 +1082,23 @@ export interface paths {
         put?: never;
         /** Decide Candidate */
         post: operations["decide_candidate_runs__run_id__tasks__task_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/tools/{call_id}/mcp-reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Mcp Effect */
+        post: operations["reconcile_mcp_effect_runs__run_id__tools__call_id__mcp_reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2006,6 +2040,33 @@ export interface components {
             state: "connected";
             /** Tools */
             tools: components["schemas"]["MCPToolResponse"][];
+        };
+        /** MCPReconciliationDecision */
+        MCPReconciliationDecision: {
+            /** Confirmed External Effect Reviewed */
+            confirmed_external_effect_reviewed: boolean;
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "applied" | "not_applied";
+        };
+        /** MCPReconciliationItem */
+        MCPReconciliationItem: {
+            /** Call Id */
+            call_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unknown_outcome" | "cancelled_unknown_outcome";
+            /** Tool */
+            tool: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** MCPSecretRequest */
         MCPSecretRequest: {
@@ -5276,6 +5337,37 @@ export interface operations {
             };
         };
     };
+    get_mcp_reconciliations_runs__run_id__mcp_reconciliations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPReconciliationItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pause_run_runs__run_id__pause_post: {
         parameters: {
             query?: never;
@@ -5590,6 +5682,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_mcp_effect_runs__run_id__tools__call_id__mcp_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPReconciliationDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPReconciliationItem"][];
                 };
             };
             /** @description Validation Error */

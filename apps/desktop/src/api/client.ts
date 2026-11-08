@@ -27,6 +27,7 @@ export type CredentialStatus = components['schemas']['LMStudioCredentialStatus']
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
+export type MCPReconciliationItem = components['schemas']['MCPReconciliationItem'];
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
 export type ChatSession = components['schemas']['CLIChatSessionRecord'];
@@ -92,6 +93,8 @@ export class EngineClient {
   clearBraveSearchKey(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'DELETE'}); }
 
   mcpServers(): Promise<MCPServer[]> { return this.#request('/mcp/servers'); }
+  mcpReconciliations(runId:string):Promise<MCPReconciliationItem[]>{return this.#request(`/runs/${encodeURIComponent(runId)}/mcp-reconciliations`);}
+  reconcileMcpEffect(runId:string,callId:string,resolution:'applied'|'not_applied'):Promise<MCPReconciliationItem[]>{return this.#request(`/runs/${encodeURIComponent(runId)}/tools/${encodeURIComponent(callId)}/mcp-reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_external_effect_reviewed:true})});}
   createMCPServer(input:{name:string;transport:'stdio'|'streamable_http';endpoint:string|null;command:string;args:string[];cwd:string|null;secret_env:string[]}):Promise<MCPServer>{return this.#request('/mcp/servers',{method:'POST',body:JSON.stringify(input)});}
   deleteMCPServer(id:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}`,{method:'DELETE'});}
   connectMCPServer(id:string):Promise<MCPConnect>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/connect`,{method:'POST'});}

@@ -55,6 +55,20 @@ class RunEvent(BaseModel):
     created_at: datetime
 
 
+class MCPReconciliationItem(BaseModel):
+    call_id: str
+    tool: str
+    status: Literal["unknown_outcome", "cancelled_unknown_outcome"]
+    updated_at: datetime
+
+
+class MCPReconciliationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolution: Literal["applied", "not_applied"]
+    confirmed_external_effect_reviewed: bool
+
+
 class RunSummary(BaseModel):
     id: str
     objective: str

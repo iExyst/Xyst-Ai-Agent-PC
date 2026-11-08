@@ -1446,6 +1446,62 @@
         "title": "MCPConnectResponse",
         "type": "object"
       },
+      "MCPReconciliationDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_external_effect_reviewed": {
+            "title": "Confirmed External Effect Reviewed",
+            "type": "boolean"
+          },
+          "resolution": {
+            "enum": [
+              "applied",
+              "not_applied"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "confirmed_external_effect_reviewed"
+        ],
+        "title": "MCPReconciliationDecision",
+        "type": "object"
+      },
+      "MCPReconciliationItem": {
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown_outcome",
+              "cancelled_unknown_outcome"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "tool",
+          "status",
+          "updated_at"
+        ],
+        "title": "MCPReconciliationItem",
+        "type": "object"
+      },
       "MCPSecretRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7868,6 +7924,54 @@
         "summary": "Export Run Trajectory"
       }
     },
+    "/runs/{run_id}/mcp-reconciliations": {
+      "get": {
+        "operationId": "get_mcp_reconciliations_runs__run_id__mcp_reconciliations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MCPReconciliationItem"
+                  },
+                  "title": "Response Get Mcp Reconciliations Runs  Run Id  Mcp Reconciliations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Mcp Reconciliations"
+      }
+    },
     "/runs/{run_id}/pause": {
       "post": {
         "operationId": "pause_run_runs__run_id__pause_post",
@@ -8379,6 +8483,73 @@
           }
         ],
         "summary": "Decide Candidate"
+      }
+    },
+    "/runs/{run_id}/tools/{call_id}/mcp-reconcile": {
+      "post": {
+        "operationId": "reconcile_mcp_effect_runs__run_id__tools__call_id__mcp_reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPReconciliationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MCPReconciliationItem"
+                  },
+                  "title": "Response Reconcile Mcp Effect Runs  Run Id  Tools  Call Id  Mcp Reconcile Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Mcp Effect"
       }
     },
     "/runs/{run_id}/tools/{call_id}/result": {

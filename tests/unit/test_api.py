@@ -161,6 +161,67 @@ def test_public_tool_result_api_is_authenticated_and_excludes_internal_data(work
     assert unauthorized.status_code == 401
 
 
+def test_ambiguous_mcp_write_can_be_owner_reconciled_without_replay(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "mcp-reconcile-api.sqlite3")
+    run_id = store.create_run(
+        objective="Use MCP", acceptance_criteria=[], workspace=None, mode="observe", model=None
+    )["id"]
+    token = store.acquire_lease(run_id, "worker")
+    assert token
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="mcp-call",
+        tool="mcp.call",
+        version="1",
+        arguments={"tool": "mcp_fixture_create", "arguments": {"secret": "hidden"}},
+        idempotency_key="mcp-effect",
+    )
+    store.record_tool_result(
+        run_id,
+        token,
+        "mcp-call",
+        {"status": "unknown_outcome", "trust": "untrusted_mcp_output", "error": "timeout"},
+    )
+    store.release_lease(run_id, token)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        listed = client.get(f"/runs/{run_id}/mcp-reconciliations", headers=headers)
+        refused = client.post(
+            f"/runs/{run_id}/tools/mcp-call/mcp-reconcile",
+            headers=headers,
+            json={"resolution": "not_applied", "confirmed_external_effect_reviewed": False},
+        )
+        resolved = client.post(
+            f"/runs/{run_id}/tools/mcp-call/mcp-reconcile",
+            headers=headers,
+            json={"resolution": "not_applied", "confirmed_external_effect_reviewed": True},
+        )
+        stale = client.post(
+            f"/runs/{run_id}/tools/mcp-call/mcp-reconcile",
+            headers=headers,
+            json={"resolution": "applied", "confirmed_external_effect_reviewed": True},
+        )
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["call_id"] == "mcp-call"
+    assert listed.json()[0]["tool"] == "mcp_fixture_create"
+    assert listed.json()[0]["status"] == "unknown_outcome"
+    assert "hidden" not in listed.text
+    assert refused.status_code == 400
+    assert resolved.status_code == 200 and resolved.json() == []
+    assert stale.status_code == 409
+    assert store.public_tool_result(run_id, "mcp-call") == (
+        '{"status": "owner_confirmed_not_applied", '
+        '"trust": "owner_reviewed_external_effect", "tool": "mcp_fixture_create", '
+        '"instruction": "The owner inspected the external system and confirmed whether the effect '
+        'occurred. Do not repeat the original call automatically."}'
+    )
+    assert any(
+        event["event_type"] == "mcp.effect_reconciled" for event in store.list_events(run_id)
+    )
+
+
 class WaitingProvider(FakeProvider):
     def __init__(self):
         super().__init__()

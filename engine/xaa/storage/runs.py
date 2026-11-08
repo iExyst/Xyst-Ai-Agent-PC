@@ -1907,6 +1907,80 @@ class RunStore:
             for row in rows
         ]
 
+    def mcp_reconciliation_items(self, run_id: str) -> list[dict[str, Any]]:
+        """List ambiguous MCP writes without exposing their arguments or returned content."""
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT provider_call_id,arguments,result,updated_at FROM tool_calls "
+                "WHERE run_id=? AND tool_name='mcp.call' AND state='completed' "
+                "ORDER BY created_at",
+                (run_id,),
+            ).fetchall()
+        items = []
+        for row in rows:
+            result = json.loads(row["result"] or "{}")
+            status = result.get("status")
+            if status not in {"unknown_outcome", "cancelled_unknown_outcome"}:
+                continue
+            arguments = json.loads(row["arguments"])
+            items.append(
+                {
+                    "call_id": row["provider_call_id"],
+                    "tool": arguments.get("tool", "MCP tool"),
+                    "status": status,
+                    "updated_at": row["updated_at"],
+                }
+            )
+        return items
+
+    def reconcile_mcp_outcome(self, run_id: str, call_id: str, resolution: str) -> bool:
+        """Record owner inspection of an ambiguous MCP write; never replay the call."""
+        if resolution not in {"applied", "not_applied"}:
+            raise ValueError("Choose applied or not_applied.")
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            run = connection.execute(
+                "SELECT state,lease_expires_at FROM runs WHERE id=?", (run_id,)
+            ).fetchone()
+            if run is None:
+                raise KeyError(run_id)
+            if run["state"] in {"planning", "running", "verifying", "waiting_for_approval"} and (
+                run["lease_expires_at"] is not None and run["lease_expires_at"] > utc_now()
+            ):
+                raise ValueError("The run is active; wait for it to stop before reconciling.")
+            row = connection.execute(
+                "SELECT arguments,result FROM tool_calls WHERE run_id=? AND provider_call_id=? "
+                "AND tool_name='mcp.call' AND state='completed'",
+                (run_id, call_id),
+            ).fetchone()
+            if row is None:
+                return False
+            result = json.loads(row["result"] or "{}")
+            if result.get("status") not in {"unknown_outcome", "cancelled_unknown_outcome"}:
+                return False
+            tool = json.loads(row["arguments"]).get("tool", "MCP tool")
+            reviewed = {
+                "status": f"owner_confirmed_{resolution}",
+                "trust": "owner_reviewed_external_effect",
+                "tool": tool,
+                "instruction": (
+                    "The owner inspected the external system and confirmed whether the effect "
+                    "occurred. Do not repeat the original call automatically."
+                ),
+            }
+            connection.execute(
+                "UPDATE tool_calls SET result=?,updated_at=? WHERE run_id=? AND provider_call_id=? "
+                "AND state='completed'",
+                (json.dumps(reviewed), utc_now(), run_id, call_id),
+            )
+            self.record_event(
+                connection,
+                run_id,
+                "mcp.effect_reconciled",
+                {"call_id": call_id, "tool": tool, "resolution": resolution},
+            )
+            return True
+
     def conversation_messages(self, run_id: str) -> list[dict[str, Any]]:
         """Replay persisted model messages and confirmed results in event order."""
         messages: list[dict[str, Any]] = []
