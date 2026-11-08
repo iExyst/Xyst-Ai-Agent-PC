@@ -1,6 +1,10 @@
 # Progress
 
-Updated 2026-11-07.
+Updated 2026-11-08.
+
+## Scanned PDF OCR and usage accounting (2026-11-08)
+
+Added bounded local rendering and vision-model OCR for scanned PDF pages, with per-page and aggregate size limits, explicit vision-capability checks, and original/OCR/image artifacts retained with integrity metadata. OCR calls use LM Studio's local chat endpoint, do not persist provider-side conversations, and their measured tokens are now included in run usage. A configured run token budget below the per-page minimum is rejected before OCR inference. Native Windows acceptance passed PNG, text PDF, scanned PDF, DOCX and XLSX cases on Gemma 4 e4b; the scanned-page OCR used 520 tokens and its run totaled 1,871 tokens with no unmeasured calls or outstanding reservations. This is one model and fixture, not a general OCR quality guarantee. Focused local tests pass (63 cases); hosted Windows run [42435619239](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42435619239) passed both source and installer jobs, including the full Python suite (773 passed, one warning), desktop specialist-conflict acceptance, installer build and installed-package recovery/install checks. Overall goal completion remains approximately 16%; remaining Phase 4 repeatability and wider release gates are still open.
 
 ## Live Phase 4 specialist conflict and WSL validation (2026-11-07)
 
