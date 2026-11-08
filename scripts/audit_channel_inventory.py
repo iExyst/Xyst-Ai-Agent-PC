@@ -181,6 +181,24 @@ EXTERNAL_CHANNEL_SOURCE_AUDITS = {
     ),
 }
 EXTERNAL_NON_CHANNEL_SOURCE_AUDITS = {
+    "deepinfra-sandbox": (
+        "Billable remote terminal sandbox backend, not a messaging adapter; its provider and execution lifecycle are separately reviewed in the external execution audit.",
+        [
+            "README.md",
+            "plugin.yaml",
+            "deepinfra_hermes_sandbox/__init__.py",
+            "deepinfra_hermes_sandbox/environment.py",
+        ],
+    ),
+    "discord-tps": (
+        "post_api_request metrics hook plus a Discord presence handler on the gateway's existing bot connection; publishes the latest model name and token rate, but does not receive or send messages.",
+        [
+            "discord-tps/README.md",
+            "discord-tps/plugin.yaml",
+            "discord-tps/__init__.py",
+            "tests/test_discord_tps.py",
+        ],
+    ),
     "hermes-fleet-connector": (
         "Standalone phone and fleet reporting service; its pinned manifest declares kind=standalone and no tools/hooks/middleware, not a gateway platform adapter.",
         ["plugin.yaml", "README.md"],
@@ -192,6 +210,18 @@ EXTERNAL_NON_CHANNEL_SOURCE_AUDITS = {
     "mermail": (
         "Multi-agent skill bundle and marketplace plugin; its pinned source does not declare a Hermes gateway platform adapter.",
         ["plugin.json", "README.md", "skills"],
+    ),
+    "render-platform": (
+        "Hosted Render Streamable HTTP MCP connection plus a hash-checked bundle of Render skills; no native gateway adapter, tools, hooks, or middleware are declared. Account-backed remote operations and bundled shell guidance still require trust and approval controls.",
+        [
+            "README.md",
+            "plugin.json",
+            "mcp.json",
+            "upstream.json",
+            "scripts/verify_package.py",
+            "skills/render-mcp/SKILL.md",
+            "skills/render-deploy/SKILL.md",
+        ],
     ),
     "microsoft365": (
         "Standalone Microsoft 365 Graph tools plugin; its pinned manifest declares kind=standalone rather than a messaging platform adapter.",

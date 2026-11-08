@@ -1,7 +1,7 @@
 import sqlite3
 
 from xaa.storage.memory import MemoryStore
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
 
 
 def test_explicit_preference_edit_delete_and_scope_search(workspace_tmp_path):
@@ -89,5 +89,5 @@ def test_schema_18_memory_rows_migrate_without_losing_data(workspace_tmp_path):
     assert "source_uri" in columns
     assert record["content"] == "Keep answers concise"
     assert record["source_uri"] is None
-    assert schema == 20
+    assert schema == DATABASE_SCHEMA_VERSION
     assert idempotency_table is not None

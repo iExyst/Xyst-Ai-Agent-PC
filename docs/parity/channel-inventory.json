@@ -4002,8 +4002,20 @@
         "DEEPINFRA_API_KEY"
       ],
       "classification": "not a messaging adapter (terminal backend)",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/deepinfra/deepinfra-hermes-sandbox",
+        "reference_commit": "259a477548f1862071c9e2462fda6a7bb9de68c8",
+        "subdirectory": "",
+        "paths": [
+          "README.md",
+          "plugin.yaml",
+          "deepinfra_hermes_sandbox/__init__.py",
+          "deepinfra_hermes_sandbox/environment.py"
+        ],
+        "finding": "Billable remote terminal sandbox backend, not a messaging adapter; its provider and execution lifecycle are separately reviewed in the external execution audit.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4017,8 +4029,20 @@
       "version": "1.0.3",
       "required_environment_names": [],
       "classification": "not a messaging adapter (presence hook)",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/tuancookiez-hub/hermes-discord-tokenpersec",
+        "reference_commit": "056fcd331d9be03c287f293854b715b17b637203",
+        "subdirectory": "discord-tps",
+        "paths": [
+          "discord-tps/README.md",
+          "discord-tps/plugin.yaml",
+          "discord-tps/__init__.py",
+          "tests/test_discord_tps.py"
+        ],
+        "finding": "post_api_request metrics hook plus a Discord presence handler on the gateway's existing bot connection; publishes the latest model name and token rate, but does not receive or send messages.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
@@ -4721,8 +4745,23 @@
         "RENDER_API_KEY"
       ],
       "classification": "not a messaging adapter (deployment MCP/skills)",
-      "external_source_inspected": false,
-      "external_source_evidence": null,
+      "external_source_inspected": true,
+      "external_source_evidence": {
+        "repository": "https://github.com/ojusave/render-hermes-plugin",
+        "reference_commit": "1d343332142c27e1b97281ff03e2811f8a083750",
+        "subdirectory": "",
+        "paths": [
+          "README.md",
+          "plugin.json",
+          "mcp.json",
+          "upstream.json",
+          "scripts/verify_package.py",
+          "skills/render-mcp/SKILL.md",
+          "skills/render-deploy/SKILL.md"
+        ],
+        "finding": "Hosted Render Streamable HTTP MCP connection plus a hash-checked bundle of Render skills; no native gateway adapter, tools, hooks, or middleware are declared. Account-backed remote operations and bundled shell guidance still require trust and approval controls.",
+        "evidence_level": "pinned source reviewed statically; plugin/runtime behavior not independently verified"
+      },
       "status": "planned",
       "phase": 9
     },
