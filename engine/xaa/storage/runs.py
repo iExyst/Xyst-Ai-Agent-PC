@@ -1916,7 +1916,7 @@ class RunStore:
                 "ORDER BY created_at",
                 (run_id,),
             ).fetchall()
-        items = []
+        items: list[dict[str, Any]] = []
         for row in rows:
             result = json.loads(row["result"] or "{}")
             status = result.get("status")
