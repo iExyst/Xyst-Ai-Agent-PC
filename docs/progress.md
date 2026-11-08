@@ -19,13 +19,17 @@ The rough percentage estimates in older entries below were copied forward withou
 | 7 — Web/MCP | Fixture and selected live slices verified | Cancellation, untrusted outputs and disconnect behavior pass fixture checks; broader server compatibility, authentication modes and package activation remain open. |
 | 8 — Scheduling/channels | Partial | Persistence, timezone/DST, duplicate and ambiguous-send fixture checks pass. Scheduled Telegram uncertainty now has owner-reviewed, attempt-bounded reconciliation, hosted in run 42478955033; live messaging delivery and broader channel identity/delivery remain open. |
 | 9 — Remaining parity | Incomplete | The matrix records substantial partial slices but explicitly leaves many audited channels, backends, media and advanced integrations open; the inventory audit is not exhaustive. |
-| 10 — Package/release | Partial | Hosted run [42478955033](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42478955033) passed both Windows jobs after aligning the installed backup fixture with the isolated native-test profile. It covers installer packaging, native close/restore/quit, backup/restore, upgrade, boot and uninstall. Clean normal-user setup, signing, final license/notices audit and broader migration remain open. |
+| 10 — Package/release | Partial | Hosted run [42478955033](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42478955033) passed both Windows jobs after aligning the installed backup fixture with the isolated native-test profile. It covers installer packaging, native close/restore/quit, backup/restore, upgrade, boot and uninstall. The installer bundles and hash-verifies release notices; the application license, complete package attribution/copyright review, clean normal-user setup, signing and broader migration remain open. |
 
 The phases have very different scope, so counting these rows equally would produce a misleading percentage. The prior 16% was not recomputed from this gate view and is not presented as a current measurement.
 
 ## Latest hosted verification (2026-11-08)
 
 Run [42478955033](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42478955033) passed both Windows jobs. Source validation passed the pinned Hermes import/channel/execution audits, Ruff, formatting, Pyright, API contracts, desktop client and browser checks, the full Python suite, and Telegram/scheduled-delivery recovery. The installer built and passed native desktop/API restart recovery, preference and sourced-knowledge UI, specialist recovery, frozen ACP/snapshot/worker checks, private task command snapshot scopes, previous-version download, and install/boot/uninstall acceptance. This run validates the scheduled-delivery reconciliation implementation.
+
+## Bundled release notices verification (2026-11-08)
+
+The release Tauri overlay bundles `THIRD_PARTY_NOTICES.md`, the dependency inventory, and release notes. The installer manifest records each staged file's size and SHA-256; the installed-package smoke checks all three files against those hashes. Hosted run [42478955033](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42478955033) passed the installer smoke. The notices remain provisional: the application license has not been selected, six Windows-target crate archives lack embedded license files, and broader attribution/copyright review remains open. `docs/releases/windows-installer.md` now reflects the verified bundle behavior.
 
 ## Telegram ambiguous reply reconciliation (2026-11-08)
 
