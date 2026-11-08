@@ -25,7 +25,7 @@ The phases have very different scope, so counting these rows equally would produ
 
 ## Latest hosted verification (2026-11-08)
 
-Run [42478955033](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42478955033) passed both Windows jobs. Source validation passed the pinned Hermes import/channel/execution audits, Ruff, formatting, Pyright, API contracts, desktop client and browser checks, the full Python suite, and Telegram/scheduled-delivery recovery. The installer built and passed native desktop/API restart recovery, preference and sourced-knowledge UI, specialist recovery, frozen ACP/snapshot/worker checks, private task command snapshot scopes, previous-version download, and install/boot/uninstall acceptance. This run validates the scheduled-delivery reconciliation implementation.
+Run [42482250360](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42482250360) passed both Windows jobs. Source validation passed the pinned Hermes import/channel/execution audits, Ruff, formatting, Pyright, API contracts, desktop client and browser checks, the full Python suite, and Telegram/scheduled-delivery recovery. The installer built and passed native desktop/API restart recovery, preference and sourced-knowledge UI, specialist recovery, frozen ACP/snapshot/worker checks, private task command snapshot scopes, previous-version download, and install/boot/uninstall acceptance. This run validates the MCP ambiguous-write execution fence and owner reconciliation slice.
 
 ## Bundled release notices verification (2026-11-08)
 
@@ -37,7 +37,7 @@ The active-run view now offers an explicit check for MCP write calls whose effec
 
 ## Block execution after an ambiguous MCP write (2026-11-08)
 
-The coordinator now stops immediately after an MCP write reports an unknown outcome, before it asks the model for another turn. Remaining tool calls in that same model response are durably recorded as not started, preserving a complete replayable tool sequence. The run becomes blocked until the owner inspects and reconciles the MCP effect, then resumes explicitly. A coordinator regression verifies that a batched follow-up write never reaches the MCP manager and both tool results replay in order. The coordinator and MCP stdio suites pass (16 tests), with Pyright, Ruff and formatting clean. Hosted verification for this follow-up is pending.
+The coordinator now stops immediately after an MCP write reports an unknown outcome, before it asks the model for another turn. Remaining tool calls in that same model response are durably recorded as not started, preserving a complete replayable tool sequence. The run becomes blocked until the owner inspects and reconciles the MCP effect, then resumes explicitly. A coordinator regression verifies that a batched follow-up write never reaches the MCP manager and both tool results replay in order. The coordinator and MCP stdio suites pass (16 tests), with Pyright, Ruff and formatting clean. Hosted run [42482250360](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42482250360) passed both Windows jobs, including the full Python suite, process-kill recovery diagnostics, installer, native recovery and upgrade/boot/uninstall acceptance.
 
 ## Telegram ambiguous reply reconciliation (2026-11-08)
 
@@ -53,7 +53,7 @@ Automations now shows the selected Telegram user for each schedule and provides 
 
 ## Current worktree verification (2026-11-08)
 
-Commit `5a67aad` is the current hosted application baseline. Run [42478955033](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42478955033) passed both Windows jobs, including source validation, the full Python suite, installer packaging, native recovery checks and installed-package upgrade/boot/uninstall acceptance. Node 24 checkout, cache and setup-node actions are also hosted-verified. Live second-provider interoperability, clean normal-user setup, signing, application licensing and remaining objective gates remain open.
+Commit `bba5653` is the current hosted application baseline. Run [42482250360](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42482250360) passed both Windows jobs, including source validation, the full Python suite, installer packaging, native recovery checks and installed-package upgrade/boot/uninstall acceptance. Node 24 checkout, cache and setup-node actions are also hosted-verified. Live second-provider interoperability, clean normal-user setup, signing, application licensing and remaining objective gates remain open.
 
 ## CI-enforced pinned Hermes capability inventories (2026-11-08)
 
