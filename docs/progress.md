@@ -29,7 +29,7 @@ Run [42475637744](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/424756
 
 ## Telegram ambiguous reply reconciliation (2026-11-08)
 
-The desktop now lists ordinary Telegram replies whose send outcome is unknown, scoped to the currently configured bot account. The owner can inspect the private chat and explicitly mark a reply delivered or return it to the outbox for retry; the UI warns that an incorrect retry may duplicate a message. The authenticated API requires a destination-checked confirmation, only transitions records still in `unknown`, and stores each resolution in a durable audit table. Focused Telegram API/store tests (21), desktop typecheck, generated contract check, client tests (15), and the channel browser workflow pass locally. Hosted validation is pending; live Telegram interoperability remains unverified.
+The desktop now lists ordinary Telegram replies whose send outcome is unknown, scoped to the currently configured bot account. The owner can inspect the private chat and explicitly mark a reply delivered or return it to the outbox for retry; the UI warns that an incorrect retry may duplicate a message. The authenticated API requires a destination-checked confirmation, only transitions records still in `unknown`, and stores each resolution in a durable audit table. Focused Telegram API/store tests (21), desktop typecheck, generated contract check, client tests (15), and the channel browser workflow pass locally. Hosted run [42476706237](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42476706237) passed both Windows jobs, including full source checks and installed-package recovery/upgrade/boot/uninstall acceptance. Live Telegram interoperability remains unverified.
 
 ## Current worktree verification (2026-11-08)
 
