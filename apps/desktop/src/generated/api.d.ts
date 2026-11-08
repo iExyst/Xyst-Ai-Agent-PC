@@ -3114,6 +3114,8 @@ export interface components {
         TaskRecoverableAction: {
             /** Journal Call Id */
             journal_call_id: string;
+            /** Mcp Tool */
+            mcp_tool?: string | null;
             /** Model Call Id */
             model_call_id: string;
             /**
@@ -3125,7 +3127,7 @@ export interface components {
              * Tool Name
              * @enum {string}
              */
-            tool_name: "workspace.read_file" | "workspace.list_directory" | "workspace.write_file" | "workspace.create_file" | "workspace.delete_file" | "review_dependency_file" | "review_dependency_output" | "web.fetch" | "web.search" | "browser.run";
+            tool_name: "workspace.read_file" | "workspace.list_directory" | "workspace.write_file" | "workspace.create_file" | "workspace.delete_file" | "review_dependency_file" | "review_dependency_output" | "web.fetch" | "web.search" | "browser.run" | "mcp.call";
         };
         /** TaskRecoverableCommand */
         TaskRecoverableCommand: {

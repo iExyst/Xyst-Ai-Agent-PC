@@ -4409,6 +4409,17 @@
             "title": "Journal Call Id",
             "type": "string"
           },
+          "mcp_tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Tool"
+          },
           "model_call_id": {
             "title": "Model Call Id",
             "type": "string"
@@ -4433,7 +4444,8 @@
               "review_dependency_output",
               "web.fetch",
               "web.search",
-              "browser.run"
+              "browser.run",
+              "mcp.call"
             ],
             "title": "Tool Name",
             "type": "string"

@@ -222,6 +222,135 @@ def test_lost_worker_with_unanswered_token_reservation_is_not_safe_to_resume(wor
         tasks.resolve_lost_worker(run_id, parent, "read", "resume")
 
 
+@pytest.mark.parametrize("result_saved", [False, True])
+def test_lost_specialist_mcp_read_is_sealed_or_attached_without_replay(
+    workspace_tmp_path, result_saved
+):
+    import hashlib
+
+    from xaa.storage.mcp import MCPDiscoveredTool, MCPRegistry, MCPServerSpec
+    from xaa.storage.runs import TaskReadScope
+
+    store = RunStore(workspace_tmp_path / f"mcp-task-recovery-{result_saved}.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(MCPServerSpec(name="Fixture", command="fixture"))
+    read_tool = registry.synchronize_tools(
+        server.id,
+        [
+            MCPDiscoveredTool(
+                name="lookup",
+                input_schema={"type": "object", "properties": {}},
+                schema_sha256="a" * 64,
+            )
+        ],
+    )[0]
+    read_tool = registry.set_permission(server.id, read_tool.name, "read", read_tool.schema_sha256)
+    run_id = store.create_run(
+        objective="Read one approved MCP result",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="read",
+                objective="Read from the configured MCP server",
+                permissions=("workspace.read", read_tool.qualified_name),
+                max_iterations=3,
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None
+    model_call_id = "mcp-model-call"
+    tasks.record_read_worker_event(
+        run_id,
+        parent,
+        "read",
+        claim["token"],
+        "task.model.message",
+        {
+            "task_id": "read",
+            "message": {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": model_call_id,
+                        "type": "function",
+                        "function": {"name": read_tool.qualified_name, "arguments": "{}"},
+                    }
+                ],
+            },
+        },
+    )
+    journal_call_id = (
+        "taskfs-" + hashlib.sha256(f"{run_id}:read:{model_call_id}".encode()).hexdigest()
+    )
+    scoped = RunStore(
+        store.path,
+        task_scope=TaskReadScope(run_id, parent, "read", claim["token"]),
+        internal_tools=True,
+    )
+    assert scoped.record_tool_intent(
+        run_id,
+        parent,
+        call_id=journal_call_id,
+        tool="mcp.call",
+        version="1",
+        arguments={
+            "tool": read_tool.qualified_name,
+            "arguments": {},
+            "permission": "read",
+            "schema_sha256": read_tool.schema_sha256,
+        },
+        idempotency_key=journal_call_id,
+        internal=True,
+    )
+    expected_result = {"status": "ok", "trust": "untrusted_mcp_output", "content": []}
+    if result_saved:
+        scoped.record_tool_result(run_id, parent, journal_call_id, expected_result, internal=True)
+
+    with store.connection() as connection:
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    summary = tasks.recovery_summary(run_id, "read")
+    action = next(
+        item
+        for item in summary["recoverable_task_actions"]
+        if item["model_call_id"] == model_call_id
+    )
+    assert action["tool_name"] == "mcp.call"
+    assert action["mcp_tool"] == read_tool.qualified_name
+    assert action["state"] == ("completed" if result_saved else "intended")
+    from xaa.api.contracts import TaskRecoverySummary
+
+    TaskRecoverySummary.model_validate(summary)
+
+    tasks.record_recovered_task_action_result(
+        run_id, parent, "read", model_call_id, journal_call_id
+    )
+    attached = next(
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.tool.result"
+        and event["payload"].get("call_id") == model_call_id
+    )
+    if result_saved:
+        assert attached["payload"]["result"] == expected_result
+    else:
+        assert attached["payload"]["result"]["error"]["code"] == "interrupted_read"
+        assert (
+            "no previous contents are assumed" in attached["payload"]["result"]["error"]["message"]
+        )
+        assert not store.unresolved_tool_calls(run_id)
+
+
 def test_lost_worker_cannot_resume_after_specialist_time_budget_is_exhausted(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "task-time-budget.sqlite3")
     run_id = runs.create_run(

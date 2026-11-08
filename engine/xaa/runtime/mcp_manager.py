@@ -251,6 +251,28 @@ class MCPManager:
             )
         return available
 
+    def tools_for_task(self, allowed_read_tools: set[str]) -> list[dict[str, Any]]:
+        """Expose only connected tools the user classified as read and the task inherited."""
+        return [
+            tool
+            for tool in self.tools_for_run(set())
+            if tool["function"]["name"] in allowed_read_tools
+        ]
+
+    def read_tool_record(self, qualified_name: str) -> MCPToolRecord | None:
+        """Return the currently connected, schema-matched user-approved read tool."""
+        record = next(
+            (tool for tool in self.registry.list_tools() if tool.qualified_name == qualified_name),
+            None,
+        )
+        if record is None or record.permission != "read":
+            return None
+        connection = self._connected.get(record.server_id)
+        server_tool = connection.tools.get(record.name) if connection else None
+        if server_tool is None or server_tool.schema_sha256 != record.schema_sha256:
+            return None
+        return record
+
     def is_tool_authorized_for_run(
         self, qualified_name: str, approved_write_tools: set[str]
     ) -> bool:
@@ -262,7 +284,9 @@ class MCPManager:
             return False
         return record.permission == "read" or qualified_name in approved_write_tools
 
-    async def call_tool(self, qualified_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def call_tool(
+        self, qualified_name: str, arguments: dict[str, Any], *, require_read: bool = False
+    ) -> dict[str, Any]:
         record = next(
             (tool for tool in self.registry.list_tools() if tool.qualified_name == qualified_name),
             None,
@@ -278,7 +302,11 @@ class MCPManager:
                 "The MCP server is disconnected; reconnect it before retrying.",
                 status="not_connected",
             )
-        if record.permission == "none" or record.schema_sha256 != server_tool.schema_sha256:
+        if (
+            record.permission == "none"
+            or (require_read and record.permission != "read")
+            or record.schema_sha256 != server_tool.schema_sha256
+        ):
             raise MCPInvocationError(
                 "The MCP tool permission or schema is no longer valid.", status="not_connected"
             )
@@ -291,10 +319,30 @@ class MCPManager:
             ) from error
         try:
             async with connection.lock:
+                if require_read:
+                    current = next(
+                        (
+                            item
+                            for item in self.registry.list_tools(record.server_id)
+                            if item.qualified_name == qualified_name
+                        ),
+                        None,
+                    )
+                    if (
+                        current is None
+                        or current.permission != "read"
+                        or current.schema_sha256 != server_tool.schema_sha256
+                    ):
+                        raise MCPInvocationError(
+                            "The MCP tool no longer has the saved read permission.",
+                            status="not_connected",
+                        )
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
                     result = await connection.session.call_tool(record.name, arguments)
         except asyncio.CancelledError:
             await self._drop_failed_connection(record.server_id, connection)
+            raise
+        except MCPInvocationError:
             raise
         except TimeoutError as error:
             await self._drop_failed_connection(record.server_id, connection)

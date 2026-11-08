@@ -8,6 +8,7 @@ from typing import Any, Literal, cast
 from uuid import uuid4
 
 from xaa.runtime.task_graph import TaskDefinition, TaskGraph, TaskStatus
+from xaa.storage.mcp import MCPRegistry
 from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
 
 
@@ -328,6 +329,11 @@ class TaskStore:
             permissions.add("web.search")
         if run.get("approved_browser") and run.get("approved_web_hosts"):
             permissions.add("web.browser.read")
+        permissions.update(
+            tool.qualified_name
+            for tool in MCPRegistry(self.runs).list_tools()
+            if tool.permission == "read"
+        )
         if run["mode"] == "workspace":
             permissions.add("workspace.write")
             if run.get("command_grant") is not None:
@@ -570,7 +576,7 @@ class TaskStore:
                     "WHERE run_id=? AND task_id=? AND tool_name IN "
                     "('workspace.run_command','workspace.read_file','workspace.list_directory',"
                     "'workspace.write_file','workspace.create_file','workspace.delete_file',"
-                    "'web.fetch','web.search','browser.run') "
+                    "'web.fetch','web.search','browser.run','mcp.call') "
                     "AND state IN ('intended','completed','failed')",
                     (run_id, f"{run_id}:{task_id}"),
                 )
@@ -626,8 +632,14 @@ class TaskStore:
             function = cast(dict[str, Any], call.get("function", {}))
             model_tool_name = cast(str, function.get("name"))
             tool_name = branch_tools.get(model_tool_name)
-            if tool_name is not None and required_permissions[tool_name] not in scope_permissions:
-                tool_name = None
+            if tool_name is None and model_tool_name in scope_permissions:
+                tool_name = "mcp.call"
+            if tool_name is not None:
+                required_permission = (
+                    model_tool_name if tool_name == "mcp.call" else required_permissions[tool_name]
+                )
+                if required_permission not in scope_permissions:
+                    tool_name = None
             reviewer_read = (
                 model_tool_name in reviewer_read_tools
                 and task["assigned_role"] == "reviewer"
@@ -665,7 +677,21 @@ class TaskStore:
             ):
                 continue
             recoverable_state = saved["state"]
-            can_attach_completed = recoverable_state == "completed" and saved["result"] is not None
+            saved_arguments = cast(dict[str, Any], json.loads(saved["arguments"]))
+            schema_digest = saved_arguments.get("schema_sha256")
+            mcp_read = (
+                tool_name == "mcp.call"
+                and saved_arguments.get("tool") == model_tool_name
+                and saved_arguments.get("permission") == "read"
+                and isinstance(schema_digest, str)
+                and len(schema_digest) == 64
+                and all(character in "0123456789abcdef" for character in schema_digest)
+            )
+            can_attach_completed = (
+                recoverable_state == "completed"
+                and saved["result"] is not None
+                and (tool_name != "mcp.call" or mcp_read)
+            )
             can_seal_read = (
                 tool_name
                 in {
@@ -676,7 +702,7 @@ class TaskStore:
                     "browser.run",
                 }
                 and recoverable_state == "intended"
-            )
+            ) or (mcp_read and recoverable_state == "intended")
             can_attach_interrupted = (
                 tool_name
                 in {
@@ -689,17 +715,23 @@ class TaskStore:
                 and recoverable_state == "failed"
                 and saved["result"] is not None
                 and json.loads(saved["result"]).get("error", {}).get("code") == "interrupted_read"
+            ) or (
+                mcp_read
+                and recoverable_state == "failed"
+                and saved["result"] is not None
+                and json.loads(saved["result"]).get("error", {}).get("code") == "interrupted_read"
             )
             if not (can_attach_completed or can_seal_read or can_attach_interrupted):
                 continue
-            recoverable_task_actions.append(
-                {
-                    "model_call_id": model_call_id,
-                    "journal_call_id": journal_call_id,
-                    "tool_name": tool_name,
-                    "state": recoverable_state,
-                }
-            )
+            action = {
+                "model_call_id": model_call_id,
+                "journal_call_id": journal_call_id,
+                "tool_name": tool_name,
+                "state": recoverable_state,
+            }
+            if tool_name == "mcp.call":
+                action["mcp_tool"] = model_tool_name
+            recoverable_task_actions.append(action)
         candidate_reviewable = bool(
             candidate_item
             and candidate_item["sequence"] == last_message_sequence
@@ -907,6 +939,7 @@ class TaskStore:
             "web.fetch",
             "web.search",
             "browser.run",
+            "mcp.call",
         }
         expected_journal_id = (
             "taskfs-" + hashlib.sha256(f"{run_id}:{task_id}:{model_call_id}".encode()).hexdigest()
@@ -934,7 +967,7 @@ class TaskStore:
             ):
                 raise ValueError("Task recovery state changed; refresh the plan.")
             tool = connection.execute(
-                "SELECT tool_name,state,result FROM tool_calls "
+                "SELECT tool_name,state,arguments,result FROM tool_calls "
                 "WHERE run_id=? AND task_id=? AND provider_call_id=?",
                 (run_id, f"{run_id}:{task_id}", journal_call_id),
             ).fetchone()
@@ -949,6 +982,10 @@ class TaskStore:
             ]
             if len(model_calls) != 1:
                 raise ValueError("Pending model task action is missing or ambiguous.")
+            model_tool_name = model_calls[0].get("function", {}).get("name")
+            scope_permissions: set[str] = (
+                set(cast(list[str], json.loads(task["permission_scope"]))) if task else set()
+            )
             expected_tool = {
                 "workspace_read_file": "workspace.read_file",
                 "workspace_list_directory": "workspace.list_directory",
@@ -961,23 +998,48 @@ class TaskStore:
                 "web_fetch": "web.fetch",
                 "web_search": "web.search",
                 "browser_run": "browser.run",
-            }.get(model_calls[0].get("function", {}).get("name"))
+            }.get(model_tool_name)
+            if (
+                expected_tool is None
+                and isinstance(model_tool_name, str)
+                and model_tool_name in scope_permissions
+            ):
+                expected_tool = "mcp.call"
             if expected_tool not in allowed:
                 raise PermissionError("Saved tool is outside task recovery scope.")
-            required_permission = {
-                "workspace.read_file": "workspace.read",
-                "workspace.list_directory": "workspace.read",
-                "workspace.write_file": "workspace.write",
-                "workspace.create_file": "workspace.write",
-                "workspace.delete_file": "workspace.write",
-                "review_dependency_file": "workspace.read",
-                "review_dependency_output": "workspace.read",
-                "web.fetch": "web.read",
-                "web.search": "web.search",
-                "browser.run": "web.browser.read",
-            }[expected_tool]
-            if required_permission not in json.loads(task["permission_scope"]):
+            required_permission = (
+                model_tool_name
+                if expected_tool == "mcp.call"
+                else {
+                    "workspace.read_file": "workspace.read",
+                    "workspace.list_directory": "workspace.read",
+                    "workspace.write_file": "workspace.write",
+                    "workspace.create_file": "workspace.write",
+                    "workspace.delete_file": "workspace.write",
+                    "review_dependency_file": "workspace.read",
+                    "review_dependency_output": "workspace.read",
+                    "web.fetch": "web.read",
+                    "web.search": "web.search",
+                    "browser.run": "web.browser.read",
+                }[expected_tool]
+            )
+            if required_permission not in scope_permissions:
                 raise PermissionError("Task no longer has permission for this saved read.")
+            mcp_read = expected_tool == "mcp.call"
+            if mcp_read:
+                if tool is None:
+                    raise ValueError("No saved MCP read action is available to attach.")
+                arguments = cast(dict[str, Any], json.loads(tool["arguments"]))
+                schema_digest = arguments.get("schema_sha256")
+                if (
+                    tool["tool_name"] != "mcp.call"
+                    or arguments.get("tool") != model_tool_name
+                    or arguments.get("permission") != "read"
+                    or not isinstance(schema_digest, str)
+                    or len(schema_digest) != 64
+                    or any(character not in "0123456789abcdef" for character in schema_digest)
+                ):
+                    raise PermissionError("Saved MCP action is not an inherited read-only call.")
             dependency_read = expected_tool in {
                 "review_dependency_file",
                 "review_dependency_output",
@@ -1004,13 +1066,17 @@ class TaskStore:
             elif tool["tool_name"] != expected_tool:
                 raise PermissionError("Saved action result belongs to a different model call.")
             elif tool["state"] == "intended":
-                if tool["tool_name"] not in {
-                    "workspace.read_file",
-                    "workspace.list_directory",
-                    "web.fetch",
-                    "web.search",
-                    "browser.run",
-                }:
+                if (
+                    tool["tool_name"]
+                    not in {
+                        "workspace.read_file",
+                        "workspace.list_directory",
+                        "web.fetch",
+                        "web.search",
+                        "browser.run",
+                    }
+                    and not mcp_read
+                ):
                     raise PermissionError("An interrupted write cannot be resolved as a read.")
                 if connection.execute(
                     "SELECT 1 FROM run_events WHERE run_id=? AND event_type='tool.executing' "
@@ -1064,7 +1130,9 @@ class TaskStore:
             if not dependency_read:
                 assert tool is not None
                 required_permission = (
-                    "workspace.write"
+                    model_tool_name
+                    if mcp_read
+                    else "workspace.write"
                     if tool["tool_name"]
                     in {"workspace.write_file", "workspace.create_file", "workspace.delete_file"}
                     else "workspace.read"

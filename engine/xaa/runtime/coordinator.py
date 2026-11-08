@@ -1106,6 +1106,7 @@ class Coordinator:
                     self.provider,
                     stream_responses=self.stream_responses,
                     credential_store=self.credential_store,
+                    mcp_manager=self.mcp_manager,
                 ).run_ready(run_id, token, deadline=deadline)
             ready, _ = TaskStore(self.store).readiness(run_id)
             blocked = (
@@ -1435,6 +1436,15 @@ class Coordinator:
             ]
         if self.mcp_manager is not None:
             tools.extend(self.mcp_manager.tools_for_run(set(run.get("approved_mcp_tools", []))))
+            if self.mcp_manager.tools_for_run(set()) and any(
+                tool["function"]["name"] == "plan_save" for tool in tools
+            ):
+                next(tool["function"] for tool in tools if tool["function"]["name"] == "plan_save")[
+                    "description"
+                ] += (
+                    " A specialist may receive an exact qualified MCP tool name as a permission "
+                    "only when that MCP tool is currently configured with user-approved read permission."
+                )
         if run["mode"] == "workspace" and run["workspace"]:
             try:
                 grant = CommandJournal(self.store).grant(run_id)

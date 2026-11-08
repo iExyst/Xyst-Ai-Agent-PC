@@ -72,11 +72,12 @@ test('offer a clean restart when the specialist died before saving a reply',asyn
 
 test('attach a command result that was saved before the specialist stopped',async({page})=>{
   const run={id:'saved-command-recovery',objective:'Run the saved check',state:'blocked',acceptance_criteria:[],revision:1};
-  const task={id:'saved-command-recovery:check',local_id:'check',objective:'Run the saved check',acceptance_criteria:['Report the check result'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read','workspace.command'],budgets:{max_iterations:2,max_seconds:60},status:'blocked',blocked_reason:'worker_lost_reconciliation_required'};
+  const task={id:'saved-command-recovery:check',local_id:'check',objective:'Run the saved check',acceptance_criteria:['Report the check result'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read','workspace.command','mcp_0123456789abcdef_lookup'],budgets:{max_iterations:2,max_seconds:60},status:'blocked',blocked_reason:'worker_lost_reconciliation_required'};
   const plan={tasks:[task],ready:[],blocked:[]};
-  const saved={task_id:'check',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[{call_id:'model-call-1',name:'workspace_run_command'},{call_id:'model-call-2',name:'workspace_read_file'},{call_id:'model-call-3',name:'workspace_list_directory'}],unresolved_tool_calls:0,recoverable_commands:[{model_call_id:'model-call-1',journal_call_id:'journal-call-1',argv:['printf','saved'],state:'completed'}],recoverable_task_actions:[{model_call_id:'model-call-2',journal_call_id:'journal-file-2',tool_name:'workspace.read_file',state:'completed'},{model_call_id:'model-call-3',journal_call_id:'journal-list-3',tool_name:'workspace.list_directory',state:'intended'}],safe_to_resume:false,consumed_iterations:1,run_measured_tokens:15,reserved_tokens:0};
+  const saved={task_id:'check',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[{call_id:'model-call-1',name:'workspace_run_command'},{call_id:'model-call-2',name:'workspace_read_file'},{call_id:'model-call-3',name:'workspace_list_directory'},{call_id:'model-call-4',name:'mcp_0123456789abcdef_lookup'}],unresolved_tool_calls:0,recoverable_commands:[{model_call_id:'model-call-1',journal_call_id:'journal-call-1',argv:['printf','saved'],state:'completed'}],recoverable_task_actions:[{model_call_id:'model-call-2',journal_call_id:'journal-file-2',tool_name:'workspace.read_file',state:'completed'},{model_call_id:'model-call-3',journal_call_id:'journal-list-3',tool_name:'workspace.list_directory',state:'intended'},{model_call_id:'model-call-4',journal_call_id:'journal-mcp-4',tool_name:'mcp.call',mcp_tool:'mcp_0123456789abcdef_lookup',state:'intended'}],safe_to_resume:false,consumed_iterations:1,run_measured_tokens:15,reserved_tokens:0};
   let attachedCommand=false;
   let attachedFile=false;
+  let attachedMcp=false;
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request();
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
@@ -95,7 +96,11 @@ test('attach a command result that was saved before the specialist stopped',asyn
       return route.fulfill({json:{...saved,saved_tool_results:2,pending_model_tool_calls:[saved.pending_model_tool_calls[2]],recoverable_commands:[],recoverable_task_actions:[saved.recoverable_task_actions[1]],safe_to_resume:false},headers});
     }
     if(path.endsWith('/recovery/actions/model-call-3')&&request.method()==='POST'){
-      return route.fulfill({json:{...saved,saved_tool_results:3,pending_model_tool_calls:[],recoverable_commands:[],recoverable_task_actions:[],safe_to_resume:true},headers});
+      return route.fulfill({json:{...saved,saved_tool_results:3,pending_model_tool_calls:[saved.pending_model_tool_calls[3]],recoverable_commands:[],recoverable_task_actions:[saved.recoverable_task_actions[2]],safe_to_resume:false},headers});
+    }
+    if(path.endsWith('/recovery/actions/model-call-4')&&request.method()==='POST'){
+      attachedMcp=true;
+      return route.fulfill({json:{...saved,saved_tool_results:4,pending_model_tool_calls:[],recoverable_commands:[],recoverable_task_actions:[],safe_to_resume:true},headers});
     }
     if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:saved,headers});
     if(path.endsWith('/plan'))return route.fulfill({json:plan,headers});
@@ -122,5 +127,9 @@ test('attach a command result that was saved before the specialist stopped',asyn
   await expect(card).toContainText('The read was interrupted before a result was saved. Recovery records that no result is available; the specialist may request a fresh read afterward.');
   await card.getByRole('button',{name:'Seal interrupted read'}).click();
   await expect(card).toContainText('3 saved tool results');
+  await expect(card).toContainText('mcp_0123456789abcdef_lookup');
+  await card.getByRole('button',{name:'Seal interrupted read'}).click();
+  await expect.poll(()=>attachedMcp).toBe(true);
+  await expect(card).toContainText('4 saved tool results');
   await expect(card.getByRole('button',{name:'Resume from saved results'})).toBeEnabled();
 });

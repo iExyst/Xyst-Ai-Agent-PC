@@ -316,6 +316,113 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
     assert not store.unresolved_tool_calls(run_id)
 
 
+@pytest.mark.asyncio
+async def test_researcher_uses_only_inherited_user_approved_mcp_reads(workspace_tmp_path):
+    import sys
+    from pathlib import Path
+
+    from xaa.runtime.mcp_manager import MCPManager
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    store = RunStore(workspace_tmp_path / "specialist-mcp.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Fixture",
+            command=sys.executable,
+            args=[str(Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py")],
+        )
+    )
+    manager = MCPManager(store, None)
+    await manager.connect_server(server.id)
+    tools = registry.list_tools(server.id)
+    read_tool = next(tool for tool in tools if tool.name == "add")
+    write_tool = next(tool for tool in tools if tool.name == "slow")
+    read_tool = registry.set_permission(server.id, read_tool.name, "read", read_tool.schema_sha256)
+    write_tool = registry.set_permission(
+        server.id, write_tool.name, "write", write_tool.schema_sha256
+    )
+
+    run_id = store.create_run(
+        objective="Read a configured MCP fixture",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "coordinator")
+    tasks = TaskStore(store)
+    task = TaskDefinition(
+        id="research",
+        objective="Use the MCP read tool",
+        role="researcher",
+        permissions=("workspace.read", read_tool.qualified_name),
+        max_iterations=2,
+    )
+    with pytest.raises(PermissionError):
+        tasks.validate_plan(
+            run_id,
+            [
+                task.model_copy(
+                    update={"permissions": ("workspace.read", write_tool.qualified_name)}
+                )
+            ],
+        )
+    tasks.save_plan(run_id, parent, [task])
+
+    class Researcher(LMStudioProvider):
+        async def chat(self, *, messages, tools=None, **kwargs):
+            names = {item["function"]["name"] for item in tools or []}
+            assert read_tool.qualified_name in names
+            assert write_tool.qualified_name not in names
+            if messages[-1]["role"] == "user":
+                message = {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "mcp-read",
+                            "type": "function",
+                            "function": {
+                                "name": read_tool.qualified_name,
+                                "arguments": '{"left":20,"right":22}',
+                            },
+                        }
+                    ],
+                }
+            else:
+                result = json.loads(messages[-1]["content"])
+                assert result["structured_content"] == {"result": 42}
+                message = {"role": "assistant", "content": "The MCP read returned 42."}
+            return {
+                "choices": [{"message": message}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            }
+
+    provider = Researcher()
+    try:
+        outcomes = await SpecialistRunner(store, provider, mcp_manager=manager).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+        await manager.close()
+
+    assert outcomes == [{"task_id": "research", "status": "verifying"}]
+    with store.connection() as connection:
+        journal = connection.execute(
+            "SELECT task_id,tool_name,state,arguments,result FROM tool_calls WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+    assert journal["task_id"] == f"{run_id}:research"
+    assert (journal["tool_name"], journal["state"]) == ("mcp.call", "completed")
+    journal_arguments = json.loads(journal["arguments"])
+    assert journal_arguments["tool"] == read_tool.qualified_name
+    assert journal_arguments["permission"] == "read"
+    assert journal_arguments["schema_sha256"] == read_tool.schema_sha256
+    assert json.loads(journal["result"])["structured_content"] == {"result": 42}
+    assert not store.unresolved_tool_calls(run_id)
+
+
 @pytest.mark.parametrize("permission", ["web.search", "web.read", "web.browser.read"])
 def test_specialist_plan_cannot_inherit_unapproved_web_access(workspace_tmp_path, permission):
     store = RunStore(workspace_tmp_path / "unapproved-specialist-web.sqlite3")

@@ -25,6 +25,7 @@ from xaa.runtime.executor import (
     WriteFileArguments,
 )
 from xaa.runtime.line_edit import WriteLinesArguments
+from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
 from xaa.runtime.task_commands import execute_task_command, read_dependency_command_output
 from xaa.runtime.task_review import candidate_evidence
 from xaa.runtime.tool_worker import FilesystemOperation, execute_filesystem
@@ -152,6 +153,7 @@ class SpecialistRunner:
         *,
         stream_responses: bool = False,
         credential_store: CredentialStore | None = None,
+        mcp_manager: MCPManager | None = None,
     ) -> None:
         self.store = store
         self.memory = MemoryStore(store)
@@ -159,6 +161,7 @@ class SpecialistRunner:
         self.provider = provider
         self.stream_responses = stream_responses
         self.credential_store = credential_store
+        self.mcp_manager = mcp_manager
         self._budgeted_inference_lock = asyncio.Lock()
 
     async def _heartbeat(self, run_id: str, parent: str, task_id: str, worker: str) -> None:
@@ -742,6 +745,8 @@ class SpecialistRunner:
                 "Screenshot capture is unavailable to specialist tasks."
             )
             tools.append(browser_tool)
+        if self.mcp_manager is not None:
+            tools.extend(self.mcp_manager.tools_for_task(task_permissions))
         if task["assigned_role"] == "reviewer" and task["dependencies"]:
             tools.extend(
                 [
@@ -972,6 +977,87 @@ class SpecialistRunner:
                             "task_id": identity,
                             "call_id": call["id"],
                             "journal_id": journal_id,
+                            "result": result,
+                        },
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
+                    )
+                    continue
+                if name.startswith("mcp_"):
+                    if self.mcp_manager is None or name not in task_permissions:
+                        raise PermissionError("Specialist requested an MCP tool outside its scope.")
+                    tool_record = self.mcp_manager.read_tool_record(name)
+                    if tool_record is None:
+                        raise PermissionError(
+                            "The delegated MCP tool is no longer connected with read permission."
+                        )
+                    scoped_store = RunStore(
+                        self.store.path,
+                        task_scope=TaskReadScope(run_id, parent, identity, worker),
+                        internal_tools=True,
+                    )
+                    intent_arguments = {
+                        "tool": name,
+                        "arguments": arguments,
+                        "permission": "read",
+                        "schema_sha256": tool_record.schema_sha256,
+                    }
+                    if not scoped_store.record_tool_intent(
+                        run_id,
+                        parent,
+                        call_id=journal_id,
+                        tool="mcp.call",
+                        version="1",
+                        arguments=intent_arguments,
+                        idempotency_key=journal_id,
+                        internal=True,
+                    ):
+                        raise ValueError("Saved MCP read requires recovery; it cannot be replayed.")
+                    try:
+                        result = await self.mcp_manager.call_tool(
+                            name, arguments, require_read=True
+                        )
+                    except MCPInvocationError as exc:
+                        if exc.status == "unknown_outcome":
+                            result = {
+                                "status": "interrupted_read",
+                                "trust": "untrusted_mcp_output",
+                                "error": {
+                                    "code": "interrupted_read",
+                                    "message": "The read-only MCP call was interrupted. No contents are known; request a new read if the server remains available.",
+                                },
+                            }
+                        else:
+                            result = {
+                                "status": "not_connected",
+                                "trust": "untrusted_mcp_output",
+                                "error": str(exc),
+                            }
+                    except ValueError as exc:
+                        result = {
+                            "status": "invalid_arguments",
+                            "trust": "untrusted_mcp_output",
+                            "error": str(exc),
+                        }
+                    scoped_store.record_tool_result(
+                        run_id, parent, journal_id, result, internal=True
+                    )
+                    self.tasks.record_read_worker_event(
+                        run_id,
+                        parent,
+                        identity,
+                        worker,
+                        "task.tool.result",
+                        {
+                            "task_id": identity,
+                            "call_id": call["id"],
+                            "journal_id": journal_id,
+                            "mcp_tool": name,
                             "result": result,
                         },
                     )

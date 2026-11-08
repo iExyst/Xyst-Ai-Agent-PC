@@ -189,6 +189,7 @@ class TaskRecoverableAction(BaseModel):
     model_call_id: str
     journal_call_id: str
     state: Literal["intended", "completed", "failed"]
+    mcp_tool: str | None = None
     tool_name: Literal[
         "workspace.read_file",
         "workspace.list_directory",
@@ -200,6 +201,7 @@ class TaskRecoverableAction(BaseModel):
         "web.fetch",
         "web.search",
         "browser.run",
+        "mcp.call",
     ]
 
 
