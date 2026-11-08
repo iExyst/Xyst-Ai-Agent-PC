@@ -20,6 +20,7 @@
   },
   "conflict_review_reached": false,
   "original_fixture_changed": false,
+  "owned_model_unloaded": true,
   "evidence": ".acceptance/live-task-workspaces-repeat-20261108/data/XAA/xaa.sqlite3",
   "scope": "Failed repeat sample; does not pass the Phase 4 integration gate."
 }
