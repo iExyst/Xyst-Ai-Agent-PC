@@ -37,15 +37,15 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain' },
       { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png' },
-      { id: 'docx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+      { id: 'xlsx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
     ], headers });
     if (path === '/artifacts/artifact-1') return route.fulfill({ body: '<script>window.artifactExecuted=true</script>', contentType: 'text/plain', headers });
     if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
-    if (path === '/artifacts/docx-1') return route.fulfill({ body: 'DOCX fixture bytes', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers });
+    if (path === '/artifacts/xlsx-1') return route.fulfill({ body: 'XLSX fixture bytes', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers });
     if (path === '/runs' && request.method() === 'POST') {
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
-      expect(request.postDataJSON().document).toBe(`data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${Buffer.from('DOCX fixture bytes').toString('base64')}`);
+      expect(request.postDataJSON().document).toBe(`data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${Buffer.from('XLSX fixture bytes').toString('base64')}`);
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().approved_browser).toBe(true);
@@ -96,8 +96,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');
-  await page.getByLabel(/Text document/).setInputFiles({name:'notes.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',buffer:Buffer.from('DOCX fixture bytes')});
-  await expect(page.getByText('Attached: notes.docx.',{exact:false})).toBeVisible();
+  await page.getByLabel(/Text document/).setInputFiles({name:'notes.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('XLSX fixture bytes')});
+  await expect(page.getByText('Attached: notes.xlsx.',{exact:false})).toBeVisible();
   await page.getByText('Run limits',{exact:true}).click();
   await page.getByLabel('Iteration limit',{exact:true}).fill('0');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
@@ -136,9 +136,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByRole('button', { name: 'View git.diff' }).click();
   await expect(page.locator('pre')).toContainText('<script>');
   expect(await page.evaluate(() => 'artifactExecuted' in window)).toBe(false);
-  const docxDownload = page.waitForEvent('download');
+  const xlsxDownload = page.waitForEvent('download');
   await page.getByRole('button', {name:'Download user.input_document', exact:true}).click();
-  expect((await docxDownload).suggestedFilename()).toBe('xaa-input-document.docx');
+  expect((await xlsxDownload).suggestedFilename()).toBe('xaa-input-document.xlsx');
   await page.getByRole('button', { name: 'View browser.screenshot:untrusted_web_content' }).click();
   await expect(page.getByRole('img', { name: 'Untrusted image content' })).toBeVisible();
   await page.getByLabel('Objective', {exact:true}).fill('Read another file', {timeout:2000});

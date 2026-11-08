@@ -744,6 +744,7 @@ class RunStore:
             if document_media_type not in {
                 "application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "text/plain",
                 "text/markdown",
             }:
@@ -795,6 +796,7 @@ class RunStore:
                 "image/jpeg": "jpg",
                 "application/pdf": "pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
                 "text/plain": "txt",
                 "text/markdown": "md",
             }[media_type]

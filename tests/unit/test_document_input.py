@@ -7,6 +7,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.runtime.document_input import MAX_DOCUMENT_BYTES, extract_document_text
 
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def make_text_pdf(text: str) -> bytes:
@@ -51,6 +52,50 @@ def make_docx(paragraphs: list[str]) -> bytes:
     return output.getvalue()
 
 
+def make_xlsx(*, target: str = "worksheets/sheet1.xml", marker: str = "XLSX-MARKER-42") -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Override PartName="/xl/workbook.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            "</Types>",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId0" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+            'Target="xl/workbook.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Fixture" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+            f'Target="{target}"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/sharedStrings.xml",
+            f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>{marker}</t></si></sst>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c>'
+            '<c r="B1"><v>42</v></c><c r="C1" t="inlineStr"><is><t>inline-value</t>'
+            "</is></c></row></sheetData></worksheet>",
+        )
+    return output.getvalue()
+
+
 def test_extracts_pdf_text_with_page_marker():
     result = extract_document_text(make_text_pdf("Visible fixture text"), "application/pdf")
     assert "[Page 1]" in result
@@ -75,6 +120,19 @@ def test_docx_text_obeys_shared_character_limit():
     assert "clipped at the 48,000-character extraction limit" in result
 
 
+def test_extracts_xlsx_shared_inline_and_numeric_cells():
+    result = extract_document_text(make_xlsx(), XLSX_TYPE)
+    assert "[Sheet: Fixture]" in result
+    assert "A1=XLSX-MARKER-42" in result
+    assert "B1=42" in result
+    assert "C1=inline-value" in result
+
+
+def test_rejects_xlsx_sheet_relationship_escape():
+    with pytest.raises(ValueError, match="path escapes"):
+        extract_document_text(make_xlsx(target="../../outside.xml"), XLSX_TYPE)
+
+
 @pytest.mark.parametrize("media_type", ["text/plain", "text/markdown"])
 def test_extracts_utf8_text_and_markdown(media_type):
     assert extract_document_text(b"\xef\xbb\xbfHello \xe2\x98\x83", media_type) == "Hello ☃"
@@ -94,5 +152,5 @@ def test_rejects_invalid_text_and_non_extractable_pdf():
 def test_rejects_oversized_or_unsupported_documents():
     with pytest.raises(ValueError, match="4 MiB"):
         extract_document_text(b"x" * (MAX_DOCUMENT_BYTES + 1), "text/plain")
-    with pytest.raises(ValueError, match="PDF, DOCX, UTF-8"):
+    with pytest.raises(ValueError, match="PDF, DOCX, XLSX, UTF-8"):
         extract_document_text(b"image bytes", "image/png")

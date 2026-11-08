@@ -83,31 +83,7 @@ function makeTextPdf(text) {
   return Buffer.concat([...parts, ...lines]);
 }
 
-function makeDocx(text) {
-  const document = Buffer.from(
-    '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      `<w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`,
-  );
-  const contentTypes = Buffer.from(
-    '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-      '<Default Extension="xml" ContentType="application/xml"/>' +
-      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
-      '</Types>',
-  );
-  const relationships = Buffer.from(
-    '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
-      '</Relationships>',
-  );
-  const entries = [
-    ['[Content_Types].xml', contentTypes],
-    ['_rels/.rels', relationships],
-    ['word/document.xml', document],
-  ];
+function zipStored(entries) {
   const localParts = [];
   const centralParts = [];
   let offset = 0;
@@ -155,6 +131,74 @@ function makeDocx(text) {
   return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
+function makeDocx(text) {
+  const document = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      `<w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`,
+  );
+  const contentTypes = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>',
+  );
+  const relationships = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>',
+  );
+  return zipStored([
+    ['[Content_Types].xml', contentTypes],
+    ['_rels/.rels', relationships],
+    ['word/document.xml', document],
+  ]);
+}
+
+function makeXlsx(text) {
+  const contentTypes = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '</Types>',
+  );
+  const workbook = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheets><sheet name="Verification" sheetId="1" r:id="rId1"/></sheets></workbook>',
+  );
+  const relationships = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>' +
+      '</Relationships>',
+  );
+  const sharedStrings = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>' + text + '</t></si></sst>',
+  );
+  const sheet = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>42</v></c></row></sheetData></worksheet>',
+  );
+  return zipStored([
+    ['[Content_Types].xml', contentTypes],
+    ['_rels/.rels', Buffer.from('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId0" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')],
+    ['xl/workbook.xml', workbook],
+    ['xl/_rels/workbook.xml.rels', relationships],
+    ['xl/sharedStrings.xml', sharedStrings],
+    ['xl/worksheets/sheet1.xml', sheet],
+  ]);
+}
+
 const imageBytes = makeImage();
 const imagePath = path.join(input, 'two-red-circles.png');
 await writeFile(imagePath, imageBytes);
@@ -166,6 +210,10 @@ const docxMarker = `DOCX-${randomUUID().replaceAll('-', '').toUpperCase()}`;
 const docxBytes = makeDocx(`Document verification marker: ${docxMarker}`);
 const docxPath = path.join(input, 'verification.docx');
 await writeFile(docxPath, docxBytes);
+const xlsxMarker = `XLSX-${randomUUID().replaceAll('-', '').toUpperCase()}`;
+const xlsxBytes = makeXlsx(xlsxMarker);
+const xlsxPath = path.join(input, 'verification.xlsx');
+await writeFile(xlsxPath, xlsxBytes);
 
 const manifest = JSON.parse(await readFile('build/native-dev/manifest.json', 'utf8'));
 const nativeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())));
@@ -210,7 +258,14 @@ async function finishRun(
   const answer = finalMessage?.content ?? '';
   const calls = messages.flatMap(message => message.tool_calls ?? []);
   const answerAccepted = expectedAnswer instanceof RegExp ? expectedAnswer.test(answer) : answer.includes(expectedAnswer);
-  const result = { run_id: run.id, state: run.state, answer, tool_call_count: calls.length };
+  const result = {
+    run_id: run.id,
+    state: run.state,
+    answer,
+    expected_answer: typeof expectedAnswer === 'string' ? expectedAnswer : null,
+    answer_matches_expected: answerAccepted,
+    tool_call_count: calls.length,
+  };
   runs.push(result);
   if (!answerAccepted) throw new Error(`Model answer omitted expected media evidence: ${answer}`);
   if (calls.length !== 0) throw new Error('Media-only acceptance unexpectedly proposed a tool call.');
@@ -284,6 +339,12 @@ try {
     '#run-document', docxPath, 'Attached: verification.docx', docxMarker,
     ['user.input_document', 'user.input_document_text'], docxBytes, docxMarker, 'docx-run.png',
   );
+  const xlsxResult = await finishRun(
+    page,
+    'Read the attached spreadsheet. From the Verification sheet, return only the exact 32-character uppercase hexadecimal code that follows the literal XLSX- prefix.',
+    '#run-document', xlsxPath, 'Attached: verification.xlsx', xlsxMarker.slice(5),
+    ['user.input_document', 'user.input_document_text'], xlsxBytes, xlsxMarker, 'xlsx-run.png',
+  );
 
   const unloaded = await api('/models/unload', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instance_id: instance }),
@@ -314,6 +375,7 @@ try {
     image: imageResult,
     document: documentResult,
     docx: docxResult,
+    xlsx: xlsxResult,
     final_review_left_pending: true,
     engine_stopped: engineStopped,
     graceful_shutdown: graceful,

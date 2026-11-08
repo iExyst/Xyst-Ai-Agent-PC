@@ -513,6 +513,67 @@ def test_run_docx_is_extracted_and_original_artifact_is_downloadable(workspace_t
         assert downloaded.headers["content-type"].split(";", 1)[0] == media_type
 
 
+def test_run_xlsx_extracts_cells_and_retains_original_artifact(workspace_tmp_path):
+    import base64
+    from io import BytesIO
+    from zipfile import ZIP_DEFLATED, ZipFile
+
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Override PartName="/xl/workbook.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            "</Types>",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId0" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+            'Target="xl/workbook.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+            'Target="worksheets/sheet1.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>XLSX-API-MARKER-361A</t>'
+            "</is></c></row></sheetData></worksheet>",
+        )
+    source = output.getvalue()
+    encoded = f"data:{media_type};base64," + base64.b64encode(source).decode("ascii")
+    store = RunStore(workspace_tmp_path / "run-xlsx.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Report the XLSX marker", "document": encoded},
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert "XLSX-API-MARKER-361A" in store.document_text(run_id)
+        artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
+        original = next(item for item in artifacts if item["provenance"] == "user.input_document")
+        downloaded = client.get(f"/artifacts/{original['id']}", headers=headers)
+        assert downloaded.content == source
+        assert downloaded.headers["content-type"].split(";", 1)[0] == media_type
+
+
 def test_shutdown_pauses_worker_before_signalling_server(workspace_tmp_path):
     provider = WaitingProvider()
     store = RunStore(workspace_tmp_path / "shutdown.sqlite3")
