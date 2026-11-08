@@ -67,8 +67,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: browser-popup-edge-${{ github.run_id }}
-          path: .acceptance/browser-popup-edge-*/report.json
+          path: .acceptance/
           if-no-files-found: error
+          include-hidden-files: true
       - uses: actions/cache/save@v6
         if: success() && steps.uv-cache.outputs.cache-hit != 'true'
         with:
