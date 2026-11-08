@@ -90,7 +90,21 @@ jobs:
             ~/.cargo/git
             apps/desktop/src-tauri/target
           key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+      - uses: actions/cache/restore@v4
+        id: nsis-cache
+        with:
+          path: |
+            ~/AppData/Local/tauri/NSIS
+            apps/desktop/src-tauri/target/release/.tauri/NSIS
+          key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - run: npm run build:installer
+      - uses: actions/cache/save@v4
+        if: success() && steps.nsis-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/AppData/Local/tauri/NSIS
+            apps/desktop/src-tauri/target/release/.tauri/NSIS
+          key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - name: Verify recovery after native Tauri desktop process death
         shell: pwsh
         run: |
