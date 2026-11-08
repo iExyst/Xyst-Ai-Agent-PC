@@ -8,6 +8,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [busy,setBusy]=useState(false);
   const [confirmRevoke,setConfirmRevoke]=useState(false);
   const [reconcileChoice,setReconcileChoice]=useState<{updateId:number;resolution:'delivered'|'retry'}>();
+  const [emailReconcileChoice,setEmailReconcileChoice]=useState<{uidValidity:string;uid:string;resolution:'delivered'|'retry'}>();
   const [error,setError]=useState('');
   const [email,setEmail]=useState<EmailChannelStatus>();
   const [emailAddress,setEmailAddress]=useState('');
@@ -54,6 +55,14 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     setBusy(true);setError('');
     try {setStatus(await client.reconcileTelegramDelivery(reconcileChoice.updateId,reconcileChoice.resolution));setReconcileChoice(undefined);}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not reconcile the Telegram delivery.');}
+    finally {setBusy(false);}
+  }
+
+  async function reconcileEmailDelivery() {
+    if(!emailReconcileChoice)return;
+    setBusy(true);setError('');
+    try {setEmail(await client.reconcileEmailDelivery(emailReconcileChoice.uidValidity,emailReconcileChoice.uid,emailReconcileChoice.resolution));setEmailReconcileChoice(undefined);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not reconcile the email reply.');}
     finally {setBusy(false);}
   }
 
@@ -117,7 +126,25 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     <label htmlFor="email-allowed-senders">Authorized sender addresses (comma separated)</label><input id="email-allowed-senders" value={allowedSenders} onChange={event=>setAllowedSenders(event.target.value)} placeholder="you@example.com" disabled={busy}/>
     <label htmlFor="email-authserv-id">Receiving mail server authserv-id</label><input id="email-authserv-id" value={authservId} onChange={event=>setAuthservId(event.target.value)} placeholder="mx.example.com" disabled={busy}/>
     <div className="controls"><button type="button" onClick={()=>void saveEmail()} disabled={busy||!emailAddress||!emailPassword||!imapHost||!smtpHost||!allowedSenders.trim()||!authservId.trim()}>Save email settings</button>{email?.configured&&<button type="button" onClick={()=>void clearEmail()} disabled={busy}>Clear email credentials</button>}</div>
-    {email&&<p role="status">{email.configured?`Configured mailbox: ${email.address}`:'Email is not configured'} · {email.processed_messages} processed message(s){email.deliveries&&Object.keys(email.deliveries).length?` · ${Object.entries(email.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}`:''}</p>}
+    {email&&<>
+      <p role="status">{email.configured?`Configured mailbox: ${email.address}`:'Email is not configured'} · {email.processed_messages} processed message(s){email.deliveries&&Object.keys(email.deliveries).length?` · ${Object.entries(email.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}`:''}</p>
+      {email.configured&&(email.unknown_deliveries??[]).length>0&&<section aria-label="Email replies needing review">
+        <h4>Unconfirmed email replies</h4>
+        <p>Check the configured mailbox's Sent folder and the authorized sender's reply before choosing an action. A retry can send a duplicate if SMTP accepted the first message.</p>
+        <ul>{(email.unknown_deliveries??[]).map(delivery=><li key={`${delivery.uid_validity}:${delivery.uid}`}>
+          <span>Message UID {delivery.uid} · sender {delivery.sender??'unknown'} · run {delivery.run_id??'unavailable'} · {new Date(delivery.updated_at).toLocaleString()}</span>
+          <div className="controls">
+            <button type="button" onClick={()=>setEmailReconcileChoice({uidValidity:delivery.uid_validity,uid:delivery.uid,resolution:'delivered'})} disabled={busy}>I checked; mark email delivered</button>
+            <button type="button" onClick={()=>setEmailReconcileChoice({uidValidity:delivery.uid_validity,uid:delivery.uid,resolution:'retry'})} disabled={busy}>I checked; retry email</button>
+          </div>
+          {emailReconcileChoice?.uid===delivery.uid&&emailReconcileChoice.uidValidity===delivery.uid_validity&&<div role="alertdialog" aria-label="Confirm email delivery reconciliation">
+            <p>{emailReconcileChoice.resolution==='retry'?'Retrying may send a duplicate if the SMTP server accepted the first reply.':'This records that you found the reply in the Sent folder.'} Confirm that you checked the mailbox and reply destination.</p>
+            <button type="button" onClick={()=>void reconcileEmailDelivery()} disabled={busy}>Confirm {emailReconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+            <button type="button" onClick={()=>setEmailReconcileChoice(undefined)} disabled={busy}>Cancel</button>
+          </div>}
+        </li>)}</ul>
+      </section>}
+    </>}
     {error&&<p role="alert">{error}</p>}
   </section>;
 }

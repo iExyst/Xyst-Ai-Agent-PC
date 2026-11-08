@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/email/deliveries/{uid_validity}/{uid}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Email Delivery */
+        post: operations["reconcile_email_delivery_channels_email_deliveries__uid_validity___uid__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram": {
         parameters: {
             query?: never;
@@ -1743,6 +1760,34 @@ export interface components {
             };
             /** Processed Messages */
             processed_messages: number;
+            /** Unknown Deliveries */
+            unknown_deliveries: components["schemas"]["EmailUnknownDelivery"][];
+        };
+        /** EmailDeliveryReconciliation */
+        EmailDeliveryReconciliation: {
+            /**
+             * Confirmed Destination Checked
+             * @constant
+             */
+            confirmed_destination_checked: true;
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "delivered" | "retry";
+        };
+        /** EmailUnknownDelivery */
+        EmailUnknownDelivery: {
+            /** Run Id */
+            run_id: string | null;
+            /** Sender */
+            sender: string | null;
+            /** Uid */
+            uid: string;
+            /** Uid Validity */
+            uid_validity: string;
+            /** Updated At */
+            updated_at: string;
         };
         /** EvaluationRecord */
         EvaluationRecord: {
@@ -3297,6 +3342,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmailCredentialStatus"];
+                };
+            };
+        };
+    };
+    reconcile_email_delivery_channels_email_deliveries__uid_validity___uid__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid_validity: string;
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailDeliveryReconciliation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

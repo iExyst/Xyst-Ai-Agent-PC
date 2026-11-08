@@ -478,6 +478,16 @@ class RunStore:
                 );
                 CREATE INDEX IF NOT EXISTS email_messages_delivery
                     ON email_messages(mailbox_id,delivery_state,created_at);
+                CREATE TABLE IF NOT EXISTS email_delivery_reconciliations (
+                    id TEXT PRIMARY KEY,
+                    mailbox_id TEXT NOT NULL,
+                    uid_validity TEXT NOT NULL,
+                    uid TEXT NOT NULL,
+                    resolution TEXT NOT NULL CHECK (resolution IN ('delivered','retry')),
+                    resolved_at TEXT NOT NULL,
+                    FOREIGN KEY(mailbox_id,uid_validity,uid)
+                        REFERENCES email_messages(mailbox_id,uid_validity,uid) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS provider_profiles (
                     id TEXT PRIMARY KEY,
                     adapter TEXT NOT NULL,

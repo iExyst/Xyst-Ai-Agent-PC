@@ -877,15 +877,95 @@
           "processed_messages": {
             "title": "Processed Messages",
             "type": "integer"
+          },
+          "unknown_deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/EmailUnknownDelivery"
+            },
+            "title": "Unknown Deliveries",
+            "type": "array"
           }
         },
         "required": [
           "configured",
           "address",
           "processed_messages",
-          "deliveries"
+          "deliveries",
+          "unknown_deliveries"
         ],
         "title": "EmailCredentialStatus",
+        "type": "object"
+      },
+      "EmailDeliveryReconciliation": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_destination_checked": {
+            "const": true,
+            "title": "Confirmed Destination Checked",
+            "type": "boolean"
+          },
+          "resolution": {
+            "enum": [
+              "delivered",
+              "retry"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "confirmed_destination_checked"
+        ],
+        "title": "EmailDeliveryReconciliation",
+        "type": "object"
+      },
+      "EmailUnknownDelivery": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "uid": {
+            "title": "Uid",
+            "type": "string"
+          },
+          "uid_validity": {
+            "title": "Uid Validity",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid_validity",
+          "uid",
+          "sender",
+          "run_id",
+          "updated_at"
+        ],
+        "title": "EmailUnknownDelivery",
         "type": "object"
       },
       "EvaluationRecord": {
@@ -5049,6 +5129,69 @@
           }
         ],
         "summary": "Set Email Credential"
+      }
+    },
+    "/channels/email/deliveries/{uid_validity}/{uid}/reconcile": {
+      "post": {
+        "operationId": "reconcile_email_delivery_channels_email_deliveries__uid_validity___uid__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uid_validity",
+            "required": true,
+            "schema": {
+              "title": "Uid Validity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uid",
+            "required": true,
+            "schema": {
+              "title": "Uid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailDeliveryReconciliation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Email Delivery"
       }
     },
     "/channels/telegram": {

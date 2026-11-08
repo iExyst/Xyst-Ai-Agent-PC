@@ -245,6 +245,10 @@ export class EngineClient {
 
   emailStatus(): Promise<EmailChannelStatus> { return this.#request('/channels/email'); }
 
+  reconcileEmailDelivery(uidValidity:string,uid:string,resolution:'delivered'|'retry'): Promise<EmailChannelStatus> {
+    return this.#request(`/channels/email/deliveries/${encodeURIComponent(uidValidity)}/${encodeURIComponent(uid)}/reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_destination_checked:true})});
+  }
+
   setEmailAccount(input: components['schemas']['EmailCredentialRequest']): Promise<EmailChannelStatus> {
     return this.#request('/channels/email/credential',{method:'PUT',body:JSON.stringify(input)});
   }

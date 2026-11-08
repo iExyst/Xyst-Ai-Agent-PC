@@ -412,12 +412,28 @@ class EmailCredentialRequest(BaseModel):
     authserv_id: str = Field(min_length=1, max_length=253, pattern=r"^[A-Za-z0-9.-]+$")
 
 
+class EmailUnknownDelivery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    uid_validity: str
+    uid: str
+    sender: str | None
+    run_id: str | None
+    updated_at: str
+
+
 class EmailCredentialStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     configured: bool
     address: str | None
     processed_messages: int
     deliveries: dict[str, int]
+    unknown_deliveries: list[EmailUnknownDelivery]
+
+
+class EmailDeliveryReconciliation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resolution: Literal["delivered", "retry"]
+    confirmed_destination_checked: Literal[True]
 
 
 class SpecialistRouteRequest(BaseModel):
@@ -1500,6 +1516,45 @@ def create_app(
                 status_code=503, detail="Could not clear the OS credential."
             ) from exc
         return email_store.status(None)
+
+    @app.post(
+        "/channels/email/deliveries/{uid_validity}/{uid}/reconcile",
+        response_model=EmailCredentialStatus,
+    )
+    def reconcile_email_delivery(
+        uid_validity: str,
+        uid: str,
+        payload: EmailDeliveryReconciliation,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        raw_config = credential_store.get("email-mailbox-config")
+        password = credential_store.get("email-mailbox-password")
+        if raw_config is None or password is None:
+            raise HTTPException(
+                status_code=409, detail="Configure the email mailbox before reconciling a reply."
+            )
+        try:
+            raw_values = json.loads(raw_config)
+            if not isinstance(raw_values, dict):
+                raise TypeError("Invalid mailbox settings.")
+            values = {key: str(value) for key, value in cast(dict[str, object], raw_values).items()}
+            values["password"] = password
+            config = EmailConfig.parse(values)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                status_code=409, detail="The configured email mailbox is unavailable."
+            ) from exc
+        if not uid_validity.isdecimal() or not uid.isdecimal():
+            raise HTTPException(status_code=422, detail="Email delivery identity is invalid.")
+        if not email_store.reconcile_delivery(
+            config.address, uid_validity, uid, payload.resolution
+        ):
+            raise HTTPException(
+                status_code=409, detail="This email reply is no longer awaiting reconciliation."
+            )
+        return email_store.status(config.address)
 
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:

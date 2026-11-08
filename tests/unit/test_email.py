@@ -177,7 +177,20 @@ def test_email_ingress_is_allowlisted_idempotent_and_delivery_is_never_ambiguous
     assert delivery["body"] == "Task complete."
     assert store.reconcile_sends() == 1
     assert store.claim_delivery(mailbox_id) is None
-    assert store.status(config.address)["deliveries"] == {"unknown": 1}
+    unknown = store.status(config.address)["unknown_deliveries"]
+    assert len(unknown) == 1
+    assert unknown[0]["uid_validity"] == "77"
+    assert unknown[0]["uid"] == "1"
+    assert unknown[0]["run_id"] == run_id
+    assert store.reconcile_delivery(config.address, "77", "1", "delivered")
+    assert not store.reconcile_delivery(config.address, "77", "1", "retry")
+    assert store.status(config.address)["deliveries"] == {"sent": 1}
+    with runs.connection() as connection:
+        audit = connection.execute(
+            "SELECT resolution FROM email_delivery_reconciliations WHERE mailbox_id=? AND uid_validity='77' AND uid='1'",
+            (mailbox_id,),
+        ).fetchone()
+    assert audit["resolution"] == "delivered"
 
 
 def test_email_service_polls_imap_and_threads_reply_over_starttls(workspace_tmp_path) -> None:
@@ -403,6 +416,54 @@ def test_email_api_keeps_password_secret_and_rejects_unauthorized_access(
     assert client.get("/channels/email", headers={"Authorization": f"Bearer {'a' * 40}"}).json()[
         "configured"
     ]
+    email_store = EmailStore(runs)
+    raw, _ = message_bytes("owner@example.test", "API reconciliation")
+    run_id = email_store.accept_message("agent@example.test", "77", "3", raw, "fixture/model")
+    assert run_id
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE email_messages SET delivery_state='unknown' WHERE uid_validity='77' AND uid='3'"
+        )
+    status = client.get("/channels/email", headers={"Authorization": f"Bearer {'a' * 40}"}).json()
+    assert status["unknown_deliveries"][0]["run_id"] == run_id
+    rejected = client.post(
+        "/channels/email/deliveries/77/3/reconcile",
+        headers={"Authorization": f"Bearer {'a' * 40}"},
+        json={"resolution": "retry", "confirmed_destination_checked": False},
+    )
+    assert rejected.status_code == 422
+    reconciled = client.post(
+        "/channels/email/deliveries/77/3/reconcile",
+        headers={"Authorization": f"Bearer {'a' * 40}"},
+        json={"resolution": "delivered", "confirmed_destination_checked": True},
+    )
+    assert reconciled.status_code == 200
+    assert reconciled.json()["unknown_deliveries"] == []
+    assert reconciled.json()["deliveries"]["sent"] == 1
+    assert (
+        client.post(
+            "/channels/email/deliveries/77/3/reconcile",
+            headers={"Authorization": f"Bearer {'a' * 40}"},
+            json={"resolution": "retry", "confirmed_destination_checked": True},
+        ).status_code
+        == 409
+    )
+    retry_raw, _ = message_bytes("owner@example.test", "Retry after inspection")
+    retry_run = email_store.accept_message(
+        "agent@example.test", "77", "4", retry_raw, "fixture/model"
+    )
+    assert retry_run
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE email_messages SET delivery_state='unknown' WHERE uid_validity='77' AND uid='4'"
+        )
+    retried = client.post(
+        "/channels/email/deliveries/77/4/reconcile",
+        headers={"Authorization": f"Bearer {'a' * 40}"},
+        json={"resolution": "retry", "confirmed_destination_checked": True},
+    )
+    assert retried.status_code == 200
+    assert retried.json()["deliveries"]["pending"] == 1
     assert (
         client.delete(
             "/channels/email/credential", headers={"Authorization": f"Bearer {'a' * 40}"}

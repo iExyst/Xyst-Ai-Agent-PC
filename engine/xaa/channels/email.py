@@ -225,7 +225,13 @@ class EmailStore:
 
     def status(self, address: str | None) -> dict[str, Any]:
         if address is None:
-            return {"configured": False, "address": None, "processed_messages": 0, "deliveries": {}}
+            return {
+                "configured": False,
+                "address": None,
+                "processed_messages": 0,
+                "deliveries": {},
+                "unknown_deliveries": [],
+            }
         with self.runs.connection() as connection:
             mailbox = connection.execute(
                 "SELECT id FROM email_mailboxes WHERE address=?", (address,)
@@ -236,6 +242,7 @@ class EmailStore:
                     "address": None,
                     "processed_messages": 0,
                     "deliveries": {},
+                    "unknown_deliveries": [],
                 }
             count = connection.execute(
                 "SELECT count(*) FROM email_messages WHERE mailbox_id=?", (mailbox["id"],)
@@ -244,12 +251,53 @@ class EmailStore:
                 "SELECT delivery_state,count(*) AS amount FROM email_messages WHERE mailbox_id=? AND delivery_state IS NOT NULL GROUP BY delivery_state",
                 (mailbox["id"],),
             ).fetchall()
+            unknown_deliveries = connection.execute(
+                "SELECT uid_validity,uid,sender,run_id,updated_at FROM email_messages WHERE mailbox_id=? AND delivery_state='unknown' ORDER BY updated_at,uid_validity,uid",
+                (mailbox["id"],),
+            ).fetchall()
         return {
             "configured": True,
             "address": address,
             "processed_messages": int(count),
             "deliveries": {str(row["delivery_state"]): int(row["amount"]) for row in rows},
+            "unknown_deliveries": [
+                {
+                    "uid_validity": str(row["uid_validity"]),
+                    "uid": str(row["uid"]),
+                    "sender": str(row["sender"]) if row["sender"] is not None else None,
+                    "run_id": str(row["run_id"]) if row["run_id"] is not None else None,
+                    "updated_at": str(row["updated_at"]),
+                }
+                for row in unknown_deliveries
+            ],
         }
+
+    def reconcile_delivery(
+        self, address: str, uid_validity: str, uid: str, resolution: str
+    ) -> bool:
+        if resolution not in {"delivered", "retry"}:
+            raise ValueError("Invalid email delivery reconciliation.")
+        now = utc_now()
+        state = "sent" if resolution == "delivered" else "pending"
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            mailbox = connection.execute(
+                "SELECT id FROM email_mailboxes WHERE address=?", (address,)
+            ).fetchone()
+            if mailbox is None:
+                return False
+            mailbox_id = str(mailbox["id"])
+            changed = connection.execute(
+                "UPDATE email_messages SET delivery_state=?,updated_at=? WHERE mailbox_id=? AND uid_validity=? AND uid=? AND delivery_state='unknown'",
+                (state, now, mailbox_id, uid_validity, uid),
+            ).rowcount
+            if changed != 1:
+                return False
+            connection.execute(
+                "INSERT INTO email_delivery_reconciliations (id,mailbox_id,uid_validity,uid,resolution,resolved_at) VALUES (?,?,?,?,?,?)",
+                (str(uuid4()), mailbox_id, uid_validity, uid, resolution, now),
+            )
+        return True
 
     def accept_message(
         self, mailbox_id: str, uid_validity: str, uid: str, raw: bytes, model: str | None

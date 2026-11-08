@@ -3,7 +3,7 @@ import {expect,test} from '@playwright/test';
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
-  let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{}};
+  let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   await page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
@@ -43,7 +43,12 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/channels/email'&&request.method()==='GET')return route.fulfill({json:emailStatus,headers});
     if(path==='/channels/email/credential'&&request.method()==='PUT'){
       const body=request.postDataJSON();requests.push(body);expect(body.password).toBe('email-app-password');expect(body.authserv_id).toBe('mx.example.test');
-      emailStatus={configured:true,address:'agent@example.test',processed_messages:0,deliveries:{}};
+      emailStatus={configured:true,address:'agent@example.test',processed_messages:1,deliveries:{unknown:1},unknown_deliveries:[{uid_validity:'77',uid:'3',sender:'owner@example.test',run_id:'email-fixture-run',updated_at:'2026-11-08T12:00:00Z'}]};
+      return route.fulfill({json:emailStatus,headers});
+    }
+    if(path==='/channels/email/deliveries/77/3/reconcile'&&request.method()==='POST'){
+      expect(request.postDataJSON()).toEqual({resolution:'retry',confirmed_destination_checked:true});
+      emailStatus={...emailStatus,deliveries:{pending:1},unknown_deliveries:[]};
       return route.fulfill({json:emailStatus,headers});
     }
     if(path==='/channels/email/credential'&&request.method()==='DELETE'){
@@ -83,6 +88,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Save email settings',exact:true}).click();
   await expect(panel.getByLabel('Mailbox password or app password')).toHaveValue('');
   await expect(panel.getByText('Configured mailbox: agent@example.test')).toBeVisible();
+  await expect(panel.getByText(/Message UID 3 · sender owner@example.test/)).toBeVisible();
+  await panel.getByRole('button',{name:'I checked; retry email',exact:true}).click();
+  await panel.getByRole('button',{name:'Confirm retry',exact:true}).click();
+  await expect(panel.getByText('Unconfirmed email replies')).toHaveCount(0);
   await panel.getByRole('button',{name:'Clear email credentials',exact:true}).click();
   await expect(panel.getByText('Email is not configured')).toBeVisible();
   expect(requests).toHaveLength(2);
