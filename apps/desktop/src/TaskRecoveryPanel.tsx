@@ -27,7 +27,8 @@ export function TaskRecoveryPanel({client,runId,taskId,onUpdated}:{client:Engine
       {summary.candidate&&<><h4>Saved candidate for review</h4><pre>{summary.candidate}</pre><p>This candidate is unverified. Open the ordinary evidence review before accepting it.</p><button disabled={busy||!summary.candidate_reviewable} onClick={()=>void decide('review_candidate')}>Review saved candidate</button>{!summary.candidate_reviewable&&<p>Later or unresolved work follows this candidate, so it cannot be reviewed yet.</p>}</>}
       {summary.pending_model_tool_calls.length>0&&<><h4>Proposed actions without a saved result</h4><ul>{summary.pending_model_tool_calls.map((call,index)=><li key={`${call.call_id}-${index}`}>{call.name??'Unknown tool'} ({call.call_id??'missing call ID'})</li>)}</ul><p>These actions may have been in flight. Reconcile their journals before continuing.</p></>}
       {summary.unresolved_tool_calls>0&&<p>{summary.unresolved_tool_calls} tool action(s) have an uncertain execution result. They must be reconciled before continuation.</p>}
-      {summary.safe_to_resume&&<p>The saved history is at a safe boundary, with no unresolved action or candidate, and both specialist and shared run budgets have room to continue.</p>}
+      {summary.safe_to_resume&&!summary.resume_from_start&&<p>The saved history is at a safe boundary, with no unresolved action or candidate, and both specialist and shared run budgets have room to continue.</p>}
+      {summary.resume_from_start&&<p>No model reply or tool result was saved for this task. Resuming starts again from the task objective; the prior inference attempt still counts against its budgets.</p>}
       <div className="controls"><button disabled={busy||!summary.safe_to_resume} onClick={()=>void decide('resume')}>Resume from saved results</button><button disabled={busy} onClick={()=>void decide('fail')}>Mark task failed</button></div>
     </>}{error&&<p role="alert">{error}</p>}
   </section>;

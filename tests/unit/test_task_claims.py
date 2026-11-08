@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
@@ -303,6 +304,76 @@ def test_lost_worker_cannot_resume_when_shared_run_budget_is_exhausted(workspace
     assert summary["safe_to_resume"] is False
     with pytest.raises(ValueError, match="Review the saved candidate"):
         tasks.resolve_lost_worker(run_id, parent, "read", "resume")
+
+
+def test_lost_worker_cannot_restart_unmeasured_inference_with_shared_token_budget(
+    workspace_tmp_path,
+):
+    runs = RunStore(workspace_tmp_path / "unmeasured-recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+        max_total_tokens=100,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="read", objective="Read evidence")])
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        runs.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "read", "inference_id": "unmeasured-attempt"},
+        )
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["read"]
+    summary = tasks.recovery_summary(run_id, "read")
+    assert summary["safe_to_resume"] is False
+    assert summary["resume_from_start"] is False
+
+
+def test_clean_lost_worker_can_be_requeued_from_assignment(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "clean-restart-recovery.sqlite3")
+    run_id = runs.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    runs.transition(run_id, RunState.PLANNING, owner=parent)
+    tasks = TaskStore(runs)
+    tasks.save_plan(run_id, parent, [TaskDefinition(id="read", objective="Read evidence")])
+    tasks.claim_ready(run_id, parent)
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?", (run_id,)
+        )
+
+    reopened = RunStore(runs.path)
+    assert reopened.recover_abandoned_runs() == []
+    recovered_tasks = TaskStore(reopened)
+    summary = recovered_tasks.recovery_summary(run_id, "read")
+    assert summary["resume_from_start"] is True
+    owner = reopened.acquire_blocked_run_recovery(run_id, "local-user-task-recovery")
+    assert owner is not None
+    recovered_tasks.resolve_lost_worker(run_id, owner, "read", "resume")
+
+    assert reopened.get_run(run_id)["state"] == "queued"
+    assert recovered_tasks.records(run_id)[0]["status"] == "queued"
+    decision = next(
+        event
+        for event in reversed(reopened.list_events(run_id))
+        if event["event_type"] == "task.recovery_decided"
+    )
+    assert decision["payload"]["decision"] == "resume"
+    assert decision["payload"]["evidence"]["resume_from_start"] is True
 
 
 @pytest.mark.parametrize("exhausted_limit", ["iterations", "tokens"])

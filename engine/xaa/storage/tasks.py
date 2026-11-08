@@ -544,7 +544,15 @@ class TaskStore:
             and not pending_calls
             and not unresolved
         )
-        safe_boundary = (
+        resume_from_start = (
+            not messages
+            and not calls
+            and not completed_results
+            and not pending_calls
+            and not unresolved
+            and not any(event["event_type"] == "task.response_requested" for event in events)
+        )
+        safe_boundary = resume_from_start or (
             bool(messages)
             and not pending_calls
             and not unresolved
@@ -614,7 +622,17 @@ class TaskStore:
             self.runs.inference_attempts(run_id) < run["limits"]["max_iterations"]
             and elapsed < run["limits"]["max_seconds"]
             and self.runs.usage_report(run_id)["outstanding_reserved_tokens"] == 0
-            and (shared_limit is None or run_usage["total_tokens"] < shared_limit)
+            and (
+                shared_limit is None
+                or (run_usage["unmeasured_calls"] == 0 and run_usage["total_tokens"] < shared_limit)
+            )
+        )
+        safe_to_resume = (
+            safe_boundary
+            and candidate is None
+            and tokens_reserved == 0
+            and task_budget_available
+            and run_budget_available
         )
         summary: dict[str, Any] = {
             "task_id": task_id,
@@ -626,13 +644,8 @@ class TaskStore:
             ),
             "pending_model_tool_calls": pending_calls,
             "unresolved_tool_calls": len(unresolved),
-            "safe_to_resume": (
-                safe_boundary
-                and candidate is None
-                and tokens_reserved == 0
-                and task_budget_available
-                and run_budget_available
-            ),
+            "safe_to_resume": safe_to_resume,
+            "resume_from_start": resume_from_start and safe_to_resume,
             "consumed_iterations": task_attempts,
             "run_measured_tokens": self.runs.token_usage(run_id)["total_tokens"],
             "reserved_tokens": tokens_reserved,

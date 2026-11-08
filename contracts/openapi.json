@@ -4464,6 +4464,10 @@
             "title": "Reserved Tokens",
             "type": "integer"
           },
+          "resume_from_start": {
+            "title": "Resume From Start",
+            "type": "boolean"
+          },
           "run_measured_tokens": {
             "title": "Run Measured Tokens",
             "type": "integer"
@@ -4499,6 +4503,7 @@
           "pending_model_tool_calls",
           "unresolved_tool_calls",
           "safe_to_resume",
+          "resume_from_start",
           "consumed_iterations",
           "run_measured_tokens",
           "reserved_tokens"

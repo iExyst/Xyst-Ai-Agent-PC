@@ -3098,6 +3098,8 @@ export interface components {
             }[];
             /** Reserved Tokens */
             reserved_tokens: number;
+            /** Resume From Start */
+            resume_from_start: boolean;
             /** Run Measured Tokens */
             run_measured_tokens: number;
             /** Safe To Resume */

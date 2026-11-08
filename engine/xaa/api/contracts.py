@@ -187,6 +187,7 @@ class TaskRecoverySummary(BaseModel):
     pending_model_tool_calls: list[dict[str, str | None]]
     unresolved_tool_calls: int
     safe_to_resume: bool
+    resume_from_start: bool
     consumed_iterations: int
     run_measured_tokens: int
     reserved_tokens: int
