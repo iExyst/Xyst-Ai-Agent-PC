@@ -1430,6 +1430,11 @@ export interface components {
             /** Acceptance Criteria */
             acceptance_criteria?: string[];
             /**
+             * Allow Procedure Drafting
+             * @default false
+             */
+            allow_procedure_drafting: boolean;
+            /**
              * Approved Browser
              * @default false
              */
@@ -2260,6 +2265,11 @@ export interface components {
         RunRecord: {
             /** Acceptance Criteria */
             acceptance_criteria: string[];
+            /**
+             * Allow Procedure Drafting
+             * @default false
+             */
+            allow_procedure_drafting: boolean;
             /**
              * Approved Browser
              * @default false

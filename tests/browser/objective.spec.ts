@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 test('connect, submit an objective and render its saved events', async ({ page }) => {
   const errors: string[] = [];
   let planReads = 0;
+  let runSubmissions = 0;
   let usageUnavailable = true;
   let braveSearchConfigured = false;
   let braveSearchSecret = '';
@@ -43,13 +44,16 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
     if (path === '/artifacts/xlsx-1') return route.fulfill({ body: 'XLSX fixture bytes', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers });
     if (path === '/runs' && request.method() === 'POST') {
+      runSubmissions += 1;
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
       expect(request.postDataJSON().document).toBe(`data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${Buffer.from('XLSX fixture bytes').toString('base64')}`);
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().approved_browser).toBe(true);
+      expect(request.postDataJSON().allow_procedure_drafting).toBe(true);
       expect(request.postDataJSON().file_checks).toEqual([{path: 'input.txt', expected_content: 'fixture\n'}]);
+      if (runSubmissions === 1) return route.fulfill({status:503,body:'temporary unavailable',headers});
       return route.fulfill({ json: run, headers });
     }
     if (path.endsWith('/events/stream')) {
@@ -93,6 +97,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('Allow Brave web search for this next run').check();
   await page.getByLabel('Allow managed browser reads for this next run').check();
+  await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');
@@ -109,6 +114,10 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('256');
   await page.getByLabel('Reserve prompt and output tokens before each inference',{exact:true}).check();
   await page.getByRole('button', { name: 'Start objective' }).click();
+  await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
+  await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
+  await page.getByRole('button', { name: 'Start objective' }).click();
+  await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('3 iterations · 60 seconds');
   await expect(resources).toContainText('Reported token threshold: 5000 · Output tokens per request: 256');

@@ -61,6 +61,8 @@ from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import IterationBudgetExceeded, LeaseLost, RunStore, TokenBudgetExceeded
 from xaa.storage.skills import (
     MAX_PROCEDURE_TEXT_BYTES,
+    SkillConflict,
+    SkillDraft,
     SkillStore,
     available_toolsets,
     snapshot_digest,
@@ -480,6 +482,51 @@ class Coordinator:
             )
             self.store.record_tool_result(run_id, token, call["id"], result)
             return result
+        if name == "procedure_draft":
+            if not run.get("allow_procedure_drafting"):
+                raise PermissionError("This run has no user authorization to draft procedures.")
+            try:
+                draft = SkillDraft.model_validate(arguments)
+            except ValidationError:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.draft",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure draft validation requires reconciliation.")
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="invalid_procedure_draft",
+                    message="Draft fields or linked resources are invalid; correct the draft before retrying.",
+                )
+            try:
+                return SkillStore(self.store).create_model_draft_from_run(
+                    run_id, token, call["id"], draft
+                )
+            except SkillConflict as exc:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.draft",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure draft conflict requires reconciliation.") from exc
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_draft_conflict",
+                    message=str(exc),
+                )
         if name.startswith("mcp_"):
             if self.mcp_manager is None or not self.mcp_manager.is_tool_authorized_for_run(
                 name, set(run.get("approved_mcp_tools", []))
@@ -890,6 +937,17 @@ class Coordinator:
                 },
             }
         )
+        if run.get("allow_procedure_drafting"):
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "procedure_draft",
+                        "description": "Create a versioned reusable procedure candidate from this work. This is a persistent library change the user explicitly authorized for this run. The candidate stays inactive and unevaluated. Do not copy secrets or unrelated project data. Never claim this draft is verified. This tool cannot revise, activate, evaluate, select, or execute a procedure; the user reviews it separately.",
+                        "parameters": SkillDraft.model_json_schema(),
+                    },
+                },
+            )
         if run["mode"] == "workspace":
             tools.append(
                 {

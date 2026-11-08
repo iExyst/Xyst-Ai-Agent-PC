@@ -694,6 +694,7 @@ class RunStore:
         approved_web_search: bool = False,
         approved_browser: bool = False,
         approved_mcp_tools: list[str] | None = None,
+        allow_procedure_drafting: bool = False,
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
         document_bytes: bytes | None = None,
@@ -996,6 +997,13 @@ class RunStore:
                     "mcp.access_granted",
                     {"tools": approved_mcp_tools, "actor": "local_user"},
                 )
+            if allow_procedure_drafting:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "procedure.drafting_granted",
+                    {"actor": "local_user"},
+                )
             connection.execute(
                 "INSERT INTO run_limits VALUES (?, ?, ?)", (run_id, max_iterations, max_seconds)
             )
@@ -1143,6 +1151,12 @@ class RunStore:
         record["approved_mcp_tools"] = (
             json.loads(mcp_grants[0][0]).get("tools", []) if len(mcp_grants) == 1 else []
         )
+        with self._connection() as connection:
+            drafting_grants = connection.execute(
+                "SELECT 1 FROM run_events WHERE run_id=? AND event_type='procedure.drafting_granted'",
+                (run_id,),
+            ).fetchall()
+        record["allow_procedure_drafting"] = len(drafting_grants) == 1
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (
             {

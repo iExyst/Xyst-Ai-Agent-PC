@@ -249,6 +249,11 @@
             "title": "Acceptance Criteria",
             "type": "array"
           },
+          "allow_procedure_drafting": {
+            "default": false,
+            "title": "Allow Procedure Drafting",
+            "type": "boolean"
+          },
           "approved_browser": {
             "default": false,
             "title": "Approved Browser",
@@ -2598,6 +2603,11 @@
             },
             "title": "Acceptance Criteria",
             "type": "array"
+          },
+          "allow_procedure_drafting": {
+            "default": false,
+            "title": "Allow Procedure Drafting",
+            "type": "boolean"
           },
           "approved_browser": {
             "default": false,
