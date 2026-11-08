@@ -151,6 +151,159 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
         )
 
 
+@pytest.mark.parametrize(
+    "tool_name,permission,approvals,arguments,journal_name",
+    [
+        (
+            "web_search",
+            "web.search",
+            {"approved_web_search": True},
+            '{"query":"fixture fact","count":1}',
+            "web.search",
+        ),
+        (
+            "web_fetch",
+            "web.read",
+            {"approved_web_hosts": ["example.com"]},
+            '{"url":"https://example.com/fact"}',
+            "web.fetch",
+        ),
+    ],
+)
+async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
+    workspace_tmp_path, monkeypatch, tool_name, permission, approvals, arguments, journal_name
+):
+    from xaa.runtime import web_fetch, web_search
+
+    store = RunStore(workspace_tmp_path / "specialist-web.sqlite3")
+    run_id = store.create_run(
+        objective="Research approved sources",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        **approvals,
+    )["id"]
+    parent = store.acquire_lease(run_id, "coordinator")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="research",
+                objective="Read an approved fixture source",
+                role="researcher",
+                permissions=("workspace.read", permission),
+                max_iterations=2,
+            )
+        ],
+    )
+    requested: list[tuple[str, str]] = []
+
+    async def fake_search(query: str, count: int, api_key: str):
+        requested.append((query, api_key))
+        return {
+            "status": "ok",
+            "trust": "untrusted_web_content",
+            "results": [{"url": "https://example.com/fact", "title": "Fixture fact"}],
+        }
+
+    async def fake_read(url: str, hosts: set[str]):
+        requested.append((url, ",".join(sorted(hosts))))
+        return {
+            "status": "ok",
+            "trust": "untrusted_web_content",
+            "text": "Fixture fact",
+        }
+
+    monkeypatch.setattr(web_search, "_search", fake_search)
+    monkeypatch.setattr(web_fetch, "_read_url", fake_read)
+
+    class Credentials:
+        def get(self, name: str) -> str | None:
+            assert name == "brave-search"
+            return "configured-test-key"
+
+    class Researcher(LMStudioProvider):
+        async def chat(self, *, messages, tools=None, **kwargs):
+            names = {tool["function"]["name"] for tool in tools or []}
+            assert tool_name in names
+            assert ({"web_search", "web_fetch"} - {tool_name}).isdisjoint(names)
+            if messages[-1]["role"] == "user":
+                message = {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "research-read",
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": arguments,
+                            },
+                        }
+                    ],
+                }
+            else:
+                result = json.loads(messages[-1]["content"])
+                assert (
+                    result.get("text") == "Fixture fact"
+                    or result.get("results", [{}])[0].get("title") == "Fixture fact"
+                )
+                message = {"role": "assistant", "content": "Read the fixture fact."}
+            return {
+                "choices": [{"message": message}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            }
+
+    provider = Researcher()
+    try:
+        outcomes = await SpecialistRunner(
+            store, provider, credential_store=Credentials()
+        ).run_ready(run_id, parent, deadline=time.monotonic() + 30)
+    finally:
+        await provider.close()
+
+    assert outcomes == [{"task_id": "research", "status": "verifying"}]
+    assert requested == (
+        [("fixture fact", "configured-test-key")]
+        if tool_name == "web_search"
+        else [("https://example.com/fact", "example.com")]
+    )
+    with store.connection() as connection:
+        journal = connection.execute(
+            "SELECT task_id,tool_name,state,result FROM tool_calls WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+    assert journal["task_id"] == f"{run_id}:research"
+    assert (journal["tool_name"], journal["state"]) == (journal_name, "completed")
+    assert json.loads(journal["result"])["trust"] == "untrusted_web_content"
+    assert not store.unresolved_tool_calls(run_id)
+
+
+def test_specialist_plan_cannot_inherit_unapproved_web_search(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "unapproved-specialist-web.sqlite3")
+    run_id = store.create_run(
+        objective="No web approval",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    with pytest.raises(PermissionError):
+        TaskStore(store).validate_plan(
+            run_id,
+            [
+                TaskDefinition(
+                    id="research",
+                    objective="Search the web",
+                    role="researcher",
+                    permissions=("workspace.read", "web.search"),
+                )
+            ],
+        )
+
+
 async def test_specialist_write_request_fails_without_modifying_file(workspace_tmp_path):
     target = workspace_tmp_path / "target.txt"
     target.write_bytes(b"unchanged")

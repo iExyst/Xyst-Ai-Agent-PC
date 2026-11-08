@@ -322,6 +322,10 @@ class TaskStore:
         if run is None:
             raise KeyError(run_id)
         permissions = {"workspace.read"}
+        if run.get("approved_web_hosts"):
+            permissions.add("web.read")
+        if run.get("approved_web_search"):
+            permissions.add("web.search")
         if run["mode"] == "workspace":
             permissions.add("workspace.write")
             if run.get("command_grant") is not None:
@@ -563,7 +567,8 @@ class TaskStore:
                     "SELECT provider_call_id,tool_name,state,arguments,result FROM tool_calls "
                     "WHERE run_id=? AND task_id=? AND tool_name IN "
                     "('workspace.run_command','workspace.read_file','workspace.list_directory',"
-                    "'workspace.write_file','workspace.create_file','workspace.delete_file') "
+                    "'workspace.write_file','workspace.create_file','workspace.delete_file',"
+                    "'web.fetch','web.search') "
                     "AND state IN ('intended','completed','failed')",
                     (run_id, f"{run_id}:{task_id}"),
                 )
@@ -594,6 +599,8 @@ class TaskStore:
             "workspace_write_lines": "workspace.write_file",
             "workspace_create_file": "workspace.create_file",
             "workspace_delete_file": "workspace.delete_file",
+            "web_fetch": "web.fetch",
+            "web_search": "web.search",
         }
         reviewer_read_tools = {
             "review_dependency_file": "review_dependency_file",
@@ -601,17 +608,22 @@ class TaskStore:
         }
         recoverable_task_actions: list[dict[str, str]] = []
         scope_permissions = set(task["permission_scope"])
-        if "workspace.write" not in scope_permissions:
-            branch_tools = {
-                name: tool
-                for name, tool in branch_tools.items()
-                if name in {"workspace_read_file", "workspace_list_directory"}
-            }
+        required_permissions = {
+            "workspace.read_file": "workspace.read",
+            "workspace.list_directory": "workspace.read",
+            "workspace.write_file": "workspace.write",
+            "workspace.create_file": "workspace.write",
+            "workspace.delete_file": "workspace.write",
+            "web.fetch": "web.read",
+            "web.search": "web.search",
+        }
         for call in calls:
             model_call_id = call.get("id")
             function = cast(dict[str, Any], call.get("function", {}))
             model_tool_name = cast(str, function.get("name"))
             tool_name = branch_tools.get(model_tool_name)
+            if tool_name is not None and required_permissions[tool_name] not in scope_permissions:
+                tool_name = None
             reviewer_read = (
                 model_tool_name in reviewer_read_tools
                 and task["assigned_role"] == "reviewer"
@@ -651,11 +663,23 @@ class TaskStore:
             recoverable_state = saved["state"]
             can_attach_completed = recoverable_state == "completed" and saved["result"] is not None
             can_seal_read = (
-                tool_name in {"workspace.read_file", "workspace.list_directory"}
+                tool_name
+                in {
+                    "workspace.read_file",
+                    "workspace.list_directory",
+                    "web.fetch",
+                    "web.search",
+                }
                 and recoverable_state == "intended"
             )
             can_attach_interrupted = (
-                tool_name in {"workspace.read_file", "workspace.list_directory"}
+                tool_name
+                in {
+                    "workspace.read_file",
+                    "workspace.list_directory",
+                    "web.fetch",
+                    "web.search",
+                }
                 and recoverable_state == "failed"
                 and saved["result"] is not None
                 and json.loads(saved["result"]).get("error", {}).get("code") == "interrupted_read"
@@ -865,7 +889,7 @@ class TaskStore:
     def record_recovered_task_action_result(
         self, run_id: str, token: str, task_id: str, model_call_id: str, journal_call_id: str
     ) -> None:
-        """Attach an already committed private filesystem result; never replay its action."""
+        """Attach a saved task action result or seal an interrupted read; never replay it."""
         allowed = {
             "workspace.read_file",
             "workspace.list_directory",
@@ -874,12 +898,14 @@ class TaskStore:
             "workspace.delete_file",
             "review_dependency_file",
             "review_dependency_output",
+            "web.fetch",
+            "web.search",
         }
         expected_journal_id = (
             "taskfs-" + hashlib.sha256(f"{run_id}:{task_id}:{model_call_id}".encode()).hexdigest()
         )
         if journal_call_id != expected_journal_id:
-            raise PermissionError("Saved file action identity does not match its model call.")
+            raise PermissionError("Saved task action identity does not match its model call.")
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, token)
@@ -896,9 +922,6 @@ class TaskStore:
             if (
                 task is None
                 or task["status"] != "blocked"
-                or not set(json.loads(task["permission_scope"])).intersection(
-                    {"workspace.read", "workspace.write"}
-                )
                 or blocked is None
                 or blocked[0] != "worker_lost_reconciliation_required"
             ):
@@ -918,7 +941,7 @@ class TaskStore:
                 if json.loads(row[0]).get("task_id") == task_id and call.get("id") == model_call_id
             ]
             if len(model_calls) != 1:
-                raise ValueError("Pending model file action is missing or ambiguous.")
+                raise ValueError("Pending model task action is missing or ambiguous.")
             expected_tool = {
                 "workspace_read_file": "workspace.read_file",
                 "workspace_list_directory": "workspace.list_directory",
@@ -928,9 +951,24 @@ class TaskStore:
                 "workspace_delete_file": "workspace.delete_file",
                 "review_dependency_file": "review_dependency_file",
                 "review_dependency_output": "review_dependency_output",
+                "web_fetch": "web.fetch",
+                "web_search": "web.search",
             }.get(model_calls[0].get("function", {}).get("name"))
             if expected_tool not in allowed:
-                raise PermissionError("Saved tool is outside read-only file recovery scope.")
+                raise PermissionError("Saved tool is outside task recovery scope.")
+            required_permission = {
+                "workspace.read_file": "workspace.read",
+                "workspace.list_directory": "workspace.read",
+                "workspace.write_file": "workspace.write",
+                "workspace.create_file": "workspace.write",
+                "workspace.delete_file": "workspace.write",
+                "review_dependency_file": "workspace.read",
+                "review_dependency_output": "workspace.read",
+                "web.fetch": "web.read",
+                "web.search": "web.search",
+            }[expected_tool]
+            if required_permission not in json.loads(task["permission_scope"]):
+                raise PermissionError("Task no longer has permission for this saved read.")
             dependency_read = expected_tool in {
                 "review_dependency_file",
                 "review_dependency_output",
@@ -953,11 +991,16 @@ class TaskStore:
                     },
                 }
             elif tool is None or tool["tool_name"] not in allowed:
-                raise ValueError("No completed private file action is available to attach.")
+                raise ValueError("No saved task action is available to attach.")
             elif tool["tool_name"] != expected_tool:
-                raise PermissionError("Saved file result belongs to a different model action.")
+                raise PermissionError("Saved action result belongs to a different model call.")
             elif tool["state"] == "intended":
-                if tool["tool_name"] not in {"workspace.read_file", "workspace.list_directory"}:
+                if tool["tool_name"] not in {
+                    "workspace.read_file",
+                    "workspace.list_directory",
+                    "web.fetch",
+                    "web.search",
+                }:
                     raise PermissionError("An interrupted write cannot be resolved as a read.")
                 if connection.execute(
                     "SELECT 1 FROM run_events WHERE run_id=? AND event_type='tool.executing' "
@@ -997,7 +1040,7 @@ class TaskStore:
                 )
             else:
                 if tool["result"] is None:
-                    raise ValueError("Saved file action has no durable result to attach.")
+                    raise ValueError("Saved task action has no durable result to attach.")
                 result = json.loads(tool["result"])
                 if (
                     tool["state"] == "failed"
@@ -1007,7 +1050,7 @@ class TaskStore:
                         "Only a sealed interrupted read can be attached after failure."
                     )
             if not dependency_read and tool is not None and expected_tool != tool["tool_name"]:
-                raise PermissionError("Saved file result belongs to a different model action.")
+                raise PermissionError("Saved action result belongs to a different model call.")
             if not dependency_read:
                 assert tool is not None
                 required_permission = (
@@ -1017,7 +1060,7 @@ class TaskStore:
                     else "workspace.read"
                 )
                 if required_permission not in json.loads(task["permission_scope"]):
-                    raise PermissionError("Task did not have permission for the saved file action.")
+                    raise PermissionError("Task did not have permission for the saved action.")
             if connection.execute(
                 "SELECT 1 FROM run_events WHERE run_id=? AND event_type='task.tool.result' "
                 "AND json_extract(payload,'$.task_id')=? AND json_extract(payload,'$.call_id')=?",

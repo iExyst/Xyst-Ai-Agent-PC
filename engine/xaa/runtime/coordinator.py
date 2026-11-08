@@ -861,7 +861,10 @@ class Coordinator:
                 {"actor": "coordinator", "source": "plan_run_ready"},
             )
             statuses = await SpecialistRunner(
-                self.store, self.provider, stream_responses=self.stream_responses
+                self.store,
+                self.provider,
+                stream_responses=self.stream_responses,
+                credential_store=self.credential_store,
             ).run_ready(run_id, token, deadline=deadline)
             result = {"tasks": statuses, "verification": "Candidates require independent review."}
             self.store.record_tool_result(run_id, token, call["id"], result)
@@ -1099,7 +1102,10 @@ class Coordinator:
             async with asyncio.timeout(remaining):
                 await self.diagnose_run_tools(run_id, token, run["model"])
                 outcomes = await SpecialistRunner(
-                    self.store, self.provider, stream_responses=self.stream_responses
+                    self.store,
+                    self.provider,
+                    stream_responses=self.stream_responses,
+                    credential_store=self.credential_store,
                 ).run_ready(run_id, token, deadline=deadline)
             ready, _ = TaskStore(self.store).readiness(run_id)
             blocked = (
@@ -1188,7 +1194,7 @@ class Coordinator:
                 "type": "function",
                 "function": {
                     "name": "plan_save",
-                    "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, permissions, max_iterations and max_seconds. Total reservations cannot exceed {run['limits']['max_iterations']} iterations and {run['limits']['max_seconds']} seconds. Permissions may include workspace.read{' and workspace.write' if run['mode'] == 'workspace' else ''}. Tasks with workspace.write use private working trees. Only when this run has a saved command grant may a private read/write task additionally receive workspace.command to validate its private files. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
+                    "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, permissions, max_iterations and max_seconds. Total reservations cannot exceed {run['limits']['max_iterations']} iterations and {run['limits']['max_seconds']} seconds. Permissions may include workspace.read{' and workspace.write' if run['mode'] == 'workspace' else ''}{' and web.search' if run.get('approved_web_search') else ''}{' and web.read for exact run-approved hosts' if run.get('approved_web_hosts') else ''}. Tasks with workspace.write use private working trees. Only when this run has a saved command grant may a private read/write task additionally receive workspace.command to validate its private files. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
                     "parameters": SavePlanArguments.model_json_schema(),
                 },
             },

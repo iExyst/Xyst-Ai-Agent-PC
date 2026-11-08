@@ -486,6 +486,125 @@ async def test_lost_reviewer_can_seal_dependency_read_without_assuming_contents(
     assert "No dependency contents are assumed" in saved["payload"]["result"]["error"]["message"]
 
 
+@pytest.mark.parametrize("save_result", [False, True])
+async def test_lost_researcher_can_seal_or_attach_web_search_result(
+    workspace_tmp_path, save_result: bool
+):
+    store = RunStore(workspace_tmp_path / f"web-recovery-{save_result}.sqlite3")
+    project = workspace_tmp_path / f"web-project-{save_result}"
+    project.mkdir()
+    run_id = store.create_run(
+        objective="Research approved web sources",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="observe",
+        model="fixture",
+        approved_web_search=True,
+    )["id"]
+    owner = store.acquire_lease(run_id, "web-recovery-owner")
+    store.transition(run_id, RunState.PLANNING, owner=owner)
+    store.transition(run_id, RunState.RUNNING, owner=owner)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [
+            TaskDefinition(
+                id="researcher",
+                objective="Search an approved source",
+                role="researcher",
+                permissions=["workspace.read", "web.search"],
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, owner)
+    assert claim is not None
+    scope = TaskReadScope(run_id, owner, "researcher", claim["token"])
+    call_id = "research-search-call"
+    journal_id = "taskfs-" + hashlib.sha256(f"{run_id}:researcher:{call_id}".encode()).hexdigest()
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "researcher",
+                "inference_id": "research-inference",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query":"saved research","count":1}',
+                            },
+                        }
+                    ],
+                },
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+            },
+        )
+    scoped_store = RunStore(store.path, task_scope=scope, internal_tools=True)
+    assert scoped_store.record_tool_intent(
+        run_id,
+        owner,
+        call_id=journal_id,
+        tool="web.search",
+        version="1",
+        arguments={"query": "saved research", "count": 1},
+        idempotency_key=journal_id,
+    )
+    if save_result:
+        scoped_store.record_tool_result(
+            run_id,
+            owner,
+            journal_id,
+            {
+                "status": "ok",
+                "trust": "untrusted_web_content",
+                "results": [{"url": "https://example.com", "title": "saved"}],
+            },
+        )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
+            (f"{run_id}:researcher",),
+        )
+    assert tasks.recover_expired(run_id, owner) == ["researcher"]
+    summary = tasks.recovery_summary(run_id, "researcher")
+    assert summary["recoverable_task_actions"] == [
+        {
+            "model_call_id": call_id,
+            "journal_call_id": journal_id,
+            "tool_name": "web.search",
+            "state": "completed" if save_result else "intended",
+        }
+    ]
+    store.transition(run_id, RunState.BLOCKED, reason="lost_specialist", owner=owner)
+    recovery_owner = store.acquire_blocked_run_recovery(
+        run_id, "test-web-recovery-owner", seconds=180
+    )
+    assert recovery_owner is not None
+    store.transition(run_id, RunState.PLANNING, reason="test_recovery", owner=recovery_owner)
+    store.transition(run_id, RunState.RUNNING, reason="test_recovery", owner=recovery_owner)
+    tasks.record_recovered_task_action_result(
+        run_id, recovery_owner, "researcher", call_id, journal_id
+    )
+    store.transition(run_id, RunState.BLOCKED, reason="test_result_attached", owner=recovery_owner)
+    assert tasks.recovery_summary(run_id, "researcher")["pending_model_tool_calls"] == []
+    saved = next(
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.tool.result" and event["payload"].get("call_id") == call_id
+    )
+    if save_result:
+        assert saved["payload"]["result"]["results"][0]["title"] == "saved"
+    else:
+        assert saved["payload"]["result"]["error"]["code"] == "interrupted_read"
+
+
 async def test_task_scope_is_required_for_snapshot_and_launch(workspace_tmp_path):
     transport = FixtureTransport()
     store, run_id, owner, _, scopes = await private_tasks(workspace_tmp_path, transport)

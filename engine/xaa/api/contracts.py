@@ -197,6 +197,8 @@ class TaskRecoverableAction(BaseModel):
         "workspace.delete_file",
         "review_dependency_file",
         "review_dependency_output",
+        "web.fetch",
+        "web.search",
     ]
 
 

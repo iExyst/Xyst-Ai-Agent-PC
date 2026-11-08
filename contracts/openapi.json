@@ -4430,7 +4430,9 @@
               "workspace.create_file",
               "workspace.delete_file",
               "review_dependency_file",
-              "review_dependency_output"
+              "review_dependency_output",
+              "web.fetch",
+              "web.search"
             ],
             "title": "Tool Name",
             "type": "string"

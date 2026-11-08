@@ -2361,7 +2361,7 @@ def create_app(
                 None,
             )
             if action is None:
-                raise ValueError("No saved private file result matches this pending model action.")
+                raise ValueError("No saved task action matches this pending model call.")
             owner = run_store.acquire_blocked_run_recovery(
                 run_id, "local-user-task-action-recovery", seconds=180
             )
@@ -2396,7 +2396,7 @@ def create_app(
         except (ValueError, PermissionError, LeaseLost) as exc:
             raise HTTPException(
                 status_code=409,
-                detail="Saved private file result could not be attached; inspect the run.",
+                detail="Saved read-only result could not be attached; inspect the run.",
             ) from exc
 
     @app.post(

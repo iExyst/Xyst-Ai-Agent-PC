@@ -116,11 +116,11 @@ test('attach a command result that was saved before the specialist stopped',asyn
   await expect.poll(()=>attachedCommand).toBe(true);
   await expect(card).toContainText('1 saved tool results');
   await expect(card.getByRole('button',{name:'Resume from saved results'})).toBeDisabled();
-  await card.getByRole('button',{name:'Attach saved file result'}).click();
+  await card.getByRole('button',{name:'Attach saved result'}).click();
   await expect.poll(()=>attachedFile).toBe(true);
   await expect(card).toContainText('2 saved tool results');
-  await expect(card).toContainText('The read was interrupted before a result was saved. Recovery records that no contents are available; the specialist may request a fresh read afterward.');
-  await card.getByRole('button',{name:'Mark read interrupted'}).click();
+  await expect(card).toContainText('The read was interrupted before a result was saved. Recovery records that no result is available; the specialist may request a fresh read afterward.');
+  await card.getByRole('button',{name:'Seal interrupted read'}).click();
   await expect(card).toContainText('3 saved tool results');
   await expect(card.getByRole('button',{name:'Resume from saved results'})).toBeEnabled();
 });
