@@ -171,6 +171,7 @@
     "unresolved_calls": 0,
     "owned_model_unloaded": true,
     "diagnostic": "scripts/live_task_workspaces_diagnostic.py",
+    "hosted_ci_run": "https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42453419338",
     "transport_change": "WSL resource path discovery now maps all five files in one bounded WSL process instead of five independent launches",
     "focused_tests": "tests/unit/test_wsl_transport.py: 12 passed",
     "failed_attempts": [

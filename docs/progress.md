@@ -4,7 +4,7 @@ Updated 2026-11-08.
 
 ## WSL specialist command setup and Phase 4 repeat (2026-11-08)
 
-Live Phase 4 repeat attempts showed a repeatable setup cost in `WSLTransport.discover`: it launched one WSL process for each of five resource paths, each capped at 10 seconds. Discovery now maps all five paths inside one bounded WSL launch (up to 30 seconds), then rechecks the resource fingerprint before returning the transport. Twelve focused WSL transport tests pass; Ruff, formatting, and strict Pyright pass.
+Live Phase 4 repeat attempts showed a repeatable setup cost in `WSLTransport.discover`: it launched one WSL process for each of five resource paths, each capped at 10 seconds. Discovery now maps all five paths inside one bounded WSL launch (up to 30 seconds), then rechecks the resource fingerprint before returning the transport. Twelve focused WSL transport tests pass; Ruff, formatting, and strict Pyright pass. Hosted run [42453419338](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42453419338) passed both Windows jobs, including the full Python suite and installer recovery/upgrade acceptance.
 
 With a fresh 16,384-context `qwen/qwen3.5-9b` instance and conservative context admission, the live run at `.acceptance/69f071a7-cf26-4a79-af90-4b9703d6ef1b/report.json` completed both real-model specialists, private edits, Ubuntu-24.04 restricted validation, conflict refusal without a choice, hash-backed selection of beta, and final integration. The original file remained unchanged before review; both tasks completed, there were no unresolved calls, and the owned model instance was unloaded. This is a second end-to-end live Phase 4 sample, using conservative context admission because an independent exact SDK count was unavailable.
 
