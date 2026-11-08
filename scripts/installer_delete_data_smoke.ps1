@@ -77,12 +77,19 @@ try {
     [IO.File]::WriteAllText($xaaDatabaseMarker, 'Disposable X.A.A. data removal fixture')
     [IO.File]::WriteAllText($xaaConfigMarker, 'Disposable Tauri app-data removal fixture')
 
-    $xaaProcess = Start-Process -FilePath $xaaUninstaller -PassThru
+    $xaaStartedAt = [DateTime]::UtcNow
+    $xaaProcess = Start-Process -FilePath $xaaUninstaller -WindowStyle Normal -WorkingDirectory $xaaInstallDir -PassThru
+    $xaaReport.uninstaller_pid = $xaaProcess.Id
+    Write-Output "Started interactive uninstaller process $($xaaProcess.Id)."
     $xaaDeadline = [DateTime]::UtcNow.AddSeconds(60)
     $xaaConfirmClicked = $false
     while ([DateTime]::UtcNow -lt $xaaDeadline -and -not $xaaConfirmClicked) {
         $xaaProcess.Refresh()
-        if ($xaaProcess.HasExited) { throw "Uninstaller exited before the data-removal choice (code $($xaaProcess.ExitCode))." }
+        if ($xaaProcess.HasExited) {
+            $xaaReport.uninstaller_exit_code = $xaaProcess.ExitCode
+            $xaaReport.uninstaller_runtime_seconds = [Math]::Round(([DateTime]::UtcNow - $xaaStartedAt).TotalSeconds, 2)
+            throw "Uninstaller exited before the data-removal choice (code $($xaaProcess.ExitCode), runtime $($xaaReport.uninstaller_runtime_seconds)s)."
+        }
         $xaaWindow = $xaaProcess.MainWindowHandle
         if ($xaaWindow -ne [IntPtr]::Zero) {
             $xaaControls = [XaaInstallerWindowApi]::ChildWindows($xaaWindow)
