@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import type {EmailChannelStatus,EngineClient,TelegramChannelStatus} from './api/client.ts';
+import type {EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 
 export function ChannelsPanel({client}:{client:EngineClient}) {
   const [status,setStatus]=useState<TelegramChannelStatus>();
@@ -11,6 +11,8 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [emailReconcileChoice,setEmailReconcileChoice]=useState<{uidValidity:string;uid:string;resolution:'delivered'|'retry'}>();
   const [error,setError]=useState('');
   const [email,setEmail]=useState<EmailChannelStatus>();
+  const [webhook,setWebhook]=useState<WebhookChannelStatus>();
+  const [webhookSecret,setWebhookSecret]=useState('');
   const [emailAddress,setEmailAddress]=useState('');
   const [emailPassword,setEmailPassword]=useState('');
   const [imapHost,setImapHost]=useState('');
@@ -19,7 +21,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
-    try {setStatus(await client.telegramStatus());setError('');}
+    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setError('');}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
   useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
@@ -80,6 +82,20 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function rotateWebhookSecret() {
+    setBusy(true);setError('');
+    try {const result=await client.createWebhookCredential();setWebhook({configured:result.configured});setWebhookSecret(result.secret);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the webhook secret.');}
+    finally {setBusy(false);}
+  }
+
+  async function clearWebhook() {
+    setBusy(true);setError('');
+    try {setWebhook(await client.clearWebhookCredential());setWebhookSecret('');}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not disable webhook ingress.');}
+    finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
     <h3>Telegram (private chats)</h3>
@@ -117,6 +133,11 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
         </li>)}</ul>
       </section>}
     </>}
+    <h3>Generic webhook (signed text ingress)</h3>
+    <p>Creates an inbound-only callback key in Windows Credential Manager. Any system holding the shared key can submit text events; X.A.A. treats message text as untrusted and starts an Observe-mode run with no workspace, command, browser, search or MCP grants. Sign the exact request body with HMAC-SHA256 over <code>timestamp.event-id.body</code>. The local API remains loopback-only unless remote access is deliberately configured.</p>
+    <div className="controls"><button type="button" onClick={()=>void rotateWebhookSecret()} disabled={busy}>{webhook?.configured?'Rotate webhook secret':'Create webhook secret'}</button>{webhook?.configured&&<button type="button" onClick={()=>void clearWebhook()} disabled={busy}>Disable webhook ingress</button>}</div>
+    {webhook&&<p role="status">{webhook.configured?'Signed webhook ingress is configured.':'Signed webhook ingress is disabled.'}</p>}
+    {webhookSecret&&<div aria-label="New webhook secret"><p>Copy this secret to the configured sender now. It is shown only once; rotate it if lost.</p><code>{webhookSecret}</code><button type="button" onClick={()=>void navigator.clipboard.writeText(webhookSecret).catch(()=>setError('Clipboard access failed; copy the displayed secret manually.'))} disabled={busy}>Copy secret</button></div>}
     <h3>Email (authorized senders)</h3>
     <p>Email uses IMAP over verified TLS and SMTP STARTTLS. Only exact allowed senders with a passing DMARC result from the configured receiving mail server can start Observe-mode runs. Replies are text only; ambiguous SMTP outcomes are never retried automatically.</p>
     <label htmlFor="email-address">Mailbox address</label><input id="email-address" type="email" autoComplete="username" value={emailAddress} onChange={event=>setEmailAddress(event.target.value)} disabled={busy}/>

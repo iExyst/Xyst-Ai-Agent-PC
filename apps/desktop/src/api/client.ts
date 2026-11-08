@@ -23,6 +23,8 @@ export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
 export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
 export type EmailChannelStatus = components['schemas']['EmailCredentialStatus'];
+export type WebhookChannelStatus = components['schemas']['WebhookChannelStatus'];
+export type WebhookCredential = components['schemas']['WebhookCredentialRecord'];
 export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
@@ -251,6 +253,16 @@ export class EngineClient {
   }
 
   emailStatus(): Promise<EmailChannelStatus> { return this.#request('/channels/email'); }
+
+  webhookStatus(): Promise<WebhookChannelStatus> { return this.#request('/channels/webhook'); }
+
+  createWebhookCredential(): Promise<WebhookCredential> {
+    return this.#request('/channels/webhook/credential',{method:'POST',body:JSON.stringify({})});
+  }
+
+  clearWebhookCredential(): Promise<WebhookChannelStatus> {
+    return this.#request('/channels/webhook/credential',{method:'DELETE'});
+  }
 
   reconcileEmailDelivery(uidValidity:string,uid:string,resolution:'delivered'|'retry'): Promise<EmailChannelStatus> {
     return this.#request(`/channels/email/deliveries/${encodeURIComponent(uidValidity)}/${encodeURIComponent(uid)}/reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_destination_checked:true})});

@@ -4,6 +4,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   const errors:string[]=[];const requests:any[]=[];
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
   let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{},unknown_deliveries:[]};
+  let webhookStatus:any={configured:false};
   await page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
@@ -55,6 +56,15 @@ test('save Telegram token securely, pair an account and clear the credential',as
       emailStatus={configured:false,address:null,processed_messages:0,deliveries:{}};
       return route.fulfill({json:emailStatus,headers});
     }
+    if(path==='/channels/webhook'&&request.method()==='GET')return route.fulfill({json:webhookStatus,headers});
+    if(path==='/channels/webhook/credential'&&request.method()==='POST'){
+      webhookStatus={configured:true};
+      return route.fulfill({json:{configured:true,secret:'one-time-webhook-secret-which-is-long-enough'},headers});
+    }
+    if(path==='/channels/webhook/credential'&&request.method()==='DELETE'){
+      webhookStatus={configured:false};
+      return route.fulfill({json:webhookStatus,headers});
+    }
     return route.fulfill({json:{status:'ok'},headers});
   });
   await page.goto('/');
@@ -79,6 +89,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByText(/0 linked user/)).toBeVisible();
   await panel.getByRole('button',{name:'Clear saved token',exact:true}).click();
   await expect(panel.getByText('Telegram bot is not configured')).toBeVisible();
+  await panel.getByRole('button',{name:'Create webhook secret',exact:true}).click();
+  await expect(panel.getByLabel('New webhook secret')).toContainText('one-time-webhook-secret-which-is-long-enough');
+  await panel.getByRole('button',{name:'Disable webhook ingress',exact:true}).click();
+  await expect(panel.getByText('Signed webhook ingress is disabled.')).toBeVisible();
   await panel.getByLabel('Mailbox address').fill('agent@example.test');
   await panel.getByLabel('Mailbox password or app password').fill('email-app-password');
   await panel.getByLabel('IMAP server').fill('imap.example.test');

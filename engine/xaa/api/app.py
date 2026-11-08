@@ -42,9 +42,13 @@ from xaa.api.contracts import (
     TaskRecoveryDecision,
     TaskRecoverySummary,
     UsageReport,
+    WebhookChannelStatus,
+    WebhookCredentialRecord,
+    WebhookReceipt,
 )
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
+from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import (
     PluginDiscovery,
@@ -1468,6 +1472,110 @@ def create_app(
         code = secrets.token_urlsafe(32)
         expires_at = telegram_store.create_pairing(code)
         return {"code": code, "expires_at": expires_at}
+
+    @app.get("/channels/webhook", response_model=WebhookChannelStatus)
+    def webhook_status(_: None = Depends(authenticate)) -> WebhookChannelStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            return WebhookChannelStatus(
+                configured=credential_store.get("generic-webhook-hmac") is not None
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not read the OS credential."
+            ) from exc
+
+    @app.post("/channels/webhook/credential", response_model=WebhookCredentialRecord)
+    def create_webhook_credential(_: None = Depends(authenticate)) -> WebhookCredentialRecord:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        secret = secrets.token_urlsafe(48)
+        try:
+            credential_store.set(secret, "generic-webhook-hmac")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
+        return WebhookCredentialRecord(configured=True, secret=secret)
+
+    @app.delete("/channels/webhook/credential", response_model=WebhookChannelStatus)
+    def delete_webhook_credential(_: None = Depends(authenticate)) -> WebhookChannelStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            credential_store.delete("generic-webhook-hmac")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return WebhookChannelStatus(configured=False)
+
+    @app.post(
+        "/webhooks/inbound", status_code=status.HTTP_202_ACCEPTED, response_model=WebhookReceipt
+    )
+    async def receive_webhook(
+        request: Request,
+        x_xaa_timestamp: str | None = Header(default=None, alias="X-XAA-Timestamp"),
+        x_xaa_event_id: str | None = Header(default=None, alias="X-XAA-Event-Id"),
+        x_xaa_signature: str | None = Header(default=None, alias="X-XAA-Signature"),
+    ) -> dict[str, str]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            secret = credential_store.get("generic-webhook-hmac")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not read the OS credential."
+            ) from exc
+        if secret is None:
+            raise HTTPException(status_code=404, detail="Webhook ingress is not configured.")
+
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 64 * 1024:
+                raise HTTPException(status_code=413, detail="Webhook body exceeds 64 KiB.")
+        try:
+            event, event_id, body_digest = parse_delivery(
+                secret=secret,
+                timestamp=x_xaa_timestamp,
+                event_id=x_xaa_event_id,
+                signature=x_xaa_signature,
+                body=bytes(body),
+            )
+        except InvalidWebhook as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        with run_store.connection() as connection:
+            selected = connection.execute(
+                "SELECT selected_model FROM provider_profiles WHERE selected_model IS NOT NULL LIMIT 1"
+            ).fetchone()
+        if selected is None:
+            raise HTTPException(
+                status_code=409, detail="Select a model before accepting webhook messages."
+            )
+        source = event.sender_id
+        if event.conversation_id is not None:
+            source += f" in conversation {event.conversation_id}"
+        objective = f"Respond to this signed generic webhook message from {source}:\n\n{event.text}"
+        try:
+            record = run_store.create_run(
+                objective=objective,
+                acceptance_criteria=["Respond to the webhook message and report the result."],
+                workspace=None,
+                mode="observe",
+                model=str(selected["selected_model"]),
+                client_request_id=request_identity(event_id),
+                request_digest=body_digest,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409, detail="Webhook event ID was reused with different content."
+            ) from exc
+        if record["state"] == "queued" and record["model"]:
+            supervisor.submit(str(record["id"]))
+        return {"run_id": str(record["id"]), "state": str(record["state"])}
 
     @app.get("/channels/email", response_model=EmailCredentialStatus)
     def email_status(_: None = Depends(authenticate)) -> dict[str, Any]:

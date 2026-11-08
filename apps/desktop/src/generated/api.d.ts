@@ -188,6 +188,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhook Status */
+        get: operations["webhook_status_channels_webhook_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/webhook/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Webhook Credential */
+        post: operations["create_webhook_credential_channels_webhook_credential_post"];
+        /** Delete Webhook Credential */
+        delete: operations["delete_webhook_credential_channels_webhook_credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/acp-sessions": {
         parameters: {
             query?: never;
@@ -1513,6 +1548,23 @@ export interface paths {
         /** Set Specialist Route */
         put: operations["set_specialist_route_specialists_profiles__role__route_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/inbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive Webhook */
+        post: operations["receive_webhook_webhooks_inbound_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3375,6 +3427,24 @@ export interface components {
              */
             token: string;
         };
+        /** WebhookChannelStatus */
+        WebhookChannelStatus: {
+            /** Configured */
+            configured: boolean;
+        };
+        /** WebhookCredentialRecord */
+        WebhookCredentialRecord: {
+            /** Configured */
+            configured: boolean;
+            /** Secret */
+            secret: string;
+        };
+        /** WebhookReceipt */
+        WebhookReceipt: {
+            /** Run Id */
+            run_id: string;
+            state: components["schemas"]["RunState"];
+        };
     };
     responses: never;
     parameters: never;
@@ -3710,6 +3780,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramPairingCode"];
+                };
+            };
+        };
+    };
+    webhook_status_channels_webhook_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookChannelStatus"];
+                };
+            };
+        };
+    };
+    create_webhook_credential_channels_webhook_credential_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookCredentialRecord"];
+                };
+            };
+        };
+    };
+    delete_webhook_credential_channels_webhook_credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookChannelStatus"];
                 };
             };
         };
@@ -6733,6 +6863,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpecialistProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_webhook_webhooks_inbound_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-XAA-Timestamp"?: string | null;
+                "X-XAA-Event-Id"?: string | null;
+                "X-XAA-Signature"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookReceipt"];
                 };
             };
             /** @description Validation Error */

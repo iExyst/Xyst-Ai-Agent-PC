@@ -69,6 +69,20 @@ class MCPReconciliationDecision(BaseModel):
     confirmed_external_effect_reviewed: bool
 
 
+class WebhookChannelStatus(BaseModel):
+    configured: bool
+
+
+class WebhookCredentialRecord(BaseModel):
+    configured: bool
+    secret: str = Field(min_length=32, max_length=128)
+
+
+class WebhookReceipt(BaseModel):
+    run_id: str
+    state: RunState
+
+
 class RunSummary(BaseModel):
     id: str
     objective: str

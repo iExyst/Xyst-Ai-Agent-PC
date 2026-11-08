@@ -5154,6 +5154,56 @@
         ],
         "title": "WebSearchCredentialRequest",
         "type": "object"
+      },
+      "WebhookChannelStatus": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "WebhookChannelStatus",
+        "type": "object"
+      },
+      "WebhookCredentialRecord": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "secret": {
+            "maxLength": 128,
+            "minLength": 32,
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "secret"
+        ],
+        "title": "WebhookCredentialRecord",
+        "type": "object"
+      },
+      "WebhookReceipt": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          }
+        },
+        "required": [
+          "run_id",
+          "state"
+        ],
+        "title": "WebhookReceipt",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -5600,6 +5650,73 @@
           }
         ],
         "summary": "Create Telegram Pairing"
+      }
+    },
+    "/channels/webhook": {
+      "get": {
+        "operationId": "webhook_status_channels_webhook_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookChannelStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Webhook Status"
+      }
+    },
+    "/channels/webhook/credential": {
+      "delete": {
+        "operationId": "delete_webhook_credential_channels_webhook_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookChannelStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Webhook Credential"
+      },
+      "post": {
+        "operationId": "create_webhook_credential_channels_webhook_credential_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCredentialRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Webhook Credential"
       }
     },
     "/chat/acp-sessions": {
@@ -10128,6 +10245,84 @@
           }
         ],
         "summary": "Set Specialist Route"
+      }
+    },
+    "/webhooks/inbound": {
+      "post": {
+        "operationId": "receive_webhook_webhooks_inbound_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-XAA-Timestamp",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Xaa-Timestamp"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-XAA-Event-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Xaa-Event-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-XAA-Signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Xaa-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Webhook"
       }
     }
   }

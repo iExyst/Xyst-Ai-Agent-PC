@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 import zipfile
 from collections.abc import AsyncIterator
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.channels.webhook import sign_webhook
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
@@ -44,6 +46,100 @@ def test_openapi_advertises_packaged_engine_version(workspace_tmp_path) -> None:
         FakeProvider(), SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "api.sqlite3")
     )
     assert app.version == APP_VERSION
+
+
+def test_signed_webhook_creates_one_observe_run_and_rejects_replay_changes(workspace_tmp_path):
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    store = RunStore(workspace_tmp_path / "webhook-api.sqlite3")
+    credentials = Credentials()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    with TestClient(app) as client:
+        assert client.get("/channels/webhook").status_code == 401
+        assert client.get("/channels/webhook", headers=headers).json() == {"configured": False}
+        configured = client.post("/channels/webhook/credential", headers=headers)
+        assert configured.status_code == 200
+        secret = configured.json()["secret"]
+        assert len(secret) >= 32
+        assert client.get("/channels/webhook", headers=headers).json() == {"configured": True}
+
+        event_id = "fixture-event-1"
+        timestamp = str(int(time.time()))
+        body = b'{"sender_id":"sender-7","conversation_id":"thread-2","text":"Do this"}'
+        signed_headers = {
+            **headers,
+            "X-XAA-Timestamp": timestamp,
+            "X-XAA-Event-Id": event_id,
+            "X-XAA-Signature": sign_webhook(secret, timestamp, event_id, body),
+            "Content-Type": "application/json",
+        }
+        assert client.post("/webhooks/inbound", content=body).status_code == 401
+        bad_signature = {**signed_headers, "X-XAA-Signature": "sha256=" + "0" * 64}
+        assert (
+            client.post("/webhooks/inbound", content=body, headers=bad_signature).status_code == 401
+        )
+        stale_time = str(int(time.time()) - 301)
+        stale_headers = {
+            **signed_headers,
+            "X-XAA-Timestamp": stale_time,
+            "X-XAA-Signature": sign_webhook(secret, stale_time, event_id, body),
+        }
+        assert (
+            client.post("/webhooks/inbound", content=body, headers=stale_headers).status_code == 401
+        )
+
+        accepted = client.post("/webhooks/inbound", content=body, headers=signed_headers)
+        repeated = client.post("/webhooks/inbound", content=body, headers=signed_headers)
+        changed_body = b'{"sender_id":"sender-7","conversation_id":"thread-2","text":"Different"}'
+        changed_headers = {
+            **signed_headers,
+            "X-XAA-Signature": sign_webhook(secret, timestamp, event_id, changed_body),
+        }
+        conflict = client.post("/webhooks/inbound", content=changed_body, headers=changed_headers)
+        oversized = client.post(
+            "/webhooks/inbound",
+            content=b"x" * (64 * 1024 + 1),
+            headers=signed_headers,
+        )
+
+    assert accepted.status_code == 202, accepted.text
+    assert repeated.status_code == 202
+    assert accepted.json()["run_id"] == repeated.json()["run_id"]
+    assert conflict.status_code == 409
+    assert oversized.status_code == 413
+    run = store.get_run(accepted.json()["run_id"])
+    assert run is not None
+    assert run["workspace"] is None
+    assert run["mode"] == "observe"
+    assert run["model"] == "fixture/model"
+    assert run["approved_web_hosts"] == []
+    assert run["approved_mcp_tools"] == []
+    with store.connection() as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM runs WHERE objective LIKE '%Do this'"
+        ).fetchone()[0]
+    assert count == 1
 
 
 def test_blocked_lost_specialist_can_be_inspected_and_explicitly_closed(workspace_tmp_path):
