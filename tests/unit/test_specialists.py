@@ -237,6 +237,45 @@ async def test_context_budget_reason_is_persisted_for_blocked_specialist(workspa
     ]
 
 
+async def test_provider_timeout_is_classified_as_specialist_inference_failure(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-timeout.sqlite3")
+    run_id = store.create_run(
+        objective="Parent task",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="timeout", objective="Read the available file")],
+    )
+
+    class TimedOutProvider(LMStudioProvider):
+        async def chat(self, **kwargs):
+            raise TimeoutError("fixture timeout detail is not persisted")
+
+    provider = TimedOutProvider()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+
+    assert statuses == [{"task_id": "timeout", "status": "failed"}]
+    result = json.loads(tasks.records(run_id)[0]["result"])
+    assert result["causes"] == ["SpecialistInferenceTimeout"]
+    assert result["failure_details"] == [{"stage": "chat"}]
+    assert "fixture timeout detail" not in json.dumps(result)
+    events = store.list_events(run_id)
+    assert sum(event["event_type"] == "task.inference.started" for event in events) == 1
+    assert sum(event["event_type"] == "task.result" for event in events) == 1
+
+
 async def test_invalid_private_read_path_returns_tool_error_and_can_be_corrected(
     workspace_tmp_path,
 ):

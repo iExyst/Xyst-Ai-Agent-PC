@@ -40,6 +40,14 @@ class SpecialistIterationLimit(ValueError):
     """The saved assignment budget was consumed before a candidate was submitted."""
 
 
+class SpecialistInferenceTimeout(TimeoutError):
+    """A specialist provider chat call timed out before returning a completion."""
+
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        super().__init__("Specialist model inference timed out before a completion was received.")
+
+
 class ReviewDependencyFileArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     dependency_id: str = Field(min_length=1, max_length=128)
@@ -111,6 +119,7 @@ def _failure_details(error: BaseException) -> list[dict[str, str | int]]:
         "counter_error_code",
         "counted_prompt_tokens",
         "reported_prompt_tokens",
+        "stage",
     )
     detail = {
         field: value
@@ -721,6 +730,8 @@ class SpecialistRunner:
                         run_id, parent, identity, worker, inference_id, exc
                     )
                     raise
+                except TimeoutError as exc:
+                    raise SpecialistInferenceTimeout("chat_streamed") from exc
                 if pending:
                     emit(pending, inference_id)
             else:
@@ -736,6 +747,8 @@ class SpecialistRunner:
                         run_id, parent, identity, worker, inference_id, exc
                     )
                     raise
+                except TimeoutError as exc:
+                    raise SpecialistInferenceTimeout("chat") from exc
             choice = validate_completion(response)
             usage = (
                 TokenUsage.model_validate(response["usage"]).model_dump()
