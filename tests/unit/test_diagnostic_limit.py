@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 
@@ -11,6 +12,41 @@ from xaa.providers.lm_studio import (
 )
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
+
+
+async def test_scanned_page_transcription_uses_native_vision_with_reasoning_off():
+    requests = []
+
+    def handle(request):
+        payload = json.loads(request.content)
+        requests.append((request.url.path, payload))
+        return httpx.Response(
+            200,
+            json={
+                "output": [{"type": "message", "content": "marker 1234"}],
+                "stats": {"reasoning_output_tokens": 0},
+            },
+        )
+
+    provider = LMStudioProvider()
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url, transport=httpx.MockTransport(handle)
+    )
+    png = b"\x89PNG\r\n\x1a\nfixture"
+    try:
+        result = await provider.transcribe_scanned_pages(
+            model="vision", objective="Read the code", pages=[(3, png)]
+        )
+    finally:
+        await provider.close()
+
+    assert result == "[Scanned PDF OCR — page 3]\nmarker 1234"
+    path, payload = requests[0]
+    assert path == "/api/v1/chat"
+    assert payload["reasoning"] == "off"
+    assert payload["store"] is False
+    assert "Read the code" in payload["input"][0]["content"]
+    assert payload["input"][1]["data_url"].endswith(base64.b64encode(png).decode())
 
 
 @pytest.mark.parametrize("truncated_at", [None, 1, 2])

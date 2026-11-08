@@ -2,18 +2,30 @@
 
 from __future__ import annotations
 
+from binascii import crc32
 from io import BytesIO
+from math import ceil, isfinite
 from posixpath import join as join_posix
 from posixpath import normpath
+from struct import pack
+from typing import Any, cast
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile, ZipInfo
+from zlib import compress
 
+import pypdfium2 as pdfium
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
 MAX_DOCUMENT_CHARS = 48_000
 MAX_PDF_PAGES = 50
+MAX_PDF_OCR_PAGES = 4
+MAX_PDF_OCR_PAGE_BYTES = 2 * 1024 * 1024
+MAX_PDF_OCR_TOTAL_BYTES = 6 * 1024 * 1024
+MAX_PDF_OCR_DIMENSION = 1600
+MAX_PDF_OCR_PIXELS = 2_500_000
+PDF_OCR_RENDER_SCALE = 2
 MAX_OOXML_ENTRIES = 1024
 MAX_OOXML_PART_BYTES = 4 * 1024 * 1024
 MAX_XLSX_SHEETS = 50
@@ -79,6 +91,113 @@ def extract_document_text(content: bytes, media_type: str) -> str:
     if truncated:
         text += "\n[Document text clipped at the 48,000-character extraction limit.]"
     return text
+
+
+def render_pdf_scanned_pages(content: bytes) -> list[tuple[int, bytes]]:
+    """Render bounded textless PDF pages as PNGs for an explicitly selected vision model."""
+    if not content or len(content) > MAX_DOCUMENT_BYTES or not content.startswith(b"%PDF-"):
+        raise ValueError("Scanned-page rendering requires a PDF between 1 byte and 4 MiB.")
+    try:
+        reader = PdfReader(BytesIO(content), strict=True)
+        if reader.is_encrypted:
+            raise ValueError("Encrypted PDFs are not supported.")
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page extraction limit.")
+        scanned = [
+            index
+            for index, page in enumerate(reader.pages)
+            if not (page.extract_text() or "").strip()
+        ]
+        if len(scanned) > MAX_PDF_OCR_PAGES:
+            raise ValueError(
+                f"PDF has more than {MAX_PDF_OCR_PAGES} scanned pages; split it into smaller files."
+            )
+        if not scanned:
+            return []
+        document: Any = pdfium.PdfDocument(content)
+        try:
+            rendered: list[tuple[int, bytes]] = []
+            total_bytes = 0
+            for index in scanned:
+                page: Any = document[index]
+                page_width, page_height = float(page.get_width()), float(page.get_height())
+                scale = min(
+                    PDF_OCR_RENDER_SCALE,
+                    MAX_PDF_OCR_DIMENSION / max(page_width, page_height),
+                )
+                width = ceil(page_width * scale)
+                height = ceil(page_height * scale)
+                if (
+                    not isfinite(width)
+                    or not isfinite(height)
+                    or width < 1
+                    or height < 1
+                    or width > MAX_PDF_OCR_DIMENSION
+                    or height > MAX_PDF_OCR_DIMENSION
+                    or width * height > MAX_PDF_OCR_PIXELS
+                ):
+                    raise ValueError(
+                        "A scanned PDF page exceeds the bounded OCR render dimensions."
+                    )
+                bitmap: Any = page.render(scale=scale)
+                try:
+                    data = _bitmap_png(bitmap)
+                finally:
+                    bitmap.close()
+                total_bytes += len(data)
+                if len(data) > MAX_PDF_OCR_PAGE_BYTES or total_bytes > MAX_PDF_OCR_TOTAL_BYTES:
+                    raise ValueError("Scanned PDF page images exceed the bounded OCR input size.")
+                rendered.append((index + 1, data))
+            return rendered
+        finally:
+            document.close()
+    except ValueError:
+        raise
+    except (
+        PdfReadError,
+        pdfium.PdfiumError,
+        TypeError,
+        KeyError,
+        IndexError,
+        RecursionError,
+        OSError,
+        RuntimeError,
+    ):
+        raise ValueError("PDF scanned pages could not be safely rendered.") from None
+
+
+def _bitmap_png(bitmap: pdfium.PdfBitmap) -> bytes:
+    """Encode PDFium's bounded BGR bitmap without an image-library dependency."""
+    width, height, stride = (
+        cast(int, bitmap.width),
+        cast(int, bitmap.height),
+        cast(int, bitmap.stride),
+    )
+    source = bytes(cast(Any, bitmap.buffer))
+    if width < 1 or height < 1 or stride < width * 3 or len(source) < stride * height:
+        raise ValueError("PDF renderer returned an invalid page bitmap.")
+    pixels = bytearray(height * (1 + width * 3))
+    for y in range(height):
+        source_row = y * stride
+        target_row = y * (1 + width * 3)
+        for x in range(width):
+            source_pixel = source_row + x * 3
+            target_pixel = target_row + 1 + x * 3
+            pixels[target_pixel] = source[source_pixel + 2]
+            pixels[target_pixel + 1] = source[source_pixel + 1]
+            pixels[target_pixel + 2] = source[source_pixel]
+    header = b"\x89PNG\r\n\x1a\n"
+
+    def chunk(name: bytes, payload: bytes) -> bytes:
+        body = name + payload
+        return pack(">I", len(payload)) + body + pack(">I", crc32(body) & 0xFFFFFFFF)
+
+    return (
+        header
+        + chunk(b"IHDR", pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", compress(pixels, level=6))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _extract_docx_text(content: bytes) -> str:

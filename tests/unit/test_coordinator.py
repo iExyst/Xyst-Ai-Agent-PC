@@ -119,6 +119,53 @@ async def test_coordinator_executes_journaled_read_and_stops_for_verification(wo
     )
 
 
+def test_scanned_pdf_page_images_are_added_as_untrusted_vision_context(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "scanned-pages.sqlite3")
+    run = store.create_run(
+        objective="Read the document",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        document_bytes=b"%PDF-fixture",
+        document_media_type="application/pdf",
+        document_text="Scanned page previews are attached.",
+        document_page_images=[(2, b"\x89PNG\r\n\x1a\nfixture")],
+    )
+    token = store.acquire_lease(run["id"], "scanner-test")
+    assert token is not None
+    messages = Coordinator(store, ScriptedProvider())._initial_messages(run["id"], token, run)
+    user = messages[1]["content"]
+    assert isinstance(user, list)
+    assert "pages 2" in user[0]["text"]
+    assert "untrusted" in user[0]["text"]
+    assert user[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_scanned_pdf_ocr_text_replaces_model_image_input_but_keeps_untrusted_boundary(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "scanned-ocr-pages.sqlite3")
+    run = store.create_run(
+        objective="Read the document",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        document_bytes=b"%PDF-fixture",
+        document_media_type="application/pdf",
+        document_text="[Scanned PDF OCR — page 1]\nOCR fixture text",
+        document_page_images=[(1, b"\x89PNG\r\n\x1a\nfixture")],
+    )
+    token = store.acquire_lease(run["id"], "scanner-test")
+    assert token is not None
+    messages = Coordinator(store, ScriptedProvider())._initial_messages(run["id"], token, run)
+    user = messages[1]["content"]
+    assert isinstance(user, str)
+    assert "OCR fixture text" in user
+    assert "untrusted reference material" in user
+
+
 async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedure(
     workspace_tmp_path,
 ):

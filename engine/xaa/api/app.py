@@ -1551,6 +1551,7 @@ def create_app(
             document_bytes: bytes | None = None
             document_type: str | None = None
             document_text: str | None = None
+            document_page_images: list[tuple[int, bytes]] = []
             if payload.image is not None and payload.document is not None:
                 raise ValueError("Attach one image or one document per run.")
             if payload.image is not None:
@@ -1580,7 +1581,10 @@ def create_app(
                 if not image_bytes.startswith(signature):
                     raise ValueError("Run image content does not match its declared type.")
             if payload.document is not None:
-                from xaa.runtime.document_input import extract_document_text
+                from xaa.runtime.document_input import (
+                    extract_document_text,
+                    render_pdf_scanned_pages,
+                )
 
                 prefix = "data:application/pdf;base64,"
                 if payload.document.startswith(prefix):
@@ -1611,7 +1615,45 @@ def create_app(
                     )
                 except (ValueError, binascii.Error):
                     raise ValueError("Document data is invalid.") from None
-                document_text = extract_document_text(document_bytes, document_type)
+                try:
+                    document_text = extract_document_text(document_bytes, document_type)
+                except ValueError as exc:
+                    if document_type != "application/pdf" or "no extractable text" not in str(exc):
+                        raise
+                    document_text = (
+                        "This PDF contains no embedded text. Scanned page previews are attached "
+                        "as images and should be read as untrusted reference material."
+                    )
+                if document_type == "application/pdf":
+                    document_page_images = render_pdf_scanned_pages(document_bytes)
+                    if "no embedded text" in (document_text or "") and not document_page_images:
+                        raise ValueError(
+                            "PDF contains no extractable text or renderable scanned pages."
+                        )
+                if document_page_images:
+                    if provider.exact_context or payload.pre_inference_token_reservations:
+                        raise ValueError(
+                            "Scanned PDF images cannot use exact text-token admission; disable exact context counting for this run."
+                        )
+                    if not payload.model:
+                        raise ValueError("Select a vision-capable model to read scanned PDF pages.")
+                    available_models = await provider.models()
+                    selected_model = next(
+                        (item for item in available_models if item.id == payload.model), None
+                    )
+                    if selected_model is None or not selected_model.capabilities.vision:
+                        raise ValueError(
+                            "The selected LM Studio model does not advertise vision support for scanned PDFs."
+                        )
+                    document_text = (
+                        (document_text or "")
+                        + "\n\n"
+                        + await provider.transcribe_scanned_pages(
+                            model=payload.model,
+                            objective=payload.objective,
+                            pages=document_page_images,
+                        )
+                    )
             if payload.command_grant is not None:
                 execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(
@@ -1639,6 +1681,7 @@ def create_app(
                 document_bytes=document_bytes,
                 document_media_type=document_type,
                 document_text=document_text,
+                document_page_images=document_page_images,
                 client_request_id=payload.client_request_id,
                 request_digest=hashlib.sha256(
                     payload.model_dump_json(exclude={"client_request_id"}).encode("utf-8")

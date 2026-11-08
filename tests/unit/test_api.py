@@ -513,6 +513,67 @@ def test_run_docx_is_extracted_and_original_artifact_is_downloadable(workspace_t
         assert downloaded.headers["content-type"].split(";", 1)[0] == media_type
 
 
+def test_scanned_pdf_requires_vision_and_retains_page_preview_artifact(workspace_tmp_path):
+    import base64
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    output = BytesIO()
+    writer.write(output)
+    source = output.getvalue()
+    encoded = "data:application/pdf;base64," + base64.b64encode(source).decode("ascii")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+
+    class VisionProvider(FakeProvider):
+        async def models(self) -> list[ModelInfo]:
+            return [ModelInfo(id="fixture", capabilities=ModelCapabilities(vision=True))]
+
+        async def transcribe_scanned_pages(self, *, model, objective, pages):
+            assert model == "fixture"
+            assert objective == "Read the scan"
+            assert len(pages) == 1
+            return "[Scanned PDF OCR — page 1]\nfixture OCR"
+
+    nonvision_store = RunStore(workspace_tmp_path / "scanned-no-vision.sqlite3")
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=nonvision_store)) as client:
+        rejected = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Read the scan", "model": "fixture/model", "document": encoded},
+        )
+        assert rejected.status_code == 409
+        assert "vision support" in rejected.json()["detail"]
+
+    store = RunStore(workspace_tmp_path / "scanned-vision.sqlite3")
+    with TestClient(create_app(VisionProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers=headers,
+            json={"objective": "Read the scan", "model": "fixture", "document": encoded},
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert "no embedded text" in store.document_text(run_id)
+        assert "fixture OCR" in store.document_text(run_id)
+        pages = store.document_page_images(run_id)
+        assert len(pages) == 1 and pages[0][0] == 1
+        page_bytes = base64.b64decode(pages[0][1].split(",", 1)[1])
+        assert page_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
+        assert {item["provenance"] for item in artifacts} == {
+            "user.input_document",
+            "user.input_document_text",
+            "user.input_document_page:1",
+        }
+        source_record = next(
+            item for item in artifacts if item["provenance"] == "user.input_document"
+        )
+        assert client.get(f"/artifacts/{source_record['id']}", headers=headers).content == source
+
+
 def test_run_xlsx_extracts_cells_and_retains_original_artifact(workspace_tmp_path):
     import base64
     from io import BytesIO

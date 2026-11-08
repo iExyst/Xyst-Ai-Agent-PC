@@ -699,6 +699,7 @@ class RunStore:
         document_bytes: bytes | None = None,
         document_media_type: str | None = None,
         document_text: str | None = None,
+        document_page_images: list[tuple[int, bytes]] | None = None,
         client_request_id: str | None = None,
         request_digest: str | None = None,
     ) -> dict[str, Any]:
@@ -732,6 +733,7 @@ class RunStore:
         if image_bytes is not None and (not image_bytes or len(image_bytes) > 3 * 1024 * 1024):
             raise ValueError("Run images must be between 1 byte and 3 MiB.")
         document_values = (document_bytes, document_media_type, document_text)
+        document_page_images = document_page_images or []
         if any(value is not None for value in document_values) and not all(
             value is not None for value in document_values
         ):
@@ -753,6 +755,27 @@ class RunStore:
                 raise ValueError("Documents must be between 1 byte and 4 MiB.")
             if not document_text or len(document_text) > 49_000:
                 raise ValueError("Extracted document text is empty or exceeds its storage limit.")
+        elif document_page_images:
+            raise ValueError("Scanned page images require an attached document.")
+        if document_page_images and document_media_type != "application/pdf":
+            raise ValueError("Scanned page images are supported only for PDFs.")
+        if (
+            len(document_page_images) > 4
+            or any(
+                type(page_number) is not int
+                or page_number < 1
+                or page_number > 50
+                or not data
+                or len(data) > 2 * 1024 * 1024
+                or not data.startswith(b"\x89PNG\r\n\x1a\n")
+                for page_number, data in document_page_images
+            )
+            or sum(len(data) for _, data in document_page_images) > 6 * 1024 * 1024
+        ):
+            raise ValueError("Scanned page image input exceeds its bounded limits.")
+        page_numbers = [page_number for page_number, _ in document_page_images]
+        if page_numbers != sorted(set(page_numbers)):
+            raise ValueError("Scanned PDF page numbers must be unique and ordered.")
         if max_total_tokens is not None and (
             type(max_total_tokens) is not int or not 1 <= max_total_tokens <= 100_000_000
         ):
@@ -818,6 +841,8 @@ class RunStore:
         ):
             stage_artifact(document_bytes, document_media_type, "user.input_document")
             stage_artifact(document_text.encode("utf-8"), "text/plain", "user.input_document_text")
+            for page_number, image in document_page_images:
+                stage_artifact(image, "image/png", f"user.input_document_page:{page_number}")
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             trial_snapshot = None
@@ -884,7 +909,7 @@ class RunStore:
                         "media_type": staged_artifacts[0][2],
                     },
                 )
-            if document_bytes is not None and len(staged_artifacts) == 2:
+            if document_bytes is not None:
                 self.record_event(
                     connection,
                     run_id,
@@ -895,6 +920,18 @@ class RunStore:
                         "media_type": staged_artifacts[0][2],
                     },
                 )
+            for artifact_id, _, media_type, _, provenance in staged_artifacts:
+                if provenance.startswith("user.input_document_page:"):
+                    self.record_event(
+                        connection,
+                        run_id,
+                        "run.document_page_attached",
+                        {
+                            "artifact_id": artifact_id,
+                            "media_type": media_type,
+                            "page": int(provenance.rsplit(":", 1)[1]),
+                        },
+                    )
             if trial_snapshot is not None:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
             if granted_command is not None:
@@ -978,6 +1015,43 @@ class RunStore:
             return content.decode("utf-8", errors="strict")
         except UnicodeDecodeError:
             raise ValueError("Extracted document artifact is not valid UTF-8.") from None
+
+    def document_page_images(self, run_id: str) -> list[tuple[int, str]]:
+        """Return integrity-checked managed PNG previews for scanned PDF pages."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT media_type, storage_key, size_bytes, sha256, provenance FROM artifacts "
+                "WHERE run_id=? AND provenance LIKE 'user.input_document_page:%' "
+                "ORDER BY CAST(substr(provenance, 26) AS INTEGER)",
+                (run_id,),
+            ).fetchall()
+        if not rows:
+            return []
+        root = (self.path.parent / "artifacts").resolve(strict=True)
+        result: list[tuple[int, str]] = []
+        for row in rows:
+            if row["media_type"] != "image/png":
+                raise ValueError("Scanned page artifact has an unexpected media type.")
+            try:
+                page_number = int(str(row["provenance"]).rsplit(":", 1)[1])
+            except (IndexError, ValueError):
+                raise ValueError("Scanned page artifact has invalid provenance.") from None
+            target = (root / row["storage_key"]).resolve(strict=True)
+            if not target.is_relative_to(root):
+                raise PermissionError("Scanned PDF page escaped managed artifact storage.")
+            with target.open("rb") as source:
+                if not opened_file_path(source).is_relative_to(root):
+                    raise PermissionError("Opened scanned PDF page escaped managed storage.")
+                content = source.read(2 * 1024 * 1024 + 1)
+            if (
+                len(content) != row["size_bytes"]
+                or hashlib.sha256(content).hexdigest() != row["sha256"]
+            ):
+                raise ValueError("Scanned PDF page failed artifact integrity verification.")
+            result.append(
+                (page_number, "data:image/png;base64," + base64.b64encode(content).decode("ascii"))
+            )
+        return result
 
     def procedure_trial(self, run_id: str) -> dict[str, Any] | None:
         with self.connection() as connection:

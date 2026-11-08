@@ -206,6 +206,12 @@ const marker = `DOC-${randomUUID().replaceAll('-', '').toUpperCase()}`;
 const pdfBytes = makeTextPdf(`Document verification marker: ${marker}`);
 const pdfPath = path.join(input, 'verification.pdf');
 await writeFile(pdfPath, pdfBytes);
+const scanMarker = `SCAN-${randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase()}`;
+const scannedPdfPath = path.join(input, 'verification-scanned.pdf');
+execFileSync('uv', ['run', 'python', 'scripts/create_scanned_pdf_fixture.py', scannedPdfPath, scanMarker], {
+  windowsHide: true, stdio: 'pipe', timeout: 30000,
+});
+const scannedPdfBytes = await readFile(scannedPdfPath);
 const docxMarker = `DOCX-${randomUUID().replaceAll('-', '').toUpperCase()}`;
 const docxBytes = makeDocx(`Document verification marker: ${docxMarker}`);
 const docxPath = path.join(input, 'verification.docx');
@@ -242,16 +248,22 @@ async function finishRun(
   await page.locator(fileInput).setInputFiles(filePath);
   await expect(page.getByText(attachedText, { exact: false })).toBeVisible({ timeout: 10000 });
   await page.getByLabel('Objective', { exact: true }).fill(objective);
+  const priorHistory = await (await api('/runs?limit=1')).json();
+  const priorRunId = priorHistory.items?.[0]?.id;
   await page.getByRole('button', { name: 'Start objective', exact: true }).click();
 
   let run;
   for (let attempt = 0; attempt < 180; attempt++) {
     const history = await (await api('/runs?limit=1')).json();
     run = history.items?.[0];
-    if (run && ['verifying', 'completed', 'failed', 'blocked'].includes(run.state)) break;
+    if (
+      run && run.id !== priorRunId && ['verifying', 'completed', 'failed', 'blocked'].includes(run.state)
+    ) break;
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
-  if (!run || run.state !== 'verifying') throw new Error(`Media run did not reach review: ${run?.state ?? 'missing'}`);
+  if (!run || run.id === priorRunId || run.state !== 'verifying') {
+    throw new Error(`New media run did not reach review: ${run?.state ?? 'missing'}`);
+  }
   const events = await (await api(`/runs/${run.id}/events`)).json();
   const messages = events.filter(event => event.event_type === 'model.message').map(event => event.payload.message);
   const finalMessage = messages.at(-1);
@@ -283,8 +295,11 @@ async function finishRun(
     };
     if (artifact.provenance === 'user.input_image' && !bytes.equals(imageBytes)) throw new Error('Image artifact bytes changed.');
     if (artifact.provenance === 'user.input_document' && !bytes.equals(sourceDocumentBytes)) throw new Error('Document artifact bytes changed.');
-    if (artifact.provenance === 'user.input_document_text' && !bytes.toString('utf8').includes(expectedTextMarker)) {
+    if (artifact.provenance === 'user.input_document_text' && expectedTextMarker && !bytes.toString('utf8').includes(expectedTextMarker)) {
       throw new Error('Extracted-text artifact lost its verification marker.');
+    }
+    if (artifact.provenance.startsWith('user.input_document_page:') && !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      throw new Error('Scanned document page artifact is not a PNG image.');
     }
   }
   await expect(page.getByText(expectedAnswer, { exact: false }).last()).toBeVisible({ timeout: 10000 });
@@ -322,6 +337,13 @@ try {
   await expect(page.getByText('The selected model completed a validated harmless tool round trip.', { exact: true })).toBeVisible({ timeout: 120000 });
   await page.getByLabel('Workspace path').fill(workspace);
 
+  const scannedDocumentResult = await finishRun(
+    page,
+    'Read the scanned PDF and transcribe the code after SCAN-. Reply with exactly eight uppercase hexadecimal characters and nothing else.',
+    '#run-document', scannedPdfPath, 'Attached: verification-scanned.pdf', scanMarker.slice(5),
+    ['user.input_document', 'user.input_document_text', 'user.input_document_page:1'],
+    scannedPdfBytes, null, 'scanned-pdf-run.png',
+  );
   const imageResult = await finishRun(
     page,
     'Inspect the attached image. Count the red circles. Reply with a short line giving the count and color, with no explanation.',
@@ -374,6 +396,7 @@ try {
     native_tool_diagnostic: true,
     image: imageResult,
     document: documentResult,
+    scanned_pdf: scannedDocumentResult,
     docx: docxResult,
     xlsx: xlsxResult,
     final_review_left_pending: true,

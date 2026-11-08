@@ -1,75 +1,55 @@
 {
   "date": "2026-11-07",
   "passed": true,
-  "desktop": "Tauri development build with bundled engine",
-  "model": "qwen/qwen3.5-9b",
+  "model": "google/gemma-4-e4b",
   "vision_advertised": true,
   "native_tool_diagnostic": true,
-  "image": {
-    "run_id": "2c7e5b1c-cbb8-416b-b12d-820fd7cd337a",
-    "state": "verifying",
-    "answer": "2 red",
-    "tool_call_count": 0,
-    "artifact_provenance": "user.input_image",
-    "artifact_bytes": 458,
-    "artifact_sha256": "e595d243fe8c81f6728388a39a08e191fba3a2f4bd5aad8f86d4b38ae0f55533",
-    "workspace_unchanged": true
+  "native_runs": {
+    "image": {
+      "state": "verifying",
+      "answer": "2 red",
+      "artifact_provenances": ["user.input_image"],
+      "source_sha256": "e595d243fe8c81f672838a39a08e191fba3a2f4bd5aad8f86d4b38ae0f55533"
+    },
+    "text_pdf": {
+      "state": "verifying",
+      "answer_matches_random_marker": true,
+      "artifact_provenances": ["user.input_document", "user.input_document_text"],
+      "source_sha256": "02dec3f209f9f040c3c122fa16b58eb8dbf52e351080e8d96c5d50e363665ced"
+    },
+    "scanned_pdf": {
+      "state": "verifying",
+      "answer": "A8DF2F44",
+      "answer_matches_random_marker": true,
+      "tool_call_count": 0,
+      "artifact_provenances": [
+        "user.input_document",
+        "user.input_document_text",
+        "user.input_document_page:1"
+      ],
+      "source_sha256": "06d6dc32bbb72ed46015f078e7956d809343639caa98d25294980ebac50b96d3",
+      "page_png_sha256": "b771b6fcc77caa29ad7e589392bdfd81a48798b71502fb873012eccc023ca070"
+    },
+    "docx": {
+      "state": "verifying",
+      "answer_matches_random_marker": true,
+      "artifact_provenances": ["user.input_document", "user.input_document_text"],
+      "source_sha256": "050705e642bd4ccdf43b4461157513ff7adb9d9d1fabc007f8dd482250dedfdf"
+    },
+    "xlsx": {
+      "state": "verifying",
+      "answer_matches_random_cell_marker": true,
+      "artifact_provenances": ["user.input_document", "user.input_document_text"],
+      "source_sha256": "c90b3b635168c6dda2b28553de11a826a096dcd4bc5bab2741e10fcc70a36182"
+    }
   },
-  "document": {
-    "run_id": "3c48f745-a673-4ff2-9a8e-39f2bd680237",
-    "state": "verifying",
-    "answer_matched_random_pdf_marker": true,
-    "tool_call_count": 0,
-    "artifact_provenance": [
-      "user.input_document",
-      "user.input_document_text"
-    ],
-    "source_pdf_bytes": 647,
-    "source_pdf_sha256": "f84c137269a866289574676a926b94dec0e8c3555d9e23c35cda9ffa916a631c",
-    "extracted_text_bytes": 75,
-    "extracted_text_sha256": "6b3b370f76a24bd1821ee701bf9580fb0be5e587c523bd4206f4b03ac8104fd6",
-    "workspace_unchanged": true
-  },
-  "docx": {
-    "run_id": "a71dc0e2-8cee-45cd-adaf-10e575e616a8",
-    "state": "verifying",
-    "answer_matched_random_docx_marker": true,
-    "tool_call_count": 0,
-    "artifact_provenance": [
-      "user.input_document",
-      "user.input_document_text"
-    ],
-    "source_docx_bytes": 1287,
-    "source_docx_sha256": "2f70b87d271796c9fec1cb07b3ca94a010ccea7c42621b17c6ae19ef44fd446d",
-    "extracted_text_bytes": 67,
-    "extracted_text_sha256": "9025bd927290492b9d4718cb213ac2db43fdb144fe3468e204aa2d1099fd6cb5",
-    "workspace_unchanged": true
-  },
-  "xlsx": {
-    "run_id": "97dbecf5-f067-48d2-bfd8-a2b9c43f5db8",
-    "state": "verifying",
-    "answer_contains_random_cell_marker": true,
-    "marker_prefix": "XLSX-",
-    "tool_call_count": 0,
-    "artifact_provenance": [
-      "user.input_document",
-      "user.input_document_text"
-    ],
-    "source_xlsx_bytes": 2468,
-    "source_xlsx_sha256": "6c05efcd7a264f9ecd4d8c4ac56d23e3547566eab86361c635ed2435e64a0d2f",
-    "extracted_text_bytes": 68,
-    "extracted_text_sha256": "8e9bdfc52fac1a6e367e1b406904dccd32916161fda1b8b096422c6156f12e31",
-    "workspace_unchanged": true
-  },
-  "review_state": "pending",
   "model_unloaded_before_window_close": true,
-  "desktop_exit_code": 0,
   "engine_stopped": true,
   "graceful_shutdown": true,
-  "native_build_sha256": {
-    "xaa-desktop.exe": "8ee35a10fd4bd59fe752297fe2a768a44b799808a1ffa562f508f1abafd0fb15",
-    "xaa-engine.exe": "62fc6e19b35d9e6ee2da7832c13ab3421e592c85530b62c7e9f80e001b7a6376"
+  "build_sha256": {
+      "xaa-desktop.exe": "1a9714c53a0817ebc12f102f2769e161b40273d817f396561188f9ad0de2e8cb",
+    "xaa-engine.exe": "b8deb86dd430ee6254b23f4e1882ef1bac56c13d92caeb9c410fa804efd3e5ba"
   },
-  "scope": "One synthetic PNG, one text PDF, one DOCX and one XLSX passed through the actual Tauri UI on one local vision model. XLSX proves cached cell values on one sheet; this does not establish formula evaluation, workbook formatting, broad media accuracy, OCR, scanned document support, other model families, or final review acceptance.",
-  "latest_report": ".acceptance/native-media-51d5a724-1948-4f3c-8141-600cb404bfc9/report.json"
+  "scope": "Actual Windows Tauri upload and agent runs passed for one synthetic image, one text PDF, one scanned PDF, one DOCX and one XLSX on one local vision model. The scanned page was OCR-transcribed through LM Studio native vision with reasoning disabled; its original PDF, OCR text and rendered page PNG were retained as checksummed artifacts. This is a single synthetic OCR case on google/gemma-4-e4b, not broad OCR accuracy or a guarantee for other models. XLSX covers cached cell text only. Runs stopped at verifying for independent review.",
+  "latest_report": ".acceptance/native-media-6b7ae02c-a34d-42de-ac53-84400ab40416/report.json"
 }

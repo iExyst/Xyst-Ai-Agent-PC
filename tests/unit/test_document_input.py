@@ -4,7 +4,11 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
-from xaa.runtime.document_input import MAX_DOCUMENT_BYTES, extract_document_text
+from xaa.runtime.document_input import (
+    MAX_DOCUMENT_BYTES,
+    extract_document_text,
+    render_pdf_scanned_pages,
+)
 
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -147,6 +151,22 @@ def test_rejects_invalid_text_and_non_extractable_pdf():
     writer.write(output)
     with pytest.raises(ValueError, match="no extractable text"):
         extract_document_text(output.getvalue(), "application/pdf")
+
+
+def test_renders_textless_pdf_page_as_bounded_png_for_vision_ocr():
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    output = BytesIO()
+    writer.write(output)
+    rendered = render_pdf_scanned_pages(output.getvalue())
+    assert len(rendered) == 1
+    assert rendered[0][0] == 1
+    assert rendered[0][1].startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(rendered[0][1]) <= 2 * 1024 * 1024
+
+
+def test_pdf_with_embedded_text_does_not_create_ocr_previews():
+    assert render_pdf_scanned_pages(make_text_pdf("Visible text")) == []
 
 
 def test_rejects_oversized_or_unsupported_documents():
