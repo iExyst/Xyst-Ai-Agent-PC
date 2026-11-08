@@ -89,15 +89,21 @@ try{
   const restoreDeadline=Date.now()+10000;
   while(!await isWindowVisible()&&Date.now()<restoreDeadline)await new Promise(resolve=>setTimeout(resolve,100));
   if(!await isWindowVisible())throw new Error('The hidden window did not restore');
-  await page.getByRole('button',{name:'Quit and stop the agent'}).click();
+  const closeBehavior=page.getByLabel('When the main window closes');
+  if(await closeBehavior.inputValue()!=='keep_running')throw new Error('The default close behavior must keep the agent running');
+  await closeBehavior.selectOption('exit_on_close');
+  await expect(page.getByText('Close behavior saved.',{exact:true})).toBeVisible();
+  const savedBehavior=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_close_behavior'));
+  if(savedBehavior!=='exit_on_close')throw new Error('The selected close behavior was not saved');
+  await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'})).catch(()=>{});
   const shutdownDeadline=Date.now()+30000;
   while(proc.exitCode===null&&Date.now()<shutdownDeadline)await new Promise(resolve=>setTimeout(resolve,250));
-  if(proc.exitCode===null)throw new Error('Explicit quit did not stop the desktop');
+  if(proc.exitCode===null)throw new Error('Selecting quit on close did not stop the desktop');
   let stopped=false;try{await fetch(`${connection.base_url}/runs`,{signal:AbortSignal.timeout(1000)});}catch{stopped=true;}
-  if(!stopped)throw new Error('The engine survived explicit application quit');
+  if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,window_close_hides:true,engine_remains_available_while_hidden:true,window_restores:true,explicit_quit_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;

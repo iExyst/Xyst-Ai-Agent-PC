@@ -1,10 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
+    fs,
     io::Write,
     net::TcpListener,
     net::TcpStream,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
@@ -21,6 +22,25 @@ mod confinement;
 struct EngineState {
     child: Mutex<Child>,
     connection: Connection,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CloseBehavior {
+    #[default]
+    KeepRunning,
+    ExitOnClose,
+}
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+struct DesktopSettings {
+    close_behavior: CloseBehavior,
+}
+
+struct CloseBehaviorState {
+    value: Mutex<CloseBehavior>,
+    settings_path: PathBuf,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -87,13 +107,7 @@ fn tray_image() -> Image<'static> {
 
 fn install_system_tray(app: &tauri::App) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Xyst AI Agent", true, None::<&str>)?;
-    let quit = MenuItem::with_id(
-        app,
-        "quit",
-        "Quit and stop the agent",
-        true,
-        None::<&str>,
-    )?;
+    let quit = MenuItem::with_id(app, "quit", "Quit and stop the agent", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
     let tray = TrayIconBuilder::new()
         .icon(tray_image())
@@ -129,6 +143,58 @@ fn quit_application(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+fn load_close_behavior(settings_path: &Path) -> CloseBehavior {
+    fs::read(settings_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<DesktopSettings>(&bytes).ok())
+        .map(|settings| settings.close_behavior)
+        .unwrap_or_default()
+}
+
+fn save_close_behavior(settings_path: &Path, behavior: CloseBehavior) -> Result<(), String> {
+    let parent = settings_path
+        .parent()
+        .ok_or_else(|| "Desktop settings path has no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|_| "Could not create the desktop settings directory")?;
+    let temporary =
+        settings_path.with_file_name(format!("desktop-settings.{}.tmp", uuid::Uuid::new_v4()));
+    let bytes = serde_json::to_vec(&DesktopSettings {
+        close_behavior: behavior,
+    })
+    .map_err(|_| "Could not encode desktop settings")?;
+    let mut file = fs::File::create(&temporary).map_err(|_| "Could not write desktop settings")?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|_| "Could not save desktop settings")?;
+    fs::rename(&temporary, settings_path)
+        .map_err(|_| "Could not replace desktop settings".to_string())
+}
+
+#[tauri::command]
+fn get_close_behavior(
+    state: tauri::State<'_, CloseBehaviorState>,
+) -> Result<CloseBehavior, String> {
+    state
+        .value
+        .lock()
+        .map(|behavior| *behavior)
+        .map_err(|_| "Desktop settings are unavailable".into())
+}
+
+#[tauri::command]
+fn set_close_behavior(
+    state: tauri::State<'_, CloseBehaviorState>,
+    behavior: CloseBehavior,
+) -> Result<CloseBehavior, String> {
+    let mut current = state
+        .value
+        .lock()
+        .map_err(|_| "Desktop settings are unavailable".to_string())?;
+    save_close_behavior(&state.settings_path, behavior)?;
+    *current = behavior;
+    Ok(behavior)
+}
+
 fn selected_log_directory(
     hidden_acceptance: bool,
     requested: Option<PathBuf>,
@@ -142,9 +208,26 @@ fn selected_log_directory(
     default
 }
 
+fn selected_settings_path(
+    hidden_acceptance: bool,
+    requested: Option<PathBuf>,
+    data_directory: Option<PathBuf>,
+    default: PathBuf,
+) -> PathBuf {
+    let directory = if hidden_acceptance {
+        requested.or(data_directory).unwrap_or(default)
+    } else {
+        default
+    };
+    directory.join("desktop-settings.json")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{configure_engine_environment, tray_image};
+    use super::{
+        configure_engine_environment, load_close_behavior, save_close_behavior,
+        selected_settings_path, tray_image, CloseBehavior,
+    };
     use std::process::Command;
 
     #[test]
@@ -180,6 +263,58 @@ mod tests {
         assert_eq!(icon.rgba().len(), 32 * 32 * 4);
         assert_eq!(icon.rgba()[(10 * 32) * 4 + 3], 0);
         assert_eq!(icon.rgba()[(16 * 32 + 16) * 4 + 3], 255);
+    }
+
+    #[test]
+    fn close_behavior_defaults_to_keep_running_and_persists_user_choice() {
+        let directory = std::env::temp_dir().join(format!("xaa-settings-{}", uuid::Uuid::new_v4()));
+        let settings_path = directory.join("desktop-settings.json");
+        assert_eq!(
+            load_close_behavior(&settings_path),
+            CloseBehavior::KeepRunning
+        );
+
+        save_close_behavior(&settings_path, CloseBehavior::ExitOnClose).unwrap();
+        assert_eq!(
+            load_close_behavior(&settings_path),
+            CloseBehavior::ExitOnClose
+        );
+
+        save_close_behavior(&settings_path, CloseBehavior::KeepRunning).unwrap();
+        assert_eq!(
+            load_close_behavior(&settings_path),
+            CloseBehavior::KeepRunning
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn acceptance_settings_use_isolated_paths_and_ignore_overrides_in_visible_app() {
+        let requested = std::path::PathBuf::from("acceptance-config");
+        let data = std::path::PathBuf::from("acceptance-data");
+        let default = std::path::PathBuf::from("user-config");
+        assert_eq!(
+            selected_settings_path(
+                false,
+                Some(requested.clone()),
+                Some(data.clone()),
+                default.clone()
+            ),
+            default.join("desktop-settings.json")
+        );
+        assert_eq!(
+            selected_settings_path(
+                true,
+                Some(requested.clone()),
+                Some(data.clone()),
+                default.clone()
+            ),
+            requested.join("desktop-settings.json")
+        );
+        assert_eq!(
+            selected_settings_path(true, None, Some(data.clone()), default),
+            data.join("desktop-settings.json")
+        );
     }
 }
 
@@ -234,6 +369,17 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             install_system_tray(app)?;
+            let settings_path = selected_settings_path(
+                std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1"),
+                std::env::var_os("XAA_TEST_CONFIG_DIR").map(PathBuf::from),
+                std::env::var_os("XAA_DATA_DIR").map(PathBuf::from),
+                app.path().app_config_dir()?,
+            );
+            let close_behavior = load_close_behavior(&settings_path);
+            app.manage(CloseBehaviorState {
+                value: Mutex::new(close_behavior),
+                settings_path,
+            });
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let port = listener.local_addr()?.port();
             let token = uuid::Uuid::new_v4().simple().to_string();
@@ -282,14 +428,25 @@ fn main() {
                 return;
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                let behavior = window
+                    .app_handle()
+                    .state::<CloseBehaviorState>()
+                    .value
+                    .lock()
+                    .map(|value| *value)
+                    .unwrap_or_default();
+                if behavior == CloseBehavior::KeepRunning {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             engine_connection,
             restore_main_window,
-            quit_application
+            quit_application,
+            get_close_behavior,
+            set_close_behavior
         ])
         .build(tauri::generate_context!())
         .expect("X.A.A. desktop failed to start")
