@@ -3,10 +3,74 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import PurePosixPath
 from typing import cast
 
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
+
+_JS_PACKAGE_MANAGERS = {
+    "npm": ("test",),
+    "pnpm": ("test",),
+    "yarn": ("test",),
+    "bun": ("run", "test"),
+}
+_JS_LOCKFILES = {
+    "package-lock.json": "npm",
+    "npm-shrinkwrap.json": "npm",
+    "pnpm-lock.yaml": "pnpm",
+    "yarn.lock": "yarn",
+    "bun.lock": "bun",
+    "bun.lockb": "bun",
+}
+
+
+def _javascript_package_manager(
+    package: str, manifest: dict[str, object], paths: dict[str, str]
+) -> str | None:
+    declared = manifest.get("packageManager")
+    if isinstance(declared, str):
+        match = re.match(r"^(npm|pnpm|yarn|bun)@[^\s]+$", declared)
+        if match:
+            return match.group(1)
+        if declared:
+            return None
+
+    package_dir = PurePosixPath(package).parent
+    ancestors = [package_dir, *package_dir.parents]
+    for directory in ancestors:
+        lockfile_managers = {
+            manager
+            for filename, manager in _JS_LOCKFILES.items()
+            if (directory / filename).as_posix().casefold() in paths
+        }
+        if len(lockfile_managers) == 1:
+            return next(iter(lockfile_managers))
+        if len(lockfile_managers) > 1:
+            return None
+    return "npm"
+
+
+def _javascript_test_argv(manager: str, package: str) -> list[str]:
+    prefix = package.rpartition("/")[0]
+    if manager == "npm":
+        argv = ["/usr/bin/env", "npm"]
+        if prefix:
+            argv.extend(["--prefix", prefix])
+        return [*argv, *_JS_PACKAGE_MANAGERS[manager]]
+    argv = ["/usr/bin/env", manager]
+    if manager == "bun":
+        argv.append("run")
+        if prefix:
+            argv.extend(["--cwd", prefix])
+        argv.append("test")
+        return argv
+    if manager == "pnpm" and prefix:
+        argv.extend(["--dir", prefix])
+    elif manager == "yarn" and prefix:
+        argv.extend(["--cwd", prefix])
+    argv.extend(_JS_PACKAGE_MANAGERS[manager])
+    return argv
 
 
 def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, object]]:
@@ -58,15 +122,16 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
         test_script = cast(dict[str, object], scripts).get("test")
         if not isinstance(test_script, str) or not test_script.strip():
             continue
+        manager = _javascript_package_manager(package, manifest, paths)
+        if manager is None:
+            continue
+        argv = _javascript_test_argv(manager, package)
         prefix = package.rpartition("/")[0]
-        argv = ["/usr/bin/env", "npm", "test"]
-        if prefix:
-            argv[2:2] = ["--prefix", prefix]
         suffix = "" if not prefix else f" — {prefix}"
         suggestions.append(
             {
-                "label": f"JavaScript tests (npm){suffix}",
-                "rationale": f"{package} declares a test script. Confirm npm and dependencies are available in the restricted WSL environment.",
+                "label": f"JavaScript tests ({manager}){suffix}",
+                "rationale": f"{package} declares a test script. Confirm {manager} and dependencies are available in the restricted WSL environment.",
                 "argv": argv,
             }
         )

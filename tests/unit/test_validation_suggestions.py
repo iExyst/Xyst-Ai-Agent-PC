@@ -60,6 +60,49 @@ def test_javascript_suggestions_require_a_declared_test_script():
     assert result[0]["argv"] == ["/usr/bin/env", "npm", "--prefix", "apps/valid", "test"]
 
 
+def test_javascript_suggestions_follow_declared_managers_and_local_lockfiles():
+    result = suggest_validation_commands(
+        snapshot(
+            (
+                "apps/npm/package.json",
+                b'{"scripts":{"test":"vitest"},"packageManager":"npm@10.0.0"}',
+            ),
+            (
+                "apps/pnpm/package.json",
+                b'{"scripts":{"test":"vitest"},"packageManager":"pnpm@9.0.0"}',
+            ),
+            (
+                "apps/yarn/package.json",
+                b'{"scripts":{"test":"jest"},"packageManager":"yarn@4.0.0"}',
+            ),
+            (
+                "apps/bun/package.json",
+                b'{"scripts":{"test":"bun test"},"packageManager":"bun@1.1.0"}',
+            ),
+            ("apps/locked/package.json", b'{"scripts":{"test":"vitest"}}'),
+            ("apps/locked/pnpm-lock.yaml", b"lockfileVersion: '9.0'"),
+            ("apps/ambiguous/package.json", b'{"scripts":{"test":"vitest"}}'),
+            ("apps/ambiguous/package-lock.json", b"{}"),
+            ("apps/ambiguous/yarn.lock", b""),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "JavaScript tests (bun) — apps/bun",
+        "JavaScript tests (pnpm) — apps/locked",
+        "JavaScript tests (npm) — apps/npm",
+        "JavaScript tests (pnpm) — apps/pnpm",
+        "JavaScript tests (yarn) — apps/yarn",
+    ]
+    assert [item["argv"] for item in result] == [
+        ["/usr/bin/env", "bun", "run", "--cwd", "apps/bun", "test"],
+        ["/usr/bin/env", "pnpm", "--dir", "apps/locked", "test"],
+        ["/usr/bin/env", "npm", "--prefix", "apps/npm", "test"],
+        ["/usr/bin/env", "pnpm", "--dir", "apps/pnpm", "test"],
+        ["/usr/bin/env", "yarn", "--cwd", "apps/yarn", "test"],
+    ]
+
+
 def test_suggests_go_and_nested_dotnet_checks():
     result = suggest_validation_commands(
         snapshot(("go.mod", b"module example"), ("src/App.csproj", b"<Project />"))
