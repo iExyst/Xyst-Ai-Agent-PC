@@ -185,6 +185,18 @@ class TaskRecoverableCommand(BaseModel):
     state: Literal["intended", "completed", "failed"]
 
 
+class TaskRecoverableAction(BaseModel):
+    model_call_id: str
+    journal_call_id: str
+    tool_name: Literal[
+        "workspace.read_file",
+        "workspace.list_directory",
+        "workspace.write_file",
+        "workspace.create_file",
+        "workspace.delete_file",
+    ]
+
+
 class TaskRecoverySummary(BaseModel):
     task_id: str
     status: Literal["blocked"]
@@ -194,6 +206,7 @@ class TaskRecoverySummary(BaseModel):
     pending_model_tool_calls: list[dict[str, str | None]]
     unresolved_tool_calls: int
     recoverable_commands: list[TaskRecoverableCommand]
+    recoverable_task_actions: list[TaskRecoverableAction]
     safe_to_resume: bool
     resume_from_start: bool
     consumed_iterations: int

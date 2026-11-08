@@ -205,6 +205,84 @@ async def test_lost_worker_can_attach_already_saved_command_result(workspace_tmp
     assert recovered["saved_tool_results"] == 1
 
 
+async def test_lost_worker_can_attach_committed_private_file_result(workspace_tmp_path):
+    transport = FixtureTransport()
+    store, run_id, owner, _, scopes = await private_tasks(workspace_tmp_path, transport)
+    scope = scopes[0]
+    model_call_id = "model-read-1"
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": scope.task_id,
+                "inference_id": "inference-read-1",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": model_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": '{"path":"fixture.txt"}',
+                            },
+                        }
+                    ],
+                },
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+            },
+        )
+    journal_id = (
+        "taskfs-" + hashlib.sha256(f"{run_id}:{scope.task_id}:{model_call_id}".encode()).hexdigest()
+    )
+    await execute_filesystem(
+        store,
+        run_id,
+        owner,
+        journal_id,
+        "branch_read",
+        {"path": "fixture.txt"},
+        idempotency_key=journal_id,
+        internal=True,
+        task_id=scope.task_id,
+        task_token=scope.task_token,
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
+            (f"{run_id}:{scope.task_id}",),
+        )
+    tasks = TaskStore(store)
+    assert tasks.recover_expired(run_id, owner) == [scope.task_id]
+    summary = tasks.recovery_summary(run_id, scope.task_id)
+    assert summary["recoverable_task_actions"] == [
+        {
+            "model_call_id": model_call_id,
+            "journal_call_id": journal_id,
+            "tool_name": "workspace.read_file",
+        }
+    ]
+    store.transition(run_id, RunState.BLOCKED, reason="lost_specialist", owner=owner)
+    token = "task-file-recovery-api-token-long-123456"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
+        response = client.post(
+            f"/runs/{run_id}/tasks/{scope.task_id}/recovery/actions/{model_call_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        duplicate = client.post(
+            f"/runs/{run_id}/tasks/{scope.task_id}/recovery/actions/{model_call_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["saved_tool_results"] == 1
+    assert duplicate.status_code == 409
+    recovered = tasks.recovery_summary(run_id, scope.task_id)
+    assert recovered["pending_model_tool_calls"] == []
+    assert recovered["recoverable_task_actions"] == []
+
+
 async def test_task_scope_is_required_for_snapshot_and_launch(workspace_tmp_path):
     transport = FixtureTransport()
     store, run_id, owner, _, scopes = await private_tasks(workspace_tmp_path, transport)

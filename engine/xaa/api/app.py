@@ -2338,6 +2338,68 @@ def create_app(
             ) from exc
 
     @app.post(
+        "/runs/{run_id}/tasks/{task_id}/recovery/actions/{model_call_id}",
+        response_model=TaskRecoverySummary,
+    )
+    def attach_saved_task_action(
+        run_id: str, task_id: str, model_call_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        run = run_store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run["state"] != "blocked":
+            raise HTTPException(status_code=409, detail="The run must be blocked for recovery.")
+        tasks = TaskStore(run_store)
+        try:
+            summary = tasks.recovery_summary(run_id, task_id)
+            action = next(
+                (
+                    item
+                    for item in summary["recoverable_task_actions"]
+                    if item["model_call_id"] == model_call_id
+                ),
+                None,
+            )
+            if action is None:
+                raise ValueError("No saved private file result matches this pending model action.")
+            owner = run_store.acquire_blocked_run_recovery(
+                run_id, "local-user-task-action-recovery", seconds=180
+            )
+            if owner is None:
+                raise ValueError("A worker still owns the run.")
+            try:
+                run_store.transition(
+                    run_id, RunState.PLANNING, reason="task_action_result_recovery", owner=owner
+                )
+                run_store.transition(
+                    run_id, RunState.RUNNING, reason="task_action_result_recovery", owner=owner
+                )
+                tasks.record_recovered_task_action_result(
+                    run_id, owner, task_id, model_call_id, action["journal_call_id"]
+                )
+                run_store.transition(
+                    run_id, RunState.BLOCKED, reason="task_action_result_attached", owner=owner
+                )
+                return tasks.recovery_summary(run_id, task_id)
+            except BaseException:
+                current = run_store.get_run(run_id)
+                if current and current["state"] != "blocked":
+                    run_store.transition(
+                        run_id,
+                        RunState.BLOCKED,
+                        reason="task_action_result_recovery_failed",
+                        owner=owner,
+                    )
+                raise
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found.") from exc
+        except (ValueError, PermissionError, LeaseLost) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Saved private file result could not be attached; inspect the run.",
+            ) from exc
+
+    @app.post(
         "/runs/{run_id}/tasks/{task_id}/recovery",
         response_model=PlanRecord,
         status_code=202,

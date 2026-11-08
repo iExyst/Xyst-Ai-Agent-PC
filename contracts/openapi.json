@@ -4403,6 +4403,36 @@
         "title": "TaskEvidence",
         "type": "object"
       },
+      "TaskRecoverableAction": {
+        "properties": {
+          "journal_call_id": {
+            "title": "Journal Call Id",
+            "type": "string"
+          },
+          "model_call_id": {
+            "title": "Model Call Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "enum": [
+              "workspace.read_file",
+              "workspace.list_directory",
+              "workspace.write_file",
+              "workspace.create_file",
+              "workspace.delete_file"
+            ],
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_call_id",
+          "journal_call_id",
+          "tool_name"
+        ],
+        "title": "TaskRecoverableAction",
+        "type": "object"
+      },
       "TaskRecoverableCommand": {
         "properties": {
           "argv": {
@@ -4503,6 +4533,13 @@
             "title": "Recoverable Commands",
             "type": "array"
           },
+          "recoverable_task_actions": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRecoverableAction"
+            },
+            "title": "Recoverable Task Actions",
+            "type": "array"
+          },
           "reserved_tokens": {
             "title": "Reserved Tokens",
             "type": "integer"
@@ -4546,6 +4583,7 @@
           "pending_model_tool_calls",
           "unresolved_tool_calls",
           "recoverable_commands",
+          "recoverable_task_actions",
           "safe_to_resume",
           "resume_from_start",
           "consumed_iterations",
@@ -8469,6 +8507,68 @@
           }
         ],
         "summary": "Decide Task Recovery"
+      }
+    },
+    "/runs/{run_id}/tasks/{task_id}/recovery/actions/{model_call_id}": {
+      "post": {
+        "operationId": "attach_saved_task_action_runs__run_id__tasks__task_id__recovery_actions__model_call_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_call_id",
+            "required": true,
+            "schema": {
+              "title": "Model Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecoverySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Attach Saved Task Action"
       }
     },
     "/runs/{run_id}/tasks/{task_id}/recovery/commands/{model_call_id}": {

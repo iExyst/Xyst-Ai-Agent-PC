@@ -1071,6 +1071,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/tasks/{task_id}/recovery/actions/{model_call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Saved Task Action */
+        post: operations["attach_saved_task_action_runs__run_id__tasks__task_id__recovery_actions__model_call_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/tasks/{task_id}/recovery/commands/{model_call_id}": {
         parameters: {
             query?: never;
@@ -3093,6 +3110,18 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** TaskRecoverableAction */
+        TaskRecoverableAction: {
+            /** Journal Call Id */
+            journal_call_id: string;
+            /** Model Call Id */
+            model_call_id: string;
+            /**
+             * Tool Name
+             * @enum {string}
+             */
+            tool_name: "workspace.read_file" | "workspace.list_directory" | "workspace.write_file" | "workspace.create_file" | "workspace.delete_file";
+        };
         /** TaskRecoverableCommand */
         TaskRecoverableCommand: {
             /** Argv */
@@ -3129,6 +3158,8 @@ export interface components {
             }[];
             /** Recoverable Commands */
             recoverable_commands: components["schemas"]["TaskRecoverableCommand"][];
+            /** Recoverable Task Actions */
+            recoverable_task_actions: components["schemas"]["TaskRecoverableAction"][];
             /** Reserved Tokens */
             reserved_tokens: number;
             /** Resume From Start */
@@ -5681,6 +5712,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_saved_task_action_runs__run_id__tasks__task_id__recovery_actions__model_call_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                task_id: string;
+                model_call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRecoverySummary"];
                 };
             };
             /** @description Validation Error */
