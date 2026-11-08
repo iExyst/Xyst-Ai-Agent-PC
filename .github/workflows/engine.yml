@@ -61,6 +61,14 @@ jobs:
           sparse-checkout-cone-mode: true
           persist-credentials: false
       - run: uv sync --locked
+      - name: Verify managed-browser popup cleanup in Microsoft Edge
+        run: uv run python scripts/browser_popup_smoke.py
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-popup-edge-${{ github.run_id }}
+          path: .acceptance/browser-popup-edge-*/report.json
+          if-no-files-found: error
       - uses: actions/cache/save@v6
         if: success() && steps.uv-cache.outputs.cache-hit != 'true'
         with:
