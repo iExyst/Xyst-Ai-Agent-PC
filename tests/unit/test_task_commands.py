@@ -1,4 +1,7 @@
+import asyncio
 import hashlib
+import os
+import subprocess
 import time
 
 import pytest
@@ -6,7 +9,7 @@ from test_command_controller import FixtureTransport, setup
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.task_commands import command_evidence
 from xaa.runtime.task_graph import TaskDefinition
-from xaa.runtime.tool_worker import execute_filesystem
+from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import TaskReadScope
 from xaa.storage.tasks import TaskStore
@@ -150,6 +153,47 @@ async def test_task_scope_is_required_for_snapshot_and_launch(workspace_tmp_path
     assert result["verification"] == "not_verified"
     assert not store.unresolved_tool_calls(run_id)
     assert store.conversation_messages(run_id) == []
+
+
+async def test_workspace_hash_worker_rejects_junction_before_command_execution(workspace_tmp_path):
+    _controller, store, run_id, owner, project = setup(workspace_tmp_path, FixtureTransport())
+    outside = workspace_tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "private.txt"
+    sentinel.write_bytes(b"outside command data")
+    junction = project / "external"
+    if os.name == "nt":
+        await asyncio.to_thread(
+            subprocess.run,
+            ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        junction.symlink_to(outside, target_is_directory=True)
+    try:
+        with pytest.raises(FilesystemWorkerError) as failure:
+            await execute_filesystem(
+                store,
+                run_id,
+                owner,
+                "junction-project-hash",
+                "project_hash",
+                {},
+                idempotency_key="junction-project-hash",
+                internal=True,
+            )
+        assert failure.value.code == "PermissionError"
+        assert not any(
+            event["event_type"] in {"execution.reserved", "execution.launched"}
+            for event in store.list_events(run_id)
+        )
+        assert sentinel.read_bytes() == b"outside command data"
+    finally:
+        if os.name == "nt":
+            junction.rmdir()
+        else:
+            junction.unlink()
 
 
 async def test_expiry_during_command_cleans_up_without_publishing_success(workspace_tmp_path):

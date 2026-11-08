@@ -92,6 +92,7 @@ class LMStudioProvider:
         token: str | None = None,
         *,
         exact_context: bool = False,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.exact_context = exact_context
@@ -101,10 +102,15 @@ class LMStudioProvider:
         self._inference_lock = self._inference_queue.lock
         self._diagnosed_models: set[str] = set()
         self._context_limits: dict[str, int] = {}
+        self._provider_label = "LM Studio"
+        self._output_token_parameter = "max_tokens"
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {token}"} if token else {},
             timeout=httpx.Timeout(60.0, connect=3.0),
+            trust_env=False,
+            follow_redirects=False,
+            transport=transport,
         )
 
     @staticmethod
@@ -148,6 +154,8 @@ class LMStudioProvider:
                 if self._credential
                 else {},
                 timeout=httpx.Timeout(60.0, connect=3.0),
+                trust_env=False,
+                follow_redirects=False,
             )
             self.base_url = normalized
             self._diagnosed_models.clear()
@@ -164,6 +172,8 @@ class LMStudioProvider:
                 base_url=self.base_url,
                 headers={"Authorization": f"Bearer {token}"} if token else {},
                 timeout=httpx.Timeout(60.0, connect=3.0),
+                trust_env=False,
+                follow_redirects=False,
             )
             self._credential = credential
             self._diagnosed_models.clear()
@@ -781,7 +791,7 @@ class LMStudioProvider:
         payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
         if max_output_tokens is not None:
             self.output_options(max_output_tokens)
-            payload["max_tokens"] = max_output_tokens
+            payload[self._output_token_parameter] = max_output_tokens
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -806,7 +816,7 @@ class LMStudioProvider:
                     await asyncio.sleep(CHAT_RETRY_DELAY_SECONDS)
                     continue
                 raise ProviderError(
-                    f"LM Studio rejected chat request ({exc.response.status_code}). "
+                    f"{self._provider_label} rejected chat request ({exc.response.status_code}). "
                     "The selected model or server may not support tool calling."
                 ) from exc
             except httpx.TransportError as exc:
@@ -814,13 +824,15 @@ class LMStudioProvider:
                     await asyncio.sleep(CHAT_RETRY_DELAY_SECONDS)
                     continue
                 raise ProviderError(
-                    "LM Studio chat request failed; check the local server status."
+                    f"{self._provider_label} chat request failed; check the server status."
                 ) from exc
             except httpx.HTTPError as exc:
                 raise ProviderError(
-                    "LM Studio chat request failed; check the local server status."
+                    f"{self._provider_label} chat request failed; check the server status."
                 ) from exc
-        raise ProviderError("LM Studio chat request failed after one transient retry.")
+        raise ProviderError(
+            f"{self._provider_label} chat request failed after one transient retry."
+        )
 
     @staticmethod
     def _is_engine_fetch_failure(error: httpx.HTTPStatusError) -> bool:
@@ -921,7 +933,7 @@ class LMStudioProvider:
         payload: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
         if max_output_tokens is not None:
             self.output_options(max_output_tokens)
-            payload["max_tokens"] = max_output_tokens
+            payload[self._output_token_parameter] = max_output_tokens
             payload["stream_options"] = {"include_usage": True}
         if tools:
             payload["tools"] = tools
@@ -936,7 +948,9 @@ class LMStudioProvider:
                         yield line[6:]
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                "LM Studio response stream timed out; retry or increase the server timeout."
+                f"{self._provider_label} response stream timed out; retry or increase the server timeout."
             ) from exc
         except httpx.HTTPError as exc:
-            raise ProviderError("LM Studio response stream failed or was interrupted.") from exc
+            raise ProviderError(
+                f"{self._provider_label} response stream failed or was interrupted."
+            ) from exc

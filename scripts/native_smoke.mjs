@@ -17,8 +17,10 @@ const logPath = path.join(nativeLocalAppData, 'dev.xyst.xaa', 'logs', 'engine.lo
 const previousLog = await readFile(logPath, 'utf8').catch(() => '');
 const nativeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())));
 nativeEnv.PATH = path.join(process.env.SystemRoot, 'System32');
-const manifest = JSON.parse(await readFile('build/native-dev/manifest.json', 'utf8'));
-const proc = spawn(path.resolve('build/native-dev/xaa-desktop.exe'), [], { windowsHide: true, stdio: 'ignore', env: { ...nativeEnv, APPDATA: nativeAppData, LOCALAPPDATA: nativeLocalAppData, XAA_TEST_HIDDEN: '1', XAA_DATA_DIR: root, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=19222' } });
+const executable = path.resolve(process.env.XAA_NATIVE_EXECUTABLE || 'build/native-dev/xaa-desktop.exe');
+const manifestPath = process.env.XAA_NATIVE_MANIFEST || 'build/native-dev/manifest.json';
+const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+const proc = spawn(executable, [], { windowsHide: true, stdio: 'ignore', env: { ...nativeEnv, APPDATA: nativeAppData, LOCALAPPDATA: nativeLocalAppData, XAA_TEST_HIDDEN: '1', XAA_DATA_DIR: root, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=19222' } });
 let browser;
 let connection;
 let instance;
@@ -44,6 +46,7 @@ const reopen = process.env.XAA_NATIVE_REOPEN === '1';
 const tokenCountRequested=process.env.XAA_NATIVE_TOKEN_COUNT==='1';
 let tokenCountVerified=false;
 const providerSetupRequested=process.env.XAA_NATIVE_PROVIDER_SETUP==='1';
+const providerModel=process.env.XAA_NATIVE_PROVIDER_MODEL||'qwen2.5-0.5b-instruct';
 let providerSetupVerified=false;
 const onboardingRequested=process.env.XAA_NATIVE_ONBOARDING==='1';
 let onboardingVerified=false;
@@ -76,20 +79,45 @@ try {
     if(initial.endpoint!=='http://127.0.0.1:1234')throw new Error('Native provider setup did not start with the default LM Studio endpoint');
     await page.getByLabel('LM Studio server address').fill('http://localhost:1234');
     await page.getByRole('button',{name:'Save address and connect',exact:true}).click();
-    await expect(page.getByRole('status').filter({hasText:/Connected\. Found 29 models\./})).toBeVisible({timeout:15000});
+    const discovered=await (await fetch(`${connection.base_url}/models`,{headers})).json();
+    const discoveredCount=discovered.filter(model=>typeof model.id==='string').length;
+    if(!discoveredCount)throw new Error('Native provider setup returned an empty model inventory');
+    const priorModel=discovered.find(model=>model.id===providerModel);
+    if(!priorModel)throw new Error(`Native provider model ${providerModel} was not discovered`);
+    const modelWasLoaded=priorModel.loaded===true;
+    await expect(page.getByRole('status').filter({hasText:new RegExp(`Connected\\. Found ${discoveredCount} models?\\.`)})).toBeVisible({timeout:15000});
     const saved=await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json();
     if(saved.endpoint!=='http://127.0.0.1:1234'||saved.selected_model!==null)throw new Error('Native provider endpoint was not persisted or did not clear the stale selection');
-    const loaded=await fetch(`${connection.base_url}/models/load`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({model:'qwen3-0.6b',context_length:4096})});
-    if(!loaded.ok)throw new Error(`Could not load installed tool-diagnostic fixture: ${await loaded.text()}`);
-    instance=(await loaded.json()).instance_id;
-    await page.getByLabel('Local model').selectOption('qwen3-0.6b');
-    await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBe('qwen3-0.6b');
+    if(!modelWasLoaded){
+      const loaded=await fetch(`${connection.base_url}/models/load`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({model:providerModel,context_length:4096})});
+      if(!loaded.ok)throw new Error(`Could not load installed tool-diagnostic fixture: ${await loaded.text()}`);
+      instance=(await loaded.json()).instance_id;
+    }
+    await page.getByLabel('Local model').selectOption(providerModel);
+    await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model),{timeout:20000}).toBe(providerModel);
+    let diagnosticResponse;
+    page.on('response',async response=>{
+      if(new URL(response.url()).pathname==='/providers/diagnostics'){
+        diagnosticResponse={status:response.status(),body:await response.text()};
+      }
+    });
     await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click();
-    await expect(page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true})).toBeVisible({timeout:60000});
+    try{
+      await expect(page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true})).toBeVisible({timeout:60000});
+    }catch(error){
+      throw new Error(`Native provider diagnostic failed: ${JSON.stringify(diagnosticResponse??null)}`,{cause:error});
+    }
     await page.getByLabel('Local model').selectOption('');
     await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBeNull();
+    if(instance){
+      const unloaded=await fetch(`${connection.base_url}/models/unload`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({instance_id:instance})});
+      if(!unloaded.ok)throw new Error(`Native diagnostic model failed to unload: ${await unloaded.text()}`);
+      const afterUnload=await (await fetch(`${connection.base_url}/models`,{headers})).json();
+      if(afterUnload.find(model=>model.id===providerModel)?.loaded!==false)throw new Error('Native diagnostic model remained loaded after the smoke test');
+      instance=undefined;
+    }
     providerSetupVerified=true;
-    await writeFile(path.join(root,'provider-setup.json'),JSON.stringify({passed:true,initial_endpoint:initial.endpoint,saved_endpoint:saved.endpoint,discovered_model_count:count,selected_model_during_diagnostic:'qwen3-0.6b',real_tool_round_trip:true,selection_cleared:true},null,2));
+    await writeFile(path.join(root,'provider-setup.json'),JSON.stringify({passed:true,initial_endpoint:initial.endpoint,saved_endpoint:saved.endpoint,discovered_model_count:count,selected_model_during_diagnostic:providerModel,real_tool_round_trip:true,selection_cleared:true,model_loaded_by_test:!modelWasLoaded,model_unloaded_by_test:!modelWasLoaded},null,2));
   }
   if(onboardingRequested){
     const model='qwen/qwen3.5-9b';

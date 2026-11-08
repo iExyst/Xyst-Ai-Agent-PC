@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import json
+import os
+import subprocess
 import time
 
 import pytest
@@ -46,6 +48,50 @@ def setup(root):
         ],
     )
     return store, run_id, owner, tasks, project
+
+
+async def test_specialist_snapshot_worker_rejects_source_workspace_junction(workspace_tmp_path):
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+    outside = workspace_tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "private.txt"
+    sentinel.write_bytes(b"outside specialist data")
+    junction = project / "external"
+    if os.name == "nt":
+        await asyncio.to_thread(
+            subprocess.run,
+            ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        junction.symlink_to(outside, target_is_directory=True)
+    try:
+        claim = tasks.claim_ready(run_id, owner)
+        assert claim is not None and claim["task"]["local_id"] == "a"
+        with pytest.raises(FilesystemWorkerError) as failure:
+            await execute_filesystem(
+                store,
+                run_id,
+                owner,
+                "junction-snapshot",
+                "branch_init",
+                {},
+                idempotency_key="junction-snapshot",
+                internal=True,
+                task_id="a",
+                task_token=claim["token"],
+            )
+        assert failure.value.code == "PermissionError"
+        assert not any(
+            event["event_type"] == "task.workspace.created" for event in store.list_events(run_id)
+        )
+        assert sentinel.read_bytes() == b"outside specialist data"
+    finally:
+        if os.name == "nt":
+            junction.rmdir()
+        else:
+            junction.unlink()
 
 
 async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outputs(

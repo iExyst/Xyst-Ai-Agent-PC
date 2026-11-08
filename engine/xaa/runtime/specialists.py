@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
+from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
@@ -141,7 +142,11 @@ RUN_READY_TOOL = {
 
 class SpecialistRunner:
     def __init__(
-        self, store: RunStore, provider: LMStudioProvider, *, stream_responses: bool = False
+        self,
+        store: RunStore,
+        provider: LMStudioProvider | ProviderRouter,
+        *,
+        stream_responses: bool = False,
     ) -> None:
         self.store = store
         self.memory = MemoryStore(store)
@@ -399,7 +404,16 @@ class SpecialistRunner:
         self.store.check_token_budget(run_id, parent, before_inference=True)
         self.tasks.check_token_budget(run_id, identity, before_inference=True)
         inference_id = self.tasks.reserve_inference(run_id, parent, identity, worker)
-        if options.get("require_exact_context") is True or self.provider.exact_context:
+        parent_run = self.store.get_run(run_id)
+        if parent_run is None:
+            raise RuntimeError("Specialist parent run disappeared before inference.")
+        selected_model = task.get("model_route") or parent_run.get("model") or ""
+        exact_context = (
+            self.provider.exact_context_for(selected_model)
+            if isinstance(self.provider, ProviderRouter)
+            else self.provider.exact_context
+        )
+        if options.get("require_exact_context") is True or exact_context:
             options["on_admission"] = partial(
                 self.tasks.reserve_tokens,
                 run_id,

@@ -1,3 +1,7 @@
+import hashlib
+import os
+import subprocess
+
 import pytest
 from xaa.runtime.executor import ReconciliationRequired, WorkspaceExecutor
 from xaa.runtime.file_handles import open_for_read
@@ -51,3 +55,71 @@ def test_opened_destination_is_checked_before_reading(workspace_tmp_path, monkey
             run_id, token, "race", {"path": "input.txt"}, idempotency_key="race"
         )
     assert not any(event["event_type"] == "tool.completed" for event in store.list_events(run_id))
+
+
+def test_file_reads_and_edits_reject_junctions_to_outside_workspace(workspace_tmp_path):
+    root = workspace_tmp_path / "project"
+    outside = workspace_tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    sentinel = outside / "private.txt"
+    original = b"private outside data\r\n"
+    sentinel.write_bytes(original)
+    junction = root / "external"
+    if os.name == "nt":
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        junction.symlink_to(outside, target_is_directory=True)
+    try:
+        store = RunStore(workspace_tmp_path / "runs.sqlite3")
+        run_id = store.create_run(
+            objective="Check workspace containment",
+            acceptance_criteria=[],
+            workspace=str(root),
+            mode="workspace",
+            model=None,
+        )["id"]
+        token = store.acquire_lease(run_id, "worker")
+        executor = WorkspaceExecutor(store)
+        with pytest.raises(PermissionError, match="outside the selected workspace"):
+            executor.read_file(
+                run_id,
+                token,
+                "junction-read",
+                {"path": "external/private.txt"},
+                idempotency_key="junction-read",
+            )
+        with pytest.raises(PermissionError, match="outside the selected workspace"):
+            executor.write_file(
+                run_id,
+                token,
+                "junction-edit",
+                {
+                    "path": "external/private.txt",
+                    "content": "overwrite attempt",
+                    "expected_sha256": hashlib.sha256(original).hexdigest(),
+                },
+                idempotency_key="junction-edit",
+            )
+        with pytest.raises(PermissionError, match="outside the selected workspace"):
+            executor.delete_file(
+                run_id,
+                token,
+                "junction-delete",
+                {
+                    "path": "external/private.txt",
+                    "expected_sha256": hashlib.sha256(original).hexdigest(),
+                },
+                idempotency_key="junction-delete",
+            )
+        assert sentinel.read_bytes() == original
+        assert store.unresolved_tool_calls(run_id) == []
+    finally:
+        if os.name == "nt":
+            junction.rmdir()
+        else:
+            junction.unlink()

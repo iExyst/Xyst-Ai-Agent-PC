@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
+from xaa.providers.openai_compatible import OpenAICompatibleProvider
+from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
 from xaa.storage.runs import RunStore
 
 TOKEN = "provider-settings-test-token-long-enough-for-validation"
@@ -39,6 +41,17 @@ class MemoryCredentialStore:
 
     def delete(self, profile: str = "lm-studio") -> None:
         self.value = None
+
+
+class FixtureCompatibleProvider(OpenAICompatibleProvider):
+    def __init__(self) -> None:
+        super().__init__("https://compatible.example.test")
+
+    async def models(self) -> list[ModelInfo]:
+        return [ModelInfo(id="remote/model")]
+
+    async def health(self) -> bool:
+        return True
 
 
 @pytest.mark.parametrize(
@@ -181,6 +194,124 @@ def test_lm_studio_credential_is_saved_and_never_returned(workspace_tmp_path):
         assert cleared.json() == {"configured": False}
         assert credentials.get() is None
         assert provider._credential is None
+
+
+def test_compatible_provider_settings_and_token_use_named_vault_profile(workspace_tmp_path):
+    class ProfileCredentials:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def get(self, profile: str = "lm-studio") -> str | None:
+            return self.values.get(profile)
+
+        def set(self, token: str, profile: str = "lm-studio") -> None:
+            self.values[profile] = token
+
+        def delete(self, profile: str = "lm-studio") -> None:
+            self.values.pop(profile, None)
+
+    credentials = ProfileCredentials()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(
+            AvailableProvider(),
+            SecretStr(TOKEN),
+            store=RunStore(workspace_tmp_path / "compatible-provider.sqlite3"),
+            credential_store=credentials,
+        )
+    ) as client:
+        assert client.get("/providers/openai-compatible/config", headers=headers).json() == {
+            "endpoint": None,
+            "selected_model": None,
+        }
+        assert (
+            client.put(
+                "/providers/openai-compatible/config",
+                headers=headers,
+                json={"endpoint": "http://203.0.113.8"},
+            ).status_code
+            == 422
+        )
+        configured = client.put(
+            "/providers/openai-compatible/config",
+            headers=headers,
+            json={"endpoint": "https://api.example.test"},
+        )
+        assert configured.status_code == 200
+        assert configured.json() == {
+            "endpoint": "https://api.example.test",
+            "selected_model": None,
+        }
+        token = "compatible-provider-secret-value"
+        saved = client.put(
+            "/providers/openai-compatible/credential",
+            headers=headers,
+            json={"token": token},
+        )
+        assert saved.status_code == 200
+        assert saved.json() == {"configured": True}
+        assert token not in saved.text
+        assert credentials.get("openai-compatible") == token
+        assert client.get("/providers/openai-compatible/credential", headers=headers).json() == {
+            "configured": True
+        }
+        cleared = client.delete("/providers/openai-compatible/credential", headers=headers)
+        assert cleared.json() == {"configured": False}
+        assert credentials.get("openai-compatible") is None
+
+
+def test_model_selection_is_exclusive_and_run_id_keeps_adapter(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "provider-selection.sqlite3")
+    router = ProviderRouter(AvailableProvider(), FixtureCompatibleProvider())
+    with TestClient(create_app(router, SecretStr(TOKEN), store=store)) as client:
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        external = f"{OPENAI_MODEL_PREFIX}remote/model"
+        selected = client.put(
+            "/providers/openai-compatible/selection",
+            headers=headers,
+            json={"model": external},
+        )
+        assert selected.status_code == 200
+        with store.connection() as connection:
+            assert (
+                connection.execute(
+                    "SELECT selected_model FROM provider_profiles WHERE id='openai-compatible'"
+                ).fetchone()[0]
+                == external
+            )
+            assert (
+                connection.execute(
+                    "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
+                ).fetchone()[0]
+                is None
+            )
+        local = client.put(
+            "/providers/lm-studio/selection",
+            headers=headers,
+            json={"model": "fixture/model"},
+        )
+        assert local.status_code == 200
+        with store.connection() as connection:
+            assert (
+                connection.execute(
+                    "SELECT selected_model FROM provider_profiles WHERE id='openai-compatible'"
+                ).fetchone()[0]
+                is None
+            )
+            assert (
+                connection.execute(
+                    "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
+                ).fetchone()[0]
+                == "fixture/model"
+            )
+        run = store.create_run(
+            objective="Keep provider identity",
+            acceptance_criteria=[],
+            workspace=None,
+            mode="observe",
+            model=external,
+        )
+        assert run["model"] == external
 
 
 def test_brave_search_credential_uses_named_os_vault_profile(workspace_tmp_path):

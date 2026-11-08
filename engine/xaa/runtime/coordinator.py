@@ -21,6 +21,7 @@ from xaa.providers.lm_studio import (
     DiagnosticLimitError,
     LMStudioProvider,
 )
+from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.browser import BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
@@ -77,7 +78,7 @@ class Coordinator:
     def __init__(
         self,
         store: RunStore,
-        provider: LMStudioProvider,
+        provider: LMStudioProvider | ProviderRouter,
         *,
         stream_responses: bool = False,
         credential_store: CredentialStore | None = None,
@@ -167,7 +168,7 @@ class Coordinator:
                 },
             )
             admission: dict[str, Any] = {}
-            if self.provider.exact_context or require_exact:
+            if self._exact_context_for(model) or require_exact:
                 admission["on_admission"] = partial(
                     self.store.reserve_tokens, run_id, token, identity
                 )
@@ -227,7 +228,7 @@ class Coordinator:
             self.provider.output_options(run["limits"]["max_output_tokens"])
         )
         require_exact = run["limits"].get("pre_inference_token_reservations") is True
-        if self.provider.exact_context or require_exact:
+        if self._exact_context_for(model) or require_exact:
             options["on_admission"] = partial(
                 self.store.reserve_tokens, run_id, token, inference_id
             )
@@ -1399,10 +1400,13 @@ class Coordinator:
         image = self.store.image_data_url(run_id)
         document = self.store.document_text(run_id)
         document_pages = self.store.document_page_images(run_id)
-        if (image is not None or document_pages) and self.provider.exact_context:
+        if (image is not None or document_pages) and self._exact_context_for(
+            run.get("model") or ""
+        ):
             raise ValueError(
                 "Image input is unavailable while exact text-token admission is enabled; disable exact context counting or remove the image/PDF attachment."
             )
+
         user_text = run["objective"]
         if document is not None:
             user_text += (
@@ -1470,6 +1474,11 @@ class Coordinator:
             {"ids": [item["id"] for item in recalled["items"]], "omitted": recalled["omitted"]},
         )
         return messages
+
+    def _exact_context_for(self, model: str) -> bool:
+        if isinstance(self.provider, ProviderRouter):
+            return self.provider.exact_context_for(model)
+        return self.provider.exact_context
 
     def _update_plan_budget(
         self, run_id: str, run: dict[str, Any], tools: list[dict[str, Any]], max_iterations: int

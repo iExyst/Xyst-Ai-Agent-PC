@@ -621,6 +621,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Diagnose Model */
+        post: operations["diagnose_model_providers_diagnostics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/lm-studio/config": {
         parameters: {
             query?: never;
@@ -658,23 +675,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/providers/lm-studio/diagnostics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Diagnose Model */
-        post: operations["diagnose_model_providers_lm_studio_diagnostics_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/providers/lm-studio/selection": {
         parameters: {
             query?: never;
@@ -692,7 +692,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/providers/lm-studio/token-count": {
+    "/providers/openai-compatible/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compatible Provider Config */
+        get: operations["compatible_provider_config_providers_openai_compatible_config_get"];
+        /** Set Compatible Provider Config */
+        put: operations["set_compatible_provider_config_providers_openai_compatible_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/openai-compatible/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compatible Provider Credential Status */
+        get: operations["compatible_provider_credential_status_providers_openai_compatible_credential_get"];
+        /** Set Compatible Provider Credential */
+        put: operations["set_compatible_provider_credential_providers_openai_compatible_credential_put"];
+        post?: never;
+        /** Delete Compatible Provider Credential */
+        delete: operations["delete_compatible_provider_credential_providers_openai_compatible_credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/openai-compatible/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Compatible Provider Model */
+        put: operations["set_compatible_provider_model_providers_openai_compatible_selection_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/token-count": {
         parameters: {
             query?: never;
             header?: never;
@@ -702,7 +756,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Token Count */
-        post: operations["token_count_providers_lm_studio_token_count_post"];
+        post: operations["token_count_providers_token_count_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1474,6 +1528,23 @@ export interface components {
             /** Profile Sha256 */
             profile_sha256: string;
         };
+        /** CompatibleProviderConfigRecord */
+        CompatibleProviderConfigRecord: {
+            /** Endpoint */
+            endpoint: string | null;
+            /** Selected Model */
+            selected_model: string | null;
+        };
+        /** CompatibleProviderConfigRequest */
+        CompatibleProviderConfigRequest: {
+            /** Endpoint */
+            endpoint: string;
+        };
+        /** CompatibleProviderSelectionRequest */
+        CompatibleProviderSelectionRequest: {
+            /** Model */
+            model?: string | null;
+        };
         /** CreateRunRequest */
         CreateRunRequest: {
             /** Acceptance Criteria */
@@ -1512,6 +1583,8 @@ export interface components {
              * @default false
              */
             approved_web_search: boolean;
+            /** Audio */
+            audio?: string | null;
             /** Client Request Id */
             client_request_id?: string | null;
             command_grant?: components["schemas"]["CommandGrant"] | null;
@@ -1552,6 +1625,8 @@ export interface components {
              */
             pre_inference_token_reservations: boolean;
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
+            /** Transcription Url */
+            transcription_url?: string | null;
             /** Workspace */
             workspace?: string | null;
         };
@@ -4352,6 +4427,41 @@ export interface operations {
             };
         };
     };
+    diagnose_model_providers_diagnostics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     lm_studio_config_providers_lm_studio_config_get: {
         parameters: {
             query?: never;
@@ -4478,41 +4588,6 @@ export interface operations {
             };
         };
     };
-    diagnose_model_providers_lm_studio_diagnostics_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModelRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     set_lm_studio_model_providers_lm_studio_selection_put: {
         parameters: {
             query?: never;
@@ -4548,7 +4623,168 @@ export interface operations {
             };
         };
     };
-    token_count_providers_lm_studio_token_count_post: {
+    compatible_provider_config_providers_openai_compatible_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompatibleProviderConfigRecord"];
+                };
+            };
+        };
+    };
+    set_compatible_provider_config_providers_openai_compatible_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompatibleProviderConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompatibleProviderConfigRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compatible_provider_credential_status_providers_openai_compatible_credential_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+        };
+    };
+    set_compatible_provider_credential_providers_openai_compatible_credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LMStudioCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_compatible_provider_credential_providers_openai_compatible_credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+        };
+    };
+    set_compatible_provider_model_providers_openai_compatible_selection_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompatibleProviderSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string | null;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    token_count_providers_token_count_post: {
         parameters: {
             query?: never;
             header?: never;

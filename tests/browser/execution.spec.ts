@@ -32,7 +32,7 @@ test('sandbox selection checks controls without granting a run, including unavai
   expect(checks).toBe(1);expect(runCreates).toBe(0);
   modelsAvailable=true;await page.getByRole('button',{name:'Refresh models',exact:true}).click();
   await expect(page.getByRole('option',{name:'fixture/model',exact:true})).toHaveCount(1);
-  await expect(page.getByLabel('Local model')).toHaveValue('');
+  await expect(page.getByLabel('Local model or compatible provider model')).toHaveValue('');
   const permission=page.getByLabel('Allow isolated commands for this next run');
   await expect(permission).toBeDisabled();
   await page.getByLabel('Workspace permissions').selectOption('workspace');

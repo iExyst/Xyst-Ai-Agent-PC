@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "date": "2026-11-08",
+  "platform": "Windows 11 Tauri development build with frozen engine",
+  "provider": "LM Studio",
+  "initial_endpoint": "http://127.0.0.1:1234",
+  "saved_endpoint": "http://127.0.0.1:1234",
+  "discovered_model_count": 34,
+  "selected_model": "qwen2.5-0.5b-instruct",
+  "real_tool_round_trip": true,
+  "selection_cleared": true,
+  "model_loaded_by_test": true,
+  "model_unloaded_by_test": true,
+  "independent_loaded_state_after_test": false,
+  "desktop_exited": true,
+  "engine_stopped": true,
+  "build_sha256": {
+    "xaa-desktop.exe": "dd0f7f03fb2e4473893d58da344f51ed0985764165cc2057853afdec5798c758",
+    "xaa-engine.exe": "cf51086da81136fe8532a40670f201de19ac962681a7a40235d624badb1b857c"
+  },
+  "full_acceptance_report": "../../../.acceptance/7dcd3067-5cae-4d88-9ff0-808af1b248f6/report.json",
+  "setup_report": "../../../.acceptance/7dcd3067-5cae-4d88-9ff0-808af1b248f6/provider-setup.json",
+  "scope": "Verifies the current native provider settings UI, live local model inventory, explicit model choice, validated harmless tool round trip, selection clearing, temporary model unload, and desktop/engine shutdown. This does not verify an OpenAI-compatible remote provider or the installed installer."
+}

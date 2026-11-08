@@ -51,6 +51,8 @@ from xaa.extensions.agent_plugins import (
     read_plugin_skill,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
+from xaa.providers.openai_compatible import OpenAICompatibleProvider
+from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.command_controller import CommandController
@@ -58,6 +60,7 @@ from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
 from xaa.runtime.file_handles import opened_file_path
+from xaa.runtime.local_transcription import TranscriptionError
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
 from xaa.runtime.project_validation import (
     ProjectValidationRequest,
@@ -122,6 +125,8 @@ class CreateRunRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=10_000)
     image: str | None = Field(default=None, max_length=4_200_000)
     document: str | None = Field(default=None, max_length=5_600_000)
+    audio: str | None = Field(default=None, max_length=5_600_000)
+    transcription_url: str | None = Field(default=None, max_length=2_048)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
     mode: Literal["observe", "workspace", "authorized_automation"] = "observe"
@@ -217,6 +222,22 @@ class LMStudioCredentialRequest(BaseModel):
 class LMStudioCredentialStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     configured: bool
+
+
+class CompatibleProviderConfigRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    endpoint: str = Field(min_length=1, max_length=2048)
+
+
+class CompatibleProviderConfigRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    endpoint: str | None
+    selected_model: str | None
+
+
+class CompatibleProviderSelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str | None = Field(default=None, max_length=320)
 
 
 class WebSearchCredentialRequest(BaseModel):
@@ -409,7 +430,7 @@ class SpecialistProfileResponse(BaseModel):
 
 
 def create_app(
-    provider: LMStudioProvider,
+    provider: LMStudioProvider | ProviderRouter,
     api_token: SecretStr,
     *,
     trusted_origins: tuple[str, ...] = ("http://tauri.localhost", "https://tauri.localhost"),
@@ -420,6 +441,8 @@ def create_app(
 ) -> FastAPI:
     """Create a fail-closed service; caller controls token and provider lifecycle."""
     expected = api_token.get_secret_value()
+    if isinstance(provider, LMStudioProvider):
+        provider = ProviderRouter(provider)
     execution_readiness = ExecutionReadiness()
     if len(expected) < 32:
         raise ValueError("XAA API token must contain at least 32 characters.")
@@ -470,7 +493,7 @@ def create_app(
             "SELECT endpoint FROM provider_profiles WHERE id='lm-studio'"
         ).fetchone()
         if profile is None:
-            endpoint = provider.validate_endpoint(provider.base_url)
+            endpoint = provider.validate_endpoint(provider.lm_studio.base_url)
             now = utc_now()
             connection.execute(
                 "INSERT INTO provider_profiles VALUES ('lm-studio','lm-studio',?,NULL,NULL,NULL,?,?)",
@@ -478,6 +501,24 @@ def create_app(
             )
         else:
             endpoint = str(profile["endpoint"])
+        now = utc_now()
+        connection.execute(
+            "INSERT OR IGNORE INTO provider_profiles VALUES ('openai-compatible','openai-compatible','',NULL,NULL,NULL,?,?)",
+            (now, now),
+        )
+        compatible_profile = connection.execute(
+            "SELECT endpoint FROM provider_profiles WHERE id='openai-compatible'"
+        ).fetchone()
+        compatible_endpoint = str(compatible_profile["endpoint"]) or None
+    if compatible_endpoint is not None:
+        token = credential_store.get("openai-compatible") if credential_store else None
+        try:
+            compatible_endpoint = OpenAICompatibleProvider.validate_endpoint(compatible_endpoint)
+        except ValueError:
+            compatible_endpoint = None
+        if compatible_endpoint is not None:
+            # Configure at construction time so health checks and requests share this client.
+            provider.openai_compatible = OpenAICompatibleProvider(compatible_endpoint, token)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
@@ -918,11 +959,158 @@ def create_app(
 
     @app.get("/providers")
     async def providers(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        compatible_status: dict[str, Any]
+        if provider.openai_compatible is None:
+            compatible_status = {"id": "openai-compatible", "status": "not_configured"}
+        else:
+            try:
+                await provider.openai_compatible.health()
+                compatible_status = {"id": "openai-compatible", "status": "connected"}
+            except ProviderError as exc:
+                compatible_status = {
+                    "id": "openai-compatible",
+                    "status": "unavailable",
+                    "error": str(exc),
+                }
         try:
             await provider.health()
-            return [{"id": "lm-studio", "status": "connected"}]
+            return [{"id": "lm-studio", "status": "connected"}, compatible_status]
         except ProviderError as exc:
-            return [{"id": "lm-studio", "status": "unavailable", "error": str(exc)}]
+            return [
+                {"id": "lm-studio", "status": "unavailable", "error": str(exc)},
+                compatible_status,
+            ]
+
+    @app.get("/providers/openai-compatible/config", response_model=CompatibleProviderConfigRecord)
+    def compatible_provider_config(
+        _: None = Depends(authenticate),
+    ) -> CompatibleProviderConfigRecord:
+        with run_store.connection() as connection:
+            row = connection.execute(
+                "SELECT endpoint,selected_model FROM provider_profiles WHERE id='openai-compatible'"
+            ).fetchone()
+        return CompatibleProviderConfigRecord(
+            endpoint=row["endpoint"] or None, selected_model=row["selected_model"]
+        )
+
+    @app.put("/providers/openai-compatible/config", response_model=CompatibleProviderConfigRecord)
+    async def set_compatible_provider_config(
+        payload: CompatibleProviderConfigRequest, _: None = Depends(authenticate)
+    ) -> CompatibleProviderConfigRecord:
+        try:
+            normalized = OpenAICompatibleProvider.validate_endpoint(payload.endpoint)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        with run_store.connection() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+            if active:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Finish or pause active work before changing provider settings.",
+                )
+            token = credential_store.get("openai-compatible") if credential_store else None
+            await provider.configure_openai_compatible(normalized, token)
+            now = utc_now()
+            connection.execute(
+                "UPDATE provider_profiles SET endpoint=?,selected_model=NULL,updated_at=? WHERE id='openai-compatible'",
+                (normalized, now),
+            )
+        return CompatibleProviderConfigRecord(endpoint=normalized, selected_model=None)
+
+    @app.get("/providers/openai-compatible/credential", response_model=LMStudioCredentialStatus)
+    def compatible_provider_credential_status(
+        _: None = Depends(authenticate),
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        return LMStudioCredentialStatus(
+            configured=credential_store.get("openai-compatible") is not None
+        )
+
+    @app.put("/providers/openai-compatible/credential", response_model=LMStudioCredentialStatus)
+    async def set_compatible_provider_credential(
+        payload: LMStudioCredentialRequest, _: None = Depends(authenticate)
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing provider credentials.",
+            )
+        try:
+            token = payload.token.get_secret_value()
+            credential_store.set(token, "openai-compatible")
+            if provider.openai_compatible is not None:
+                await provider.configure_openai_compatible(
+                    provider.openai_compatible.base_url, token
+                )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
+        return LMStudioCredentialStatus(configured=True)
+
+    @app.delete("/providers/openai-compatible/credential", response_model=LMStudioCredentialStatus)
+    async def delete_compatible_provider_credential(
+        _: None = Depends(authenticate),
+    ) -> LMStudioCredentialStatus:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE lease_owner IS NOT NULL"
+            ).fetchone()[0]
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or pause active work before changing provider credentials.",
+            )
+        try:
+            credential_store.delete("openai-compatible")
+            if provider.openai_compatible is not None:
+                await provider.configure_openai_compatible(
+                    provider.openai_compatible.base_url, None
+                )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return LMStudioCredentialStatus(configured=False)
+
+    @app.put("/providers/openai-compatible/selection")
+    async def set_compatible_provider_model(
+        payload: CompatibleProviderSelectionRequest, _: None = Depends(authenticate)
+    ) -> dict[str, str | None]:
+        if payload.model is not None:
+            if not payload.model.startswith(OPENAI_MODEL_PREFIX):
+                raise HTTPException(
+                    status_code=422, detail="Select a discovered compatible-provider model."
+                )
+            try:
+                available = await provider.models()
+            except ProviderError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            if payload.model not in {item.id for item in available}:
+                raise HTTPException(
+                    status_code=422, detail="Selected model is not currently available."
+                )
+        with run_store.connection() as connection:
+            connection.execute(
+                "UPDATE provider_profiles SET selected_model=?,updated_at=? WHERE id='openai-compatible'",
+                (payload.model, utc_now()),
+            )
+            connection.execute(
+                "UPDATE provider_profiles SET selected_model=NULL,updated_at=? WHERE id='lm-studio'",
+                (utc_now(),),
+            )
+        return {"model": payload.model}
 
     @app.get("/providers/lm-studio/config", response_model=LMStudioConfigRecord)
     def lm_studio_config(_: None = Depends(authenticate)) -> LMStudioConfigRecord:
@@ -1090,6 +1278,10 @@ def create_app(
             connection.execute(
                 "UPDATE provider_profiles SET selected_model=?,updated_at=? WHERE id='lm-studio'",
                 (payload.model, utc_now()),
+            )
+            connection.execute(
+                "UPDATE provider_profiles SET selected_model=NULL,updated_at=? WHERE id='openai-compatible'",
+                (utc_now(),),
             )
         return {"model": payload.model}
 
@@ -1291,12 +1483,13 @@ def create_app(
                 )
         with run_store.connection() as connection:
             profile = connection.execute(
-                "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
+                "SELECT 1 FROM provider_profiles WHERE selected_model=? LIMIT 1",
+                (payload.model,),
             ).fetchone()
-        if profile is None or profile["selected_model"] != payload.model:
+        if profile is None:
             raise HTTPException(
                 status_code=409,
-                detail="Select this model in LM Studio setup before scheduling work.",
+                detail="Select this model in provider setup before scheduling work.",
             )
         delivery_destination: str | None = None
         if payload.telegram_user_id is not None:
@@ -1346,7 +1539,8 @@ def create_app(
         assert result is not None
         return result
 
-    @app.post("/providers/lm-studio/diagnostics")
+    @app.post("/providers/diagnostics")
+    @app.post("/providers/lm-studio/diagnostics", include_in_schema=False)
     async def diagnose_model(
         payload: ModelRequest, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
@@ -1356,7 +1550,10 @@ def create_app(
         except ProviderError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @app.post("/providers/lm-studio/token-count", response_model=PromptCount)
+    @app.post("/providers/token-count", response_model=PromptCount)
+    @app.post(
+        "/providers/lm-studio/token-count", response_model=PromptCount, include_in_schema=False
+    )
     async def token_count(
         payload: PromptCountRequest, _: None = Depends(authenticate)
     ) -> PromptCount:
@@ -1584,8 +1781,27 @@ def create_app(
             document_text: str | None = None
             document_page_images: list[tuple[int, bytes]] = []
             document_ocr_usage: list[tuple[str, dict[str, int]]] = []
-            if payload.image is not None and payload.document is not None:
-                raise ValueError("Attach one image or one document per run.")
+            if (
+                sum(value is not None for value in (payload.image, payload.document, payload.audio))
+                > 1
+            ):
+                raise ValueError("Attach one image, document or audio file per run.")
+            if payload.audio is not None:
+                if not payload.transcription_url:
+                    raise ValueError("Enter a local transcription endpoint to use WAV audio.")
+                if not payload.audio.startswith("data:audio/wav;base64,"):
+                    raise ValueError("Run audio must be a PCM WAV data URL.")
+                try:
+                    decoded_audio = base64.b64decode(payload.audio.split(",", 1)[1], validate=True)
+                except (ValueError, binascii.Error):
+                    raise ValueError("Run audio data is invalid.") from None
+                from xaa.runtime.local_transcription import transcribe_wav
+
+                document_text = await transcribe_wav(decoded_audio, payload.transcription_url)
+                document_bytes = decoded_audio
+                document_type = "audio/wav"
+            elif payload.transcription_url is not None:
+                raise ValueError("A transcription endpoint is only used with an audio attachment.")
             if payload.image is not None:
                 if not payload.model:
                     raise ValueError("Select a vision-capable model before attaching an image.")
@@ -1663,7 +1879,10 @@ def create_app(
                             "PDF contains no extractable text or renderable scanned pages."
                         )
                 if document_page_images:
-                    if provider.exact_context or payload.pre_inference_token_reservations:
+                    if (
+                        provider.exact_context_for(payload.model or "")
+                        or payload.pre_inference_token_reservations
+                    ):
                         raise ValueError(
                             "Scanned PDF images cannot use exact text-token admission; disable exact context counting for this run."
                         )
@@ -1738,6 +1957,8 @@ def create_app(
             raise HTTPException(
                 status_code=409, detail="Command workspace is unavailable."
             ) from exc
+        except TranscriptionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ProviderError as exc:
@@ -2205,6 +2426,7 @@ def create_app(
             "image/png": "png",
             "image/jpeg": "jpg",
             "application/pdf": "pdf",
+            "audio/wav": "wav",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
             "text/markdown": "md",

@@ -133,8 +133,32 @@ export class EngineClient {
     return this.#request('/providers/lm-studio/selection', {method:'PUT',body:JSON.stringify({model})});
   }
 
-  diagnoseLMStudioModel(model: string): Promise<{model:string;tool_round_trip_verified:boolean}> {
-    return this.#request('/providers/lm-studio/diagnostics', {method:'POST',body:JSON.stringify({model})});
+  compatibleProviderConfig(): Promise<components['schemas']['CompatibleProviderConfigRecord']> {
+    return this.#request('/providers/openai-compatible/config');
+  }
+
+  setCompatibleProviderEndpoint(endpoint: string): Promise<components['schemas']['CompatibleProviderConfigRecord']> {
+    return this.#request('/providers/openai-compatible/config', {method:'PUT',body:JSON.stringify({endpoint})});
+  }
+
+  compatibleProviderCredentialStatus(): Promise<components['schemas']['LMStudioCredentialStatus']> {
+    return this.#request('/providers/openai-compatible/credential');
+  }
+
+  setCompatibleProviderCredential(token: string): Promise<components['schemas']['LMStudioCredentialStatus']> {
+    return this.#request('/providers/openai-compatible/credential', {method:'PUT',body:JSON.stringify({token})});
+  }
+
+  clearCompatibleProviderCredential(): Promise<components['schemas']['LMStudioCredentialStatus']> {
+    return this.#request('/providers/openai-compatible/credential', {method:'DELETE'});
+  }
+
+  selectCompatibleProviderModel(model: string | null): Promise<{model:string|null}> {
+    return this.#request('/providers/openai-compatible/selection', {method:'PUT',body:JSON.stringify({model})});
+  }
+
+  diagnoseProviderModel(model: string): Promise<{model:string;tool_round_trip_verified:boolean}> {
+    return this.#request('/providers/diagnostics', {method:'POST',body:JSON.stringify({model})});
   }
 
   providers(): Promise<{id:string;status:string;error?:string}[]> { return this.#request('/providers'); }

@@ -1,5 +1,8 @@
+import asyncio
 import base64
 import hashlib
+import os
+import subprocess
 import time
 
 import pytest
@@ -145,6 +148,58 @@ async def test_failed_snapshot_seals_identity_before_releasing_slot(workspace_tm
     assert transport.controls == ["cleanup", "status"]
     assert not store.unresolved_tool_calls(run_id)
     assert not any(event["event_type"] == "tool.executing" for event in store.list_events(run_id))
+
+
+async def test_command_controller_does_not_launch_on_external_junction_snapshot(
+    workspace_tmp_path,
+):
+    class CountingTransport(FixtureTransport):
+        def __init__(self):
+            super().__init__()
+            self.launches = 0
+
+        async def run(self, intent, snapshot, *, deadline):
+            self.launches += 1
+            return await super().run(intent, snapshot, deadline=deadline)
+
+    transport = CountingTransport()
+    controller, store, run_id, token, project = setup(workspace_tmp_path, transport)
+    outside = workspace_tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "private.txt"
+    sentinel.write_bytes(b"outside command payload")
+    junction = project / "external"
+    if os.name == "nt":
+        await asyncio.to_thread(
+            subprocess.run,
+            ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        junction.symlink_to(outside, target_is_directory=True)
+    try:
+        with pytest.raises(RuntimeError, match="Owned transport failed"):
+            await controller.execute(
+                run_id,
+                token,
+                "junction-command",
+                {"argv": ["fixture"]},
+                idempotency_key="junction-command",
+                deadline=time.monotonic() + 15,
+            )
+        events = store.list_events(run_id)
+        assert transport.launches == 0
+        assert transport.controls == ["cleanup", "status"]
+        assert any(event["event_type"] == "execution.reserved" for event in events)
+        assert not any(event["event_type"] == "execution.launched" for event in events)
+        assert not store.unresolved_tool_calls(run_id)
+        assert sentinel.read_bytes() == b"outside command payload"
+    finally:
+        if os.name == "nt":
+            junction.rmdir()
+        else:
+            junction.unlink()
 
 
 async def test_expired_controller_budget_creates_no_intent(workspace_tmp_path):

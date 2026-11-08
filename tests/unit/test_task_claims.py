@@ -23,9 +23,14 @@ def test_claims_are_distinct_and_failed_dependency_is_blocked(workspace_tmp_path
         run_id,
         parent,
         [
-            TaskDefinition(id="a", objective="A"),
-            TaskDefinition(id="b", objective="B"),
-            TaskDefinition(id="c", objective="C", dependencies=["a"]),
+            TaskDefinition(id="a", objective="A", max_iterations=1, max_seconds=10),
+            TaskDefinition(id="b", objective="B", max_iterations=1, max_seconds=10),
+            TaskDefinition(
+                id="c", objective="C", dependencies=["a"], max_iterations=1, max_seconds=10
+            ),
+            TaskDefinition(
+                id="d", objective="D", dependencies=["c"], max_iterations=1, max_seconds=10
+            ),
         ],
     )
     second = TaskStore(RunStore(runs.path))
@@ -40,9 +45,23 @@ def test_claims_are_distinct_and_failed_dependency_is_blocked(workspace_tmp_path
         run_id, parent, "a", a["token"], state="failed", result={"error": "fixture failure"}
     )
     assert second.claim_ready(run_id, parent) is None
-    assert (
-        next(row for row in second.records(run_id) if row["local_id"] == "c")["status"] == "blocked"
-    )
+    rows = {row["local_id"]: row for row in second.records(run_id)}
+    assert rows["c"]["status"] == rows["d"]["status"] == "blocked"
+    assert rows["c"]["blocked_reason"] == rows["d"]["blocked_reason"] == "dependency_failed"
+    blocked_events = [
+        event
+        for event in runs.list_events(run_id)
+        if event["event_type"] == "task.blocked" and event["payload"].get("task_id") in {"c", "d"}
+    ]
+    assert {event["payload"]["task_id"] for event in blocked_events} == {"c", "d"}
+    assert len(blocked_events) == 2
+    assert second.claim_ready(run_id, parent) is None
+    repeated_blocked_events = [
+        event
+        for event in runs.list_events(run_id)
+        if event["event_type"] == "task.blocked" and event["payload"].get("task_id") in {"c", "d"}
+    ]
+    assert repeated_blocked_events == blocked_events
     second.renew_worker(run_id, parent, "b", b["token"])
     assert second.recover_expired(run_id, parent) == []
     with runs.connection() as connection:

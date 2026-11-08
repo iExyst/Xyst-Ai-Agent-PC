@@ -775,12 +775,15 @@ class RunStore:
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "text/plain",
                 "text/markdown",
+                "audio/wav",
             }:
                 raise ValueError("Unsupported document media type.")
             if not document_bytes or len(document_bytes) > 4 * 1024 * 1024:
                 raise ValueError("Documents must be between 1 byte and 4 MiB.")
             if not document_text or len(document_text) > 49_000:
                 raise ValueError("Extracted document text is empty or exceeds its storage limit.")
+            if document_media_type == "audio/wav" and not document_bytes.startswith(b"RIFF"):
+                raise ValueError("Attached WAV audio is invalid.")
         elif document_page_images:
             raise ValueError("Scanned page images require an attached document.")
         if document_page_images and document_media_type != "application/pdf":
@@ -848,6 +851,7 @@ class RunStore:
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
                 "text/plain": "txt",
                 "text/markdown": "md",
+                "audio/wav": "wav",
             }[media_type]
             filename = f"{uuid.uuid4().hex}.{extension}"
             artifact_directory = self.path.parent / "artifacts"

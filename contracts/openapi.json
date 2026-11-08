@@ -320,6 +320,74 @@
         "title": "CommandGrant",
         "type": "object"
       },
+      "CompatibleProviderConfigRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "selected_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Model"
+          }
+        },
+        "required": [
+          "endpoint",
+          "selected_model"
+        ],
+        "title": "CompatibleProviderConfigRecord",
+        "type": "object"
+      },
+      "CompatibleProviderConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "title": "CompatibleProviderConfigRequest",
+        "type": "object"
+      },
+      "CompatibleProviderSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "CompatibleProviderSelectionRequest",
+        "type": "object"
+      },
       "CreateRunRequest": {
         "additionalProperties": false,
         "properties": {
@@ -376,6 +444,18 @@
             "default": false,
             "title": "Approved Web Search",
             "type": "boolean"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "maxLength": 5600000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
           },
           "client_request_id": {
             "anyOf": [
@@ -516,6 +596,18 @@
                 "type": "null"
               }
             ]
+          },
+          "transcription_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Url"
           },
           "workspace": {
             "anyOf": [
@@ -6519,6 +6611,51 @@
         "summary": "Set Brave Search Credential"
       }
     },
+    "/providers/diagnostics": {
+      "post": {
+        "operationId": "diagnose_model_providers_diagnostics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Diagnose Model Providers Diagnostics Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Diagnose Model"
+      }
+    },
     "/providers/lm-studio/config": {
       "get": {
         "operationId": "lm_studio_config_providers_lm_studio_config_get",
@@ -6668,51 +6805,6 @@
         "summary": "Set Lm Studio Credential"
       }
     },
-    "/providers/lm-studio/diagnostics": {
-      "post": {
-        "operationId": "diagnose_model_providers_lm_studio_diagnostics_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Diagnose Model Providers Lm Studio Diagnostics Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Diagnose Model"
-      }
-    },
     "/providers/lm-studio/selection": {
       "put": {
         "operationId": "set_lm_studio_model_providers_lm_studio_selection_put",
@@ -6767,9 +6859,212 @@
         "summary": "Set Lm Studio Model"
       }
     },
-    "/providers/lm-studio/token-count": {
+    "/providers/openai-compatible/config": {
+      "get": {
+        "operationId": "compatible_provider_config_providers_openai_compatible_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatibleProviderConfigRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Compatible Provider Config"
+      },
+      "put": {
+        "operationId": "set_compatible_provider_config_providers_openai_compatible_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompatibleProviderConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatibleProviderConfigRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Compatible Provider Config"
+      }
+    },
+    "/providers/openai-compatible/credential": {
+      "delete": {
+        "operationId": "delete_compatible_provider_credential_providers_openai_compatible_credential_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Compatible Provider Credential"
+      },
+      "get": {
+        "operationId": "compatible_provider_credential_status_providers_openai_compatible_credential_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Compatible Provider Credential Status"
+      },
+      "put": {
+        "operationId": "set_compatible_provider_credential_providers_openai_compatible_credential_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LMStudioCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LMStudioCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Compatible Provider Credential"
+      }
+    },
+    "/providers/openai-compatible/selection": {
+      "put": {
+        "operationId": "set_compatible_provider_model_providers_openai_compatible_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompatibleProviderSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": "Response Set Compatible Provider Model Providers Openai Compatible Selection Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Compatible Provider Model"
+      }
+    },
+    "/providers/token-count": {
       "post": {
-        "operationId": "token_count_providers_lm_studio_token_count_post",
+        "operationId": "token_count_providers_token_count_post",
         "requestBody": {
           "content": {
             "application/json": {

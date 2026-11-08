@@ -52,7 +52,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:client
       - name: Verify explicit specialist conflict choices in the desktop UI
-        run: npm run test:browser -- tests/browser/task-review.spec.ts
+        run: npm run test:browser -- tests/browser/task-review.spec.ts tests/browser/voice-input.spec.ts
         timeout-minutes: 3
       - run: uv run pytest -q
       - name: Verify specialist recovery after API process death

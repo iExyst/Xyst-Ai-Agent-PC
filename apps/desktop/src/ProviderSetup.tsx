@@ -22,6 +22,9 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [credential,setCredential]=useState('');
   const [credentialConfigured,setCredentialConfigured]=useState(false);
   const [modelDetails,setModelDetails]=useState<ModelInfo[]>([]);
+  const [compatibleEndpoint,setCompatibleEndpoint]=useState('');
+  const [compatibleCredential,setCompatibleCredential]=useState('');
+  const [compatibleCredentialConfigured,setCompatibleCredentialConfigured]=useState(false);
   const selectedDetails=modelDetails.find(item=>item.id===model);
 
   useEffect(()=>{
@@ -31,6 +34,11 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
         const config=await client.lmStudioConfig();
         if(!live)return;
         if(typeof config.endpoint==='string'&&config.endpoint.trim())setEndpoint(config.endpoint);
+        const compatibleConfig=await client.compatibleProviderConfig();
+        if(!live)return;
+        if(compatibleConfig.endpoint)setCompatibleEndpoint(compatibleConfig.endpoint);
+        const compatibleCredentialStatus=await client.compatibleProviderCredentialStatus();
+        if(live)setCompatibleCredentialConfigured(compatibleCredentialStatus.configured);
         const credentialStatus=await client.lmStudioCredentialStatus();
         if(live)setCredentialConfigured(credentialStatus.configured);
         const provider=await client.providers();
@@ -43,8 +51,10 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
           setModelDetails(available);
           const ids=available.map(item=>item.id);
           onModelsChanged(ids);
-          if(typeof config.selected_model==='string'&&ids.includes(config.selected_model))onModelChanged(config.selected_model);
+          const saved=compatibleConfig.selected_model??config.selected_model;
+          if(typeof saved==='string'&&ids.includes(saved))onModelChanged(saved);
           else if(config.selected_model)await client.selectLMStudioModel(null);
+          else if(compatibleConfig.selected_model)await client.selectCompatibleProviderModel(null);
         }
       } catch {
         if(live)setStatus('Could not reach LM Studio. Start its Local Server in LM Studio, then retry.');
@@ -119,7 +129,10 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     onModelChanged(value);
     onDiagnosticPassed(false);
     setDiagnostic('unknown');setError('');
-    try { await client.selectLMStudioModel(value||null); }
+    try {
+      if(value.startsWith('openai-compatible::'))await client.selectCompatibleProviderModel(value||null);
+      else await client.selectLMStudioModel(value||null);
+    }
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not save the selected model.');}
   }
 
@@ -127,7 +140,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     if(!model)return;
     setBusy(true);setError('');setDiagnostic('unknown');
     try {
-      const result=await client.diagnoseLMStudioModel(model);
+      const result=await client.diagnoseProviderModel(model);
       setDiagnostic(result.tool_round_trip_verified?'passed':'failed');
       onDiagnosticPassed(result.tool_round_trip_verified);
       setStatus(result.tool_round_trip_verified?'Tool-use diagnostic passed. Workspace tools are supported by this model.':'Tool-use diagnostic did not pass.');
@@ -152,7 +165,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     <p>{credentialConfigured?'A token is saved in Windows Credential Manager.':'No API token is saved.'} The token is never shown after saving.</p>
     <button type="button" disabled={busy||!credential} onClick={()=>void saveCredential()}>Save API token securely</button>
     {credentialConfigured&&<button type="button" disabled={busy} onClick={()=>void clearCredential()}>Clear saved API token</button>}
-    <label htmlFor="local-model">Local model</label>
+    <label htmlFor="local-model">Local model or compatible provider model</label>
     <select id="local-model" value={model} disabled={busy} onChange={event=>void select(event.target.value)}>
       <option value="">Choose a discovered model</option>
       {models.map(id=><option key={id} value={id}>{id}</option>)}
@@ -162,5 +175,41 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     {diagnostic==='passed'&&<p role="status">The selected model completed a validated harmless tool round trip.</p>}
     {diagnostic==='failed'&&<p role="alert">Tool use remains unverified for this model. Try a different model or review the error.</p>}
     {error&&<p role="alert">{error}</p>}
+    <hr />
+    <h3>Optional OpenAI-compatible provider</h3>
+    <p>Use a trusted HTTPS service or an HTTP service on this PC. Selecting one of its models sends that run’s content to the configured service. LM Studio remains the default.</p>
+    <label htmlFor="compatible-endpoint">Provider server address</label>
+    <input id="compatible-endpoint" type="url" value={compatibleEndpoint} onChange={event=>setCompatibleEndpoint(event.target.value)} disabled={busy}/>
+    <button type="button" disabled={busy||!compatibleEndpoint.trim()} onClick={()=>void (async()=>{
+      setBusy(true);setError('');
+      try {
+        const saved=await client.setCompatibleProviderEndpoint(compatibleEndpoint);
+        setCompatibleEndpoint(saved.endpoint??'');
+        if(model.startsWith('openai-compatible::'))onModelChanged('');
+        onDiagnosticPassed(false);
+        const providers=await client.providers();
+        const configured=providers.find(item=>item.id==='openai-compatible');
+        if(configured?.status!=='connected')throw new Error(configured?.error??'The configured provider is unavailable.');
+        const found=await client.models();
+        setModelDetails(found);onModelsChanged(found.map(item=>item.id));
+        setStatus(`Provider connected. Discovered ${found.filter(item=>item.id.startsWith('openai-compatible::')).length} compatible model(s).`);
+      } catch(failure) {setError(failure instanceof Error?failure.message:'Could not configure the provider.');}
+      finally {setBusy(false);}
+    })()}>Save address and discover models</button>
+    <label htmlFor="compatible-token">Optional provider API token</label>
+    <input id="compatible-token" type="password" autoComplete="new-password" value={compatibleCredential} onChange={event=>setCompatibleCredential(event.target.value)} disabled={busy} maxLength={512}/>
+    <p>{compatibleCredentialConfigured?'A token is saved in Windows Credential Manager.':'No token is saved.'} The token is never shown after saving.</p>
+    <button type="button" disabled={busy||!compatibleCredential} onClick={()=>void (async()=>{
+      setBusy(true);setError('');
+      try {const result=await client.setCompatibleProviderCredential(compatibleCredential);setCompatibleCredential('');setCompatibleCredentialConfigured(result.configured);}
+      catch(failure) {setError(failure instanceof Error?failure.message:'Could not save the provider token.');}
+      finally {setBusy(false);}
+    })()}>Save provider token securely</button>
+    {compatibleCredentialConfigured&&<button type="button" disabled={busy} onClick={()=>void (async()=>{
+      setBusy(true);setError('');
+      try {const result=await client.clearCompatibleProviderCredential();setCompatibleCredentialConfigured(result.configured);}
+      catch(failure) {setError(failure instanceof Error?failure.message:'Could not clear the provider token.');}
+      finally {setBusy(false);}
+    })()}>Clear saved provider token</button>}
   </section>;
 }
