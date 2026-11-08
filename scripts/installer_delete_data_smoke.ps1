@@ -164,13 +164,33 @@ try {
         $xaaReport.window_diagnostics = [XaaInstallerWindowApi]::DescribeProcessWindows($xaaProcess.Id)
         throw 'Timed out finding the uninstaller data-removal checkbox and confirmation button.'
     }
-    if (-not $xaaProcess.WaitForExit(120000)) {
+    $xaaFinishDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    $xaaCloseClicked = $false
+    while ([DateTime]::UtcNow -lt $xaaFinishDeadline) {
+        $xaaProcess.Refresh()
+        if ($xaaProcess.HasExited) { break }
+        foreach ($xaaWindow in [XaaInstallerWindowApi]::TopLevelWindows($xaaProcess.Id)) {
+            foreach ($xaaControl in [XaaInstallerWindowApi]::ChildWindows($xaaWindow)) {
+                $xaaText = [XaaInstallerWindowApi]::Text($xaaControl)
+                if ([XaaInstallerWindowApi]::IsWindowVisible($xaaControl) -and $xaaText -in @('Close', '&Close')) {
+                    [void][XaaInstallerWindowApi]::SendMessage($xaaControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+                    $xaaCloseClicked = $true
+                    $xaaReport.uninstaller_close_clicked = $true
+                    break
+                }
+            }
+            if ($xaaCloseClicked) { break }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    $xaaProcess.Refresh()
+    if (-not $xaaProcess.HasExited) {
         $xaaReport.post_click_window_diagnostics = [XaaInstallerWindowApi]::DescribeProcessWindows($xaaProcess.Id)
         $xaaReport.data_dir_exists_after_timeout = Test-Path -LiteralPath $xaaDataDir
         $xaaReport.config_dir_exists_after_timeout = Test-Path -LiteralPath $xaaConfigDir
         $xaaReport.desktop_binary_exists_after_timeout = Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')
         $xaaReport.engine_binary_exists_after_timeout = Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe')
-        throw 'Uninstaller did not finish within 120 seconds.'
+        throw 'Uninstaller did not exit after its successful completion page.'
     }
     $xaaReport.uninstaller_exit_code = $xaaProcess.ExitCode
     $xaaReport.app_data_removed = -not (Test-Path -LiteralPath $xaaDataDir) -and -not (Test-Path -LiteralPath $xaaConfigDir)
