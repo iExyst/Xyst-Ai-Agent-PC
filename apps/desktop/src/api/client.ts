@@ -282,6 +282,10 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/recovery`,{method:'POST',body:JSON.stringify({decision})});
   }
 
+  reconcileTaskCommand(runId:string,taskId:string,modelCallId:string):Promise<components['schemas']['TaskRecoverySummary']> {
+    return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/recovery/commands/${encodeURIComponent(modelCallId)}`,{method:'POST'});
+  }
+
   integrationPreview(runId:string,taskId:string):Promise<components['schemas']['IntegrationPreview']> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/integration-preview`,{method:'POST'});
   }

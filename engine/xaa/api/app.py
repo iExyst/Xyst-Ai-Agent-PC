@@ -2256,6 +2256,87 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post(
+        "/runs/{run_id}/tasks/{task_id}/recovery/commands/{model_call_id}",
+        response_model=TaskRecoverySummary,
+    )
+    async def reconcile_task_command(
+        run_id: str, task_id: str, model_call_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        run = run_store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run["state"] != "blocked":
+            raise HTTPException(status_code=409, detail="The run must be blocked for recovery.")
+        tasks = TaskStore(run_store)
+        try:
+            summary = tasks.recovery_summary(run_id, task_id)
+            match = next(
+                (
+                    item
+                    for item in summary["recoverable_commands"]
+                    if item["model_call_id"] == model_call_id
+                ),
+                None,
+            )
+            if match is None:
+                raise ValueError("No saved task command matches this pending model action.")
+            owner = run_store.acquire_blocked_run_recovery(
+                run_id, "local-user-task-command-recovery", seconds=180
+            )
+            if owner is None:
+                raise ValueError("A worker still owns the run.")
+            try:
+                run_store.transition(
+                    run_id, RunState.PLANNING, reason="task_command_recovery", owner=owner
+                )
+                run_store.transition(
+                    run_id, RunState.RUNNING, reason="task_command_recovery", owner=owner
+                )
+                journal = CommandJournal(run_store, purpose="agent")
+                intent = journal.recovery_intent(run_id, owner, match["journal_call_id"])
+                transport = await WSLTransport.discover(
+                    intent.distribution, deadline=time.monotonic() + 30
+                )
+                if transport.profile_sha256 != intent.profile_sha256:
+                    raise PermissionError(
+                        "Execution profile changed; reconciliation is unavailable."
+                    )
+                await CommandController(run_store, transport, purpose="agent").recover(
+                    run_id, owner, match["journal_call_id"]
+                )
+                tasks.record_recovered_command_result(
+                    run_id, owner, task_id, model_call_id, match["journal_call_id"]
+                )
+                run_store.transition(
+                    run_id, RunState.BLOCKED, reason="task_command_reconciled", owner=owner
+                )
+                return tasks.recovery_summary(run_id, task_id)
+            except BaseException:
+                current = run_store.get_run(run_id)
+                if current and current["state"] != "blocked":
+                    run_store.transition(
+                        run_id,
+                        RunState.BLOCKED,
+                        reason="task_command_reconciliation_failed",
+                        owner=owner,
+                    )
+                raise
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task or saved command not found.") from exc
+        except (
+            ValueError,
+            OSError,
+            PermissionError,
+            LeaseLost,
+            FilesystemWorkerError,
+            TimeoutError,
+        ) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Task command reconciliation could not confirm a result; inspect the run.",
+            ) from exc
+
+    @app.post(
         "/runs/{run_id}/tasks/{task_id}/recovery",
         response_model=PlanRecord,
         status_code=202,

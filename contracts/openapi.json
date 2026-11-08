@@ -4403,6 +4403,32 @@
         "title": "TaskEvidence",
         "type": "object"
       },
+      "TaskRecoverableCommand": {
+        "properties": {
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Argv",
+            "type": "array"
+          },
+          "journal_call_id": {
+            "title": "Journal Call Id",
+            "type": "string"
+          },
+          "model_call_id": {
+            "title": "Model Call Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_call_id",
+          "journal_call_id",
+          "argv"
+        ],
+        "title": "TaskRecoverableCommand",
+        "type": "object"
+      },
       "TaskRecoveryDecision": {
         "additionalProperties": false,
         "properties": {
@@ -4460,6 +4486,13 @@
             "title": "Pending Model Tool Calls",
             "type": "array"
           },
+          "recoverable_commands": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRecoverableCommand"
+            },
+            "title": "Recoverable Commands",
+            "type": "array"
+          },
           "reserved_tokens": {
             "title": "Reserved Tokens",
             "type": "integer"
@@ -4502,6 +4535,7 @@
           "saved_tool_results",
           "pending_model_tool_calls",
           "unresolved_tool_calls",
+          "recoverable_commands",
           "safe_to_resume",
           "resume_from_start",
           "consumed_iterations",
@@ -8425,6 +8459,68 @@
           }
         ],
         "summary": "Decide Task Recovery"
+      }
+    },
+    "/runs/{run_id}/tasks/{task_id}/recovery/commands/{model_call_id}": {
+      "post": {
+        "operationId": "reconcile_task_command_runs__run_id__tasks__task_id__recovery_commands__model_call_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_call_id",
+            "required": true,
+            "schema": {
+              "title": "Model Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecoverySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Task Command"
       }
     },
     "/runs/{run_id}/tasks/{task_id}/review": {

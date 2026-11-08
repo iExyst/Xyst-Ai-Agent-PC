@@ -1071,6 +1071,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/tasks/{task_id}/recovery/commands/{model_call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Task Command */
+        post: operations["reconcile_task_command_runs__run_id__tasks__task_id__recovery_commands__model_call_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/tasks/{task_id}/review": {
         parameters: {
             query?: never;
@@ -3076,6 +3093,15 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** TaskRecoverableCommand */
+        TaskRecoverableCommand: {
+            /** Argv */
+            argv: string[];
+            /** Journal Call Id */
+            journal_call_id: string;
+            /** Model Call Id */
+            model_call_id: string;
+        };
         /** TaskRecoveryDecision */
         TaskRecoveryDecision: {
             /**
@@ -3096,6 +3122,8 @@ export interface components {
             pending_model_tool_calls: {
                 [key: string]: string | null;
             }[];
+            /** Recoverable Commands */
+            recoverable_commands: components["schemas"]["TaskRecoverableCommand"][];
             /** Reserved Tokens */
             reserved_tokens: number;
             /** Resume From Start */
@@ -5648,6 +5676,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_task_command_runs__run_id__tasks__task_id__recovery_commands__model_call_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                task_id: string;
+                model_call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRecoverySummary"];
                 };
             };
             /** @description Validation Error */

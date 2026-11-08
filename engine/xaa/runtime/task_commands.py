@@ -153,6 +153,7 @@ async def execute_task_command(
     arguments: dict[str, Any],
     *,
     deadline: float,
+    model_call_id: str,
 ) -> dict[str, Any]:
     parsed = CommandArguments.model_validate(arguments)
     if deadline <= time.monotonic():
@@ -173,4 +174,5 @@ async def execute_task_command(
         parsed.model_dump(),
         idempotency_key=call_id,
         deadline=deadline,
+        task_call_id=model_call_id,
     )

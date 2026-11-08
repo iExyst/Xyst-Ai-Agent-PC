@@ -986,6 +986,7 @@ class SpecialistRunner:
                         journal_id,
                         arguments,
                         deadline=deadline,
+                        model_call_id=call["id"],
                     )
                     self.tasks.record_read_worker_event(
                         run_id,

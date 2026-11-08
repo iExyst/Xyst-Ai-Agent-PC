@@ -297,6 +297,7 @@ class CommandJournal:
         arguments: dict[str, Any],
         *,
         idempotency_key: str,
+        model_call_id: str | None = None,
     ) -> CommandIntent:
         parsed = CommandArguments.model_validate(arguments)
         if not call_id or len(call_id) > 256 or not idempotency_key or len(idempotency_key) > 512:
@@ -398,6 +399,7 @@ class CommandJournal:
                     ).hexdigest()
                     if self.task_scope
                     else None,
+                    **({"model_call_id": model_call_id} if model_call_id is not None else {}),
                 },
             )
         return intent

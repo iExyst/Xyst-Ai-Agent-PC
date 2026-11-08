@@ -13,7 +13,7 @@ test('explain a fenced specialist after its worker is lost',async({page})=>{
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-    if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:{task_id:'inspect',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[{call_id:'call-1',name:'workspace_read_file'}],unresolved_tool_calls:0,safe_to_resume:false,consumed_iterations:1,run_measured_tokens:15,reserved_tokens:0},headers});
+    if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:{task_id:'inspect',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[{call_id:'call-1',name:'workspace_read_file'}],unresolved_tool_calls:0,recoverable_commands:[],safe_to_resume:false,consumed_iterations:1,run_measured_tokens:15,reserved_tokens:0},headers});
     if(path.endsWith('/recovery')&&request.method()==='POST')return route.fulfill({status:202,json:{...plan,tasks:[{...task,status:'failed',blocked_reason:null}]},headers});
     if(path.endsWith('/plan'))return route.fulfill({json:plan,headers});
     if(path.endsWith('/events/stream'))return route.fulfill({body:'event: done\ndata: {}\n\n',contentType:'text/event-stream',headers});
@@ -50,7 +50,7 @@ test('offer a clean restart when the specialist died before saving a reply',asyn
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-    if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:{task_id:'inspect',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[],unresolved_tool_calls:0,safe_to_resume:true,resume_from_start:true,consumed_iterations:1,run_measured_tokens:0,reserved_tokens:0},headers});
+    if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:{task_id:'inspect',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[],unresolved_tool_calls:0,recoverable_commands:[],safe_to_resume:true,resume_from_start:true,consumed_iterations:1,run_measured_tokens:0,reserved_tokens:0},headers});
     if(path.endsWith('/recovery')&&request.method()==='POST')return route.fulfill({status:202,json:{...plan,tasks:[{...task,status:'queued',blocked_reason:null}]},headers});
     if(path.endsWith('/plan'))return route.fulfill({json:plan,headers});
     if(path.endsWith('/events/stream'))return route.fulfill({body:'event: done\ndata: {}\n\n',contentType:'text/event-stream',headers});

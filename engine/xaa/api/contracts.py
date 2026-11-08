@@ -178,6 +178,12 @@ class PlanRecord(BaseModel):
     blocked: list[str]
 
 
+class TaskRecoverableCommand(BaseModel):
+    model_call_id: str
+    journal_call_id: str
+    argv: list[str]
+
+
 class TaskRecoverySummary(BaseModel):
     task_id: str
     status: Literal["blocked"]
@@ -186,6 +192,7 @@ class TaskRecoverySummary(BaseModel):
     saved_tool_results: int
     pending_model_tool_calls: list[dict[str, str | None]]
     unresolved_tool_calls: int
+    recoverable_commands: list[TaskRecoverableCommand]
     safe_to_resume: bool
     resume_from_start: bool
     consumed_iterations: int

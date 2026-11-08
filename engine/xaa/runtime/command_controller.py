@@ -133,11 +133,17 @@ class CommandController:
         *,
         idempotency_key: str,
         deadline: float,
+        task_call_id: str | None = None,
     ) -> dict[str, Any]:
         if deadline <= time.monotonic():
             raise TimeoutError("Parent time budget expired before command reservation.")
         intent = self.journal.reserve(
-            run_id, owner, call_id, arguments, idempotency_key=idempotency_key
+            run_id,
+            owner,
+            call_id,
+            arguments,
+            idempotency_key=idempotency_key,
+            model_call_id=task_call_id,
         )
         try:
             self.transport.require_intent(intent)

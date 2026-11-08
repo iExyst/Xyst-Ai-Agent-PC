@@ -538,6 +538,41 @@ class TaskStore:
             for item in self.runs.unresolved_tool_calls(run_id)
             if item.get("task_id") == task_id
         ]
+        pending_command_ids = {
+            item["call_id"]
+            for item in pending_calls
+            if item["name"] == "workspace_run_command" and item["call_id"] is not None
+        }
+        reservations: dict[str, str] = {}
+        for event in self.runs.list_events(run_id):
+            payload = event["payload"]
+            model_call_id = payload.get("model_call_id")
+            command_call_id = payload.get("call_id")
+            if (
+                event["event_type"] == "execution.reserved"
+                and payload.get("task_id") == task_id
+                and model_call_id in pending_command_ids
+                and isinstance(command_call_id, str)
+            ):
+                reservations[model_call_id] = command_call_id
+        unresolved_by_id = {item["id"]: item for item in unresolved}
+        recoverable_commands: list[dict[str, Any]] = []
+        for model_call_id in pending_command_ids:
+            journal_call_id = reservations.get(model_call_id)
+            command = unresolved_by_id.get(journal_call_id)
+            if command is None or command.get("tool_name") != "workspace.run_command":
+                continue
+            arguments = cast(dict[str, Any], command.get("arguments", {}))
+            argv = cast(list[Any] | None, arguments.get("argv"))
+            if not isinstance(argv, list) or any(not isinstance(item, str) for item in argv):
+                continue
+            recoverable_commands.append(
+                {
+                    "model_call_id": model_call_id,
+                    "journal_call_id": journal_call_id,
+                    "argv": argv,
+                }
+            )
         candidate_reviewable = bool(
             candidate_item
             and candidate_item["sequence"] == last_message_sequence
@@ -644,6 +679,7 @@ class TaskStore:
             ),
             "pending_model_tool_calls": pending_calls,
             "unresolved_tool_calls": len(unresolved),
+            "recoverable_commands": recoverable_commands,
             "safe_to_resume": safe_to_resume,
             "resume_from_start": resume_from_start and safe_to_resume,
             "consumed_iterations": task_attempts,
@@ -651,6 +687,75 @@ class TaskStore:
             "reserved_tokens": tokens_reserved,
         }
         return summary
+
+    def record_recovered_command_result(
+        self, run_id: str, token: str, task_id: str, model_call_id: str, journal_call_id: str
+    ) -> None:
+        """Attach a sealed task command result to its pending model tool call exactly once."""
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, token)
+            task = connection.execute(
+                "SELECT status,blocked_reason FROM tasks WHERE run_id=? AND id=?",
+                (run_id, f"{run_id}:{task_id}"),
+            ).fetchone()
+            if (
+                task is None
+                or task["status"] != "blocked"
+                or task["blocked_reason"] != "worker_lost_reconciliation_required"
+            ):
+                raise ValueError("Task recovery state changed; refresh the plan.")
+            tool = connection.execute(
+                "SELECT tool_name,state,result FROM tool_calls WHERE run_id=? AND task_id=? AND provider_call_id=?",
+                (run_id, f"{run_id}:{task_id}", journal_call_id),
+            ).fetchone()
+            reservation = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='execution.reserved' AND json_extract(payload,'$.call_id')=?",
+                (run_id, journal_call_id),
+            ).fetchone()
+            if tool is None or tool["tool_name"] != "workspace.run_command":
+                raise ValueError("Saved task command is unavailable for reconciliation.")
+            if tool["state"] not in {"completed", "failed"} or tool["result"] is None:
+                raise ValueError("Saved command still needs backend reconciliation.")
+            if reservation is None:
+                raise ValueError("Saved task command has no durable reservation.")
+            reservation_payload = json.loads(reservation[0])
+            if (
+                reservation_payload.get("task_id") != task_id
+                or reservation_payload.get("model_call_id") != model_call_id
+            ):
+                raise PermissionError("Saved command belongs to a different task action.")
+            model_calls = [
+                call
+                for row in connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? AND event_type='task.model.message'",
+                    (run_id,),
+                )
+                for call in json.loads(row[0]).get("message", {}).get("tool_calls", [])
+                if json.loads(row[0]).get("task_id") == task_id
+                and call.get("id") == model_call_id
+                and call.get("function", {}).get("name") == "workspace_run_command"
+            ]
+            if len(model_calls) != 1:
+                raise ValueError("Pending model command is missing or ambiguous.")
+            if connection.execute(
+                "SELECT 1 FROM run_events WHERE run_id=? AND event_type='task.tool.result' AND json_extract(payload,'$.task_id')=? AND json_extract(payload,'$.call_id')=?",
+                (run_id, task_id, model_call_id),
+            ).fetchone():
+                raise ValueError("Task command result was already attached to its model call.")
+            result = json.loads(tool["result"])
+            self.runs.record_event(
+                connection,
+                run_id,
+                "task.tool.result",
+                {
+                    "task_id": task_id,
+                    "call_id": model_call_id,
+                    "journal_id": journal_call_id,
+                    "result": result,
+                    "recovered": True,
+                },
+            )
 
     def resolve_lost_worker(self, run_id: str, token: str, task_id: str, decision: str) -> None:
         if decision not in {"resume", "review_candidate", "fail"}:
