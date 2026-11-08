@@ -33,7 +33,7 @@ The release Tauri overlay bundles `THIRD_PARTY_NOTICES.md`, the dependency inven
 
 ## MCP ambiguous write reconciliation (2026-11-08)
 
-The active-run view now lists MCP write calls whose effects are unknown without exposing their arguments or response content. After checking the external system, the owner can record whether the effect happened; the decision is authenticated, transactionally audited, and changes the saved tool result for any later continuation without replaying the original request. Focused API coverage verifies authentication, mandatory review acknowledgement, privacy of stored arguments, idempotent refusal of stale decisions, and the durable audit event. The focused API test, desktop typecheck, API contract check and browser acceptance pass. This is one external-effect path, not complete general reconciliation.
+The active-run view now offers an explicit check for MCP write calls whose effects are unknown, without exposing their arguments or response content. After checking the external system, the owner can record whether the effect happened; the decision is authenticated, transactionally audited, and changes the saved tool result for any later continuation without replaying the original request. Focused API coverage verifies authentication, mandatory review acknowledgement, privacy of stored arguments, idempotent refusal of stale decisions, and the durable audit event. The focused API test, desktop typecheck, API contract check and browser acceptance pass. This is one external-effect path, not complete general reconciliation.
 
 ## Telegram ambiguous reply reconciliation (2026-11-08)
 

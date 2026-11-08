@@ -30,6 +30,8 @@ test('owner reviews an ambiguous MCP write without replaying it',async({page})=>
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
   await expect(page.getByRole('region',{name:'MCP effect reconciliation'})).toBeVisible();
+  await page.getByRole('button',{name:'Check for uncertain MCP effects'}).click();
+  await expect(page.getByText('mcp_fixture_update',{exact:true})).toBeVisible();
   await expect(page.getByText('hidden server output',{exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'Confirm effect did not happen'}).click();
   await expect(page.getByRole('region',{name:'MCP effect reconciliation'})).toHaveCount(0);

@@ -22,7 +22,7 @@ Discovered tools are namespaced by server ID. Their JSON schemas are validated, 
 
 A disconnect before execution returns a known `not_connected` status after recording a completed result for the proposed call; it does not leave an unresolved intent or fail the run. Cancelling an in-flight write closes its connection, records `cancelled_unknown_outcome`, and leaves no unresolved intent. A timeout, transport failure, server-reported error, or output overflow during a write is journaled as `unknown_outcome` and is never retried automatically because a remote side effect may have happened. The system prompt asks the model to reconcile externally before proposing another write.
 
-The active run view lists ambiguous MCP writes without exposing their arguments or response content. After inspecting the external system, the owner can record that the effect happened or did not happen. This decision is audited and replaces the ambiguous tool result used on a later run continuation; it never replays the original call. Reconciliation is refused while the run has a live worker lease.
+The active run view provides an explicit check for ambiguous MCP writes without exposing their arguments or response content. After inspecting the external system, the owner can record that the effect happened or did not happen. This decision is audited and replaces the ambiguous tool result used on a later run continuation; it never replays the original call. Reconciliation is refused while the run has a live worker lease.
 
 Configured stdio processes run with the user's process privileges. HTTP endpoints receive only the configured bearer token and user-authorized requests. Neither transport adds OS/container isolation for MCP servers.
 
