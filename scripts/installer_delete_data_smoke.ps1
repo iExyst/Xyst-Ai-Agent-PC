@@ -164,7 +164,14 @@ try {
         $xaaReport.window_diagnostics = [XaaInstallerWindowApi]::DescribeProcessWindows($xaaProcess.Id)
         throw 'Timed out finding the uninstaller data-removal checkbox and confirmation button.'
     }
-    if (-not $xaaProcess.WaitForExit(120000)) { throw 'Uninstaller did not finish within 120 seconds.' }
+    if (-not $xaaProcess.WaitForExit(120000)) {
+        $xaaReport.post_click_window_diagnostics = [XaaInstallerWindowApi]::DescribeProcessWindows($xaaProcess.Id)
+        $xaaReport.data_dir_exists_after_timeout = Test-Path -LiteralPath $xaaDataDir
+        $xaaReport.config_dir_exists_after_timeout = Test-Path -LiteralPath $xaaConfigDir
+        $xaaReport.desktop_binary_exists_after_timeout = Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')
+        $xaaReport.engine_binary_exists_after_timeout = Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe')
+        throw 'Uninstaller did not finish within 120 seconds.'
+    }
     $xaaReport.uninstaller_exit_code = $xaaProcess.ExitCode
     $xaaReport.app_data_removed = -not (Test-Path -LiteralPath $xaaDataDir) -and -not (Test-Path -LiteralPath $xaaConfigDir)
     $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
