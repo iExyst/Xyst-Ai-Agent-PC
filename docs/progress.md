@@ -2,6 +2,12 @@
 
 Updated 2026-11-08.
 
+## Live interactive terminal chat (2026-11-08)
+
+Added `scripts/live_cli_chat_diagnostic.py` to exercise the actual `xaa chat` subprocess against a disposable authenticated X.A.A. API and a temporary workspace. A real LM Studio `qwen/qwen3.5-9b` run read a random fixture marker with `workspace.read_file`, returned the exact marker to the terminal, reached `verifying`, and persisted the user/assistant turn in the SQLite session. The stored tool record is `completed`; the workspace contained only the generated fixture; no user project changed. The model was unloaded after acceptance. Sanitized summary: `docs/releases/evidence/live-cli-chat.json`; full local report: `.acceptance/live-cli-chat-1c80e6f2-e1fc-4868-b4cb-6e9151998583/report.json`.
+
+Ruff, formatting and strict Pyright pass for the acceptance script. This verifies one model and one synthetic turn. Desktop-session unification and broad live CLI reliability remain open; overall release completion remains approximately 16%.
+
 ## Atomic multi-resource procedure edits (2026-11-08)
 
 Expanded the existing explicit resource-edit permission to allow one atomic model call to create or replace up to eight distinct linked UTF-8 files in one inactive candidate version. Each file remains limited to 64 KiB; the package still enforces its 32-file and 1 MiB total limits. Duplicate paths, invalid relative paths and over-limit batches are rejected before storage. The focused procedure suite passes (21 tests), including a three-file single-version write; the browser consent flow, production desktop build, generated contract check, Ruff and strict Pyright pass. Live Qwen3.5 9B acceptance called the revision tool once to replace one reference and create two more, verified exact bytes and unchanged version 1, reached `verifying`, and left no unresolved calls: `.acceptance/live-procedure-resource-batch-31dbc25d7db24a12995f9dbffac3249b/report.json`. Hosted source and installer jobs passed in [run 42445001886](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42445001886). Mixed create/remove batches, multi-call batching and broader manager semantics remain open; overall completion remains approximately 16%.

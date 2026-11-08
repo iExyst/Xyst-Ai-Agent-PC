@@ -83,7 +83,7 @@ For interactive terminal conversation:
 uv run xaa chat --model MODEL_ID --session project-notes
 ```
 
-Each turn creates a durable run. The named session stores up to six recent user/assistant pairs in the local database, bounded to 8 KiB of context. The session is tied to its model, workspace and mode. Use `/reset` or restart with `--reset` to clear session context; saved runs remain. Ctrl+C requests cancellation of the current run. Full candidate text remains in the run history when saved chat context is clipped.
+Each turn creates a durable run. A live one-turn acceptance on qwen/qwen3.5-9b read a generated workspace marker and persisted the chat session; broader live model reliability is not established. The named session stores up to six recent user/assistant pairs in the local database, bounded to 8 KiB of context. The session is tied to its model, workspace and mode. Use `/reset` or restart with `--reset` to clear session context; saved runs remain. Ctrl+C requests cancellation of the current run. Full candidate text remains in the run history when saved chat context is clipped.
 
 ## Pause, cancel and recover
 

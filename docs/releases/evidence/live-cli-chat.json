@@ -1,0 +1,27 @@
+{
+  "audit_date": "2026-11-08",
+  "model": "qwen/qwen3.5-9b",
+  "provider": "LM Studio local API",
+  "workflow": "interactive xaa chat against a disposable authenticated API and isolated fixture workspace",
+  "run": {
+    "state": "verifying",
+    "tool_calls": [{"name": "workspace.read_file", "state": "completed"}],
+    "exact_random_fixture_marker_returned": true
+  },
+  "session": {
+    "persisted": true,
+    "saved_message_count": 2
+  },
+  "isolation": {
+    "local_inference_only": true,
+    "user_project_modified": false,
+    "model_unloaded_after_acceptance": true
+  },
+  "overall": "passed",
+  "limitations": [
+    "One model and one synthetic terminal turn; this does not establish broad model reliability.",
+    "Does not establish CLI and desktop session unification or full CLI/desktop acceptance."
+  ],
+  "local_report": ".acceptance/live-cli-chat-1c80e6f2-e1fc-4868-b4cb-6e9151998583/report.json",
+  "acceptance_script": "scripts/live_cli_chat_diagnostic.py"
+}
