@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
+from xaa.runtime.project_validation import validation_required
 from xaa.runtime.run_review import RunReviewDecision, review_run
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
@@ -238,6 +239,71 @@ async def test_integrated_validation_selection_must_be_successful_current_root_e
             ),
         )
     assert store.get_run(run_id)["state"] == "verifying"
+
+
+async def test_final_review_requires_validation_after_specialist_integration(workspace_tmp_path):
+    grant = {
+        "backend": "wsl-bubblewrap-v1",
+        "distribution": "Ubuntu-24.04",
+        "profile_sha256": "a" * 64,
+        "max_seconds": 20,
+    }
+    store, run_id, _ = candidate(workspace_tmp_path, command_grant=grant)
+    assert not validation_required(store, run_id)
+    owner = store.acquire_lease(run_id, "fixture-integration")
+    assert owner is not None
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.integration.authorized",
+            {
+                "task_id": "edit",
+                "actor": "local-user",
+                "files": [{"path": "result.txt", "choice": "proposed"}],
+                "writes": [
+                    {
+                        "path": "result.txt",
+                        "action": "write",
+                        "choice": "proposed",
+                    }
+                ],
+            },
+        )
+    store.release_lease(run_id, owner)
+    assert validation_required(store, run_id)
+
+    with pytest.raises(ValueError, match="Select successful validation evidence"):
+        await review_run(store, run_id, RunReviewDecision.model_validate(decision(store, run_id)))
+
+    assert store.get_run(run_id)["state"] == "verifying"
+    assert not any(event["event_type"] == "run.reviewed" for event in store.list_events(run_id))
+
+
+def test_noop_specialist_integration_does_not_require_project_validation(workspace_tmp_path):
+    grant = {
+        "backend": "wsl-bubblewrap-v1",
+        "distribution": "Ubuntu-24.04",
+        "profile_sha256": "a" * 64,
+        "max_seconds": 20,
+    }
+    store, run_id, _ = candidate(workspace_tmp_path, command_grant=grant)
+    owner = store.acquire_lease(run_id, "fixture-noop-integration")
+    assert owner is not None
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.integration.authorized",
+            {
+                "task_id": "edit",
+                "actor": "local-user",
+                "files": [{"path": "result.txt", "choice": "current"}],
+                "writes": [],
+            },
+        )
+    store.release_lease(run_id, owner)
+    assert not validation_required(store, run_id)
 
 
 def test_schema_six_reader_cannot_accept_integrated_project_review(workspace_tmp_path):

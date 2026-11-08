@@ -24,19 +24,22 @@ class ProjectValidationRequest(CommandArguments):
 
 
 def validation_required(store: RunStore, run_id: str) -> bool:
+    """Require a fresh project check after direct edits or accepted specialist integration."""
     run = store.get_run(run_id)
     if run is None:
         raise KeyError(run_id)
     if run.get("command_grant") is None:
         return False
     with store.connection() as connection:
-        return (
-            connection.execute(
-                "SELECT 1 FROM tool_calls WHERE run_id=? AND task_id IS NULL AND state='completed' AND tool_name IN ('workspace.write_file','workspace.create_file','workspace.replace_text','workspace.apply_patch') AND json_extract(result,'$.sha256') IS NOT NULL LIMIT 1",
-                (run_id,),
-            ).fetchone()
-            is not None
-        )
+        direct_edit = connection.execute(
+            "SELECT 1 FROM tool_calls WHERE run_id=? AND task_id IS NULL AND state='completed' AND tool_name IN ('workspace.write_file','workspace.create_file','workspace.replace_text','workspace.apply_patch') AND json_extract(result,'$.sha256') IS NOT NULL LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        integrated_edit = connection.execute(
+            "SELECT 1 FROM run_events WHERE run_id=? AND event_type='task.integration.authorized' AND json_array_length(json_extract(payload,'$.writes'))>0 LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        return direct_edit is not None or integrated_edit is not None
 
 
 async def summary(store: RunStore, run_id: str, owner: str) -> ProjectValidationSummary:
