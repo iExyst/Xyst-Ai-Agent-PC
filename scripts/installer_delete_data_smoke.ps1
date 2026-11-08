@@ -25,6 +25,9 @@ public static class XaaInstallerWindowApi {
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr window);
 
+    [DllImport("user32.dll")]
+    public static extern int GetDlgCtrlID(IntPtr window);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
 
@@ -64,6 +67,17 @@ public static class XaaInstallerWindowApi {
         var className = new StringBuilder(256);
         GetClassName(window, className, className.Capacity);
         return className.ToString();
+    }
+
+    public static string[] DescribeProcessWindows(int targetProcessId) {
+        var descriptions = new List<string>();
+        foreach (var window in TopLevelWindows(targetProcessId)) {
+            descriptions.Add(String.Format("window hwnd={0} class={1} visible={2} text=[{3}]", window, ClassName(window), IsWindowVisible(window), Text(window)));
+            foreach (var control in ChildWindows(window)) {
+                descriptions.Add(String.Format("control hwnd={0} id={1} class={2} visible={3} text=[{4}]", control, GetDlgCtrlID(control), ClassName(control), IsWindowVisible(control), Text(control)));
+            }
+        }
+        return descriptions.ToArray();
     }
 }
 '@
@@ -147,23 +161,7 @@ try {
         if (-not $xaaConfirmClicked) { Start-Sleep -Milliseconds 250 }
     }
     if (-not $xaaConfirmClicked) {
-        $xaaReport.window_diagnostics = @(
-            foreach ($xaaWindow in [XaaInstallerWindowApi]::TopLevelWindows($xaaProcess.Id)) {
-                [pscustomobject]@{
-                    text = [XaaInstallerWindowApi]::Text($xaaWindow)
-                    class = [XaaInstallerWindowApi]::ClassName($xaaWindow)
-                    visible = [XaaInstallerWindowApi]::IsWindowVisible($xaaWindow)
-                    children = @(
-                        foreach ($xaaControl in [XaaInstallerWindowApi]::ChildWindows($xaaWindow)) {
-                            [pscustomobject]@{
-                                text = [XaaInstallerWindowApi]::Text($xaaControl)
-                                class = [XaaInstallerWindowApi]::ClassName($xaaControl)
-                            }
-                        }
-                    )
-                }
-            }
-        )
+        $xaaReport.window_diagnostics = [XaaInstallerWindowApi]::DescribeProcessWindows($xaaProcess.Id)
         throw 'Timed out finding the uninstaller data-removal checkbox and confirmation button.'
     }
     if (-not $xaaProcess.WaitForExit(120000)) { throw 'Uninstaller did not finish within 120 seconds.' }
@@ -177,6 +175,6 @@ try {
         if ($xaaCleanup.ExitCode -ne 0) { $xaaReport.cleanup_exit_code = $xaaCleanup.ExitCode }
     }
     $env:PATH = $xaaPriorPath
-    $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/delete-data-smoke.json' -Encoding utf8
+    $xaaReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath 'build/installer/delete-data-smoke.json' -Encoding utf8
 }
 if (-not $xaaReport.passed) { throw 'Explicit application-data removal verification failed.' }
