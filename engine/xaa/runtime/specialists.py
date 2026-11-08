@@ -15,6 +15,7 @@ from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
+from xaa.runtime.browser import BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import (
@@ -729,6 +730,18 @@ class SpecialistRunner:
                 " Approved exact hostnames: " + ", ".join(approved_hosts) + "."
             )
             tools.append(fetch_tool)
+        if (
+            "web.browser.read" in task_permissions
+            and run.get("approved_browser")
+            and approved_hosts
+        ):
+            browser_tool = json.loads(json.dumps(BROWSER_TOOL))
+            browser_tool["function"]["parameters"]["properties"].pop("screenshot", None)
+            browser_tool["function"]["description"] += (
+                " Approved exact hostnames: " + ", ".join(approved_hosts) + ". "
+                "Screenshot capture is unavailable to specialist tasks."
+            )
+            tools.append(browser_tool)
         if task["assigned_role"] == "reviewer" and task["dependencies"]:
             tools.extend(
                 [
@@ -900,7 +913,7 @@ class SpecialistRunner:
                     "taskfs-"
                     + hashlib.sha256(f"{run_id}:{identity}:{call['id']}".encode()).hexdigest()
                 )
-                if name in {"web_fetch", "web_search"}:
+                if name in {"web_fetch", "web_search", "browser_run"}:
                     scoped_store = RunStore(
                         self.store.path,
                         task_scope=TaskReadScope(run_id, parent, identity, worker),
@@ -930,6 +943,21 @@ class SpecialistRunner:
                             arguments.get("query", ""),
                             arguments.get("count", 5),
                             api_key,
+                            deadline=deadline,
+                        )
+                    elif (
+                        name == "browser_run"
+                        and "web.browser.read" in task_permissions
+                        and run.get("approved_browser")
+                        and not arguments.get("screenshot", False)
+                    ):
+                        result = await run_approved_browser(
+                            scoped_store,
+                            run_id,
+                            parent,
+                            journal_id,
+                            arguments,
+                            approved_hosts,
                             deadline=deadline,
                         )
                     else:

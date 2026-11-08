@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import os
 import subprocess
 import time
@@ -487,8 +488,27 @@ async def test_lost_reviewer_can_seal_dependency_read_without_assuming_contents(
 
 
 @pytest.mark.parametrize("save_result", [False, True])
-async def test_lost_researcher_can_seal_or_attach_web_search_result(
-    workspace_tmp_path, save_result: bool
+@pytest.mark.parametrize(
+    "tool_name,permission,approval,arguments,journal_name",
+    [
+        (
+            "web_search",
+            "web.search",
+            {"approved_web_search": True},
+            '{"query":"saved research","count":1}',
+            "web.search",
+        ),
+        (
+            "browser_run",
+            "web.browser.read",
+            {"approved_browser": True, "approved_web_hosts": ["example.com"]},
+            '{"url":"https://example.com/fact"}',
+            "browser.run",
+        ),
+    ],
+)
+async def test_lost_researcher_can_seal_or_attach_web_read_result(
+    workspace_tmp_path, save_result: bool, tool_name, permission, approval, arguments, journal_name
 ):
     store = RunStore(workspace_tmp_path / f"web-recovery-{save_result}.sqlite3")
     project = workspace_tmp_path / f"web-project-{save_result}"
@@ -499,7 +519,7 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
         workspace=str(project),
         mode="observe",
         model="fixture",
-        approved_web_search=True,
+        **approval,
     )["id"]
     owner = store.acquire_lease(run_id, "web-recovery-owner")
     store.transition(run_id, RunState.PLANNING, owner=owner)
@@ -513,7 +533,7 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
                 id="researcher",
                 objective="Search an approved source",
                 role="researcher",
-                permissions=["workspace.read", "web.search"],
+                permissions=["workspace.read", permission],
             )
         ],
     )
@@ -537,8 +557,8 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
                             "id": call_id,
                             "type": "function",
                             "function": {
-                                "name": "web_search",
-                                "arguments": '{"query":"saved research","count":1}',
+                                "name": tool_name,
+                                "arguments": arguments,
                             },
                         }
                     ],
@@ -551,9 +571,9 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
         run_id,
         owner,
         call_id=journal_id,
-        tool="web.search",
+        tool=journal_name,
         version="1",
-        arguments={"query": "saved research", "count": 1},
+        arguments=json.loads(arguments),
         idempotency_key=journal_id,
     )
     if save_result:
@@ -564,6 +584,7 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
             {
                 "status": "ok",
                 "trust": "untrusted_web_content",
+                "text": "saved",
                 "results": [{"url": "https://example.com", "title": "saved"}],
             },
         )
@@ -578,7 +599,7 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
         {
             "model_call_id": call_id,
             "journal_call_id": journal_id,
-            "tool_name": "web.search",
+            "tool_name": journal_name,
             "state": "completed" if save_result else "intended",
         }
     ]
@@ -600,7 +621,7 @@ async def test_lost_researcher_can_seal_or_attach_web_search_result(
         if event["event_type"] == "task.tool.result" and event["payload"].get("call_id") == call_id
     )
     if save_result:
-        assert saved["payload"]["result"]["results"][0]["title"] == "saved"
+        assert saved["payload"]["result"]["text"] == "saved"
     else:
         assert saved["payload"]["result"]["error"]["code"] == "interrupted_read"
 

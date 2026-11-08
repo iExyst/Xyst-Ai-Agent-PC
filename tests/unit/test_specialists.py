@@ -168,6 +168,13 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
             '{"url":"https://example.com/fact"}',
             "web.fetch",
         ),
+        (
+            "browser_run",
+            "web.browser.read",
+            {"approved_browser": True, "approved_web_hosts": ["example.com"]},
+            '{"url":"https://example.com/fact"}',
+            "browser.run",
+        ),
     ],
 )
 async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
@@ -217,8 +224,29 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
             "text": "Fixture fact",
         }
 
+    async def fake_browser(scoped_store, run_id, parent, journal_id, arguments, hosts, *, deadline):
+        requested.append((arguments["url"], ",".join(hosts)))
+        assert "screenshot" not in arguments
+        assert scoped_store.record_tool_intent(
+            run_id,
+            parent,
+            call_id=journal_id,
+            tool="browser.run",
+            version="1",
+            arguments=arguments,
+            idempotency_key=journal_id,
+        )
+        result = {
+            "status": "ok",
+            "trust": "untrusted_web_content",
+            "text": "Fixture fact",
+        }
+        scoped_store.record_tool_result(run_id, parent, journal_id, result)
+        return result
+
     monkeypatch.setattr(web_search, "_search", fake_search)
     monkeypatch.setattr(web_fetch, "_read_url", fake_read)
+    monkeypatch.setattr(specialist_module, "run_approved_browser", fake_browser)
 
     class Credentials:
         def get(self, name: str) -> str | None:
@@ -230,6 +258,13 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
             names = {tool["function"]["name"] for tool in tools or []}
             assert tool_name in names
             assert ({"web_search", "web_fetch"} - {tool_name}).isdisjoint(names)
+            if tool_name == "browser_run":
+                browser_schema = next(
+                    tool["function"]["parameters"]
+                    for tool in tools or []
+                    if tool["function"]["name"] == tool_name
+                )
+                assert "screenshot" not in browser_schema["properties"]
             if messages[-1]["role"] == "user":
                 message = {
                     "role": "assistant",
@@ -281,7 +316,8 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
     assert not store.unresolved_tool_calls(run_id)
 
 
-def test_specialist_plan_cannot_inherit_unapproved_web_search(workspace_tmp_path):
+@pytest.mark.parametrize("permission", ["web.search", "web.read", "web.browser.read"])
+def test_specialist_plan_cannot_inherit_unapproved_web_access(workspace_tmp_path, permission):
     store = RunStore(workspace_tmp_path / "unapproved-specialist-web.sqlite3")
     run_id = store.create_run(
         objective="No web approval",
@@ -298,7 +334,7 @@ def test_specialist_plan_cannot_inherit_unapproved_web_search(workspace_tmp_path
                     id="research",
                     objective="Search the web",
                     role="researcher",
-                    permissions=("workspace.read", "web.search"),
+                    permissions=("workspace.read", permission),
                 )
             ],
         )

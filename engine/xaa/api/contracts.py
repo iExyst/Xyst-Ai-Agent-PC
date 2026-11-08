@@ -199,6 +199,7 @@ class TaskRecoverableAction(BaseModel):
         "review_dependency_output",
         "web.fetch",
         "web.search",
+        "browser.run",
     ]
 
 

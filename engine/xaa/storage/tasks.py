@@ -326,6 +326,8 @@ class TaskStore:
             permissions.add("web.read")
         if run.get("approved_web_search"):
             permissions.add("web.search")
+        if run.get("approved_browser") and run.get("approved_web_hosts"):
+            permissions.add("web.browser.read")
         if run["mode"] == "workspace":
             permissions.add("workspace.write")
             if run.get("command_grant") is not None:
@@ -568,7 +570,7 @@ class TaskStore:
                     "WHERE run_id=? AND task_id=? AND tool_name IN "
                     "('workspace.run_command','workspace.read_file','workspace.list_directory',"
                     "'workspace.write_file','workspace.create_file','workspace.delete_file',"
-                    "'web.fetch','web.search') "
+                    "'web.fetch','web.search','browser.run') "
                     "AND state IN ('intended','completed','failed')",
                     (run_id, f"{run_id}:{task_id}"),
                 )
@@ -601,6 +603,7 @@ class TaskStore:
             "workspace_delete_file": "workspace.delete_file",
             "web_fetch": "web.fetch",
             "web_search": "web.search",
+            "browser_run": "browser.run",
         }
         reviewer_read_tools = {
             "review_dependency_file": "review_dependency_file",
@@ -616,6 +619,7 @@ class TaskStore:
             "workspace.delete_file": "workspace.write",
             "web.fetch": "web.read",
             "web.search": "web.search",
+            "browser.run": "web.browser.read",
         }
         for call in calls:
             model_call_id = call.get("id")
@@ -669,6 +673,7 @@ class TaskStore:
                     "workspace.list_directory",
                     "web.fetch",
                     "web.search",
+                    "browser.run",
                 }
                 and recoverable_state == "intended"
             )
@@ -679,6 +684,7 @@ class TaskStore:
                     "workspace.list_directory",
                     "web.fetch",
                     "web.search",
+                    "browser.run",
                 }
                 and recoverable_state == "failed"
                 and saved["result"] is not None
@@ -900,6 +906,7 @@ class TaskStore:
             "review_dependency_output",
             "web.fetch",
             "web.search",
+            "browser.run",
         }
         expected_journal_id = (
             "taskfs-" + hashlib.sha256(f"{run_id}:{task_id}:{model_call_id}".encode()).hexdigest()
@@ -953,6 +960,7 @@ class TaskStore:
                 "review_dependency_output": "review_dependency_output",
                 "web_fetch": "web.fetch",
                 "web_search": "web.search",
+                "browser_run": "browser.run",
             }.get(model_calls[0].get("function", {}).get("name"))
             if expected_tool not in allowed:
                 raise PermissionError("Saved tool is outside task recovery scope.")
@@ -966,6 +974,7 @@ class TaskStore:
                 "review_dependency_output": "workspace.read",
                 "web.fetch": "web.read",
                 "web.search": "web.search",
+                "browser.run": "web.browser.read",
             }[expected_tool]
             if required_permission not in json.loads(task["permission_scope"]):
                 raise PermissionError("Task no longer has permission for this saved read.")
@@ -1000,6 +1009,7 @@ class TaskStore:
                     "workspace.list_directory",
                     "web.fetch",
                     "web.search",
+                    "browser.run",
                 }:
                     raise PermissionError("An interrupted write cannot be resolved as a read.")
                 if connection.execute(

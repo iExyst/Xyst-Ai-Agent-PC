@@ -4432,7 +4432,8 @@
               "review_dependency_file",
               "review_dependency_output",
               "web.fetch",
-              "web.search"
+              "web.search",
+              "browser.run"
             ],
             "title": "Tool Name",
             "type": "string"
