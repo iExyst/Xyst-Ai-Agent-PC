@@ -1499,6 +1499,21 @@ class RunStore:
             )
         return len(rows)
 
+    def stop_specialists(self, run_id: str, *, cancel: bool) -> int:
+        """Stop active specialists without changing the parent run lease or state."""
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
+                raise KeyError(run_id)
+            stopped = self._stop_specialists(
+                connection,
+                run_id,
+                "parent_cancelled" if cancel else "parent_paused",
+                cancel=cancel,
+            )
+            connection.commit()
+            return stopped
+
     def transition(
         self,
         run_id: str,

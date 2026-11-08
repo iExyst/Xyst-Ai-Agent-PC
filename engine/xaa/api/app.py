@@ -3189,6 +3189,10 @@ def create_app(
 
     @app.post("/runs/{run_id}/pause", response_model=RunRecord)
     async def pause_run(run_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
+        try:
+            run_store.stop_specialists(run_id, cancel=False)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found.") from exc
         await supervisor.stop(run_id)
         record = run_store.get_run(run_id)
         if record is None:
@@ -3206,6 +3210,10 @@ def create_app(
 
     @app.post("/runs/{run_id}/cancel", response_model=RunRecord)
     async def cancel_run(run_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
+        try:
+            run_store.stop_specialists(run_id, cancel=True)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Run not found.") from exc
         await supervisor.stop(run_id)
         record = run_store.get_run(run_id)
         if record is None:
