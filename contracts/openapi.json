@@ -4419,12 +4419,22 @@
           "model_call_id": {
             "title": "Model Call Id",
             "type": "string"
+          },
+          "state": {
+            "enum": [
+              "intended",
+              "completed",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
           }
         },
         "required": [
           "model_call_id",
           "journal_call_id",
-          "argv"
+          "argv",
+          "state"
         ],
         "title": "TaskRecoverableCommand",
         "type": "object"

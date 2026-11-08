@@ -131,6 +131,69 @@ async def test_private_command_requires_explicit_task_permission(workspace_tmp_p
     assert not store.unresolved_tool_calls(run_id)
 
 
+async def test_lost_worker_can_attach_already_saved_command_result(workspace_tmp_path):
+    transport = FixtureTransport()
+    store, run_id, owner, _, scopes = await private_tasks(workspace_tmp_path, transport)
+    scope = scopes[0]
+    model_call_id = "model-command-1"
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": scope.task_id,
+                "inference_id": "inference-command-1",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": model_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_run_command",
+                                "arguments": '{"argv":["fixture"]}',
+                            },
+                        }
+                    ],
+                },
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+            },
+        )
+    await CommandController(store, transport, task_scope=scope).execute(
+        run_id,
+        owner,
+        "journal-command-1",
+        {"argv": ["fixture"]},
+        idempotency_key="journal-command-1",
+        deadline=time.monotonic() + 15,
+        task_call_id=model_call_id,
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
+            (f"{run_id}:{scope.task_id}",),
+        )
+    tasks = TaskStore(store)
+    assert tasks.recover_expired(run_id, owner) == [scope.task_id]
+    summary = tasks.recovery_summary(run_id, scope.task_id)
+    assert summary["unresolved_tool_calls"] == 0
+    assert summary["recoverable_commands"] == [
+        {
+            "model_call_id": model_call_id,
+            "journal_call_id": "journal-command-1",
+            "argv": ["fixture"],
+            "state": "completed",
+        }
+    ]
+    tasks.record_recovered_command_result(
+        run_id, owner, scope.task_id, model_call_id, "journal-command-1"
+    )
+    recovered = tasks.recovery_summary(run_id, scope.task_id)
+    assert recovered["pending_model_tool_calls"] == []
+    assert recovered["saved_tool_results"] == 1
+
+
 async def test_task_scope_is_required_for_snapshot_and_launch(workspace_tmp_path):
     transport = FixtureTransport()
     store, run_id, owner, _, scopes = await private_tasks(workspace_tmp_path, transport)

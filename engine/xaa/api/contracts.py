@@ -182,6 +182,7 @@ class TaskRecoverableCommand(BaseModel):
     model_call_id: str
     journal_call_id: str
     argv: list[str]
+    state: Literal["intended", "completed", "failed"]
 
 
 class TaskRecoverySummary(BaseModel):

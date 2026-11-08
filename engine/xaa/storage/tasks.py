@@ -555,14 +555,24 @@ class TaskStore:
                 and isinstance(command_call_id, str)
             ):
                 reservations[model_call_id] = command_call_id
-        unresolved_by_id = {item["id"]: item for item in unresolved}
+        with self.runs.connection() as connection:
+            saved_commands = {
+                row["provider_call_id"]: row
+                for row in connection.execute(
+                    "SELECT provider_call_id,state,arguments FROM tool_calls "
+                    "WHERE run_id=? AND task_id=? AND tool_name='workspace.run_command' "
+                    "AND state IN ('intended','completed','failed')",
+                    (run_id, f"{run_id}:{task_id}"),
+                )
+                if row["provider_call_id"]
+            }
         recoverable_commands: list[dict[str, Any]] = []
         for model_call_id in pending_command_ids:
             journal_call_id = reservations.get(model_call_id)
-            command = unresolved_by_id.get(journal_call_id)
-            if command is None or command.get("tool_name") != "workspace.run_command":
+            command = saved_commands.get(journal_call_id)
+            if command is None:
                 continue
-            arguments = cast(dict[str, Any], command.get("arguments", {}))
+            arguments = cast(dict[str, Any], json.loads(command["arguments"]))
             argv = cast(list[Any] | None, arguments.get("argv"))
             if not isinstance(argv, list) or any(not isinstance(item, str) for item in argv):
                 continue
@@ -571,6 +581,7 @@ class TaskStore:
                     "model_call_id": model_call_id,
                     "journal_call_id": journal_call_id,
                     "argv": argv,
+                    "state": command["state"],
                 }
             )
         candidate_reviewable = bool(
@@ -696,13 +707,20 @@ class TaskStore:
             connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, token)
             task = connection.execute(
-                "SELECT status,blocked_reason FROM tasks WHERE run_id=? AND id=?",
+                "SELECT status FROM tasks WHERE run_id=? AND id=?",
                 (run_id, f"{run_id}:{task_id}"),
+            ).fetchone()
+            blocked = connection.execute(
+                "SELECT json_extract(payload,'$.reason') FROM run_events "
+                "WHERE run_id=? AND event_type='task.blocked' "
+                "AND json_extract(payload,'$.task_id')=? ORDER BY sequence DESC LIMIT 1",
+                (run_id, task_id),
             ).fetchone()
             if (
                 task is None
                 or task["status"] != "blocked"
-                or task["blocked_reason"] != "worker_lost_reconciliation_required"
+                or blocked is None
+                or blocked[0] != "worker_lost_reconciliation_required"
             ):
                 raise ValueError("Task recovery state changed; refresh the plan.")
             tool = connection.execute(

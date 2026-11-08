@@ -2292,18 +2292,19 @@ def create_app(
                 run_store.transition(
                     run_id, RunState.RUNNING, reason="task_command_recovery", owner=owner
                 )
-                journal = CommandJournal(run_store, purpose="agent")
-                intent = journal.recovery_intent(run_id, owner, match["journal_call_id"])
-                transport = await WSLTransport.discover(
-                    intent.distribution, deadline=time.monotonic() + 30
-                )
-                if transport.profile_sha256 != intent.profile_sha256:
-                    raise PermissionError(
-                        "Execution profile changed; reconciliation is unavailable."
+                if match["state"] == "intended":
+                    journal = CommandJournal(run_store, purpose="agent")
+                    intent = journal.recovery_intent(run_id, owner, match["journal_call_id"])
+                    transport = await WSLTransport.discover(
+                        intent.distribution, deadline=time.monotonic() + 30
                     )
-                await CommandController(run_store, transport, purpose="agent").recover(
-                    run_id, owner, match["journal_call_id"]
-                )
+                    if transport.profile_sha256 != intent.profile_sha256:
+                        raise PermissionError(
+                            "Execution profile changed; reconciliation is unavailable."
+                        )
+                    await CommandController(run_store, transport, purpose="agent").recover(
+                        run_id, owner, match["journal_call_id"]
+                    )
                 tasks.record_recovered_command_result(
                     run_id, owner, task_id, model_call_id, match["journal_call_id"]
                 )
