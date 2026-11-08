@@ -12,10 +12,11 @@ from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, object]]:
     """Return deterministic command presets inferred from project manifests.
 
-    The suggestions are hints only. They are never executed until a user reviews
-    the exact argv and starts a restricted project validation from the UI. Every
-    supported manifest in the bounded snapshot is represented so a monorepo is
-    not mistaken for a single-package project by the automatic dispatcher.
+    Suggestions are hints only. A sole suggestion may be dispatched by final
+    review under the run's existing restricted-command grant; its evidence still
+    requires human inspection and selection. Every supported manifest in the
+    bounded snapshot is represented so a monorepo is not mistaken for a single
+    package by the automatic dispatcher.
     """
     paths = {entry.path.casefold(): entry.path for entry in snapshot.files}
     suggestions: list[dict[str, object]] = []
@@ -123,6 +124,24 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
             {
                 "label": f"Rust tests (Cargo){suffix}",
                 "rationale": f"{cargo} was found. Offline mode prevents dependency downloads; confirm the required toolchain and crates are already available.",
+                "argv": argv,
+            }
+        )
+
+    swift_packages = [
+        path for key, path in paths.items() if PurePosixPath(key).name == "package.swift"
+    ]
+    for manifest in sorted(swift_packages, key=str.casefold):
+        directory = str(PurePosixPath(manifest).parent)
+        argv = ["/usr/bin/env", "swift", "test"]
+        suffix = ""
+        if directory != ".":
+            argv.extend(["--package-path", directory])
+            suffix = f" — {directory}"
+        suggestions.append(
+            {
+                "label": f"Swift tests (Swift Package Manager){suffix}",
+                "rationale": f"{manifest} was found. Confirm Swift and any required dependencies are available in the restricted WSL environment.",
                 "argv": argv,
             }
         )

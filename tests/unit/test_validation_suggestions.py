@@ -106,6 +106,28 @@ def test_suggests_maven_gradle_and_declared_composer_test_scripts():
     ]
 
 
+def test_suggests_swift_package_tests_at_root_and_nested_paths():
+    result = suggest_validation_commands(
+        snapshot(
+            ("Package.swift", b"// swift-tools-version: 5.9"),
+            ("apps/ios/Package.swift", b"// swift-tools-version: 6.0"),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "Swift tests (Swift Package Manager) — apps/ios",
+        "Swift tests (Swift Package Manager)",
+    ]
+    assert result[0]["argv"] == [
+        "/usr/bin/env",
+        "swift",
+        "test",
+        "--package-path",
+        "apps/ios",
+    ]
+    assert result[1]["argv"] == ["/usr/bin/env", "swift", "test"]
+
+
 def test_suggests_every_supported_manifest_in_a_monorepo():
     result = suggest_validation_commands(
         snapshot(
@@ -119,9 +141,10 @@ def test_suggests_every_supported_manifest_in_a_monorepo():
             ("services/two/go.mod", b"module two"),
             ("dotnet/one.sln", b""),
             ("dotnet/two.sln", b""),
+            ("ios/Package.swift", b"// swift-tools-version: 6.0"),
         )
     )
 
-    assert len(result) == 10
-    assert len({tuple(item["argv"]) for item in result}) == 10
+    assert len(result) == 11
+    assert len({tuple(item["argv"]) for item in result}) == 11
     assert any("services/two" in str(item["argv"]) for item in result)
