@@ -67,6 +67,18 @@ def _revision(skill_id: str, version: int = 1) -> SkillContentRevision:
     )
 
 
+def _targeted_patch(
+    skill_id: str, old_string: str, new_string: str, *, replace_all: bool = False
+) -> SkillContentRevision:
+    return SkillContentRevision(
+        skill_id=skill_id,
+        expected_version=1,
+        old_string=old_string,
+        new_string=new_string,
+        replace_all=replace_all,
+    )
+
+
 def test_model_revision_creates_content_only_candidate_version(workspace_tmp_path: Path) -> None:
     store = RunStore(workspace_tmp_path / "procedure-revision.sqlite3")
     skills = SkillStore(store)
@@ -99,6 +111,67 @@ def test_model_revision_creates_content_only_candidate_version(workspace_tmp_pat
             (run_id,),
         ).fetchone()
     assert call is not None and call["state"] == "completed"
+
+
+def test_model_revision_supports_exact_targeted_text_replacement(workspace_tmp_path: Path) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-revision-targeted.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    run_id, owner = _run(store, entry["id"])
+
+    result = skills.create_model_revision_from_run(
+        run_id,
+        owner,
+        "targeted-revision",
+        _targeted_patch(entry["id"], "requested files", "assigned files"),
+    )
+
+    assert result["edit_mode"] == "targeted_replace"
+    assert result["replacements"] == 1
+    assert (
+        skills.version(entry["id"], 1)["content"]
+        == "Read requested files and report observed facts."
+    )
+    assert (
+        skills.version(entry["id"], 2)["content"]
+        == "Read assigned files and report observed facts."
+    )
+
+
+def test_targeted_patch_requires_unique_match_or_explicit_replace_all(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-revision-replace-all.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(
+        SkillDraft(
+            **{
+                **_draft().model_dump(),
+                "content": "Read requested files and read requested files again.",
+            }
+        )
+    )
+    run_id, owner = _run(store, entry["id"])
+    with pytest.raises(SkillConflict, match="more than once"):
+        skills.create_model_revision_from_run(
+            run_id,
+            owner,
+            "ambiguous-patch",
+            _targeted_patch(entry["id"], "requested files", "assigned files"),
+        )
+
+    replace_run, replace_owner = _run(store, entry["id"])
+    result = skills.create_model_revision_from_run(
+        replace_run,
+        replace_owner,
+        "replace-all-patch",
+        _targeted_patch(entry["id"], "requested files", "assigned files", replace_all=True),
+    )
+    assert result["replacements"] == 2
+    assert (
+        skills.version(entry["id"], 2)["content"]
+        == "Read assigned files and read assigned files again."
+    )
 
 
 def test_model_revision_of_active_entry_does_not_move_active_pointer(

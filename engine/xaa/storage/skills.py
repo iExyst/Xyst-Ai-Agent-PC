@@ -197,17 +197,38 @@ class SkillDraft(BaseModel):
 
 
 class SkillContentRevision(BaseModel):
-    """A model may only replace content on the explicitly selected procedure version."""
+    """Content-only full rewrite or exact targeted replacement of the selected version."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str = Field(min_length=1, max_length=128)
     expected_version: int = Field(ge=1, le=127)
-    content: str = Field(min_length=1, max_length=MAX_PROCEDURE_TEXT_BYTES)
+    content: str | None = Field(default=None, max_length=MAX_PROCEDURE_TEXT_BYTES)
+    old_string: str | None = Field(default=None, max_length=MAX_PROCEDURE_TEXT_BYTES)
+    new_string: str | None = Field(default=None, max_length=MAX_PROCEDURE_TEXT_BYTES)
+    replace_all: bool = False
 
     @model_validator(mode="after")
     def bounded_content(self) -> "SkillContentRevision":
-        if not self.content.strip() or len(self.content.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES:
-            raise ValueError("Procedure content must contain visible text within the byte limit.")
+        if self.content is not None:
+            if self.old_string is not None or self.new_string is not None or self.replace_all:
+                raise ValueError("Use either full content or one targeted replacement, not both.")
+            if (
+                not self.content.strip()
+                or len(self.content.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES
+            ):
+                raise ValueError(
+                    "Procedure content must contain visible text within the byte limit."
+                )
+            return self
+        if self.old_string is None or self.new_string is None:
+            raise ValueError("Provide full content or both old_string and new_string.")
+        if not self.old_string.strip():
+            raise ValueError("Targeted replacement needs visible old_string text.")
+        if any(
+            len(value.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES
+            for value in (self.old_string, self.new_string)
+        ):
+            raise ValueError("Targeted replacement strings exceed the procedure byte limit.")
         return self
 
 
@@ -653,9 +674,36 @@ class SkillStore:
                 "WHERE skill_id=? AND version=? ORDER BY relative_path",
                 (revision.skill_id, current_version),
             ).fetchall()
+            replacement_count: int | None = None
+            if revision.content is not None:
+                revised_content = revision.content
+            else:
+                old_string = revision.old_string
+                new_string = revision.new_string
+                assert old_string is not None and new_string is not None
+                prior_content = str(latest["content"])
+                replacement_count = prior_content.count(old_string)
+                if replacement_count == 0:
+                    raise SkillConflict(
+                        "Exact old_string text was not found in the selected procedure."
+                    )
+                if replacement_count != 1 and not revision.replace_all:
+                    raise SkillConflict(
+                        "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                    )
+                revised_content = prior_content.replace(
+                    old_string, new_string, -1 if revision.replace_all else 1
+                )
+                if (
+                    not revised_content.strip()
+                    or len(revised_content.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES
+                ):
+                    raise SkillConflict(
+                        "The targeted replacement would leave invalid or oversized content."
+                    )
             draft = SkillDraft(
                 name=entry["name"],
-                content=revision.content,
+                content=revised_content,
                 description=prior_evidence.get("description", ""),
                 category=prior_evidence.get("category", ""),
                 required_tools=json.loads(latest["required_tools"]),
@@ -704,6 +752,8 @@ class SkillStore:
                 "status": "candidate_version_created",
                 "procedure": summary,
                 "version": next_version,
+                "edit_mode": "full_rewrite" if replacement_count is None else "targeted_replace",
+                "replacements": replacement_count,
                 "trust": "untrusted_model_revision",
                 "requires_user_review": True,
                 "notice": "The new version inherits the existing tools, permissions, metadata and resources. It was not evaluated or made active.",

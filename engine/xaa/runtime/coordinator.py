@@ -1029,7 +1029,7 @@ class Coordinator:
                     "type": "function",
                     "function": {
                         "name": "procedure_revise",
-                        "description": "Create a new content-only version of the exact procedure selected for this run. This write is explicitly authorized by the user. The procedure title, tool dependencies, permissions, metadata, and linked resources are copied unchanged. The new version is untrusted and unevaluated; never claim it is verified, activate it, or change the active version. Do not include secrets or unrelated project data.",
+                        "description": "Create a new content-only version of the exact procedure selected for this run. This write is explicitly authorized by the user. Choose one form: provide full content, or replace exact old_string text with new_string (set replace_all only when every occurrence should change). Patches affect the main procedure text only, never linked files. The title, tool dependencies, permissions, metadata, and linked resources are copied unchanged. The new version is untrusted and unevaluated; never claim it is verified, activate it, or change the active version. Do not include secrets or unrelated project data.",
                         "parameters": schema,
                     },
                 },
