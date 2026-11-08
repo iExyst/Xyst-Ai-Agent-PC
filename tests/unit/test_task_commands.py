@@ -5,8 +5,13 @@ import subprocess
 import time
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from test_command_controller import FixtureTransport, setup
+from xaa.api.app import create_app
+from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.command_controller import CommandController
+from xaa.runtime.states import RunState
 from xaa.runtime.task_commands import command_evidence
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
@@ -186,9 +191,15 @@ async def test_lost_worker_can_attach_already_saved_command_result(workspace_tmp
             "state": "completed",
         }
     ]
-    tasks.record_recovered_command_result(
-        run_id, owner, scope.task_id, model_call_id, "journal-command-1"
-    )
+    store.transition(run_id, RunState.BLOCKED, reason="lost_specialist", owner=owner)
+    token = "task-command-recovery-api-token-123456"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
+        response = client.post(
+            f"/runs/{run_id}/tasks/{scope.task_id}/recovery/commands/{model_call_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["saved_tool_results"] == 1
     recovered = tasks.recovery_summary(run_id, scope.task_id)
     assert recovered["pending_model_tool_calls"] == []
     assert recovered["saved_tool_results"] == 1
