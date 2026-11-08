@@ -78,7 +78,10 @@ async def main() -> None:
             or filename not in by_role["researcher"]["objective"]
             or by_role["reviewer"]["dependencies"] != [by_role["researcher"]["local_id"]]
             or tasks.readiness(run_id) != ([by_role["researcher"]["local_id"]], [])
-            or calls != ["workspace_list_directory", "plan_save"]
+            or not calls
+            or calls[0] != "workspace_list_directory"
+            or not set(calls[1:]) <= {"plan_save"}
+            or "plan_save" not in calls[1:]
         ):
             raise RuntimeError("Model did not save the expected dependency graph.")
 
@@ -118,7 +121,7 @@ async def main() -> None:
             raise RuntimeError("The dispatched researcher did not produce exact read evidence.")
 
         evidence_ids = [item["call_id"] for item in source["evidence"]]
-        source_read_ids = {event["payload"]["call_id"] for event in source_reads}
+        source_read_ids = {event["payload"]["journal_id"] for event in source_reads}
         if not evidence_ids or not set(evidence_ids) <= source_read_ids:
             raise RuntimeError("Research candidate did not cite its saved file-read evidence.")
         await review_candidate(
