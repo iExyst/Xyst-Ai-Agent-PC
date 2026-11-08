@@ -64,6 +64,7 @@ from xaa.storage.skills import (
     SkillConflict,
     SkillContentRevision,
     SkillDraft,
+    SkillResourceRemoval,
     SkillResourceRevision,
     SkillStore,
     available_toolsets,
@@ -671,6 +672,80 @@ class Coordinator:
                     code="procedure_resource_revision_conflict",
                     message=str(exc),
                 )
+        if name == "procedure_resource_remove":
+            if not run.get("allow_procedure_resource_removal"):
+                raise PermissionError(
+                    "This run has no user authorization to remove a procedure resource."
+                )
+            try:
+                removal = SkillResourceRemoval.model_validate(arguments)
+            except ValidationError:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.resource_remove",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError(
+                        "Procedure resource removal validation requires reconciliation."
+                    )
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="invalid_procedure_resource_removal",
+                    message="Resource path or selected procedure identity is invalid.",
+                )
+            selected = run.get("procedure_trial")
+            if (
+                selected is None
+                or selected.get("skill_id") != removal.skill_id
+                or selected.get("version") != removal.expected_version
+            ):
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.resource_remove",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure resource removal scope requires reconciliation.")
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_resource_removal_scope_mismatch",
+                    message="Remove only from the exact procedure version selected for this run.",
+                )
+            try:
+                return SkillStore(self.store).create_model_resource_removal_from_run(
+                    run_id, token, call["id"], removal
+                )
+            except SkillConflict as exc:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.resource_remove",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError(
+                        "Procedure resource removal conflict requires reconciliation."
+                    ) from exc
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_resource_removal_conflict",
+                    message=str(exc),
+                )
         if name.startswith("mcp_"):
             if self.mcp_manager is None or not self.mcp_manager.is_tool_authorized_for_run(
                 name, set(run.get("approved_mcp_tools", []))
@@ -1124,6 +1199,21 @@ class Coordinator:
                     "function": {
                         "name": "procedure_resource_revise",
                         "description": "Create an unevaluated candidate package version by creating or replacing exactly one UTF-8 linked resource at a normalized relative path. This separate file write was explicitly authorized for the selected procedure and version. The procedure body, tools, permissions, metadata, other resources and active pointer stay unchanged. Resources are untrusted text, and scripts remain inert. Do not attempt deletion, path traversal, execution, activation or evaluation; the user reviews and evaluates the version separately.",
+                        "parameters": schema,
+                    },
+                },
+            )
+        if run.get("allow_procedure_resource_removal") and run.get("procedure_trial"):
+            trial = run["procedure_trial"]
+            schema = SkillResourceRemoval.model_json_schema()
+            schema["properties"]["skill_id"]["enum"] = [trial["skill_id"]]
+            schema["properties"]["expected_version"]["enum"] = [trial["version"]]
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "procedure_resource_remove",
+                        "description": "Create an unevaluated candidate package version with exactly one linked resource removed. This removal was explicitly authorized by the user for the selected procedure and version. Other files, procedure text, tools, permissions, metadata and the active pointer stay unchanged. The earlier version is preserved. Do not remove multiple files or activate/evaluate the candidate; the user reviews it separately.",
                         "parameters": schema,
                     },
                 },

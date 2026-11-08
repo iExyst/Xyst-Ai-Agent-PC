@@ -1435,6 +1435,11 @@ export interface components {
              */
             allow_procedure_drafting: boolean;
             /**
+             * Allow Procedure Resource Removal
+             * @default false
+             */
+            allow_procedure_resource_removal: boolean;
+            /**
              * Allow Procedure Resource Revision
              * @default false
              */
@@ -2280,6 +2285,11 @@ export interface components {
              * @default false
              */
             allow_procedure_drafting: boolean;
+            /**
+             * Allow Procedure Resource Removal
+             * @default false
+             */
+            allow_procedure_resource_removal: boolean;
             /**
              * Allow Procedure Resource Revision
              * @default false

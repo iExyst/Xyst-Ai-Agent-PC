@@ -141,6 +141,7 @@ class CreateRunRequest(BaseModel):
     allow_procedure_drafting: bool = False
     allow_procedure_revision: bool = False
     allow_procedure_resource_revision: bool = False
+    allow_procedure_resource_removal: bool = False
     approved_mcp_tools: list[str] = Field(default_factory=list, max_length=50)
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
@@ -1690,6 +1691,7 @@ def create_app(
                 allow_procedure_drafting=payload.allow_procedure_drafting,
                 allow_procedure_revision=payload.allow_procedure_revision,
                 allow_procedure_resource_revision=payload.allow_procedure_resource_revision,
+                allow_procedure_resource_removal=payload.allow_procedure_resource_removal,
                 approved_mcp_tools=payload.approved_mcp_tools,
                 image_bytes=image_bytes,
                 image_media_type=image_type,

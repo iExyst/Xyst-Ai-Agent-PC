@@ -18,6 +18,7 @@ from xaa.storage.skills import (
     SkillConflict,
     SkillContentRevision,
     SkillDraft,
+    SkillResourceRemoval,
     SkillResourceRevision,
     SkillRevision,
     SkillStore,
@@ -272,6 +273,118 @@ def test_resource_revision_adds_one_utf8_file_and_refuses_path_escape(
     assert [asset["path"] for asset in version_two["assets"]] == ["references/new.txt"]
 
 
+def test_model_resource_removal_preserves_previous_version_and_other_package_fields(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-remove.sqlite3")
+    skills = SkillStore(store)
+    original = _draft()
+    original.assets = [
+        SkillAsset(
+            path="references/remove.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"remove me").hexdigest(),
+            content_base64=base64.b64encode(b"remove me").decode("ascii"),
+        ),
+        SkillAsset(
+            path="references/keep.txt",
+            media_type="text/plain",
+            sha256=hashlib.sha256(b"keep me").hexdigest(),
+            content_base64=base64.b64encode(b"keep me").decode("ascii"),
+        ),
+    ]
+    entry = skills.create(original)
+    before = skills.version(entry["id"], 1)
+    run_id = store.create_run(
+        objective="Remove the obsolete reference.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_resource_removal=True,
+    )
+    owner = store.acquire_lease(str(run_id["id"]), "procedure-resource-remove-test")
+    assert owner is not None
+
+    result = skills.create_model_resource_removal_from_run(
+        str(run_id["id"]),
+        owner,
+        "remove-resource-call",
+        SkillResourceRemoval(skill_id=entry["id"], expected_version=1, path="references/remove.md"),
+    )
+
+    after = skills.version(entry["id"], 2)
+    assert result["removed_resource_path"] == "references/remove.md"
+    assert after["content"] == before["content"]
+    assert after["required_tools"] == before["required_tools"]
+    assert [asset["path"] for asset in after["assets"]] == ["references/keep.txt"]
+    assert base64.b64decode(after["assets"][0]["content_base64"]) == b"keep me"
+    assert after["evaluation_evidence"]["state"] == "candidate"
+    assert after["evaluation_evidence"]["evaluations"] == []
+    assert skills.get(entry["id"])["active_version"] is None
+    assert skills.version(entry["id"], 1) == before
+    with store.connection() as connection:
+        call = connection.execute(
+            "SELECT state FROM tool_calls WHERE run_id=? AND tool_name='procedure.resource_remove'",
+            (str(run_id["id"]),),
+        ).fetchone()
+    assert call is not None and call["state"] == "completed"
+
+
+def test_resource_removal_rejects_missing_path_escape_and_missing_grant(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-remove-denied.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    removal_run = store.create_run(
+        objective="Remove one selected resource.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_resource_removal=True,
+    )
+    run_id = str(removal_run["id"])
+    owner = store.acquire_lease(run_id, "procedure-resource-remove-test")
+    assert owner is not None
+    with pytest.raises(ValidationError, match="normalized relative POSIX"):
+        SkillResourceRemoval(skill_id=entry["id"], expected_version=1, path="../outside.txt")
+    with pytest.raises(SkillConflict, match="no linked resource"):
+        skills.create_model_resource_removal_from_run(
+            run_id,
+            owner,
+            "missing-resource-call",
+            SkillResourceRemoval(skill_id=entry["id"], expected_version=1, path="missing.txt"),
+        )
+    denied_run, denied_owner = _run(store, entry["id"])
+    with pytest.raises(PermissionError, match="no user authorization"):
+        skills.create_model_resource_removal_from_run(
+            denied_run,
+            denied_owner,
+            "denied-resource-remove",
+            SkillResourceRemoval(skill_id=entry["id"], expected_version=1, path="missing.txt"),
+        )
+
+
+def test_resource_removal_requires_exclusive_run_grant(workspace_tmp_path: Path) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-remove-combined.sqlite3")
+    entry = SkillStore(store).create(_draft())
+    with pytest.raises(ValueError, match="Choose only one"):
+        store.create_run(
+            objective="Conflicting edits.",
+            acceptance_criteria=[],
+            workspace=".",
+            mode="observe",
+            model="fixture",
+            procedure_trial={"skill_id": entry["id"], "version": 1},
+            allow_procedure_revision=True,
+            allow_procedure_resource_removal=True,
+        )
+
+
 def test_resource_revision_requires_its_own_grant_and_rejects_combined_grants(
     workspace_tmp_path: Path,
 ) -> None:
@@ -284,7 +397,7 @@ def test_resource_revision_requires_its_own_grant_and_rejects_combined_grants(
     )
     with pytest.raises(PermissionError, match="no user authorization"):
         skills.create_model_resource_revision_from_run(run_id, owner, "denied-resource", revision)
-    with pytest.raises(ValueError, match="Choose either"):
+    with pytest.raises(ValueError, match="Choose only one"):
         store.create_run(
             objective="Conflicting revisions.",
             acceptance_criteria=[],
@@ -567,6 +680,79 @@ async def test_coordinator_exposes_and_executes_separately_granted_resource_revi
     assert not store.unresolved_tool_calls(str(run["id"]))
 
 
+@pytest.mark.asyncio
+async def test_coordinator_exposes_and_executes_separately_granted_resource_removal(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-remove-coordinator.sqlite3")
+    draft = _draft()
+    draft.assets = [
+        SkillAsset(
+            path="references/remove.txt",
+            media_type="text/plain",
+            sha256=hashlib.sha256(b"obsolete").hexdigest(),
+            content_base64=base64.b64encode(b"obsolete").decode("ascii"),
+        )
+    ]
+    skills = SkillStore(store)
+    entry = skills.create(draft)
+    run = store.create_run(
+        objective="Remove the obsolete reference.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_resource_removal=True,
+    )
+    removal = SkillResourceRemoval(
+        skill_id=entry["id"], expected_version=1, path="references/remove.txt"
+    )
+
+    class ResourceRemovalProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            available = {tool["function"]["name"]: tool for tool in (tools or [])}
+            assert "procedure_resource_remove" in available
+            assert "procedure_resource_revise" not in available
+            schema = available["procedure_resource_remove"]["function"]["parameters"]
+            assert schema["properties"]["skill_id"]["enum"] == [entry["id"]]
+            call = {
+                "id": "resource-removal-call",
+                "type": "function",
+                "function": {
+                    "name": "procedure_resource_remove",
+                    "arguments": json.dumps(removal.model_dump(mode="json")),
+                },
+            }
+            if not any(message.get("role") == "tool" for message in messages):
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": [call]}}]}
+            return {
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Removal candidate saved."}}
+                ]
+            }
+
+    provider = ResourceRemovalProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+    saved = skills.version(entry["id"], 2)
+    assert saved["assets"] == []
+    assert saved["evaluation_evidence"]["state"] == "candidate"
+    assert not store.unresolved_tool_calls(str(run["id"]))
+
+
 def test_api_persists_separate_procedure_resource_revision_grant(
     workspace_tmp_path: Path,
 ) -> None:
@@ -592,6 +778,40 @@ def test_api_persists_separate_procedure_resource_revision_grant(
         event
         for event in store.list_events(run["id"])
         if event["event_type"] == "procedure.resource_revision_granted"
+    ]
+    assert len(grants) == 1
+    assert grants[0]["payload"] == {
+        "actor": "local_user",
+        "skill_id": entry["id"],
+        "expected_version": 1,
+    }
+
+
+def test_api_persists_separate_procedure_resource_removal_grant(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-remove-api.sqlite3")
+    entry = SkillStore(store).create(_draft())
+    app = create_app(LMStudioProvider(), SecretStr(API_TOKEN), store=store)
+    with TestClient(app) as client:
+        response = client.post(
+            "/runs",
+            headers={"Authorization": f"Bearer {API_TOKEN}"},
+            json={
+                "objective": "Remove one linked reference.",
+                "workspace": ".",
+                "procedure_trial": {"skill_id": entry["id"], "version": 1},
+                "allow_procedure_resource_removal": True,
+            },
+        )
+    assert response.status_code == 201
+    run = response.json()
+    assert run["allow_procedure_resource_revision"] is False
+    assert run["allow_procedure_resource_removal"] is True
+    grants = [
+        event
+        for event in store.list_events(run["id"])
+        if event["event_type"] == "procedure.resource_removal_granted"
     ]
     assert len(grants) == 1
     assert grants[0]["payload"] == {

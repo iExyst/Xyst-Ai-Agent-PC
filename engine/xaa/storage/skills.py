@@ -258,6 +258,25 @@ class SkillResourceRevision(BaseModel):
         return self
 
 
+class SkillResourceRemoval(BaseModel):
+    """Remove one normalized linked resource from a new candidate package version."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    skill_id: str = Field(min_length=1, max_length=128)
+    expected_version: int = Field(ge=1, le=127)
+    path: str = Field(min_length=1, max_length=512)
+
+    @model_validator(mode="after")
+    def normalized_path(self) -> "SkillResourceRemoval":
+        SkillAsset(
+            path=self.path,
+            content_base64="",
+            media_type="text/plain",
+            sha256=hashlib.sha256(b"").hexdigest(),
+        )
+        return self
+
+
 class SkillTrial(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str = Field(min_length=1, max_length=128)
@@ -993,6 +1012,186 @@ class SkillStore:
                     "version": next_version,
                     "parent_version": current_version,
                     "path": asset.path,
+                    "call_id": call_id,
+                },
+            )
+            self.runs.record_event(
+                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
+            )
+        return result
+
+    def create_model_resource_removal_from_run(
+        self, run_id: str, owner: str, call_id: str, removal: SkillResourceRemoval
+    ) -> dict[str, Any]:
+        """Create an unevaluated candidate version without one granted package resource."""
+        if self.runs.task_scope is not None:
+            raise PermissionError("Specialists cannot remove user-library procedure resources.")
+        if not call_id or len(call_id) > 128:
+            raise ValueError("Procedure resource removal call identity is invalid.")
+        now = utc_now()
+        encoded_arguments = json.dumps(removal.model_dump(mode="json"), sort_keys=True)
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, owner)
+            grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_removal_granted'",
+                (run_id,),
+            ).fetchall()
+            selected = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.selected'",
+                (run_id,),
+            ).fetchall()
+            if len(grants) != 1:
+                raise PermissionError(
+                    "This run has no user authorization to remove a procedure resource."
+                )
+            grant = json.loads(grants[0][0])
+            if (
+                grant.get("actor") != "local_user"
+                or grant.get("skill_id") != removal.skill_id
+                or grant.get("expected_version") != removal.expected_version
+                or len(selected) != 1
+                or json.loads(selected[0][0]).get("skill_id") != removal.skill_id
+                or json.loads(selected[0][0]).get("version") != removal.expected_version
+            ):
+                raise PermissionError("Procedure resource removal exceeds the selected run grant.")
+            if connection.execute(
+                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run_id, call_id),
+            ).fetchone():
+                raise SkillConflict("The model procedure-resource removal call was already used.")
+            entry = connection.execute(
+                "SELECT name,lifecycle_state,active_version FROM skills WHERE id=?",
+                (removal.skill_id,),
+            ).fetchone()
+            latest = connection.execute(
+                "SELECT * FROM skill_versions WHERE skill_id=? ORDER BY version DESC LIMIT 1",
+                (removal.skill_id,),
+            ).fetchone()
+            if entry is None or latest is None:
+                raise SkillConflict("The selected procedure no longer exists.")
+            current_version = int(latest["version"])
+            if entry["lifecycle_state"] == "deprecated":
+                raise SkillConflict("Deprecated procedures cannot receive model resource removals.")
+            if current_version != removal.expected_version:
+                raise SkillConflict(
+                    "Procedure changed; reload its latest version before removing resources."
+                )
+            if current_version >= 128:
+                raise SkillConflict("A procedure cannot exceed 128 versions.")
+            prior_evidence: dict[str, Any] = json.loads(latest["evaluation_evidence"])
+            raw_prior_source = prior_evidence.get("source")
+            prior_source: dict[str, Any] = (
+                cast(dict[str, Any], raw_prior_source) if isinstance(raw_prior_source, dict) else {}
+            )
+            prior_assets = connection.execute(
+                "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
+                "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                (removal.skill_id, current_version),
+            ).fetchall()
+            asset_map = {
+                str(item["relative_path"]): SkillAsset(
+                    path=item["relative_path"],
+                    media_type=item["media_type"],
+                    sha256=item["sha256"],
+                    content_base64=base64.b64encode(item["content"]).decode("ascii"),
+                )
+                for item in prior_assets
+            }
+            if removal.path not in asset_map:
+                raise SkillConflict(
+                    "The selected procedure version has no linked resource at that path."
+                )
+            del asset_map[removal.path]
+            try:
+                draft = SkillDraft(
+                    name=entry["name"],
+                    content=latest["content"],
+                    description=prior_evidence.get("description", ""),
+                    category=prior_evidence.get("category", ""),
+                    required_tools=json.loads(latest["required_tools"]),
+                    required_permissions=json.loads(latest["required_permissions"]),
+                    assets=list(asset_map.values()),
+                )
+            except ValidationError as exc:
+                raise SkillConflict(
+                    "The resource removal produced an invalid procedure package."
+                ) from exc
+            evidence: dict[str, Any] = {
+                "state": "candidate",
+                "provenance": "model_resource_removal",
+                "source": {
+                    **{
+                        str(key): value
+                        for key, value in prior_source.items()
+                        if isinstance(value, str)
+                    },
+                    "resource_removal_run_id": run_id,
+                    "resource_removal_call_id": call_id,
+                    "parent_version": str(current_version),
+                    "parent_provenance": str(prior_evidence.get("provenance", "user")),
+                },
+                "evaluations": [],
+            }
+            next_version = current_version + 1
+            self._insert_version(connection, removal.skill_id, next_version, draft, evidence)
+            connection.execute("UPDATE skills SET updated_at=? WHERE id=?", (now, removal.skill_id))
+            summary = {
+                "id": removal.skill_id,
+                "name": entry["name"],
+                "description": draft.description,
+                "category": draft.category,
+                "lifecycle_state": entry["lifecycle_state"],
+                "active_version": entry["active_version"],
+                "latest_version": next_version,
+            }
+            result = {
+                "status": "candidate_version_created",
+                "procedure": summary,
+                "version": next_version,
+                "removed_resource_path": removal.path,
+                "trust": "untrusted_model_resource_removal",
+                "requires_user_review": True,
+            }
+            connection.execute(
+                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) "
+                "VALUES (?,NULL,?,'procedure.resource_remove','1',?,?,'completed',?,NULL,?,?,?)",
+                (
+                    str(uuid4()),
+                    run_id,
+                    encoded_arguments,
+                    call_id,
+                    json.dumps(result),
+                    now,
+                    now,
+                    call_id,
+                ),
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "tool.intended",
+                {"call_id": call_id, "tool": "procedure.resource_remove", "internal": False},
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "procedure.version_drafted",
+                {
+                    "skill_id": removal.skill_id,
+                    "version": next_version,
+                    "parent_version": current_version,
+                    "call_id": call_id,
+                },
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "procedure.resource_removed",
+                {
+                    "skill_id": removal.skill_id,
+                    "version": next_version,
+                    "path": removal.path,
                     "call_id": call_id,
                 },
             )
