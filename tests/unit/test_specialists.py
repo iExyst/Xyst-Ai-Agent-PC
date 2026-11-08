@@ -172,7 +172,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
             "browser_run",
             "web.browser.read",
             {"approved_browser": True, "approved_web_hosts": ["example.com"]},
-            '{"url":"https://example.com/fact"}',
+            '{"url":"https://example.com/fact","screenshot":true}',
             "browser.run",
         ),
     ],
@@ -226,7 +226,7 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
 
     async def fake_browser(scoped_store, run_id, parent, journal_id, arguments, hosts, *, deadline):
         requested.append((arguments["url"], ",".join(hosts)))
-        assert "screenshot" not in arguments
+        assert arguments.get("screenshot") is (tool_name == "browser_run")
         assert scoped_store.record_tool_intent(
             run_id,
             parent,
@@ -241,6 +241,16 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
             "trust": "untrusted_web_content",
             "text": "Fixture fact",
         }
+        if arguments.get("screenshot"):
+            result["screenshot_artifact"] = {
+                "id": "fixture-screenshot",
+                "run_id": run_id,
+                "media_type": "image/png",
+                "size_bytes": 3,
+                "sha256": "a" * 64,
+                "provenance": "browser.screenshot:untrusted_web_content",
+                "created_at": "2026-11-08T12:00:00+00:00",
+            }
         scoped_store.record_tool_result(run_id, parent, journal_id, result)
         return result
 
@@ -264,7 +274,7 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
                     for tool in tools or []
                     if tool["function"]["name"] == tool_name
                 )
-                assert "screenshot" not in browser_schema["properties"]
+                assert "screenshot" in browser_schema["properties"]
             if messages[-1]["role"] == "user":
                 message = {
                     "role": "assistant",
@@ -313,6 +323,14 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
     assert journal["task_id"] == f"{run_id}:research"
     assert (journal["tool_name"], journal["state"]) == (journal_name, "completed")
     assert json.loads(journal["result"])["trust"] == "untrusted_web_content"
+    if tool_name == "browser_run":
+        assert json.loads(journal["result"])["screenshot_artifact"]["id"] == "fixture-screenshot"
+        task_results = [
+            event["payload"]["result"]
+            for event in store.list_events(run_id)
+            if event["event_type"] == "task.tool.result"
+        ]
+        assert task_results[0]["screenshot_artifact"]["id"] == "fixture-screenshot"
     assert not store.unresolved_tool_calls(run_id)
 
 

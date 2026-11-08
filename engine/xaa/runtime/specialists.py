@@ -739,10 +739,9 @@ class SpecialistRunner:
             and approved_hosts
         ):
             browser_tool = json.loads(json.dumps(BROWSER_TOOL))
-            browser_tool["function"]["parameters"]["properties"].pop("screenshot", None)
             browser_tool["function"]["description"] += (
                 " Approved exact hostnames: " + ", ".join(approved_hosts) + ". "
-                "Screenshot capture is unavailable to specialist tasks."
+                "Any requested screenshot is stored as an untrusted run artifact."
             )
             tools.append(browser_tool)
         if self.mcp_manager is not None:
@@ -954,7 +953,6 @@ class SpecialistRunner:
                         name == "browser_run"
                         and "web.browser.read" in task_permissions
                         and run.get("approved_browser")
-                        and not arguments.get("screenshot", False)
                     ):
                         result = await run_approved_browser(
                             scoped_store,

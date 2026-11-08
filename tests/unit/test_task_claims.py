@@ -351,6 +351,120 @@ def test_lost_specialist_mcp_read_is_sealed_or_attached_without_replay(
         assert not store.unresolved_tool_calls(run_id)
 
 
+def test_lost_specialist_browser_screenshot_result_recovers_with_artifact(workspace_tmp_path):
+    import hashlib
+
+    from xaa.storage.runs import TaskReadScope
+
+    store = RunStore(workspace_tmp_path / "browser-screenshot-recovery.sqlite3")
+    run_id = store.create_run(
+        objective="Capture an approved page",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        approved_browser=True,
+        approved_web_hosts=["example.com"],
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="research",
+                objective="Capture the approved page",
+                permissions=("workspace.read", "web.browser.read"),
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None
+    model_call_id = "browser-screenshot-call"
+    tasks.record_read_worker_event(
+        run_id,
+        parent,
+        "research",
+        claim["token"],
+        "task.model.message",
+        {
+            "task_id": "research",
+            "message": {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": model_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": "browser_run",
+                            "arguments": '{"url":"https://example.com/","screenshot":true}',
+                        },
+                    }
+                ],
+            },
+        },
+    )
+    journal_call_id = (
+        "taskfs-" + hashlib.sha256(f"{run_id}:research:{model_call_id}".encode()).hexdigest()
+    )
+    scoped = RunStore(
+        store.path,
+        task_scope=TaskReadScope(run_id, parent, "research", claim["token"]),
+        internal_tools=True,
+    )
+    assert scoped.record_tool_intent(
+        run_id,
+        parent,
+        call_id=journal_call_id,
+        tool="browser.run",
+        version="1",
+        arguments={"url": "https://example.com/", "screenshot": True},
+        idempotency_key=journal_call_id,
+        internal=True,
+    )
+    artifact_root = store.path.parent / "artifacts"
+    artifact_root.mkdir(exist_ok=True)
+    screenshot_bytes = b"png"
+    filename = "specialist-screenshot.png"
+    (artifact_root / filename).write_bytes(screenshot_bytes)
+    artifact = scoped.register_artifact(
+        run_id,
+        parent,
+        filename,
+        provenance="browser.screenshot:untrusted_web_content",
+        media_type="image/png",
+    )
+    expected_result = {
+        "status": "ok",
+        "trust": "untrusted_web_content",
+        "screenshot_artifact": artifact,
+    }
+    scoped.record_tool_result(run_id, parent, journal_call_id, expected_result, internal=True)
+
+    with store.connection() as connection:
+        connection.execute("UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00'")
+    assert tasks.recover_expired(run_id, parent) == ["research"]
+    summary = tasks.recovery_summary(run_id, "research")
+    action = next(
+        item
+        for item in summary["recoverable_task_actions"]
+        if item["model_call_id"] == model_call_id
+    )
+    assert action["tool_name"] == "browser.run"
+    assert action["state"] == "completed"
+    tasks.record_recovered_task_action_result(
+        run_id, parent, "research", model_call_id, journal_call_id
+    )
+    attached = next(
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.tool.result"
+        and event["payload"].get("call_id") == model_call_id
+    )
+    assert attached["payload"]["result"]["screenshot_artifact"] == artifact
+
+
 def test_lost_worker_cannot_resume_after_specialist_time_budget_is_exhausted(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "task-time-budget.sqlite3")
     run_id = runs.create_run(
