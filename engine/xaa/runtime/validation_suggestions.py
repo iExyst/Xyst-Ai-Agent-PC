@@ -74,6 +74,30 @@ def _javascript_test_argv(manager: str, package: str) -> list[str]:
     return argv
 
 
+def _makefile_declares_test_recipe(source: str) -> bool:
+    """Return true only when a literal `test` target has a recipe."""
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if not line or line[0].isspace() or line.lstrip().startswith("#") or ":" not in line:
+            continue
+        targets = line.split(":", 1)[0].split()
+        if "test" not in targets:
+            continue
+        inline_recipe = line.split(":", 1)[1].partition(";")[2].strip()
+        if inline_recipe and not inline_recipe.startswith("#"):
+            return True
+        for recipe in lines[index + 1 :]:
+            if recipe.startswith("\t"):
+                command = recipe[1:].strip()
+                if command and not command.startswith("#"):
+                    return True
+                continue
+            if not recipe or recipe.lstrip().startswith("#"):
+                continue
+            break
+    return False
+
+
 def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, object]]:
     """Return deterministic command presets inferred from project manifests.
 
@@ -278,6 +302,45 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
             {
                 "label": f"Ruby tests (Rake){suffix}",
                 "rationale": f"{rakefile} explicitly declares a test task. Confirm Ruby/Rake and any locked dependencies are available in the restricted network-disabled WSL environment.",
+                "argv": argv,
+            }
+        )
+
+    makefile_candidates: dict[str, list[str]] = {}
+    makefile_priority = {"GNUmakefile": 0, "Makefile": 1, "makefile": 2}
+    for path in paths.values():
+        parent = str(PurePosixPath(path).parent)
+        if PurePosixPath(path).name in makefile_priority:
+            makefile_candidates.setdefault(parent, []).append(path)
+    makefiles = [
+        min(
+            candidates,
+            key=lambda path: (makefile_priority[PurePosixPath(path).name], path.casefold()),
+        )
+        for candidates in makefile_candidates.values()
+    ]
+    for makefile in sorted(makefiles, key=str.casefold):
+        try:
+            content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == makefile.casefold()
+            )
+            make_source = content.decode("utf-8")
+        except (StopIteration, UnicodeDecodeError):
+            continue
+        if not _makefile_declares_test_recipe(make_source):
+            continue
+        directory = str(PurePosixPath(makefile).parent)
+        argv = ["/usr/bin/env", "make", "--no-print-directory"]
+        if directory != ".":
+            argv.extend(["-C", directory])
+        argv.extend(["-f", PurePosixPath(makefile).name, "test"])
+        suffix = "" if directory == "." else f" — {directory}"
+        suggestions.append(
+            {
+                "label": f"Make tests{suffix}",
+                "rationale": f"{makefile} defines a test target with a recipe. Confirm GNU Make and its required tools are available in the restricted network-disabled WSL environment.",
                 "argv": argv,
             }
         )

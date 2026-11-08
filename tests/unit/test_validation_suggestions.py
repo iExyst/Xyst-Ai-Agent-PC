@@ -230,6 +230,61 @@ def test_suggests_rake_only_for_explicit_test_tasks_and_locked_bundles():
     assert result[1]["argv"] == ["/usr/bin/env", "rake", "--rakefile", "Rakefile", "test"]
 
 
+def test_suggests_make_only_for_explicit_test_target_recipes():
+    result = suggest_validation_commands(
+        snapshot(
+            ("Makefile", b".PHONY: test\ntest: unit\n\t@python3 -m unittest\n"),
+            ("native/GNUmakefile", b"test:; ctest --test-dir build\n"),
+            ("native/Makefile", b"test:\n\tfalse\n"),
+            ("services/lower/makefile", b"test:\n\tgo test ./...\n"),
+            ("services/api/Makefile", b"all: test\n\ntest check:\n\tgo test ./...\n"),
+            ("apps/no-recipe/Makefile", b".PHONY: test\ntest:\n\ncheck:\n\ttrue\n"),
+            (
+                "apps/comment-only/Makefile",
+                b"# test: ignored\n.PHONY: test\ntest:\n\t# no test command\n",
+            ),
+            ("apps/substring/Makefile", b"testing:\n\ttrue\n"),
+            ("apps/malformed/Makefile", b"\xff"),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "Make tests",
+        "Make tests — native",
+        "Make tests — services/api",
+        "Make tests — services/lower",
+    ]
+    assert result[0]["argv"] == [
+        "/usr/bin/env",
+        "make",
+        "--no-print-directory",
+        "-f",
+        "Makefile",
+        "test",
+    ]
+    assert result[1]["argv"] == [
+        "/usr/bin/env",
+        "make",
+        "--no-print-directory",
+        "-C",
+        "native",
+        "-f",
+        "GNUmakefile",
+        "test",
+    ]
+    assert result[2]["argv"] == [
+        "/usr/bin/env",
+        "make",
+        "--no-print-directory",
+        "-C",
+        "services/api",
+        "-f",
+        "Makefile",
+        "test",
+    ]
+    assert result[3]["argv"][-3:] == ["-f", "makefile", "test"]
+
+
 def test_suggests_every_supported_manifest_in_a_monorepo():
     result = suggest_validation_commands(
         snapshot(
