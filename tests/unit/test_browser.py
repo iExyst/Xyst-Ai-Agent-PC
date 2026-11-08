@@ -91,6 +91,24 @@ def test_browser_url_uses_exact_approved_hosts_and_web_url_policy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_browser_closes_new_pages_and_keeps_primary_page() -> None:
+    primary = object()
+
+    class Popup:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    popup = Popup()
+    assert browser_worker.close_unexpected_page(primary, primary) is None
+    task = browser_worker.close_unexpected_page(primary, popup)
+    assert task is not None
+    await task
+    assert popup.closed
+
+
+@pytest.mark.asyncio
 async def test_browser_dns_rejects_mixed_public_and_private_answers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

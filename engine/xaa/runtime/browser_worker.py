@@ -66,6 +66,13 @@ async def guard_browser_route(route: Any, hosts: set[str]) -> None:
         await route.continue_()
 
 
+def close_unexpected_page(main_page: Any, opened_page: Any) -> asyncio.Task[None] | None:
+    """Close popups/new tabs; browser reads return content from the primary page only."""
+    if opened_page is main_page:
+        return None
+    return asyncio.create_task(opened_page.close())
+
+
 async def resolve_public(host: str) -> list[str]:
     loop = asyncio.get_running_loop()
     answers = await loop.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
@@ -195,6 +202,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                 try:
                     await context.route("**/*", lambda route: guard_browser_route(route, hosts))
                     page = await context.new_page()
+                    context.on("page", lambda opened: close_unexpected_page(page, opened))
                     await page.goto(request.url, wait_until="domcontentloaded", timeout=15000)
                     for name in request.links:
                         link = page.get_by_role("link", name=name, exact=True)
