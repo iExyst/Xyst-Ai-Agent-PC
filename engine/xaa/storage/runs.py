@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from xaa.providers.contracts import public_assistant_message, public_run_event
 from xaa.runtime.file_handles import opened_file_path
@@ -695,6 +695,7 @@ class RunStore:
         approved_browser: bool = False,
         approved_mcp_tools: list[str] | None = None,
         allow_procedure_drafting: bool = False,
+        allow_procedure_revision: bool = False,
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
         document_bytes: bytes | None = None,
@@ -865,15 +866,34 @@ class RunStore:
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             trial_snapshot = None
+            selected_trial = None
             if procedure_trial is not None:
                 from xaa.storage.skills import SkillTrial, resolve_trial
 
+                selected_trial = SkillTrial.model_validate(procedure_trial)
                 trial_snapshot = resolve_trial(
                     connection,
-                    SkillTrial.model_validate(procedure_trial),
+                    selected_trial,
                     mode=mode,
                     workspace=workspace,
                 )
+            if allow_procedure_revision:
+                if selected_trial is None:
+                    raise ValueError(
+                        "Model procedure revision requires a selected procedure version."
+                    )
+                if selected_trial.version >= 128:
+                    raise ValueError(
+                        "A procedure at its version limit cannot be revised by a model."
+                    )
+                latest = connection.execute(
+                    "SELECT MAX(version) FROM skill_versions WHERE skill_id=?",
+                    (selected_trial.skill_id,),
+                ).fetchone()[0]
+                if latest != selected_trial.version:
+                    raise ValueError(
+                        "Model procedure revision requires the selected latest version."
+                    )
             connection.execute(
                 "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)",
                 (
@@ -1003,6 +1023,17 @@ class RunStore:
                     run_id,
                     "procedure.drafting_granted",
                     {"actor": "local_user"},
+                )
+            if allow_procedure_revision and selected_trial is not None:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "procedure.revision_granted",
+                    {
+                        "actor": "local_user",
+                        "skill_id": selected_trial.skill_id,
+                        "expected_version": selected_trial.version,
+                    },
                 )
             connection.execute(
                 "INSERT INTO run_limits VALUES (?, ?, ?)", (run_id, max_iterations, max_seconds)
@@ -1157,6 +1188,11 @@ class RunStore:
                 (run_id,),
             ).fetchall()
         record["allow_procedure_drafting"] = len(drafting_grants) == 1
+        with self._connection() as connection:
+            revision_grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.revision_granted'",
+                (run_id,),
+            ).fetchall()
         trial = self.procedure_trial(run_id)
         record["procedure_trial"] = (
             {
@@ -1165,6 +1201,18 @@ class RunStore:
             }
             if trial
             else None
+        )
+        revision_payload: dict[str, Any] = {}
+        if len(revision_grants) == 1:
+            parsed_revision_payload: Any = json.loads(revision_grants[0][0])
+            if isinstance(parsed_revision_payload, dict):
+                revision_payload = cast(dict[str, Any], parsed_revision_payload)
+        record["allow_procedure_revision"] = bool(
+            len(revision_grants) == 1
+            and record["procedure_trial"] is not None
+            and revision_payload.get("actor") == "local_user"
+            and revision_payload.get("skill_id") == record["procedure_trial"]["skill_id"]
+            and revision_payload.get("expected_version") == record["procedure_trial"]["version"]
         )
         record["acceptance_criteria"] = json.loads(record["acceptance_criteria"])
         with self._connection() as connection:

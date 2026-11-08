@@ -196,6 +196,21 @@ class SkillDraft(BaseModel):
         return self
 
 
+class SkillContentRevision(BaseModel):
+    """A model may only replace content on the explicitly selected procedure version."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    skill_id: str = Field(min_length=1, max_length=128)
+    expected_version: int = Field(ge=1, le=127)
+    content: str = Field(min_length=1, max_length=MAX_PROCEDURE_TEXT_BYTES)
+
+    @model_validator(mode="after")
+    def bounded_content(self) -> "SkillContentRevision":
+        if not self.content.strip() or len(self.content.encode("utf-8")) > MAX_PROCEDURE_TEXT_BYTES:
+            raise ValueError("Procedure content must contain visible text within the byte limit.")
+        return self
+
+
 class SkillTrial(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str = Field(min_length=1, max_length=128)
@@ -365,7 +380,9 @@ class EvaluationRecord(BaseModel):
 
 class SkillEvidence(BaseModel):
     state: Literal["candidate", "evaluated"]
-    provenance: Literal["user", "agent_plugin", "agent_plugins_v1", "hermes_skill"]
+    provenance: Literal[
+        "user", "model_draft", "model_revision", "agent_plugin", "agent_plugins_v1", "hermes_skill"
+    ]
     source: dict[str, str] | None = None
     evaluations: list[EvaluationRecord]
 
@@ -565,6 +582,161 @@ class SkillStore:
                 run_id,
                 "procedure.draft_created",
                 {"skill_id": identity, "version": 1, "call_id": call_id},
+            )
+            self.runs.record_event(
+                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
+            )
+        return result
+
+    def create_model_revision_from_run(
+        self, run_id: str, owner: str, call_id: str, revision: SkillContentRevision
+    ) -> dict[str, Any]:
+        """Create a content-only candidate version under a per-run user grant."""
+        if self.runs.task_scope is not None:
+            raise PermissionError("Specialists cannot revise user-library procedures.")
+        if not call_id or len(call_id) > 128:
+            raise ValueError("Procedure revision call identity is invalid.")
+        now = utc_now()
+        encoded_arguments = json.dumps(revision.model_dump(mode="json"), sort_keys=True)
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, owner)
+            grants = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.revision_granted'",
+                (run_id,),
+            ).fetchall()
+            if len(grants) != 1:
+                raise PermissionError("This run has no user authorization to revise procedures.")
+            grant = json.loads(grants[0][0])
+            selected = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.selected'",
+                (run_id,),
+            ).fetchall()
+            if (
+                grant.get("actor") != "local_user"
+                or grant.get("skill_id") != revision.skill_id
+                or grant.get("expected_version") != revision.expected_version
+                or len(selected) != 1
+                or json.loads(selected[0][0]).get("skill_id") != revision.skill_id
+                or json.loads(selected[0][0]).get("version") != revision.expected_version
+            ):
+                raise PermissionError("Procedure revision exceeds the selected run grant.")
+            if connection.execute(
+                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run_id, call_id),
+            ).fetchone():
+                raise SkillConflict("The model procedure-revision call was already used.")
+            entry = connection.execute(
+                "SELECT name,lifecycle_state,active_version FROM skills WHERE id=?",
+                (revision.skill_id,),
+            ).fetchone()
+            latest = connection.execute(
+                "SELECT * FROM skill_versions WHERE skill_id=? ORDER BY version DESC LIMIT 1",
+                (revision.skill_id,),
+            ).fetchone()
+            if entry is None or latest is None:
+                raise SkillConflict("The selected procedure no longer exists.")
+            current_version = int(latest["version"])
+            if entry["lifecycle_state"] == "deprecated":
+                raise SkillConflict("Deprecated procedures cannot receive model revisions.")
+            if current_version != revision.expected_version:
+                raise SkillConflict("Procedure changed; reload its latest version before revising.")
+            if current_version >= 128:
+                raise SkillConflict("A procedure cannot exceed 128 versions.")
+            prior_evidence: dict[str, Any] = json.loads(latest["evaluation_evidence"])
+            raw_prior_source = prior_evidence.get("source")
+            prior_source: dict[str, Any] = (
+                cast(dict[str, Any], raw_prior_source) if isinstance(raw_prior_source, dict) else {}
+            )
+            prior_assets = connection.execute(
+                "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
+                "WHERE skill_id=? AND version=? ORDER BY relative_path",
+                (revision.skill_id, current_version),
+            ).fetchall()
+            draft = SkillDraft(
+                name=entry["name"],
+                content=revision.content,
+                description=prior_evidence.get("description", ""),
+                category=prior_evidence.get("category", ""),
+                required_tools=json.loads(latest["required_tools"]),
+                required_permissions=json.loads(latest["required_permissions"]),
+                assets=[
+                    SkillAsset(
+                        path=asset["relative_path"],
+                        media_type=asset["media_type"],
+                        sha256=asset["sha256"],
+                        content_base64=base64.b64encode(asset["content"]).decode("ascii"),
+                    )
+                    for asset in prior_assets
+                ],
+            )
+            evidence: dict[str, Any] = {
+                "state": "candidate",
+                "provenance": "model_revision",
+                "source": {
+                    **{
+                        str(key): value
+                        for key, value in prior_source.items()
+                        if isinstance(value, str)
+                    },
+                    "revision_run_id": run_id,
+                    "revision_call_id": call_id,
+                    "parent_version": str(current_version),
+                    "parent_provenance": str(prior_evidence.get("provenance", "user")),
+                },
+                "evaluations": [],
+            }
+            next_version = current_version + 1
+            self._insert_version(connection, revision.skill_id, next_version, draft, evidence)
+            connection.execute(
+                "UPDATE skills SET updated_at=? WHERE id=?", (now, revision.skill_id)
+            )
+            summary = {
+                "id": revision.skill_id,
+                "name": entry["name"],
+                "description": draft.description,
+                "category": draft.category,
+                "lifecycle_state": entry["lifecycle_state"],
+                "active_version": entry["active_version"],
+                "latest_version": next_version,
+            }
+            result = {
+                "status": "candidate_version_created",
+                "procedure": summary,
+                "version": next_version,
+                "trust": "untrusted_model_revision",
+                "requires_user_review": True,
+                "notice": "The new version inherits the existing tools, permissions, metadata and resources. It was not evaluated or made active.",
+            }
+            connection.execute(
+                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.revise','1',?,?,'completed',?,NULL,?,?,?)",
+                (
+                    str(uuid4()),
+                    run_id,
+                    encoded_arguments,
+                    call_id,
+                    json.dumps(result),
+                    now,
+                    now,
+                    call_id,
+                ),
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "tool.intended",
+                {"call_id": call_id, "tool": "procedure.revise", "internal": False},
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "procedure.version_drafted",
+                {
+                    "skill_id": revision.skill_id,
+                    "version": next_version,
+                    "parent_version": current_version,
+                    "call_id": call_id,
+                },
             )
             self.runs.record_event(
                 connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}

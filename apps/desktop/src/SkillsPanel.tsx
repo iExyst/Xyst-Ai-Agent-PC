@@ -4,7 +4,7 @@ import {suggestActiveProcedures,type ProcedureSuggestion} from './procedureSugge
 import type {components} from './generated/api.js';
 
 type Summary=components['schemas']['SkillSummary'];
-export type ProcedureTrialSelection=components['schemas']['SkillTrial']&{name:string};
+export type ProcedureTrialSelection=components['schemas']['SkillTrial']&{name:string;latest_version:number};
 function importedRequirementsJson(raw:string|undefined):string {
   try {
     const value:unknown=JSON.parse(raw??'{}');
@@ -82,7 +82,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective}:{client:Engine
       <label className="procedure-permission"><input type="checkbox" checked={write} disabled={busy} onChange={event=>setWrite(event.target.checked)}/>Requires editing workspace files</label>
       <button disabled={busy||!name.trim()||!content.trim()||!!selected&&version!==selected.latest_version}>{selected?'Save new procedure version':'Save procedure candidate'}</button>
     </form>
-    {selected&&<div className="controls"><button disabled={busy||selected.lifecycle_state==='deprecated'} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name,purpose:'evaluation_trial'})}>Select version for trial run</button>{selected.active_version===version&&selected.lifecycle_state==='active'&&<button disabled={busy} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name,purpose:'active_use'})}>Select active procedure for next run</button>}<button disabled={busy} onClick={()=>void exportVersion()}>Export procedure version</button><button disabled={busy||selected.active_version!==null} onClick={()=>void remove()}>Delete procedure and all versions</button></div>}
+    {selected&&<div className="controls"><button disabled={busy||selected.lifecycle_state==='deprecated'} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name,latest_version:selected.latest_version,purpose:'evaluation_trial'})}>Select version for trial run</button>{selected.active_version===version&&selected.lifecycle_state==='active'&&<button disabled={busy} onClick={()=>onTrial({skill_id:selected.id,version,name:selected.name,latest_version:selected.latest_version,purpose:'active_use'})}>Select active procedure for next run</button>}<button disabled={busy} onClick={()=>void exportVersion()}>Export procedure version</button><button disabled={busy||selected.active_version!==null} onClick={()=>void remove()}>Delete procedure and all versions</button></div>}
     {selected&&version!==selected.latest_version&&<p>Historical versions are preserved. Select the latest version to revise this procedure.</p>}
     {selected&&<section aria-label="Procedure lifecycle"><h3>Activation and rollback</h3>
       <p>Entry state: {selected.lifecycle_state}. Active version: {selected.active_version??'none'}. New runs use a procedure only when you explicitly select it.</p>

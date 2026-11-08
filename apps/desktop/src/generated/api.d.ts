@@ -1435,6 +1435,11 @@ export interface components {
              */
             allow_procedure_drafting: boolean;
             /**
+             * Allow Procedure Revision
+             * @default false
+             */
+            allow_procedure_revision: boolean;
+            /**
              * Approved Browser
              * @default false
              */
@@ -2271,6 +2276,11 @@ export interface components {
              */
             allow_procedure_drafting: boolean;
             /**
+             * Allow Procedure Revision
+             * @default false
+             */
+            allow_procedure_revision: boolean;
+            /**
              * Approved Browser
              * @default false
              */
@@ -2474,7 +2484,7 @@ export interface components {
              * Provenance
              * @enum {string}
              */
-            provenance: "user" | "agent_plugin" | "agent_plugins_v1" | "hermes_skill";
+            provenance: "user" | "model_draft" | "model_revision" | "agent_plugin" | "agent_plugins_v1" | "hermes_skill";
             /** Source */
             source?: {
                 [key: string]: string;

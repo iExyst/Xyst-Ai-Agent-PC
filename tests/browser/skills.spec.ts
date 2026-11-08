@@ -2,14 +2,22 @@ import {test,expect} from '@playwright/test';
 
 test('create, revise, inspect, export and delete an unverified procedure',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  let summary:any;const versions:any[]=[];
+  let summary:any;const versions:any[]=[];const runSubmissions:any[]=[];let runAttempts=0;
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,DELETE,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     expect(request.headers()['authorization']).toBe('Bearer '+'x'.repeat(32));
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
-    if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/runs'&&request.method()==='POST'){
+      runSubmissions.push(request.postDataJSON());
+      runAttempts+=1;
+      if(runAttempts===1)return route.fulfill({status:503,body:'temporary unavailable',headers});
+      return route.fulfill({json:{id:'revision-run',objective:'Improve procedure',state:'running',acceptance_criteria:[],revision:1,model:'fixture/model',limits:{max_iterations:8,max_seconds:900}},headers});
+    }
+    if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:'event: done\ndata: {}\n\n'});
+    if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if(path.endsWith('/export'))return route.fulfill({status:200,body:Buffer.from('mock zip'),contentType:'application/zip',headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path.startsWith('/skills')){
@@ -59,8 +67,25 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeDisabled();
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toContainText('Inspect safely \u00b7 version 1');
+  await expect(page.getByLabel('Allow this run to draft a new version of this procedure')).toBeDisabled();
   await page.getByRole('button',{name:'Remove selected procedure',exact:true}).click();
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toHaveCount(0);
+  await panel.getByLabel('Procedure version',{exact:true}).selectOption('2');
+  await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  const revisionGrant=page.getByLabel('Allow this run to draft a new version of this procedure');
+  await expect(revisionGrant).toBeEnabled();
+  await revisionGrant.check();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective',{exact:true}).fill('Improve the selected procedure');
+  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await expect(revisionGrant).not.toBeChecked();
+  await revisionGrant.check();
+  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  expect(runSubmissions[0].allow_procedure_revision).toBe(true);
+  expect(runSubmissions[1].allow_procedure_revision).toBe(true);
+  expect(runSubmissions[1].procedure_trial).toEqual({skill_id:'procedure-1',version:2,purpose:'evaluation_trial'});
+  await panel.getByLabel('Procedure version',{exact:true}).selectOption('1');
   const download=page.waitForEvent('download');await panel.getByRole('button',{name:'Export procedure version',exact:true}).click();
   expect((await download).suggestedFilename()).toBe('procedure-procedure-1-v1.zip');
   await panel.getByRole('button',{name:'Find completed procedure trials',exact:true}).click();

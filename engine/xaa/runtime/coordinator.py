@@ -62,6 +62,7 @@ from xaa.storage.runs import IterationBudgetExceeded, LeaseLost, RunStore, Token
 from xaa.storage.skills import (
     MAX_PROCEDURE_TEXT_BYTES,
     SkillConflict,
+    SkillContentRevision,
     SkillDraft,
     SkillStore,
     available_toolsets,
@@ -527,6 +528,76 @@ class Coordinator:
                     code="procedure_draft_conflict",
                     message=str(exc),
                 )
+        if name == "procedure_revise":
+            if not run.get("allow_procedure_revision"):
+                raise PermissionError("This run has no user authorization to revise a procedure.")
+            try:
+                revision = SkillContentRevision.model_validate(arguments)
+            except ValidationError:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.revise",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure revision validation requires reconciliation.")
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="invalid_procedure_revision",
+                    message="Revision content or selected procedure identity is invalid.",
+                )
+            selected = run.get("procedure_trial")
+            if (
+                selected is None
+                or selected.get("skill_id") != revision.skill_id
+                or selected.get("version") != revision.expected_version
+            ):
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.revise",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError("Procedure revision scope requires reconciliation.")
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_revision_scope_mismatch",
+                    message="Revise only the exact procedure version selected for this run.",
+                )
+            try:
+                return SkillStore(self.store).create_model_revision_from_run(
+                    run_id, token, call["id"], revision
+                )
+            except SkillConflict as exc:
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=call["id"],
+                    tool="procedure.revise",
+                    version="1",
+                    arguments=arguments,
+                    idempotency_key=call["id"],
+                ):
+                    raise ValueError(
+                        "Procedure revision conflict requires reconciliation."
+                    ) from exc
+                return self.store.record_tool_failure(
+                    run_id,
+                    token,
+                    call["id"],
+                    code="procedure_revision_conflict",
+                    message=str(exc),
+                )
         if name.startswith("mcp_"):
             if self.mcp_manager is None or not self.mcp_manager.is_tool_authorized_for_run(
                 name, set(run.get("approved_mcp_tools", []))
@@ -945,6 +1016,21 @@ class Coordinator:
                         "name": "procedure_draft",
                         "description": "Create a versioned reusable procedure candidate from this work. This is a persistent library change the user explicitly authorized for this run. The candidate stays inactive and unevaluated. Do not copy secrets or unrelated project data. Never claim this draft is verified. This tool cannot revise, activate, evaluate, select, or execute a procedure; the user reviews it separately.",
                         "parameters": SkillDraft.model_json_schema(),
+                    },
+                },
+            )
+        if run.get("allow_procedure_revision") and run.get("procedure_trial"):
+            trial = run["procedure_trial"]
+            schema = SkillContentRevision.model_json_schema()
+            schema["properties"]["skill_id"]["enum"] = [trial["skill_id"]]
+            schema["properties"]["expected_version"]["enum"] = [trial["version"]]
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "procedure_revise",
+                        "description": "Create a new content-only version of the exact procedure selected for this run. This write is explicitly authorized by the user. The procedure title, tool dependencies, permissions, metadata, and linked resources are copied unchanged. The new version is untrusted and unevaluated; never claim it is verified, activate it, or change the active version. Do not include secrets or unrelated project data.",
+                        "parameters": schema,
                     },
                 },
             )
