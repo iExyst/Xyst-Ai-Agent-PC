@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import subprocess
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -44,6 +45,63 @@ async def diagnose(distribution: str) -> None:
         store.transition(record["id"], RunState.PLANNING, owner=token)
         store.transition(record["id"], RunState.RUNNING, owner=token)
         return record["id"], token
+
+    outside = root / "outside"
+    outside.mkdir()
+    sentinel = outside / "private.txt"
+    sentinel.write_bytes(b"external command fixture")
+
+    async def reject_reparse_point(call_id: str) -> None:
+        rejected, owner = run()
+        try:
+            await controller.execute(
+                rejected,
+                owner,
+                call_id,
+                {"argv": ["/usr/bin/true"]},
+                idempotency_key=call_id,
+                deadline=time.monotonic() + 30,
+            )
+        except RuntimeError as exc:
+            if "Owned transport failed" not in str(exc):
+                raise
+        else:
+            raise AssertionError("Workspace reparse point was accepted for command capture")
+        events = store.list_events(rejected)
+        event_types = [event["event_type"] for event in events]
+        assert "execution.reserved" in event_types
+        assert "execution.launched" not in event_types
+        assert "execution.reconciled" in event_types
+        assert not store.unresolved_tool_calls(rejected)
+        assert sentinel.read_bytes() == b"external command fixture"
+
+    junction = project / "external-junction"
+    await asyncio.to_thread(
+        subprocess.run,
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        check=True,
+        capture_output=True,
+    )
+    try:
+        await reject_reparse_point("junction")
+    finally:
+        junction.rmdir()
+
+    reparse_types = ["directory_junction"]
+    unavailable_reparse_types: dict[str, str] = {}
+    symlink = project / "external-symlink"
+    try:
+        symlink.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 1314:
+            raise
+        unavailable_reparse_types["directory_symlink"] = "winerror_1314_privilege_unavailable"
+    else:
+        try:
+            await reject_reparse_point("directory-symlink")
+            reparse_types.append("directory_symlink")
+        finally:
+            symlink.unlink()
 
     normal, owner = run()
     result = await controller.execute(
@@ -144,6 +202,8 @@ async def diagnose(distribution: str) -> None:
         "passed": True,
         "distribution": distribution,
         "profile_sha256": transport.profile_sha256,
+        "windows_reparse_types_rejected_before_wsl_launch": reparse_types,
+        "windows_reparse_types_unavailable": unavailable_reparse_types,
         "owned_snapshot_to_registered_result": True,
         "normal_artifact_count": 3,
         "run_pause_revoked_lease_before_cancellation": True,
