@@ -21,6 +21,7 @@ const recoverStartupRun=process.env.XAA_NATIVE_BOOT_RECOVERY==='1';
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
 const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
 let ownerRecoveryAcceptance;
+let desktopApiRequests=[];
 if(recoverStartupRun){
   const recoveryReportPath=path.join(root,'startup-recovery-seed.json');
   const recoveryWorkspace=path.join(root,'startup-recovery-workspace');
@@ -31,7 +32,9 @@ if(recoverStartupRun){
 const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
-let browser,connection;
+let browser,connection,page;
+const pageConsoleErrors=[];
+const pageErrors=[];
 try{
   const debuggingDeadline=Date.now()+60000;
   let lastDebuggingError='Debugging endpoint unavailable';
@@ -49,7 +52,6 @@ try{
     }catch(error){lastDebuggingError=String(error)+(error?.cause?.code?` (${error.cause.code})`:'');if(proc.exitCode!==null)throw new Error(`Packaged desktop exited during boot: ${lastDebuggingError}`);await new Promise(resolve=>setTimeout(resolve,250));}
   }
   if(!browser)throw new Error(`Packaged debugging attachment failed: ${lastDebuggingError}`);
-  let page;
   const pageDeadline=Date.now()+20000;
   while(Date.now()<pageDeadline){
     page=browser.contexts().flatMap(context=>context.pages())[0];
@@ -58,6 +60,8 @@ try{
     await new Promise(resolve=>setTimeout(resolve,100));
   }
   if(!page)throw new Error('Packaged WebView debugging endpoint did not expose a page');
+  page.on('console',message=>{if(message.type()==='error')pageConsoleErrors.push(message.text());});
+  page.on('pageerror',error=>pageErrors.push(String(error)));
   await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
   const initiallyVisible=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible',{label:'main'}));
   if(initiallyVisible)throw new Error('The --background launch argument opened the main window.');
@@ -85,7 +89,6 @@ try{
     backupAcceptance={backup_cli:true,restore_cli:true,bundle,restored_directory:restoreDirectory,verification:JSON.parse(verified)};
   }
   if(recoverStartupRun){
-    const desktopApiRequests=[];
     page.on('request',request=>{if(request.url().startsWith(connection.base_url))desktopApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);});
     page.on('dialog',dialog=>void dialog.accept());
     await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible({timeout:20000});
@@ -182,8 +185,13 @@ try{
 }catch(error){
   let processDiagnostics;
   try{processDiagnostics=JSON.parse(execFileSync('pwsh.exe',['-NoProfile','-NonInteractive','-File',path.resolve('scripts/native_boot_diagnostics.ps1'),'-DesktopProcessId',String(proc.pid)],{windowsHide:true,encoding:'utf8',timeout:15000,maxBuffer:65536}));}catch(diagnosticError){processDiagnostics={error:String(diagnosticError)};}
+  let pageDiagnostics;
+  if(page){
+    pageDiagnostics={url:page.url(),title:await page.title().catch(()=>''),body_text:(await page.locator('body').innerText({timeout:3000}).catch(()=>'' )).slice(0,12000),desktop_api_requests:desktopApiRequests,console_errors:pageConsoleErrors.slice(-40),page_errors:pageErrors.slice(-20)};
+    await page.screenshot({path:path.join(root,'failure.png'),fullPage:true,timeout:5000}).catch(()=>{});
+  }
   await writeFile(path.join(root,'desktop-stdout.log'),stdout);await writeFile(path.join(root,'desktop-stderr.log'),stderr);
   const engineLog=(await readFile(logPath,'utf8').catch(()=>''));await writeFile(path.join(root,'engine-startup.log'),engineLog.slice(previous.length));
-  await writeFile(path.join(root,'report.json'),JSON.stringify({passed:false,error:String(error),desktop_exit_code:proc.exitCode,desktop_signal:proc.signalCode,process_diagnostics:processDiagnostics,elapsed_milliseconds:Date.now()-started},null,2));throw error;
+  await writeFile(path.join(root,'report.json'),JSON.stringify({passed:false,error:String(error),desktop_exit_code:proc.exitCode,desktop_signal:proc.signalCode,process_diagnostics:processDiagnostics,page_diagnostics:pageDiagnostics,startup_recovery_seed:ownerRecoveryAcceptance,elapsed_milliseconds:Date.now()-started},null,2));throw error;
 }
 finally{await browser?.close().catch(()=>{});if(proc.exitCode===null)execFileSync('taskkill',['/PID',String(proc.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});try{execFileSync('reg.exe',['delete','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run','/v',startupValueName,'/f'],{windowsHide:true,stdio:'ignore'});}catch{}}

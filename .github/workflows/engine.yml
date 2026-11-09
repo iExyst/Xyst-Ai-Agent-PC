@@ -420,6 +420,7 @@ jobs:
             .acceptance/**/desktop-stdout.log
             .acceptance/**/desktop-stderr.log
             .acceptance/**/engine-startup.log
+            .acceptance/**/failure.png
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
