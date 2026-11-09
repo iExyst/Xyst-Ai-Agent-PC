@@ -62,7 +62,11 @@ if ($xaaManifest.install_mode -ne 'currentUser') { throw 'Installer manifest doe
 $xaaReport.install_scope = $xaaManifest.install_mode
 try {
     if ($xaaPriorInstaller) {
-        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S') -WindowStyle Hidden -Wait -PassThru
+        # The archived 0.1.0 installer predates the currentUser release mode and
+        # needs an explicit target to seed the upgrade fixture in this profile.
+        # The package under test below is installed without /D and must choose
+        # its own declared per-user default directory.
+        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
         if ($xaaPriorSetup.ExitCode -ne 0) { throw "Prior installer exit code $($xaaPriorSetup.ExitCode)" }
         $xaaReport.prior_version = $xaaPriorManifest.version
         $xaaReport.prior_install_verified = (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
