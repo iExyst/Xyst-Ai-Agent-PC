@@ -17,6 +17,7 @@ on:
       - 'docs/releases/THIRD_PARTY_NOTICES.md'
       - 'docs/releases/dependency-inventory.md'
       - 'docs/releases/0.1.1.md'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,6 +29,7 @@ permissions:
 
 jobs:
   windows:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     env:
       UV_CACHE_DIR: .uv-cache
@@ -147,7 +149,7 @@ jobs:
         timeout-minutes: 2
 
   windows-installer:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 30
     env:
