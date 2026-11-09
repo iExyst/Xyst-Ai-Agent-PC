@@ -2340,7 +2340,7 @@ class RunStore:
             connection.execute("BEGIN IMMEDIATE")
             now = utc_now()
             abandoned = connection.execute(
-                "SELECT id FROM runs WHERE state IN ('planning', 'running') "
+                "SELECT id,mode,workspace FROM runs WHERE state IN ('planning', 'running') "
                 "AND (lease_owner IS NULL OR lease_expires_at <= ?)",
                 (now,),
             ).fetchall()
@@ -2350,10 +2350,44 @@ class RunStore:
                     connection, run_id, "parent_worker_lost_reconciliation_required"
                 )
                 unresolved = connection.execute(
-                    "SELECT 1 FROM tool_calls WHERE run_id = ? AND state = 'intended' LIMIT 1",
+                    "SELECT tool_name,tool_version FROM tool_calls "
+                    "WHERE run_id = ? AND state = 'intended'",
                     (run_id,),
-                ).fetchone()
-                destination = "blocked" if unresolved or interrupted else "queued"
+                ).fetchall()
+                safe_reads = {
+                    "workspace.read_file",
+                    "workspace.list_directory",
+                    "workspace.search",
+                }
+                safe_workspace_writes = {
+                    "workspace.write_file",
+                    "workspace.create_file",
+                    "workspace.delete_file",
+                }
+                workspace_writes_authorized = (
+                    row["mode"] == "workspace" and bool(row["workspace"])
+                )
+                recoverable_intents = all(
+                    item["tool_version"] == "1"
+                    and (
+                        item["tool_name"] in safe_reads
+                        or (
+                            workspace_writes_authorized
+                            and item["tool_name"] in safe_workspace_writes
+                        )
+                    )
+                    for item in unresolved
+                )
+                has_unresolved = bool(unresolved)
+                must_block = (has_unresolved and not recoverable_intents) or interrupted
+                destination = "blocked" if must_block else "queued"
+                reason = (
+                    "tool_reconciliation_required"
+                    if must_block
+                    else "filesystem_reconciliation"
+                    if has_unresolved
+                    else "expired_worker"
+                )
                 connection.execute(
                     "UPDATE runs SET state = ?, lease_owner = NULL, lease_expires_at = NULL, "
                     "updated_at = ?, revision = revision + 1 WHERE id = ?",
@@ -2365,9 +2399,7 @@ class RunStore:
                     "run.recovered",
                     {
                         "state": destination,
-                        "reason": "tool_reconciliation_required"
-                        if unresolved or interrupted
-                        else "expired_worker",
+                        "reason": reason,
                     },
                 )
             rows = connection.execute(

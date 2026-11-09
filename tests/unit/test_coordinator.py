@@ -262,12 +262,9 @@ async def test_restart_reconciles_completed_delete_before_resuming_run(workspace
     )
     store.append_worker_event(run_id, token, "tool.executing", {"call_id": "delete-1"})
     target.unlink()
-    store.transition(run_id, RunState.BLOCKED, reason="simulated_worker_loss", owner=token)
     store.release_lease(run_id, token)
-
-    recovery_token = store.acquire_blocked_run_recovery(run_id, "owner-resumed")
-    assert recovery_token
-    store.release_lease(run_id, recovery_token)
+    assert store.recover_abandoned_runs() == [run_id]
+    assert store.get_run(run_id)["state"] == RunState.QUEUED
 
     class ResumeProvider(ScriptedProvider):
         async def chat(self, *, model, messages, tools=None):
