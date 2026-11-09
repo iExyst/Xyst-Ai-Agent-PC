@@ -1,7 +1,7 @@
 import {chromium,expect} from '@playwright/test';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import path from 'node:path';
 
 const executable=path.resolve(process.argv[2]??'build/native-release/xaa-desktop.exe');
@@ -17,6 +17,7 @@ const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH
 const started=Date.now();let stdout='',stderr='';
 const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
 const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
+const recoverStartupRun=process.env.XAA_NATIVE_BOOT_RECOVERY==='1';
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
 const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
 const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
@@ -74,6 +75,45 @@ try{
     if(!restoreText.includes('Restored database and artifacts:'))throw new Error('Installed restore-bundle CLI did not report success');
     const verified=execFileSync('uv',['run','python','scripts/installed_backup_fixture.py','verify','--directory',restoreDirectory,'--fixture',backupFixturePath,'--report',path.join(root,'installed-backup-verification.json')],{windowsHide:true,encoding:'utf8',timeout:60000,env:process.env});
     backupAcceptance={backup_cli:true,restore_cli:true,bundle,restored_directory:restoreDirectory,verification:JSON.parse(verified)};
+  }
+  let ownerRecoveryAcceptance;
+  if(recoverStartupRun){
+    const recoveryReportPath=path.join(root,'startup-recovery-seed.json');
+    const recoveryWorkspace=path.join(root,'startup-recovery-workspace');
+    const recoveryDatabase=path.join(localAppData,'XAA','xaa.sqlite3');
+    ownerRecoveryAcceptance=JSON.parse(execFileSync('uv',['run','python','scripts/native_recovery_fixture.py','--database',recoveryDatabase,'--workspace',recoveryWorkspace,'--report',recoveryReportPath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
+    if(ownerRecoveryAcceptance.state_at_seed!=='blocked'||ownerRecoveryAcceptance.inference_attempts_at_seed!==0)throw new Error('Recovery fixture was not seeded as a blocked, inference-free run.');
+    const desktopApiRequests=[];
+    page.on('request',request=>{if(request.url().startsWith(connection.base_url))desktopApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);});
+    page.on('dialog',dialog=>void dialog.accept());
+    await page.reload({waitUntil:'domcontentloaded'});
+    await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
+    await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible({timeout:20000});
+    await expect(page.getByText(ownerRecoveryAcceptance.objective??'Review and recover an interrupted workspace edit',{exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Inspect uncertain workspace writes'}).click();
+    await expect(page.getByText('Edit fixture.txt',{exact:false})).toBeVisible();
+    await page.getByRole('button',{name:'Confirm write did not apply'}).click();
+    await expect(page.getByText('The interrupted write was recorded as not applied. Review the run, then use Resume to continue.',{exact:true})).toBeVisible();
+    const runHeaders={Authorization:`Bearer ${connection.token}`};
+    const [savedRunResponse,reconciliationsResponse,resultResponse,eventsResponse]=await Promise.all([
+      fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}`,{headers:runHeaders}),
+      fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/workspace-write-reconciliations`,{headers:runHeaders}),
+      fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/tools/${encodeURIComponent(ownerRecoveryAcceptance.call_id)}/result`,{headers:runHeaders}),
+      fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/events`,{headers:runHeaders}),
+    ]);
+    if(!savedRunResponse.ok||!reconciliationsResponse.ok||!resultResponse.ok||!eventsResponse.ok)throw new Error('Could not verify the packaged owner recovery result.');
+    const savedRun=await savedRunResponse.json();
+    const reconciliations=await reconciliationsResponse.json();
+    const toolResult=await resultResponse.json();
+    const events=await eventsResponse.json();
+    const workspaceBytes=await readFile(ownerRecoveryAcceptance.path);
+    const workspaceHash=createHash('sha256').update(workspaceBytes).digest('hex');
+    if(savedRun.state!=='blocked'||reconciliations.length!==0||!String(toolResult.result).includes('not_applied_after_review'))throw new Error('The installed desktop did not save owner-reviewed recovery while keeping the run blocked.');
+    if(workspaceHash!==ownerRecoveryAcceptance.original_sha256)throw new Error('Owner recovery changed the restored workspace file.');
+    if(events.some(event=>event.event_type==='model.inference.started'||event.event_type==='model.message'))throw new Error('The startup recovery acceptance unexpectedly requested model inference.');
+    if(desktopApiRequests.some(request=>request.endsWith(`/runs/${ownerRecoveryAcceptance.run_id}/resume`)))throw new Error('The desktop resumed the run during recovery.');
+    ownerRecoveryAcceptance={...ownerRecoveryAcceptance,passed:true,webview_reloaded:true,latest_unfinished_run_opened:true,owner_recovery_confirmed_in_ui:true,unresolved_intents:reconciliations.length,result_available:String(toolResult.result).includes('not_applied_after_review'),run_state_after_recovery:savedRun.state,workspace_sha256_after_recovery:workspaceHash,automatic_resume:false,model_inference_requested:false};
+    await writeFile(path.join(root,'startup-recovery-acceptance.json'),JSON.stringify(ownerRecoveryAcceptance,null,2));
   }
   const startupMilliseconds=Date.now()-started;
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
@@ -137,7 +177,7 @@ try{
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture&&!ownerRecoveryAcceptance,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,owner_reviewed_startup_recovery:ownerRecoveryAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;

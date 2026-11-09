@@ -141,6 +141,7 @@ try {
         }
         $env:XAA_NATIVE_ACCEPTANCE_ROOT = $xaaAcceptanceRoot
         $env:XAA_NATIVE_BACKUP_FIXTURE = $xaaBackupFixture
+        $env:XAA_NATIVE_BOOT_RECOVERY = '1'
         $env:XAA_TEST_CONFIG_DIR = Split-Path -Parent $xaaDesktopSettings
         $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR = 'keep_running'
         & node scripts/native_boot_smoke.mjs $xaaDesktop
@@ -157,6 +158,7 @@ try {
     if ($xaaReport.native_acceptance.initial_close_behavior -ne 'keep_running') { throw 'Installed desktop did not load its isolated default close behavior.' }
     $xaaReport.installed_backup_restore_verified = [bool]$xaaReport.native_acceptance.installed_backup_restore_verified
     if (-not $xaaReport.installed_backup_restore_verified -or -not $xaaReport.native_acceptance.backup_acceptance.verification.passed) { throw 'Installed backup/restore evidence was incomplete.' }
+    if (-not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.passed -or -not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.owner_recovery_confirmed_in_ui -or $xaaReport.native_acceptance.owner_reviewed_startup_recovery.automatic_resume) { throw 'Installed desktop startup recovery did not complete the owner-reviewed UI acceptance.' }
     $xaaReport.upgrade_data_verified = [bool]$xaaPriorInstaller -and [bool]$xaaReport.upgrade_data_fixture_seeded_before_upgrade -and $xaaReport.installed_backup_restore_verified
     $xaaReport.installed_binaries_present = $true
     $xaaReport.installed_boot_verified = $true

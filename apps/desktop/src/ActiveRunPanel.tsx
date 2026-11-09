@@ -1,3 +1,4 @@
+import {useEffect,useState} from 'react';
 import type {Run} from './api/client.ts';
 import type {EngineClient} from './api/client.ts';
 import {MCPReconciliationPanel} from './MCPReconciliationPanel.tsx';
@@ -6,6 +7,9 @@ import {WorkspaceWriteReconciliationPanel} from './WorkspaceWriteReconciliationP
 type Action='pause'|'resume'|'cancel';
 
 export function ActiveRunPanel({run,answer,partial,activity,busy,client,onControl}:{run:Run;answer:string;partial:string;activity:string[];busy:boolean;client:EngineClient;onControl:(action:Action)=>void}) {
+  const [workspaceRecoveryRunId,setWorkspaceRecoveryRunId]=useState(run.state==='blocked'?run.id:'');
+  useEffect(()=>{if(run.state==='blocked')setWorkspaceRecoveryRunId(run.id);},[run.id,run.state]);
+  const showWorkspaceRecovery=run.state==='blocked'||workspaceRecoveryRunId===run.id;
   function enabled(action:Action) {
     if(action==='resume')return ['paused','blocked'].includes(run.state);
     if(action==='pause')return ['queued','planning','running','verifying','waiting_for_approval'].includes(run.state);
@@ -16,7 +20,7 @@ export function ActiveRunPanel({run,answer,partial,activity,busy,client,onContro
     {answer&&<article><h3>{run.state==='completed'?'Accepted result':'Candidate answer'}</h3><p style={{whiteSpace:'pre-wrap'}}>{answer}</p></article>}
     {partial&&<article><h3>Partial response</h3><p style={{whiteSpace:'pre-wrap'}}>{partial}</p></article>}
     <MCPReconciliationPanel client={client} runId={run.id}/>
-    {run.state==='blocked'&&<WorkspaceWriteReconciliationPanel client={client} runId={run.id}/>}
+    {showWorkspaceRecovery&&<WorkspaceWriteReconciliationPanel key={run.id} client={client} runId={run.id} enabled={run.state==='blocked'}/>}
     <h3>Activity</h3><ol aria-live="polite">{activity.map((item,index)=><li key={index}>{item}</li>)}</ol>
   </section>;
 }
