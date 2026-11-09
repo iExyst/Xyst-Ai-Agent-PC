@@ -218,6 +218,77 @@ async def test_coordinator_executes_journaled_read_and_stops_for_verification(wo
     )
 
 
+async def test_restart_reconciles_completed_delete_before_resuming_run(workspace_tmp_path):
+    import hashlib
+
+    target = workspace_tmp_path / "removed.txt"
+    original = b"already deleted before result persistence"
+    target.write_bytes(original)
+    store = RunStore(workspace_tmp_path / "delete-recovery.sqlite3")
+    run_id = store.create_run(
+        objective="Delete the reviewed file",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model="fixture",
+    )["id"]
+    token = store.acquire_lease(run_id, "interrupted-delete-worker")
+    assert token
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    store.transition(run_id, RunState.RUNNING, owner=token)
+    digest = hashlib.sha256(original).hexdigest()
+    call = {
+        "id": "delete-1",
+        "type": "function",
+        "function": {
+            "name": "workspace_delete_file",
+            "arguments": json.dumps({"path": "removed.txt", "expected_sha256": digest}),
+        },
+    }
+    store.append_worker_event(
+        run_id,
+        token,
+        "model.message",
+        {"iteration": 0, "message": {"role": "assistant", "tool_calls": [call]}},
+    )
+    assert store.record_tool_intent(
+        run_id,
+        token,
+        call_id="delete-1",
+        tool="workspace.delete_file",
+        version="1",
+        arguments={"path": "removed.txt", "expected_sha256": digest},
+        idempotency_key="delete-1",
+    )
+    store.append_worker_event(run_id, token, "tool.executing", {"call_id": "delete-1"})
+    target.unlink()
+    store.transition(run_id, RunState.BLOCKED, reason="simulated_worker_loss", owner=token)
+    store.release_lease(run_id, token)
+
+    recovery_token = store.acquire_blocked_run_recovery(run_id, "owner-resumed")
+    assert recovery_token
+    store.release_lease(run_id, recovery_token)
+
+    class ResumeProvider(ScriptedProvider):
+        async def chat(self, *, model, messages, tools=None):
+            assert messages[-1]["role"] == "tool"
+            saved_result = json.loads(messages[-1]["content"])
+            assert saved_result["deleted"] is True
+            assert saved_result["reconciled"] is True
+            return {"choices": [{"message": {"role": "assistant", "content": "Deletion confirmed"}}]}
+
+    provider = ResumeProvider()
+    try:
+        await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+
+    assert not target.exists()
+    assert store.unresolved_tool_calls(run_id) == []
+    assert json.loads(store.public_tool_result(run_id, "delete-1"))["reconciled"] is True
+    assert store.get_run(run_id)["state"] == RunState.VERIFYING
+
+
 def test_scanned_pdf_page_images_are_added_as_untrusted_vision_context(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "scanned-pages.sqlite3")
     run = store.create_run(

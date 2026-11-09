@@ -1721,7 +1721,8 @@ class Coordinator:
             if recovered_commands is None:
                 return
             if any(
-                call["tool_name"] in {"workspace.write_file", "workspace.create_file"}
+                call["tool_name"]
+                in {"workspace.write_file", "workspace.create_file", "workspace.delete_file"}
                 for call in self.store.unresolved_tool_calls(run_id)
             ):
                 identity = f"reconciliation-{uuid4()}"
