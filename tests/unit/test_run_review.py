@@ -306,6 +306,37 @@ def test_noop_specialist_integration_does_not_require_project_validation(workspa
     assert not validation_required(store, run_id)
 
 
+def test_final_review_requires_validation_after_direct_file_deletion(workspace_tmp_path):
+    grant = {
+        "backend": "wsl-bubblewrap-v1",
+        "distribution": "Ubuntu-24.04",
+        "profile_sha256": "a" * 64,
+        "max_seconds": 20,
+    }
+    store, run_id, target = candidate(workspace_tmp_path, command_grant=grant)
+    owner = store.acquire_lease(run_id, "fixture-direct-deletion")
+    assert owner is not None
+    with store.connection() as connection:
+        store.record_tool_intent(
+            run_id,
+            owner,
+            call_id="direct-delete",
+            tool="workspace.delete_file",
+            version="1",
+            arguments={"path": target.name, "expected_sha256": "a" * 64},
+            idempotency_key="direct-delete",
+        )
+        connection.execute(
+            "UPDATE tool_calls SET state='completed',result=? WHERE run_id=? AND provider_call_id='direct-delete'",
+            (
+                json.dumps({"path": target.name, "deleted": True, "previous_sha256": "a" * 64}),
+                run_id,
+            ),
+        )
+    store.release_lease(run_id, owner)
+    assert validation_required(store, run_id)
+
+
 def test_schema_six_reader_cannot_accept_integrated_project_review(workspace_tmp_path):
     grant = {
         "backend": "wsl-bubblewrap-v1",

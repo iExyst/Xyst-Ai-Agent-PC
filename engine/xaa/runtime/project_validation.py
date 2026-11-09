@@ -32,7 +32,7 @@ def validation_required(store: RunStore, run_id: str) -> bool:
         return False
     with store.connection() as connection:
         direct_edit = connection.execute(
-            "SELECT 1 FROM tool_calls WHERE run_id=? AND task_id IS NULL AND state='completed' AND tool_name IN ('workspace.write_file','workspace.create_file','workspace.replace_text','workspace.apply_patch') AND json_extract(result,'$.sha256') IS NOT NULL LIMIT 1",
+            "SELECT 1 FROM tool_calls WHERE run_id=? AND task_id IS NULL AND state='completed' AND ((tool_name IN ('workspace.write_file','workspace.create_file','workspace.replace_text','workspace.apply_patch') AND json_extract(result,'$.sha256') IS NOT NULL) OR (tool_name='workspace.delete_file' AND json_extract(result,'$.deleted')=1)) LIMIT 1",
             (run_id,),
         ).fetchone()
         integrated_edit = connection.execute(
