@@ -85,6 +85,78 @@ def recover(root: Path, run_id: str) -> None:
     recovered = store.recover_abandoned_runs()
     saved = store.get_run(run_id)
     assert saved is not None and saved["state"] == "blocked"
+    if os.environ.get("XAA_OWNER_RECONCILIATION") == "1":
+        if (
+            os.environ.get("XAA_CRASH_OPERATION") != "create"
+            or os.environ.get("XAA_CRASH_BOUNDARY") != "created"
+        ):
+            raise ValueError("Owner-reviewed acceptance requires an interrupted create.")
+        destination = root / "fixture.txt"
+        if not destination.is_file() or destination.read_bytes() != b"":
+            raise AssertionError("Expected the interrupted create to leave an empty file.")
+        # This deterministic diagnostic represents the owner's inspection/removal step.
+        destination.unlink()
+        token = store.acquire_blocked_run_recovery(
+            run_id, "acceptance-owner-reconciliation", seconds=180
+        )
+        if token is None:
+            raise RuntimeError("Could not acquire blocked-run owner recovery.")
+        store.transition(run_id, RunState.PLANNING, owner=token)
+        frozen = os.environ.get("XAA_FROZEN_WORKER") == "1"
+        if not frozen:
+            raise ValueError("Owner-reconciliation acceptance requires the frozen worker.")
+        executable = Path(
+            os.environ.get("XAA_FROZEN_ENGINE_EXECUTABLE", "build/native-dev/xaa-engine.exe")
+        ).resolve()
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(tool_worker.sys, "frozen", True, create=True))
+            stack.enter_context(patch.object(tool_worker.sys, "executable", str(executable)))
+            result = asyncio.run(
+                tool_worker.execute_filesystem(
+                    store,
+                    run_id,
+                    token,
+                    "workspace-reconciliation-edit-1",
+                    "reconcile_not_applied",
+                    {"provider_call_id": "edit-1"},
+                    idempotency_key="workspace-reconciliation-edit-1",
+                    internal=True,
+                    timeout=10,
+                )
+            )
+        store.transition(
+            run_id,
+            RunState.BLOCKED,
+            reason="workspace_write_reconciled_not_applied",
+            owner=token,
+        )
+        store.release_lease(run_id, token)
+        resolved = store.unresolved_tool_calls(run_id)
+        saved_result = store.public_tool_result(run_id, "edit-1")
+        if (
+            result.get("effect") != "not_applied_after_review"
+            or resolved
+            or saved_result is None
+            or json.loads(saved_result).get("effect") != "not_applied_after_review"
+            or destination.exists()
+        ):
+            raise AssertionError("Frozen owner reconciliation did not resolve safely.")
+        (root / "recovery.json").write_text(
+            json.dumps(
+                {
+                    "automatically_requeued_run_ids": recovered,
+                    "state": "blocked",
+                    "outcomes": {"edit-1": "not_applied_after_review"},
+                    "has_unresolved_tool_calls": False,
+                    "original_result_available": True,
+                    "destination_absent": True,
+                    "run_id": run_id,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return
     store.transition(run_id, RunState.QUEUED, reason="operator_requested_reconciliation")
     token = store.acquire_lease(run_id, "recovery-worker")
     assert token is not None
@@ -142,7 +214,11 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--recover":
         recover(Path(sys.argv[2]), sys.argv[3])
         return
-    root = (Path(".acceptance") / str(uuid4())).resolve()
+    root = Path(
+        os.environ.get("XAA_ACCEPTANCE_DIR", str(Path(".acceptance") / str(uuid4())))
+    ).resolve()
+    if root.exists():
+        raise FileExistsError("Acceptance output directory already exists.")
     root.mkdir(parents=True)
     target = root / "fixture.txt"
     create = os.environ.get("XAA_CRASH_OPERATION") == "create"
@@ -192,16 +268,32 @@ def main() -> None:
     recovery = json.loads((root / "recovery.json").read_text(encoding="utf-8"))
     outcomes = recovery["outcomes"]
     early = os.environ.get("XAA_CRASH_BOUNDARY") == "created"
-    passed = (
-        process.returncode not in (0, None)
-        and recovery_process.returncode == 0
-        and outcomes == {"edit-1": "conflicting" if early else "applied"}
-        and target.read_bytes() == (b"" if early else b"verified-after-crash")
-        and target.stat().st_mtime_ns == before_recovery_mtime
-        and recovery["has_unresolved_tool_calls"] == early
-        and recovery["state"] == ("blocked" if early else "planning")
-        and run_id not in recovery["automatically_requeued_run_ids"]
-    )
+    owner_reconciliation = os.environ.get("XAA_OWNER_RECONCILIATION") == "1"
+    target_exists = target.exists()
+    target_contents = target.read_bytes() if target_exists else None
+    rewritten = target_exists and target.stat().st_mtime_ns != before_recovery_mtime
+    if owner_reconciliation:
+        passed = (
+            process.returncode not in (0, None)
+            and recovery_process.returncode == 0
+            and outcomes == {"edit-1": "not_applied_after_review"}
+            and not target_exists
+            and recovery["has_unresolved_tool_calls"] is False
+            and recovery["state"] == "blocked"
+            and recovery["original_result_available"] is True
+            and run_id not in recovery["automatically_requeued_run_ids"]
+        )
+    else:
+        passed = (
+            process.returncode not in (0, None)
+            and recovery_process.returncode == 0
+            and outcomes == {"edit-1": "conflicting" if early else "applied"}
+            and target_contents == (b"" if early else b"verified-after-crash")
+            and not rewritten
+            and recovery["has_unresolved_tool_calls"] == early
+            and recovery["state"] == ("blocked" if early else "planning")
+            and run_id not in recovery["automatically_requeued_run_ids"]
+        )
     report = {
         "passed": passed,
         "operation": "create" if create else "edit",
@@ -217,12 +309,14 @@ def main() -> None:
         "state_after_reconciliation": recovery["state"],
         "unresolved_after_reconciliation": recovery["has_unresolved_tool_calls"],
         "outcomes": outcomes,
-        "rewritten": target.stat().st_mtime_ns != before_recovery_mtime,
+        "destination_exists": target_exists,
+        "rewritten": rewritten,
     }
     if os.environ.get("XAA_FROZEN_WORKER") == "1":
-        report["build_sha256"] = json.loads(
-            Path("build/native-dev/manifest.json").read_text(encoding="utf-8")
+        manifest_path = Path(
+            os.environ.get("XAA_FROZEN_ENGINE_MANIFEST", "build/native-dev/manifest.json")
         )
+        report["build_sha256"] = json.loads(manifest_path.read_text(encoding="utf-8"))
     (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({**report, "evidence": str(root)}, indent=2))
     if not passed:
