@@ -3784,7 +3784,7 @@ export interface components {
              * Operation
              * @enum {string}
              */
-            operation: "create" | "edit";
+            operation: "create" | "edit" | "delete";
             /** Path */
             path: string;
         };

@@ -2546,7 +2546,11 @@ def create_app(
     async def get_workspace_write_reconciliations(
         run_id: str, _: None = Depends(authenticate)
     ) -> list[dict[str, Any]]:
-        from xaa.runtime.executor import CreateFileArguments, WriteFileArguments
+        from xaa.runtime.executor import (
+            CreateFileArguments,
+            DeleteFileArguments,
+            WriteFileArguments,
+        )
 
         run = run_store.get_run(run_id)
         if run is None:
@@ -2580,6 +2584,17 @@ def create_app(
                         "desired_sha256": hashlib.sha256(
                             parsed.content.encode("utf-8")
                         ).hexdigest(),
+                    }
+                )
+            elif call["tool_name"] == "workspace.delete_file" and call["tool_version"] == "1":
+                parsed = DeleteFileArguments.model_validate(call["arguments"])
+                items.append(
+                    {
+                        "call_id": call["id"],
+                        "operation": "delete",
+                        "path": parsed.path,
+                        "expected_sha256": parsed.expected_sha256,
+                        "desired_sha256": parsed.expected_sha256,
                     }
                 )
         return items

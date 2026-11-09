@@ -71,7 +71,7 @@ class MCPReconciliationDecision(BaseModel):
 
 class WorkspaceWriteReconciliationItem(BaseModel):
     call_id: str
-    operation: Literal["create", "edit"]
+    operation: Literal["create", "edit", "delete"]
     path: str
     expected_sha256: str | None
     desired_sha256: str

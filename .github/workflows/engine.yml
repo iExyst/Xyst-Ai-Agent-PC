@@ -350,6 +350,24 @@ jobs:
           path: .acceptance/workspace-edit-owner-${{ github.run_id }}/report.json
           if-no-files-found: error
           include-hidden-files: true
+      - name: Verify owner-reviewed workspace delete recovery through the frozen worker
+        run: uv run python scripts/write_crash_diagnostic.py
+        env:
+          XAA_CRASH_OPERATION: delete
+          XAA_CRASH_BOUNDARY: deleted
+          XAA_CRASH_RECONCILE_WORKER: "1"
+          XAA_FROZEN_WORKER: "1"
+          XAA_OWNER_RECONCILIATION: "1"
+          XAA_FROZEN_ENGINE_EXECUTABLE: build/native-release/xaa-engine.exe
+          XAA_FROZEN_ENGINE_MANIFEST: build/native-release/manifest.json
+          XAA_ACCEPTANCE_DIR: .acceptance/workspace-delete-owner-${{ github.run_id }}
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workspace-delete-owner-recovery-${{ github.run_id }}
+          path: .acceptance/workspace-delete-owner-${{ github.run_id }}/report.json
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Verify frozen ACP entry point and packaged version metadata
         run: uv run python scripts/frozen_acp_diagnostic.py --engine apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe
         timeout-minutes: 2

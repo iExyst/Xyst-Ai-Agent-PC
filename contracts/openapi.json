@@ -5630,7 +5630,8 @@
           "operation": {
             "enum": [
               "create",
-              "edit"
+              "edit",
+              "delete"
             ],
             "title": "Operation",
             "type": "string"

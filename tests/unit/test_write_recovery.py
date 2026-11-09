@@ -81,6 +81,49 @@ def test_owner_reconciles_interrupted_creation_only_when_destination_is_absent(w
     assert store.unresolved_tool_calls(run_id) == []
 
 
+def test_owner_reconciles_interrupted_delete_only_after_original_hash_is_restored(
+    workspace_tmp_path,
+):
+    original = b"reviewed file contents"
+    target = workspace_tmp_path / "file.txt"
+    target.write_bytes(original)
+    store = RunStore(workspace_tmp_path / "runs.sqlite3")
+    run_id = store.create_run(
+        objective="Delete",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "owner-recovery")
+    arguments = {"path": "file.txt", "expected_sha256": hashlib.sha256(original).hexdigest()}
+    assert store.record_tool_intent(
+        run_id,
+        token,
+        call_id="delete",
+        tool="workspace.delete_file",
+        version="1",
+        arguments=arguments,
+        idempotency_key="delete",
+        internal=True,
+    )
+    target.unlink()
+    with pytest.raises(ValueError, match="Restore the deleted file"):
+        WorkspaceExecutor(store).reconcile_write_not_applied(run_id, token, "delete")
+    assert store.unresolved_tool_calls(run_id)
+    target.write_bytes(original)
+    result = WorkspaceExecutor(store).reconcile_write_not_applied(run_id, token, "delete")
+    assert result["effect"] == "not_applied_after_review"
+    assert target.read_bytes() == original
+    assert store.unresolved_tool_calls(run_id) == []
+    events = store.list_events(run_id)
+    failed = next(event for event in events if event["event_type"] == "tool.failed")
+    reconciled = next(event for event in events if event["event_type"] == "tool.reconciled")
+    assert failed["payload"]["internal"] is True
+    assert reconciled["payload"]["internal"] is True
+    assert store.public_tool_result(run_id, "delete") is None
+
+
 @pytest.mark.parametrize(
     "current,outcome",
     [(b"after", "applied"), (b"before", "unchanged"), (b"partial", "conflicting")],

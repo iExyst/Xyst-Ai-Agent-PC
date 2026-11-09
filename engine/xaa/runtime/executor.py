@@ -378,8 +378,45 @@ class WorkspaceExecutor:
                 raise ValueError(
                     "Restore the original file hash before confirming this write did not apply."
                 )
+            return self.store.record_tool_reconciled_not_applied(
+                run_id,
+                token,
+                call_id,
+                message="Owner inspected the selected workspace; the destination is back at the saved pre-write state. No automatic retry occurred.",
+            )
+        elif call["tool_name"] == "workspace.delete_file" and call["tool_version"] == "1":
+            parsed = DeleteFileArguments.model_validate(arguments)
+            try:
+                target = (root / parsed.path).resolve(strict=True)
+            except FileNotFoundError as exc:
+                raise ValueError(
+                    "Restore the deleted file before confirming the deletion did not apply."
+                ) from exc
+            if not target.is_relative_to(root) or not target.is_file():
+                raise ValueError(
+                    "Restore the deleted file before confirming the deletion did not apply."
+                )
+            with open_existing_for_edit(target, database=self.store.path) as source:
+                if not opened_file_path(source).is_relative_to(root):
+                    raise PermissionError("Opened reconciliation target escaped the workspace.")
+                current = source.read(65537)
+            if (
+                len(current) > 65536
+                or hashlib.sha256(current).hexdigest() != parsed.expected_sha256
+            ):
+                raise ValueError(
+                    "Restore the original file hash before confirming this deletion did not apply."
+                )
+            # Keep the exclusive file handle until the owner decision is durable so no other
+            # process can replace the verified destination between the hash check and commit.
+            return self.store.record_tool_reconciled_not_applied(
+                run_id,
+                token,
+                call_id,
+                message="Owner inspected the selected workspace; the destination is back at the saved pre-write state. No automatic retry occurred.",
+            )
         else:
-            raise ValueError("This uncertain tool action is not a workspace write.")
+            raise ValueError("This uncertain tool action is not a recoverable workspace write.")
         return self.store.record_tool_reconciled_not_applied(
             run_id,
             token,

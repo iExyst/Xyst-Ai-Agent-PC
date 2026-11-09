@@ -55,21 +55,36 @@ def child(root: Path, run_id: str) -> None:
         raise RuntimeError("Could not acquire probe lease.")
     store.transition(run_id, RunState.PLANNING, owner=token)
     store.transition(run_id, RunState.RUNNING, owner=token)
-    create = os.environ.get("XAA_CRASH_OPERATION") == "create"
-    operation = (
-        WorkspaceExecutor(store).create_file if create else WorkspaceExecutor(store).write_file
-    )
-    operation(
-        run_id,
-        token,
-        "edit-1",
-        {
-            "path": "fixture.txt",
-            "content": "verified-after-crash",
-            **({} if create else {"expected_sha256": hashlib.sha256(b"before").hexdigest()}),
-        },
-        idempotency_key="edit-1",
-    )
+    executor = WorkspaceExecutor(store)
+    operation_name = os.environ.get("XAA_CRASH_OPERATION")
+    if operation_name == "create":
+        executor.create_file(
+            run_id,
+            token,
+            "edit-1",
+            {"path": "fixture.txt", "content": "verified-after-crash"},
+            idempotency_key="edit-1",
+        )
+    elif operation_name == "delete":
+        executor.delete_file(
+            run_id,
+            token,
+            "edit-1",
+            {"path": "fixture.txt", "expected_sha256": hashlib.sha256(b"before").hexdigest()},
+            idempotency_key="edit-1",
+        )
+    else:
+        executor.write_file(
+            run_id,
+            token,
+            "edit-1",
+            {
+                "path": "fixture.txt",
+                "content": "verified-after-crash",
+                "expected_sha256": hashlib.sha256(b"before").hexdigest(),
+            },
+            idempotency_key="edit-1",
+        )
 
 
 def recover(root: Path, run_id: str) -> None:
@@ -87,6 +102,7 @@ def recover(root: Path, run_id: str) -> None:
     assert saved is not None and saved["state"] == "blocked"
     if os.environ.get("XAA_OWNER_RECONCILIATION") == "1":
         create = os.environ.get("XAA_CRASH_OPERATION") == "create"
+        delete = os.environ.get("XAA_CRASH_OPERATION") == "delete"
         boundary = os.environ.get("XAA_CRASH_BOUNDARY")
         destination = root / "fixture.txt"
         if create:
@@ -95,6 +111,18 @@ def recover(root: Path, run_id: str) -> None:
             # This deterministic diagnostic represents the owner's inspection/removal step.
             destination.unlink()
             inspected_state = "destination_absent"
+        elif delete:
+            if boundary != "deleted" or destination.exists():
+                raise AssertionError("Expected the interrupted delete to leave no file.")
+            # Restore the owner's backup only after inspecting the uncertain deletion.
+            destination.write_bytes(b"before")
+            unresolved = next(
+                item for item in store.unresolved_tool_calls(run_id) if item["id"] == "edit-1"
+            )
+            expected_sha256 = unresolved["arguments"].get("expected_sha256")
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != expected_sha256:
+                raise AssertionError("Could not restore the saved pre-delete file hash.")
+            inspected_state = "original_hash_restored"
         else:
             if boundary != "flushed" or not destination.is_file():
                 raise AssertionError("Expected an interrupted edit after its content was flushed.")
@@ -145,7 +173,15 @@ def recover(root: Path, run_id: str) -> None:
         )
         store.release_lease(run_id, token)
         resolved = store.unresolved_tool_calls(run_id)
-        saved_result = store.public_tool_result(run_id, "edit-1")
+        if delete:
+            with store.connection() as connection:
+                saved_row = connection.execute(
+                    "SELECT result FROM tool_calls WHERE run_id=? AND provider_call_id=? AND state='failed'",
+                    (run_id, "edit-1"),
+                ).fetchone()
+            saved_result = str(saved_row["result"]) if saved_row is not None else None
+        else:
+            saved_result = store.public_tool_result(run_id, "edit-1")
         destination_state_valid = (
             not destination.exists()
             if create
@@ -240,7 +276,8 @@ def main() -> None:
         raise FileExistsError("Acceptance output directory already exists.")
     root.mkdir(parents=True)
     target = root / "fixture.txt"
-    create = os.environ.get("XAA_CRASH_OPERATION") == "create"
+    operation_name = os.environ.get("XAA_CRASH_OPERATION")
+    create = operation_name == "create"
     if not create:
         target.write_bytes(b"before")
     store = RunStore(root / "runs.sqlite3")
@@ -273,7 +310,7 @@ def main() -> None:
             if process.poll() is None:
                 process.kill()
                 process.wait(timeout=5)
-    before_recovery_mtime = target.stat().st_mtime_ns
+    before_recovery_mtime = target.stat().st_mtime_ns if target.exists() else None
     recovery_process = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), "--recover", str(root), run_id],
         check=False,
@@ -290,7 +327,11 @@ def main() -> None:
     owner_reconciliation = os.environ.get("XAA_OWNER_RECONCILIATION") == "1"
     target_exists = target.exists()
     target_contents = target.read_bytes() if target_exists else None
-    rewritten = target_exists and target.stat().st_mtime_ns != before_recovery_mtime
+    rewritten = (
+        target_exists
+        and before_recovery_mtime is not None
+        and target.stat().st_mtime_ns != before_recovery_mtime
+    )
     expected_owner_state = (
         "destination_absent"
         if os.environ.get("XAA_CRASH_OPERATION") == "create"
@@ -321,13 +362,17 @@ def main() -> None:
         )
     report = {
         "passed": passed,
-        "operation": "create" if create else "edit",
+        "operation": "create" if create else "delete" if operation_name == "delete" else "edit",
         "reconciliation_worker": os.environ.get("XAA_CRASH_RECONCILE_WORKER") == "1",
         "frozen_worker": os.environ.get("XAA_FROZEN_WORKER") == "1",
         "run_owner_exit_code": process.returncode,
-        "interruption": "run-owning process killed after create before content/execution event"
-        if early
-        else "run-owning process killed after fsync before result",
+        "interruption": (
+            "run-owning process killed after create before content/execution event"
+            if early
+            else "run-owning process killed after deletion before result"
+            if operation_name == "delete"
+            else "run-owning process killed after fsync before result"
+        ),
         "recovery_in_fresh_process": recovery_process.returncode == 0,
         "automatically_requeued_run_ids": recovery["automatically_requeued_run_ids"],
         "initial_recovery_state": "blocked",

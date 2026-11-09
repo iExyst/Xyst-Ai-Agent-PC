@@ -1814,10 +1814,17 @@ class RunStore:
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.require_lease(connection, run_id, token)
+            intended = connection.execute(
+                "SELECT json_extract(payload,'$.internal') AS internal FROM run_events "
+                "WHERE run_id=? AND event_type='tool.intended' "
+                "AND json_extract(payload,'$.call_id')=? LIMIT 1",
+                (run_id, call_id),
+            ).fetchone()
+            internal = intended is not None and intended["internal"] == 1
             changed = connection.execute(
                 "UPDATE tool_calls SET state='failed',result=?,error=?,updated_at=? "
                 "WHERE run_id=? AND provider_call_id=? AND state='intended' "
-                "AND tool_name IN ('workspace.write_file','workspace.create_file')",
+                "AND tool_name IN ('workspace.write_file','workspace.create_file','workspace.delete_file')",
                 (json.dumps(result), json.dumps(result["error"]), utc_now(), run_id, call_id),
             ).rowcount
             if changed != 1:
@@ -1828,7 +1835,7 @@ class RunStore:
                 "tool.failed",
                 {
                     "call_id": call_id,
-                    "internal": False,
+                    "internal": internal,
                     "effect": "not_applied_after_review",
                     "code": "write_reconciled_not_applied",
                 },
@@ -1840,6 +1847,7 @@ class RunStore:
                 {
                     "call_id": call_id,
                     "resolution": "not_applied_after_workspace_review",
+                    "internal": internal,
                 },
             )
         return result

@@ -18,7 +18,9 @@ export function WorkspaceWriteReconciliationPanel({client,runId}:{client:EngineC
   async function confirmNotApplied(item:WorkspaceWriteReconciliationItem) {
     const before=item.operation==='create'
       ? 'Delete the incomplete file first, then verify the destination is absent.'
-      : `Restore the original file and verify its SHA-256 is ${item.expected_sha256}.`;
+      : item.operation==='delete'
+        ? `Restore the deleted file and verify its SHA-256 is ${item.expected_sha256}.`
+        : `Restore the original file and verify its SHA-256 is ${item.expected_sha256}.`;
     if(!window.confirm(`${before} Confirm only after inspecting the selected workspace. This closes the old write as not applied; it does not repeat it.`))return;
     setBusy(true);setError('');setMessage('');
     try {
@@ -34,8 +36,8 @@ export function WorkspaceWriteReconciliationPanel({client,runId}:{client:EngineC
     <p>Inspect each destination. The saved write is never repeated automatically. To confirm it did not apply, restore the original file hash or remove the incomplete new file; the engine checks that state again before recording your decision.</p>
     {!checked&&<button type="button" disabled={busy} onClick={()=>void load()}>Inspect uncertain workspace writes</button>}
     {items.length>0&&<ul>{items.map(item=><li key={item.call_id}>
-      <strong>{item.operation==='create'?'Create':'Edit'} <code>{item.path}</code></strong>
-      <p>Desired SHA-256: <code>{item.desired_sha256}</code>{item.expected_sha256&&<> · original SHA-256: <code>{item.expected_sha256}</code></>}</p>
+      <strong>{item.operation==='create'?'Create':item.operation==='delete'?'Delete':'Edit'} <code>{item.path}</code></strong>
+      <p>{item.operation==='delete'?<>Required restored SHA-256: <code>{item.expected_sha256}</code></>:<>Desired SHA-256: <code>{item.desired_sha256}</code>{item.expected_sha256&&<> · original SHA-256: <code>{item.expected_sha256}</code></>}</>}</p>
       <button type="button" disabled={busy} onClick={()=>void confirmNotApplied(item)}>Confirm write did not apply</button>
     </li>)}</ul>}
     {checked&&items.length===0&&<p>No unresolved workspace writes.</p>}
