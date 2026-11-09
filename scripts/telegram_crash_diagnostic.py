@@ -175,6 +175,10 @@ def main() -> None:
     if "--child" in sys.argv:
         child(Path(sys.argv[sys.argv.index("--child") + 1]), scheduled=scheduled)
         return
+    if "--reconcile" in sys.argv:
+        root = Path(sys.argv[sys.argv.index("--reconcile") + 1])
+        asyncio.run(make_service(root, block_after_accept=False).cycle())
+        return
 
     root = (Path(".acceptance") / f"telegram-crash-{uuid4()}").resolve()
     root.mkdir(parents=True)
@@ -230,7 +234,25 @@ def main() -> None:
                     (IDENTITY.account_id,),
                 ).fetchone()[0]
             )
-    asyncio.run(make_service(root, block_after_accept=False).cycle())
+    reconciliation = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--reconcile",
+            str(root),
+            *(["--scheduled"] if scheduled else []),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=20,
+        text=True,
+    )
+    (root / "reconcile.stdout.log").write_text(reconciliation.stdout, encoding="utf-8")
+    (root / "reconcile.stderr.log").write_text(reconciliation.stderr, encoding="utf-8")
+    if reconciliation.returncode != 0:
+        raise RuntimeError(
+            f"Fresh-process Telegram reconciliation failed ({reconciliation.returncode})."
+        )
     accepted_after = accepted_log.read_text(encoding="utf-8").splitlines()
     with reopened.connection() as connection:
         if scheduled:
@@ -263,7 +285,7 @@ def main() -> None:
     report: dict[str, Any] = {
         "passed": passed,
         "transport": "deterministic fsynced local acceptor; no Telegram endpoint or bot used",
-        "crash_boundary": "send accepted durably before delivery journal completion",
+        "crash_boundary": "send accepted durably before delivery journal completion; reconciled in a fresh process",
         "delivery_kind": "scheduled outbox" if scheduled else "inbound reply",
         "run_id": run_id,
         "delivery_state_before_restart": before_reconcile,
