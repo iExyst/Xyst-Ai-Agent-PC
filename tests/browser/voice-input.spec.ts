@@ -62,7 +62,10 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
           deniedOnce = true;
           return Promise.reject(new DOMException('Permission denied by acceptance fixture', 'NotAllowedError'));
         }
-        return getUserMedia(constraints);
+        return getUserMedia(constraints).then(stream => {
+          (window as Window & { __xaaMicrophoneStream?: MediaStream }).__xaaMicrophoneStream = stream;
+          return stream;
+        });
       },
     });
   });
@@ -103,6 +106,10 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const tracks = (window as Window & { __xaaMicrophoneStream?: MediaStream }).__xaaMicrophoneStream?.getTracks() ?? [];
+    return tracks.length > 0 && tracks.every(track => track.readyState === 'ended');
+  })).toBe(true);
   await expect(page.getByRole('button', { name: 'Start objective', exact: true })).toBeEnabled();
   await page.getByLabel('Local speech service URL').fill('http://127.0.0.1:8765/v1/audio/transcriptions');
   await page.getByRole('button', { name: 'Start objective', exact: true }).click();
