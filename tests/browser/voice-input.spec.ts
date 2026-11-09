@@ -50,6 +50,7 @@ test('voice attachment submits WAV and the selected local transcription endpoint
 
 test('microphone capture is converted locally to a bounded PCM WAV attachment', async ({ page }) => {
   const run = { id: 'voice-capture-run', objective: 'Summarize this recording', state: 'verifying', revision: 1, acceptance_criteria: [], model: 'fixture/model', limits: { max_iterations: 2, max_seconds: 60 } };
+  const oldAudio = Buffer.from('RIFF\x24\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0}\0\0\x02\0\x10\0data\0\0\0\0', 'binary');
   let submitted: Record<string, unknown> | undefined;
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
@@ -75,11 +76,17 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await page.getByLabel('Local model').selectOption('fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective', { exact: true }).fill(run.objective);
+  await page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)').setInputFiles({ name: 'old.wav', mimeType: 'audio/wav', buffer: oldAudio });
+  await expect(page.getByText(/Attached: old\.wav/)).toBeVisible();
   await page.getByRole('button', { name: 'Record voice' }).click();
+  await expect(page.getByText(/Attached: old\.wav/)).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start objective', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)')).toBeDisabled();
   await expect(page.getByText(/Recording on this computer/)).toBeVisible();
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start objective', exact: true })).toBeEnabled();
   await page.getByLabel('Local speech service URL').fill('http://127.0.0.1:8765/v1/audio/transcriptions');
   await page.getByRole('button', { name: 'Start objective', exact: true }).click();
   await expect.poll(() => submitted).toBeDefined();

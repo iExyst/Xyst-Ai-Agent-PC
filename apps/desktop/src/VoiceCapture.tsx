@@ -57,8 +57,9 @@ function toDataUrl(bytes: Uint8Array): string {
   return `data:audio/wav;base64,${btoa(binary)}`;
 }
 
-export function VoiceCapture({ onRecorded, disabled }: { onRecorded: (dataUrl: string) => void; disabled: boolean }) {
+export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecorded: (dataUrl: string) => void; onCaptureBusy: (busy: boolean) => void; disabled: boolean }) {
   const [recording, setRecording] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const streamRef = useRef<MediaStream | undefined>(undefined);
   const recorderRef = useRef<MediaRecorder | undefined>(undefined);
@@ -86,6 +87,7 @@ export function VoiceCapture({ onRecorded, disabled }: { onRecorded: (dataUrl: s
     setError('');
     discardRef.current = false;
     chunksRef.current = [];
+    onCaptureBusy(true);
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
         throw new Error('Microphone recording is not available in this desktop environment.');
@@ -98,11 +100,16 @@ export function VoiceCapture({ onRecorded, disabled }: { onRecorded: (dataUrl: s
       recorder.onerror = () => {
         discardRef.current = true;
         releaseMicrophone();
+        onCaptureBusy(false);
         setError('Microphone recording failed. Check the device and try again.');
       };
       recorder.onstop = () => {
         releaseMicrophone();
-        if (discardRef.current || chunksRef.current.length === 0) return;
+        if (discardRef.current || chunksRef.current.length === 0) {
+          onCaptureBusy(false);
+          return;
+        }
+        setProcessing(true);
         void (async () => {
           let context: AudioContext | undefined;
           try {
@@ -117,6 +124,8 @@ export function VoiceCapture({ onRecorded, disabled }: { onRecorded: (dataUrl: s
               : 'Could not convert the recording to PCM WAV. Try a shorter recording or attach a WAV file.');
           } finally {
             await context?.close();
+            setProcessing(false);
+            onCaptureBusy(false);
           }
         })();
       };
@@ -127,6 +136,7 @@ export function VoiceCapture({ onRecorded, disabled }: { onRecorded: (dataUrl: s
       }, MAX_DURATION_SECONDS * 1000);
     } catch (failure) {
       releaseMicrophone();
+      onCaptureBusy(false);
       setError(failure instanceof Error && failure.name === 'NotAllowedError'
         ? 'Microphone permission was denied. Allow microphone access in Windows settings or attach a WAV file.'
         : failure instanceof Error ? failure.message : 'Could not start microphone recording.');
@@ -139,7 +149,7 @@ export function VoiceCapture({ onRecorded, disabled }: { onRecorded: (dataUrl: s
 
   return <div aria-label="Microphone voice capture">
     {!recording
-      ? <button type="button" disabled={disabled} onClick={() => void start()}>Record voice</button>
+      ? <button type="button" disabled={disabled || processing} onClick={() => void start()}>{processing ? 'Converting recording…' : 'Record voice'}</button>
       : <button type="button" disabled={disabled} onClick={stop}>Stop recording</button>}
     {recording && <p role="status">Recording on this computer. The microphone stops when you finish or reach the 4 MiB recording limit.</p>}
     {error && <p role="alert">{error}</p>}
