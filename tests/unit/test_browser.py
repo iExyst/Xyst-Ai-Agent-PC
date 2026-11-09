@@ -251,6 +251,46 @@ async def test_browser_route_guard_applies_to_redirect_and_subresource_requests(
         assert blocked_subresources == {}
 
 
+@pytest.mark.parametrize("is_main_frame", [True, False])
+@pytest.mark.asyncio
+async def test_browser_route_guard_tracks_only_blocked_top_level_documents(
+    is_main_frame: bool,
+) -> None:
+    class FakeFrame:
+        def __init__(self, parent_frame=None) -> None:
+            self.parent_frame = parent_frame
+
+    main_frame = FakeFrame()
+
+    class FakeRequest:
+        resource_type = "document"
+        method = "GET"
+        url = "https://outside.example.net/redirect-target"
+        frame = main_frame if is_main_frame else FakeFrame(main_frame)
+
+        def is_navigation_request(self) -> bool:
+            return True
+
+    class FakeRoute:
+        request = FakeRequest()
+        action: tuple[str, str | None] | None = None
+
+        async def abort(self, error_code: str) -> None:
+            self.action = ("abort", error_code)
+
+        async def continue_(self) -> None:
+            self.action = ("continue", None)
+
+    blocked_main_navigations: dict[str, int] = {}
+    await browser_worker.guard_browser_route(
+        FakeRoute(),
+        {"docs.example.com"},
+        main_frame=main_frame,
+        blocked_main_navigations=blocked_main_navigations,
+    )
+    assert blocked_main_navigations == ({"count": 1} if is_main_frame else {})
+
+
 @pytest.mark.asyncio
 async def test_browser_cancellation_stops_owned_worker_process_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path

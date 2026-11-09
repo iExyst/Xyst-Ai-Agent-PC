@@ -56,7 +56,12 @@ def validate_url(url: str, hosts: set[str]) -> str:
 
 
 async def guard_browser_route(
-    route: Any, hosts: set[str], blocked_subresources: dict[str, int] | None = None
+    route: Any,
+    hosts: set[str],
+    blocked_subresources: dict[str, int] | None = None,
+    *,
+    main_frame: Any | None = None,
+    blocked_main_navigations: dict[str, int] | None = None,
 ) -> None:
     try:
         if route.request.method not in {"GET", "HEAD"}:
@@ -64,7 +69,23 @@ async def guard_browser_route(
         validate_web_target(route.request.url, hosts)
     except (ValueError, PermissionError):
         resource_type = getattr(route.request, "resource_type", "document")
-        if blocked_subresources is not None and resource_type != "document":
+        request_frame = getattr(route.request, "frame", None)
+        is_top_level_navigation = main_frame is not None and (
+            request_frame is main_frame
+            or (
+                request_frame is not None
+                and route.request.is_navigation_request()
+                and request_frame.parent_frame is None
+            )
+        )
+        if (
+            resource_type == "document"
+            and main_frame is not None
+            and is_top_level_navigation
+            and blocked_main_navigations is not None
+        ):
+            blocked_main_navigations["count"] = blocked_main_navigations.get("count", 0) + 1
+        elif blocked_subresources is not None and resource_type != "document":
             blocked_subresources[resource_type] = blocked_subresources.get(resource_type, 0) + 1
         await route.abort("blockedbyclient")
     else:
@@ -179,6 +200,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
     validate_url(request.url, hosts)
     budget = {"bytes": 0, "connections": 0}
     blocked_subresources: dict[str, int] = {}
+    blocked_main_navigations = {"count": 0}
     server = await asyncio.start_server(
         lambda reader, writer: _proxy_client(reader, writer, hosts, budget), "127.0.0.1", 0
     )
@@ -206,11 +228,17 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                     ignore_https_errors=False,
                 )
                 try:
+                    page = await context.new_page()
                     await context.route(
                         "**/*",
-                        lambda route: guard_browser_route(route, hosts, blocked_subresources),
+                        lambda route: guard_browser_route(
+                            route,
+                            hosts,
+                            blocked_subresources,
+                            main_frame=page.main_frame,
+                            blocked_main_navigations=blocked_main_navigations,
+                        ),
                     )
-                    page = await context.new_page()
                     context.on("page", lambda opened: close_unexpected_page(page, opened))
                     await page.goto(request.url, wait_until="domcontentloaded", timeout=15000)
                     for name in request.links:
@@ -221,6 +249,10 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             )
                         await link.click(timeout=8000)
                         await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                    if blocked_main_navigations["count"]:
+                        raise PermissionError(
+                            "Browser blocked a top-level navigation outside the approved host list."
+                        )
                     text = (await page.locator("body").inner_text(timeout=5000))[:MAX_PAGE_TEXT]
                     result: dict[str, Any] = {
                         "url": urlsplit(page.url)._replace(query="", fragment="").geturl(),

@@ -78,6 +78,7 @@ async def run_case(
         "status": result.get("status"),
         "error": result.get("error"),
         "final_url": result.get("url"),
+        "title": result.get("title"),
         "content_has_fixture_marker": "Herman Melville - Moby-Dick"
         in str(result.get("content", "")),
         "blocked_subresources": result.get("blocked_subresources", {}),
@@ -128,11 +129,53 @@ async def main() -> None:
                 f"Off-host subresources were not blocked and recorded: {subresources}"
             )
 
+        approved_chain_destination = "https://example.com/"
+        approved_chain_second_hop = "https://httpbin.org/redirect-to?" + urlencode(
+            {"url": approved_chain_destination}
+        )
+        approved_chain_start = "https://postman-echo.com/redirect-to?" + urlencode(
+            {"url": approved_chain_second_hop}
+        )
+        approved_chain = await run_case(
+            root / "approved-chain.sqlite3",
+            name="approved_multi_hop_redirect",
+            destination=approved_chain_destination,
+            approved_hosts=["postman-echo.com", "httpbin.org", "example.com"],
+            start_url=approved_chain_start,
+        )
+        if (
+            approved_chain["status"] != "ok"
+            or approved_chain["final_url"] != approved_chain_destination
+            or approved_chain["title"] != "Example Domain"
+        ):
+            raise AssertionError(
+                f"Approved multi-hop redirect did not reach the approved content: {approved_chain}"
+            )
+
+        blocked_chain_destination = "https://example.org/"
+        blocked_chain_second_hop = "https://httpbin.org/redirect-to?" + urlencode(
+            {"url": blocked_chain_destination}
+        )
+        blocked_chain_start = "https://postman-echo.com/redirect-to?" + urlencode(
+            {"url": blocked_chain_second_hop}
+        )
+        blocked_chain = await run_case(
+            root / "blocked-chain.sqlite3",
+            name="blocked_multi_hop_redirect",
+            destination=blocked_chain_destination,
+            approved_hosts=["postman-echo.com", "httpbin.org"],
+            start_url=blocked_chain_start,
+        )
+        if blocked_chain["status"] != "read_failed" or blocked_chain["final_url"] is not None:
+            raise AssertionError(
+                f"An unapproved destination in a redirect chain was not blocked: {blocked_chain}"
+            )
+
     report = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
         "browser": "Microsoft Edge via managed Playwright worker",
         "fixture_service": "Postman Echo redirect-to endpoint",
-        "cases": [allowed, blocked, subresources],
+        "cases": [allowed, blocked, subresources, approved_chain, blocked_chain],
         "source_sha256": {
             "browser_redirect_smoke.py": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "browser.py": hashlib.sha256(
