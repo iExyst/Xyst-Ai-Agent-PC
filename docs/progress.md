@@ -2,6 +2,10 @@
 
 Updated 2026-11-09.
 
+## Cancel a managed browser read through the installed desktop (2026-11-09)
+
+Added a Windows native desktop WebView acceptance backed by a deterministic loopback OpenAI-compatible fixture. The fixture configures through the desktop UI and completes only the harmless tool-use diagnostic; the browser run proposes one approved delayed read, then the acceptance clicks the desktop `cancel` control and verifies the authenticated cancel request, terminal `cancelled` run, durably saved browser result, no post-cancellation model follow-up and clean desktop exit. Local report: [`native-browser-ui-cancel-3caf12ab-01f4-456f-935b-99e583da3d3c/report.json`](../.acceptance/native-browser-ui-cancel-3caf12ab-01f4-456f-935b-99e583da3d3c/report.json). Launch credentials were cleaned. Wired the acceptance into the hosted install/upgrade/uninstall smoke, which will run against the installed binary; hosted verification is pending. No real model inference was requested. Other installed desktop browser workflows and remaining browser lifecycle boundaries remain open.
+
 ## Verify the current release notices in the installed Windows package (2026-11-09)
 
 Added a manual `workflow_dispatch` path that runs only the hosted Windows installer job on a selected branch, so package acceptance can run before changes reach `main` without repeating the full source suite. Manual run [42620161353](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42620161353) built the unsigned 0.1.1 installer from commit `c4d9dbc` and passed. The installed smoke confirms all three release notice files match their manifest hashes, the 0.1.0→0.1.1 upgrade preserves seeded run/event/artifact data, installed browser and backup/restore acceptance pass, default uninstall preserves user data and removes binaries, and the explicit removal choice deletes application data and exits cleanly. Reports are preserved in `.acceptance/hosted-installer-42620161353/`. This verifies packaging and install behavior, not license compatibility or the owner-selected X.A.A. application license; those release decisions remain open. No model inference was used.

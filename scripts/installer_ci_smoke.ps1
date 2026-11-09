@@ -144,6 +144,15 @@ try {
         $env:XAA_NATIVE_BOOT_RECOVERY = '1'
         $env:XAA_TEST_CONFIG_DIR = Split-Path -Parent $xaaDesktopSettings
         $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR = 'keep_running'
+        $env:XAA_NATIVE_BROWSER_CANCEL_DEBUG_PORT = '19222'
+        $xaaBrowserCancelOutput = & node scripts/native_browser_cancel_smoke.mjs $xaaDesktop
+        $xaaCancelExitCode = $LASTEXITCODE
+        if ($xaaCancelExitCode -ne 0) { throw 'Installed desktop browser cancellation acceptance failed.' }
+        $xaaCancelAcceptance = ($xaaBrowserCancelOutput | Out-String | ConvertFrom-Json)
+        if (-not $xaaCancelAcceptance.passed -or -not $xaaCancelAcceptance.cancel_request_observed -or $xaaCancelAcceptance.final_run_state -ne 'cancelled' -or $xaaCancelAcceptance.saved_browser_result.status -ne 'cancelled' -or -not $xaaCancelAcceptance.launch_credentials_clean -or $xaaCancelAcceptance.model_inference_requested) {
+            throw 'Installed desktop browser cancellation evidence was incomplete.'
+        }
+        $xaaReport.installed_desktop_browser_cancellation = $xaaCancelAcceptance
         & node scripts/native_boot_smoke.mjs $xaaDesktop
         $xaaBootExitCode = $LASTEXITCODE
     } finally {
@@ -178,7 +187,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
