@@ -99,7 +99,6 @@ if ((Test-Path -LiteralPath $xaaDataDir) -or (Test-Path -LiteralPath $xaaConfigD
     throw 'Refusing to remove pre-existing X.A.A. user data from the hosted runner.'
 }
 New-Item -ItemType Directory -Path $xaaTestRoot | Out-Null
-New-Item -ItemType Directory -Path $xaaLocalAppData, $xaaRoamingAppData | Out-Null
 
 $xaaManifest = Get-Content -LiteralPath 'build/installer/manifest.json' -Raw | ConvertFrom-Json
 if ($xaaManifest.install_mode -ne 'currentUser') { throw 'Installer manifest does not declare the current-user install mode.' }
