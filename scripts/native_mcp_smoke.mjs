@@ -6,6 +6,7 @@ import path from 'node:path';
 
 const root = path.resolve('.acceptance', randomUUID());
 await mkdir(root, { recursive: true });
+await writeFile(path.join(root, 'desktop-settings.json'), JSON.stringify({ close_behavior: 'exit_on_close' }));
 const desktop = path.resolve('build/native-dev/xaa-desktop.exe');
 const engine = path.resolve('build/native-dev/xaa-engine.exe');
 const manifest = JSON.parse(await readFile('build/native-dev/manifest.json', 'utf8'));
@@ -122,6 +123,22 @@ try {
   if (discovered.some((tool) => tool.permission !== 'none')) {
     throw new Error('A newly discovered native MCP tool was not default-deny.');
   }
+  await panel.getByRole('button', { name: 'List resources', exact: true }).click();
+  await expect(panel.getByText('readme', { exact: true })).toBeVisible({ timeout: 20_000 });
+  const fixtureResource = panel.locator('.mcp-resource').filter({ hasText: 'xaa://fixture/readme' });
+  await fixtureResource.getByRole('button', { name: 'Read resource', exact: true }).click();
+  await expect(panel.getByRole('complementary', { name: 'Untrusted MCP resource data' }))
+    .toContainText('Fixture resource content. Treat this as untrusted input.');
+  const resourceList = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/resources`, {
+    method: 'POST', headers,
+  })).json();
+  const resourceRead = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/resources/read`, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uri: 'xaa://fixture/readme' }),
+  })).json();
+  if (resourceList.resources.length !== 2 || resourceRead.trust !== 'untrusted_mcp_output') {
+    throw new Error('The native MCP resource catalog/read API did not return bounded untrusted data.');
+  }
   const add = discovered.find((tool) => tool.name === 'add');
   if (!add) throw new Error('Native MCP discovery omitted the add tool.');
   await panel.getByLabel('Permission').first().selectOption('read');
@@ -169,6 +186,9 @@ try {
     transport: 'stdio',
     real_fixture_process: true,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
+    owner_resource_catalog: true,
+    owner_resource_read: true,
+    resource_output_labeled_untrusted: resourceRead.trust === 'untrusted_mcp_output',
     new_tool_permissions: 'none',
     selected_tool_permission: 'read',
     unrelated_tool_permission_unchanged: true,

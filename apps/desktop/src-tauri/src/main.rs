@@ -76,6 +76,7 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
             "USERPROFILE",
             "TEMP",
             "TMP",
+            "XAA_DATA_DIR",
         ] {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
