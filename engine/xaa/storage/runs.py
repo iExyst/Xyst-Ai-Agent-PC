@@ -78,8 +78,6 @@ def utc_now() -> str:
 def _is_safe_read_intent(tool_name: str, version: str, arguments: str) -> bool:
     if SAFE_READ_TOOL_VERSIONS.get(tool_name) != version:
         return False
-    if tool_name != "mcp.call":
-        return True
     try:
         payload: Any = json.loads(arguments)
     except (TypeError, json.JSONDecodeError):
@@ -87,6 +85,8 @@ def _is_safe_read_intent(tool_name: str, version: str, arguments: str) -> bool:
     if not isinstance(payload, dict):
         return False
     typed_payload = cast(dict[str, Any], payload)
+    if tool_name != "mcp.call":
+        return True
     permission = typed_payload.get("permission")
     qualified_name = typed_payload.get("tool")
     return (
@@ -1978,11 +1978,11 @@ class RunStore:
                     internal_intents.add(payload["call_id"])
             for row in rows:
                 call_id = row["provider_call_id"]
-                arguments = json.loads(row["arguments"])
                 if not _is_safe_read_intent(
                     row["tool_name"], row["tool_version"], row["arguments"]
                 ):
                     continue
+                arguments = cast(dict[str, Any], json.loads(row["arguments"]))
                 if row["tool_name"].startswith(
                     "git."
                 ) and not self._discard_interrupted_git_artifact(
@@ -2112,10 +2112,27 @@ class RunStore:
                 "SELECT * FROM tool_calls WHERE run_id = ? AND state = 'intended' ORDER BY created_at",
                 (run_id,),
             ).fetchall()
-        return [
-            {**dict(row), "id": row["provider_call_id"], "arguments": json.loads(row["arguments"])}
-            for row in rows
-        ]
+        calls: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                arguments = json.loads(row["arguments"])
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                    arguments_invalid = True
+                else:
+                    arguments_invalid = False
+            except (TypeError, json.JSONDecodeError):
+                arguments = {}
+                arguments_invalid = True
+            calls.append(
+                {
+                    **dict(row),
+                    "id": row["provider_call_id"],
+                    "arguments": arguments,
+                    "arguments_invalid": arguments_invalid,
+                }
+            )
+        return calls
 
     def mcp_reconciliation_items(self, run_id: str) -> list[dict[str, Any]]:
         """List ambiguous MCP writes without exposing their arguments or returned content."""

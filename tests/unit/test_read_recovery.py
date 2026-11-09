@@ -196,6 +196,40 @@ def test_legacy_git_intent_stays_blocked_without_an_artifact_identity(workspace_
     assert {call["id"] for call in store.unresolved_tool_calls(run_id)} == {"legacy-git"}
 
 
+def test_malformed_read_intent_is_quarantined_without_crashing_recovery(workspace_tmp_path):
+    store, run_id, token = setup(workspace_tmp_path)
+    propose(store, run_id, token, "damaged-read")
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="damaged-read",
+        tool="workspace.read_file",
+        version="1",
+        arguments={"path": "input.txt"},
+        idempotency_key="damaged-read",
+    )
+    connection = sqlite3.connect(store.path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE tool_calls SET arguments='{' WHERE run_id=? AND provider_call_id=?",
+                (run_id, "damaged-read"),
+            )
+            connection.execute(
+                "UPDATE runs SET state='planning', lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    assert store.recover_abandoned_runs() == []
+    assert store.get_run(run_id)["state"] == RunState.BLOCKED
+    unresolved = store.unresolved_tool_calls(run_id)
+    assert len(unresolved) == 1
+    assert unresolved[0]["arguments"] == {}
+    assert unresolved[0]["arguments_invalid"] is True
+
+
 @pytest.mark.parametrize("permission,recoverable", [("read", True), ("write", False)])
 def test_parent_mcp_recovery_uses_saved_user_permission(
     workspace_tmp_path, permission, recoverable
