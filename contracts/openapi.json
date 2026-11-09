@@ -5591,6 +5591,64 @@
         ],
         "title": "WebhookReceipt",
         "type": "object"
+      },
+      "WorkspaceWriteReconciliationDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_workspace_inspected": {
+            "title": "Confirmed Workspace Inspected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirmed_workspace_inspected"
+        ],
+        "title": "WorkspaceWriteReconciliationDecision",
+        "type": "object"
+      },
+      "WorkspaceWriteReconciliationItem": {
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "desired_sha256": {
+            "title": "Desired Sha256",
+            "type": "string"
+          },
+          "expected_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Sha256"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "edit"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "operation",
+          "path",
+          "expected_sha256",
+          "desired_sha256"
+        ],
+        "title": "WorkspaceWriteReconciliationItem",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -9723,6 +9781,73 @@
         "summary": "Get Public Tool Result"
       }
     },
+    "/runs/{run_id}/tools/{call_id}/workspace-write-reconcile": {
+      "post": {
+        "operationId": "reconcile_workspace_write_not_applied_runs__run_id__tools__call_id__workspace_write_reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceWriteReconciliationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceWriteReconciliationItem"
+                  },
+                  "title": "Response Reconcile Workspace Write Not Applied Runs  Run Id  Tools  Call Id  Workspace Write Reconcile Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconcile Workspace Write Not Applied"
+      }
+    },
     "/runs/{run_id}/usage": {
       "get": {
         "operationId": "get_run_usage_runs__run_id__usage_get",
@@ -9914,6 +10039,54 @@
           }
         ],
         "summary": "Reconcile Project Validation"
+      }
+    },
+    "/runs/{run_id}/workspace-write-reconciliations": {
+      "get": {
+        "operationId": "get_workspace_write_reconciliations_runs__run_id__workspace_write_reconciliations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceWriteReconciliationItem"
+                  },
+                  "title": "Response Get Workspace Write Reconciliations Runs  Run Id  Workspace Write Reconciliations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Workspace Write Reconciliations"
       }
     },
     "/schedules": {

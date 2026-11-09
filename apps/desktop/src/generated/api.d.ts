@@ -1345,6 +1345,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/tools/{call_id}/workspace-write-reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Workspace Write Not Applied */
+        post: operations["reconcile_workspace_write_not_applied_runs__run_id__tools__call_id__workspace_write_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/usage": {
         parameters: {
             query?: never;
@@ -1391,6 +1408,23 @@ export interface paths {
         put?: never;
         /** Reconcile Project Validation */
         post: operations["reconcile_project_validation_runs__run_id__validation__call_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/workspace-write-reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace Write Reconciliations */
+        get: operations["get_workspace_write_reconciliations_runs__run_id__workspace_write_reconciliations_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3732,6 +3766,27 @@ export interface components {
             /** Run Id */
             run_id: string;
             state: components["schemas"]["RunState"];
+        };
+        /** WorkspaceWriteReconciliationDecision */
+        WorkspaceWriteReconciliationDecision: {
+            /** Confirmed Workspace Inspected */
+            confirmed_workspace_inspected: boolean;
+        };
+        /** WorkspaceWriteReconciliationItem */
+        WorkspaceWriteReconciliationItem: {
+            /** Call Id */
+            call_id: string;
+            /** Desired Sha256 */
+            desired_sha256: string;
+            /** Expected Sha256 */
+            expected_sha256: string | null;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "create" | "edit";
+            /** Path */
+            path: string;
         };
     };
     responses: never;
@@ -6593,6 +6648,42 @@ export interface operations {
             };
         };
     };
+    reconcile_workspace_write_not_applied_runs__run_id__tools__call_id__workspace_write_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceWriteReconciliationDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceWriteReconciliationItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_usage_runs__run_id__usage_get: {
         parameters: {
             query?: never;
@@ -6709,6 +6800,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectValidationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_write_reconciliations_runs__run_id__workspace_write_reconciliations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceWriteReconciliationItem"][];
                 };
             };
             /** @description Validation Error */

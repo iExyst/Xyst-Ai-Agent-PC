@@ -335,6 +335,58 @@ class WorkspaceExecutor:
                 )
         return outcomes
 
+    def reconcile_write_not_applied(self, run_id: str, token: str, call_id: str) -> dict[str, Any]:
+        """Close a confirmed no-effect write only when its original filesystem state is restored."""
+        run = self.store.get_run(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        if run["mode"] != "workspace" or not run["workspace"]:
+            raise PermissionError("Workspace-write reconciliation requires the selected workspace.")
+        call = next(
+            (item for item in self.store.unresolved_tool_calls(run_id) if item["id"] == call_id),
+            None,
+        )
+        if call is None:
+            raise ValueError("Workspace write is missing or already resolved.")
+        root = Path(run["workspace"]).resolve(strict=True)
+        arguments = call["arguments"]
+        path = arguments.get("path")
+        if not isinstance(path, str):
+            raise TypeError("Saved workspace write has no valid path.")
+        if call["tool_name"] == "workspace.create_file" and call["tool_version"] == "1":
+            target = root.joinpath(*creation_parts(path))
+            parent = target.parent.resolve(strict=True)
+            if not parent.is_relative_to(root) or os.path.lexists(target):
+                raise ValueError(
+                    "Remove the partial file and confirm its destination is absent first."
+                )
+        elif call["tool_name"] == "workspace.write_file" and call["tool_version"] == "1":
+            parsed = WriteFileArguments.model_validate(arguments)
+            target = (root / parsed.path).resolve(strict=True)
+            if not target.is_relative_to(root) or not target.is_file():
+                raise ValueError(
+                    "Restore the original file before confirming this write did not apply."
+                )
+            with open_existing_for_edit(target, database=self.store.path) as source:
+                if not opened_file_path(source).is_relative_to(root):
+                    raise PermissionError("Opened reconciliation target escaped the workspace.")
+                current = source.read(65537)
+            if (
+                len(current) > 65536
+                or hashlib.sha256(current).hexdigest() != parsed.expected_sha256
+            ):
+                raise ValueError(
+                    "Restore the original file hash before confirming this write did not apply."
+                )
+        else:
+            raise ValueError("This uncertain tool action is not a workspace write.")
+        return self.store.record_tool_reconciled_not_applied(
+            run_id,
+            token,
+            call_id,
+            message="Owner inspected the selected workspace; the destination is back at the saved pre-write state. No automatic retry occurred.",
+        )
+
     def delete_file(
         self,
         run_id: str,

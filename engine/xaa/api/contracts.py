@@ -69,6 +69,19 @@ class MCPReconciliationDecision(BaseModel):
     confirmed_external_effect_reviewed: bool
 
 
+class WorkspaceWriteReconciliationItem(BaseModel):
+    call_id: str
+    operation: Literal["create", "edit"]
+    path: str
+    expected_sha256: str | None
+    desired_sha256: str
+
+
+class WorkspaceWriteReconciliationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    confirmed_workspace_inspected: bool
+
+
 class WebhookChannelStatus(BaseModel):
     configured: bool
 

@@ -32,6 +32,7 @@ export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
 export type MCPReconciliationItem = components['schemas']['MCPReconciliationItem'];
+export type WorkspaceWriteReconciliationItem = components['schemas']['WorkspaceWriteReconciliationItem'];
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
 export type ChatSession = components['schemas']['CLIChatSessionRecord'];
@@ -99,6 +100,8 @@ export class EngineClient {
   mcpServers(): Promise<MCPServer[]> { return this.#request('/mcp/servers'); }
   async mcpReconciliations(runId:string):Promise<MCPReconciliationItem[]>{const items=await this.#request<unknown>(`/runs/${encodeURIComponent(runId)}/mcp-reconciliations`);if(!Array.isArray(items))throw new Error('MCP reconciliation response was invalid.');return items as MCPReconciliationItem[];}
   async reconcileMcpEffect(runId:string,callId:string,resolution:'applied'|'not_applied'):Promise<MCPReconciliationItem[]>{const items=await this.#request<unknown>(`/runs/${encodeURIComponent(runId)}/tools/${encodeURIComponent(callId)}/mcp-reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_external_effect_reviewed:true})});if(!Array.isArray(items))throw new Error('MCP reconciliation response was invalid.');return items as MCPReconciliationItem[];}
+  async workspaceWriteReconciliations(runId:string):Promise<WorkspaceWriteReconciliationItem[]>{const items=await this.#request<unknown>(`/runs/${encodeURIComponent(runId)}/workspace-write-reconciliations`);if(!Array.isArray(items))throw new Error('Workspace write reconciliation response was invalid.');return items as WorkspaceWriteReconciliationItem[];}
+  async reconcileWorkspaceWriteNotApplied(runId:string,callId:string):Promise<WorkspaceWriteReconciliationItem[]>{const items=await this.#request<unknown>(`/runs/${encodeURIComponent(runId)}/tools/${encodeURIComponent(callId)}/workspace-write-reconcile`,{method:'POST',body:JSON.stringify({confirmed_workspace_inspected:true})});if(!Array.isArray(items))throw new Error('Workspace write reconciliation response was invalid.');return items as WorkspaceWriteReconciliationItem[];}
   createMCPServer(input:{name:string;transport:'stdio'|'streamable_http';endpoint:string|null;command:string;args:string[];cwd:string|null;secret_env:string[]}):Promise<MCPServer>{return this.#request('/mcp/servers',{method:'POST',body:JSON.stringify(input)});}
   deleteMCPServer(id:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}`,{method:'DELETE'});}
   connectMCPServer(id:string):Promise<MCPConnect>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/connect`,{method:'POST'});}

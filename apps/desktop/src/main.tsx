@@ -171,7 +171,7 @@ function App() {
         Object.assign(labels, { 'tool.failed': 'Workspace operation needs review', 'plan.rejected': 'Plan proposal rejected; correction needed', 'plan.saved': 'Task plan saved', 'task.claimed': 'Specialist task started', 'task.blocked': 'Specialist task blocked', 'task.result': 'Specialist result submitted', 'task.verification': 'Specialist file evidence checked' });
         Object.assign(labels, { 'task.model.stream_rejected': 'Specialist stream was incomplete or invalid; no partial tool call ran' });
         Object.assign(labels, { 'context.admission_failed': 'Exact prompt counter failed; safe SDK error details saved' });
-        Object.assign(labels, {'execution.granted':'Isolated commands authorized for this run','execution.reserved':'Sandbox command reserved','execution.snapshot':'Private project copy captured','tool.executing':'Workspace operation executing','execution.completed':'Sandbox command result saved','execution.reconciled':'Interrupted command reconciled; inspect verification status','model.answer_requested':'Public answer requested; tools disabled for this legacy continuation','model.response_requested':'Model response requested; saved progress retained','diagnostic.inference.started':'Checking model tool support','diagnostic.inference.completed':'Model tool check response saved'});
+        Object.assign(labels, {'execution.granted':'Isolated commands authorized for this run','execution.reserved':'Sandbox command reserved','execution.snapshot':'Private project copy captured','tool.executing':'Workspace operation executing','tool.reconciled':'Interrupted workspace write closed after owner inspection; it was not repeated','execution.completed':'Sandbox command result saved','execution.reconciled':'Interrupted command reconciled; inspect verification status','model.answer_requested':'Public answer requested; tools disabled for this legacy continuation','model.response_requested':'Model response requested; saved progress retained','diagnostic.inference.started':'Checking model tool support','diagnostic.inference.completed':'Model tool check response saved'});
         const reasons: Record<string,string> = {
           model_no_public_response: 'The model returned another empty response without progress. Inspect the saved evidence before retrying.',
           model_no_public_answer: 'The model returned no public answer after one answer-only retry. Inspect the saved evidence; command results were not replayed.',
@@ -186,6 +186,8 @@ function App() {
           token_budget_exhausted_or_unmeasured: 'The reported token threshold was reached, or usage could not be measured. Further work is blocked.',
           iteration_budget_exhausted: 'The shared iteration limit was reached.',
           time_budget_exhausted: 'The run time limit was reached.',
+          tool_reconciliation_required: 'A workspace write may have happened before its result was saved. Inspect the file and use the recovery panel to confirm its original state before continuing.',
+          workspace_write_reconciliation_required: 'The workspace file does not match the saved pre-write state. Restore the expected file or remove the incomplete new file, then inspect it again before confirming recovery.',
         };
         const reason = typeof event.payload.reason === 'string' ? reasons[event.payload.reason] : undefined;
         const counterCode = event.event_type === 'context.admission_failed' && typeof event.payload.counter_error_code === 'string' ? ` (${event.payload.counter_error_code})` : '';

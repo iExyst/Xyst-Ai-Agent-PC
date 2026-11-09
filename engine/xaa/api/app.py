@@ -45,6 +45,8 @@ from xaa.api.contracts import (
     WebhookChannelStatus,
     WebhookCredentialRecord,
     WebhookReceipt,
+    WorkspaceWriteReconciliationDecision,
+    WorkspaceWriteReconciliationItem,
 )
 from xaa.channels.discord import (
     DiscordApiError,
@@ -87,7 +89,7 @@ from xaa.runtime.supervisor import RunSupervisor
 from xaa.runtime.task_integration import IntegrationPreview
 from xaa.runtime.task_integration import preview as integration_preview
 from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
-from xaa.runtime.tool_worker import FilesystemWorkerError
+from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.web_fetch import normalize_approved_hosts
 from xaa.runtime.wsl_transport import WSLTransport
@@ -2536,6 +2538,106 @@ def create_app(
         if run_store.get_run(run_id) is None:
             raise HTTPException(status_code=404, detail="Run not found.")
         return run_store.mcp_reconciliation_items(run_id)
+
+    @app.get(
+        "/runs/{run_id}/workspace-write-reconciliations",
+        response_model=list[WorkspaceWriteReconciliationItem],
+    )
+    async def get_workspace_write_reconciliations(
+        run_id: str, _: None = Depends(authenticate)
+    ) -> list[dict[str, Any]]:
+        from xaa.runtime.executor import CreateFileArguments, WriteFileArguments
+
+        run = run_store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run["state"] != RunState.BLOCKED.value:
+            raise HTTPException(
+                status_code=409, detail="Workspace writes can be inspected only while blocked."
+            )
+        items: list[dict[str, Any]] = []
+        for call in run_store.unresolved_tool_calls(run_id):
+            if call["tool_name"] == "workspace.create_file" and call["tool_version"] == "1":
+                parsed = CreateFileArguments.model_validate(call["arguments"])
+                content = parsed.content.encode("utf-8")
+                items.append(
+                    {
+                        "call_id": call["id"],
+                        "operation": "create",
+                        "path": parsed.path,
+                        "expected_sha256": None,
+                        "desired_sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                )
+            elif call["tool_name"] == "workspace.write_file" and call["tool_version"] == "1":
+                parsed = WriteFileArguments.model_validate(call["arguments"])
+                items.append(
+                    {
+                        "call_id": call["id"],
+                        "operation": "edit",
+                        "path": parsed.path,
+                        "expected_sha256": parsed.expected_sha256,
+                        "desired_sha256": hashlib.sha256(
+                            parsed.content.encode("utf-8")
+                        ).hexdigest(),
+                    }
+                )
+        return items
+
+    @app.post(
+        "/runs/{run_id}/tools/{call_id}/workspace-write-reconcile",
+        response_model=list[WorkspaceWriteReconciliationItem],
+    )
+    async def reconcile_workspace_write_not_applied(
+        run_id: str,
+        call_id: str,
+        payload: WorkspaceWriteReconciliationDecision,
+        _: None = Depends(authenticate),
+    ) -> list[dict[str, Any]]:
+        if not payload.confirmed_workspace_inspected:
+            raise HTTPException(
+                status_code=400,
+                detail="Inspect and restore the saved pre-write workspace state before confirming.",
+            )
+        owner = run_store.acquire_blocked_run_recovery(
+            run_id, "local-user-workspace-write-reconciliation", seconds=180
+        )
+        if owner is None:
+            raise HTTPException(status_code=409, detail="The run is active or no longer blocked.")
+        try:
+            run_store.transition(
+                run_id, RunState.PLANNING, reason="workspace_write_reconciliation", owner=owner
+            )
+            await execute_filesystem(
+                run_store,
+                run_id,
+                owner,
+                f"workspace-reconciliation-{call_id}",
+                "reconcile_not_applied",
+                {"provider_call_id": call_id},
+                idempotency_key=f"workspace-reconciliation-{call_id}",
+                internal=True,
+                timeout=10,
+            )
+            run_store.transition(
+                run_id,
+                RunState.BLOCKED,
+                reason="workspace_write_reconciled_not_applied",
+                owner=owner,
+            )
+        except (ValueError, OSError, PermissionError, FilesystemWorkerError) as exc:
+            record = run_store.get_run(run_id)
+            if record is not None and record["state"] != RunState.BLOCKED.value:
+                run_store.transition(
+                    run_id,
+                    RunState.BLOCKED,
+                    reason="workspace_write_reconciliation_required",
+                    owner=owner,
+                )
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            run_store.release_lease(run_id, owner)
+        return await get_workspace_write_reconciliations(run_id, None)
 
     @app.post(
         "/runs/{run_id}/tools/{call_id}/mcp-reconcile",

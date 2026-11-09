@@ -1802,6 +1802,48 @@ class RunStore:
             )
         return result
 
+    def record_tool_reconciled_not_applied(
+        self, run_id: str, token: str, call_id: str, *, message: str
+    ) -> dict[str, Any]:
+        """Resolve an interrupted workspace write after owner review and state verification."""
+        result: dict[str, Any] = {
+            "ok": False,
+            "effect": "not_applied_after_review",
+            "error": {"code": "write_reconciled_not_applied", "message": message},
+        }
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.require_lease(connection, run_id, token)
+            changed = connection.execute(
+                "UPDATE tool_calls SET state='failed',result=?,error=?,updated_at=? "
+                "WHERE run_id=? AND provider_call_id=? AND state='intended' "
+                "AND tool_name IN ('workspace.write_file','workspace.create_file')",
+                (json.dumps(result), json.dumps(result["error"]), utc_now(), run_id, call_id),
+            ).rowcount
+            if changed != 1:
+                raise ValueError("Workspace write is missing or already resolved.")
+            self.record_event(
+                connection,
+                run_id,
+                "tool.failed",
+                {
+                    "call_id": call_id,
+                    "internal": False,
+                    "effect": "not_applied_after_review",
+                    "code": "write_reconciled_not_applied",
+                },
+            )
+            self.record_event(
+                connection,
+                run_id,
+                "tool.reconciled",
+                {
+                    "call_id": call_id,
+                    "resolution": "not_applied_after_workspace_review",
+                },
+            )
+        return result
+
     def resolve_interrupted_reads(self, run_id: str, token: str) -> list[str]:
         """Close read-only intents without replaying them or assuming any write failed."""
         names = {

@@ -1,6 +1,7 @@
 import type {Run} from './api/client.ts';
 import type {EngineClient} from './api/client.ts';
 import {MCPReconciliationPanel} from './MCPReconciliationPanel.tsx';
+import {WorkspaceWriteReconciliationPanel} from './WorkspaceWriteReconciliationPanel.tsx';
 
 type Action='pause'|'resume'|'cancel';
 
@@ -15,6 +16,7 @@ export function ActiveRunPanel({run,answer,partial,activity,busy,client,onContro
     {answer&&<article><h3>{run.state==='completed'?'Accepted result':'Candidate answer'}</h3><p style={{whiteSpace:'pre-wrap'}}>{answer}</p></article>}
     {partial&&<article><h3>Partial response</h3><p style={{whiteSpace:'pre-wrap'}}>{partial}</p></article>}
     <MCPReconciliationPanel client={client} runId={run.id}/>
+    {run.state==='blocked'&&<WorkspaceWriteReconciliationPanel client={client} runId={run.id}/>}
     <h3>Activity</h3><ol aria-live="polite">{activity.map((item,index)=><li key={index}>{item}</li>)}</ol>
   </section>;
 }

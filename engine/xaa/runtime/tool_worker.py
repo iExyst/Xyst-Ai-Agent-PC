@@ -25,6 +25,7 @@ FilesystemOperation = Literal[
     "list",
     "search",
     "reconcile",
+    "reconcile_not_applied",
     "branch_init",
     "branch_read",
     "branch_list",
@@ -78,6 +79,8 @@ class WorkerRequest(BaseModel):
             raise PermissionError(
                 "Project verification capture is an internal operation without arguments."
             )
+        if self.operation == "reconcile_not_applied" and not self.internal:
+            raise PermissionError("Reviewed workspace reconciliation is an internal operation.")
         return self
 
 
@@ -267,6 +270,15 @@ def main() -> None:
                 if request.arguments or not request.internal:
                     raise ValueError("Reconciliation is an internal operation without arguments.")
                 result = dict(executor.reconcile_writes(request.run_id, request.token))
+            elif request.operation == "reconcile_not_applied":
+                if not request.internal or set(request.arguments) != {"provider_call_id"}:
+                    raise ValueError("Reviewed reconciliation requires one saved write identity.")
+                provider_call_id = request.arguments["provider_call_id"]
+                if not isinstance(provider_call_id, str) or not provider_call_id:
+                    raise ValueError("Saved write identity is invalid.")
+                result = executor.reconcile_write_not_applied(
+                    request.run_id, request.token, provider_call_id
+                )
             elif request.operation == "list":
                 result = list_directory(
                     executor.store,

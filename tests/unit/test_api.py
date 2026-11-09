@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import threading
 import time
 import zipfile
@@ -514,6 +516,86 @@ def test_ambiguous_mcp_write_can_be_owner_reconciled_without_replay(workspace_tm
     assert any(
         event["event_type"] == "mcp.effect_reconciled" for event in store.list_events(run_id)
     )
+
+
+def test_interrupted_workspace_write_can_be_owner_reconciled_after_state_check(
+    workspace_tmp_path, monkeypatch
+):
+    from xaa.runtime.executor import WorkspaceExecutor
+
+    store = RunStore(workspace_tmp_path / "workspace-write-reconcile-api.sqlite3")
+    run_id = store.create_run(
+        objective="Create a file",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "worker")
+    assert token
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    store.transition(run_id, RunState.RUNNING, owner=token)
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="create-call",
+        tool="workspace.create_file",
+        version="1",
+        arguments={"path": "new.txt", "content": "private payload"},
+        idempotency_key="create-call",
+    )
+    store.transition(run_id, RunState.BLOCKED, reason="tool_reconciliation_required", owner=token)
+    store.release_lease(run_id, token)
+    (workspace_tmp_path / "new.txt").write_bytes(b"")
+
+    async def reconcile_in_process(
+        _store, recovery_run_id, owner, call_id, _operation, arguments, **_kwargs
+    ):
+        return WorkspaceExecutor(_store).reconcile_write_not_applied(
+            recovery_run_id, owner, arguments["provider_call_id"]
+        )
+
+    monkeypatch.setattr("xaa.api.app.execute_filesystem", reconcile_in_process)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        listed = client.get(f"/runs/{run_id}/workspace-write-reconciliations", headers=headers)
+        refused = client.post(
+            f"/runs/{run_id}/tools/create-call/workspace-write-reconcile",
+            headers=headers,
+            json={"confirmed_workspace_inspected": False},
+        )
+        unresolved = client.post(
+            f"/runs/{run_id}/tools/create-call/workspace-write-reconcile",
+            headers=headers,
+            json={"confirmed_workspace_inspected": True},
+        )
+        (workspace_tmp_path / "new.txt").unlink()
+        resolved = client.post(
+            f"/runs/{run_id}/tools/create-call/workspace-write-reconcile",
+            headers=headers,
+            json={"confirmed_workspace_inspected": True},
+        )
+    assert listed.status_code == 200
+    assert listed.json() == [
+        {
+            "call_id": "create-call",
+            "operation": "create",
+            "path": "new.txt",
+            "expected_sha256": None,
+            "desired_sha256": hashlib.sha256(b"private payload").hexdigest(),
+        }
+    ]
+    assert "private payload" not in listed.text
+    assert refused.status_code == 400
+    assert unresolved.status_code == 409
+    assert resolved.status_code == 200 and resolved.json() == [], resolved.text
+    assert store.get_run(run_id)["state"] == RunState.BLOCKED.value
+    assert store.unresolved_tool_calls(run_id) == []
+    assert (
+        json.loads(store.public_tool_result(run_id, "create-call"))["effect"]
+        == "not_applied_after_review"
+    )
+    assert not (workspace_tmp_path / "new.txt").exists()
 
 
 class WaitingProvider(FakeProvider):

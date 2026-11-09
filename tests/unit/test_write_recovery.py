@@ -1,9 +1,84 @@
 import hashlib
+import json
 
 import pytest
 from xaa.runtime.executor import WorkspaceExecutor
 from xaa.runtime.tool_worker import execute_filesystem
 from xaa.storage.runs import RunStore
+
+
+def test_owner_reconciles_interrupted_edit_only_after_original_hash_is_restored(workspace_tmp_path):
+    target = workspace_tmp_path / "file.txt"
+    original = b"before"
+    target.write_bytes(original)
+    store = RunStore(workspace_tmp_path / "runs.sqlite3")
+    run_id = store.create_run(
+        objective="Edit",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "owner-recovery")
+    arguments = {
+        "path": "file.txt",
+        "content": "after",
+        "expected_sha256": hashlib.sha256(original).hexdigest(),
+    }
+    assert store.record_tool_intent(
+        run_id,
+        token,
+        call_id="edit",
+        tool="workspace.write_file",
+        version="1",
+        arguments=arguments,
+        idempotency_key="edit",
+    )
+    store.append_worker_event(run_id, token, "tool.executing", {"call_id": "edit"})
+    target.write_bytes(b"partial")
+    with pytest.raises(ValueError, match="Restore the original"):
+        WorkspaceExecutor(store).reconcile_write_not_applied(run_id, token, "edit")
+    assert store.unresolved_tool_calls(run_id)
+    target.write_bytes(original)
+    modified = target.stat().st_mtime_ns
+    result = WorkspaceExecutor(store).reconcile_write_not_applied(run_id, token, "edit")
+    assert result["effect"] == "not_applied_after_review"
+    assert target.read_bytes() == original
+    assert target.stat().st_mtime_ns == modified
+    assert store.unresolved_tool_calls(run_id) == []
+    assert any(event["event_type"] == "tool.reconciled" for event in store.list_events(run_id))
+
+
+def test_owner_reconciles_interrupted_creation_only_when_destination_is_absent(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "runs.sqlite3")
+    run_id = store.create_run(
+        objective="Create",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "owner-recovery")
+    arguments = {"path": "new.txt", "content": "new content"}
+    assert store.record_tool_intent(
+        run_id,
+        token,
+        call_id="create",
+        tool="workspace.create_file",
+        version="1",
+        arguments=arguments,
+        idempotency_key="create",
+    )
+    target = workspace_tmp_path / "new.txt"
+    target.write_bytes(b"")
+    with pytest.raises(ValueError, match="destination is absent"):
+        WorkspaceExecutor(store).reconcile_write_not_applied(run_id, token, "create")
+    assert store.unresolved_tool_calls(run_id)
+    target.unlink()
+    result = WorkspaceExecutor(store).reconcile_write_not_applied(run_id, token, "create")
+    assert result["effect"] == "not_applied_after_review"
+    assert not target.exists()
+    assert store.unresolved_tool_calls(run_id) == []
 
 
 @pytest.mark.parametrize(
@@ -66,3 +141,41 @@ async def test_write_effect_is_reconciled_without_repeating_it(
     assert result == {"write-1": outcome}
     assert target.stat().st_mtime_ns == modified
     assert len(recovered.unresolved_tool_calls(run_id)) == (0 if outcome == "applied" else 1)
+
+
+async def test_owner_confirmed_no_effect_recovery_runs_in_filesystem_worker(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "runs.sqlite3")
+    run_id = store.create_run(
+        objective="Create",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "owner-recovery")
+    assert store.record_tool_intent(
+        run_id,
+        token,
+        call_id="create",
+        tool="workspace.create_file",
+        version="1",
+        arguments={"path": "new.txt", "content": "value"},
+        idempotency_key="create",
+    )
+    result = await execute_filesystem(
+        store,
+        run_id,
+        token,
+        "owner-reconcile",
+        "reconcile_not_applied",
+        {"provider_call_id": "create"},
+        idempotency_key="owner-reconcile",
+        internal=True,
+    )
+    assert result["effect"] == "not_applied_after_review"
+    assert store.unresolved_tool_calls(run_id) == []
+    assert (
+        json.loads(store.public_tool_result(run_id, "create"))["effect"]
+        == "not_applied_after_review"
+    )
+    assert not (workspace_tmp_path / "new.txt").exists()
