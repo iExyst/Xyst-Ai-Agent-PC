@@ -65,6 +65,68 @@ def test_parent_expiry_fences_live_child_lease_and_blocks_replay(workspace_tmp_p
     assert TaskStore(reopened).claim_ready(run_id, replacement) is None
 
 
+@pytest.mark.parametrize(
+    "mandatory_reservations,expected_safe_resume",
+    [(False, False), (True, True)],
+)
+def test_recovery_distinguishes_unadmitted_exact_count_attempts(
+    workspace_tmp_path, mandatory_reservations, expected_safe_resume
+):
+    store = RunStore(workspace_tmp_path / f"preflight-{mandatory_reservations}.sqlite3")
+    run_id = store.create_run(
+        objective="Recover exact token admission",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_total_tokens=100,
+        max_iterations=6,
+        pre_inference_token_reservations=mandatory_reservations,
+    )["id"]
+    parent = store.acquire_lease(run_id, "preflight-parent")
+    store.transition(run_id, RunState.PLANNING, owner=parent)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="task",
+                objective="Inspect",
+                max_iterations=2,
+                max_total_tokens=50,
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None
+    store.append_worker_event(
+        run_id,
+        parent,
+        "task.inference.started",
+        {"task_id": "task", "inference_id": "unadmitted"},
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (run_id,),
+        )
+
+    reopened = RunStore(store.path)
+    assert reopened.recover_abandoned_runs() == []
+    summary = TaskStore(reopened).recovery_summary(run_id, "task")
+    assert summary["safe_to_resume"] is expected_safe_resume
+    assert summary["resume_from_start"] is expected_safe_resume
+    owner = reopened.acquire_blocked_run_recovery(run_id, "local-user-preflight-recovery")
+    assert owner is not None
+    if expected_safe_resume:
+        TaskStore(reopened).resolve_lost_worker(run_id, owner, "task", "resume")
+        assert TaskStore(reopened).records(run_id)[0]["status"] == "queued"
+    else:
+        with pytest.raises(ValueError, match="Review the saved candidate"):
+            TaskStore(reopened).resolve_lost_worker(run_id, owner, "task", "resume")
+
+
 async def test_dispatch_cancelled_before_coroutine_start_releases_reserved_ownership(
     workspace_tmp_path,
 ):

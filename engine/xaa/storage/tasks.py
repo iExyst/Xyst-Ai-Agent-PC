@@ -780,15 +780,42 @@ class TaskStore:
             for event in events
             if event["event_type"] in {"task.model.message", "task.model.incomplete"}
         ]
+        run = self.runs.get_run(run_id)
+        assert run is not None
+        task_answered_ids = {
+            event["payload"].get("inference_id")
+            for event in task_answers
+            if isinstance(event["payload"].get("inference_id"), str)
+        }
+        task_reserved_ids = {
+            event["payload"].get("inference_id")
+            for event in events
+            if event["event_type"] == "tokens.reserved"
+            and isinstance(event["payload"].get("inference_id"), str)
+        }
+        unadmitted_task_attempts = {
+            event["payload"].get("inference_id")
+            for event in events
+            if event["event_type"] == "task.inference.started"
+            and isinstance(event["payload"].get("inference_id"), str)
+            and event["payload"].get("inference_id") not in task_answered_ids
+            and event["payload"].get("inference_id") not in task_reserved_ids
+        }
         task_token_limit = task["budgets"].get("max_total_tokens")
         task_reported_tokens = sum(
             event["payload"]["usage"]["total_tokens"]
             for event in task_answers
             if event["payload"].get("usage") is not None
         )
-        task_usage_unknown = task_attempts > len(task_answers) or any(
+        task_unmeasured_calls = max(0, task_attempts - len(task_answers)) + sum(
             event["payload"].get("usage") is None for event in task_answers
         )
+        exact_reservations_required = run["limits"].get("pre_inference_token_reservations") is True
+        task_usage_unknown = task_unmeasured_calls > 0
+        if exact_reservations_required and task_unmeasured_calls == len(unadmitted_task_attempts):
+            # Exact mode writes a hold before sending an inference request. An unanswered
+            # attempt without a hold is a safe preflight boundary, not unknown model usage.
+            task_usage_unknown = False
         task_budget_available = (
             task_attempts < task["budgets"]["max_iterations"]
             and (
@@ -797,9 +824,17 @@ class TaskStore:
             )
             and self._task_elapsed_seconds(events) < task["budgets"]["max_seconds"]
         )
-        run = self.runs.get_run(run_id)
-        assert run is not None
         run_events = self.runs.list_events(run_id)
+        run_answered_ids = {
+            event["payload"].get("inference_id")
+            for event in run_events
+            if event["event_type"] in {"task.model.message", "task.model.incomplete"}
+        }
+        run_reserved_ids = {
+            event["payload"].get("inference_id")
+            for event in run_events
+            if event["event_type"] == "tokens.reserved"
+        }
         planning_starts = [
             event["created_at"]
             for event in run_events
@@ -812,13 +847,26 @@ class TaskStore:
         ).total_seconds()
         run_usage = self.runs.token_usage(run_id)
         shared_limit = run["limits"]["max_total_tokens"]
+        run_unadmitted_attempts = {
+            event["payload"].get("inference_id")
+            for event in run_events
+            if event["event_type"] == "task.inference.started"
+            and isinstance(event["payload"].get("inference_id"), str)
+            and event["payload"].get("inference_id") not in run_answered_ids
+            and event["payload"].get("inference_id") not in run_reserved_ids
+        }
+        run_usage_unknown = run_usage["unmeasured_calls"] > 0
+        if exact_reservations_required and run_usage["unmeasured_calls"] == len(
+            run_unadmitted_attempts
+        ):
+            run_usage_unknown = False
         run_budget_available = (
             self.runs.inference_attempts(run_id) < run["limits"]["max_iterations"]
             and elapsed < run["limits"]["max_seconds"]
             and self.runs.usage_report(run_id)["outstanding_reserved_tokens"] == 0
             and (
                 shared_limit is None
-                or (run_usage["unmeasured_calls"] == 0 and run_usage["total_tokens"] < shared_limit)
+                or (not run_usage_unknown and run_usage["total_tokens"] < shared_limit)
             )
         )
         safe_to_resume = (
