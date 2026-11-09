@@ -86,6 +86,9 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
         ):
             if pre_reserve:
                 assert require_exact_context is True and on_admission is not None
+                # The exact prompt count is asynchronous, so both independent attempts can be
+                # unmeasured before either receives its shared-budget reservation.
+                await asyncio.sleep(0.01)
                 on_admission(3, max_output_tokens)
             assert max_output_tokens == (4 if output_limit is not None else None)
             assert "Parent context must not be copied" not in json.dumps(messages)

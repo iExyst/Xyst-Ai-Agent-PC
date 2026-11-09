@@ -2429,8 +2429,9 @@ class RunStore:
             assert run is not None
             limit = run["limits"]["max_total_tokens"]
             amount = prompt_tokens + output_tokens
+            mandatory_reservations = run["limits"].get("pre_inference_token_reservations") is True
             if limit is not None and (
-                usage["unmeasured_calls"] > 1 + len(pending)
+                (usage["unmeasured_calls"] > 1 + len(pending) and not mandatory_reservations)
                 or usage["total_tokens"] + sum(h["reserved_tokens"] for h in pending) + amount
                 > limit
             ):
@@ -2474,10 +2475,12 @@ class RunStore:
             )
 
     def check_token_budget(self, run_id: str, token: str, *, before_inference: bool) -> None:
-        """Gate further work on durable reported usage, not a hard inference ceiling.
+        """Gate work on measured usage or exact durable holds.
 
-        In-flight/unknown usage fails closed for another inference. After a response,
-        equality permits its tools, but no subsequent inference. Never refunds attempts.
+        Without mandatory reservations, in-flight/unknown usage fails closed. With
+        mandatory reservations, holds account for concurrent requests before their
+        responses are measured. Equality permits an admitted request's tools, but no
+        subsequent inference. Never refunds attempts.
         """
         with self.connection() as connection:
             self.require_lease(connection, run_id, token)
@@ -2485,6 +2488,14 @@ class RunStore:
         assert run is not None
         limit = run["limits"]["max_total_tokens"]
         if limit is None:
+            return
+        if run["limits"].get("pre_inference_token_reservations") is True:
+            usage = self.usage_report(run_id)
+            accounted = usage["total_tokens"] + usage["outstanding_reserved_tokens"]
+            if accounted > limit or (before_inference and accounted == limit):
+                raise TokenBudgetExceeded(
+                    "Token threshold reached or reserved allowance exhausted."
+                )
             return
         usage = self.token_usage(run_id)
         if (
