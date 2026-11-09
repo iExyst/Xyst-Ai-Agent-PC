@@ -52,6 +52,20 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   const run = { id: 'voice-capture-run', objective: 'Summarize this recording', state: 'verifying', revision: 1, acceptance_criteria: [], model: 'fixture/model', limits: { max_iterations: 2, max_seconds: 60 } };
   const oldAudio = Buffer.from('RIFF\x24\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0}\0\0\x02\0\x10\0data\0\0\0\0', 'binary');
   let submitted: Record<string, unknown> | undefined;
+  await page.addInitScript(() => {
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    let deniedOnce = false;
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: (constraints: MediaStreamConstraints) => {
+        if (!deniedOnce) {
+          deniedOnce = true;
+          return Promise.reject(new DOMException('Permission denied by acceptance fixture', 'NotAllowedError'));
+        }
+        return getUserMedia(constraints);
+      },
+    });
+  });
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -78,6 +92,9 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await page.getByLabel('Objective', { exact: true }).fill(run.objective);
   await page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)').setInputFiles({ name: 'old.wav', mimeType: 'audio/wav', buffer: oldAudio });
   await expect(page.getByText(/Attached: old\.wav/)).toBeVisible();
+  await page.getByRole('button', { name: 'Record voice' }).click();
+  await expect(page.getByRole('alert')).toContainText('Microphone permission was denied');
+  await expect(page.getByRole('button', { name: 'Record voice' })).toBeEnabled();
   await page.getByRole('button', { name: 'Record voice' }).click();
   await expect(page.getByText(/Attached: old\.wav/)).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Start objective', exact: true })).toBeDisabled();
