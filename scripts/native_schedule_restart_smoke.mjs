@@ -109,7 +109,7 @@ try{
 
   const report={passed:true,executable,full_desktop_process_restarts:2,schedule_id:fixture.schedule_id,execution_id:firstExecution.id,occurrence_id:firstExecution.occurrence_id,state_after_both_starts:secondExecution.state,execution_count_after_both_starts:second.schedule.executions.length,run_count:second.runs.length,missed_policy:'skip',authenticated_api:true,model_inference_requested:false,telegram_delivery_requested:false,evidence:root};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
-  console.log(report);
+  console.log(JSON.stringify(report));
 }catch(error){
   const report={passed:false,error:String(error),executable,first_exit_code:firstProcess?.exitCode,second_exit_code:secondProcess?.exitCode,model_inference_requested:false,telegram_delivery_requested:false,evidence:root};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
