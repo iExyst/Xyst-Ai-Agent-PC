@@ -17,6 +17,8 @@ use tauri::{
 };
 
 #[cfg(windows)]
+mod autostart;
+#[cfg(windows)]
 mod confinement;
 
 struct EngineState {
@@ -141,6 +143,42 @@ fn restore_main_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn quit_application(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn get_start_on_login() -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        autostart::is_enabled()
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Start at sign-in is currently supported on Windows only".into())
+    }
+}
+
+#[tauri::command]
+fn set_start_on_login(enabled: bool) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        autostart::set_enabled(enabled)?;
+        autostart::is_enabled()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        Err("Start at sign-in is currently supported on Windows only".into())
+    }
+}
+
+fn should_show_main_window(
+    acceptance_hidden: bool,
+    arguments: impl IntoIterator<Item = std::ffi::OsString>,
+) -> bool {
+    !acceptance_hidden
+        && !arguments
+            .into_iter()
+            .any(|argument| argument == "--background")
 }
 
 fn load_close_behavior(settings_path: &Path) -> CloseBehavior {
@@ -316,6 +354,28 @@ mod tests {
             data.join("desktop-settings.json")
         );
     }
+
+    #[test]
+    fn background_startup_keeps_the_window_hidden_but_acceptance_can_show_it() {
+        use super::should_show_main_window;
+        use std::ffi::OsString;
+
+        assert!(!should_show_main_window(
+            false,
+            [
+                OsString::from("xaa-desktop.exe"),
+                OsString::from("--background")
+            ]
+        ));
+        assert!(!should_show_main_window(
+            true,
+            [OsString::from("xaa-desktop.exe")]
+        ));
+        assert!(should_show_main_window(
+            false,
+            [OsString::from("xaa-desktop.exe")]
+        ));
+    }
 }
 
 impl EngineState {
@@ -416,7 +476,10 @@ fn main() {
                     token,
                 },
             });
-            if std::env::var("XAA_TEST_HIDDEN").as_deref() != Ok("1") {
+            if should_show_main_window(
+                std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1"),
+                std::env::args_os(),
+            ) {
                 if let Some(window) = app.get_webview_window("main") {
                     window.show()?;
                 }
@@ -446,7 +509,9 @@ fn main() {
             restore_main_window,
             quit_application,
             get_close_behavior,
-            set_close_behavior
+            set_close_behavior,
+            get_start_on_login,
+            set_start_on_login
         ])
         .build(tauri::generate_context!())
         .expect("X.A.A. desktop failed to start")

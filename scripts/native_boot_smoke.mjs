@@ -7,6 +7,7 @@ import path from 'node:path';
 const executable=path.resolve(process.argv[2]??'build/native-release/xaa-desktop.exe');
 const requestedRoot=process.env.XAA_NATIVE_ACCEPTANCE_ROOT;
 const root=requestedRoot?path.resolve(requestedRoot):path.resolve('.acceptance',randomUUID());
+const startupValueName=`XAA Acceptance ${randomUUID()}`;
 if(requestedRoot){const acceptanceRoot=path.resolve('.acceptance')+path.sep;if(!root.startsWith(acceptanceRoot)||await readFile(path.join(root,'report.json')).then(()=>true).catch(()=>false))throw new Error('Requested native acceptance root must be new and inside .acceptance');}
 await mkdir(root,{recursive:true});
 const logDirectory=path.join(root,'logs');await mkdir(logDirectory,{recursive:true});
@@ -18,7 +19,7 @@ const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
 const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
 const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
-const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;
@@ -80,6 +81,28 @@ try{
   const expectedInitialCloseBehavior=process.env.XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR||'keep_running';
   if(initialCloseBehavior!==expectedInitialCloseBehavior)throw new Error(`Expected initial close behavior ${expectedInitialCloseBehavior}, received ${initialCloseBehavior}`);
   await expect(closeBehavior).toHaveValue(expectedInitialCloseBehavior);
+  const startOnLogin=page.getByLabel('Start X.A.A. when I sign in');
+  const initialStartOnLogin=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_start_on_login'));
+  const waitForStartOnLogin=async expected=>{
+    const deadline=Date.now()+5000;
+    while(Date.now()<deadline){if(await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_start_on_login'))===expected)return;await new Promise(resolve=>setTimeout(resolve,50));}
+    const status=await page.getByRole('status').allTextContents();
+    throw new Error(`Expected start-at-sign-in=${expected}; status: ${status.join(' | ')}`);
+  };
+  let startOnLoginVerified=false;
+  try{
+    await startOnLogin.click();
+    await waitForStartOnLogin(true);
+    await expect(startOnLogin).toBeChecked();
+    await expect(page.getByText('X.A.A. will start hidden when you sign in.',{exact:true})).toBeVisible();
+    await startOnLogin.click();
+    await waitForStartOnLogin(false);
+    await expect(startOnLogin).not.toBeChecked();
+    await expect(page.getByText('Start at sign-in is off.',{exact:true})).toBeVisible();
+    startOnLoginVerified=true;
+  }finally{
+    await page.evaluate(enabled=>window.__TAURI_INTERNALS__.invoke('set_start_on_login',{enabled}),initialStartOnLogin);
+  }
   if(initialCloseBehavior!=='keep_running'){
     await closeBehavior.selectOption('keep_running');
     await expect(page.getByText('Close behavior saved.',{exact:true})).toBeVisible();
@@ -112,7 +135,7 @@ try{
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,initial_close_behavior:initialCloseBehavior,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;
@@ -121,4 +144,4 @@ try{
   const engineLog=(await readFile(logPath,'utf8').catch(()=>''));await writeFile(path.join(root,'engine-startup.log'),engineLog.slice(previous.length));
   await writeFile(path.join(root,'report.json'),JSON.stringify({passed:false,error:String(error),desktop_exit_code:proc.exitCode,desktop_signal:proc.signalCode,process_diagnostics:processDiagnostics,elapsed_milliseconds:Date.now()-started},null,2));throw error;
 }
-finally{await browser?.close().catch(()=>{});if(proc.exitCode===null)execFileSync('taskkill',['/PID',String(proc.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}
+finally{await browser?.close().catch(()=>{});if(proc.exitCode===null)execFileSync('taskkill',['/PID',String(proc.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});try{execFileSync('reg.exe',['delete','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run','/v',startupValueName,'/f'],{windowsHide:true,stdio:'ignore'});}catch{}}

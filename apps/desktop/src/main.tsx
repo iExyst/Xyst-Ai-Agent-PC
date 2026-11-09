@@ -84,17 +84,25 @@ function App() {
   const [error, setError] = useState('');
   const [closeBehavior,setCloseBehavior]=useState<DesktopCloseBehavior>('keep_running');
   const [closeBehaviorStatus,setCloseBehaviorStatus]=useState('');
+  const [startOnLogin,setStartOnLogin]=useState(false);
+  const [startOnLoginStatus,setStartOnLoginStatus]=useState('');
   const [busy, setBusy] = useState(false);
   const stream = useRef<AbortController | null>(null);
   useEffect(() => () => stream.current?.abort(), []);
   useEffect(()=>{
     if(!('__TAURI_INTERNALS__' in window))return;
     void invoke<DesktopCloseBehavior>('get_close_behavior').then(setCloseBehavior).catch(failure=>setCloseBehaviorStatus(String(failure)));
+    void invoke<boolean>('get_start_on_login').then(setStartOnLogin).catch(failure=>setStartOnLoginStatus(String(failure)));
   },[]);
   async function updateCloseBehavior(behavior:DesktopCloseBehavior){
     setCloseBehaviorStatus('Saving close behavior…');
     try{const saved=await invoke<DesktopCloseBehavior>('set_close_behavior',{behavior});setCloseBehavior(saved);setCloseBehaviorStatus('Close behavior saved.');}
     catch(failure){setCloseBehaviorStatus(String(failure));}
+  }
+  async function updateStartOnLogin(enabled:boolean){
+    setStartOnLoginStatus('Saving startup setting…');
+    try{const saved=await invoke<boolean>('set_start_on_login',{enabled});setStartOnLogin(saved);setStartOnLoginStatus(saved?'X.A.A. will start hidden when you sign in.':'Start at sign-in is off.');}
+    catch(failure){setStartOnLoginStatus(String(failure));}
   }
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
@@ -277,7 +285,7 @@ function App() {
     if (!client || !run) return;
     try { setRun(await client.control(run.id, action)); } catch (failure) { setError(String(failure)); }
   }
-  return <main><header><span>X.A.A.</span><h1>Xyst AI Agent</h1><p>Local objectives. Visible execution.</p><p role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p>{'__TAURI_INTERNALS__' in window&&<><section aria-labelledby="window-behavior-title"><h2 id="window-behavior-title">Window behavior</h2><label htmlFor="close-behavior">When the main window closes<select id="close-behavior" value={closeBehavior} onChange={event=>void updateCloseBehavior(event.target.value as DesktopCloseBehavior)}><option value="keep_running">Hide to tray and keep the agent running</option><option value="exit_on_close">Quit and stop the agent</option></select></label>{closeBehaviorStatus&&<p role="status">{closeBehaviorStatus}</p>}</section><button type="button" onClick={()=>void invoke('quit_application')}>Quit and stop the agent</button></>}</header>
+  return <main><header><span>X.A.A.</span><h1>Xyst AI Agent</h1><p>Local objectives. Visible execution.</p><p role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p>{'__TAURI_INTERNALS__' in window&&<><section aria-labelledby="window-behavior-title"><h2 id="window-behavior-title">Window behavior</h2><label htmlFor="close-behavior">When the main window closes<select id="close-behavior" value={closeBehavior} onChange={event=>void updateCloseBehavior(event.target.value as DesktopCloseBehavior)}><option value="keep_running">Hide to tray and keep the agent running</option><option value="exit_on_close">Quit and stop the agent</option></select></label>{closeBehaviorStatus&&<p role="status">{closeBehaviorStatus}</p>}</section><section aria-labelledby="startup-title"><h2 id="startup-title">Startup</h2><label><input type="checkbox" checked={startOnLogin} onChange={event=>void updateStartOnLogin(event.target.checked)}/>Start X.A.A. when I sign in</label><p>Starts the engine in the system tray so scheduled tasks can run after sign-in.</p>{startOnLoginStatus&&<p role="status">{startOnLoginStatus}</p>}</section><button type="button" onClick={()=>void invoke('quit_application')}>Quit and stop the agent</button></>}</header>
     {!client ? <section><h2>Connect to the engine</h2><p>Start the local engine, then enter its API token. The token stays in this window’s memory.</p><label>Engine token<input type="password" value={token} onChange={event => setToken(event.target.value)} /></label><button onClick={connect} disabled={busy || token.length < 32}>Connect</button></section> : <>
       <ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/>
       <section aria-labelledby="onboarding-title"><h2 id="onboarding-title">Get started</h2><ol><li>Connect LM Studio, choose a discovered model, and complete the harmless tool diagnostic above. {diagnosticPassed?'Tool support verified.':'The demonstration unlocks after a successful diagnostic.'}</li><li>{workspace ? <>Workspace selected: <code>{workspace}</code></> : 'Choose a project folder below.'}</li><li>Run a read-only demonstration to see the agent inspect and explain that project.</li></ol><button type="button" onClick={()=>void startDemonstration()} disabled={busy||!diagnosticPassed||!model||!workspace.trim()}>Start read-only onboarding demonstration</button></section>
