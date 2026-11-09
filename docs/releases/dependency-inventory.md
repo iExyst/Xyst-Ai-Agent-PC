@@ -1,13 +1,13 @@
 # Locked dependency and license metadata inventory
 
-Snapshot date: 2026-11-08. This is an inventory of the current lockfiles and build environment, not a legal opinion or a complete third-party notice bundle.
+Snapshot date: 2026-11-09. This is an inventory of the current lockfiles and build environment, not a legal opinion or a complete third-party notice bundle.
 
 ## Scope and collection
 
-- Python: `uv.lock`; 79 installed distribution records from `uv run --with pip-licenses pip-licenses --format=json --with-urls` (pip-licenses 5.5.5). This environment scan omits some lockfile entries that are not installed on this host and includes the three `jaraco.*` records using their original dotted names; the lockfile itself contains those names normalized with hyphens. The package table is a metadata inventory merged from lock metadata and installed records, not a host-complete installed-file/license-text audit.
+- Python: `uv.lock`; 79 installed distribution records from `uv run --with pip-licenses pip-licenses --format=json --with-urls` (pip-licenses 5.5.5). This environment scan omits some lockfile entries that are not installed on this host and includes the three `jaraco.*` records using their original dotted names; the lockfile itself contains those names normalized with hyphens. A full lock cross-check found five missing third-party rows: `jeepney`, `macholib`, `SecretStorage`, `setuptools`, and `uvloop`. Their exact pinned source archives were downloaded and matched against the SHA-256 hashes in `uv.lock`; license files and package metadata are preserved in `.acceptance/conditional-lock-license-audit-20261109/verification.json`. Four are platform-conditional; `setuptools` is a transitive PyInstaller dependency. This fills the lock metadata table but does not expand the separately scoped notice draft or complete the package copyright review.
 - JavaScript: `package-lock.json`; 6 runtime dependency records and 61 total records from `npx license-checker@25.0.1 --production --json` and `npx license-checker@25.0.1 --json`.
 - Rust: `apps/desktop/src-tauri/Cargo.lock`; 411 package records from `cargo metadata --format-version 1 --locked` (Cargo 1.99.1). Target-specific and build dependencies are included.
-- Combined table: 550 unique ecosystem/name/version/license/source rows. Prior command outputs remain at `.acceptance/dependency-inventory-971fa5b/`; after adding Discord, current Python, npm, and Cargo collection outputs are retained at `.acceptance/discord-dependency-audit/`.
+- Combined table: 555 unique ecosystem/name/version/license/source rows. Prior command outputs remain at `.acceptance/dependency-inventory-971fa5b/`; after adding Discord, current Python, npm, and Cargo collection outputs are retained at `.acceptance/discord-dependency-audit/`.
 
 License expressions below are copied from package metadata without normalization. A package expression such as `MIT OR Apache-2.0` must be reviewed with the package license text; it is not a substitute for that text.
 
@@ -16,7 +16,7 @@ License expressions below are copied from package metadata without normalization
 - The repository has no root `LICENSE` or `NOTICE`; `pyproject.toml` and `Cargo.toml` also omit a license for X.A.A. The Python and Rust project records therefore have unknown license metadata. The private npm workspace is marked `UNLICENSED`. The owner must choose and record the application license before distribution; this inventory does not make that choice.
 - `agent-client-protocol==0.9.0` has unknown PyPI license metadata. The installed pinned distribution's `.dist-info/licenses/LICENSE` was inspected and contains the Apache License 2.0 text; its [upstream Python SDK repository](https://github.com/agentclientprotocol/python-sdk) also identifies Apache-2.0.
 - `pyinstaller==6.22.3` reports GPLv2 metadata, and `pyinstaller-hooks-contrib==2026.9` reports Apache/GPLv2 metadata. Review and preserve their packaging exception and copyright/license texts before release.
-- A provisional full-text notice draft is in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). It contains 293 distinct license text groups: 286 previously audited groups (249 earlier groups plus 37 PDFium wheel texts) and seven supplemental groups for the nine Discord adapter runtime distributions. The six Windows-target crate archives omit license files, but their declared texts are represented from exact upstream VCS revisions or Mozilla’s official MPL-2.0 text. All six downloaded archive hashes match Cargo.lock. The earlier package-attribution audit found no omissions across its 2026-11-07 scoped inputs: 67 installed Python development distributions plus the locked PDFium wheel license texts, 5 external npm runtime dependencies, and 247 external Windows-target Cargo packages (excluding `xaa-desktop`). Its report is `.acceptance/dependency-license-upstream-20261107/verification.json`. The Discord dependency update adds nine host-installed Python distributions; their current license metadata is listed below, with exact package license files retained in the new virtual environment. Their exact installed license files and accompanying NOTICE files are now included in the notice draft; complete package copyright coverage still needs review before release. Python scope remains host-installed distributions, not every platform-conditional lock entry. The unsigned Windows NSIS package now installs this draft, its inventory, and [`0.1.1.md`](0.1.1.md) beside the application binaries; the staged manifest and installer acceptance verify each document hash (see `../progress.md`, 2026-11-07). The root application license is undecided and release/legal review remains open; these materials do not make the package release-complete.
+- A provisional full-text notice draft is in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). It contains 293 distinct license text groups: 286 previously audited groups (249 earlier groups plus 37 PDFium wheel texts) and seven supplemental groups for the nine Discord adapter runtime distributions. The six Windows-target crate archives omit license files, but their declared texts are represented from exact upstream VCS revisions or Mozilla’s official MPL-2.0 text. All six downloaded archive hashes match Cargo.lock. The earlier package-attribution audit found no omissions across its 2026-11-07 scoped inputs: 67 installed Python development distributions plus the locked PDFium wheel license texts, 5 external npm runtime dependencies, and 247 external Windows-target Cargo packages (excluding `xaa-desktop`). Its report is `.acceptance/dependency-license-upstream-20261107/verification.json`. The Discord dependency update adds nine host-installed Python distributions; their current license metadata is listed below, with exact package license files retained in the new virtual environment. Their exact installed license files and accompanying NOTICE files are now included in the notice draft; complete package copyright coverage still needs review before release. The Python metadata table now covers every `uv.lock` package, but the notice draft's Python texts and attribution coverage have not yet been expanded to the five newly recorded packages. In particular, setuptools contains vendored license/NOTICE files, and uvloop's PyPI metadata says MIT while its pinned source includes MIT, Apache-2.0, and vendored libuv licenses. The unsigned Windows NSIS package now installs this draft, its inventory, and [`0.1.1.md`](0.1.1.md) beside the application binaries; the staged manifest and installer acceptance verify each document hash (see `../progress.md`, 2026-11-07). The root application license is undecided and release/legal review remains open; these materials do not make the package release-complete.
 - `npm audit --json` reported zero vulnerabilities across the current lockfile on 2026-11-07; raw output is `.acceptance/dependency-inventory-971fa5b/npm-audit.json`. The locked `openapi-typescript` → `@redocly/openapi-core` → `minimatch` versions from the 2026-11-03 report are still present, so this closes the current scanner finding without claiming that the dependency chain changed. Re-audit after lockfile updates.
 
 ## Package records
@@ -114,10 +114,12 @@ License expressions below are copied from package metadata without normalization
 | Python | jaraco.classes | 3.4.0 | MIT License | https://github.com/jaraco/jaraco.classes |
 | Python | jaraco.context | 6.1.2 | MIT | https://github.com/jaraco/jaraco.context |
 | Python | jaraco.functools | 4.6.0 | MIT | https://github.com/jaraco/jaraco.functools |
+| Python | jeepney | 0.9.0 | MIT | https://gitlab.com/takluyver/jeepney |
 | Python | jsonschema | 4.26.0 | MIT | https://github.com/python-jsonschema/jsonschema |
 | Python | jsonschema-specifications | 2025.9.1 | MIT | https://github.com/python-jsonschema/jsonschema-specifications |
 | Python | keyring | 25.7.0 | MIT | https://github.com/jaraco/keyring |
 | Python | lmstudio | 1.6.0b1 | MIT | https://github.com/lmstudio-ai/lmstudio-sdk-python |
+| Python | macholib | 1.16.4 | MIT | https://github.com/ronaldoussoren/macholib |
 | Python | mcp | 1.30.0 | MIT License | https://modelcontextprotocol.io |
 | Python | more-itertools | 11.2.1 | MIT | https://github.com/more-itertools/more-itertools |
 | Python | multidict | 7.2.1 | Apache-2.0 | https://github.com/aio-libs/multidict |
@@ -145,6 +147,8 @@ License expressions below are copied from package metadata without normalization
 | Python | pytest-asyncio | 1.4.1.post1 | Apache-2.0 | https://github.com/pytest-dev/pytest-asyncio |
 | Python | python-dotenv | 1.2.4 | BSD-3-Clause | https://github.com/theskumar/python-dotenv |
 | Python | python-multipart | 0.0.33 | Apache-2.0 | https://github.com/Kludex/python-multipart |
+| Python | SecretStorage | 3.5.0 | BSD-3-Clause | https://github.com/mitya57/secretstorage |
+| Python | setuptools | 84.2.1 | MIT | https://github.com/pypa/setuptools |
 | Python | pywin32 | 312 | Python Software Foundation License | https://github.com/mhammond/pywin32 |
 | Python | pywin32-ctypes | 0.2.3 | BSD-3-Clause | https://github.com/enthought/pywin32-ctypes |
 | Python | PyYAML | 6.0.3 | MIT License | https://pyyaml.org/ |
@@ -157,6 +161,7 @@ License expressions below are copied from package metadata without normalization
 | Python | typing_extensions | 4.16.0 | PSF-2.0 | https://github.com/python/typing_extensions |
 | Python | tzdata | 2026.6 | Apache-2.0 | https://github.com/python/tzdata |
 | Python | uvicorn | 0.54.0 | BSD-3-Clause | https://uvicorn.dev/ |
+| Python | uvloop | 0.23.0 | MIT License (PyPI metadata; upstream includes MIT and Apache-2.0 texts) | https://github.com/MagicStack/uvloop |
 | Python | watchfiles | 1.3.0 | MIT License | https://github.com/samuelcolvin/watchfiles |
 | Python | websockets | 17.4 | BSD-3-Clause | https://github.com/python-websockets/websockets |
 | Python | wsproto | 1.3.2 | MIT | https://github.com/python-hyper/wsproto/ |
