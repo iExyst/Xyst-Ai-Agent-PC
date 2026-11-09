@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 
+test.use({
+  permissions: ['microphone'],
+  launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+});
+
 test('voice attachment submits WAV and the selected local transcription endpoint', async ({ page }) => {
   const run = { id: 'voice-run', objective: 'Summarize this recording', state: 'verifying', revision: 1, acceptance_criteria: [], model: 'fixture/model', limits: { max_iterations: 2, max_seconds: 60 } };
   const audio = Buffer.from('RIFF\x24\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0}\0\0\x02\0\x10\0data\0\0\0\0', 'binary');
@@ -41,4 +46,52 @@ test('voice attachment submits WAV and the selected local transcription endpoint
   });
   expect(submitted).not.toHaveProperty('image');
   expect(submitted).not.toHaveProperty('document');
+});
+
+test('microphone capture is converted locally to a bounded PCM WAV attachment', async ({ page }) => {
+  const run = { id: 'voice-capture-run', objective: 'Summarize this recording', state: 'verifying', revision: 1, acceptance_criteria: [], model: 'fixture/model', limits: { max_iterations: 2, max_seconds: 60 } };
+  let submitted: Record<string, unknown> | undefined;
+  await page.route('http://127.0.0.1:8765/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
+    if (path.startsWith('/memory')) return route.fulfill({ json: [], headers });
+    if (path === '/runs' && request.method() === 'GET') return route.fulfill({ json: { items: [], next_cursor: null }, headers });
+    if (path.endsWith('/plan')) return route.fulfill({ json: { tasks: [], ready: [], blocked: [] }, headers });
+    if (path.endsWith('/events/stream')) return route.fulfill({ headers, contentType: 'text/event-stream', body: 'event: done\ndata: {}\n\n' });
+    if (path === '/runs' && request.method() === 'POST') {
+      submitted = request.postDataJSON();
+      return route.fulfill({ json: run, headers });
+    }
+    if (path.endsWith('/usage')) return route.fulfill({ json: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmeasured_calls: 0, outstanding_reserved_tokens: 0, outstanding_reservations: 0 }, headers });
+    return route.fulfill({ json: run, headers });
+  });
+
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective', { exact: true }).fill(run.objective);
+  await page.getByRole('button', { name: 'Record voice' }).click();
+  await expect(page.getByText(/Recording on this computer/)).toBeVisible();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible();
+  await page.getByLabel('Local speech service URL').fill('http://127.0.0.1:8765/v1/audio/transcriptions');
+  await page.getByRole('button', { name: 'Start objective', exact: true }).click();
+  await expect.poll(() => submitted).toBeDefined();
+  const dataUrl = submitted?.audio;
+  expect(typeof dataUrl).toBe('string');
+  const encoded = (dataUrl as string).replace('data:audio/wav;base64,', '');
+  const wav = Buffer.from(encoded, 'base64');
+  expect(wav.subarray(0, 4).toString()).toBe('RIFF');
+  expect(wav.subarray(8, 12).toString()).toBe('WAVE');
+  expect(wav.readUInt16LE(22)).toBe(1);
+  expect(wav.readUInt32LE(24)).toBe(16_000);
+  expect(wav.readUInt16LE(34)).toBe(16);
+  expect(wav.length).toBeLessThanOrEqual(4 * 1024 * 1024);
+  expect(submitted).toMatchObject({ transcription_url: 'http://127.0.0.1:8765/v1/audio/transcriptions' });
 });

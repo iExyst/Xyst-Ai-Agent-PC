@@ -2,6 +2,10 @@
 
 Updated 2026-11-09.
 
+## Add local microphone capture to voice input (2026-11-09)
+
+The desktop can now record from the user's microphone after an explicit click, encode the captured audio locally as mono 16 kHz PCM WAV, and attach it through the existing loopback transcription path. Recording stops at 131 seconds to keep the decoded WAV within 4 MiB; stream tracks are stopped after recording, and permission/conversion failures are displayed in the UI. Microsoft Edge's fake-device browser acceptance checks recording, WAV format/sample rate/size, and submission to a fixture transcription URL; the existing WAV attachment workflow remains covered. Desktop TypeScript checks pass and both voice-input browser tests pass. No live model, transcription service, Discord, or external audio service was used. Real microphone hardware, permission-denial UI and transcription accuracy remain unverified.
+
 ## Reject truncated PCM WAV before transcription (2026-11-09)
 
 The WAV validator previously trusted the RIFF frame-count header without reading the declared PCM payload, allowing a truncated file to reach the selected transcription endpoint. It now reads the bounded declared frames and verifies the sample byte count matches channels, sample width and frame count; a regression removes sample bytes while retaining the original header and requires rejection. The API/loopback acceptance also posts the truncated data URL first and verifies the ASR fixture receives no request, then completes a valid case. `tests/unit/test_local_transcription.py` plus `tests/unit/test_api_voice.py` pass (6 tests); Ruff, formatting, engine Pyright and `git diff --check` pass. Hosted Windows run [42645212802](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42645212802) passed the full source job, including 931 Python tests, the 976-entry catalog drift check, browser acceptances and process-recovery diagnostics. Its first attempt hit an HTTPBIN navigation timeout in the redirect smoke; retrying the failed job passed. No audio was sent to an external service and no model inference was used.
