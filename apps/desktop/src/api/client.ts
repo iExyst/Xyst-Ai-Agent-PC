@@ -31,6 +31,8 @@ export type CredentialStatus = components['schemas']['LMStudioCredentialStatus']
 export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
+export type MCPResource = {uri:string;name:string;title:string|null;description:string|null;mime_type:string|null;size:number|null};
+export type MCPResourceRead = {trust:'untrusted_mcp_output';contents:Array<{uri:string;mime_type:string|null;kind:'text';text:string}|{uri:string;mime_type:string|null;kind:'blob';base64:string}>};
 export type MCPReconciliationItem = components['schemas']['MCPReconciliationItem'];
 export type WorkspaceWriteReconciliationItem = components['schemas']['WorkspaceWriteReconciliationItem'];
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
@@ -106,6 +108,8 @@ export class EngineClient {
   deleteMCPServer(id:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}`,{method:'DELETE'});}
   connectMCPServer(id:string):Promise<MCPConnect>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/connect`,{method:'POST'});}
   disconnectMCPServer(id:string):Promise<{state:string}>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/disconnect`,{method:'POST'});}
+  async listMCPResources(id:string):Promise<MCPResource[]>{const result=await this.#request<{resources:unknown}>(`/mcp/servers/${encodeURIComponent(id)}/resources`,{method:'POST'});if(!Array.isArray(result.resources))throw new Error('MCP resource listing response was invalid.');return result.resources as MCPResource[];}
+  readMCPResource(id:string,uri:string):Promise<MCPResourceRead>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/resources/read`,{method:'POST',body:JSON.stringify({uri})});}
   setMCPToolPermission(serverId:string,tool:MCPTool,permission:MCPTool['permission']):Promise<MCPTool>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(tool.name)}/permission`,{method:'PUT',body:JSON.stringify({permission,schema_sha256:tool.schema_sha256})});}
   setMCPSecret(serverId:string,name:string,value:string):Promise<{configured:boolean}>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({value})});}
   clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}

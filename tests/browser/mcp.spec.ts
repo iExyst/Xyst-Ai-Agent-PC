@@ -31,6 +31,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     expect(request.headers()['authorization']).toBe(`Bearer ${'x'.repeat(32)}`);
     const body = ['POST','PUT'].includes(request.method()) ? request.postDataJSON() : undefined;
     requests.push({method:request.method(),path,...(body?{body}:{})});
+    if (path === '/runs/latest-unfinished') return route.fulfill({json:null,headers});
     if (path === '/runs') return route.fulfill({json:{items:[],next_cursor:null},headers});
     if (path === '/models') return route.fulfill({json:[{id:'fixture/model'}],headers});
     if (path === '/providers') return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
@@ -54,6 +55,8 @@ test('configure an MCP server, discover tools and explicitly grant write access'
       server = {...server,state:'connected',tools:[tool]};
       return route.fulfill({json:{state:'connected',tools:[tool]},headers});
     }
+    if (path === `/mcp/servers/${serverId}/resources`) return route.fulfill({json:{resources:[{uri:'xaa://fixture/readme',name:'readme',title:'Fixture readme',description:'Owner inspection fixture.',mime_type:'text/plain',size:20}]},headers});
+    if (path === `/mcp/servers/${serverId}/resources/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:body.uri,mime_type:'text/plain',kind:'text',text:'Fixture resource data.'}]},headers});
     if (path === `/mcp/servers/${serverId}/tools/change_value/permission`) {
       Object.assign(tool,body);
       server = {...server,tools:[tool]};
@@ -75,6 +78,11 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await expect(panel.getByText('Fixture MCP')).toBeVisible();
   await panel.getByRole('button',{name:'Connect and discover'}).click();
   await expect(panel.getByText('Change value')).toBeVisible();
+  await panel.getByRole('button',{name:'List resources'}).click();
+  await expect(panel.getByText('Fixture readme')).toBeVisible();
+  await panel.getByRole('button',{name:'Read resource'}).click();
+  await expect(panel.getByRole('complementary',{name:'Untrusted MCP resource data'})).toContainText('Fixture resource data.');
+  expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/read')&&item.body.uri==='xaa://fixture/readme')).toBe(true);
   await panel.getByLabel('Permission').selectOption('write');
   const grant = panel.getByLabel('Allow this write tool for the next run');
   await expect(grant).toBeVisible();

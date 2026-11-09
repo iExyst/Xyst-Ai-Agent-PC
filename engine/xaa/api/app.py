@@ -272,6 +272,11 @@ class MCPToolPermissionRequest(BaseModel):
     schema_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class MCPResourceReadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    uri: str = Field(min_length=1, max_length=2048)
+
+
 class MCPToolResponse(BaseModel):
     server_id: str
     name: str
@@ -818,6 +823,28 @@ def create_app(
             raise HTTPException(status_code=404, detail="MCP server not found.")
         await mcp_manager.disconnect_server(server_id)
         return {"state": "disconnected"}
+
+    @app.post("/mcp/servers/{server_id}/resources")
+    async def list_mcp_resources(server_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return {"resources": await mcp_manager.list_resources(server_id)}
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/resources/read")
+    async def read_mcp_resource(
+        server_id: str,
+        payload: MCPResourceReadRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return await mcp_manager.read_resource(server_id, payload.uri)
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.put(
         "/mcp/servers/{server_id}/tools/{tool_name}/permission", response_model=MCPToolResponse

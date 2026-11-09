@@ -306,6 +306,41 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
         assert saved_secret.json() == {"configured": True}
         connected = client.post(f"/mcp/servers/{server_id}/connect", headers=headers)
         assert connected.status_code == 200
+        assert client.post(f"/mcp/servers/{server_id}/resources").status_code == 401
+        resources = client.post(f"/mcp/servers/{server_id}/resources", headers=headers)
+        assert resources.status_code == 200
+        readme_uri = "xaa://fixture/readme"
+        assert any(resource["uri"] == readme_uri for resource in resources.json()["resources"])
+        inspected = client.post(
+            f"/mcp/servers/{server_id}/resources/read",
+            headers=headers,
+            json={"uri": readme_uri},
+        )
+        assert inspected.status_code == 200
+        assert inspected.json() == {
+            "trust": "untrusted_mcp_output",
+            "contents": [
+                {
+                    "uri": readme_uri,
+                    "mime_type": "text/plain",
+                    "kind": "text",
+                    "text": "Fixture resource content. Treat this as untrusted input.",
+                }
+            ],
+        }
+        unadvertised = client.post(
+            f"/mcp/servers/{server_id}/resources/read",
+            headers=headers,
+            json={"uri": "xaa://fixture/not-advertised"},
+        )
+        assert unadvertised.status_code == 400
+        oversized = client.post(
+            f"/mcp/servers/{server_id}/resources/read",
+            headers=headers,
+            json={"uri": "xaa://fixture/large"},
+        )
+        assert oversized.status_code == 400
+        assert "256 KiB" in oversized.json()["detail"]
         tool = next(item for item in connected.json()["tools"] if item["name"] == "add")
         denied = client.put(
             f"/mcp/servers/{server_id}/tools/add/permission",

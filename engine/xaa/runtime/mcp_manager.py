@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -17,7 +19,8 @@ from jsonschema import validators
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CallToolResult, PaginatedRequestParams, Tool
+from mcp.types import CallToolResult, PaginatedRequestParams, TextResourceContents, Tool
+from pydantic import AnyUrl, TypeAdapter
 
 from xaa.credentials import CredentialStore
 from xaa.storage.mcp import (
@@ -33,6 +36,8 @@ MCP_CALL_TIMEOUT = 45
 MCP_TOOL_COUNT_LIMIT = 256
 MCP_TOOL_SCHEMA_BYTES = 128 * 1024
 MCP_RESULT_BYTES = 256 * 1024
+MCP_RESOURCE_COUNT_LIMIT = 256
+MCP_RESOURCE_FIELD_LIMIT = 2048
 MCP_ENV_PROFILE = "mcp:{}:{}"
 
 
@@ -54,12 +59,14 @@ class _ConnectedServer:
         server: MCPServerRecord,
         session: ClientSession,
         tools: dict[str, MCPDiscoveredTool],
+        resources: dict[str, Any],
         shutdown: asyncio.Event,
         owner_task: asyncio.Task[None],
     ) -> None:
         self.server = server
         self.session = session
         self.tools = tools
+        self.resources = resources
         self.shutdown = shutdown
         self.owner_task = owner_task
         self.lock = asyncio.Lock()
@@ -155,7 +162,7 @@ class MCPManager:
                 if task is None:
                     raise RuntimeError("MCP connection task was not scheduled.")
                 connection = _ConnectedServer(
-                    server, session, {tool.name: tool for tool in tools}, asyncio.Event(), task
+                    server, session, {tool.name: tool for tool in tools}, {}, asyncio.Event(), task
                 )
                 if not ready.done():
                     ready.set_result((connection, records))
@@ -219,6 +226,135 @@ class MCPManager:
         if server_id in self._errors:
             return "error", self._errors[server_id]
         return "disconnected", None
+
+    async def list_resources(self, server_id: str) -> list[dict[str, Any]]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before listing its resources.")
+        try:
+            async with connection.lock:
+                connection.resources = {}
+                resources: dict[str, Any] = {}
+                resource_count = 0
+                cursor: str | None = None
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    for _ in range(8):
+                        response = await connection.session.list_resources(
+                            params=PaginatedRequestParams(cursor=cursor)
+                        )
+                        for resource in response.resources:
+                            resource_count += 1
+                            uri = str(resource.uri)
+                            if (
+                                len(uri) > MCP_RESOURCE_FIELD_LIMIT
+                                or resource_count > MCP_RESOURCE_COUNT_LIMIT
+                            ):
+                                raise MCPConnectionError(
+                                    "The MCP resource catalog exceeded its safety limit."
+                                )
+                            resources[uri] = resource
+                        cursor = response.nextCursor
+                        if cursor is None:
+                            break
+                    else:
+                        raise MCPConnectionError(
+                            "The MCP resource listing exceeded its pagination limit."
+                        )
+                catalog = [
+                    {
+                        "uri": uri,
+                        "name": _bounded_text(resource.name, MCP_RESOURCE_FIELD_LIMIT),
+                        "title": _bounded_text(resource.title, MCP_RESOURCE_FIELD_LIMIT),
+                        "description": _bounded_text(
+                            resource.description, MCP_RESOURCE_FIELD_LIMIT
+                        ),
+                        "mime_type": _bounded_text(resource.mimeType, 256),
+                        "size": resource.size,
+                    }
+                    for uri, resource in resources.items()
+                ]
+                if (
+                    len(json.dumps(catalog, separators=(",", ":")).encode("utf-8"))
+                    > MCP_RESULT_BYTES
+                ):
+                    raise MCPConnectionError(
+                        "The MCP resource catalog exceeded the 256 KiB response limit."
+                    )
+                connection.resources = resources
+                return catalog
+        except MCPConnectionError:
+            raise
+        except TimeoutError as error:
+            raise MCPConnectionError("The MCP resource listing timed out.") from error
+        except Exception as error:
+            raise MCPConnectionError(
+                "The MCP server could not list resources; it may not support resource discovery."
+            ) from error
+
+    async def read_resource(self, server_id: str, uri: str) -> dict[str, Any]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before reading a resource.")
+        if len(uri) > MCP_RESOURCE_FIELD_LIMIT or uri not in connection.resources:
+            raise MCPConnectionError(
+                "Read only a resource URI currently advertised by this connected server."
+            )
+        try:
+            async with connection.lock:
+                if uri not in connection.resources:
+                    raise MCPConnectionError(
+                        "The resource is no longer in the connected server catalog."
+                    )
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    response = await connection.session.read_resource(
+                        TypeAdapter(AnyUrl).validate_python(uri)
+                    )
+            contents: list[dict[str, Any]] = []
+            total = 0
+            for item in response.contents:
+                if len(contents) >= MCP_RESOURCE_COUNT_LIMIT:
+                    raise MCPConnectionError("The MCP resource returned too many content items.")
+                if isinstance(item, TextResourceContents):
+                    if len(item.text) > MCP_RESULT_BYTES:
+                        raise MCPConnectionError(
+                            "The MCP resource exceeded the 256 KiB read limit."
+                        )
+                    body: dict[str, Any] = {"kind": "text", "text": item.text}
+                    size = len(item.text.encode("utf-8"))
+                else:
+                    blob = item.blob
+                    if len(blob) > MCP_RESULT_BYTES:
+                        raise MCPConnectionError(
+                            "The MCP resource exceeded the 256 KiB read limit."
+                        )
+                    try:
+                        base64.b64decode(blob, validate=True)
+                    except (ValueError, binascii.Error) as error:
+                        raise MCPConnectionError(
+                            "The MCP resource returned invalid base64 data."
+                        ) from error
+                    body = {"kind": "blob", "base64": blob}
+                    size = len(blob.encode("ascii"))
+                total += size
+                if total > MCP_RESULT_BYTES:
+                    raise MCPConnectionError("The MCP resource exceeded the 256 KiB read limit.")
+                contents.append(
+                    {
+                        "uri": str(item.uri)[:MCP_RESOURCE_FIELD_LIMIT],
+                        "mime_type": _bounded_text(item.mimeType, 256),
+                        **body,
+                    }
+                )
+            payload = {"trust": "untrusted_mcp_output", "contents": contents}
+            if len(json.dumps(payload, separators=(",", ":")).encode("utf-8")) > MCP_RESULT_BYTES:
+                raise MCPConnectionError("The MCP resource exceeded the 256 KiB read limit.")
+            return payload
+        except MCPConnectionError:
+            raise
+        except TimeoutError as error:
+            raise MCPConnectionError("The MCP resource read timed out.") from error
+        except Exception as error:
+            raise MCPConnectionError("The MCP resource read failed.") from error
 
     def tools_for_run(self, approved_write_tools: set[str]) -> list[dict[str, Any]]:
         available: list[dict[str, Any]] = []
@@ -497,6 +633,10 @@ def _validator(schema: dict[str, Any]) -> Any:
     validator_type = validators.validator_for(schema)
     validator_type.check_schema(schema)
     return validator_type(schema)
+
+
+def _bounded_text(value: str | None, limit: int) -> str | None:
+    return value[:limit] if value is not None else None
 
 
 def _walk(value: Any) -> Iterator[tuple[str, Any]]:

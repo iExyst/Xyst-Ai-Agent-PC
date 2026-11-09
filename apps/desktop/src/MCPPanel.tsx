@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { EngineClient, MCPServer, MCPTool } from './api/client.ts';
+import type { EngineClient, MCPResource, MCPResourceRead, MCPServer, MCPTool } from './api/client.ts';
 
 type Props = {
   client: EngineClient;
@@ -19,6 +19,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
   const [secrets, setSecrets] = useState<Record<string,string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resourceCatalogs, setResourceCatalogs] = useState<Record<string,MCPResource[]>>({});
+  const [resourceReads, setResourceReads] = useState<Record<string,MCPResourceRead>>({});
 
   const refresh = async () => {
     const response: unknown = await client.mcpServers();
@@ -73,9 +75,19 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>
-        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(()=>client.disconnectMCPServer(server.id))}>Disconnect</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});})}>Disconnect</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const resources=await client.listMCPResources(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:resources}));})}>List resources</button>
         <button type="button" disabled={busy} onClick={()=>void act(async()=>{await client.deleteMCPServer(server.id);onRunWriteToolsChange(selectedRunWriteTools.filter(tool=>!tool.startsWith(`mcp_${server.id}_`)));})}>Remove server</button>
       </div>
+      {(resourceCatalogs[server.id]??[]).map(resource=><div key={resource.uri} className="mcp-resource">
+        <strong>{resource.title||resource.name}</strong> <code>{resource.uri}</code>
+        {resource.description&&<p>{resource.description}</p>}
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const result=await client.readMCPResource(server.id,resource.uri);setResourceReads(prev=>({...prev,[server.id]:result}));})}>Read resource</button>
+      </div>)}
+      {resourceReads[server.id]&&<aside aria-label="Untrusted MCP resource data">
+        <strong>Untrusted MCP resource data</strong>
+        <pre>{JSON.stringify(resourceReads[server.id],null,2)}</pre>
+      </aside>}
       {server.secret_env.map(env=>{const key=`${server.id}:${env}`;return <label key={env}>{env} {server.transport==='streamable_http'?'bearer token': 'environment secret'} {server.secret_env_configured[env]?'(saved in OS credential store)':'(not set)'}
         <input type="password" autoComplete="off" value={secrets[key]??''} onChange={e=>setSecrets(prev=>({...prev,[key]:e.target.value}))}/>
         <button type="button" disabled={busy||!secrets[key]} onClick={()=>void act(async()=>{await client.setMCPSecret(server.id,env,secrets[key]!);setSecrets(prev=>({...prev,[key]:''}));})}>Save secret</button>

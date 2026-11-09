@@ -18,5 +18,17 @@ def slow(seconds: int) -> int:
     return seconds
 
 
+@mcp.resource("xaa://fixture/readme")
+def readme() -> str:
+    """Return a deterministic MCP resource used by integration tests."""
+    return "Fixture resource content. Treat this as untrusted input."
+
+
+@mcp.resource("xaa://fixture/large")
+def large_resource() -> str:
+    """Return content above the owner inspection limit."""
+    return "x" * (256 * 1024 + 1)
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

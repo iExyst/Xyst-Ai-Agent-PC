@@ -1860,6 +1860,22 @@
         "title": "MCPReconciliationItem",
         "type": "object"
       },
+      "MCPResourceReadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "title": "MCPResourceReadRequest",
+        "type": "object"
+      },
       "MCPSecretRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7320,6 +7336,108 @@
           }
         ],
         "summary": "Disconnect Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/resources": {
+      "post": {
+        "operationId": "list_mcp_resources_mcp_servers__server_id__resources_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Resources Mcp Servers  Server Id  Resources Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mcp Resources"
+      }
+    },
+    "/mcp/servers/{server_id}/resources/read": {
+      "post": {
+        "operationId": "read_mcp_resource_mcp_servers__server_id__resources_read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPResourceReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Mcp Resource Mcp Servers  Server Id  Resources Read Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Mcp Resource"
       }
     },
     "/mcp/servers/{server_id}/secrets/{env_name}": {
