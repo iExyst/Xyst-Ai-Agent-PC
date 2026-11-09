@@ -33,9 +33,11 @@ def test_audio_run_uses_loopback_service_and_keeps_source_and_transcript(
     workspace_tmp_path,
 ) -> None:
     source_audio = wav_data()
+    request_received = threading.Event()
 
     class TranscriptionHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
+            request_received.set()
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             valid = (
                 self.path == "/v1/audio/transcriptions"
@@ -61,9 +63,22 @@ def test_audio_run_uses_loopback_service_and_keeps_source_and_transcript(
     store = RunStore(workspace_tmp_path / "voice.sqlite3")
     token = "voice-test-token-that-is-long-enough-for-validation"
     encoded = "data:audio/wav;base64," + base64.b64encode(source_audio).decode("ascii")
+    truncated = "data:audio/wav;base64," + base64.b64encode(source_audio[:-8]).decode("ascii")
     endpoint = f"http://127.0.0.1:{speech_server.server_port}/v1/audio/transcriptions"
     try:
         with TestClient(create_app(QuietProvider(), SecretStr(token), store=store)) as client:
+            rejected = client.post(
+                "/runs",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "objective": "Summarize the recording",
+                    "audio": truncated,
+                    "transcription_url": endpoint,
+                },
+            )
+            assert rejected.status_code == 502
+            assert not request_received.is_set()
+
             response = client.post(
                 "/runs",
                 headers={"Authorization": f"Bearer {token}"},
@@ -74,6 +89,7 @@ def test_audio_run_uses_loopback_service_and_keeps_source_and_transcript(
                 },
             )
             assert response.status_code == 201
+            assert request_received.is_set()
             run_id = response.json()["id"]
             artifacts = store.list_artifacts(run_id)
             assert [item["media_type"] for item in artifacts] == ["audio/wav", "text/plain"]
