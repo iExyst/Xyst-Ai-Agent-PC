@@ -126,11 +126,15 @@ $username = 'xaa_ci_' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $account = $null
 $profile = $null
 $failure = $null
+$profileCleanupVerified = $false
+$accountCleanupVerified = $false
+$profilePathForCleanupCheck = $null
 $reportPath = Join-Path $root 'report.json'
 
 try {
     if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) { throw 'Random standard-user name already exists.' }
     $expectedProfilePath = [IO.Path]::GetFullPath((Join-Path (Join-Path $env:SystemDrive 'Users') $username)).TrimEnd('\')
+    $profilePathForCleanupCheck = $expectedProfilePath
     if (Test-Path -LiteralPath $expectedProfilePath) { throw 'Random standard-user profile path already exists.' }
     New-Item -ItemType Directory -Path $root | Out-Null
     $randomBytes = [byte[]]::new(32)
@@ -204,6 +208,7 @@ try {
             if ($profile) {
                 $usersRoot = [IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Users')).TrimEnd('\') + '\'
                 $profilePath = [IO.Path]::GetFullPath($profile.LocalPath).TrimEnd('\')
+                $profilePathForCleanupCheck = $profilePath
                 $allowedProfilePrefix = $expectedProfilePath + '.'
                 if (-not $profilePath.StartsWith($usersRoot, [StringComparison]::OrdinalIgnoreCase) -or ($profilePath -ne $expectedProfilePath -and -not $profilePath.StartsWith($allowedProfilePrefix, [StringComparison]::OrdinalIgnoreCase))) {
                     throw 'Refusing to delete a profile outside the newly created standard-user path.'
@@ -212,12 +217,18 @@ try {
                 $profilePath = [IO.Path]::GetFullPath($profile.LocalPath).TrimEnd('\')
                 if (Test-Path -LiteralPath $profilePath) { Remove-Item -LiteralPath $profilePath -Recurse -Force }
             }
+            $remainingProfile = Get-CimInstance -ClassName Win32_UserProfile -Filter "SID='$($account.SID.Value)'" -ErrorAction SilentlyContinue
+            $pathStillExists = $profilePathForCleanupCheck -and (Test-Path -LiteralPath $profilePathForCleanupCheck)
+            if ($remainingProfile -or $pathStillExists) { throw 'The disposable Windows user profile remains after cleanup.' }
+            $profileCleanupVerified = $true
         } catch {
             $cleanupErrors.Add("Profile cleanup failed: $($_.Exception.Message)")
         }
         try {
             $remainingAccount = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
             if ($remainingAccount) { Remove-LocalUser -Name $username }
+            if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) { throw 'The disposable local account remains after cleanup.' }
+            $accountCleanupVerified = $true
         } catch {
             $cleanupErrors.Add("Account cleanup failed: $($_.Exception.Message)")
         }
@@ -233,15 +244,17 @@ try {
     if ($cleanupErrors.Count -gt 0) {
         $failureMessage = $cleanupErrors -join ' '
         if ($failure) { $failure += " $failureMessage" } else { $failure = $failureMessage }
-        $savedReport = 'build/installer/standard-user-smoke.json'
-        if (Test-Path -LiteralPath $savedReport) {
-            try {
-                $finalReport = Get-Content -LiteralPath $savedReport -Raw | ConvertFrom-Json
-                $finalReport.cleanup_errors = @($cleanupErrors)
-                $finalReport.passed = $false
-                $finalReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $savedReport -Encoding utf8
-            } catch { }
+    }
+    $savedReport = 'build/installer/standard-user-smoke.json'
+    if (Test-Path -LiteralPath $savedReport) {
+        $finalReport = Get-Content -LiteralPath $savedReport -Raw | ConvertFrom-Json
+        $finalReport | Add-Member -NotePropertyName standard_user_profile_removed -NotePropertyValue $profileCleanupVerified -Force
+        $finalReport | Add-Member -NotePropertyName standard_user_account_removed -NotePropertyValue $accountCleanupVerified -Force
+        if ($cleanupErrors.Count -gt 0 -or -not $profileCleanupVerified -or -not $accountCleanupVerified) {
+            $finalReport | Add-Member -NotePropertyName cleanup_errors -NotePropertyValue @($cleanupErrors) -Force
+            $finalReport.passed = $false
         }
+        $finalReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $savedReport -Encoding utf8
     }
 }
 
