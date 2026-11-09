@@ -1873,26 +1873,19 @@ class RunStore:
             if not rows:
                 return []
             internal_intents: set[str] = set()
-            executing: set[str] = set()
             for event in connection.execute(
-                "SELECT event_type,payload FROM run_events WHERE run_id=? AND event_type IN ('model.message','tool.intended','tool.executing') ORDER BY sequence",
+                "SELECT event_type,payload FROM run_events WHERE run_id=? AND event_type IN ('model.message','tool.intended') ORDER BY sequence",
                 (run_id,),
             ):
                 payload = json.loads(event["payload"])
                 if event["event_type"] == "model.message":
                     for call in payload.get("message", {}).get("tool_calls", []):
                         proposals[call["id"]] = call["function"]["name"]
-                elif event["event_type"] == "tool.executing":
-                    executing.add(payload["call_id"])
                 elif payload.get("internal") is True:
                     internal_intents.add(payload["call_id"])
             for row in rows:
                 call_id = row["provider_call_id"]
-                if (
-                    row["tool_name"] not in names
-                    or row["tool_version"] != "1"
-                    or call_id in executing
-                ):
+                if row["tool_name"] not in names or row["tool_version"] != "1":
                     continue
                 internal = (
                     call_id in internal_intents or proposals.get(call_id) != names[row["tool_name"]]

@@ -63,6 +63,7 @@ def test_interrupted_read_has_a_failed_result_without_reexecuting(
 
 
 def test_recovery_preserves_internal_results_and_unknown_effects(workspace_tmp_path):
+    (workspace_tmp_path / "input.txt").write_bytes(b"unchanged")
     store, run_id, token = setup(workspace_tmp_path)
     propose(store, run_id, token, "private")
     for identity, tool, version in [
@@ -84,15 +85,26 @@ def test_recovery_preserves_internal_results_and_unknown_effects(workspace_tmp_p
             internal=identity == "private",
         )
     store.append_worker_event(run_id, token, "tool.executing", {"call_id": "executing"})
-    assert set(store.resolve_interrupted_reads(run_id, token)) == {"private", "helper"}
+    assert set(store.resolve_interrupted_reads(run_id, token)) == {
+        "private",
+        "helper",
+        "executing",
+    }
     assert not [
         message for message in store.conversation_messages(run_id) if message["role"] == "tool"
     ]
+    failures = [
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "tool.failed" and event["payload"]["call_id"] == "executing"
+    ]
+    assert failures[0]["payload"]["code"] == "interrupted_read"
+    assert failures[0]["payload"]["effect"] == "read_only"
+    assert (workspace_tmp_path / "input.txt").read_bytes() == b"unchanged"
     assert {call["id"] for call in store.unresolved_tool_calls(run_id)} == {
         "write",
         "new-version",
         "unknown",
-        "executing",
     }
 
 
