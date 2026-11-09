@@ -1,4 +1,4 @@
-"""Kill a real worker after fsync and verify destination reconciliation."""
+"""Kill a real worker at a workspace write boundary and verify recovery."""
 
 import asyncio
 import hashlib
@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +15,10 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
+from xaa.providers.lm_studio import DiagnosticRequest, LMStudioProvider
+from xaa.runtime import executor as executor_module
 from xaa.runtime import tool_worker
+from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.executor import WorkspaceExecutor
 from xaa.runtime.states import RunState
 from xaa.storage.runs import RunStore
@@ -24,12 +28,20 @@ class InterruptedStore(RunStore):
     def append_worker_event(
         self, run_id: str, owner: str, kind: str, payload: dict[str, Any]
     ) -> None:
-        if kind == "tool.executing" and os.environ.get("XAA_CRASH_BOUNDARY") == "created":
-            (self.path.parent / "flushed.marker").write_text(
-                "file created; content and execution event not committed", encoding="utf-8"
+        if kind == "tool.executing":
+            boundary = os.environ.get("XAA_CRASH_BOUNDARY")
+            message = (
+                {
+                    "created": "file created; content and execution event not committed",
+                    "before_execution": "tool intent persisted; execution event and effect not committed",
+                }.get(boundary)
+                if boundary is not None
+                else None
             )
-            time.sleep(60)
-            raise RuntimeError("Parent should kill this worker before the wait ends.")
+            if message is not None:
+                (self.path.parent / "flushed.marker").write_text(message, encoding="utf-8")
+                time.sleep(60)
+                raise RuntimeError("Parent should kill this worker before the wait ends.")
         return super().append_worker_event(run_id, owner, kind, payload)
 
     def record_tool_result(
@@ -66,13 +78,46 @@ def child(root: Path, run_id: str) -> None:
             idempotency_key="edit-1",
         )
     elif operation_name == "delete":
-        executor.delete_file(
-            run_id,
-            token,
-            "edit-1",
-            {"path": "fixture.txt", "expected_sha256": hashlib.sha256(b"before").hexdigest()},
-            idempotency_key="edit-1",
-        )
+        delete_arguments = {
+            "path": "fixture.txt",
+            "expected_sha256": hashlib.sha256(b"before").hexdigest(),
+        }
+        if os.environ.get("XAA_OWNER_RECONCILIATION") == "1":
+
+            def interrupt_before_unlink(
+                _path: Path,
+                _root: Path,
+                _expected_sha256: str,
+                *,
+                database: Path,
+                before_delete: Callable[[], None],
+            ) -> int:
+                del database
+                before_delete()
+                (store.path.parent / "flushed.marker").write_text(
+                    "deletion intent persisted; original file remains", encoding="utf-8"
+                )
+                time.sleep(60)
+                raise RuntimeError("Parent should kill this worker before the wait ends.")
+
+            with patch.object(
+                executor_module, "delete_opened_file_if_hash", interrupt_before_unlink
+            ):
+                executor.delete_file(
+                    run_id,
+                    token,
+                    "edit-1",
+                    delete_arguments,
+                    idempotency_key="edit-1",
+                )
+        else:
+            executor.delete_file(
+                run_id,
+                token,
+                "edit-1",
+                delete_arguments,
+                idempotency_key="edit-1",
+            )
     else:
         executor.write_file(
             run_id,
@@ -99,8 +144,46 @@ def recover(root: Path, run_id: str) -> None:
         time.sleep(min(remaining + 0.05, 2))
     recovered = store.recover_abandoned_runs()
     saved = store.get_run(run_id)
-    assert saved is not None and saved["state"] == "blocked"
     if os.environ.get("XAA_OWNER_RECONCILIATION") == "1":
+        assert saved is not None and saved["state"] == "queued" and run_id in recovered
+
+        class NoInferenceProvider(LMStudioProvider):
+            async def diagnose_tools(
+                self, model: str, *, request: DiagnosticRequest | None = None
+            ) -> bool:
+                raise AssertionError("Recovery must block before tool diagnosis or inference.")
+
+            async def chat(
+                self,
+                *,
+                model: str,
+                messages: list[dict[str, Any]],
+                tools: list[dict[str, Any]] | None = None,
+                max_output_tokens: int | None = None,
+                on_admission: Callable[[int, int], None] | None = None,
+                require_exact_context: bool = False,
+            ) -> dict[str, Any]:
+                raise AssertionError("Recovery must block before model inference.")
+
+        executable = Path(
+            os.environ.get("XAA_FROZEN_ENGINE_EXECUTABLE", "build/native-dev/xaa-engine.exe")
+        ).resolve()
+
+        async def recover_with_frozen_worker() -> None:
+            provider = NoInferenceProvider()
+            try:
+                with ExitStack() as stack:
+                    stack.enter_context(patch.object(tool_worker.sys, "frozen", True, create=True))
+                    stack.enter_context(
+                        patch.object(tool_worker.sys, "executable", str(executable))
+                    )
+                    await Coordinator(store, provider).execute(run_id)
+            finally:
+                await provider.close()
+
+        asyncio.run(recover_with_frozen_worker())
+        saved = store.get_run(run_id)
+        assert saved is not None and saved["state"] == "blocked"
         create = os.environ.get("XAA_CRASH_OPERATION") == "create"
         delete = os.environ.get("XAA_CRASH_OPERATION") == "delete"
         boundary = os.environ.get("XAA_CRASH_BOUNDARY")
@@ -112,31 +195,29 @@ def recover(root: Path, run_id: str) -> None:
             destination.unlink()
             inspected_state = "destination_absent"
         elif delete:
-            if boundary != "deleted" or destination.exists():
-                raise AssertionError("Expected the interrupted delete to leave no file.")
-            # Restore the owner's backup only after inspecting the uncertain deletion.
-            destination.write_bytes(b"before")
+            if boundary != "deleted" or not destination.is_file():
+                raise AssertionError(
+                    "Expected the interrupted delete to preserve the original file."
+                )
             unresolved = next(
                 item for item in store.unresolved_tool_calls(run_id) if item["id"] == "edit-1"
             )
             expected_sha256 = unresolved["arguments"].get("expected_sha256")
             if hashlib.sha256(destination.read_bytes()).hexdigest() != expected_sha256:
-                raise AssertionError("Could not restore the saved pre-delete file hash.")
-            inspected_state = "original_hash_restored"
+                raise AssertionError("Original pre-delete file hash was not preserved.")
+            inspected_state = "original_hash_preserved"
         else:
-            if boundary != "flushed" or not destination.is_file():
-                raise AssertionError("Expected an interrupted edit after its content was flushed.")
-            if destination.read_bytes() != b"verified-after-crash":
-                raise AssertionError("Interrupted edit did not leave the intended content.")
-            # Restore the saved pre-write bytes only after inspecting the uncertain edit.
-            destination.write_bytes(b"before")
+            if boundary != "before_execution" or not destination.is_file():
+                raise AssertionError("Expected an interrupted edit before its execution event.")
+            if destination.read_bytes() != b"before":
+                raise AssertionError("Interrupted pre-execution edit changed the original file.")
             unresolved = next(
                 item for item in store.unresolved_tool_calls(run_id) if item["id"] == "edit-1"
             )
             expected_sha256 = unresolved["arguments"].get("expected_sha256")
             if hashlib.sha256(destination.read_bytes()).hexdigest() != expected_sha256:
-                raise AssertionError("Could not restore the saved pre-write file hash.")
-            inspected_state = "original_hash_restored"
+                raise AssertionError("Original pre-write file hash was not preserved.")
+            inspected_state = "original_hash_preserved"
         token = store.acquire_blocked_run_recovery(
             run_id, "acceptance-owner-reconciliation", seconds=180
         )
@@ -212,7 +293,7 @@ def recover(root: Path, run_id: str) -> None:
             encoding="utf-8",
         )
         return
-    store.transition(run_id, RunState.QUEUED, reason="operator_requested_reconciliation")
+    assert saved is not None and saved["state"] == "queued" and run_id in recovered
     token = store.acquire_lease(run_id, "recovery-worker")
     assert token is not None
     store.transition(run_id, RunState.PLANNING, owner=token)
@@ -332,10 +413,9 @@ def main() -> None:
         and before_recovery_mtime is not None
         and target.stat().st_mtime_ns != before_recovery_mtime
     )
+    operation_name = os.environ.get("XAA_CRASH_OPERATION")
     expected_owner_state = (
-        "destination_absent"
-        if os.environ.get("XAA_CRASH_OPERATION") == "create"
-        else "original_hash_restored"
+        "destination_absent" if operation_name == "create" else "original_hash_preserved"
     )
     if owner_reconciliation:
         passed = (
@@ -347,18 +427,19 @@ def main() -> None:
             and recovery["has_unresolved_tool_calls"] is False
             and recovery["state"] == "blocked"
             and recovery["original_result_available"] is True
-            and run_id not in recovery["automatically_requeued_run_ids"]
+            and run_id in recovery["automatically_requeued_run_ids"]
         )
     else:
         passed = (
             process.returncode not in (0, None)
             and recovery_process.returncode == 0
             and outcomes == {"edit-1": "conflicting" if early else "applied"}
-            and target_contents == (b"" if early else b"verified-after-crash")
+            and target_contents
+            == (b"" if early else None if operation_name == "delete" else b"verified-after-crash")
             and not rewritten
             and recovery["has_unresolved_tool_calls"] == early
             and recovery["state"] == ("blocked" if early else "planning")
-            and run_id not in recovery["automatically_requeued_run_ids"]
+            and run_id in recovery["automatically_requeued_run_ids"]
         )
     report = {
         "passed": passed,
@@ -369,13 +450,17 @@ def main() -> None:
         "interruption": (
             "run-owning process killed after create before content/execution event"
             if early
+            else "run-owning process killed before edit execution was journaled"
+            if owner_reconciliation and operation_name == "write"
+            else "run-owning process killed after execution was journaled but before unlink"
+            if owner_reconciliation and operation_name == "delete"
             else "run-owning process killed after deletion before result"
             if operation_name == "delete"
             else "run-owning process killed after fsync before result"
         ),
         "recovery_in_fresh_process": recovery_process.returncode == 0,
         "automatically_requeued_run_ids": recovery["automatically_requeued_run_ids"],
-        "initial_recovery_state": "blocked",
+        "initial_recovery_state": "queued",
         "state_after_reconciliation": recovery["state"],
         "unresolved_after_reconciliation": recovery["has_unresolved_tool_calls"],
         "outcomes": outcomes,
