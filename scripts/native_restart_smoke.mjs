@@ -40,6 +40,7 @@ const fakeState = {
 const liveProviderEndpoint = 'http://127.0.0.1:1234';
 let diagnosticsNonce;
 const specialistNonce = `native-specialist-evidence-${randomUUID()}`;
+const restoredCommandOutput = `NATIVE-REPLAY-OUTPUT-${randomUUID()}`;
 const specialistIdentity = `Evidence Reader ${randomUUID().slice(0, 8)}`;
 const specialistInstructions = liveSpecialistMode
   ? `Call workspace_read_file for fixture.txt exactly once. After it returns, do not call tools again. Quote the exact text field from that saved result, including ${specialistNonce}. If the conversation already contains a tool result for this file, use it immediately and do not reread.`
@@ -547,11 +548,24 @@ try {
   catch { oldApiStopped = true; }
   if (!oldApiStopped) throw new Error('The old bundled engine API remained reachable after desktop process death.');
 
-  execFileSync('uv', ['run', 'python', '-c',
-    "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?\",(sys.argv[2],)); c.commit(); c.close()",
-    database, run.id], { windowsHide: true, stdio: 'pipe', timeout: 30000, env: process.env });
+  const seedOutputEvent = [
+    'import base64,sys',
+    'from pathlib import Path',
+    'from xaa.storage.runs import RunStore',
+    'store=RunStore(Path(sys.argv[1]))',
+    'payload={"call_id":"native-restart-fixture","execution_id":"' + 'a'.repeat(32) + '","stream":"stdout","trust":"untrusted_command_output","chunk_b64":base64.b64encode((sys.argv[3]+"\\n").encode()).decode()}',
+    'with store._connection() as connection:',
+    '    connection.execute("BEGIN IMMEDIATE")',
+    '    RunStore.record_event(connection,sys.argv[2],"execution.output.delta",payload)',
+    '    connection.execute("UPDATE runs SET lease_expires_at=\'2000-01-01T00:00:00+00:00\' WHERE id=?",(sys.argv[2],))',
+  ].join('\n');
+  execFileSync('uv', ['run', 'python', '-c', seedOutputEvent, database, run.id, restoredCommandOutput], {
+    windowsHide: true, stdio: 'pipe', timeout: 30000, env: process.env,
+  });
   fakeState.allowRunResponse = true;
   second = await startDesktop('Restarted');
+  const restoredOutput = second.page.getByRole('region', { name: 'Streaming command output' });
+  await expect(restoredOutput).toContainText(restoredCommandOutput, { timeout: 15000 });
   const recoveryDeadline = Date.now() + 45000;
   let recovered;
   while (Date.now() < recoveryDeadline) {
@@ -584,6 +598,8 @@ try {
     streamed_candidates: fakeState.streamedCandidates,
     harmless_tool_diagnostic_verified: diagnosticResult.tool_round_trip_verified,
     recovery_event: recoveredEvent.payload,
+    streamed_command_output_restored_after_restart: true,
+    restored_command_output_marker: restoredCommandOutput,
     candidate_count: savedAnswers.length,
     final_state: recovered.state,
     tool_effects: 0,
