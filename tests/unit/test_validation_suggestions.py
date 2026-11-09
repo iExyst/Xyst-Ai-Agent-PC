@@ -45,6 +45,31 @@ def test_no_manifest_means_no_suggestions():
     assert suggest_validation_commands(snapshot(("README.md", b"Documentation"))) == []
 
 
+def test_python_suggestions_require_real_pytest_configuration_and_deduplicate_projects():
+    result = suggest_validation_commands(
+        snapshot(
+            ("pyproject.toml", b"[project]\nname = 'application'\n"),
+            ("tests/pyproject.toml", b"[project]\nname = 'unrelated'\n"),
+            ("tests/setup.cfg", b"[metadata]\nname = unrelated\n"),
+            ("qa/pytest.ini", b""),
+            ("qa/pyproject.toml", b"[tool.pytest.ini_options]\ntestpaths = ['tests']\n"),
+            ("qa/setup.cfg", b"[tool:pytest]\naddopts = -q\n"),
+            ("service/tox.ini", b"[pytest]\ntestpaths = tests\n"),
+            ("tools/.pytest.toml", b"[pytest]\n"),
+            ("broken/tox.ini", b"[testenv]\ncommands = pytest\n"),
+            ("bad/pyproject.toml", b"[tool.pytest.ini_options\n"),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "Python tests (pytest) — qa",
+        "Python tests (pytest) — service",
+        "Python tests (pytest) — tools",
+    ]
+    assert result[0]["rationale"].startswith("qa/pytest.ini contains pytest configuration")
+    assert result[0]["argv"] == ["/usr/bin/python3", "-I", "-m", "pytest", "-q", "qa"]
+
+
 def test_javascript_suggestions_require_a_declared_test_script():
     result = suggest_validation_commands(
         snapshot(
@@ -290,8 +315,8 @@ def test_suggests_every_supported_manifest_in_a_monorepo():
         snapshot(
             ("apps/one/package.json", b'{"scripts":{"test":"vitest run"}}'),
             ("apps/two/package.json", b'{"scripts":{"test":"jest"}}'),
-            ("services/one/pyproject.toml", b"[project]"),
-            ("services/two/pyproject.toml", b"[project]"),
+            ("services/one/pyproject.toml", b"[tool.pytest]\ntestpaths = ['tests']\n"),
+            ("services/two/pyproject.toml", b"[tool.pytest.ini_options]\naddopts = '-q'\n"),
             ("crates/one/Cargo.toml", b"[package]"),
             ("crates/two/Cargo.toml", b"[package]"),
             ("services/one/go.mod", b"module one"),

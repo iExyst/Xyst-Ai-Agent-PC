@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
+from configparser import ConfigParser
+from configparser import Error as ConfigError
 from pathlib import PurePosixPath
 from typing import cast
 
@@ -24,6 +27,45 @@ _JS_LOCKFILES = {
     "bun.lockb": "bun",
 }
 _RAKE_TEST_TASK = re.compile(r"(?m)^\s*(?:Rake::TestTask\.new\b|task\s+(?::test\b|['\"]test['\"]))")
+_PYTEST_CONFIG_PRIORITY = {
+    "pytest.toml": 0,
+    ".pytest.toml": 1,
+    "pytest.ini": 2,
+    ".pytest.ini": 3,
+    "pyproject.toml": 4,
+    "tox.ini": 5,
+    "setup.cfg": 6,
+}
+
+
+def _declares_pytest_config(filename: str, content: bytes) -> bool:
+    """Check that a supported configuration file explicitly opts into pytest."""
+    name = PurePosixPath(filename).name.casefold()
+    if name in {"pytest.toml", ".pytest.toml", "pytest.ini", ".pytest.ini"}:
+        return True
+    try:
+        source = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if name == "pyproject.toml":
+        try:
+            document = cast(dict[str, object], tomllib.loads(source))
+        except tomllib.TOMLDecodeError:
+            return False
+        tool = document.get("tool")
+        pytest_config = (
+            cast(dict[str, object], tool).get("pytest") if isinstance(tool, dict) else None
+        )
+        return isinstance(pytest_config, dict)
+    if name in {"tox.ini", "setup.cfg"}:
+        parser = ConfigParser(interpolation=None)
+        try:
+            parser.read_string(source)
+        except ConfigError:
+            return False
+        section = "pytest" if name == "tox.ini" else "tool:pytest"
+        return parser.has_section(section)
+    return False
 
 
 def _javascript_package_manager(
@@ -110,19 +152,36 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
     paths = {entry.path.casefold(): entry.path for entry in snapshot.files}
     suggestions: list[dict[str, object]] = []
 
-    python_configs = [
-        path
-        for key, path in paths.items()
-        if PurePosixPath(key).name in {"pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg"}
-    ]
-    for config in sorted(python_configs, key=str.casefold):
-        directory = str(PurePosixPath(config).parent)
+    python_configs: dict[str, str] = {}
+    for path in paths.values():
+        name = PurePosixPath(path).name.casefold()
+        if name not in _PYTEST_CONFIG_PRIORITY:
+            continue
+        try:
+            content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == path.casefold()
+            )
+        except StopIteration:
+            continue
+        if not _declares_pytest_config(path, content):
+            continue
+        directory = str(PurePosixPath(path).parent)
+        current = python_configs.get(directory)
+        if (
+            current is None
+            or _PYTEST_CONFIG_PRIORITY[name]
+            < _PYTEST_CONFIG_PRIORITY[PurePosixPath(current).name.casefold()]
+        ):
+            python_configs[directory] = path
+    for directory, config in sorted(python_configs.items(), key=lambda item: item[0].casefold()):
         test_path = [] if directory == "." else [directory]
         suffix = "" if directory == "." else f" — {directory}"
         suggestions.append(
             {
                 "label": f"Python tests (pytest){suffix}",
-                "rationale": f"{config} was found. Confirm pytest is available in the restricted WSL environment.",
+                "rationale": f"{config} contains pytest configuration. Confirm pytest is available in the restricted WSL environment.",
                 "argv": ["/usr/bin/python3", "-I", "-m", "pytest", "-q", *test_path],
             }
         )
