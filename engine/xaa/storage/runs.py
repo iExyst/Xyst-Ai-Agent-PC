@@ -2364,9 +2364,7 @@ class RunStore:
                     "workspace.create_file",
                     "workspace.delete_file",
                 }
-                workspace_writes_authorized = (
-                    row["mode"] == "workspace" and bool(row["workspace"])
-                )
+                workspace_writes_authorized = row["mode"] == "workspace" and bool(row["workspace"])
                 recoverable_intents = all(
                     item["tool_version"] == "1"
                     and (

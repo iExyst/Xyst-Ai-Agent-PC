@@ -272,7 +272,9 @@ async def test_restart_reconciles_completed_delete_before_resuming_run(workspace
             saved_result = json.loads(messages[-1]["content"])
             assert saved_result["deleted"] is True
             assert saved_result["reconciled"] is True
-            return {"choices": [{"message": {"role": "assistant", "content": "Deletion confirmed"}}]}
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Deletion confirmed"}}]
+            }
 
     provider = ResumeProvider()
     try:
