@@ -429,8 +429,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             install_system_tray(app)?;
+            let acceptance_mode = std::env::var("XAA_TEST_ACCEPTANCE").as_deref() == Ok("1")
+                || std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1");
             let settings_path = selected_settings_path(
-                std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1"),
+                acceptance_mode,
                 std::env::var_os("XAA_TEST_CONFIG_DIR").map(PathBuf::from),
                 std::env::var_os("XAA_DATA_DIR").map(PathBuf::from),
                 app.path().app_config_dir()?,
@@ -450,7 +452,7 @@ fn main() {
                     .join("binaries/xaa-engine-x86_64-pc-windows-msvc.exe");
             }
             let logs = selected_log_directory(
-                std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1"),
+                acceptance_mode,
                 std::env::var_os("XAA_TEST_LOG_DIR").map(PathBuf::from),
                 app.path().app_log_dir()?,
             );

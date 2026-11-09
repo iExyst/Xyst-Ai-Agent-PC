@@ -19,7 +19,7 @@ const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
 const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
 const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
-const proc=spawn(executable,[],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection;
@@ -50,6 +50,8 @@ try{
   }
   if(!page)throw new Error('Packaged WebView debugging endpoint did not expose a page');
   await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
+  const initiallyVisible=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible',{label:'main'}));
+  if(initiallyVisible)throw new Error('The --background launch argument opened the main window.');
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   let ready=false;
   for(let attempt=0;attempt<240;attempt++){
@@ -135,7 +137,7 @@ try{
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;

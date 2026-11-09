@@ -28,7 +28,9 @@ fn wide(value: &str) -> Vec<u16> {
 }
 
 fn selected_value_name() -> String {
-    if std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1") {
+    if std::env::var("XAA_TEST_ACCEPTANCE").as_deref() == Ok("1")
+        || std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1")
+    {
         if let Some(value) = std::env::var_os("XAA_TEST_AUTOSTART_VALUE_NAME") {
             return value.to_string_lossy().into_owned();
         }
@@ -190,11 +192,18 @@ mod tests {
 
         unsafe {
             std::env::set_var("XAA_TEST_HIDDEN", "0");
+            std::env::set_var("XAA_TEST_ACCEPTANCE", "1");
+        }
+        assert_eq!(selected_value_name(), "XAA Acceptance fixture");
+
+        unsafe {
+            std::env::set_var("XAA_TEST_ACCEPTANCE", "0");
         }
         assert_eq!(selected_value_name(), RUN_VALUE);
 
         unsafe {
             std::env::remove_var("XAA_TEST_HIDDEN");
+            std::env::remove_var("XAA_TEST_ACCEPTANCE");
             std::env::remove_var("XAA_TEST_AUTOSTART_VALUE_NAME");
         }
     }
