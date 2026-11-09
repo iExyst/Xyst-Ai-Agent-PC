@@ -119,10 +119,32 @@ $env:LOCALAPPDATA = $xaaLocalAppData
 $env:APPDATA = $xaaRoamingAppData
 $xaaPriorPath = $env:PATH
 $env:PATH = Join-Path $env:SystemRoot 'System32'
-$xaaReport = @{ passed = $false; explicit_delete_selected = $false; no_model_inference = $true }
 $xaaUninstaller = Join-Path $xaaInstallDir 'uninstall.exe'
 
 try {
+    # The preservation smoke uninstalls the predecessor but NSIS deliberately
+    # remembers its last install directory under this product key. Remove only
+    # the exact test-owned path so this independent profile exercises the real
+    # currentUser default selected from its isolated LOCALAPPDATA.
+    $xaaInstallLocationKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\xyst\Xyst AI Agent', $true)
+    if ($xaaInstallLocationKey) {
+        try {
+            $xaaRememberedInstallDir = [string]$xaaInstallLocationKey.GetValue('')
+            if ($xaaRememberedInstallDir) {
+                $xaaExpectedPreviousInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-isolated-localappdata\Xyst AI Agent'))
+                if ([IO.Path]::GetFullPath($xaaRememberedInstallDir) -ne $xaaExpectedPreviousInstallDir) {
+                    throw 'Refusing to clear a remembered install path not created by the preservation smoke.'
+                }
+                if ((Test-Path -LiteralPath (Join-Path $xaaExpectedPreviousInstallDir 'xaa-desktop.exe')) -or (Test-Path -LiteralPath (Join-Path $xaaExpectedPreviousInstallDir 'xaa-engine.exe')) -or (Test-Path -LiteralPath (Join-Path $xaaExpectedPreviousInstallDir 'uninstall.exe'))) {
+                    throw 'Refusing to clear a remembered install path that still contains installed binaries.'
+                }
+                $xaaInstallLocationKey.DeleteValue('', $false)
+                $xaaReport.previous_test_install_location_cleared = $true
+            }
+        } finally {
+            $xaaInstallLocationKey.Dispose()
+        }
+    }
     $xaaInstall = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S') -WindowStyle Hidden -Wait -PassThru
     if ($xaaInstall.ExitCode -ne 0) { throw "Installer exit code $($xaaInstall.ExitCode)" }
     if (-not (Test-Path -LiteralPath $xaaUninstaller)) { throw 'Installer did not create uninstall.exe.' }
