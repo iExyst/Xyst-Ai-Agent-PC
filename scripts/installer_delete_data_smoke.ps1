@@ -122,34 +122,14 @@ $env:PATH = Join-Path $env:SystemRoot 'System32'
 $xaaUninstaller = Join-Path $xaaInstallDir 'uninstall.exe'
 
 try {
-    # The preservation smoke uninstalls the predecessor but NSIS deliberately
-    # remembers its last install directory under this product key. Remove only
-    # the exact test-owned path so this independent profile exercises the real
-    # currentUser default selected from its isolated LOCALAPPDATA.
-    $xaaInstallLocationKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\xyst\Xyst AI Agent', $true)
-    if ($xaaInstallLocationKey) {
-        try {
-            $xaaRememberedInstallDir = [string]$xaaInstallLocationKey.GetValue('')
-            if ($xaaRememberedInstallDir) {
-                $xaaExpectedPreviousInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-isolated-localappdata\Xyst AI Agent'))
-                if ([IO.Path]::GetFullPath($xaaRememberedInstallDir) -ne $xaaExpectedPreviousInstallDir) {
-                    throw 'Refusing to clear a remembered install path not created by the preservation smoke.'
-                }
-                if ((Test-Path -LiteralPath (Join-Path $xaaExpectedPreviousInstallDir 'xaa-desktop.exe')) -or (Test-Path -LiteralPath (Join-Path $xaaExpectedPreviousInstallDir 'xaa-engine.exe')) -or (Test-Path -LiteralPath (Join-Path $xaaExpectedPreviousInstallDir 'uninstall.exe'))) {
-                    throw 'Refusing to clear a remembered install path that still contains installed binaries.'
-                }
-                $xaaInstallLocationKey.DeleteValue('', $false)
-                $xaaReport.previous_test_install_location_cleared = $true
-            }
-        } finally {
-            $xaaInstallLocationKey.Dispose()
-        }
-    }
-    $xaaInstall = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S') -WindowStyle Hidden -Wait -PassThru
+    # The upgrade smoke verifies the release package's unmodified default
+    # location. This independent data-removal smoke supplies an isolated target
+    # so NSIS's remembered path cannot redirect its disposable fixture.
+    $xaaInstall = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
     if ($xaaInstall.ExitCode -ne 0) { throw "Installer exit code $($xaaInstall.ExitCode)" }
     if (-not (Test-Path -LiteralPath $xaaUninstaller)) { throw 'Installer did not create uninstall.exe.' }
-    $xaaReport.default_per_user_install_directory_verified = (Test-Path -LiteralPath $xaaInstallDir) -and $xaaInstallDir.StartsWith($xaaInstallParent, [StringComparison]::OrdinalIgnoreCase)
-    if (-not $xaaReport.default_per_user_install_directory_verified) { throw 'Installer did not use the isolated per-user default install directory.' }
+    $xaaReport.isolated_per_user_install_directory_verified = (Test-Path -LiteralPath $xaaInstallDir) -and $xaaInstallDir.StartsWith($xaaInstallParent, [StringComparison]::OrdinalIgnoreCase)
+    if (-not $xaaReport.isolated_per_user_install_directory_verified) { throw 'Installer did not use the isolated per-user test directory.' }
 
     New-Item -ItemType Directory -Path $xaaDataDir, $xaaConfigDir -Force | Out-Null
     $xaaDatabaseMarker = Join-Path $xaaDataDir 'explicit-delete-fixture.sqlite'
@@ -231,7 +211,7 @@ try {
     $xaaReport.uninstaller_exit_code = $xaaProcess.ExitCode
     $xaaReport.app_data_removed = -not (Test-Path -LiteralPath $xaaDataDir) -and -not (Test-Path -LiteralPath $xaaConfigDir)
     $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
-    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.explicit_delete_selected -and $xaaReport.app_data_removed -and $xaaReport.binaries_removed -and $xaaReport.uninstaller_exit_code -eq 0
+    $xaaReport.passed = $xaaReport.isolated_per_user_install_directory_verified -and $xaaReport.explicit_delete_selected -and $xaaReport.app_data_removed -and $xaaReport.binaries_removed -and $xaaReport.uninstaller_exit_code -eq 0
 } finally {
     if (Test-Path -LiteralPath $xaaUninstaller) {
         $xaaCleanup = Start-Process -FilePath $xaaUninstaller -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
