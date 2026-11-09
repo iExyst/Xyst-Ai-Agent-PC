@@ -512,8 +512,6 @@ class RunStore:
                     details TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS channel_bindings_identity_link_idx
-                    ON channel_bindings(identity_link_id);
                 CREATE TABLE IF NOT EXISTS telegram_pairing_codes (
                     code_hash TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
@@ -629,6 +627,15 @@ class RunStore:
                 """
             )
             connection.execute("BEGIN IMMEDIATE")
+            channel_binding_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(channel_bindings)")
+            }
+            if "identity_link_id" not in channel_binding_columns:
+                connection.execute("ALTER TABLE channel_bindings ADD COLUMN identity_link_id TEXT")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS channel_bindings_identity_link_idx "
+                "ON channel_bindings(identity_link_id)"
+            )
             default_profiles = (
                 (
                     "planner",

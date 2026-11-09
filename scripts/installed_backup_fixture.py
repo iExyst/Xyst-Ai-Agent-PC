@@ -9,7 +9,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
 
 
 def seed(directory: Path, report_path: Path) -> None:
@@ -46,7 +46,7 @@ def seed(directory: Path, report_path: Path) -> None:
     persisted_run = store.get_run(run_id)
     if persisted_run is None:
         raise RuntimeError("The disposable run was not persisted.")
-    report = {
+    report: dict[str, Any] = {
         "fixture": "installed-package-backup-restore",
         "directory": str(directory.resolve()),
         "run": persisted_run,
@@ -56,6 +56,27 @@ def seed(directory: Path, report_path: Path) -> None:
         "artifact_hex": payload.hex(),
         "artifact_sha256": hashlib.sha256(payload).hexdigest(),
     }
+    # Model the last released pre-identity-link database layout. The fixture is
+    # created with current code so its run and artifact are valid, then only the
+    # schema-19..22 additions are removed before the predecessor/current upgrade.
+    with sqlite3.connect(directory / "xaa.sqlite3") as db:
+        db.execute("PRAGMA foreign_keys=ON")
+        db.execute("DROP INDEX IF EXISTS channel_bindings_identity_link_idx")
+        db.execute("ALTER TABLE channel_bindings DROP COLUMN identity_link_id")
+        db.execute("DROP TABLE channel_identity_link_events")
+        db.execute("DROP TABLE channel_identity_links")
+        db.execute("DROP TABLE idempotent_run_requests")
+        db.execute("ALTER TABLE memories DROP COLUMN source_uri")
+        db.execute("PRAGMA user_version=18")
+        db.commit()
+        seeded_version = int(db.execute("PRAGMA user_version").fetchone()[0])
+        integrity = str(db.execute("PRAGMA integrity_check").fetchone()[0])
+        foreign_keys = db.execute("PRAGMA foreign_key_check").fetchall()
+    if seeded_version != 18 or integrity != "ok" or foreign_keys:
+        raise RuntimeError("Could not construct a valid schema-18 installed upgrade fixture.")
+    report["seeded_schema_version"] = seeded_version
+    report["schema_downgrade_integrity"] = integrity
+    report["schema_downgrade_foreign_key_violations"] = len(foreign_keys)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
@@ -71,9 +92,12 @@ def verify(directory: Path, fixture_path: Path, report_path: Path) -> None:
     artifact_bytes = (directory / "artifacts" / artifact_key).read_bytes()
     database_uri = (directory / "xaa.sqlite3").resolve().as_uri() + "?mode=ro"
     with sqlite3.connect(database_uri, uri=True) as db:
+        schema_version = int(db.execute("PRAGMA user_version").fetchone()[0])
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         foreign_keys = db.execute("PRAGMA foreign_key_check").fetchall()
     checks = {
+        "seeded_from_schema_18": fixture.get("seeded_schema_version") == 18,
+        "current_schema_after_upgrade": schema_version == DATABASE_SCHEMA_VERSION,
         "run_matches": run == fixture["run"],
         "events_match": events == fixture["events"],
         "artifact_metadata_matches": artifact == fixture["artifact"],

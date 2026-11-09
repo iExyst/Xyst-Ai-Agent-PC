@@ -238,6 +238,8 @@ def test_schema_20_database_migrates_identity_link_tables_without_losing_binding
     with store.connection() as connection:
         connection.execute("DROP TABLE channel_identity_link_events")
         connection.execute("DROP TABLE channel_identity_links")
+        connection.execute("DROP INDEX channel_bindings_identity_link_idx")
+        connection.execute("ALTER TABLE channel_bindings DROP COLUMN identity_link_id")
         connection.execute("PRAGMA user_version=20")
 
     upgraded = RunStore(database)
@@ -252,9 +254,13 @@ def test_schema_20_database_migrates_identity_link_tables_without_losing_binding
         binding = connection.execute(
             "SELECT id FROM channel_bindings WHERE id=?", (binding_id,)
         ).fetchone()
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(channel_bindings)")}
+        indexes = {row["name"] for row in connection.execute("PRAGMA index_list(channel_bindings)")}
     assert version == 22
     assert {"channel_identity_links", "channel_identity_link_events"} <= tables
     assert binding["id"] == binding_id
+    assert "identity_link_id" in columns
+    assert "channel_bindings_identity_link_idx" in indexes
 
 
 def test_schema_21_identity_link_audit_table_migrates_for_member_additions(workspace_tmp_path):
