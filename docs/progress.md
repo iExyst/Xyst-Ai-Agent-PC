@@ -2,6 +2,10 @@
 
 Updated 2026-11-09.
 
+## Observe managed-browser loopback attempts on both IP families (2026-11-09)
+
+Expanded `scripts/browser_proxy_bypass_smoke.py` to listen simultaneously on IPv4 `127.0.0.1:443` and IPv6 `[::1]:443`. Real Microsoft Edge attempts the approved `https://localhost/` through the managed browser worker; the local acceptance confirms rejection and zero direct connections on both families. Evidence: `.acceptance/browser-proxy-bypass-1be07b6a41934ee4a38e2560c06c1a85/report.json`. Ruff, format, and strict Pyright pass. The existing Windows CI step will rerun this coverage; hosted verification is pending. No model inference was used.
+
 ## Preserve licenses for omitted locked Python distributions (2026-11-09)
 
 Expanded `docs/releases/THIRD_PARTY_NOTICES.md` with 22 distinct source-hash-grouped license/NOTICE texts from exact locked archives for jeepney, macholib, SecretStorage, setuptools (including vendored libraries and notices), and uvloop (including libuv). The source archive and file hashes are verified in `.acceptance/conditional-lock-license-audit-20261109/verification.json`. Package-license and vendored notice texts are now preserved, but the uvloop metadata/source discrepancy, package copyright completeness, and application licensing still require review. No legal approval is claimed. `git diff --check` passes. Hosted Windows verification is pending.

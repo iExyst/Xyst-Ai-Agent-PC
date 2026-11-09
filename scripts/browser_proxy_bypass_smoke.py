@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -24,20 +25,30 @@ class WorkerResponse(BaseModel):
 
 
 async def run() -> None:
-    accepted_connections = 0
+    accepted_connections = {"ipv4": 0, "ipv6": 0}
 
     async def accept_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        nonlocal accepted_connections
         del reader
-        accepted_connections += 1
+        address = writer.get_extra_info("sockname")
+        if isinstance(address, tuple) and address[0] == "::1":
+            accepted_connections["ipv6"] += 1
+        elif isinstance(address, tuple) and address[0] == "127.0.0.1":
+            accepted_connections["ipv4"] += 1
         writer.close()
         await writer.wait_closed()
 
+    servers: list[asyncio.Server] = []
     try:
-        server = await asyncio.start_server(accept_connection, "127.0.0.1", 443)
+        servers.append(await asyncio.start_server(accept_connection, "127.0.0.1", 443))
+        servers.append(
+            await asyncio.start_server(accept_connection, "::1", 443, family=socket.AF_INET6)
+        )
     except OSError as exc:
+        for server in servers:
+            server.close()
+        await asyncio.gather(*(server.wait_closed() for server in servers))
         raise RuntimeError(
-            "Could not reserve loopback port 443 for the proxy bypass check."
+            "Could not reserve IPv4 and IPv6 loopback port 443 for the proxy bypass check."
         ) from exc
 
     try:
@@ -61,21 +72,25 @@ async def run() -> None:
         await asyncio.sleep(0.5)
         if completed.returncode != 0 or response.ok:
             raise AssertionError("Loopback page unexpectedly returned through managed browser.")
-        if accepted_connections:
+        connection_count = sum(accepted_connections.values())
+        if connection_count:
             raise AssertionError(
-                f"Edge bypassed the managed proxy and opened {accepted_connections} loopback connections."
+                "Edge bypassed the managed proxy and opened "
+                f"{connection_count} loopback connections: {accepted_connections}."
             )
         report = {
             "checked_at_utc": datetime.now(UTC).isoformat(),
             "target": request["url"],
             "managed_worker_rejected_loopback": True,
+            "listeners": ["127.0.0.1:443", "[::1]:443"],
             "direct_loopback_connections": accepted_connections,
             "worker_error": response.error,
             "model_inference_requested": False,
         }
     finally:
-        server.close()
-        await server.wait_closed()
+        for server in servers:
+            server.close()
+        await asyncio.gather(*(server.wait_closed() for server in servers))
 
     acceptance = Path(".acceptance") / f"browser-proxy-bypass-{uuid4().hex}"
     acceptance.mkdir(parents=True, exist_ok=False)
