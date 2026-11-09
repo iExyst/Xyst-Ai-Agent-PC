@@ -64,6 +64,9 @@ def validate_wav(audio: bytes) -> None:
                 raise TranscriptionError("WAV audio must contain PCM samples.")
             if wav.getnframes() > wav.getframerate() * 600:
                 raise TranscriptionError("WAV audio may not exceed 10 minutes.")
+            expected_pcm_bytes = wav.getnframes() * wav.getnchannels() * wav.getsampwidth()
+            if len(wav.readframes(wav.getnframes())) != expected_pcm_bytes:
+                raise TranscriptionError("WAV audio is truncated or has incomplete PCM frames.")
     except (wave.Error, EOFError):
         raise TranscriptionError("Audio must be a valid PCM WAV file.") from None
 

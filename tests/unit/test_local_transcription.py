@@ -45,6 +45,12 @@ def test_wav_is_validated_for_pcm_length_and_size() -> None:
         validate_wav(b"x" * (4 * 1024 * 1024 + 1))
 
 
+def test_wav_rejects_header_that_declares_missing_pcm_frames() -> None:
+    truncated = pcm_wav()[:-8]
+    with pytest.raises(TranscriptionError, match="truncated or has incomplete PCM frames"):
+        validate_wav(truncated)
+
+
 @pytest.mark.asyncio
 async def test_transcription_posts_audio_and_returns_bounded_text() -> None:
     async def respond(request: httpx.Request) -> httpx.Response:
