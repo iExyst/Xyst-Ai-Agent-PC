@@ -74,7 +74,7 @@ Expanded `scripts/browser_proxy_bypass_smoke.py` to listen simultaneously on IPv
 
 ## Preserve licenses for omitted locked Python distributions (2026-11-09)
 
-Expanded `docs/releases/THIRD_PARTY_NOTICES.md` with 22 distinct source-hash-grouped license/NOTICE texts from exact locked archives for jeepney, macholib, SecretStorage, setuptools (including vendored libraries and notices), and uvloop (including libuv). The source archive and file hashes are verified in `.acceptance/conditional-lock-license-audit-20261109/verification.json`. Package-license and vendored notice texts are now preserved, but the uvloop metadata/source discrepancy, package copyright completeness, and application licensing still require review. No legal approval is claimed. `git diff --check` passes. Hosted Windows verification is pending.
+Expanded `docs/releases/THIRD_PARTY_NOTICES.md` with 22 distinct source-hash-grouped license/NOTICE texts from exact locked archives for jeepney, macholib, SecretStorage, setuptools (including vendored libraries and notices), and uvloop (including libuv). The source archive and file hashes are verified in `.acceptance/conditional-lock-license-audit-20261109/verification.json`. Package-license and vendored notice texts are now preserved, but the uvloop metadata/source discrepancy, package copyright completeness, and application licensing still require review. No legal approval is claimed. Hosted installer run [42701055533](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42701055533) confirms the provisional notice file is included in the package and matches its manifest hash; completeness and legal compatibility remain unreviewed.
 
 ## Match the Python license metadata table to uv.lock (2026-11-09)
 
@@ -86,7 +86,7 @@ Final review now recognizes root `CMakePresets.json` workflow presets using sche
 
 ## Ignore the default npm placeholder in project validation (2026-11-09)
 
-Final-review validation suggestions now skip the stock `npm init` test script (`echo "Error: no test specified" && exit 1`) instead of presenting a command guaranteed to fail as a project test suite. A focused regression covers the exact placeholder; the validation-suggestion unit suite passes (12 tests), Ruff passes, formatting passes, and strict Pyright reports zero issues for the implementation. No live model inference was used. Hosted Windows verification remains pending.
+Final-review validation suggestions now skip the stock `npm init` test script (`echo "Error: no test specified" && exit 1`) instead of presenting a command guaranteed to fail as a project test suite. A focused regression covers the exact placeholder; the validation-suggestion unit suite passes (12 tests), Ruff passes, formatting passes, and strict Pyright reports zero issues for the implementation. No live model inference was used. Hosted Windows source run [42699945210](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42699945210) passed the complete Python suite and source checks, which include the validation-suggestion regression.
 
 ## User operating guide (2026-11-09)
 
