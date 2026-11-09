@@ -4,7 +4,7 @@ Updated 2026-11-09.
 
 ## Observe managed-browser loopback attempts on both IP families (2026-11-09)
 
-Expanded `scripts/browser_proxy_bypass_smoke.py` to listen simultaneously on IPv4 `127.0.0.1:443` and IPv6 `[::1]:443`. Real Microsoft Edge attempts the approved `https://localhost/` through the managed browser worker; the local acceptance confirms rejection and zero direct connections on both families. Evidence: `.acceptance/browser-proxy-bypass-1be07b6a41934ee4a38e2560c06c1a85/report.json`. Ruff, format, and strict Pyright pass. The existing Windows CI step will rerun this coverage; hosted verification is pending. No model inference was used.
+Expanded `scripts/browser_proxy_bypass_smoke.py` to listen simultaneously on IPv4 `127.0.0.1:443` and IPv6 `[::1]:443`. Real Microsoft Edge attempts the approved `https://localhost/` through the managed browser worker; the local acceptance confirms rejection and zero direct connections on both families. Evidence: `.acceptance/browser-proxy-bypass-1be07b6a41934ee4a38e2560c06c1a85/report.json`. Hosted Windows run [42618783720](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42618783720) passed the expanded smoke with zero connections on both addresses, all 925 Python tests, Ruff, Pyright, browser/client checks, and the other source diagnostics. The artifact is preserved at `.acceptance/hosted-browser-proxy-bypass-42618783720/`; the main-only installer job was skipped on this feature branch. No model inference was used.
 
 ## Preserve licenses for omitted locked Python distributions (2026-11-09)
 

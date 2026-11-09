@@ -40,7 +40,7 @@ Local Windows acceptance runs the actual managed Edge worker against Postman Ech
 
 ## Managed-browser loopback proxy containment
 
-The Edge proxy-bypass acceptance now listens on both `127.0.0.1:443` and `[::1]:443` while the approved `https://localhost/` request runs. This detects a direct connection on either address family; the local report records rejection and zero IPv4 and IPv6 connections (`../../.acceptance/browser-proxy-bypass-1be07b6a41934ee4a38e2560c06c1a85/report.json`). The Windows source workflow already runs and uploads this smoke; hosted verification of the expanded IPv6 listener check is pending. This covers localhost loopback only and does not establish protection against every private, link-local, or reserved address class.
+The Edge proxy-bypass acceptance listens on both `127.0.0.1:443` and `[::1]:443` while the approved `https://localhost/` request runs. This detects a direct connection on either address family; local evidence records rejection and zero IPv4 and IPv6 connections (`../../.acceptance/browser-proxy-bypass-1be07b6a41934ee4a38e2560c06c1a85/report.json`). Hosted Windows run [42618783720](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42618783720) passed the expanded check; its report also records zero connections to both listeners (`../../.acceptance/hosted-browser-proxy-bypass-42618783720/`). This covers localhost loopback only and does not establish protection against every private, link-local, or reserved address class.
 
 ## Managed-browser cancellation
 
