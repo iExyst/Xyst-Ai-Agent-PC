@@ -19,9 +19,25 @@ if ($StandardUserChild) {
         $principal = [Security.Principal.WindowsPrincipal]::new($identity)
         $report.account_sid = $identity.User.Value
         $report.account_is_administrator = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        if ($identity.User.Value -ne $config.account_sid) { throw 'The installer child did not start under the created standard-account SID.' }
+        $loadedProfile = Get-CimInstance -ClassName Win32_UserProfile -Filter "SID='$($identity.User.Value)'" -ErrorAction Stop
+        if (-not $loadedProfile -or -not $loadedProfile.LocalPath) { throw 'Windows did not load a profile for the standard account.' }
+        $profileRoot = [IO.Path]::GetFullPath($loadedProfile.LocalPath).TrimEnd('\')
+        $expectedProfileRoot = [IO.Path]::GetFullPath($config.expected_profile_path).TrimEnd('\')
+        $report.account_profile_verified = $profileRoot -eq $expectedProfileRoot -and (Test-Path -LiteralPath $profileRoot)
+        if (-not $report.account_profile_verified) { throw 'The loaded Windows profile does not match the disposable account.' }
+        # CreateProcessWithLogonW loads the profile but inherits the caller's
+        # environment block. Derive the standard profile paths from the SID's
+        # Windows profile record before asking NSIS where it installed.
+        $env:USERPROFILE = $profileRoot
+        $env:LOCALAPPDATA = Join-Path $profileRoot 'AppData\Local'
+        $env:APPDATA = Join-Path $profileRoot 'AppData\Roaming'
         $report.user_profile = $env:USERPROFILE
         $report.local_app_data = $env:LOCALAPPDATA
         $report.roaming_app_data = $env:APPDATA
+        if (-not (Test-Path -LiteralPath $env:LOCALAPPDATA) -or -not (Test-Path -LiteralPath $env:APPDATA)) {
+            throw 'The loaded standard-account profile is missing its local or roaming application-data directory.'
+        }
         if ($report.account_is_administrator) { throw 'The acceptance account unexpectedly has administrator rights.' }
 
         $setup = Start-Process -FilePath $config.installer_path -ArgumentList @('/S') -WindowStyle Hidden -Wait -PassThru
@@ -72,7 +88,7 @@ if ($StandardUserChild) {
         $report.binaries_removed = -not (Test-Path -LiteralPath $desktop) -and -not (Test-Path -LiteralPath $engine)
         $report.app_data_preserved = (Test-Path -LiteralPath $dataMarker) -and (Get-Content -LiteralPath $dataMarker -Raw) -eq 'Disposable standard-user install fixture'
         $report.config_preserved = (Test-Path -LiteralPath $configMarker) -and (Get-Content -LiteralPath $configMarker -Raw) -eq 'Disposable standard-user config fixture'
-        $report.passed = $report.standard_user -and -not $report.account_is_administrator -and $report.default_per_user_directory_verified -and $report.installed_binary_hashes_match -and $report.bundled_engine_cli_verified -and $report.binaries_removed -and $report.app_data_preserved -and $report.config_preserved -and $report.uninstaller_exit_code -eq 0
+        $report.passed = $report.standard_user -and $report.account_profile_verified -and -not $report.account_is_administrator -and $report.default_per_user_directory_verified -and $report.installed_binary_hashes_match -and $report.bundled_engine_cli_verified -and $report.binaries_removed -and $report.app_data_preserved -and $report.config_preserved -and $report.uninstaller_exit_code -eq 0
     } catch {
         $report.error = $_.Exception.Message
     } finally {
@@ -144,6 +160,8 @@ try {
     $configPath = Join-Path $root 'config.json'
     @{
         installer_path = $installerCopy
+        account_sid = $sid
+        expected_profile_path = $expectedProfilePath
         product_name = $productName
         expected_hashes = @{
             desktop = $manifest.artifacts.desktop.sha256
@@ -168,8 +186,8 @@ try {
     $child = Start-Process -FilePath $pwsh -Credential $credential -LoadUserProfile -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -Wait -PassThru
     if (-not (Test-Path -LiteralPath $reportPath)) { throw "Standard-user acceptance produced no report (exit $($child.ExitCode))." }
     $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-    $report.runner_account_is_administrator = $true
-    $report.acceptance_account_sid_matches = $report.account_sid -eq $sid
+    $report | Add-Member -NotePropertyName runner_account_is_administrator -NotePropertyValue $true -Force
+    $report | Add-Member -NotePropertyName acceptance_account_sid_matches -NotePropertyValue ($report.account_sid -eq $sid) -Force
     $report.passed = [bool]$report.passed -and $report.acceptance_account_sid_matches -and $child.ExitCode -eq 0
     $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath 'build/installer/standard-user-smoke.json' -Encoding utf8
     if (-not $report.passed) { $failure = "Standard-user install acceptance failed: $($report.error)" }
