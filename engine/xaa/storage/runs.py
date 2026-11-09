@@ -1857,9 +1857,12 @@ class RunStore:
     def resolve_interrupted_reads(self, run_id: str, token: str) -> list[str]:
         """Close read-only intents without replaying them or assuming any write failed."""
         names = {
-            "workspace.read_file": "workspace_read_file",
-            "workspace.list_directory": "workspace_list_directory",
-            "workspace.search": "workspace_search",
+            "workspace.read_file": {"workspace_read_file"},
+            "workspace.list_directory": {"workspace_list_directory"},
+            "workspace.search": {"workspace_search"},
+            "procedure.read_resource": {"procedure_read_resource"},
+            "procedure.view": {"procedure_view"},
+            "procedure.catalog": {"procedure_catalog"},
         }
         resolved: list[str] = []
         with self.connection() as connection:
@@ -1867,7 +1870,7 @@ class RunStore:
             self.require_lease(connection, run_id, token)
             proposals: dict[str, str] = {}
             rows = connection.execute(
-                "SELECT provider_call_id,tool_name,tool_version FROM tool_calls WHERE run_id=? AND state='intended' AND tool_version='1' AND tool_name IN ('workspace.read_file','workspace.list_directory','workspace.search')",
+                "SELECT provider_call_id,tool_name,tool_version FROM tool_calls WHERE run_id=? AND state='intended' AND tool_version='1' AND tool_name IN ('workspace.read_file','workspace.list_directory','workspace.search','procedure.read_resource','procedure.view','procedure.catalog')",
                 (run_id,),
             ).fetchall()
             if not rows:
@@ -1885,17 +1888,18 @@ class RunStore:
                     internal_intents.add(payload["call_id"])
             for row in rows:
                 call_id = row["provider_call_id"]
-                if row["tool_name"] not in names or row["tool_version"] != "1":
+                expected_names = names.get(row["tool_name"])
+                if expected_names is None or row["tool_version"] != "1":
                     continue
                 internal = (
-                    call_id in internal_intents or proposals.get(call_id) != names[row["tool_name"]]
+                    call_id in internal_intents or proposals.get(call_id) not in expected_names
                 )
                 result = {
                     "ok": False,
                     "effect": "read_only",
                     "error": {
                         "code": "interrupted_read",
-                        "message": "This read-only operation has no saved result. Request a new read if still needed; no previous contents are assumed.",
+                        "message": "This read-only operation has no saved result. Request a fresh read if needed; no previous contents are assumed.",
                     },
                 }
                 connection.execute(
@@ -2351,6 +2355,9 @@ class RunStore:
                     "workspace.read_file",
                     "workspace.list_directory",
                     "workspace.search",
+                    "procedure.read_resource",
+                    "procedure.view",
+                    "procedure.catalog",
                 }
                 safe_workspace_writes = {
                     "workspace.write_file",

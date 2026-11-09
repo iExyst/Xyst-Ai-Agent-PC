@@ -1,8 +1,10 @@
 import json
+import sqlite3
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.states import RunState
 from xaa.storage.runs import LeaseLost, RunStore
 
 
@@ -44,6 +46,9 @@ def propose(store, run_id, token, identity, name="workspace_read_file"):
         ("workspace.read_file", "workspace_read_file"),
         ("workspace.list_directory", "workspace_list_directory"),
         ("workspace.search", "workspace_search"),
+        ("procedure.read_resource", "procedure_read_resource"),
+        ("procedure.view", "procedure_view"),
+        ("procedure.catalog", "procedure_catalog"),
     ],
 )
 def test_interrupted_read_has_a_failed_result_without_reexecuting(
@@ -60,6 +65,49 @@ def test_interrupted_read_has_a_failed_result_without_reexecuting(
     failure = json.loads(messages[-1]["content"])
     assert failure["effect"] == "read_only" and failure["error"]["code"] == "interrupted_read"
     assert not store.unresolved_tool_calls(run_id)
+
+
+@pytest.mark.parametrize(
+    "tool,function",
+    [
+        ("procedure.read_resource", "procedure_read_resource"),
+        ("procedure.view", "procedure_view"),
+        ("procedure.catalog", "procedure_catalog"),
+    ],
+)
+def test_abandoned_local_read_requeues_and_is_sealed(workspace_tmp_path, tool, function):
+    store, run_id, token = setup(workspace_tmp_path)
+    propose(store, run_id, token, "read", function)
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="read",
+        tool=tool,
+        version="1",
+        arguments={},
+        idempotency_key="read",
+    )
+    store.append_worker_event(run_id, token, "tool.executing", {"call_id": "read"})
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    connection = sqlite3.connect(store.path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    assert store.recover_abandoned_runs() == [run_id]
+    fresh = store.acquire_lease(run_id, "recovery-worker")
+    assert fresh is not None
+    assert store.resolve_interrupted_reads(run_id, fresh) == ["read"]
+    assert not store.unresolved_tool_calls(run_id)
+    messages = store.conversation_messages(run_id)
+    result = json.loads(messages[-1]["content"])
+    assert result["effect"] == "read_only"
+    assert result["error"]["code"] == "interrupted_read"
 
 
 def test_recovery_preserves_internal_results_and_unknown_effects(workspace_tmp_path):
