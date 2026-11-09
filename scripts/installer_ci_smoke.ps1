@@ -40,6 +40,10 @@ if ($xaaPriorPath) {
     if (-not (Test-Path -LiteralPath $xaaPriorInstaller) -or (Get-FileHash -LiteralPath $xaaPriorInstaller -Algorithm SHA256).Hash -ne $xaaPriorManifest.artifacts.installer.sha256) { throw 'Prior installer checksum mismatch.' }
 }
 $xaaDataDir = Join-Path $env:LOCALAPPDATA 'XAA'
+$xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
+$xaaStartupRegistryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$xaaStartupValueName = 'Xyst AI Agent'
+$xaaStartupCommand = '"' + $xaaDesktop + '" --background'
 $xaaMarker = Join-Path $xaaDataDir 'installer-preservation-fixture.txt'
 if (Test-Path -LiteralPath $xaaMarker) { throw 'Data fixture already exists.' }
 New-Item -ItemType Directory -Path $xaaDataDir -Force | Out-Null
@@ -65,12 +69,16 @@ try {
         uv run python scripts/installed_backup_fixture.py seed --directory $xaaDataDir --report $xaaBackupFixture
         if ($LASTEXITCODE -ne 0) { throw 'Could not seed user data before the version upgrade.' }
         $xaaReport.upgrade_data_fixture_seeded_before_upgrade = $true
+        $xaaExistingStartup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
+        if ($xaaExistingStartup -and $xaaExistingStartup.GetValueNames() -contains $xaaStartupValueName) { throw 'Refusing to replace an existing sign-in startup value.' }
+        New-Item -Path $xaaStartupRegistryPath -Force | Out-Null
+        New-ItemProperty -LiteralPath $xaaStartupRegistryPath -Name $xaaStartupValueName -Value $xaaStartupCommand -PropertyType String | Out-Null
+        $xaaReport.startup_entry_seeded_before_upgrade = $true
     }
     [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
     $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
     $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
     if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
-    $xaaDesktop = Join-Path $xaaInstallDir 'xaa-desktop.exe'
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
     $xaaDesktopHash = (Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash
@@ -83,6 +91,16 @@ try {
         throw "Installed binary checksums do not match the manifest. Desktop expected $($xaaManifest.artifacts.desktop.sha256), actual $xaaDesktopHash; engine expected $($xaaManifest.artifacts.engine.sha256), actual $xaaEngineHash."
     }
     $xaaReport.installed_binary_hashes_match = $true
+    if (-not $xaaPriorInstaller) {
+        $xaaExistingStartup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
+        if ($xaaExistingStartup -and $xaaExistingStartup.GetValueNames() -contains $xaaStartupValueName) { throw 'Refusing to replace an existing sign-in startup value.' }
+        New-Item -Path $xaaStartupRegistryPath -Force | Out-Null
+        New-ItemProperty -LiteralPath $xaaStartupRegistryPath -Name $xaaStartupValueName -Value $xaaStartupCommand -PropertyType String | Out-Null
+        $xaaReport.startup_entry_seeded_after_install = $true
+    }
+    $xaaStartupEntry = (Get-Item -LiteralPath $xaaStartupRegistryPath).GetValue($xaaStartupValueName)
+    $xaaReport.startup_entry_preserved_through_upgrade = $xaaStartupEntry -eq $xaaStartupCommand
+    if (-not $xaaReport.startup_entry_preserved_through_upgrade) { throw 'The installer did not preserve the sign-in startup entry.' }
     $xaaBrowserOutput = & uv run python scripts/installed_browser_diagnostic.py --engine $xaaEngine
     if ($LASTEXITCODE -ne 0) { throw 'Installed browser worker acceptance failed.' }
     $xaaBrowserAcceptance = ($xaaBrowserOutput | Out-String | ConvertFrom-Json)
@@ -151,13 +169,21 @@ try {
         for ($xaaAttempt = 0; $xaaAttempt -lt 40 -and (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')); $xaaAttempt++) { Start-Sleep -Milliseconds 250 }
         $xaaReport.binaries_removed = -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-desktop.exe')) -and -not (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
     }
+    $xaaStartupKeyAfterUninstall = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
+    $xaaReport.startup_entry_removed_on_uninstall = -not $xaaStartupKeyAfterUninstall -or $xaaStartupValueName -notin $xaaStartupKeyAfterUninstall.GetValueNames()
     $xaaReport.user_data_preserved = (Test-Path -LiteralPath $xaaMarker) -and (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash -eq $xaaMarkerHash
     $xaaReport.desktop_settings_preserved = $false
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified))
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
+    if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
+        $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
+        if ($xaaStartupKeyForCleanup -and $xaaStartupValueName -in $xaaStartupKeyForCleanup.GetValueNames()) {
+            Remove-ItemProperty -LiteralPath $xaaStartupRegistryPath -Name $xaaStartupValueName
+        }
+    }
     Remove-Item Env:XAA_NATIVE_ACCEPTANCE_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue
     if ($null -eq $xaaPriorTestConfigDirectory) { Remove-Item Env:XAA_TEST_CONFIG_DIR -ErrorAction SilentlyContinue } else { $env:XAA_TEST_CONFIG_DIR = $xaaPriorTestConfigDirectory }
