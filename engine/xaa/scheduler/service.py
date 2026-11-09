@@ -32,8 +32,13 @@ def due_occurrence(
     frequency = recurrence["frequency"]
     zone = ZoneInfo(timezone)
     local_now = now.astimezone(zone).replace(tzinfo=None, second=0, microsecond=0)
+    current_instant = now.astimezone(UTC)
     if start > local_now:
-        return None
+        if start.date() != local_now.date():
+            return None
+        start_instant = local_instant(start, timezone)
+        if start_instant is None or start_instant > current_instant:
+            return None
     if frequency == "once":
         count = 1
     elif frequency == "daily":
@@ -46,6 +51,14 @@ def due_occurrence(
     for _ in range(count - 1):
         latest = advance_local(latest, frequency)
     instant = local_instant(latest, timezone)
+    if latest > local_now and (instant is None or instant > current_instant):
+        count -= 1
+        if count == 0:
+            return None
+        latest = start
+        for _ in range(count - 1):
+            latest = advance_local(latest, frequency)
+        instant = local_instant(latest, timezone)
     return latest, instant, count
 
 

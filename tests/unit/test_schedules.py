@@ -60,6 +60,40 @@ def test_local_timezone_resolves_dst_gap_and_ambiguous_time() -> None:
     )
 
 
+def test_daily_ambiguous_wall_time_runs_once_at_earlier_fall_back_instant(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "dst-fold.sqlite3")
+    schedule = ScheduleStore(store).create(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2025-11-02T01:30"),
+        frequency="daily",
+        timezone="America/New_York",
+        missed_run_policy="run_once",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    submitted: list[str] = []
+    service = ScheduleService(store, submitted.append)
+
+    # 01:00 EDT is before the chosen first 01:30. At 01:00 EST, the same
+    # wall clock time has passed the selected occurrence and must not defer it.
+    assert service.tick(datetime(2025, 11, 2, 5, 0, tzinfo=UTC)) == []
+    first_occurrence = service.tick(datetime(2025, 11, 2, 5, 45, tzinfo=UTC))
+    assert len(first_occurrence) == 1
+    assert service.tick(datetime(2025, 11, 2, 6, 0, tzinfo=UTC)) == []
+
+    saved = ScheduleStore(store).get(schedule["id"])
+    assert saved is not None
+    assert len(saved["executions"]) == 1
+    assert saved["executions"][0]["state"] == "queued"
+    assert saved["executions"][0]["occurrence_id"].endswith("2025-11-02T01:30")
+    assert submitted == first_occurrence
+
+
 def test_quiet_hours_support_local_day_and_overnight_windows() -> None:
     assert quiet_hours_active(
         "22:00-07:00", "America/New_York", datetime(2026, 11, 5, 4, tzinfo=UTC)
@@ -111,6 +145,47 @@ def test_dst_gap_is_persisted_as_skipped_and_recurrence_advances(workspace_tmp_p
     assert saved["executions"][0]["state"] == "dst_skipped"
     assert saved["recurrence"]["next_at"] == "2025-03-10T02:30"
     assert submitted == []
+
+
+def test_downtime_before_spring_forward_does_not_consume_future_occurrence(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "dst-downtime.sqlite3")
+    schedule = ScheduleStore(store).create(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2025-03-08T02:30"),
+        frequency="daily",
+        timezone="America/New_York",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    service = ScheduleService(store, lambda _run_id: None)
+
+    # The service resumes at 01:00 local on the spring-forward day. March 8 is
+    # overdue, but March 9 at 02:30 has not happened and will be skipped only
+    # after the wall clock advances past the DST gap.
+    before_wall_time = datetime(2025, 3, 9, 6, 0, tzinfo=UTC)
+    assert service.tick(before_wall_time) == []
+    after_missed = ScheduleStore(store).get(schedule["id"])
+    assert after_missed is not None
+    assert after_missed["recurrence"]["next_at"] == "2025-03-09T02:30"
+    assert [item["state"] for item in after_missed["executions"]] == ["missed"]
+    assert after_missed["executions"][0]["occurrence_id"].endswith("2025-03-08T02:30")
+
+    after_dst_gap = datetime(2025, 3, 9, 7, 0, tzinfo=UTC)
+    assert service.tick(after_dst_gap) == []
+    after_skipped = ScheduleStore(store).get(schedule["id"])
+    assert after_skipped is not None
+    assert after_skipped["recurrence"]["next_at"] == "2025-03-10T02:30"
+    states = {
+        item["occurrence_id"].split(":", 1)[1]: item["state"]
+        for item in after_skipped["executions"]
+    }
+    assert states == {"2025-03-08T02:30": "missed", "2025-03-09T02:30": "dst_skipped"}
 
 
 def test_run_once_uses_latest_missed_occurrence_and_overlap_is_skipped(
