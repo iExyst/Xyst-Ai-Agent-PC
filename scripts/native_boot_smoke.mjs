@@ -1,6 +1,6 @@
 import {chromium,expect} from '@playwright/test';
 import {spawn,execFileSync} from 'node:child_process';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,unlink,writeFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import path from 'node:path';
 
@@ -92,30 +92,42 @@ try{
     page.on('request',request=>{if(request.url().startsWith(connection.base_url))desktopApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);});
     page.on('dialog',dialog=>void dialog.accept());
     await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible({timeout:20000});
-    await expect(page.getByText(ownerRecoveryAcceptance.objective??'Review and recover an interrupted workspace edit',{exact:true})).toBeVisible();
+    await expect(page.getByText(ownerRecoveryAcceptance.objective??'Review and recover interrupted workspace writes',{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Inspect uncertain workspace writes'}).click();
-    await expect(page.getByText('Edit fixture.txt',{exact:false})).toBeVisible();
-    await page.getByRole('button',{name:'Confirm write did not apply'}).click();
+    await expect(page.getByText('Edit edit.txt',{exact:false})).toBeVisible();
+    await expect(page.getByText('Create partial-create.txt',{exact:false})).toBeVisible();
+    await expect(page.getByText('Delete deleted.txt',{exact:false})).toBeVisible();
+    const createRow=page.locator('li').filter({hasText:'Create partial-create.txt'});
+    const editRow=page.locator('li').filter({hasText:'Edit edit.txt'});
+    const deleteRow=page.locator('li').filter({hasText:'Delete deleted.txt'});
+    await expect(page.locator('section[aria-label="Workspace write recovery"] li')).toHaveCount(3);
+    await unlink(ownerRecoveryAcceptance.create_path);
+    await createRow.getByRole('button',{name:'Confirm write did not apply'}).click();
+    await expect(createRow).toHaveCount(0);
+    await editRow.getByRole('button',{name:'Confirm write did not apply'}).click();
+    await expect(editRow).toHaveCount(0);
+    await deleteRow.getByRole('button',{name:'Confirm write did not apply'}).click();
+    await expect(deleteRow).toHaveCount(0);
     await expect(page.getByText('The interrupted write was recorded as not applied. Review the run, then use Resume to continue.',{exact:true})).toBeVisible();
     const runHeaders={Authorization:`Bearer ${connection.token}`};
-    const [savedRunResponse,reconciliationsResponse,resultResponse,eventsResponse]=await Promise.all([
+    const [savedRunResponse,reconciliationsResponse,eventsResponse,resultResponses]=await Promise.all([
       fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}`,{headers:runHeaders}),
       fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/workspace-write-reconciliations`,{headers:runHeaders}),
-      fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/tools/${encodeURIComponent(ownerRecoveryAcceptance.call_id)}/result`,{headers:runHeaders}),
       fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/events`,{headers:runHeaders}),
+      Promise.all(ownerRecoveryAcceptance.calls.map(async call=>({call,response:await fetch(`${connection.base_url}/runs/${encodeURIComponent(ownerRecoveryAcceptance.run_id)}/tools/${encodeURIComponent(call.call_id)}/result`,{headers:runHeaders})}))),
     ]);
-    if(!savedRunResponse.ok||!reconciliationsResponse.ok||!resultResponse.ok||!eventsResponse.ok)throw new Error('Could not verify the packaged owner recovery result.');
+    if(!savedRunResponse.ok||!reconciliationsResponse.ok||!eventsResponse.ok||resultResponses.some(item=>!item.response.ok))throw new Error('Could not verify the packaged owner recovery results.');
     const savedRun=await savedRunResponse.json();
     const reconciliations=await reconciliationsResponse.json();
-    const toolResult=await resultResponse.json();
     const events=await eventsResponse.json();
-    const workspaceBytes=await readFile(ownerRecoveryAcceptance.path);
-    const workspaceHash=createHash('sha256').update(workspaceBytes).digest('hex');
-    if(savedRun.state!=='blocked'||reconciliations.length!==0||!String(toolResult.result).includes('not_applied_after_review'))throw new Error('The installed desktop did not save owner-reviewed recovery while keeping the run blocked.');
-    if(workspaceHash!==ownerRecoveryAcceptance.original_sha256)throw new Error('Owner recovery changed the restored workspace file.');
+    const toolResults=await Promise.all(resultResponses.map(async item=>({call_id:item.call.call_id,result:await item.response.json()})));
+    const restoredFileHashes=await Promise.all([ownerRecoveryAcceptance.edit_path,ownerRecoveryAcceptance.delete_path].map(async filePath=>createHash('sha256').update(await readFile(filePath)).digest('hex')));
+    const createPathExists=await readFile(ownerRecoveryAcceptance.create_path).then(()=>true).catch(()=>false);
+    if(savedRun.state!=='blocked'||reconciliations.length!==0||toolResults.some(item=>!String(item.result.result).includes('not_applied_after_review')))throw new Error('The installed desktop did not save all owner-reviewed recovery decisions while keeping the run blocked.');
+    if(restoredFileHashes.some(fileHash=>fileHash!==ownerRecoveryAcceptance.original_sha256)||createPathExists)throw new Error('Owner recovery changed a restored file or retained the removed partial create.');
     if(events.some(event=>event.event_type==='model.inference.started'||event.event_type==='model.message'))throw new Error('The startup recovery acceptance unexpectedly requested model inference.');
     if(desktopApiRequests.some(request=>request.endsWith(`/runs/${ownerRecoveryAcceptance.run_id}/resume`)))throw new Error('The desktop resumed the run during recovery.');
-    ownerRecoveryAcceptance={...ownerRecoveryAcceptance,passed:true,cold_desktop_start:true,saved_run_restored_from_database:true,latest_unfinished_run_opened:true,owner_recovery_confirmed_in_ui:true,unresolved_intents:reconciliations.length,result_available:String(toolResult.result).includes('not_applied_after_review'),run_state_after_recovery:savedRun.state,workspace_sha256_after_recovery:workspaceHash,automatic_resume:false,model_inference_requested:false};
+    ownerRecoveryAcceptance={...ownerRecoveryAcceptance,passed:true,cold_desktop_start:true,saved_run_restored_from_database:true,latest_unfinished_run_opened:true,owner_recovery_confirmed_in_ui:true,resolved_call_ids:toolResults.map(item=>item.call_id),unresolved_intents:reconciliations.length,result_available:toolResults.every(item=>String(item.result.result).includes('not_applied_after_review')),run_state_after_recovery:savedRun.state,restored_workspace_sha256s:restoredFileHashes,partial_create_absent:!createPathExists,automatic_resume:false,model_inference_requested:false};
     await writeFile(path.join(root,'startup-recovery-acceptance.json'),JSON.stringify(ownerRecoveryAcceptance,null,2));
   }
   const startupMilliseconds=Date.now()-started;

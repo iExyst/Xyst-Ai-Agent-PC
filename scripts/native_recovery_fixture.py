@@ -1,4 +1,4 @@
-"""Seed a blocked workspace edit for the packaged desktop recovery acceptance."""
+"""Seed blocked workspace writes for the packaged desktop recovery acceptance."""
 
 from __future__ import annotations
 
@@ -14,13 +14,18 @@ from xaa.storage.runs import RunStore
 
 def seed(database_path: Path, workspace: Path, report_path: Path) -> dict[str, Any]:
     workspace.mkdir(parents=True, exist_ok=True)
-    target = workspace / "fixture.txt"
     original = b"installed recovery original contents\n"
-    target.write_bytes(original)
+    original_sha256 = hashlib.sha256(original).hexdigest()
+    edit_path = workspace / "edit.txt"
+    create_path = workspace / "partial-create.txt"
+    delete_path = workspace / "deleted.txt"
+    edit_path.write_bytes(original)
+    create_path.write_bytes(b"interrupted partial create")
+    delete_path.write_bytes(original)
 
     store = RunStore(database_path)
     run = store.create_run(
-        objective="Review and recover an interrupted workspace edit",
+        objective="Review and recover interrupted workspace writes",
         acceptance_criteria=[],
         workspace=str(workspace),
         mode="workspace",
@@ -35,20 +40,40 @@ def seed(database_path: Path, workspace: Path, report_path: Path) -> dict[str, A
         raise RuntimeError("Could not lease the disposable recovery fixture run.")
     store.transition(run_id, RunState.PLANNING, owner=owner)
     store.transition(run_id, RunState.RUNNING, owner=owner)
-    call_id = "installed-recovery-edit"
-    store.record_tool_intent(
-        run_id,
-        owner,
-        call_id=call_id,
-        tool="workspace.write_file",
-        version="1",
-        arguments={
-            "path": target.name,
-            "content": "post-crash content that must not be written",
-            "expected_sha256": hashlib.sha256(original).hexdigest(),
+    calls: list[dict[str, Any]] = [
+        {
+            "call_id": "installed-recovery-edit",
+            "tool": "workspace.write_file",
+            "arguments": {
+                "path": edit_path.name,
+                "content": "post-crash edit content that must not be written",
+                "expected_sha256": original_sha256,
+            },
         },
-        idempotency_key=call_id,
-    )
+        {
+            "call_id": "installed-recovery-create",
+            "tool": "workspace.create_file",
+            "arguments": {
+                "path": create_path.name,
+                "content": "post-crash create content that must not be written",
+            },
+        },
+        {
+            "call_id": "installed-recovery-delete",
+            "tool": "workspace.delete_file",
+            "arguments": {"path": delete_path.name, "expected_sha256": original_sha256},
+        },
+    ]
+    for call in calls:
+        store.record_tool_intent(
+            run_id,
+            owner,
+            call_id=call["call_id"],
+            tool=call["tool"],
+            version="1",
+            arguments=call["arguments"],
+            idempotency_key=call["call_id"],
+        )
     store.transition(
         run_id,
         RunState.BLOCKED,
@@ -60,12 +85,14 @@ def seed(database_path: Path, workspace: Path, report_path: Path) -> dict[str, A
     if saved_run is None:
         raise RuntimeError("The recovery fixture run was not persisted.")
     report: dict[str, Any] = {
-        "objective": "Review and recover an interrupted workspace edit",
+        "objective": "Review and recover interrupted workspace writes",
         "run_id": run_id,
-        "call_id": call_id,
+        "calls": [{"call_id": call["call_id"], "tool": call["tool"]} for call in calls],
         "workspace": str(workspace),
-        "path": str(target),
-        "original_sha256": hashlib.sha256(original).hexdigest(),
+        "edit_path": str(edit_path),
+        "create_path": str(create_path),
+        "delete_path": str(delete_path),
+        "original_sha256": original_sha256,
         "inference_attempts_at_seed": store.inference_attempts(run_id),
         "state_at_seed": saved_run["state"],
     }
