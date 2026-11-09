@@ -1,6 +1,6 @@
 # Xyst AI Agent user guide
 
-**Development preview · updated 2026-11-08**
+**Development preview · updated 2026-11-09**
 
 Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends model requests to the LM Studio server you configure, records runs in SQLite, and requires explicit review before accepting agent results. The product is still under development; this guide describes behavior currently present in the repository and does not claim full Hermes parity or production release readiness.
 
@@ -17,7 +17,7 @@ For a development build, follow the commands in the repository [README](../READM
 ## First launch
 
 1. Start LM Studio's local server. The default address is `http://127.0.0.1:1234`; the desktop setup panel can change it to another HTTP loopback address.
-2. Connect the desktop to the local engine using its API token. The renderer holds that token in memory for the current window.
+2. The packaged desktop connects to its bundled local engine automatically. If the engine was started separately for development, enter that engine's API token; the renderer holds it in memory for the current window.
 3. In **LM Studio setup**, check the connection, discover models, and select the exact model ID to use.
 4. Run the harmless structured tool diagnostic. Tool use stays unavailable when the diagnostic fails.
 5. Choose a project folder with the workspace picker.
@@ -108,4 +108,4 @@ The local API is authenticated and binds to loopback by default. Do not expose i
 
 ## Current limits
 
-X.A.A. is not a production release. The installer is unsigned, and clean normal-user-machine recovery with real user data remains open. Voice, broad media accuracy, live third-party channel acceptance, broad Hermes capability families, session unification between CLI and desktop, licensing review and full release acceptance are incomplete. Consult the [progress record](progress.md) and [capability matrix](parity/hermes-matrix.md) for the verified scope and remaining gaps.
+X.A.A. is not a production release. The installer is unsigned, and clean normal-user-machine recovery with real user data remains open. Voice, broad media accuracy, live third-party channel acceptance, broad Hermes capability families, full cross-interface acceptance, licensing review and full release acceptance are incomplete. Consult the [progress record](progress.md) and [capability matrix](parity/hermes-matrix.md) for the verified scope and remaining gaps. The project does not publish a single completion percentage because the broad phase gates have not been assigned defensible weights.

@@ -2,6 +2,10 @@
 
 Updated 2026-11-09.
 
+## User operating guide (2026-11-09)
+
+Refreshed the existing `docs/user-guide.md` to date its development-preview scope and align its cross-interface/release limits with current evidence. The repository README and 0.1.1 development-build notes link the guide. It covers Windows development-build scope, LM Studio setup, diagnostic-gated onboarding, Observe/Workspace permissions, explicit candidate and conflict review, run recovery, saved memory/procedure behavior, optional integration boundaries, portable backup/restore, and desktop shutdown settings. The guide distinguishes supported workflows from partial or unverified integrations and does not claim full Hermes parity or release readiness. The README's historical 16% completion figure was removed; one unweighted percentage is not supportable from the broad objective phases. Internal guide links and `git diff --check` were reviewed; CI/package verification is pending.
+
 ## Validation and channel scope direction (2026-11-08)
 
 Per the owner's direction, defer additional live LLM testing until the final acceptance pass unless a specific implementation cannot be meaningfully verified without it. Continue deterministic fixtures, static checks, packaging checks and non-model integrations as needed; existing live-model reports remain historical evidence and must not be treated as a reason to keep running models now. Discord is one implementation choice for the objective's first messaging adapter, not a required platform named by the objective. Keep its current partial work accurately documented and avoid expanding Discord-specific scope unless a required acceptance gap or explicit owner priority calls for it.
