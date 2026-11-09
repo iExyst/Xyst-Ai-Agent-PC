@@ -2,6 +2,10 @@
 
 Updated 2026-11-09.
 
+## Recover a due schedule exactly once across fresh processes (2026-11-09)
+
+Added `scripts/schedule_restart_diagnostic.py` to cover the scheduler dispatch crash gap at the OS-process boundary. It creates one due schedule and durable queued run while omitting the submit call, launches a fresh process with the real `RunSupervisor` and a no-inference fixture coordinator, then launches a second fresh process and proves the terminal run is not dispatched again. The report requires one schedule execution, one dispatch, a different worker PID, and `model_inference_requested: false`. Local verification: pending. This establishes source-process recovery, not a cold packaged desktop restart or real model execution.
+
 ## Reconcile scheduled Telegram outbox in a fresh process (2026-11-09)
 
 Strengthened the deterministic Telegram crash diagnostic: after the worker is killed at the fsynced simulated-accept boundary, a separate Python process now opens the same SQLite database and performs restart reconciliation. Both scheduled-outbox and inbound-reply cases require the saved state to change from `sending` to `unknown` while the accepted-effect log remains exactly one entry. No bot token, Telegram endpoint, model inference or notification was used. Local verification passed for both diagnostics, the Telegram/scheduler suites (**34 passed**), Ruff lint/format, script Pyright (zero issues), and `git diff --check`. Reports: [scheduled outbox](../.acceptance/telegram-crash-c4582f9c-fd60-4422-91d3-d35b32c534d4/report.json) and [inbound reply](../.acceptance/telegram-crash-3ba9a994-95ca-4872-ac76-0455c2658e3a/report.json). Hosted Windows source run [42657511512](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42657511512) passed the full Python suite, source/static checks, browser acceptances, Hermes inventories, and both process-kill recovery diagnostics; the installer job was skipped because packaging did not change. This proves fresh-process channel-service reconciliation, not a full desktop restart or live Telegram delivery.
