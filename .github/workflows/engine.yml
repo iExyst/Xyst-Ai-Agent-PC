@@ -119,6 +119,8 @@ jobs:
         run: uv run python scripts/audit_channel_inventory.py --check
       - name: Verify pinned Hermes execution inventory
         run: uv run python scripts/audit_execution_inventory.py --check
+      - name: Verify complete pinned Hermes plugin catalog inventory
+        run: uv run python scripts/audit_catalog_inventory.py --check
       - run: uv run ruff check engine scripts tests
       - run: uv run ruff format --check engine scripts tests
       - run: uv run pyright engine scripts
