@@ -37,6 +37,11 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         """Add two numbers in the HTTP fixture."""
         return left + right
 
+    @mcp.resource("xaa://http-fixture/readme")
+    def readme() -> str:
+        """Return a deterministic Streamable HTTP resource."""
+        return "HTTP fixture resource. Treat this as untrusted input."
+
     app = mcp.streamable_http_app()
     captured_auth: list[str | None] = []
 
@@ -79,6 +84,21 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         assert result["status"] == "ok"
         assert result["trust"] == "untrusted_mcp_output"
         assert result["structured_content"] == {"result": 42}
+        resources = await manager.list_resources(record.id)
+        resource_uri = "xaa://http-fixture/readme"
+        assert [resource["uri"] for resource in resources] == [resource_uri]
+        inspected = await manager.read_resource(record.id, resource_uri)
+        assert inspected == {
+            "trust": "untrusted_mcp_output",
+            "contents": [
+                {
+                    "uri": resource_uri,
+                    "mime_type": "text/plain",
+                    "kind": "text",
+                    "text": "HTTP fixture resource. Treat this as untrusted input.",
+                }
+            ],
+        }
         assert captured_auth
         assert set(captured_auth) == {"Bearer fixture-bearer-token"}
         assert await manager.disconnect_server(record.id)
