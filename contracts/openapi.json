@@ -8662,6 +8662,37 @@
         "summary": "Create Run"
       }
     },
+    "/runs/latest-unfinished": {
+      "get": {
+        "operationId": "get_latest_unfinished_run_runs_latest_unfinished_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunSummary"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Latest Unfinished Run Runs Latest Unfinished Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Latest Unfinished Run"
+      }
+    },
     "/runs/{run_id}": {
       "get": {
         "operationId": "get_run_runs__run_id__get",
