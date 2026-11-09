@@ -4,7 +4,7 @@ Updated 2026-11-09.
 
 ## Require final project validation after direct deletions (2026-11-09)
 
-Final review already required fresh current-project command evidence after direct file creates/edits and accepted specialist integrations, but its detector missed completed direct `workspace.delete_file` calls. It now treats a journaled deletion confirmed with `deleted: true` as a project change. The regression test passes with the full `tests/unit/test_run_review.py` file (14 passed); Ruff, engine Pyright, and `git diff --check` pass. This keeps the Phase 4 gate accurate and does not require live model inference.
+Final review already required fresh current-project command evidence after direct file creates/edits and accepted specialist integrations, but its detector missed completed direct `workspace.delete_file` calls. It now treats a journaled deletion confirmed with `deleted: true` as a project change. The regression test passes with the full `tests/unit/test_run_review.py` file (14 passed); Ruff, engine Pyright, and `git diff --check` pass. Hosted Windows run [42633385434](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42633385434) passed the complete source job, including 928 Python tests, Hermes audits, static checks, desktop acceptances and recovery diagnostics; the installer job was skipped because this feature branch did not change packaging. This keeps the Phase 4 gate accurate and does not require live model inference.
 
 ## Preserve schedule occurrences across DST gaps and clock folds (2026-11-09)
 
