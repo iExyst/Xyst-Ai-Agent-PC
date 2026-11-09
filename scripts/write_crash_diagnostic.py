@@ -86,16 +86,29 @@ def recover(root: Path, run_id: str) -> None:
     saved = store.get_run(run_id)
     assert saved is not None and saved["state"] == "blocked"
     if os.environ.get("XAA_OWNER_RECONCILIATION") == "1":
-        if (
-            os.environ.get("XAA_CRASH_OPERATION") != "create"
-            or os.environ.get("XAA_CRASH_BOUNDARY") != "created"
-        ):
-            raise ValueError("Owner-reviewed acceptance requires an interrupted create.")
+        create = os.environ.get("XAA_CRASH_OPERATION") == "create"
+        boundary = os.environ.get("XAA_CRASH_BOUNDARY")
         destination = root / "fixture.txt"
-        if not destination.is_file() or destination.read_bytes() != b"":
-            raise AssertionError("Expected the interrupted create to leave an empty file.")
-        # This deterministic diagnostic represents the owner's inspection/removal step.
-        destination.unlink()
+        if create:
+            if boundary != "created" or not destination.is_file() or destination.read_bytes():
+                raise AssertionError("Expected an interrupted create to leave an empty file.")
+            # This deterministic diagnostic represents the owner's inspection/removal step.
+            destination.unlink()
+            inspected_state = "destination_absent"
+        else:
+            if boundary != "flushed" or not destination.is_file():
+                raise AssertionError("Expected an interrupted edit after its content was flushed.")
+            if destination.read_bytes() != b"verified-after-crash":
+                raise AssertionError("Interrupted edit did not leave the intended content.")
+            # Restore the saved pre-write bytes only after inspecting the uncertain edit.
+            destination.write_bytes(b"before")
+            unresolved = next(
+                item for item in store.unresolved_tool_calls(run_id) if item["id"] == "edit-1"
+            )
+            expected_sha256 = unresolved["arguments"].get("expected_sha256")
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != expected_sha256:
+                raise AssertionError("Could not restore the saved pre-write file hash.")
+            inspected_state = "original_hash_restored"
         token = store.acquire_blocked_run_recovery(
             run_id, "acceptance-owner-reconciliation", seconds=180
         )
@@ -133,12 +146,17 @@ def recover(root: Path, run_id: str) -> None:
         store.release_lease(run_id, token)
         resolved = store.unresolved_tool_calls(run_id)
         saved_result = store.public_tool_result(run_id, "edit-1")
+        destination_state_valid = (
+            not destination.exists()
+            if create
+            else destination.is_file() and destination.read_bytes() == b"before"
+        )
         if (
             result.get("effect") != "not_applied_after_review"
             or resolved
             or saved_result is None
             or json.loads(saved_result).get("effect") != "not_applied_after_review"
-            or destination.exists()
+            or not destination_state_valid
         ):
             raise AssertionError("Frozen owner reconciliation did not resolve safely.")
         (root / "recovery.json").write_text(
@@ -149,7 +167,8 @@ def recover(root: Path, run_id: str) -> None:
                     "outcomes": {"edit-1": "not_applied_after_review"},
                     "has_unresolved_tool_calls": False,
                     "original_result_available": True,
-                    "destination_absent": True,
+                    "owner_inspected_state": inspected_state,
+                    "destination_state_valid": destination_state_valid,
                     "run_id": run_id,
                 },
                 indent=2,
@@ -272,12 +291,18 @@ def main() -> None:
     target_exists = target.exists()
     target_contents = target.read_bytes() if target_exists else None
     rewritten = target_exists and target.stat().st_mtime_ns != before_recovery_mtime
+    expected_owner_state = (
+        "destination_absent"
+        if os.environ.get("XAA_CRASH_OPERATION") == "create"
+        else "original_hash_restored"
+    )
     if owner_reconciliation:
         passed = (
             process.returncode not in (0, None)
             and recovery_process.returncode == 0
             and outcomes == {"edit-1": "not_applied_after_review"}
-            and not target_exists
+            and recovery["owner_inspected_state"] == expected_owner_state
+            and recovery["destination_state_valid"] is True
             and recovery["has_unresolved_tool_calls"] is False
             and recovery["state"] == "blocked"
             and recovery["original_result_available"] is True
@@ -310,6 +335,9 @@ def main() -> None:
         "unresolved_after_reconciliation": recovery["has_unresolved_tool_calls"],
         "outcomes": outcomes,
         "destination_exists": target_exists,
+        "owner_inspected_state": recovery.get("owner_inspected_state"),
+        "destination_state_valid": recovery.get("destination_state_valid"),
+        "original_result_available": recovery.get("original_result_available", False),
         "rewritten": rewritten,
     }
     if os.environ.get("XAA_FROZEN_WORKER") == "1":
