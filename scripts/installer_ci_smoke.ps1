@@ -68,6 +68,13 @@ try {
         # artifact metadata and bytes survived the in-place upgrade.
         uv run python scripts/installed_backup_fixture.py seed --directory $xaaDataDir --report $xaaBackupFixture
         if ($LASTEXITCODE -ne 0) { throw 'Could not seed user data before the version upgrade.' }
+        $xaaSeededProfile = Get-Content -LiteralPath $xaaBackupFixture -Raw | ConvertFrom-Json
+        if ($xaaSeededProfile.seeded_schema_version -ne 18 -or $xaaSeededProfile.schema_downgrade_integrity -ne 'ok' -or $xaaSeededProfile.schema_downgrade_foreign_key_violations -ne 0) {
+            throw 'The pre-upgrade database fixture is not a valid schema-18 profile.'
+        }
+        $xaaReport.upgrade_fixture_schema_version = $xaaSeededProfile.seeded_schema_version
+        $xaaReport.upgrade_fixture_integrity = $xaaSeededProfile.schema_downgrade_integrity
+        $xaaReport.upgrade_fixture_foreign_key_violations = $xaaSeededProfile.schema_downgrade_foreign_key_violations
         $xaaReport.upgrade_data_fixture_seeded_before_upgrade = $true
         $xaaExistingStartup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
         if ($xaaExistingStartup -and $xaaExistingStartup.GetValueNames() -contains $xaaStartupValueName) { throw 'Refusing to replace an existing sign-in startup value.' }
