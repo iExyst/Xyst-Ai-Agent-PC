@@ -196,6 +196,52 @@ def test_legacy_git_intent_stays_blocked_without_an_artifact_identity(workspace_
     assert {call["id"] for call in store.unresolved_tool_calls(run_id)} == {"legacy-git"}
 
 
+@pytest.mark.parametrize("permission,recoverable", [("read", True), ("write", False)])
+def test_parent_mcp_recovery_uses_saved_user_permission(
+    workspace_tmp_path, permission, recoverable
+):
+    store, run_id, token = setup(workspace_tmp_path)
+    qualified = f"mcp_{'a' * 32}_fixture"
+    call_id = "mcp-call"
+    propose(store, run_id, token, call_id, qualified, "{}")
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id=call_id,
+        tool="mcp.call",
+        version="2",
+        arguments={"tool": qualified, "arguments": {}, "permission": permission},
+        idempotency_key=call_id,
+    )
+    store.append_worker_event(run_id, token, "tool.executing", {"call_id": call_id})
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    connection = sqlite3.connect(store.path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    recovered = store.recover_abandoned_runs()
+    if not recoverable:
+        assert recovered == []
+        assert store.get_run(run_id)["state"] == RunState.BLOCKED
+        assert {call["id"] for call in store.unresolved_tool_calls(run_id)} == {call_id}
+        return
+
+    assert recovered == [run_id]
+    fresh = store.acquire_lease(run_id, "recovery-worker")
+    assert fresh is not None
+    assert store.resolve_interrupted_reads(run_id, fresh) == [call_id]
+    assert not store.unresolved_tool_calls(run_id)
+    result = json.loads(store.conversation_messages(run_id)[-1]["content"])
+    assert result["effect"] == "read_only"
+    assert result["error"]["code"] == "interrupted_read"
+
+
 def test_recovery_preserves_internal_results_and_unknown_effects(workspace_tmp_path):
     (workspace_tmp_path / "input.txt").write_bytes(b"unchanged")
     store, run_id, token = setup(workspace_tmp_path)

@@ -766,22 +766,27 @@ class Coordinator:
                     message=str(exc),
                 )
         if name.startswith("mcp_"):
-            if self.mcp_manager is None or not self.mcp_manager.is_tool_authorized_for_run(
+            if self.mcp_manager is None:
+                raise PermissionError("This MCP tool is not connected and approved for this run.")
+            permission = self.mcp_manager.tool_permission_for_run(
                 name, set(run.get("approved_mcp_tools", []))
-            ):
+            )
+            if permission is None:
                 raise PermissionError("This MCP tool is not connected and approved for this run.")
             if not self.store.record_tool_intent(
                 run_id,
                 token,
                 call_id=call["id"],
                 tool="mcp.call",
-                version="1",
-                arguments={"tool": name, "arguments": arguments},
+                version="2",
+                arguments={"tool": name, "arguments": arguments, "permission": permission},
                 idempotency_key=call["id"],
             ):
                 raise ValueError("MCP tool call requires reconciliation.")
             try:
-                result = await self.mcp_manager.call_tool(name, arguments)
+                result = await self.mcp_manager.call_tool(
+                    name, arguments, require_read=permission == "read"
+                )
             except asyncio.CancelledError:
                 result = {"status": "cancelled_unknown_outcome", "trust": "untrusted_mcp_output"}
                 self.store.record_tool_result(run_id, token, call["id"], result)

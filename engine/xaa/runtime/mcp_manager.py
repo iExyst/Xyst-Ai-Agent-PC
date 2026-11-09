@@ -276,13 +276,22 @@ class MCPManager:
     def is_tool_authorized_for_run(
         self, qualified_name: str, approved_write_tools: set[str]
     ) -> bool:
+        return self.tool_permission_for_run(qualified_name, approved_write_tools) is not None
+
+    def tool_permission_for_run(
+        self, qualified_name: str, approved_write_tools: set[str]
+    ) -> Literal["read", "write"] | None:
         record = next(
             (tool for tool in self.registry.list_tools() if tool.qualified_name == qualified_name),
             None,
         )
         if record is None or record.permission == "none":
-            return False
-        return record.permission == "read" or qualified_name in approved_write_tools
+            return None
+        if record.permission == "read":
+            return "read"
+        if record.permission == "write" and qualified_name in approved_write_tools:
+            return "write"
+        return None
 
     async def call_tool(
         self, qualified_name: str, arguments: dict[str, Any], *, require_read: bool = False

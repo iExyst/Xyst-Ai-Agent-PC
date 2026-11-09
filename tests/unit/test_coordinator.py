@@ -121,10 +121,11 @@ class UnknownMCPWriteManager:
             if name in approved
         ]
 
-    def is_tool_authorized_for_run(self, name, approved):
-        return name in approved
+    def tool_permission_for_run(self, name, approved):
+        return "write" if name in approved else None
 
-    async def call_tool(self, name, arguments):
+    async def call_tool(self, name, arguments, *, require_read=False):
+        assert require_read is False
         self.calls.append(name)
         return {"status": "unknown_outcome", "trust": "untrusted_mcp_output"}
 

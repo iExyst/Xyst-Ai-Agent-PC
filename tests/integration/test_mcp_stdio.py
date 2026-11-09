@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import time
 from pathlib import Path
@@ -195,11 +196,13 @@ async def test_coordinator_journals_disconnected_call_without_corrupting_run(
         assert store.unresolved_tool_calls(run["id"]) == []
         with store.connection() as connection:
             saved = connection.execute(
-                "SELECT state,result FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                "SELECT state,result,tool_version,arguments FROM tool_calls WHERE run_id=? AND provider_call_id=?",
                 (run["id"], "mcp-disconnect-call"),
             ).fetchone()
         assert saved["state"] == "completed"
         assert '"status": "not_connected"' in saved["result"]
+        assert saved["tool_version"] == "2"
+        assert json.loads(saved["arguments"])["permission"] == "read"
         assert any(
             event["event_type"] == "model.message"
             and event["payload"]["message"].get("content") == "Run continued safely."

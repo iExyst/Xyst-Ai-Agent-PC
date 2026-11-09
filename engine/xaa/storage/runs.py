@@ -23,7 +23,7 @@ from xaa.storage.conversation_index import install_index
 
 DATABASE_SCHEMA_VERSION = 22
 
-SAFE_READ_TOOL_VERSIONS = {
+SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
     "workspace.list_directory": "1",
     "workspace.search": "1",
@@ -32,9 +32,10 @@ SAFE_READ_TOOL_VERSIONS = {
     "procedure.catalog": "1",
     "git.status": "2",
     "git.diff": "2",
+    "mcp.call": "2",
 }
 
-SAFE_READ_PROPOSALS = {
+SAFE_READ_PROPOSALS: dict[str, set[str]] = {
     "workspace.read_file": {"workspace_read_file"},
     "workspace.list_directory": {"workspace_list_directory"},
     "workspace.search": {"workspace_search"},
@@ -72,6 +73,27 @@ class IterationBudgetExceeded(RuntimeError):
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _is_safe_read_intent(tool_name: str, version: str, arguments: str) -> bool:
+    if SAFE_READ_TOOL_VERSIONS.get(tool_name) != version:
+        return False
+    if tool_name != "mcp.call":
+        return True
+    try:
+        payload: Any = json.loads(arguments)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    typed_payload = cast(dict[str, Any], payload)
+    permission = typed_payload.get("permission")
+    qualified_name = typed_payload.get("tool")
+    return (
+        permission == "read"
+        and isinstance(qualified_name, str)
+        and re.fullmatch(r"mcp_[a-f0-9]{32}_[A-Za-z0-9_-]{1,24}", qualified_name) is not None
+    )
 
 
 def default_database_path() -> Path:
@@ -1956,18 +1978,26 @@ class RunStore:
                     internal_intents.add(payload["call_id"])
             for row in rows:
                 call_id = row["provider_call_id"]
-                if SAFE_READ_TOOL_VERSIONS.get(row["tool_name"]) != row["tool_version"]:
+                arguments = json.loads(row["arguments"])
+                if not _is_safe_read_intent(
+                    row["tool_name"], row["tool_version"], row["arguments"]
+                ):
                     continue
                 if row["tool_name"].startswith(
                     "git."
                 ) and not self._discard_interrupted_git_artifact(
-                    connection, run_id, call_id, row["tool_name"], json.loads(row["arguments"])
+                    connection, run_id, call_id, row["tool_name"], arguments
                 ):
                     continue
-                expected_names = SAFE_READ_PROPOSALS[row["tool_name"]]
-                internal = (
-                    call_id in internal_intents or proposals.get(call_id) not in expected_names
-                )
+                if row["tool_name"] == "mcp.call":
+                    if arguments.get("tool") != proposals.get(call_id):
+                        continue
+                    internal = call_id in internal_intents
+                else:
+                    expected_names = SAFE_READ_PROPOSALS[row["tool_name"]]
+                    internal = (
+                        call_id in internal_intents or proposals.get(call_id) not in expected_names
+                    )
                 result = {
                     "ok": False,
                     "effect": "read_only",
@@ -2421,7 +2451,7 @@ class RunStore:
                     connection, run_id, "parent_worker_lost_reconciliation_required"
                 )
                 unresolved = connection.execute(
-                    "SELECT tool_name,tool_version FROM tool_calls "
+                    "SELECT tool_name,tool_version,arguments FROM tool_calls "
                     "WHERE run_id = ? AND state = 'intended'",
                     (run_id,),
                 ).fetchall()
@@ -2432,7 +2462,7 @@ class RunStore:
                 }
                 workspace_writes_authorized = row["mode"] == "workspace" and bool(row["workspace"])
                 recoverable_intents = all(
-                    SAFE_READ_TOOL_VERSIONS.get(item["tool_name"]) == item["tool_version"]
+                    _is_safe_read_intent(item["tool_name"], item["tool_version"], item["arguments"])
                     or (
                         item["tool_version"] == "1"
                         and workspace_writes_authorized
