@@ -87,18 +87,12 @@ $xaaTestRoot = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-delete-da
 if (-not $xaaTestRoot.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaTestRoot)) {
     throw 'Data-removal fixture root must be a new directory under RUNNER_TEMP.'
 }
-$xaaPriorLocalAppData = $env:LOCALAPPDATA
-$xaaPriorAppData = $env:APPDATA
-$xaaLocalAppData = [IO.Path]::GetFullPath((Join-Path $xaaTestRoot 'localappdata'))
-$xaaRoamingAppData = [IO.Path]::GetFullPath((Join-Path $xaaTestRoot 'roamingappdata'))
-$xaaLocalParent = [IO.Path]::GetFullPath($xaaTestRoot).TrimEnd('\') + '\'
-if (-not $xaaLocalAppData.StartsWith($xaaLocalParent, [StringComparison]::OrdinalIgnoreCase) -or -not $xaaRoamingAppData.StartsWith($xaaLocalParent, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Isolated per-user AppData directories escaped the disposable runner fixture.'
-}
-$xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $xaaLocalAppData 'Xyst AI Agent'))
-$xaaInstallParent = [IO.Path]::GetFullPath($xaaLocalAppData).TrimEnd('\') + '\'
+$xaaLocalAppData = [IO.Path]::GetFullPath($env:LOCALAPPDATA)
+$xaaRoamingAppData = [IO.Path]::GetFullPath($env:APPDATA)
+$xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $xaaTestRoot 'install\Xyst AI Agent'))
+$xaaInstallParent = [IO.Path]::GetFullPath((Join-Path $xaaTestRoot 'install')).TrimEnd('\') + '\'
 $xaaProductName = (Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).productName
-if ($xaaInstallDir -ne [IO.Path]::GetFullPath((Join-Path $xaaLocalAppData $xaaProductName))) { throw 'Unexpected per-user installer default path.' }
+if ($xaaInstallDir -ne [IO.Path]::GetFullPath((Join-Path $xaaInstallParent $xaaProductName))) { throw 'Unexpected isolated per-user installer target.' }
 $xaaDataDir = Join-Path $xaaLocalAppData 'XAA'
 $xaaConfigDir = Join-Path $xaaRoamingAppData 'dev.xyst.xaa'
 if ((Test-Path -LiteralPath $xaaDataDir) -or (Test-Path -LiteralPath $xaaConfigDir)) {
@@ -109,14 +103,12 @@ New-Item -ItemType Directory -Path $xaaLocalAppData, $xaaRoamingAppData | Out-Nu
 
 $xaaManifest = Get-Content -LiteralPath 'build/installer/manifest.json' -Raw | ConvertFrom-Json
 if ($xaaManifest.install_mode -ne 'currentUser') { throw 'Installer manifest does not declare the current-user install mode.' }
-$xaaReport = @{ passed = $false; explicit_delete_selected = $false; no_model_inference = $true; install_scope = $xaaManifest.install_mode; default_install_directory = $xaaInstallDir }
+$xaaReport = @{ passed = $false; explicit_delete_selected = $false; no_model_inference = $true; install_scope = $xaaManifest.install_mode; isolated_install_directory = $xaaInstallDir }
 $xaaInstallerName = $xaaManifest.artifacts.installer.filename
 if ([IO.Path]::GetFileName($xaaInstallerName) -ne $xaaInstallerName) { throw 'Installer manifest filename escaped its staging directory.' }
 $xaaInstaller = (Resolve-Path -LiteralPath (Join-Path 'build/installer' $xaaInstallerName)).Path
 if ((Get-FileHash -LiteralPath $xaaInstaller -Algorithm SHA256).Hash -ne $xaaManifest.artifacts.installer.sha256) { throw 'Installer checksum mismatch.' }
 
-$env:LOCALAPPDATA = $xaaLocalAppData
-$env:APPDATA = $xaaRoamingAppData
 $xaaPriorPath = $env:PATH
 $env:PATH = Join-Path $env:SystemRoot 'System32'
 $xaaUninstaller = Join-Path $xaaInstallDir 'uninstall.exe'
@@ -218,8 +210,6 @@ try {
         if ($xaaCleanup.ExitCode -ne 0) { $xaaReport.cleanup_exit_code = $xaaCleanup.ExitCode }
     }
     $env:PATH = $xaaPriorPath
-    $env:LOCALAPPDATA = $xaaPriorLocalAppData
-    $env:APPDATA = $xaaPriorAppData
     $xaaReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath 'build/installer/delete-data-smoke.json' -Encoding utf8
 }
 if (-not $xaaReport.passed) { throw 'Explicit application-data removal verification failed.' }
