@@ -31,6 +31,7 @@ let cancelledBrowserRunId;
 let browserCallId;
 let workspaceRunId;
 let workspaceCallId;
+let microphoneCapturePassed = false;
 let stdout = '';
 let stderr = '';
 let report;
@@ -239,7 +240,7 @@ try {
     XAA_TEST_CONFIG_DIR: configDirectory,
     XAA_TEST_LOG_DIR: logs,
     WEBVIEW2_USER_DATA_FOLDER: path.join(profile, 'webview-profile'),
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort}`,
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort} --use-fake-device-for-media-stream --use-fake-ui-for-media-stream`,
   });
   const oldLog = await readFile(engineLog, 'utf8').catch(() => '');
   desktop = spawn(desktopExecutable, [], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: launchEnvironment });
@@ -291,6 +292,30 @@ try {
   const diagnosticBody = await diagnosticResult.json();
   if (diagnosticBody.tool_round_trip_verified !== true) throw new Error(`Native harmless diagnostic was not verified: ${JSON.stringify(diagnosticBody)}`);
   await expect(page.getByText(/Tool-use diagnostic passed/)).toBeVisible({ timeout: 15000 });
+
+  await page.evaluate(() => {
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async (constraints) => {
+        const stream = await getUserMedia(constraints);
+        window.__xaaAcceptanceMicrophoneStream = stream;
+        return stream;
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Record voice', exact: true }).click();
+  await expect(page.getByText(/Recording on this computer/)).toBeVisible({ timeout: 10000 });
+  await new Promise(resolve => setTimeout(resolve, 750));
+  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible({ timeout: 10000 });
+  await expect.poll(() => page.evaluate(() => {
+    const tracks = window.__xaaAcceptanceMicrophoneStream?.getTracks() ?? [];
+    return tracks.length > 0 && tracks.every(track => track.readyState === 'ended');
+  }), { timeout: 10000 }).toBe(true);
+  await page.locator('#run-audio').setInputFiles([]);
+  await expect(page.getByText(/Attached: Microphone recording\.wav/)).not.toBeVisible();
+  microphoneCapturePassed = true;
 
   await page.locator('#approved-web-hosts').fill('httpbin.org');
   await page.getByLabel('Allow managed browser reads for this next run').check();
@@ -387,6 +412,14 @@ try {
     passed: true,
     desktop_executable: desktopExecutable,
     model_inference_requested: false,
+    installed_microphone_capture: {
+      passed: microphoneCapturePassed,
+      fake_device: true,
+      local_wav_attachment_created: true,
+      microphone_tracks_ended_after_capture: true,
+      submitted_for_transcription: false,
+      model_inference_requested: false,
+    },
     provider: 'deterministic loopback OpenAI-compatible fixture',
     user_action: 'cancel browser navigation, then accept a workspace result in installed desktop WebView',
     cancel_request_observed: cancelRequestSeen,
