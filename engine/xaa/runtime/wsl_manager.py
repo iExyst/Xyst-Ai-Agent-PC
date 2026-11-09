@@ -76,7 +76,11 @@ def cleanup(identity: str, journal: Any) -> None:
 
 
 def run(
-    request: dict[str, Any], codec: dict[str, Any], profile: dict[str, Any], journal: Any
+    request: dict[str, Any],
+    codec: dict[str, Any],
+    profile: dict[str, Any],
+    journal: Any,
+    emit_output: Any = None,
 ) -> dict[str, Any]:
     if set(request) != {"action", "execution_id", "argv", "max_seconds", "snapshot_b64"}:
         raise ValueError("Invalid execution request fields.")
@@ -170,6 +174,8 @@ def run(
                     remaining = MAX_OUTPUT_BYTES - total
                     output[key.data].extend(chunk[:remaining])
                     total += min(len(chunk), remaining)
+                    if emit_output is not None and remaining > 0:
+                        emit_output(key.data, chunk[:remaining])
                     if len(chunk) > remaining and reason == "finished":
                         reason = "output_limit"
                         with journal.locked(identity):
@@ -290,8 +296,23 @@ def main() -> None:
                 cleanup(identity, journal)
                 print(json.dumps({"execution_id": identity, "cleanup_confirmed": True}))
     elif request.get("action") == "run":
-        result = run(request, runpy.run_path(sys.argv[1]), runpy.run_path(sys.argv[2]), journal)
-        print(json.dumps(result))
+
+        def emit_output(stream: str, chunk: bytes) -> None:
+            print(
+                json.dumps(
+                    {
+                        "type": "output",
+                        "stream": stream,
+                        "chunk_b64": base64.b64encode(chunk).decode("ascii"),
+                    }
+                ),
+                flush=True,
+            )
+
+        result = run(
+            request, runpy.run_path(sys.argv[1]), runpy.run_path(sys.argv[2]), journal, emit_output
+        )
+        print(json.dumps({"type": "result", "result": result}), flush=True)
     else:
         raise ValueError("Unsupported execution manager operation.")
 

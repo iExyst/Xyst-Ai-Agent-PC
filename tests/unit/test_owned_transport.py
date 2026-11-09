@@ -98,3 +98,39 @@ async def test_repeated_cancel_cannot_abandon_actual_child_shutdown(monkeypatch)
     with pytest.raises(asyncio.CancelledError):
         await task
     assert child[0].returncode is not None
+
+
+async def test_framed_transport_delivers_complete_lines_before_process_exit():
+    frames = []
+
+    async def on_line(line):
+        frames.append(line)
+
+    raw = await request_process(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            'import sys;sys.stdout.buffer.write(b\'{"a":1}\\n{"b":2}\\n\')',
+        ],
+        b"",
+        timeout=5,
+        output_limit=1024,
+        on_stdout_line=on_line,
+    )
+    assert raw == b""
+    assert frames == [b'{"a":1}', b'{"b":2}']
+
+
+async def test_framed_transport_rejects_partial_final_line():
+    async def on_line(_line):
+        pass
+
+    with pytest.raises(TransportError, match="incomplete frame"):
+        await request_process(
+            [sys.executable, "-I", "-c", "import sys;sys.stdout.write('{}')"],
+            b"",
+            timeout=5,
+            output_limit=1024,
+            on_stdout_line=on_line,
+        )

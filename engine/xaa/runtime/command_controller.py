@@ -3,8 +3,10 @@
 import asyncio
 import base64
 import hashlib
+import inspect
 import os
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, cast
 from uuid import uuid4
 
@@ -161,7 +163,28 @@ class CommandController:
             )
             self.journal.snapshot_ready(run_id, owner, call_id, snapshot, manifest)
             intent = self.journal.authorize_launch(run_id, owner, call_id)
-            observed = await self.transport.run(intent, snapshot, deadline=deadline)
+
+            async def save_output(stream: str, chunk: bytes) -> None:
+                self.store.append_worker_event(
+                    run_id,
+                    owner,
+                    "execution.output.delta",
+                    {
+                        "call_id": call_id,
+                        "execution_id": intent.execution_id,
+                        "stream": stream,
+                        "chunk_b64": base64.b64encode(chunk).decode("ascii"),
+                        "trust": "untrusted_command_output",
+                    },
+                )
+
+            run_transport = cast(Callable[..., Awaitable[dict[str, Any]]], self.transport.run)
+            if "on_output" in inspect.signature(run_transport).parameters:
+                observed = await run_transport(
+                    intent, snapshot, deadline=deadline, on_output=save_output
+                )
+            else:
+                observed = await self.transport.run(intent, snapshot, deadline=deadline)
             output_ids: dict[str, str] = {}
             combined = 0
             for stream in ("stdout", "stderr"):

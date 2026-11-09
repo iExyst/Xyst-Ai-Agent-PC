@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -103,7 +104,12 @@ class WSLTransport:
             raise PermissionError("Execution profile changed; obtain a fresh explicit grant.")
 
     async def run(
-        self, intent: CommandIntent, snapshot: WorkspaceSnapshot, *, deadline: float
+        self,
+        intent: CommandIntent,
+        snapshot: WorkspaceSnapshot,
+        *,
+        deadline: float,
+        on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         self.require_intent(intent)
         remaining = deadline - time.monotonic()
@@ -120,13 +126,50 @@ class WSLTransport:
         ).encode("utf-8")
         if len(payload) > 18 * 1024 * 1024:
             raise ValueError("Command request exceeds the manager transport limit.")
+
+        async def frame(raw_frame: bytes) -> None:
+            message = response_object(raw_frame)
+            if message.get("type") == "output" and set(message) == {"type", "stream", "chunk_b64"}:
+                stream, encoded = message["stream"], message["chunk_b64"]
+                if (
+                    stream not in {"stdout", "stderr"}
+                    or not isinstance(encoded, str)
+                    or len(encoded) > 21848
+                ):
+                    raise TransportError("Manager sent an invalid output frame.")
+                try:
+                    chunk = base64.b64decode(encoded, validate=True)
+                except ValueError as exc:
+                    raise TransportError("Manager sent malformed output bytes.") from exc
+                if not chunk or len(chunk) > 16384:
+                    raise TransportError("Manager output frame exceeded its bound.")
+                streamed_bytes[0] += len(chunk)
+                if streamed_bytes[0] > 1024 * 1024:
+                    raise TransportError("Manager exceeded the combined output limit.")
+                if on_output is not None:
+                    await on_output(stream, chunk)
+                return
+            if message.get("type") == "result" and set(message) == {"type", "result"}:
+                frames.append(message["result"])
+                if len(frames) != 1:
+                    raise TransportError("Manager sent duplicate result frames.")
+                return
+            raise TransportError("Manager sent an unknown output frame.")
+
+        frames: list[Any] = []
+        streamed_bytes = [0]
         raw = await request_process(
             self.invocation,
             payload,
             timeout=deadline - time.monotonic(),
             output_limit=2 * 1024 * 1024,
+            on_stdout_line=frame,
         )
-        result = response_object(raw)
+        if raw:
+            raise TransportError("Manager returned unframed output.")
+        if len(frames) != 1 or not isinstance(frames[0], dict):
+            raise TransportError("Manager omitted its final execution receipt.")
+        result = cast(dict[str, Any], frames[0])
         if result.get("execution_id") != intent.execution_id:
             raise TransportError("Manager replied for a different execution identity.")
         return result

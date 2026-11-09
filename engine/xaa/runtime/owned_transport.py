@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.processes import stop_owned_process
@@ -13,7 +13,12 @@ class TransportError(RuntimeError):
 
 
 async def request_process(
-    command: Sequence[str], payload: bytes, *, timeout: float, output_limit: int
+    command: Sequence[str],
+    payload: bytes,
+    *,
+    timeout: float,
+    output_limit: int,
+    on_stdout_line: Callable[[bytes], Awaitable[None]] | None = None,
 ) -> bytes:
     if timeout <= 0:
         raise TimeoutError("Transport deadline expired before launch.")
@@ -42,9 +47,24 @@ async def request_process(
             process.stdin.close()
         return b""
 
-    async def read(stream: asyncio.StreamReader, limit: int) -> bytes:
+    async def read(stream: asyncio.StreamReader, limit: int, *, framed: bool = False) -> bytes:
         output = bytearray()
+        received = 0
         while chunk := await stream.read(16384):
+            if framed and on_stdout_line is not None:
+                received += len(chunk)
+                if received > limit:
+                    raise TransportError("Owned transport exceeded its output limit.")
+                output.extend(chunk)
+                while b"\n" in output:
+                    line, _, remainder = output.partition(b"\n")
+                    output[:] = remainder
+                    if not line:
+                        raise TransportError("Owned transport emitted an empty frame.")
+                    await on_stdout_line(bytes(line))
+                if len(output) > 2 * 1024 * 1024:
+                    raise TransportError("Owned transport frame exceeded its size limit.")
+                continue
             output.extend(chunk)
             if len(output) > limit:
                 raise TransportError("Owned transport exceeded its output limit.")
@@ -52,12 +72,14 @@ async def request_process(
 
     tasks = [
         asyncio.create_task(write()),
-        asyncio.create_task(read(process.stdout, output_limit)),
+        asyncio.create_task(read(process.stdout, output_limit, framed=True)),
         asyncio.create_task(read(process.stderr, 16384)),
     ]
     try:
         async with asyncio.timeout(timeout):
             _, output, _ = await asyncio.gather(*tasks)
+            if on_stdout_line is not None and output:
+                raise TransportError("Owned transport ended with an incomplete frame.")
             if await process.wait() != 0:
                 raise TransportError("Owned transport failed; reconcile any reserved execution.")
             assert isinstance(output, bytes)

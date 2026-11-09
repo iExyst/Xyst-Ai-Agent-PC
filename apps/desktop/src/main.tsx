@@ -73,6 +73,8 @@ function App() {
   const [transcriptionUrl, setTranscriptionUrl] = useState('http://127.0.0.1:8000/v1/audio/transcriptions');
   const [run, setRun] = useState<Run>();
   const [activity, setActivity] = useState<string[]>([]);
+  const [commandOutput, setCommandOutput] = useState({stdout:'',stderr:''});
+  const commandDecoders = useRef<Record<string, TextDecoder>>({});
   const [answer, setAnswer] = useState('');
   const [partial,setPartial]=useState('');
   const [specialistPartials,setSpecialistPartials]=useState<Record<string,string>>({});
@@ -169,7 +171,7 @@ function App() {
     const controller = new AbortController(); stream.current = controller;
     Object.values(specialistDraftTimers.current).forEach(timer=>window.clearTimeout(timer));
     specialistDraftTimers.current={};
-    setActivity([]);setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPreview('');setPlan(undefined);
+    setActivity([]);setCommandOutput({stdout:'',stderr:''});commandDecoders.current={};setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPreview('');setPlan(undefined);
     let sharedAnswer='';
     try {
       const initialPlan = await client.plan(next.id, controller.signal);
@@ -184,6 +186,15 @@ function App() {
           const pendingClear=specialistDraftTimers.current[taskId];
           if(pendingClear!==undefined){window.clearTimeout(pendingClear);delete specialistDraftTimers.current[taskId];}
           setSpecialistPartials(current=>({...current,[taskId]:((current[taskId]??'')+event.payload.text).slice(-65536)}));
+          continue;
+        }
+        if(event.event_type==='execution.completed'||event.event_type==='execution.reconciled'){
+          const tails=Object.fromEntries(Object.entries(commandDecoders.current).map(([stream,decoder])=>[stream,decoder.decode()]));
+          commandDecoders.current={};
+          setCommandOutput(current=>({stdout:(current.stdout+(tails.stdout??'')).slice(-65536),stderr:(current.stderr+(tails.stderr??'')).slice(-65536)}));
+        }
+        if(event.event_type==='execution.output.delta'&&typeof event.payload.chunk_b64==='string'&&['stdout','stderr'].includes(String(event.payload.stream))){
+          try { const binary=atob(event.payload.chunk_b64); const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0)); const decoder=commandDecoders.current[String(event.payload.stream)]??(commandDecoders.current[String(event.payload.stream)]=new TextDecoder('utf-8',{fatal:false})); const text=decoder.decode(bytes,{stream:true}); if(text)setCommandOutput(current=>({...current,[String(event.payload.stream)]:(current[String(event.payload.stream) as 'stdout'|'stderr']+text).slice(-65536)})); } catch { setCommandOutput(current=>({...current,stderr:(current.stderr+'[invalid output frame]\n').slice(-65536)})); }
           continue;
         }
         if (event.event_type.startsWith('plan.') || event.event_type.startsWith('task.')) {
@@ -282,7 +293,7 @@ function App() {
     setAllowProcedureRevision(false);
     setAllowProcedureResourceRevision(false);
     setAllowProcedureResourceRemoval(false);
-    setBusy(true); setError(''); setActivity([]); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
+    setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
     try { const next = await client.createRun({ objective:runObjective, image:imageData, document:documentData, audio:audioData, transcription_url:audioData?transcriptionUrl:undefined, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, allow_procedure_drafting:procedureDraftingGrant, allow_procedure_revision:procedureRevisionGrant, allow_procedure_resource_revision:procedureResourceRevisionGrant, allow_procedure_resource_removal:procedureResourceRemovalGrant, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedMCPTools([]);setProcedureTrial(undefined);setHistoryRefresh(value=>value+1); void watch(next,sharedTurn); }
     catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
@@ -297,7 +308,7 @@ function App() {
     runSelectionRevision.current++;
     const demoObjective = 'Read the project overview and setup documentation in the selected workspace. Do not modify files or run commands. Summarize what the project does, how a developer starts it, and one useful next step. Cite the file paths you read.';
     setMode('observe');
-    setBusy(true); setError(''); setActivity([]); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
+    setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
     try {
       const next = await client.createRun({ objective: demoObjective, model, workspace, mode: 'observe', approved_web_search:false, approved_browser:false, allow_procedure_drafting:false, allow_procedure_revision:false, allow_procedure_resource_revision:false, allow_procedure_resource_removal:false, command_grant: null, ...parsedLimits, file_checks: [] });
       setObjective(demoObjective); setRun(next); setCommandAllowed(false); setAllowProcedureDrafting(false); setAllowProcedureRevision(false); setAllowProcedureResourceRevision(false); setApprovedBrowser(false); setHistoryRefresh(value => value + 1); void watch(next);
@@ -329,6 +340,7 @@ function App() {
       <section><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client} onImported={()=>setSkillsRefresh(value=>value+1)}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
+      {(commandOutput.stdout||commandOutput.stderr)&&<section aria-label="Streaming command output"><h2>Command output (untrusted, streaming)</h2>{(['stdout','stderr'] as const).map(stream=>commandOutput[stream]&&<div key={stream}><h3>{stream}</h3><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:360,overflow:'auto'}}>{commandOutput[stream]}</pre></div>)}</section>}
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
       <ConversationSessionsPanel client={client} model={model} workspace={workspace} mode={mode} refreshKey={String(chatRefresh)} onSelect={(id,record)=>{setChatSessionId(id);setChatSession(record);}}/>
       <section><h2>File check (optional)</h2><p>Compare a file with the exact contents you supply, including whitespace. A mismatch asks the agent to correct its work within the run budget.</p><label>File to verify<input value={checkPath} onChange={event => setCheckPath(event.target.value)} placeholder="config.txt" /></label><label htmlFor="expected-file-content">Expected file contents</label><textarea id="expected-file-content" value={expectedContent} onChange={event => setExpectedContent(event.target.value)} /></section>

@@ -100,3 +100,74 @@ async def test_prelaunch_checks_never_invoke_manager(problem, monkeypatch):
             WorkspaceSnapshot((), (), ()),
             deadline=time.monotonic() + (0.1 if problem == "deadline" else 30),
         )
+
+
+async def test_run_streams_bounded_output_frames_and_requires_one_receipt(monkeypatch):
+    digest, _ = wsl_transport.profile_fingerprint()
+    intent = CommandIntent(
+        argv=["/usr/bin/printf", "ok"],
+        max_seconds=10,
+        execution_id="a" * 32,
+        backend="wsl-bubblewrap-v1",
+        distribution="Ubuntu",
+        profile_sha256=digest,
+        workspace="fixture",
+    )
+    transport = wsl_transport.WSLTransport("Ubuntu", digest, ("fixture-manager",))
+    snapshot = WorkspaceSnapshot((), (), ())
+    seen = []
+
+    async def request_process(command, payload, *, timeout, output_limit, on_stdout_line=None):
+        assert command == transport.invocation
+        assert output_limit == 2 * 1024 * 1024
+        assert on_stdout_line is not None
+        await on_stdout_line(
+            json.dumps({"type": "output", "stream": "stdout", "chunk_b64": "aMOp"}).encode()
+        )
+        await on_stdout_line(
+            json.dumps({"type": "output", "stream": "stderr", "chunk_b64": "eA=="}).encode()
+        )
+        await on_stdout_line(
+            json.dumps({"type": "result", "result": {"execution_id": intent.execution_id}}).encode()
+        )
+        return b""
+
+    async def output(stream, chunk):
+        seen.append((stream, chunk))
+
+    monkeypatch.setattr(wsl_transport, "request_process", request_process)
+    result = await transport.run(intent, snapshot, deadline=time.monotonic() + 30, on_output=output)
+    assert result["execution_id"] == intent.execution_id
+    assert seen == [("stdout", b"h\xc3\xa9"), ("stderr", b"x")]
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        b'{"type":"output","stream":"stdout","chunk_b64":""}',
+        b'{"type":"output","stream":"other","chunk_b64":"eA=="}',
+        b'{"type":"result","result":{"execution_id":"x"}}',
+    ],
+)
+async def test_run_rejects_invalid_or_duplicate_frames(frame, monkeypatch):
+    digest, _ = wsl_transport.profile_fingerprint()
+    intent = CommandIntent(
+        argv=["/usr/bin/true"],
+        max_seconds=10,
+        execution_id="a" * 32,
+        backend="wsl-bubblewrap-v1",
+        distribution="Ubuntu",
+        profile_sha256=digest,
+        workspace="fixture",
+    )
+    transport = wsl_transport.WSLTransport("Ubuntu", digest, ("fixture-manager",))
+
+    async def request_process(*args, on_stdout_line=None, **kwargs):
+        await on_stdout_line(frame)
+        if b'"type":"result"' in frame:
+            await on_stdout_line(frame)
+        return b""
+
+    monkeypatch.setattr(wsl_transport, "request_process", request_process)
+    with pytest.raises(TransportError):
+        await transport.run(intent, WorkspaceSnapshot((), (), ()), deadline=time.monotonic() + 30)
