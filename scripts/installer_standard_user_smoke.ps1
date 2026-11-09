@@ -123,7 +123,7 @@ try {
     [Array]::Clear($randomBytes, 0, $randomBytes.Length)
     $password = ConvertTo-SecureString -String $passwordText -AsPlainText -Force
     $passwordText = $null
-    $account = New-LocalUser -Name $username -Password $password -PasswordNeverExpires -UserMayNotChangePassword -Description 'Disposable X.A.A. standard-user installer acceptance'
+    $account = New-LocalUser -Name $username -Password $password -PasswordNeverExpires -UserMayNotChangePassword -Description 'XAA installer acceptance'
     $sid = $account.SID.Value
 
     $acl = Get-Acl -LiteralPath $root
