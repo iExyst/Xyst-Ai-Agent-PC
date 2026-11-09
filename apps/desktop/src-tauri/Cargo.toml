@@ -3,6 +3,7 @@ name = "xaa-desktop"
 version = "0.1.1"
 edition = "2021"
 description = "Xyst AI Agent desktop shell"
+license = "MIT"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

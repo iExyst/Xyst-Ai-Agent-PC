@@ -2,7 +2,7 @@
 
 Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies and 2026-11-09 with 22 lock-source license/NOTICE text groups for five omitted Python packages and setuptools-vendored dependencies. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
 
-**This is a provisional third-party notice file, not release approval.** The application license remains undecided, and six Windows-target Cargo crate archives omit license files; their declared license texts are represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below. The unsigned installer stages this file with the dependency inventory and release notes; install acceptance checks each document against its manifest hash. Review package-specific exceptions and copyright notices before distribution.
+**This is a provisional third-party notice file, not release approval.** X.A.A. source is licensed under MIT in the root LICENSE; this third-party notice draft remains provisional. Six Windows-target Cargo crate archives omit license files; their declared license texts are represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below. The unsigned installer stages this file with the dependency inventory and release notes; install acceptance checks each document against its manifest hash. Review package-specific exceptions and copyright notices before distribution.
 
 Python development tools are included because they are present in the locked development environment; this may overinclude tools absent from the installed product. The npm list is runtime-only. Rust entries are filtered for `x86_64-pc-windows-msvc`. The comprehensive lockfile inventory is in [`dependency-inventory.md`](dependency-inventory.md).
 
@@ -18739,7 +18739,7 @@ The six Windows-target crate archives omit matching license files. Their declare
 | `webview2-com@0.39.1`, `webview2-com-sys@0.39.1` | MIT | [Exact upstream license file](https://github.com/wravery/webview2-rs/blob/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE) |
 | `webview2-com-macros@0.8.1` | MIT | [Exact upstream license file](https://github.com/wravery/webview2-rs/blob/dffa41a8a46d3f5565eefbff2de57d38d399f158/LICENSE) |
 
-X.A.A. itself is excluded from the third-party package list. No application license is selected in this repository.
+X.A.A. itself is excluded from the third-party package list. Its source is licensed under MIT; see the root LICENSE. This file covers third-party notices only.
 
 ## PDFium binary license texts included by pypdfium2 5.15.1
 

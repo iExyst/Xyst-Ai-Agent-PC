@@ -99,6 +99,7 @@ def main() -> None:
     notices = {
         name: Path(source)
         for name, source in {
+            "LICENSE": "LICENSE",
             "THIRD_PARTY_NOTICES.md": "docs/releases/THIRD_PARTY_NOTICES.md",
             "dependency-inventory.md": "docs/releases/dependency-inventory.md",
             "release-notes-0.1.1.md": "docs/releases/0.1.1.md",

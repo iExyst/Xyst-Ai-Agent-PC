@@ -125,7 +125,7 @@ try {
         throw 'Installed browser worker evidence was incomplete.'
     }
     $xaaReport.installed_browser_acceptance = $xaaBrowserAcceptance
-    foreach ($xaaNoticeName in @('THIRD_PARTY_NOTICES.md', 'dependency-inventory.md', 'release-notes-0.1.1.md')) {
+    foreach ($xaaNoticeName in @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'dependency-inventory.md', 'release-notes-0.1.1.md')) {
         $xaaNotice = Join-Path $xaaInstallDir $xaaNoticeName
         $xaaNoticeMetadata = $xaaManifest.notices.$xaaNoticeName
         if (-not $xaaNoticeMetadata -or -not (Test-Path -LiteralPath $xaaNotice)) { throw "Installed release notice missing: $xaaNoticeName" }
