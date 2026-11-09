@@ -406,6 +406,9 @@ jobs:
       - name: Install, boot and uninstall unsigned package
         run: ./scripts/installer_ci_smoke.ps1
         timeout-minutes: 5
+      - name: Verify per-user install as a standard Windows account
+        run: ./scripts/installer_standard_user_smoke.ps1
+        timeout-minutes: 5
       - name: Verify explicit application-data removal choice
         run: ./scripts/installer_delete_data_smoke.ps1
         timeout-minutes: 5
