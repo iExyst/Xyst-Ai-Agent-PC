@@ -16,6 +16,11 @@ Recovery previously left a version-1 workspace read unresolved when a `tool.exec
 
 ## Recover interrupted procedure and Git reads (2026-11-09)
 
+Version-1 intents for local, read-only `procedure.view`, `procedure.read_resource` and `procedure.catalog` now permit startup requeue and are sealed with an explicit `interrupted_read` result if no result was persisted; the old call is never replayed, and a new read can be requested. External web/browser requests, commands, unknown tools and side-effecting procedure edits remain outside this safe-read allowlist. Git inspection was initially excluded because it creates a managed artifact; the follow-up below adds exact cleanup for that artifact. Fourteen focused recovery/restart tests passed before the Git cleanup change; no model inference was used.
+
+## Recover interrupted Git inspection artifacts (2026-11-09)
+
+Git status/diff calls now persist a version-2 unique managed-artifact filename in their intent before starting the subprocess. After a crash, recovery validates the UUID leaf name and exact run/call provenance, removes only that operation's incomplete or uncommitted artifact, deletes matching artifact metadata if it was registered, records `artifact.discarded` for desktop refresh, and seals the tool call as `interrupted_read`. Malformed names, symlinks, mismatched provenance and legacy version-1 intents remain unresolved/blocked; Git is not rerun automatically. Eighteen focused recovery/Git coordinator tests pass, as do Ruff, formatting, engine Pyright, TypeScript typecheck, 15 desktop client tests, and `git diff --check`. Hosted full-suite and installer verification are pending. No model inference was used.
 
 ## Align frozen recovery acceptance with automatic restart reconciliation (2026-11-09)
 

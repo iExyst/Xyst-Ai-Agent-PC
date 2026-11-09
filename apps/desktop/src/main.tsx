@@ -188,7 +188,7 @@ function App() {
           const updatedPlan = await client.plan(next.id, controller.signal);
           if (!controller.signal.aborted) setPlan(updatedPlan);
         }
-        if (event.event_type === 'artifact.created') {const saved=await client.artifacts(next.id,controller.signal);if(!controller.signal.aborted)setArtifacts(saved);}
+        if (event.event_type === 'artifact.created' || event.event_type === 'artifact.discarded') {const saved=await client.artifacts(next.id,controller.signal);if(!controller.signal.aborted)setArtifacts(saved);}
         if(controller.signal.aborted)break;
         const labels: Record<string, string> = { 'run.queued': 'Objective queued', 'tool.intended': 'Workspace operation started', 'tool.completed': 'Workspace operation saved', 'model.message': 'Model response saved', 'run.lease_acquired': 'Worker started', 'run.lease_released': 'Worker stopped', 'verification.feedback': 'File check failed; correction requested', 'verification.passed': 'File checks passed; review pending' };
         Object.assign(labels, { 'tool.failed': 'Workspace operation needs review', 'plan.rejected': 'Plan proposal rejected; correction needed', 'plan.saved': 'Task plan saved', 'task.claimed': 'Specialist task started', 'task.blocked': 'Specialist task blocked', 'task.result': 'Specialist result submitted', 'task.verification': 'Specialist file evidence checked' });

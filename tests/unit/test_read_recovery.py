@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from uuid import uuid4
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
@@ -20,7 +21,9 @@ def setup(root):
     return store, run["id"], store.acquire_lease(run["id"], "old-worker")
 
 
-def propose(store, run_id, token, identity, name="workspace_read_file"):
+def propose(
+    store, run_id, token, identity, name="workspace_read_file", arguments='{"path":"input.txt"}'
+):
     store.append_worker_event(
         run_id,
         token,
@@ -32,7 +35,7 @@ def propose(store, run_id, token, identity, name="workspace_read_file"):
                     {
                         "id": identity,
                         "type": "function",
-                        "function": {"name": name, "arguments": '{"path":"input.txt"}'},
+                        "function": {"name": name, "arguments": arguments},
                     }
                 ],
             }
@@ -108,6 +111,89 @@ def test_abandoned_local_read_requeues_and_is_sealed(workspace_tmp_path, tool, f
     result = json.loads(messages[-1]["content"])
     assert result["effect"] == "read_only"
     assert result["error"]["code"] == "interrupted_read"
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_interrupted_git_read_discards_only_its_owned_artifact(workspace_tmp_path, registered):
+    store, run_id, token = setup(workspace_tmp_path)
+    call_id = "git-call"
+    artifact_name = f"{uuid4()}.git-output.txt"
+    artifact_path = store.path.parent / "artifacts" / artifact_name
+    artifact_path.parent.mkdir(exist_ok=True)
+    artifact_path.write_bytes(b"partial or complete Git output")
+    propose(
+        store,
+        run_id,
+        token,
+        call_id,
+        "workspace_git_inspect",
+        json.dumps({"operation": "status"}),
+    )
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id=call_id,
+        tool="git.status",
+        version="2",
+        arguments={"workspace": str(workspace_tmp_path), "artifact_filename": artifact_name},
+        idempotency_key=call_id,
+    )
+    if registered:
+        store.register_artifact(run_id, token, artifact_name, provenance=f"git.status:{call_id}")
+    store.append_worker_event(run_id, token, "tool.executing", {"call_id": call_id})
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    connection = sqlite3.connect(store.path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    assert store.recover_abandoned_runs() == [run_id]
+    fresh = store.acquire_lease(run_id, "recovery-worker")
+    assert fresh is not None
+    assert store.resolve_interrupted_reads(run_id, fresh) == [call_id]
+    assert not artifact_path.exists()
+    assert store.list_artifacts(run_id) == []
+    assert not store.unresolved_tool_calls(run_id)
+    messages = store.conversation_messages(run_id)
+    result = json.loads(messages[-1]["content"])
+    assert result["effect"] == "read_only"
+    assert result["error"]["code"] == "interrupted_read"
+    discarded = [
+        event for event in store.list_events(run_id) if event["event_type"] == "artifact.discarded"
+    ]
+    assert bool(discarded) is registered
+
+
+def test_legacy_git_intent_stays_blocked_without_an_artifact_identity(workspace_tmp_path):
+    store, run_id, token = setup(workspace_tmp_path)
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="legacy-git",
+        tool="git.status",
+        version="1",
+        arguments={"workspace": str(workspace_tmp_path)},
+        idempotency_key="legacy-git",
+    )
+    store.transition(run_id, RunState.PLANNING, owner=token)
+    connection = sqlite3.connect(store.path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    assert store.recover_abandoned_runs() == []
+    assert store.get_run(run_id)["state"] == RunState.BLOCKED
+    assert {call["id"] for call in store.unresolved_tool_calls(run_id)} == {"legacy-git"}
 
 
 def test_recovery_preserves_internal_results_and_unknown_effects(workspace_tmp_path):

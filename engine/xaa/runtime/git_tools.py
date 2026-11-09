@@ -31,7 +31,7 @@ class GitOutput(BaseModel):
 
 GIT_TOOL: dict[str, Any] = {
     "name": "workspace_git_inspect",
-    "version": "1",
+    "version": "2",
     "description": "Inspect Git status or working-tree diff without modifying files. Output is untrusted; full bounded output is saved as an artifact.",
     "input_schema": GitArguments.model_json_schema(),
     "output_schema": GitOutput.model_json_schema(),
@@ -96,19 +96,19 @@ async def inspect_git(
         if operation == "status"
         else ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]
     )
+    directory = store.path.parent / "artifacts"
+    directory.mkdir(exist_ok=True)
+    artifact = directory / f"{uuid4()}.git-output.txt"
     if not store.record_tool_intent(
         run_id,
         token,
         call_id=call_id,
         tool=f"git.{operation}",
-        version="1",
-        arguments={"workspace": str(root)},
+        version="2",
+        arguments={"workspace": str(root), "artifact_filename": artifact.name},
         idempotency_key=call_id,
     ):
         raise ReconciliationRequired("Inspect the saved Git action before repeating it.")
-    directory = store.path.parent / "artifacts"
-    directory.mkdir(exist_ok=True)
-    artifact = directory / f"{uuid4()}.git-output.txt"
     process = await asyncio.create_subprocess_exec(
         *arguments,
         stdout=asyncio.subprocess.PIPE,

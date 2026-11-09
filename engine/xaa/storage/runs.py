@@ -23,6 +23,28 @@ from xaa.storage.conversation_index import install_index
 
 DATABASE_SCHEMA_VERSION = 22
 
+SAFE_READ_TOOL_VERSIONS = {
+    "workspace.read_file": "1",
+    "workspace.list_directory": "1",
+    "workspace.search": "1",
+    "procedure.read_resource": "1",
+    "procedure.view": "1",
+    "procedure.catalog": "1",
+    "git.status": "2",
+    "git.diff": "2",
+}
+
+SAFE_READ_PROPOSALS = {
+    "workspace.read_file": {"workspace_read_file"},
+    "workspace.list_directory": {"workspace_list_directory"},
+    "workspace.search": {"workspace_search"},
+    "procedure.read_resource": {"procedure_read_resource"},
+    "procedure.view": {"procedure_view"},
+    "procedure.catalog": {"procedure_catalog"},
+    "git.status": {"workspace_git_inspect"},
+    "git.diff": {"workspace_git_inspect"},
+}
+
 
 @dataclass(frozen=True)
 class TaskReadScope:
@@ -1854,24 +1876,70 @@ class RunStore:
             )
         return result
 
+    def _discard_interrupted_git_artifact(
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+        call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> bool:
+        operation = tool_name.removeprefix("git.")
+        if operation not in {"status", "diff"}:
+            return False
+        filename = arguments.get("artifact_filename")
+        if not isinstance(filename, str) or not filename.endswith(".git-output.txt"):
+            return False
+        identity = filename.removesuffix(".git-output.txt")
+        try:
+            if str(uuid.UUID(identity)) != identity:
+                return False
+        except ValueError:
+            return False
+
+        root = (self.path.parent / "artifacts").resolve()
+        artifact_path = root / filename
+        artifact = connection.execute(
+            "SELECT id,run_id,provenance FROM artifacts WHERE storage_key=?",
+            (filename,),
+        ).fetchall()
+        if len(artifact) > 1 or artifact_path.is_symlink():
+            return False
+        if artifact and (
+            artifact[0]["run_id"] != run_id
+            or artifact[0]["provenance"] != f"git.{operation}:{call_id}"
+        ):
+            return False
+        if artifact_path.exists():
+            try:
+                if not artifact_path.is_file() or not artifact_path.resolve(
+                    strict=True
+                ).is_relative_to(root):
+                    return False
+                artifact_path.unlink()
+            except OSError:
+                return False
+        for row in artifact:
+            connection.execute("DELETE FROM artifacts WHERE id=? AND run_id=?", (row["id"], run_id))
+            self.record_event(
+                connection,
+                run_id,
+                "artifact.discarded",
+                {"artifact_id": row["id"], "call_id": call_id, "reason": "interrupted_git_read"},
+            )
+        return True
+
     def resolve_interrupted_reads(self, run_id: str, token: str) -> list[str]:
         """Close read-only intents without replaying them or assuming any write failed."""
-        names = {
-            "workspace.read_file": {"workspace_read_file"},
-            "workspace.list_directory": {"workspace_list_directory"},
-            "workspace.search": {"workspace_search"},
-            "procedure.read_resource": {"procedure_read_resource"},
-            "procedure.view": {"procedure_view"},
-            "procedure.catalog": {"procedure_catalog"},
-        }
         resolved: list[str] = []
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.require_lease(connection, run_id, token)
             proposals: dict[str, str] = {}
+            placeholders = ",".join("?" for _ in SAFE_READ_TOOL_VERSIONS)
             rows = connection.execute(
-                "SELECT provider_call_id,tool_name,tool_version FROM tool_calls WHERE run_id=? AND state='intended' AND tool_version='1' AND tool_name IN ('workspace.read_file','workspace.list_directory','workspace.search','procedure.read_resource','procedure.view','procedure.catalog')",
-                (run_id,),
+                f"SELECT provider_call_id,tool_name,tool_version,arguments FROM tool_calls WHERE run_id=? AND state='intended' AND tool_name IN ({placeholders})",
+                (run_id, *SAFE_READ_TOOL_VERSIONS),
             ).fetchall()
             if not rows:
                 return []
@@ -1888,9 +1956,15 @@ class RunStore:
                     internal_intents.add(payload["call_id"])
             for row in rows:
                 call_id = row["provider_call_id"]
-                expected_names = names.get(row["tool_name"])
-                if expected_names is None or row["tool_version"] != "1":
+                if SAFE_READ_TOOL_VERSIONS.get(row["tool_name"]) != row["tool_version"]:
                     continue
+                if row["tool_name"].startswith(
+                    "git."
+                ) and not self._discard_interrupted_git_artifact(
+                    connection, run_id, call_id, row["tool_name"], json.loads(row["arguments"])
+                ):
+                    continue
+                expected_names = SAFE_READ_PROPOSALS[row["tool_name"]]
                 internal = (
                     call_id in internal_intents or proposals.get(call_id) not in expected_names
                 )
@@ -2351,14 +2425,6 @@ class RunStore:
                     "WHERE run_id = ? AND state = 'intended'",
                     (run_id,),
                 ).fetchall()
-                safe_reads = {
-                    "workspace.read_file",
-                    "workspace.list_directory",
-                    "workspace.search",
-                    "procedure.read_resource",
-                    "procedure.view",
-                    "procedure.catalog",
-                }
                 safe_workspace_writes = {
                     "workspace.write_file",
                     "workspace.create_file",
@@ -2366,13 +2432,11 @@ class RunStore:
                 }
                 workspace_writes_authorized = row["mode"] == "workspace" and bool(row["workspace"])
                 recoverable_intents = all(
-                    item["tool_version"] == "1"
-                    and (
-                        item["tool_name"] in safe_reads
-                        or (
-                            workspace_writes_authorized
-                            and item["tool_name"] in safe_workspace_writes
-                        )
+                    SAFE_READ_TOOL_VERSIONS.get(item["tool_name"]) == item["tool_version"]
+                    or (
+                        item["tool_version"] == "1"
+                        and workspace_writes_authorized
+                        and item["tool_name"] in safe_workspace_writes
                     )
                     for item in unresolved
                 )
