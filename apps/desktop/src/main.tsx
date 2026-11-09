@@ -88,6 +88,7 @@ function App() {
   const [startOnLoginStatus,setStartOnLoginStatus]=useState('');
   const [busy, setBusy] = useState(false);
   const stream = useRef<AbortController | null>(null);
+  const runSelectionRevision=useRef(0);
   useEffect(() => () => stream.current?.abort(), []);
   useEffect(()=>{
     if(!('__TAURI_INTERNALS__' in window))return;
@@ -138,6 +139,24 @@ function App() {
       if(!available)setError('The engine is connected, but LM Studio models are unavailable. Sandbox setup and saved data remain accessible.');
     } catch (failure) { setError(String(failure)); } finally { setBusy(false); }
   }
+  useEffect(()=>{
+    if(!client)return;
+    const controller=new AbortController();
+    const selectionRevision=runSelectionRevision.current;
+    void (async()=>{
+      try {
+        const candidate=await client.latestUnfinishedRun(controller.signal);
+        if(!candidate||['completed','failed','cancelled'].includes(candidate.state)||controller.signal.aborted||selectionRevision!==runSelectionRevision.current)return;
+        const saved=await client.getRun(candidate.id,controller.signal);
+        if(controller.signal.aborted||selectionRevision!==runSelectionRevision.current)return;
+        setRun(saved);
+        void watch(saved);
+      } catch(failure) {
+        if(!controller.signal.aborted)setError(`Could not restore the latest unfinished run: ${String(failure)}`);
+      }
+    })();
+    return()=>controller.abort();
+  },[client]);
   async function watch(next: Run, sharedTurn?:{sessionId:string;model:string;workspace:string;mode:'observe'|'workspace';userMessage:string}) {
     if (!client) return;
     stream.current?.abort();
@@ -222,6 +241,7 @@ function App() {
   }
   async function openSaved(id:string) {
     if(!client)return;
+    runSelectionRevision.current++;
     stream.current?.abort();
     const controller=new AbortController();stream.current=controller;
     setBusy(true);setError('');
@@ -231,6 +251,7 @@ function App() {
   }
   async function submit() {
     if (!client || !parsedLimits) return;
+    runSelectionRevision.current++;
     let sharedTurn:{sessionId:string;model:string;workspace:string;mode:'observe'|'workspace';userMessage:string}|undefined;
     let runObjective=objective;
     if(chatSessionId){
@@ -267,6 +288,7 @@ function App() {
   }
   async function startDemonstration() {
     if (!client || !workspace.trim() || !model || !parsedLimits) return;
+    runSelectionRevision.current++;
     const demoObjective = 'Read the project overview and setup documentation in the selected workspace. Do not modify files or run commands. Summarize what the project does, how a developer starts it, and one useful next step. Cite the file paths you read.';
     setMode('observe');
     setBusy(true); setError(''); setActivity([]); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);

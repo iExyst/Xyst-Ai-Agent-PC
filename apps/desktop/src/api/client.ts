@@ -470,6 +470,10 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(id)}`, signal ? { signal } : {});
   }
 
+  latestUnfinishedRun(signal?:AbortSignal):Promise<RunHistory['items'][number]|null>{
+    return this.#request('/runs/latest-unfinished',signal?{signal}:{});
+  }
+
   control(id: string, action: 'pause' | 'resume' | 'cancel'): Promise<Run> {
     return this.#request(`/runs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
   }

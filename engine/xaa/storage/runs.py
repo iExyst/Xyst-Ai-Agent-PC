@@ -198,6 +198,8 @@ class RunStore:
                     run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS runs_state_updated ON runs(state, updated_at);
+                CREATE INDEX IF NOT EXISTS runs_unfinished_updated ON runs(updated_at DESC, created_at DESC, id DESC)
+                    WHERE state NOT IN ('cancelled', 'completed', 'failed');
                 CREATE TABLE IF NOT EXISTS run_limits (
                     run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
                     max_iterations INTEGER NOT NULL CHECK(max_iterations BETWEEN 1 AND 100),

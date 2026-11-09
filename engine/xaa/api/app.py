@@ -38,6 +38,7 @@ from xaa.api.contracts import (
     RunEvent,
     RunHistory,
     RunRecord,
+    RunSummary,
     TaskCandidate,
     TaskRecoveryDecision,
     TaskRecoverySummary,
@@ -98,7 +99,7 @@ from xaa.storage.backup_bundle import create_backup_bundle
 from xaa.storage.channel_identity import ChannelIdentityLinks
 from xaa.storage.cli_chat import CLIChatStore
 from xaa.storage.commands import CommandJournal
-from xaa.storage.history import list_runs
+from xaa.storage.history import latest_unfinished_run, list_runs
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import InvalidTransition, LeaseLost, RunStore, utc_now
@@ -2128,6 +2129,10 @@ def create_app(
             return list_runs(run_store, limit=limit, before=before, query=q, scope=scope)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/runs/latest-unfinished", response_model=RunSummary | None)
+    def get_latest_unfinished_run(_: None = Depends(authenticate)) -> dict[str, Any] | None:
+        return latest_unfinished_run(run_store)
 
     @app.get("/specialists/profiles", response_model=list[SpecialistProfileResponse])
     def list_specialist_profiles(_: None = Depends(authenticate)) -> list[dict[str, Any]]:

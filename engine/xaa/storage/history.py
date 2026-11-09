@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from xaa.runtime.states import TERMINAL_STATES
 from xaa.storage.runs import RunStore
 
 
@@ -73,3 +74,14 @@ def list_runs(
             base64.urlsafe_b64encode(anchor.model_dump_json().encode()).decode().rstrip("=")
         )
     return {"items": items, "next_cursor": next_cursor}
+
+
+def latest_unfinished_run(store: RunStore) -> dict[str, Any] | None:
+    terminal = tuple(sorted(state.value for state in TERMINAL_STATES))
+    terminal_sql = ",".join(f"'{state}'" for state in terminal)
+    with store.connection() as connection:
+        row = connection.execute(
+            "SELECT id,substr(objective,1,500) AS objective,state,model,workspace,created_at,updated_at "
+            f"FROM runs WHERE state NOT IN ({terminal_sql}) ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row is not None else None

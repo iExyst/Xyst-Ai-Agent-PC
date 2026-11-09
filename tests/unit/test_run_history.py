@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
-from xaa.storage.history import list_runs
+from xaa.storage.history import latest_unfinished_run, list_runs
 from xaa.storage.runs import RunStore
 
 
@@ -35,6 +35,34 @@ def test_history_keyset_survives_reopen_ties_and_new_insertions(workspace_tmp_pa
     assert newer not in collected
 
 
+def test_latest_unfinished_skips_newer_terminal_runs(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "latest-unfinished.sqlite3")
+    unfinished = store.create_run(
+        objective="Interrupted run",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )
+    terminal = store.create_run(
+        objective="Finished run", acceptance_criteria=[], workspace=None, mode="observe", model=None
+    )
+    with store.connection() as connection:
+        connection.execute("UPDATE runs SET state='blocked' WHERE id=?", (unfinished["id"],))
+        connection.execute("UPDATE runs SET state='completed' WHERE id=?", (terminal["id"],))
+    latest = latest_unfinished_run(store)
+    assert latest is not None
+    assert latest["id"] == unfinished["id"]
+    assert latest["state"] == "blocked"
+    with store.connection() as connection:
+        plan = connection.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM runs "
+            "WHERE state NOT IN ('cancelled','completed','failed') "
+            "ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1"
+        ).fetchall()
+    assert any("runs_unfinished_updated" in row["detail"] for row in plan)
+
+
 def test_history_api_is_bounded_authenticated_and_literal(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "api.sqlite3")
     text = "literal_%_needle " + "x" * 700
@@ -58,10 +86,14 @@ def test_history_api_is_bounded_authenticated_and_literal(workspace_tmp_path):
     headers = {"Authorization": f"Bearer {api_token}"}
     with TestClient(create_app(LMStudioProvider(), SecretStr(api_token), store=store)) as client:
         assert client.get("/runs").status_code == 401
+        assert client.get("/runs/latest-unfinished").status_code == 401
         response = client.get("/runs", headers=headers, params={"q": "_%_"})
         assert response.status_code == 200
         item = response.json()["items"][0]
         assert item["id"] == run_id and len(item["objective"]) == 500
+        latest_unfinished = client.get("/runs/latest-unfinished", headers=headers)
+        assert latest_unfinished.status_code == 200
+        assert latest_unfinished.json()["id"] == run_id
         assert token not in response.text and "lease_owner" not in item
         assert client.get("/runs", headers=headers, params={"q": "LITERAL"}).json()["items"] == []
         assert (
