@@ -149,7 +149,7 @@ try {
         $xaaCancelExitCode = $LASTEXITCODE
         if ($xaaCancelExitCode -ne 0) { throw 'Installed desktop browser cancellation acceptance failed.' }
         $xaaCancelAcceptance = ($xaaBrowserCancelOutput | Out-String | ConvertFrom-Json)
-        if (-not $xaaCancelAcceptance.passed -or -not $xaaCancelAcceptance.cancel_request_observed -or $xaaCancelAcceptance.final_run_state -ne 'cancelled' -or $xaaCancelAcceptance.saved_browser_result.status -ne 'cancelled' -or -not $xaaCancelAcceptance.launch_credentials_clean -or $xaaCancelAcceptance.model_inference_requested) {
+        if (-not $xaaCancelAcceptance.passed -or -not $xaaCancelAcceptance.cancel_request_observed -or $xaaCancelAcceptance.final_run_state -ne 'cancelled' -or $xaaCancelAcceptance.saved_browser_result.status -ne 'cancelled' -or -not $xaaCancelAcceptance.workspace_task.passed -or $xaaCancelAcceptance.workspace_task.final_run_state -ne 'completed' -or -not $xaaCancelAcceptance.workspace_task.saved_read_contains_fixture_marker -or -not $xaaCancelAcceptance.workspace_task.accepted_through_desktop_review -or -not $xaaCancelAcceptance.launch_credentials_clean -or $xaaCancelAcceptance.model_inference_requested) {
             throw 'Installed desktop browser cancellation evidence was incomplete.'
         }
         $xaaReport.installed_desktop_browser_cancellation = $xaaCancelAcceptance
