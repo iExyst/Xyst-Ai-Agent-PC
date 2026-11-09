@@ -2,6 +2,10 @@
 
 Updated 2026-11-09.
 
+## Verify the current release notices in the installed Windows package (2026-11-09)
+
+Added a manual `workflow_dispatch` path that runs only the hosted Windows installer job on a selected branch, so package acceptance can run before changes reach `main` without repeating the full source suite. Manual run [42620161353](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42620161353) built the unsigned 0.1.1 installer from commit `c4d9dbc` and passed. The installed smoke confirms all three release notice files match their manifest hashes, the 0.1.0→0.1.1 upgrade preserves seeded run/event/artifact data, installed browser and backup/restore acceptance pass, default uninstall preserves user data and removes binaries, and the explicit removal choice deletes application data and exits cleanly. Reports are preserved in `.acceptance/hosted-installer-42620161353/`. This verifies packaging and install behavior, not license compatibility or the owner-selected X.A.A. application license; those release decisions remain open. No model inference was used.
+
 ## Observe managed-browser loopback attempts on both IP families (2026-11-09)
 
 Expanded `scripts/browser_proxy_bypass_smoke.py` to listen simultaneously on IPv4 `127.0.0.1:443` and IPv6 `[::1]:443`. Real Microsoft Edge attempts the approved `https://localhost/` through the managed browser worker; the local acceptance confirms rejection and zero direct connections on both families. Evidence: `.acceptance/browser-proxy-bypass-1be07b6a41934ee4a38e2560c06c1a85/report.json`. Hosted Windows run [42618783720](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42618783720) passed the expanded smoke with zero connections on both addresses, all 925 Python tests, Ruff, Pyright, browser/client checks, and the other source diagnostics. The artifact is preserved at `.acceptance/hosted-browser-proxy-bypass-42618783720/`; the main-only installer job was skipped on this feature branch. No model inference was used.
