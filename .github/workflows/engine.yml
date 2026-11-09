@@ -139,6 +139,9 @@ jobs:
       - name: Verify desktop startup restores unfinished owner recovery
         run: npm run test:browser -- tests/browser/startup-recovery.spec.ts
         timeout-minutes: 3
+      - name: Verify streamed model and command output rendering
+        run: npm run test:browser -- tests/browser/streaming.spec.ts
+        timeout-minutes: 4
       - run: uv run pytest -q
       - name: Verify specialist recovery after API process death
         run: uv run python scripts/specialist_restart_diagnostic.py

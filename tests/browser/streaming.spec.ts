@@ -10,6 +10,8 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if(path.endsWith('/events/stream')){
@@ -73,4 +75,39 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
   await expect(inspect).toContainText('Unverified streamed specialist draft');
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toHaveCount(0,{timeout:2500});
+});
+test('replays durable command output deltas with UTF-8 boundaries and separate streams',async({page})=>{
+  const run={id:'command-output-run',objective:'Run a bounded fixture command',state:'running',revision:1,acceptance_criteria:[]};
+  const events=[
+    {sequence:1,event_type:'execution.output.delta',payload:{call_id:'command-1',execution_id:'a'.repeat(32),stream:'stdout',chunk_b64:'aGVsbG8g4g==',trust:'untrusted_command_output'},created_at:'2026-11-09T00:00:00Z'},
+    {sequence:2,event_type:'execution.output.delta',payload:{call_id:'command-1',execution_id:'a'.repeat(32),stream:'stderr',chunk_b64:'V0FSTg==',trust:'untrusted_command_output'},created_at:'2026-11-09T00:00:01Z'},
+    {sequence:3,event_type:'execution.output.delta',payload:{call_id:'command-1',execution_id:'a'.repeat(32),stream:'stdout',chunk_b64:'gqwK',trust:'untrusted_command_output'},created_at:'2026-11-09T00:00:02Z'},
+    {sequence:4,event_type:'execution.completed',payload:{call_id:'command-1',execution_id:'a'.repeat(32)},created_at:'2026-11-09T00:00:03Z'},
+  ];
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const url=new URL(request.url());
+    const path=url.pathname;
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:events.map(event=>`id: ${event.sequence}\nevent: run_event\ndata: ${JSON.stringify(event)}\n\n`).join('')+'event: done\ndata: {}\n\n'});
+    return route.fulfill({json:run,headers});
+  });
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective',{exact:true}).fill(run.objective);
+  await page.getByRole('button',{name:'Start objective'}).click();
+  const output=page.getByRole('region',{name:'Streaming command output'});
+  await expect(output).toBeVisible();
+  await expect(output.getByRole('heading',{name:'stdout'})).toBeVisible();
+  await expect(output).toContainText('hello €');
+  await expect(output.getByRole('heading',{name:'stderr'})).toBeVisible();
+  await expect(output.getByText('WARN',{exact:true})).toBeVisible();
 });

@@ -45,6 +45,32 @@ async def diagnose(distribution: str) -> None:
     result = await transport.run(normal, snapshot, deadline=time.monotonic() + 20)
     assert result["succeeded"] is True and result["cleanup_confirmed"] is True
     assert base64.b64decode(result["stdout_b64"]).decode().strip() == nonce
+
+    deltas: list[tuple[str, bytes, float]] = []
+
+    async def receive_delta(stream: str, chunk: bytes) -> None:
+        deltas.append((stream, chunk, time.monotonic()))
+
+    streamed = intent(
+        [
+            "/usr/bin/python3",
+            "-I",
+            "-c",
+            (
+                "import sys,time;sys.stdout.write('early-');sys.stdout.flush();time.sleep(0.8);"
+                "sys.stdout.write('late\\n');sys.stdout.flush()"
+            ),
+        ]
+    )
+    streamed_result = await transport.run(
+        streamed, snapshot, deadline=time.monotonic() + 20, on_output=receive_delta
+    )
+    received_at = time.monotonic()
+    streamed_bytes = b"".join(chunk for stream, chunk, _at in deltas if stream == "stdout")
+    receipt_bytes = base64.b64decode(streamed_result["stdout_b64"], validate=True)
+    assert streamed_result["succeeded"] and streamed_result["cleanup_confirmed"]
+    assert len(deltas) >= 2 and streamed_bytes == receipt_bytes == b"early-late\n"
+    assert received_at - deltas[0][2] >= 0.5
     status = await transport.control("status", normal, deadline=time.monotonic() + 10)
     assert status["closed"] and not status["manager_alive"] and status["outcome"] is not None
     try:
@@ -100,6 +126,10 @@ async def diagnose(distribution: str) -> None:
         "distribution": distribution,
         "profile_sha256": transport.profile_sha256,
         "normal_result_verified": True,
+        "incremental_output_verified": True,
+        "incremental_delta_count": len(deltas),
+        "first_delta_preceded_receipt_seconds": round(received_at - deltas[0][2], 3),
+        "incremental_output_matches_receipt": streamed_bytes == receipt_bytes,
         "replay_refused": True,
         "remaining_time_rejected_before_claim": True,
         "launcher_cancellation_awaited": True,
