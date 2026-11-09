@@ -74,3 +74,15 @@ def test_tauri_build_stops_after_three_transient_failures(monkeypatch):
         build_installer._run_tauri_build("npm.cmd")
 
     assert delays == [5, 10]
+
+
+def test_release_installer_requires_current_user_install_mode(tmp_path):
+    config = Path("apps/desktop/src-tauri/tauri.release.conf.json")
+    assert build_installer._installer_install_mode(config) == "currentUser"
+
+    machine_config = tmp_path / "machine-install.json"
+    machine_config.write_text(
+        '{"bundle":{"windows":{"nsis":{"installMode":"perMachine"}}}}', encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="currentUser"):
+        build_installer._installer_install_mode(machine_config)

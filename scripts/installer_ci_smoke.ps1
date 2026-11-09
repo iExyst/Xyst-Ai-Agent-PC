@@ -19,9 +19,11 @@ $xaaPriorTestConfigDirectory = $env:XAA_TEST_CONFIG_DIR
 $xaaPriorExpectedCloseBehavior = $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR
 $env:LOCALAPPDATA = $xaaLocalAppData
 $env:APPDATA = $xaaRoamingAppData
-$xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-installer-test'))
-if (-not $xaaInstallDir.StartsWith($xaaRunnerRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaInstallDir)) {
-    throw 'Installer test destination must be a new directory under RUNNER_TEMP.'
+$xaaProductName = (Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).productName
+$xaaInstallDir = [IO.Path]::GetFullPath((Join-Path $xaaLocalAppData $xaaProductName))
+$xaaInstallParent = [IO.Path]::GetFullPath($xaaLocalAppData).TrimEnd('\') + '\'
+if (-not $xaaInstallDir.StartsWith($xaaInstallParent, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaInstallDir)) {
+    throw 'Per-user installer test destination must be a new directory under isolated LOCALAPPDATA.'
 }
 $xaaManifest = Get-Content -LiteralPath 'build/installer/manifest.json' -Raw | ConvertFrom-Json
 $xaaInstallerName = $xaaManifest.artifacts.installer.filename
@@ -55,10 +57,12 @@ if (-not $xaaAcceptanceRoot.StartsWith($xaaAcceptanceParent, [StringComparison]:
 New-Item -ItemType Directory -Path $xaaAcceptanceRoot | Out-Null
 $xaaBackupFixture = Join-Path $xaaAcceptanceRoot 'fixture.json'
 $xaaDesktopSettings = Join-Path $xaaRoamingAppData 'dev.xyst.xaa\desktop-settings.json'
-$xaaReport = @{ passed = $false; environment = 'disposable hosted Windows runner'; unsigned = $true }
+$xaaReport = @{ passed = $false; environment = 'disposable hosted Windows runner'; unsigned = $true; install_scope = 'currentUser'; default_install_directory = $xaaInstallDir }
+if ($xaaManifest.install_mode -ne 'currentUser') { throw 'Installer manifest does not declare the current-user install mode.' }
+$xaaReport.install_scope = $xaaManifest.install_mode
 try {
     if ($xaaPriorInstaller) {
-        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
+        $xaaPriorSetup = Start-Process -FilePath $xaaPriorInstaller -ArgumentList @('/S') -WindowStyle Hidden -Wait -PassThru
         if ($xaaPriorSetup.ExitCode -ne 0) { throw "Prior installer exit code $($xaaPriorSetup.ExitCode)" }
         $xaaReport.prior_version = $xaaPriorManifest.version
         $xaaReport.prior_install_verified = (Test-Path -LiteralPath (Join-Path $xaaInstallDir 'xaa-engine.exe'))
@@ -84,7 +88,7 @@ try {
     }
     [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
     $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
-    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', "/D=$xaaInstallDir") -WindowStyle Hidden -Wait -PassThru
+    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S') -WindowStyle Hidden -Wait -PassThru
     if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
@@ -98,6 +102,8 @@ try {
         throw "Installed binary checksums do not match the manifest. Desktop expected $($xaaManifest.artifacts.desktop.sha256), actual $xaaDesktopHash; engine expected $($xaaManifest.artifacts.engine.sha256), actual $xaaEngineHash."
     }
     $xaaReport.installed_binary_hashes_match = $true
+    $xaaReport.default_per_user_install_directory_verified = (Test-Path -LiteralPath $xaaInstallDir) -and $xaaInstallDir.StartsWith($xaaInstallParent, [StringComparison]::OrdinalIgnoreCase)
+    if (-not $xaaReport.default_per_user_install_directory_verified) { throw 'Installer did not use the isolated per-user default install directory.' }
     if (-not $xaaPriorInstaller) {
         $xaaExistingStartup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
         if ($xaaExistingStartup -and $xaaExistingStartup.GetValueNames() -contains $xaaStartupValueName) { throw 'Refusing to replace an existing sign-in startup value.' }
@@ -204,7 +210,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue

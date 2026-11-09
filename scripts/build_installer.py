@@ -7,6 +7,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
+
+
+def _installer_install_mode(config_path: Path) -> str:
+    config: Any = json.loads(config_path.read_text(encoding="utf-8"))
+    install_mode = config.get("bundle", {}).get("windows", {}).get("nsis", {}).get("installMode")
+    if not isinstance(install_mode, str) or install_mode != "currentUser":
+        raise RuntimeError("The Windows installer must use the currentUser install mode.")
+    return install_mode
 
 
 def _run_tauri_build(npm: str) -> None:
@@ -71,6 +80,7 @@ def main() -> None:
     _run_tauri_build(npm)
     config = json.loads(Path("apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
     version, product_name = config["version"], config["productName"]
+    install_mode = _installer_install_mode(Path("apps/desktop/src-tauri/tauri.release.conf.json"))
     filename = f"{product_name}_{version}_x64-setup.exe"
     if Path(filename).name != filename:
         raise RuntimeError("Installer filename must remain within the bundle directory.")
@@ -102,6 +112,7 @@ def main() -> None:
         "target": "x86_64-pc-windows-msvc",
         "signed": False,
         "binary_patching": False,
+        "install_mode": install_mode,
         "artifacts": {
             name: {
                 "filename": path.name,
