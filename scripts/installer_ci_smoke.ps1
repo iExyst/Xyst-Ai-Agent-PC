@@ -155,6 +155,16 @@ try {
         $xaaReport.installed_desktop_browser_cancellation = $xaaCancelAcceptance
         & node scripts/native_boot_smoke.mjs $xaaDesktop
         $xaaBootExitCode = $LASTEXITCODE
+        if ($xaaBootExitCode -ne 0) { throw 'Installed application boot/shutdown test failed.' }
+        $env:XAA_NATIVE_SCHEDULE_RESTART_ROOT = Join-Path $xaaAcceptanceRoot 'native-schedule-restart'
+        $xaaScheduleRestartOutput = & node scripts/native_schedule_restart_smoke.mjs $xaaDesktop
+        $xaaScheduleRestartExitCode = $LASTEXITCODE
+        if ($xaaScheduleRestartExitCode -ne 0) { throw 'Installed scheduled cold-restart acceptance failed.' }
+        $xaaScheduleRestartAcceptance = ($xaaScheduleRestartOutput | Out-String | ConvertFrom-Json)
+        if (-not $xaaScheduleRestartAcceptance.passed -or $xaaScheduleRestartAcceptance.full_desktop_process_restarts -ne 2 -or $xaaScheduleRestartAcceptance.state_after_both_starts -ne 'missed' -or $xaaScheduleRestartAcceptance.execution_count_after_both_starts -ne 1 -or $xaaScheduleRestartAcceptance.run_count -ne 0 -or $xaaScheduleRestartAcceptance.model_inference_requested -or $xaaScheduleRestartAcceptance.telegram_delivery_requested) {
+            throw 'Installed scheduled cold-restart evidence was incomplete.'
+        }
+        $xaaReport.native_schedule_restart = $xaaScheduleRestartAcceptance
     } finally {
         if ($xaaDebugPolicyOwned) {
             Remove-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe'
@@ -187,7 +197,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
@@ -197,6 +207,7 @@ try {
     }
     Remove-Item Env:XAA_NATIVE_ACCEPTANCE_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue
+    Remove-Item Env:XAA_NATIVE_SCHEDULE_RESTART_ROOT -ErrorAction SilentlyContinue
     if ($null -eq $xaaPriorTestConfigDirectory) { Remove-Item Env:XAA_TEST_CONFIG_DIR -ErrorAction SilentlyContinue } else { $env:XAA_TEST_CONFIG_DIR = $xaaPriorTestConfigDirectory }
     if ($null -eq $xaaPriorExpectedCloseBehavior) { Remove-Item Env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR = $xaaPriorExpectedCloseBehavior }
     $env:LOCALAPPDATA = $xaaPriorLocalAppData
