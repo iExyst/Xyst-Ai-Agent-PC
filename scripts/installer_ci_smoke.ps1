@@ -158,7 +158,7 @@ try {
     if ($xaaReport.native_acceptance.initial_close_behavior -ne 'keep_running') { throw 'Installed desktop did not load its isolated default close behavior.' }
     $xaaReport.installed_backup_restore_verified = [bool]$xaaReport.native_acceptance.installed_backup_restore_verified
     if (-not $xaaReport.installed_backup_restore_verified -or -not $xaaReport.native_acceptance.backup_acceptance.verification.passed) { throw 'Installed backup/restore evidence was incomplete.' }
-    if (-not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.passed -or -not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.owner_recovery_confirmed_in_ui -or $xaaReport.native_acceptance.owner_reviewed_startup_recovery.automatic_resume) { throw 'Installed desktop startup recovery did not complete the owner-reviewed UI acceptance.' }
+    if (-not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.passed -or -not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.cold_desktop_start -or -not $xaaReport.native_acceptance.owner_reviewed_startup_recovery.owner_recovery_confirmed_in_ui -or $xaaReport.native_acceptance.owner_reviewed_startup_recovery.automatic_resume) { throw 'Installed desktop startup recovery did not restore and complete the owner-reviewed run on cold start.' }
     $xaaReport.upgrade_data_verified = [bool]$xaaPriorInstaller -and [bool]$xaaReport.upgrade_data_fixture_seeded_before_upgrade -and $xaaReport.installed_backup_restore_verified
     $xaaReport.installed_binaries_present = $true
     $xaaReport.installed_boot_verified = $true

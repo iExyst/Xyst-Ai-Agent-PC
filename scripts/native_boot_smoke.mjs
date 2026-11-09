@@ -20,6 +20,14 @@ const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePat
 const recoverStartupRun=process.env.XAA_NATIVE_BOOT_RECOVERY==='1';
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
 const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
+let ownerRecoveryAcceptance;
+if(recoverStartupRun){
+  const recoveryReportPath=path.join(root,'startup-recovery-seed.json');
+  const recoveryWorkspace=path.join(root,'startup-recovery-workspace');
+  const recoveryDatabase=path.join(localAppData,'XAA','xaa.sqlite3');
+  ownerRecoveryAcceptance=JSON.parse(execFileSync('uv',['run','python','scripts/native_recovery_fixture.py','--database',recoveryDatabase,'--workspace',recoveryWorkspace,'--report',recoveryReportPath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
+  if(ownerRecoveryAcceptance.state_at_seed!=='blocked'||ownerRecoveryAcceptance.inference_attempts_at_seed!==0)throw new Error('Recovery fixture was not seeded as a blocked, inference-free run.');
+}
 const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
@@ -56,7 +64,7 @@ try{
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   let ready=false;
   for(let attempt=0;attempt<240;attempt++){
-    try{const response=await fetch(`${connection.base_url}/runs`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(500)});if(response.ok){const history=await response.json();if(backupFixture){if(!history.items.some(item=>item.id===backupFixture.run.id))throw new Error('Seeded installed backup run is absent from the engine database');}else if(history.items.length)throw new Error('Isolated boot unexpectedly has runs');ready=true;break;}}catch(error){if(String(error).includes('Seeded installed backup run'))throw error;}
+    try{const response=await fetch(`${connection.base_url}/runs`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(500)});if(response.ok){const history=await response.json();if(backupFixture){if(!history.items.some(item=>item.id===backupFixture.run.id))throw new Error('Seeded installed backup run is absent from the engine database');}else if(recoverStartupRun){if(!history.items.some(item=>item.id===ownerRecoveryAcceptance.run_id))throw new Error('Seeded startup recovery run is absent from the engine database');}else if(history.items.length)throw new Error('Isolated boot unexpectedly has runs');ready=true;break;}}catch(error){if(String(error).includes('Seeded installed backup run')||String(error).includes('Seeded startup recovery run'))throw error;}
     await new Promise(resolve=>setTimeout(resolve,250));
   }
   if(!ready)throw new Error('Bundled engine API did not become ready');
@@ -76,18 +84,10 @@ try{
     const verified=execFileSync('uv',['run','python','scripts/installed_backup_fixture.py','verify','--directory',restoreDirectory,'--fixture',backupFixturePath,'--report',path.join(root,'installed-backup-verification.json')],{windowsHide:true,encoding:'utf8',timeout:60000,env:process.env});
     backupAcceptance={backup_cli:true,restore_cli:true,bundle,restored_directory:restoreDirectory,verification:JSON.parse(verified)};
   }
-  let ownerRecoveryAcceptance;
   if(recoverStartupRun){
-    const recoveryReportPath=path.join(root,'startup-recovery-seed.json');
-    const recoveryWorkspace=path.join(root,'startup-recovery-workspace');
-    const recoveryDatabase=path.join(localAppData,'XAA','xaa.sqlite3');
-    ownerRecoveryAcceptance=JSON.parse(execFileSync('uv',['run','python','scripts/native_recovery_fixture.py','--database',recoveryDatabase,'--workspace',recoveryWorkspace,'--report',recoveryReportPath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
-    if(ownerRecoveryAcceptance.state_at_seed!=='blocked'||ownerRecoveryAcceptance.inference_attempts_at_seed!==0)throw new Error('Recovery fixture was not seeded as a blocked, inference-free run.');
     const desktopApiRequests=[];
     page.on('request',request=>{if(request.url().startsWith(connection.base_url))desktopApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);});
     page.on('dialog',dialog=>void dialog.accept());
-    await page.reload({waitUntil:'domcontentloaded'});
-    await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
     await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible({timeout:20000});
     await expect(page.getByText(ownerRecoveryAcceptance.objective??'Review and recover an interrupted workspace edit',{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Inspect uncertain workspace writes'}).click();
@@ -112,7 +112,7 @@ try{
     if(workspaceHash!==ownerRecoveryAcceptance.original_sha256)throw new Error('Owner recovery changed the restored workspace file.');
     if(events.some(event=>event.event_type==='model.inference.started'||event.event_type==='model.message'))throw new Error('The startup recovery acceptance unexpectedly requested model inference.');
     if(desktopApiRequests.some(request=>request.endsWith(`/runs/${ownerRecoveryAcceptance.run_id}/resume`)))throw new Error('The desktop resumed the run during recovery.');
-    ownerRecoveryAcceptance={...ownerRecoveryAcceptance,passed:true,webview_reloaded:true,latest_unfinished_run_opened:true,owner_recovery_confirmed_in_ui:true,unresolved_intents:reconciliations.length,result_available:String(toolResult.result).includes('not_applied_after_review'),run_state_after_recovery:savedRun.state,workspace_sha256_after_recovery:workspaceHash,automatic_resume:false,model_inference_requested:false};
+    ownerRecoveryAcceptance={...ownerRecoveryAcceptance,passed:true,cold_desktop_start:true,saved_run_restored_from_database:true,latest_unfinished_run_opened:true,owner_recovery_confirmed_in_ui:true,unresolved_intents:reconciliations.length,result_available:String(toolResult.result).includes('not_applied_after_review'),run_state_after_recovery:savedRun.state,workspace_sha256_after_recovery:workspaceHash,automatic_resume:false,model_inference_requested:false};
     await writeFile(path.join(root,'startup-recovery-acceptance.json'),JSON.stringify(ownerRecoveryAcceptance,null,2));
   }
   const startupMilliseconds=Date.now()-started;
