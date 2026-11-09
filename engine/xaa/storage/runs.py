@@ -96,6 +96,42 @@ def _is_safe_read_intent(tool_name: str, version: str, arguments: str) -> bool:
     )
 
 
+def _is_reconcilable_workspace_write(tool_name: str, version: str, arguments: str) -> bool:
+    if version != "1":
+        return False
+    try:
+        payload: Any = json.loads(arguments)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    typed_payload = cast(dict[str, Any], payload)
+    path = typed_payload.get("path")
+    if not isinstance(path, str) or not 1 <= len(path) <= 2048:
+        return False
+    if tool_name == "workspace.create_file":
+        return (
+            set(typed_payload) == {"path", "content"}
+            and isinstance(typed_payload.get("content"), str)
+            and len(typed_payload["content"]) <= 65536
+        )
+    if tool_name == "workspace.write_file":
+        return (
+            set(typed_payload) == {"path", "content", "expected_sha256"}
+            and isinstance(typed_payload.get("content"), str)
+            and len(typed_payload["content"]) <= 65536
+            and isinstance(typed_payload.get("expected_sha256"), str)
+            and re.fullmatch(r"[a-f0-9]{64}", typed_payload["expected_sha256"]) is not None
+        )
+    if tool_name == "workspace.delete_file":
+        return (
+            set(typed_payload) == {"path", "expected_sha256"}
+            and isinstance(typed_payload.get("expected_sha256"), str)
+            and re.fullmatch(r"[a-f0-9]{64}", typed_payload["expected_sha256"]) is not None
+        )
+    return False
+
+
 def default_database_path() -> Path:
     root = os.environ.get("XAA_DATA_DIR") or os.environ.get("LOCALAPPDATA")
     if root:
@@ -2120,7 +2156,13 @@ class RunStore:
                     arguments = {}
                     arguments_invalid = True
                 else:
-                    arguments_invalid = False
+                    arguments_invalid = row["tool_name"] in {
+                        "workspace.create_file",
+                        "workspace.write_file",
+                        "workspace.delete_file",
+                    } and not _is_reconcilable_workspace_write(
+                        row["tool_name"], row["tool_version"], row["arguments"]
+                    )
             except (TypeError, json.JSONDecodeError):
                 arguments = {}
                 arguments_invalid = True
@@ -2472,18 +2514,14 @@ class RunStore:
                     "WHERE run_id = ? AND state = 'intended'",
                     (run_id,),
                 ).fetchall()
-                safe_workspace_writes = {
-                    "workspace.write_file",
-                    "workspace.create_file",
-                    "workspace.delete_file",
-                }
                 workspace_writes_authorized = row["mode"] == "workspace" and bool(row["workspace"])
                 recoverable_intents = all(
                     _is_safe_read_intent(item["tool_name"], item["tool_version"], item["arguments"])
                     or (
-                        item["tool_version"] == "1"
-                        and workspace_writes_authorized
-                        and item["tool_name"] in safe_workspace_writes
+                        workspace_writes_authorized
+                        and _is_reconcilable_workspace_write(
+                            item["tool_name"], item["tool_version"], item["arguments"]
+                        )
                     )
                     for item in unresolved
                 )

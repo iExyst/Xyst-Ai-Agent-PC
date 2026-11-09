@@ -9,13 +9,13 @@ from xaa.runtime.states import RunState
 from xaa.storage.runs import LeaseLost, RunStore
 
 
-def setup(root):
+def setup(root, mode="observe"):
     store = RunStore(root / "read.sqlite3")
     run = store.create_run(
         objective="Read input.txt",
         acceptance_criteria=[],
         workspace=str(root),
-        mode="observe",
+        mode=mode,
         model="fixture",
     )
     return store, run["id"], store.acquire_lease(run["id"], "old-worker")
@@ -227,6 +227,62 @@ def test_malformed_read_intent_is_quarantined_without_crashing_recovery(workspac
     unresolved = store.unresolved_tool_calls(run_id)
     assert len(unresolved) == 1
     assert unresolved[0]["arguments"] == {}
+    assert unresolved[0]["arguments_invalid"] is True
+
+
+@pytest.mark.parametrize(
+    "tool,arguments,saved_arguments",
+    [
+        ("workspace.create_file", {"path": "new.txt", "content": "x"}, "{"),
+        (
+            "workspace.write_file",
+            {"path": "old.txt", "content": "x", "expected_sha256": "a" * 64},
+            '{"path":"old.txt","content":"x","expected_sha256":"invalid"}',
+        ),
+        (
+            "workspace.delete_file",
+            {"path": "old.txt", "expected_sha256": "a" * 64},
+            '{"path":"old.txt","expected_sha256":"' + "a" * 64 + '","extra":true}',
+        ),
+    ],
+)
+def test_malformed_workspace_write_intent_stays_blocked(
+    workspace_tmp_path, tool, arguments, saved_arguments
+):
+    store, run_id, token = setup(workspace_tmp_path, mode="workspace")
+    proposal_name = {
+        "workspace.create_file": "workspace_create_file",
+        "workspace.write_file": "workspace_write_file",
+        "workspace.delete_file": "workspace_delete_file",
+    }[tool]
+    propose(store, run_id, token, "damaged-write", proposal_name)
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="damaged-write",
+        tool=tool,
+        version="1",
+        arguments=arguments,
+        idempotency_key="damaged-write",
+    )
+    connection = sqlite3.connect(store.path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE tool_calls SET arguments=? WHERE run_id=? AND provider_call_id=?",
+                (saved_arguments, run_id, "damaged-write"),
+            )
+            connection.execute(
+                "UPDATE runs SET state='planning', lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                (run_id,),
+            )
+    finally:
+        connection.close()
+
+    assert store.recover_abandoned_runs() == []
+    assert store.get_run(run_id)["state"] == RunState.BLOCKED
+    unresolved = store.unresolved_tool_calls(run_id)
+    assert len(unresolved) == 1
     assert unresolved[0]["arguments_invalid"] is True
 
 
