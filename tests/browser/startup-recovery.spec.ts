@@ -44,3 +44,42 @@ test('reopens the latest unfinished run on connection for owner recovery without
   expect(calls.some(call=>call.method==='POST'&&call.path.endsWith('/resume'))).toBe(false);
   expect(calls.some(call=>call.path==='/v1/chat/completions')).toBe(false);
 });
+
+test('keeps retrying while the packaged engine finishes starting',async({page})=>{
+  let historyAttempts=0;
+  const calls:string[]=[];
+  await page.addInitScript(()=>{
+    const originalSetTimeout=window.setTimeout.bind(window);
+    window.setTimeout=((callback:TimerHandler,delay?:number,...arguments_:unknown[])=>originalSetTimeout(callback,delay===250?0:delay,...arguments_)) as typeof window.setTimeout;
+    (window as unknown as {__TAURI_INTERNALS__:{invoke:(command:string)=>Promise<unknown>}}).__TAURI_INTERNALS__={
+      invoke:async(command:string)=>{
+        if(command==='engine_connection')return{base_url:'http://127.0.0.1:8765',token:'x'.repeat(32)};
+        if(command==='get_close_behavior')return'keep_running';
+        if(command==='get_start_on_login')return false;
+        throw new Error(`Unexpected Tauri command: ${command}`);
+      },
+    };
+  });
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const url=new URL(request.url());
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    calls.push(`${request.method()} ${url.pathname}`);
+    if(url.pathname==='/runs'){
+      historyAttempts++;
+      if(historyAttempts<=41)return route.abort('connectionrefused');
+      return route.fulfill({json:{items:[],next_cursor:null},headers});
+    }
+    if(url.pathname==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
+    if(url.pathname==='/models')return route.fulfill({json:[],headers});
+    if(url.pathname==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
+    return route.fulfill({json:[],headers});
+  });
+  await page.goto('/');
+  await expect.poll(()=>historyAttempts).toBeGreaterThan(40);
+  await expect(page.getByRole('heading',{name:'Get started'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Connect to the engine'})).toHaveCount(0);
+  await expect(page.getByText('The local engine did not become ready. Inspect the engine log and restart the app.')).toHaveCount(0);
+  expect(calls).toContain('GET /runs/latest-unfinished');
+});

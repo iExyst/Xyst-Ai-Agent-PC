@@ -24,6 +24,8 @@ import { ConversationSessionsPanel } from './ConversationSessionsPanel.tsx';
 import type {components} from './generated/api.js';
 
 const SPECIALIST_DRAFT_CLEAR_DELAY_MS=1000;
+const ENGINE_STARTUP_RETRY_ATTEMPTS=240;
+const ENGINE_STARTUP_RETRY_DELAY_MS=250;
 type DesktopCloseBehavior='keep_running'|'exit_on_close';
 
 function conversationObjective(previous:ChatSession['messages'],current:string):string {
@@ -113,14 +115,16 @@ function App() {
       try {
         const connection = await invoke<{base_url: string; token: string}>('engine_connection');
         const next = new EngineClient(connection.base_url, connection.token);
-        for (let attempt = 0; attempt < 40 && !disposed; attempt++) {
+        // Frozen Windows engine startup can take longer on a clean profile while
+        // PyInstaller extracts its payload. Match the native smoke's 60-second bound.
+        for (let attempt = 0; attempt < ENGINE_STARTUP_RETRY_ATTEMPTS && !disposed; attempt++) {
           try {
             await next.history();
             if (!disposed) { setModel(''); setClient(next); }
             const available = await next.models().catch(()=>undefined);
             if (!disposed) { setModels(available?.map(item => item.id)??[]);if(!available)setError('The engine is connected, but LM Studio models are unavailable. Sandbox setup and saved data remain accessible.'); }
             return;
-          } catch { await new Promise(resolve => setTimeout(resolve, 250)); }
+          } catch { await new Promise(resolve => setTimeout(resolve, ENGINE_STARTUP_RETRY_DELAY_MS)); }
         }
         if (!disposed) setError('The local engine did not become ready. Inspect the engine log and restart the app.');
       } catch (failure) { if (!disposed) setError(String(failure)); }
