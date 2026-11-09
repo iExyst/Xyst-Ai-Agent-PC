@@ -27,6 +27,11 @@ _JS_LOCKFILES = {
     "bun.lockb": "bun",
 }
 _RAKE_TEST_TASK = re.compile(r"(?m)^\s*(?:Rake::TestTask\.new\b|task\s+(?::test\b|['\"]test['\"]))")
+_NPM_PLACEHOLDER_TEST = re.compile(
+    r"^echo\s+['\"]?Error:\s*no\s+test\s+specified['\"]?\s*&&\s*exit\s+1\s*$",
+    re.IGNORECASE,
+)
+_CMAKE_WORKFLOW_REQUIRED_STEPS = {"build", "test"}
 _PYTEST_CONFIG_PRIORITY = {
     "pytest.toml": 0,
     ".pytest.toml": 1,
@@ -140,6 +145,95 @@ def _makefile_declares_test_recipe(source: str) -> bool:
     return False
 
 
+def _cmake_test_workflows(content: bytes) -> list[str]:
+    """Return named CMake workflows that configure, build, and run tests."""
+    try:
+        document: object = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    if not isinstance(document, dict):
+        return []
+    root = cast(dict[str, object], document)
+    version = root.get("version")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 6:
+        return []
+    workflows = root.get("workflowPresets")
+    if not isinstance(workflows, list):
+        return []
+
+    def preset_definitions(key: str) -> dict[str, dict[str, object]]:
+        value = root.get(key)
+        if not isinstance(value, list):
+            return {}
+        definitions: dict[str, dict[str, object]] = {}
+        for preset in cast(list[object], value):
+            if not isinstance(preset, dict):
+                continue
+            item = cast(dict[str, object], preset)
+            name = item.get("name")
+            if isinstance(name, str) and name.strip():
+                definitions[name] = item
+        return definitions
+
+    configure_presets = preset_definitions("configurePresets")
+    build_presets = preset_definitions("buildPresets")
+    test_presets = preset_definitions("testPresets")
+    package_presets = preset_definitions("packagePresets")
+    names: list[str] = []
+    for candidate in cast(list[object], workflows):
+        if not isinstance(candidate, dict):
+            continue
+        workflow = cast(dict[str, object], candidate)
+        name = workflow.get("name")
+        steps = workflow.get("steps")
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or len(name) > 128
+            or workflow.get("hidden") is True
+        ):
+            continue
+        if not isinstance(steps, list) or not steps:
+            continue
+        typed_steps = cast(list[object], steps)
+        if not all(isinstance(step, dict) for step in typed_steps):
+            continue
+        first_step = cast(dict[str, object], typed_steps[0])
+        configure_name = first_step.get("name")
+        if (
+            first_step.get("type") != "configure"
+            or not isinstance(configure_name, str)
+            or configure_name not in configure_presets
+        ):
+            continue
+        step_types: set[str] = set()
+        valid_steps = True
+        for raw_step in typed_steps[1:]:
+            step = cast(dict[str, object], raw_step)
+            step_type = step.get("type")
+            preset_name = step.get("name")
+            if not isinstance(step_type, str):
+                valid_steps = False
+                break
+            expected_presets = {
+                "build": build_presets,
+                "test": test_presets,
+                "package": package_presets,
+            }.get(step_type)
+            if (
+                expected_presets is None
+                or not isinstance(preset_name, str)
+                or preset_name not in expected_presets
+                or expected_presets[preset_name].get("configurePreset") != configure_name
+            ):
+                valid_steps = False
+                break
+            step_types.add(step_type)
+        if valid_steps and _CMAKE_WORKFLOW_REQUIRED_STEPS <= step_types:
+            names.append(name)
+    return sorted(set(names), key=str.casefold)[:8]
+
+
 def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, object]]:
     """Return deterministic command presets inferred from project manifests.
 
@@ -151,6 +245,30 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
     """
     paths = {entry.path.casefold(): entry.path for entry in snapshot.files}
     suggestions: list[dict[str, object]] = []
+
+    cmake_presets = paths.get("cmakepresets.json")
+    cmake_lists = paths.get("cmakelists.txt")
+    if cmake_presets is not None and cmake_lists is not None:
+        try:
+            preset_content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == cmake_presets.casefold()
+            )
+        except StopIteration:
+            preset_content = b""
+        for name in _cmake_test_workflows(preset_content):
+            suggestions.append(
+                {
+                    "label": f"CMake tests (workflow: {name})",
+                    "rationale": (
+                        "CMakePresets.json declares a workflow with configure, build, and test "
+                        "steps. Confirm CMake and the project's dependencies are available "
+                        "in the restricted network-disabled WSL environment."
+                    ),
+                    "argv": ["/usr/bin/env", "cmake", "--workflow", "--preset", name],
+                }
+            )
 
     python_configs: dict[str, str] = {}
     for path in paths.values():
@@ -204,7 +322,11 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
         if not isinstance(scripts, dict):
             continue
         test_script = cast(dict[str, object], scripts).get("test")
-        if not isinstance(test_script, str) or not test_script.strip():
+        if (
+            not isinstance(test_script, str)
+            or not test_script.strip()
+            or _NPM_PLACEHOLDER_TEST.fullmatch(test_script.strip())
+        ):
             continue
         manager = _javascript_package_manager(package, manifest, paths)
         if manager is None:

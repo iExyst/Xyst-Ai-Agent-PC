@@ -45,6 +45,55 @@ def test_no_manifest_means_no_suggestions():
     assert suggest_validation_commands(snapshot(("README.md", b"Documentation"))) == []
 
 
+def test_ignores_npm_init_placeholder_test_script():
+    result = suggest_validation_commands(
+        snapshot(
+            (
+                "package.json",
+                b'{"scripts":{"test":"echo \\"Error: no test specified\\" && exit 1"}}',
+            ),
+        )
+    )
+
+    assert result == []
+
+
+def test_suggests_declared_cmake_test_workflows_only():
+    result = suggest_validation_commands(
+        snapshot(
+            ("CMakeLists.txt", b"project(example)"),
+            (
+                "CMakePresets.json",
+                (
+                    b'{"version":6,"configurePresets":[{"name":"ci"},{"name":"other"}],'
+                    b'"buildPresets":[{"name":"ci","configurePreset":"ci"},'
+                    b'{"name":"other","configurePreset":"other"}],'
+                    b'"testPresets":[{"name":"ci","configurePreset":"ci"},'
+                    b'{"name":"other","configurePreset":"other"}],'
+                    b'"workflowPresets":['
+                    b'{"name":"ci","steps":[{"type":"configure","name":"ci"},'
+                    b'{"type":"build","name":"ci"},{"type":"test","name":"ci"}]},'
+                    b'{"name":"mismatched","steps":[{"type":"configure","name":"ci"},'
+                    b'{"type":"build","name":"other"},{"type":"test","name":"other"}]},'
+                    b'{"name":"configure-only","steps":[{"type":"configure","name":"ci"}]}]}'
+                ),
+            ),
+        )
+    )
+
+    assert result == [
+        {
+            "label": "CMake tests (workflow: ci)",
+            "rationale": (
+                "CMakePresets.json declares a workflow with configure, build, and test steps. "
+                "Confirm CMake and the project's dependencies are available in the restricted "
+                "network-disabled WSL environment."
+            ),
+            "argv": ["/usr/bin/env", "cmake", "--workflow", "--preset", "ci"],
+        }
+    ]
+
+
 def test_python_suggestions_require_real_pytest_configuration_and_deduplicate_projects():
     result = suggest_validation_commands(
         snapshot(

@@ -2,6 +2,14 @@
 
 Updated 2026-11-09.
 
+## Suggest complete CMake test workflows during project validation (2026-11-09)
+
+Final review now recognizes root `CMakePresets.json` workflow presets using schema version 6 or newer when each suggested workflow declares configure, build, and test steps backed by named presets associated with the same configure preset. It dispatches `cmake --workflow --preset NAME` through the existing restricted-command review, avoiding generated shell commands and guessed build directories. The focused validation-suggestion suite passes (13 tests); Ruff, formatting, strict Pyright, and `git diff --check` pass. No live model inference was used. Hosted Windows verification remains pending; dependency availability and workflow success still require user review.
+
+## Ignore the default npm placeholder in project validation (2026-11-09)
+
+Final-review validation suggestions now skip the stock `npm init` test script (`echo "Error: no test specified" && exit 1`) instead of presenting a command guaranteed to fail as a project test suite. A focused regression covers the exact placeholder; the validation-suggestion unit suite passes (12 tests), Ruff passes, formatting passes, and strict Pyright reports zero issues for the implementation. No live model inference was used. Hosted Windows verification remains pending.
+
 ## User operating guide (2026-11-09)
 
 Refreshed the existing `docs/user-guide.md` to date its development-preview scope and align its cross-interface/release limits with current evidence. The repository README and 0.1.1 development-build notes link the guide. It covers Windows development-build scope, LM Studio setup, diagnostic-gated onboarding, Observe/Workspace permissions, explicit candidate and conflict review, run recovery, saved memory/procedure behavior, optional integration boundaries, portable backup/restore, and desktop shutdown settings. The guide distinguishes supported workflows from partial or unverified integrations and does not claim full Hermes parity or release readiness. The README's historical 16% completion figure was removed; one unweighted percentage is not supportable from the broad objective phases. Internal guide links and `git diff --check` were reviewed; CI/package verification is pending.
