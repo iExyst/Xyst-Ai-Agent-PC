@@ -1,8 +1,8 @@
+# Progress
+
 ## Verify PyInstaller license notice source text (2026-11-10)
 
-Removed generated Additional notice: UNKNOWN placeholders from the PyInstaller and community-hooks notice blocks. The remaining fenced texts match the pinned installed package files (pyinstaller==6.22.3 COPYING.txt; pyinstaller-hooks-contrib==2026.9 LICENSE) after normalizing line endings, markdown fence boundaries, and whitespace-only line differences. The inventory now records PyInstaller's metadata-declared GPLv2-or-later exception and keeps package-specific copyright and complete installer-notice review open. git diff --check passes. No live model inference was used.
-
-# Progress
+Removed generated `Additional notice: UNKNOWN` placeholders from the PyInstaller and community-hooks notice blocks. The remaining fenced texts match the pinned installed package files (`pyinstaller==6.22.3` `COPYING.txt`; `pyinstaller-hooks-contrib==2026.9` `LICENSE`) after normalizing line endings, markdown fence boundaries, and whitespace-only line differences. The inventory now records PyInstaller's metadata-declared GPLv2-or-later exception and keeps package-specific copyright and complete installer-notice review open. `git diff --check` passes. No live model inference was used.
 
 ## Correct the X.A.A. package license in release inventory (2026-11-10)
 
