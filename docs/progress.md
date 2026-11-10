@@ -2,7 +2,7 @@
 
 ## Avoid rebuilding private diffs for reviewer evidence paging (2026-11-10)
 
-Reviewer dependency-manifest paging and evidence-gate checks now request change metadata without generating full unified diffs. This avoids repeated diff allocation for every page while preserving full diffs for the owner review UI and normal candidate evidence. The task workspace and specialist suites pass (40 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. This bounds one repeated allocation in reviewer inventory; broader Phase 4 resource/reliability coverage remains open. No live model inference was used.
+Reviewer dependency-manifest paging and evidence-gate checks now request change metadata without generating full unified diffs. This avoids repeated diff allocation for every page while preserving full diffs for the owner review UI and normal candidate evidence. The task workspace and specialist suites pass (40 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. Hosted Windows run [42891572306](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42891572306) passed the full source workflow, including the Python suite and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. This bounds one repeated allocation in reviewer inventory; broader Phase 4 resource/reliability coverage remains open. No live model inference was used.
 
 ## Keep reviewer evidence discoverable beyond the prompt budget (2026-11-10)
 
