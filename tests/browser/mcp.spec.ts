@@ -7,6 +7,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   let importedSkill: any;
   let importedPackageServer: any;
   let importedPackageHTTPServer: any;
+  let installedPackagePresent = false;
   const tool = {
     server_id: serverId,
     name: 'change_value',
@@ -34,7 +35,13 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     const body = ['POST','PUT'].includes(request.method()) ? request.postDataJSON() : undefined;
     requests.push({method:request.method(),path,...(body?{body}:{})});
     if (path === '/extensions/packages/install') {
+      installedPackagePresent = true;
       return route.fulfill({status:201,json:{root:'C:\\plugins',package:{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample-package',skills:[],servers:[]}},headers});
+    }
+    if (path === '/extensions/packages/installed') return route.fulfill({json:{root:'C:\\plugins',packages:installedPackagePresent?[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample-package',skills:[],servers:[]}]:[],diagnostics:[]},headers});
+    if (path === '/extensions/packages/remove') {
+      installedPackagePresent=false;
+      return route.fulfill({json:{removed:true,package_name:body.package_name},headers});
     }
     if (path === '/runs/latest-unfinished') return route.fulfill({json:null,headers});
     if (path === '/runs') return route.fulfill({json:{items:[],next_cursor:null},headers});
@@ -63,7 +70,13 @@ test('configure an MCP server, discover tools and explicitly grant write access'
       importedPackageServer={id:'abcdef0123456789abcdef0123456789',name:'sample-package:local-helper',transport:'stdio',endpoint:null,command:'python.exe',args:['server.py'],cwd:null,secret_env:['API_TOKEN'],plugin_backed:true,created_at:'2026-11-10T00:00:00Z',updated_at:'2026-11-10T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{API_TOKEN:true},oauth_configured:false,tools:[]};
       return route.fulfill({status:201,json:{id:importedPackageServer.id,name:importedPackageServer.name,transport:'stdio',state:'disconnected',secret_env:['API_TOKEN']},headers});
     }
-    if (path === `/mcp/servers/${serverId}` && request.method() === 'DELETE') { server = null; return route.fulfill({status:204,headers}); }
+    if (path.startsWith('/mcp/servers/') && request.method() === 'DELETE') {
+      const removedId=path.split('/').at(-1);
+      if(removedId===serverId)server=null;
+      if(removedId===importedPackageServer?.id)importedPackageServer=null;
+      if(removedId===importedPackageHTTPServer?.id)importedPackageHTTPServer=null;
+      return route.fulfill({status:204,headers});
+    }
     if (path === `/mcp/servers/${serverId}/connect`) {
       server = {...server,state:'connected',tools:[tool]};
       return route.fulfill({json:{state:'connected',tools:[tool]},headers});
@@ -183,5 +196,14 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
   await expect(page.getByRole('button',{name:'Inspect summarize',exact:true})).toBeVisible();
   expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/import-skill'&&item.body.package_name==='sample-package'&&item.body.skill_name==='summarize')).toBe(true);
+  for(const packageServer of ['sample-package:remote-helper','sample-package:local-helper','HTTP MCP']) {
+    await mcpPanel.locator('article').filter({hasText:packageServer}).getByRole('button',{name:'Remove server'}).click();
+  }
+  page.on('dialog',dialog=>void dialog.accept());
+  await plugins.getByRole('button',{name:'Show installed packages'}).click();
+  await expect(plugins.getByRole('button',{name:'Remove sample-package'})).toBeVisible();
+  await plugins.getByRole('button',{name:'Remove sample-package'}).click();
+  await expect(plugins.getByRole('status')).toContainText('Imported skill versions and package data were kept');
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/remove'&&item.body.package_name==='sample-package')).toBe(true);
   expect(errors).toEqual([]);
 });

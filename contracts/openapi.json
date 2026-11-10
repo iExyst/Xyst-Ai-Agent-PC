@@ -2721,6 +2721,41 @@
         "title": "PluginMCPImportRequest",
         "type": "object"
       },
+      "PluginRemovalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "package_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Package Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_name"
+        ],
+        "title": "PluginRemovalRequest",
+        "type": "object"
+      },
+      "PluginRemovalResult": {
+        "additionalProperties": false,
+        "properties": {
+          "package_name": {
+            "title": "Package Name",
+            "type": "string"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed",
+          "package_name"
+        ],
+        "title": "PluginRemovalResult",
+        "type": "object"
+      },
       "PluginServer": {
         "additionalProperties": false,
         "properties": {
@@ -7342,6 +7377,72 @@
           }
         ],
         "summary": "Install Extension Package"
+      }
+    },
+    "/extensions/packages/installed": {
+      "get": {
+        "operationId": "discover_installed_extension_packages_extensions_packages_installed_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDiscovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discover Installed Extension Packages"
+      }
+    },
+    "/extensions/packages/remove": {
+      "post": {
+        "operationId": "remove_extension_package_extensions_packages_remove_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRemovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRemovalResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Extension Package"
       }
     },
     "/health": {

@@ -117,6 +117,12 @@ class PluginInstallResult(BaseModel):
     package: PluginSummary
 
 
+class PluginRemovalResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    removed: bool
+    package_name: str
+
+
 class PluginSkillImport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     source_format: Literal["agent_plugins_v1", "hermes_skill"]
@@ -1167,6 +1173,28 @@ def install_agent_plugin_archive(archive_path: str, managed_root: Path) -> Plugi
         raise
     except (zipfile.BadZipFile, OSError, RuntimeError) as exc:
         raise ValueError("selected plugin archive is invalid or could not be installed") from exc
+
+
+def remove_installed_agent_plugin(managed_root: Path, package_name: str) -> PluginRemovalResult:
+    """Remove one explicitly selected package from X.A.A.'s managed install root."""
+    if not _PLUGIN_NAME.fullmatch(package_name):
+        raise ValueError("selected plugin package name is invalid")
+    try:
+        root = managed_root.expanduser().resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError("managed plugin directory is unavailable")
+        candidate = root / package_name
+        if candidate.is_symlink() or getattr(candidate, "is_junction", lambda: False)():
+            raise ValueError("managed plugin package cannot be a symbolic link or junction")
+        target = candidate.resolve(strict=True)
+        if target.parent != root or not target.is_dir():
+            raise ValueError("selected package is not a managed plugin directory")
+        shutil.rmtree(target)
+    except FileNotFoundError as exc:
+        raise ValueError("selected managed plugin package was not found") from exc
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("selected managed plugin package could not be removed") from exc
+    return PluginRemovalResult(removed=True, package_name=package_name)
 
 
 def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> PluginSkillImport:

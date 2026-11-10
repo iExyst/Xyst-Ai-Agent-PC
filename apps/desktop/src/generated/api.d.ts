@@ -583,6 +583,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/extensions/packages/installed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discover Installed Extension Packages */
+        get: operations["discover_installed_extension_packages_extensions_packages_installed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/extensions/packages/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove Extension Package */
+        post: operations["remove_extension_package_extensions_packages_remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2954,6 +2988,18 @@ export interface components {
             /** Server Name */
             server_name: string;
         };
+        /** PluginRemovalRequest */
+        PluginRemovalRequest: {
+            /** Package Name */
+            package_name: string;
+        };
+        /** PluginRemovalResult */
+        PluginRemovalResult: {
+            /** Package Name */
+            package_name: string;
+            /** Removed */
+            removed: boolean;
+        };
         /** PluginServer */
         PluginServer: {
             /**
@@ -5143,6 +5189,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginInstallResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_installed_extension_packages_extensions_packages_installed_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDiscovery"];
+                };
+            };
+        };
+    };
+    remove_extension_package_extensions_packages_remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRemovalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRemovalResult"];
                 };
             };
             /** @description Validation Error */

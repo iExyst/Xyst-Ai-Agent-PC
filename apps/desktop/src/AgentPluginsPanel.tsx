@@ -52,6 +52,7 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
 
 export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImported:()=>void}) {
   const [root,setRoot]=useState('');
+  const [managedRoot,setManagedRoot]=useState('');
   const [result,setResult]=useState<PluginDiscovery>();
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
@@ -62,6 +63,14 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
     catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
     finally {setBusy(false);}
   }
+  async function discoverInstalled() {
+    setBusy(true);setError('');setNotice('');
+    try {
+      const installed=await client.listInstalledAgentPlugins();
+      setRoot(installed.root);setManagedRoot(installed.root);setResult(installed);
+    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setBusy(false);}
+  }
   async function installArchive() {
     setError('');setNotice('');
     try {
@@ -69,9 +78,20 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
       if(typeof selected!=='string')return;
       setBusy(true);
       const installed=await client.installAgentPluginArchive(selected);
-      setRoot(installed.root);
+      setRoot(installed.root);setManagedRoot(installed.root);
       setResult(await client.discoverAgentPlugins(installed.root));
       setNotice(`${installed.package.name} was installed for discovery. Its commands were not run; add skills as inactive candidates or MCP servers as disconnected integrations.`);
+    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setBusy(false);}
+  }
+  async function removePackage(packageName:string) {
+    if(!window.confirm(`Remove installed package “${packageName}”? Its imported skill versions and package data will be kept.`))return;
+    setBusy(true);setError('');setNotice('');
+    try {
+      await client.removeInstalledAgentPlugin(packageName);
+      const installed=await client.listInstalledAgentPlugins();
+      setRoot(installed.root);setManagedRoot(installed.root);setResult(installed);
+      setNotice(`${packageName} was removed. Imported skill versions and package data were kept.`);
     } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
     finally {setBusy(false);}
   }
@@ -97,15 +117,16 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
     <h2>Agent plugin packages</h2>
     <p>Discovery does not run commands, connect servers, or register tools. Importing a skill reads its bounded text into an inactive candidate for review.</p>
     <button disabled={busy} onClick={()=>void installArchive()}>{busy?'Installing…':'Install plugin ZIP'}</button>
+    <button disabled={busy} onClick={()=>void discoverInstalled()}>Show installed packages</button>
     <label htmlFor="plugin-root">Package folder</label>
-    <div><input id="plugin-root" value={root} onChange={event=>setRoot(event.target.value)} maxLength={2048} placeholder="C:\\path\\to\\plugins"/>
+    <div><input id="plugin-root" value={root} onChange={event=>{const value=event.target.value;setRoot(value);if(value.trim()!==managedRoot)setManagedRoot('');}} maxLength={2048} placeholder="C:\\path\\to\\plugins"/>
     <button disabled={busy||!root.trim()} onClick={()=>void discover()}>{busy?'Discovering…':'Discover packages'}</button></div>
     {error&&<p role="alert">{error}</p>}
     {notice&&<p role="status">{notice}</p>}
     {result&&<>
       <p>Scanned {result.root}. {result.packages.length} package(s) found.</p>
       {result.packages.map(item=><article key={item.path}>
-        <h3>{item.name}{item.version?` · ${item.version}`:''}</h3>{item.description&&<p>{item.description}</p>}
+        <h3>{item.name}{item.version?` · ${item.version}`:''}</h3>{managedRoot&&result.root===managedRoot&&<button disabled={busy} onClick={()=>void removePackage(item.name)}>Remove {item.name}</button>}{item.description&&<p>{item.description}</p>}
         <p>Package: <code>{item.path}</code></p>
         <h4>Skills ({item.skills.length})</h4><ul>{item.skills.map(skill=><li key={skill.path}><strong>{skill.name}</strong>: {skill.description} <code>{skill.path}</code><p>Package-declared tools: {skill.allowed_tools?.join(', ')||'none'}</p><p>Untrusted package requirements (not X.A.A. permissions): {declaredRequirementsSummary(skill.declared_requirements)}</p><p>Current-machine declaration check only (does not establish execution readiness or grant permission): {requirementReadinessSummary(skill.requirement_readiness)}</p><button disabled={busy} onClick={()=>void importSkill(item.name,skill.name)}>Import as candidate</button></li>)}</ul>
         <h4>MCP servers ({item.servers.length})</h4><ul>{item.servers.map(server=><li key={server.name}>{server.name}: {server.transport==='stdio'?`stdio · ${server.command_name} · ${server.argument_count} arguments · environment names: ${server.environment_names.join(', ')||'none'}`:`${server.transport} · ${server.endpoint} · environment names: ${server.environment_names.join(', ')||'none'}`} <button disabled={busy} onClick={()=>void importMCPServer(item.name,server.name)}>Add disconnected server</button></li>)}</ul>

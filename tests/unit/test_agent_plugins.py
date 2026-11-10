@@ -17,7 +17,7 @@ from xaa.extensions.agent_plugins import (
     read_plugin_skill,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
-from xaa.storage.mcp import MCPRegistry
+from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
@@ -496,9 +496,8 @@ def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: 
         for path in package.rglob("*"):
             if path.is_file():
                 archive.write(path, path.relative_to(package).as_posix())
-    app = create_app(
-        FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "state" / "api.sqlite3")
-    )
+    store = RunStore(tmp_path / "state" / "api.sqlite3")
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=store)
     with TestClient(app) as client:
         assert (
             client.post(
@@ -511,6 +510,10 @@ def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: 
             headers={"Authorization": f"Bearer {TOKEN}"},
             json={"archive_path": str(archive_path)},
         )
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        installed_listing = client.get("/extensions/packages/installed", headers=headers)
+        assert installed_listing.status_code == 200
+        assert installed_listing.json()["packages"][0]["name"] == "sample-package"
     assert response.status_code == 201
     body = response.json()
     installed = Path(body["package"]["path"])
@@ -518,6 +521,47 @@ def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: 
     assert body["package"]["skills"][0]["name"] == "summarize"
     assert (installed / "plugin.json").is_file()
     assert not list((tmp_path / "state" / "agent-plugins").glob("install-*"))
+    data_file = tmp_path / "state" / "plugin-data" / "sample-package" / "helper" / "state.json"
+    data_file.parent.mkdir(parents=True)
+    data_file.write_text("preserved", encoding="utf-8")
+    integration = MCPRegistry(store).create_server(
+        MCPServerSpec(
+            name="Package reference",
+            command="python",
+            plugin_root=str(installed),
+            plugin_data=str(data_file.parent),
+            plugin_sha256=agent_plugins.plugin_source_sha256(installed),
+        )
+    )
+    with TestClient(app) as client:
+        assert (
+            client.post(
+                "/extensions/packages/remove", json={"package_name": "sample-package"}
+            ).status_code
+            == 401
+        )
+        blocked = client.post(
+            "/extensions/packages/remove",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"package_name": "sample-package"},
+        )
+        assert blocked.status_code == 409
+    assert installed.exists()
+    assert MCPRegistry(store).delete_server(integration.id)
+    with TestClient(app) as client:
+        removed = client.post(
+            "/extensions/packages/remove",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"package_name": "sample-package"},
+        )
+        listing = client.get(
+            "/extensions/packages/installed", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+    assert removed.status_code == 200
+    assert removed.json() == {"removed": True, "package_name": "sample-package"}
+    assert not installed.exists()
+    assert data_file.read_text(encoding="utf-8") == "preserved"
+    assert listing.json()["packages"] == []
 
 
 def test_plugin_archive_install_rejects_traversal_and_existing_package(tmp_path: Path) -> None:

@@ -63,12 +63,14 @@ from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import (
     PluginDiscovery,
     PluginInstallResult,
+    PluginRemovalResult,
     discover_agent_plugins,
     export_procedure_package,
     install_agent_plugin_archive,
     plugin_source_sha256,
     read_plugin_mcp_server,
     read_plugin_skill,
+    remove_installed_agent_plugin,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
@@ -370,6 +372,11 @@ class PluginDiscoveryRequest(BaseModel):
 class PluginInstallRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     archive_path: str = Field(min_length=1, max_length=4096)
+
+
+class PluginRemovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    package_name: str = Field(min_length=1, max_length=128)
 
 
 class PluginSkillImportRequest(BaseModel):
@@ -783,6 +790,14 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/extensions/packages/installed", response_model=PluginDiscovery)
+    def discover_installed_extension_packages(
+        _: None = Depends(authenticate),
+    ) -> PluginDiscovery:
+        managed_root = run_store.path.parent / "agent-plugins"
+        managed_root.mkdir(parents=True, exist_ok=True)
+        return discover_agent_plugins(str(managed_root))
+
     @app.post("/extensions/packages/install", status_code=201, response_model=PluginInstallResult)
     def install_extension_package(
         payload: PluginInstallRequest, _: None = Depends(authenticate)
@@ -796,6 +811,29 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/extensions/packages/remove", response_model=PluginRemovalResult)
+    def remove_extension_package(
+        payload: PluginRemovalRequest, _: None = Depends(authenticate)
+    ) -> PluginRemovalResult:
+        managed_root = run_store.path.parent / "agent-plugins"
+        expected = managed_root.resolve()
+        for server in MCPRegistry(run_store).list_servers():
+            if server.plugin_root is None:
+                continue
+            try:
+                referenced = Path(server.plugin_root).resolve(strict=False)
+            except (OSError, RuntimeError):
+                continue
+            if referenced.parent == expected and referenced.name == payload.package_name:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Remove this package's MCP integrations before uninstalling it.",
+                )
+        try:
+            return remove_installed_agent_plugin(managed_root, payload.package_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/extensions/packages/import-skill", status_code=201, response_model=SkillSummary)
     def import_extension_skill(
