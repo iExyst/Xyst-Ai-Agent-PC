@@ -8,6 +8,7 @@ import pytest
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime import web_search
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.web_search import WEB_SEARCH_METADATA, WEB_SEARCH_TOOL
 from xaa.storage.runs import RunStore
 
 
@@ -47,6 +48,46 @@ def test_web_search_results_are_bounded_and_untrusted() -> None:
         web_search.WebSearchArguments(query="   ")
     with pytest.raises(ValueError, match="1–75 words"):
         web_search.WebSearchArguments(query=" ".join(["word"] * 76))
+
+
+def test_web_search_contract_covers_serialized_output_and_item_bounds() -> None:
+    assert WEB_SEARCH_METADATA["output_size_bytes"] == web_search.MAX_RESULT_BYTES
+    assert WEB_SEARCH_METADATA["limits"] == {
+        "response_bytes": web_search.MAX_RESPONSE_BYTES,
+        "result_bytes": web_search.MAX_RESULT_BYTES,
+        "results": web_search.MAX_RESULTS,
+        "title_characters": web_search.MAX_TITLE_CHARS,
+        "url_characters": web_search.MAX_URL_CHARS,
+        "description_characters": web_search.MAX_DESCRIPTION_CHARS,
+        "query_characters": web_search.MAX_QUERY_CHARS,
+    }
+    assert WEB_SEARCH_TOOL["function"]["parameters"] == WEB_SEARCH_METADATA["input_schema"]
+    output = WEB_SEARCH_METADATA["output_schema"]
+    item_properties = output["properties"]["results"]["items"]["properties"]
+    assert item_properties["title"]["maxLength"] == web_search.MAX_TITLE_CHARS
+    assert item_properties["url"]["maxLength"] == web_search.MAX_URL_CHARS
+    assert item_properties["description"]["maxLength"] == web_search.MAX_DESCRIPTION_CHARS
+    assert output["properties"]["error"]["maxLength"] == 500
+    assert len(output["allOf"]) == 2
+
+
+def test_web_search_replaces_oversized_unicode_results_with_bounded_failure() -> None:
+    result = {
+        "results": [
+            {
+                "title": "😀" * web_search.MAX_TITLE_CHARS,
+                "url": "https://example.test/" + "😀" * (web_search.MAX_URL_CHARS - 20),
+                "description": "😀" * web_search.MAX_DESCRIPTION_CHARS,
+                "trust": "untrusted_web_content",
+            }
+            for _ in range(web_search.MAX_RESULTS + 1)
+        ],
+        "trust": "untrusted_web_content",
+        "status": "ok",
+    }
+    bounded = web_search._bounded_result(result)
+    assert bounded["status"] == "read_failed"
+    assert len(json.dumps(bounded).encode("ascii")) <= web_search.MAX_RESULT_BYTES
 
 
 @pytest.mark.asyncio
@@ -199,7 +240,11 @@ def test_search_tool_requires_per_run_permission_key_and_workspace(
         model="fixture/model",
         approved_web_search=True,
     )
-    assert "web_search" in {tool["function"]["name"] for tool in coordinator._tools(run["id"], run)}
+    exposed = {
+        tool["function"]["name"]: tool["function"]["parameters"]
+        for tool in coordinator._tools(run["id"], run)
+    }
+    assert exposed["web_search"] == WEB_SEARCH_METADATA["input_schema"]
     run["approved_web_search"] = False
     assert "web_search" not in {
         tool["function"]["name"] for tool in coordinator._tools(run["id"], run)

@@ -49,7 +49,7 @@ from xaa.runtime.tool_worker import (
 )
 from xaa.runtime.verification import FileContentCheck, verify_files_owned
 from xaa.runtime.web_fetch import WEB_FETCH_TOOL, fetch_approved_web_page
-from xaa.runtime.web_search import WEB_SEARCH_TOOL, search_web
+from xaa.runtime.web_search import WEB_SEARCH_METADATA, WEB_SEARCH_TOOL, search_web
 from xaa.runtime.workspace_search import SEARCH_TOOL
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import TOOL as COMMAND_TOOL
@@ -1407,7 +1407,9 @@ class Coordinator:
         tools.append(search_tool)
         approved_web_hosts = run.get("approved_web_hosts", [])
         if run.get("approved_web_search"):
-            tools.append(json.loads(json.dumps(WEB_SEARCH_TOOL)))
+            web_search_tool = json.loads(json.dumps(WEB_SEARCH_TOOL))
+            web_search_tool["function"]["parameters"] = WEB_SEARCH_METADATA["input_schema"]
+            tools.append(web_search_tool)
         if approved_web_hosts:
             web_tool = json.loads(json.dumps(WEB_FETCH_TOOL))
             web_tool["function"]["description"] += (

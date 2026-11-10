@@ -25,10 +25,15 @@ limits for the final URL, title, and extracted text; redirect URLs receive the
 same URL-length check as the initial request. Its output schema carries these
 field bounds so the provider-facing declaration matches runtime behavior.
 
+`web.search` separately caps Brave's response at 1 MiB and the serialized result
+at 512 KiB. Its schema limits ten results and declares each result field's
+character bound; the coordinator exposes its input schema from the same
+metadata. Search errors and cancellation have a separate bounded result shape.
+
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. The command entry is a typed execution contract used for its
 model-facing input schema; the coordinator still enforces its saved grant and
 run deadline, while the command controller owns snapshot, execution, output,
-cancellation, and recovery behavior. Web search, browser, MCP, specialist, and
-messaging contracts still need inventory and consistency review. Their existing
-behavior and limits remain documented with their respective implementations.
+cancellation, and recovery behavior. Browser, MCP, specialist, and messaging
+contracts still need inventory and serialized-output consistency review. Their
+existing behavior and limits remain documented with their respective implementations.

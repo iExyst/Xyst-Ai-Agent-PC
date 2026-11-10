@@ -15,12 +15,18 @@ from xaa.storage.runs import LeaseLost, RunStore
 SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 SEARCH_TIMEOUT_SECONDS = 12
 MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_RESULTS = 10
+MAX_TITLE_CHARS = 500
+MAX_URL_CHARS = 2048
+MAX_DESCRIPTION_CHARS = 1500
+MAX_QUERY_CHARS = 600
+MAX_RESULT_BYTES = 512 * 1024
 
 
 class WebSearchArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    query: str = Field(min_length=1, max_length=600)
-    count: int = Field(default=5, ge=1, le=10)
+    query: str = Field(min_length=1, max_length=MAX_QUERY_CHARS)
+    count: int = Field(default=5, ge=1, le=MAX_RESULTS)
 
     @field_validator("query")
     @classmethod
@@ -48,19 +54,68 @@ WEB_SEARCH_METADATA = {
     "input_schema": WebSearchArguments.model_json_schema(),
     "output_schema": {
         "type": "object",
-        "required": ["results", "trust", "status"],
+        "required": ["trust", "status"],
         "properties": {
-            "results": {"type": "array", "maxItems": 10},
+            "results": {
+                "type": "array",
+                "maxItems": MAX_RESULTS,
+                "items": {
+                    "type": "object",
+                    "required": ["title", "url", "description", "trust"],
+                    "properties": {
+                        "title": {"type": "string", "maxLength": MAX_TITLE_CHARS},
+                        "url": {"type": "string", "maxLength": MAX_URL_CHARS},
+                        "description": {
+                            "type": "string",
+                            "maxLength": MAX_DESCRIPTION_CHARS,
+                        },
+                        "trust": {"const": "untrusted_web_content"},
+                    },
+                    "additionalProperties": False,
+                },
+            },
             "trust": {"const": "untrusted_web_content"},
             "status": {"enum": ["ok", "read_failed", "cancelled"]},
+            "error": {"type": "string", "maxLength": 500},
         },
+        "allOf": [
+            {
+                "if": {"properties": {"status": {"const": "ok"}}},
+                "then": {"required": ["results"]},
+            },
+            {
+                "if": {"properties": {"status": {"enum": ["read_failed", "cancelled"]}}},
+                "then": {"required": ["error"]},
+            },
+        ],
+        "additionalProperties": False,
     },
     "timeout_seconds": SEARCH_TIMEOUT_SECONDS,
     "cancellation": "cooperative during connect and response streaming; cancellation is journaled",
     "retry": "none; inspect the saved search result before requesting again",
-    "output_size_bytes": 250_000,
+    "output_size_bytes": MAX_RESULT_BYTES,
+    "limits": {
+        "response_bytes": MAX_RESPONSE_BYTES,
+        "result_bytes": MAX_RESULT_BYTES,
+        "results": MAX_RESULTS,
+        "title_characters": MAX_TITLE_CHARS,
+        "url_characters": MAX_URL_CHARS,
+        "description_characters": MAX_DESCRIPTION_CHARS,
+        "query_characters": MAX_QUERY_CHARS,
+    },
     "audit": ["run_id", "call_id", "query", "provider", "status"],
 }
+
+
+def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
+    encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
+    if len(encoded) <= MAX_RESULT_BYTES:
+        return result
+    return {
+        "status": "read_failed",
+        "trust": "untrusted_web_content",
+        "error": "Brave Search results exceeded the bounded tool-result size.",
+    }
 
 
 def _public_results(payload: dict[str, Any], limit: int) -> list[dict[str, str]]:
@@ -115,9 +170,9 @@ def _public_results(payload: dict[str, Any], limit: int) -> list[dict[str, str]]
         safe_url = urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
         safe.append(
             {
-                "title": str(title or "")[:500],
-                "url": safe_url[:2048],
-                "description": str(description or "")[:1500],
+                "title": str(title or "")[:MAX_TITLE_CHARS],
+                "url": safe_url[:MAX_URL_CHARS],
+                "description": str(description or "")[:MAX_DESCRIPTION_CHARS],
                 "trust": "untrusted_web_content",
             }
         )
@@ -225,5 +280,6 @@ async def search_web(
             if isinstance(exc, httpx.HTTPStatusError):
                 message = f"Brave Search returned HTTP {exc.response.status_code}."
             result = {"status": "read_failed", "trust": "untrusted_web_content", "error": message}
+    result = _bounded_result(result)
     store.record_tool_result(run_id, token, call_id, result)
     return result
