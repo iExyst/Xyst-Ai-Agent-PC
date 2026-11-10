@@ -26,6 +26,7 @@ from xaa.storage.runs import RunStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py"
+DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_server.py"
 
 
 @pytest.mark.asyncio
@@ -66,6 +67,46 @@ async def test_connection_that_dies_immediately_after_discovery_is_not_registere
     assert manager.server_status(server.id)[0] == "error"
     assert server.id not in manager._connected
     await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_owner_reconnects_after_live_stdio_transport_loss(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-live-reconnect.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Disconnect fixture",
+            command=sys.executable,
+            args=[str(DISCONNECT_FIXTURE)],
+        )
+    )
+    manager = MCPManager(store, None)
+    try:
+        await manager.connect_server(server.id)
+        terminate = next(
+            tool for tool in registry.list_tools(server.id) if tool.name == "terminate_transport"
+        )
+        registry.set_permission(server.id, terminate.name, "read", terminate.schema_sha256)
+        with pytest.raises(MCPInvocationError) as failure:
+            await manager.call_tool(terminate.qualified_name, {})
+        assert failure.value.status == "unknown_outcome"
+        assert manager.server_status(server.id)[0] == "error"
+        assert server.id not in manager._connected
+
+        reconnected = await manager.connect_server(server.id)
+        assert {tool.name for tool in reconnected} == {"add", "terminate_transport"}
+        restored = next(tool for tool in reconnected if tool.name == "terminate_transport")
+        assert restored.permission == "read"
+        add = next(tool for tool in reconnected if tool.name == "add")
+        assert add.permission == "none"
+        registry.set_permission(server.id, add.name, "read", add.schema_sha256)
+        result = await manager.call_tool(add.qualified_name, {"left": 19, "right": 23})
+        assert result["status"] == "ok"
+        assert result["structured_content"] == {"result": 42}
+    finally:
+        await manager.close()
 
 
 class MemoryCredentials:
