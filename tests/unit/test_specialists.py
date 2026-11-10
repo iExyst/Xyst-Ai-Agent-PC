@@ -22,7 +22,9 @@ async def test_dependency_review_manifest_pages_all_evidence_with_bounded_result
     store = RunStore(workspace_tmp_path / "review-manifest.sqlite3")
     runner = SpecialistRunner(store, LMStudioProvider())
     snapshot = {
-        "evidence": [{"path": f"source-{index}.py", "sha256": "a" * 64} for index in range(17)],
+        "evidence": [
+            {"path": f"{'😀' * 2040}{index}.py", "sha256": "a" * 64} for index in range(17)
+        ],
         "workspace_changes": [
             {
                 "path": f"changed-{index}.py",
@@ -55,7 +57,11 @@ async def test_dependency_review_manifest_pages_all_evidence_with_bounded_result
             break
     items = [item for page in pages for item in page["items"]]
     assert len(items) == 30
-    assert [page["offset"] for page in pages] == [0, 8, 16, 24]
+    assert pages[0]["items"] and len(pages[0]["items"]) < 8
+    assert all(
+        page["offset"] == (pages[index - 1]["next_offset"] if index else 0)
+        for index, page in enumerate(pages)
+    )
     assert pages[-1]["eof"] is True
     assert {item["kind"] for item in items} == {
         "source_file",

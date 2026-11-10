@@ -500,8 +500,26 @@ class SpecialistRunner:
                             "exit_code": item["exit_code"],
                         }
                     )
-        page = entries[offset : offset + limit]
-        result = {
+        page: list[dict[str, Any]] = []
+        for entry in entries[offset : offset + limit]:
+            candidate = [*page, entry]
+            encoded = json.dumps(
+                {
+                    "dependency_id": dependency_id,
+                    "offset": offset,
+                    "total_items": len(entries),
+                    "items": candidate,
+                    "next_offset": offset + len(candidate),
+                    "eof": offset + len(candidate) >= len(entries),
+                },
+                ensure_ascii=True,
+            ).encode("utf-8")
+            if len(encoded) > 64 * 1024:
+                break
+            page.append(entry)
+        if not page and offset < len(entries):
+            raise ValueError("A dependency review manifest item exceeds its 64 KiB limit.")
+        return {
             "dependency_id": dependency_id,
             "offset": offset,
             "total_items": len(entries),
@@ -509,9 +527,6 @@ class SpecialistRunner:
             "next_offset": offset + len(page),
             "eof": offset + len(page) >= len(entries),
         }
-        if len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > 64 * 1024:
-            raise ValueError("Dependency review manifest page exceeds its 64 KiB limit.")
-        return result
 
     async def _request_and_record(
         self,
