@@ -24,9 +24,10 @@ class MCPServerSpec(BaseModel):
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
     cwd: str | None = Field(default=None, max_length=2048)
-    secret_env: list[str] = Field(default_factory=list, max_length=12)
+    secret_env: list[str] = Field(default_factory=list, max_length=64)
     plugin_root: str | None = Field(default=None, max_length=2048)
     plugin_data: str | None = Field(default=None, max_length=2048)
+    plugin_headers: dict[str, str] = Field(default_factory=dict, max_length=32)
 
     @field_validator("name")
     @classmethod
@@ -78,18 +79,27 @@ class MCPServerSpec(BaseModel):
                 ):
                     raise ValueError("Plugin package and data paths must be absolute plain paths.")
         else:
+            plugin_backed = self.plugin_root is not None and self.plugin_data is not None
             if (
                 self.command
                 or self.args
                 or self.cwd
-                or self.plugin_root is not None
-                or self.plugin_data is not None
+                or ((self.plugin_root is None) != (self.plugin_data is None))
+                or (
+                    not plugin_backed
+                    and (self.plugin_root is not None or self.plugin_data is not None)
+                )
             ):
                 raise ValueError(
                     "Streamable HTTP MCP servers cannot set a command, arguments or working directory."
                 )
             if self.endpoint is None:
                 raise ValueError("Streamable HTTP MCP servers need an endpoint URL.")
+            for path in (self.plugin_root, self.plugin_data):
+                if path is not None and (
+                    not path or not Path(path).is_absolute() or any(ord(char) < 32 for char in path)
+                ):
+                    raise ValueError("Plugin package and data paths must be absolute plain paths.")
             import ipaddress
             from urllib.parse import urlsplit
 
@@ -120,8 +130,25 @@ class MCPServerSpec(BaseModel):
                     loopback = host == "localhost"
                 if not loopback:
                     raise ValueError("Remote MCP endpoints must use HTTPS.")
-            if len(self.secret_env) > 1:
+            if len(self.secret_env) > 1 and not plugin_backed:
                 raise ValueError("Streamable HTTP supports one OS-stored bearer token name.")
+            if self.plugin_headers and not plugin_backed:
+                raise ValueError("Only package-backed HTTP servers can set custom header mappings.")
+        if self.transport == "stdio" and self.plugin_headers:
+            raise ValueError("stdio MCP servers cannot set HTTP header mappings.")
+        header_names = [name.lower() for name in self.plugin_headers]
+        if len(header_names) != len(set(header_names)) or any(
+            not name or len(name) > 128 or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+            for name in self.plugin_headers
+        ):
+            raise ValueError("MCP header mapping names must be unique valid HTTP header names.")
+        if any(
+            not value
+            or len(value) > 1024
+            or not re.fullmatch(r"(?:[^$]|\$\{secret:[A-Za-z_][A-Za-z0-9_]{0,127}\})+", value)
+            for value in self.plugin_headers.values()
+        ):
+            raise ValueError("MCP header mappings must reference valid credential names.")
         if self.plugin_root is None and any(
             "${PLUGIN_ROOT}" in value or "${PLUGIN_DATA}" in value
             for value in [self.command, *self.args, self.cwd or ""]
@@ -162,7 +189,7 @@ class MCPRegistry:
         now = utc_now()
         with self.store.connection() as connection:
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data,plugin_headers) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -176,6 +203,7 @@ class MCPRegistry:
                     spec.endpoint,
                     spec.plugin_root,
                     spec.plugin_data,
+                    json.dumps(spec.plugin_headers),
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -299,6 +327,7 @@ class MCPRegistry:
             endpoint=row.get("endpoint"),
             plugin_root=row.get("plugin_root"),
             plugin_data=row.get("plugin_data"),
+            plugin_headers=json.loads(row.get("plugin_headers") or "{}"),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

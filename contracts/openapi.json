@@ -2151,6 +2151,14 @@
             ],
             "title": "Plugin Data"
           },
+          "plugin_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 32,
+            "title": "Plugin Headers",
+            "type": "object"
+          },
           "plugin_root": {
             "anyOf": [
               {
@@ -2167,7 +2175,7 @@
             "items": {
               "type": "string"
             },
-            "maxItems": 12,
+            "maxItems": 64,
             "title": "Secret Env",
             "type": "array"
           },

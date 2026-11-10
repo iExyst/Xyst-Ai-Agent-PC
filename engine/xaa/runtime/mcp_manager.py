@@ -1244,16 +1244,42 @@ class MCPManager:
         )
 
     def _http_headers(self, server: MCPServerRecord) -> dict[str, str]:
-        if not server.secret_env:
-            return {}
-        if self.credential_store is None:
-            raise MCPConnectionError("OS credential storage is unavailable for this MCP server.")
-        secret = self.credential_store.get(MCP_ENV_PROFILE.format(server.id, server.secret_env[0]))
-        if secret is None:
-            raise MCPConnectionError(
-                f"Set the configured {server.secret_env[0]} bearer token before connecting this MCP server."
+        headers: dict[str, str] = {}
+        if server.secret_env:
+            if self.credential_store is None:
+                raise MCPConnectionError(
+                    "OS credential storage is unavailable for this MCP server."
+                )
+            if not server.plugin_headers:
+                secret = self.credential_store.get(
+                    MCP_ENV_PROFILE.format(server.id, server.secret_env[0])
+                )
+                if secret is None:
+                    raise MCPConnectionError(
+                        f"Set the configured {server.secret_env[0]} bearer token before connecting this MCP server."
+                    )
+                headers["Authorization"] = f"Bearer {secret}"
+        for header_name, value in server.plugin_headers.items():
+
+            def resolve_secret(match: re.Match[str]) -> str:
+                env_name = match.group(1)
+                if self.credential_store is None:
+                    raise MCPConnectionError(
+                        "OS credential storage is unavailable for this MCP server."
+                    )
+                secret = self.credential_store.get(MCP_ENV_PROFILE.format(server.id, env_name))
+                if secret is None:
+                    raise MCPConnectionError(
+                        f"Set the configured {env_name} credential before connecting this MCP server."
+                    )
+                return secret
+
+            headers[header_name] = re.sub(
+                r"\$\{secret:([A-Za-z_][A-Za-z0-9_]{0,127})\}",
+                resolve_secret,
+                value,
             )
-        return {"Authorization": f"Bearer {secret}"}
+        return headers
 
     def _oauth_provider(self, server: MCPServerRecord) -> OAuthClientProvider | None:
         if self.credential_store is None or server.endpoint is None:

@@ -616,11 +616,19 @@ def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
                     or key.upper() in {"PLUGIN_ROOT", "PLUGIN_DATA"}
                     or not isinstance(value, str)
                     or len(value) > 8192
-                    or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", value)
+                    or re.search(
+                        r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\}|[A-Za-z_][A-Za-z0-9_]{0,127}\})", value
+                    )
                     for key, value in env.items()
                 ):
                     raise ValueError("stdio env keys/values are invalid or use reserved names")
-                if any(re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", arg) for arg in args):
+                if any(
+                    re.search(
+                        r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\}|[A-Za-z_][A-Za-z0-9_]{0,127}\})",
+                        arg,
+                    )
+                    for arg in args
+                ):
                     raise ValueError("stdio args contain an unsupported placeholder")
                 cwd = spec.get("cwd")
                 if "cwd" in spec:
@@ -666,7 +674,7 @@ def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
                     )
                 )
             elif transport == "streamable-http":
-                if set(spec) - {"type", "url", "headers"}:
+                if set(spec) - {"type", "url", "headers", "env"}:
                     raise ValueError("HTTP entry has unsupported fields")
                 endpoint = spec.get("url")
                 if not isinstance(endpoint, str) or len(endpoint) > 2048:
@@ -684,12 +692,27 @@ def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
                 if not isinstance(headers_value, dict):
                     raise ValueError("HTTP headers must be an object of strings")
                 headers = cast(dict[str, Any], headers_value)
+                environment = spec.get("env", {})
+                if not isinstance(environment, dict):
+                    raise ValueError("HTTP env must be an object of strings")
+                if any(
+                    not isinstance(value, str)
+                    or len(value) > 8192
+                    or re.search(r"\$\{(?![A-Za-z_][A-Za-z0-9_]{0,127}\})", value)
+                    for value in cast(dict[Any, Any], environment).values()
+                ):
+                    raise ValueError("HTTP environment values are invalid")
                 lowered_headers = [key.lower() for key in headers]
                 if len(lowered_headers) != len(set(lowered_headers)) or any(
                     not _HEADER.fullmatch(key)
                     or not isinstance(value, str)
                     or "\r" in value
                     or "\n" in value
+                    or any(
+                        name not in environment
+                        for name in re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]{0,127})\}", value)
+                    )
+                    or re.search(r"\$\{(?![A-Za-z_][A-Za-z0-9_]{0,127}\})", value)
                     for key, value in headers.items()
                 ):
                     raise ValueError("HTTP headers are invalid or contain duplicate names")
@@ -711,6 +734,9 @@ def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
                     PluginServer(
                         name=name,
                         transport="streamable_http",
+                        environment_names=sorted(
+                            key for key in cast(dict[Any, Any], environment) if isinstance(key, str)
+                        ),
                         endpoint=safe_endpoint,
                     )
                 )
@@ -753,14 +779,20 @@ def read_plugin_mcp_server(directory: str, package_name: str, server_name: str) 
             not isinstance(key, str)
             or not isinstance(value, str)
             or len(value) > 8192
-            or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", value)
+            or re.search(
+                r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\}|[A-Za-z_][A-Za-z0-9_]{0,127}\})",
+                value,
+            )
             for key, value in cast(dict[Any, Any], spec["env"]).items()
         ):
             raise ValueError("selected MCP environment changed since discovery")
         if any(
             not isinstance(argument, str)
             or len(argument) > 2048
-            or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", argument)
+            or re.search(
+                r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\}|[A-Za-z_][A-Za-z0-9_]{0,127}\})",
+                argument,
+            )
             for argument in cast(list[Any], spec["args"])
         ):
             raise ValueError("selected MCP arguments changed since discovery")
@@ -779,11 +811,29 @@ def read_plugin_mcp_server(directory: str, package_name: str, server_name: str) 
     headers = selected.get("headers", {})
     if not isinstance(endpoint, str) or not isinstance(headers, dict):
         raise TypeError("selected MCP server changed since discovery")
+    header_values: dict[str, str] = {}
+    for header_name, header_value in cast(dict[Any, Any], headers).items():
+        if not isinstance(header_name, str) or not isinstance(header_value, str):
+            raise TypeError("selected MCP header configuration changed since discovery")
+        env_values: Any = selected.get("env", {})
+        if not isinstance(env_values, dict):
+            raise TypeError("selected MCP environment changed since discovery")
+        substitutions = re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]{0,127})\}", header_value)
+        if re.search(r"\$\{(?![A-Za-z_][A-Za-z0-9_]{0,127}\})", header_value):
+            raise ValueError("MCP header uses an unsupported credential placeholder")
+        if any(name not in env_values for name in substitutions):
+            raise ValueError("MCP header references an undeclared environment variable")
+        header_values[header_name] = header_value
     return {
         "package_root": str(package_root),
         "package_name": package.name,
         "server_name": server.name,
-        "spec": {"type": "streamable-http", "url": endpoint, "headers": headers},
+        "spec": {
+            "type": "streamable-http",
+            "url": endpoint,
+            "headers": header_values,
+            "env": selected.get("env", {}),
+        },
     }
 
 

@@ -8,6 +8,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -843,8 +844,55 @@ def create_app(
                         run_store.path.parent / "plugin-data" / package_name / server_name
                     ),
                 )
+            elif raw["type"] == "streamable-http":
+                endpoint = cast(str, raw["url"])
+                raw_headers = cast(dict[str, str], raw["headers"])
+                package_env = cast(dict[str, str], raw.get("env", {}))
+                vault_values = {
+                    name: value
+                    for name, value in package_env.items()
+                    if any(f"${{{name}}}" in header_value for header_value in raw_headers.values())
+                }
+                headers: dict[str, str] = {}
+                for index, (header_name, value) in enumerate(raw_headers.items()):
+                    substitutions = re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]{0,127})\}", value)
+                    if substitutions:
+                        headers[header_name] = re.sub(
+                            r"\$\{([A-Za-z_][A-Za-z0-9_]{0,127})\}",
+                            r"${secret:\1}",
+                            value,
+                        )
+                    else:
+                        vault_name = f"XAA_PLUGIN_HEADER_{index}"
+                        while vault_name in package_env or vault_name in vault_values:
+                            index += 1
+                            vault_name = f"XAA_PLUGIN_HEADER_{index}"
+                        if credential_store is None:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="OS credential storage is required for package HTTP headers.",
+                            )
+                        vault_values[vault_name] = value
+                        headers[header_name] = f"${{secret:{vault_name}}}"
+                if vault_values and credential_store is None:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="OS credential storage is required for package HTTP credentials.",
+                    )
+                inline_values = vault_values
+                transport_spec = MCPServerSpec(
+                    name=f"{package_name}:{server_name}",
+                    transport="streamable_http",
+                    endpoint=endpoint,
+                    secret_env=sorted(vault_values),
+                    plugin_root=str(package_root),
+                    plugin_data=str(
+                        run_store.path.parent / "plugin-data" / package_name / server_name
+                    ),
+                    plugin_headers=headers,
+                )
             else:
-                raise ValueError("Import of package Streamable HTTP servers is not supported yet.")
+                raise ValueError("Selected package MCP transport is unsupported.")
             registry = MCPRegistry(run_store)
             server = registry.create_server(transport_spec)
             try:
@@ -891,7 +939,7 @@ def create_app(
             }
             servers.append(
                 {
-                    **server.model_dump(exclude={"plugin_root", "plugin_data"}),
+                    **server.model_dump(exclude={"plugin_root", "plugin_data", "plugin_headers"}),
                     "plugin_backed": server.plugin_root is not None,
                     "state": state,
                     "error": error,
@@ -908,7 +956,11 @@ def create_app(
     def create_mcp_server(
         payload: MCPServerSpec, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
-        if payload.plugin_root is not None or payload.plugin_data is not None:
+        if (
+            payload.plugin_root is not None
+            or payload.plugin_data is not None
+            or payload.plugin_headers
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="Installed package paths can only be set by validated package import.",
@@ -922,7 +974,7 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
-            **server.model_dump(exclude={"plugin_root", "plugin_data"}),
+            **server.model_dump(exclude={"plugin_root", "plugin_data", "plugin_headers"}),
             "plugin_backed": server.plugin_root is not None,
             "state": "disconnected",
             "error": None,

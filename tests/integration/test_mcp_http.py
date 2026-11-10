@@ -61,6 +61,7 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
 
     app = mcp.streamable_http_app()
     captured_auth: list[str | None] = []
+    captured_custom: list[str | None] = []
 
     async def capture_auth(scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] == "http":
@@ -68,6 +69,9 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
             token = headers.get(b"authorization")
             if token is not None:
                 captured_auth.append(token.decode())
+            custom = headers.get(b"x-fixture-secret")
+            if custom is not None:
+                captured_custom.append(custom.decode())
         await app(scope, receive, send)
 
     host = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -88,12 +92,23 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
                 name="HTTP fixture",
                 transport="streamable_http",
                 endpoint=f"http://127.0.0.1:{port}/mcp",
-                secret_env=["MCP_TOKEN"],
+                secret_env=["MCP_TOKEN", "CUSTOM_TOKEN"],
+                plugin_root=str(workspace_tmp_path),
+                plugin_data=str(workspace_tmp_path / "plugin-data"),
+                plugin_headers={
+                    "Authorization": "Bearer ${secret:MCP_TOKEN}",
+                    "X-Fixture-Secret": "${secret:CUSTOM_TOKEN}",
+                },
             )
         )
         credentials.set("fixture-bearer-token", f"mcp:{record.id}:MCP_TOKEN")
+        credentials.set("fixture-custom-header", f"mcp:{record.id}:CUSTOM_TOKEN")
         tools = await manager.connect_server(record.id)
         assert [tool.name for tool in tools] == ["add"]
+        assert manager._http_headers(record) == {
+            "Authorization": "Bearer fixture-bearer-token",
+            "X-Fixture-Secret": "fixture-custom-header",
+        }
         tool = tools[0]
         assert tool.permission == "none"
         manager.registry.set_permission(record.id, "add", "read", tool.schema_sha256)
@@ -101,6 +116,8 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         assert result["status"] == "ok"
         assert result["trust"] == "untrusted_mcp_output"
         assert result["structured_content"] == {"result": 42}
+        assert "Bearer fixture-bearer-token" in captured_auth
+        assert "fixture-custom-header" in captured_custom
         resources = await manager.list_resources(record.id)
         resource_uri = "xaa://http-fixture/readme"
         assert [resource["uri"] for resource in resources] == [resource_uri]

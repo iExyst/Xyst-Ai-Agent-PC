@@ -2748,6 +2748,10 @@ export interface components {
             name: string;
             /** Plugin Data */
             plugin_data?: string | null;
+            /** Plugin Headers */
+            plugin_headers?: {
+                [key: string]: string;
+            };
             /** Plugin Root */
             plugin_root?: string | null;
             /** Secret Env */

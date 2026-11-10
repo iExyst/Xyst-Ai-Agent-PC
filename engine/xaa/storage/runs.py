@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 23
+DATABASE_SCHEMA_VERSION = 24
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -612,7 +612,8 @@ class RunStore:
                     transport TEXT NOT NULL DEFAULT 'stdio' CHECK(transport IN ('stdio','streamable_http')),
                     endpoint TEXT,
                     plugin_root TEXT,
-                    plugin_data TEXT
+                    plugin_data TEXT,
+                    plugin_headers TEXT
                 );
                 CREATE TABLE IF NOT EXISTS mcp_server_tools (
                     server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
@@ -745,6 +746,10 @@ class RunStore:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN plugin_root TEXT")
             if "plugin_data" not in mcp_columns:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN plugin_data TEXT")
+            if "plugin_headers" not in mcp_columns:
+                connection.execute(
+                    "ALTER TABLE mcp_servers ADD COLUMN plugin_headers TEXT NOT NULL DEFAULT '{}' "
+                )
             if connection.execute("PRAGMA user_version").fetchone()[0] < 3:
                 install_index(connection)
             memory_columns = {

@@ -79,7 +79,8 @@ def make_package(root: Path) -> Path:
                     "remote-helper": {
                         "type": "streamable-http",
                         "url": "https://example.test/mcp",
-                        "headers": {"Authorization": "Bearer hidden"},
+                        "env": {"MCP_TOKEN": "http-secret-value"},
+                        "headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
                     },
                 },
             }
@@ -119,11 +120,12 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert summary.servers[0].argument_count == 2
     assert summary.servers[0].environment_names == ["API_TOKEN"]
     assert summary.servers[1].endpoint == "https://example.test/…"
+    assert summary.servers[1].environment_names == ["MCP_TOKEN"]
     encoded = summary.model_dump_json()
     for forbidden in (
         "secret-value",
         "secret-argument",
-        "Bearer hidden",
+        "http-secret-value",
         "ignored instruction text",
     ):
         assert forbidden not in encoded
@@ -532,6 +534,72 @@ def test_plugin_mcp_server_import_stores_secrets_in_vault_and_stays_disconnected
     assert saved.plugin_root == str((tmp_path / "sample").resolve())
     assert saved.secret_env == ["API_TOKEN"]
     assert saved.args == ["server.py", "secret-argument"]
+
+
+def test_plugin_http_server_import_vaults_header_values_and_omits_them_from_storage(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    config_path = package / "mcp.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["mcpServers"]["remote-helper"]["headers"] = {
+        "Authorization": "Bearer ${MCP_TOKEN}",
+        "X-Workspace-Key": "literal-private-header",
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    class FakeCredentials:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def get(self, profile: str = "lm-studio") -> str | None:
+            return self.values.get(profile)
+
+        def set(self, token: str, profile: str = "lm-studio") -> None:
+            self.values[profile] = token
+
+        def delete(self, profile: str) -> None:
+            self.values.pop(profile, None)
+
+    store = RunStore(tmp_path / "package-http-mcp.sqlite3")
+    credentials = FakeCredentials()
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,  # type: ignore[arg-type]
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        response = client.post(
+            "/extensions/packages/import-mcp-server",
+            headers=headers,
+            json={
+                "root": str(tmp_path),
+                "package_name": "sample-package",
+                "server_name": "remote-helper",
+            },
+        )
+
+    assert response.status_code == 201
+    assert "http-secret-value" not in response.text
+    assert "literal-private-header" not in response.text
+    server = MCPRegistry(store).get_server(response.json()["id"])
+    assert server is not None
+    assert server.transport == "streamable_http"
+    assert server.plugin_headers == {
+        "Authorization": "Bearer ${secret:MCP_TOKEN}",
+        "X-Workspace-Key": "${secret:XAA_PLUGIN_HEADER_1}",
+    }
+    assert credentials.values[f"mcp:{server.id}:MCP_TOKEN"] == "http-secret-value"
+    assert credentials.values[f"mcp:{server.id}:XAA_PLUGIN_HEADER_1"] == "literal-private-header"
+    with store.connection() as connection:
+        raw_row = connection.execute(
+            "SELECT endpoint,secret_env,plugin_headers FROM mcp_servers WHERE id=?",
+            (server.id,),
+        ).fetchone()
+    assert "http-secret-value" not in str(dict(raw_row))
+    assert "literal-private-header" not in str(dict(raw_row))
 
 
 def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path: Path) -> None:

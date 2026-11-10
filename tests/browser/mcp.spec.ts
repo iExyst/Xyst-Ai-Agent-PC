@@ -6,6 +6,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   const serverId = '1234567890abcdef1234567890abcdef';
   let importedSkill: any;
   let importedPackageServer: any;
+  let importedPackageHTTPServer: any;
   const tool = {
     server_id: serverId,
     name: 'change_value',
@@ -40,18 +41,22 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
     if (path === '/memory' || path === '/schedules') return route.fulfill({json:[],headers});
     if (path === '/skills') return route.fulfill({json:importedSkill?[importedSkill]:[],headers});
-    if (path === '/extensions/packages/discover') return route.fulfill({json:{root:'C:\\plugins',packages:[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample',skills:[{name:'summarize',path:'skills/summarize/SKILL.md',description:'Summarize safely.',allowed_tools:['workspace.read_file'],declared_requirements:{platforms:['windows'],required_command_names:['git'],required_environment_names:['FIXTURE_TOKEN'],dependencies_declared:true,dependency_count:1,dependency_names:['requests'],dependency_names_truncated:false,dependency_managers:['python'],unparsed_dependency_count:0,hermes_toolsets:['terminal'],hermes_required_tools:['shell.exec'],hermes_fallback_toolsets:['browser'],hermes_fallback_tools:['web.search']},requirement_readiness:{current_platform:'windows',platform_status:'compatible',unknown_platform_names:[],available_command_names:['git'],missing_command_names:[],unchecked_command_names:[],present_environment_names:[],missing_environment_names:['FIXTURE_TOKEN'],dependencies_unresolved:true,dependency_count_unresolved:1,hermes_toolsets_unresolved:['terminal'],hermes_tools_unresolved:['shell.exec'],hermes_fallback_toolsets_unresolved:['browser'],hermes_fallback_tools_unresolved:['web.search'],not_assessed:['dependency_installation','hermes_toolsets','hermes_tools','hermes_fallback_conditions','command_semantics']}}],servers:[{name:'local-helper',transport:'stdio',command_name:'python.exe',argument_count:1,environment_names:['API_TOKEN']}] }],diagnostics:[]},headers});
+    if (path === '/extensions/packages/discover') return route.fulfill({json:{root:'C:\\plugins',packages:[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample',skills:[{name:'summarize',path:'skills/summarize/SKILL.md',description:'Summarize safely.',allowed_tools:['workspace.read_file'],declared_requirements:{platforms:['windows'],required_command_names:['git'],required_environment_names:['FIXTURE_TOKEN'],dependencies_declared:true,dependency_count:1,dependency_names:['requests'],dependency_names_truncated:false,dependency_managers:['python'],unparsed_dependency_count:0,hermes_toolsets:['terminal'],hermes_required_tools:['shell.exec'],hermes_fallback_toolsets:['browser'],hermes_fallback_tools:['web.search']},requirement_readiness:{current_platform:'windows',platform_status:'compatible',unknown_platform_names:[],available_command_names:['git'],missing_command_names:[],unchecked_command_names:[],present_environment_names:[],missing_environment_names:['FIXTURE_TOKEN'],dependencies_unresolved:true,dependency_count_unresolved:1,dependency_names:['requests'],dependency_names_truncated:false,dependency_managers:['python'],unparsed_dependency_count:0,hermes_toolsets:['terminal'],hermes_tools_unresolved:['shell.exec'],hermes_fallback_toolsets_unresolved:['browser'],hermes_fallback_tools_unresolved:['web.search'],not_assessed:['dependency_installation','hermes_toolsets','hermes_tools','hermes_fallback_conditions','command_semantics']}}],servers:[{name:'local-helper',transport:'stdio',command_name:'python.exe',argument_count:1,environment_names:['API_TOKEN']},{name:'remote-helper',transport:'streamable_http',endpoint:'https://example.test/…',environment_names:['MCP_TOKEN']}] }],diagnostics:[]},headers});
     if (path === '/extensions/packages/import-skill') {
       importedSkill={id:'imported-procedure',name:'summarize',lifecycle_state:'candidate',active_version:null,lifecycle_revision:0,latest_version:1,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z'};
       return route.fulfill({status:201,json:importedSkill,headers});
     }
     if (path === '/channels/telegram') return route.fulfill({json:{configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{}},headers});
-    if (path === '/mcp/servers' && request.method() === 'GET') return route.fulfill({json:[...(server?[server]:[]),...(importedPackageServer?[importedPackageServer]:[])],headers});
+    if (path === '/mcp/servers' && request.method() === 'GET') return route.fulfill({json:[...(server?[server]:[]),...(importedPackageServer?[importedPackageServer]:[]),...(importedPackageHTTPServer?[importedPackageHTTPServer]:[])],headers});
     if (path === '/mcp/servers' && request.method() === 'POST') {
       server = {...body,id:serverId,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{},tools:[]};
       return route.fulfill({status:201,json:server,headers});
     }
     if (path === '/extensions/packages/import-mcp-server') {
+      if (body.server_name==='remote-helper') {
+        importedPackageHTTPServer={id:'fedcba9876543210fedcba9876543210',name:'sample-package:remote-helper',transport:'streamable_http',endpoint:'https://example.test/mcp',command:'',args:[],cwd:null,secret_env:['MCP_TOKEN'],plugin_backed:true,created_at:'2026-11-10T00:00:00Z',updated_at:'2026-11-10T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{MCP_TOKEN:true},oauth_configured:false,tools:[]};
+        return route.fulfill({status:201,json:{id:importedPackageHTTPServer.id,name:importedPackageHTTPServer.name,transport:'streamable_http',state:'disconnected',secret_env:['MCP_TOKEN']},headers});
+      }
       importedPackageServer={id:'abcdef0123456789abcdef0123456789',name:'sample-package:local-helper',transport:'stdio',endpoint:null,command:'python.exe',args:['server.py'],cwd:null,secret_env:['API_TOKEN'],plugin_backed:true,created_at:'2026-11-10T00:00:00Z',updated_at:'2026-11-10T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{API_TOKEN:true},oauth_configured:false,tools:[]};
       return route.fulfill({status:201,json:{id:importedPackageServer.id,name:importedPackageServer.name,transport:'stdio',state:'disconnected',secret_env:['API_TOKEN']},headers});
     }
@@ -150,11 +155,16 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await expect(plugins.locator('p').filter({hasText:'Hermes tools: shell.exec'})).toHaveCount(2);
   await expect(plugins.getByText(/Fallback toolsets: browser/)).toBeVisible();
   await expect(plugins.getByText(/Unresolved fallback conditions: browser, web.search/)).toBeVisible();
-  await plugins.getByRole('button',{name:'Add disconnected server'}).click();
+  await plugins.getByRole('listitem').filter({hasText:'local-helper'}).getByRole('button',{name:'Add disconnected server'}).click();
   await expect(plugins.getByRole('status')).toContainText('disconnected MCP server');
   const mcpPanel=page.getByRole('region',{name:'MCP integrations'});
   await expect(mcpPanel.getByRole('heading',{name:/sample-package:local-helper/})).toBeVisible();
   await expect(mcpPanel.getByRole('heading',{name:/sample-package:local-helper/})).toContainText('(disconnected)');
+  const remoteItem=plugins.getByRole('listitem').filter({hasText:'remote-helper'});
+  await expect(remoteItem).toContainText('MCP_TOKEN');
+  await remoteItem.getByRole('button',{name:'Add disconnected server'}).click();
+  await expect(plugins.getByRole('status')).toContainText('sample-package:remote-helper');
+  await expect(mcpPanel.getByRole('heading',{name:/sample-package:remote-helper/})).toContainText('(disconnected)');
   expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/import-mcp-server'&&item.body.package_name==='sample-package'&&item.body.server_name==='local-helper')).toBe(true);
   await plugins.getByRole('button',{name:'Import as candidate'}).click();
   await expect(plugins.getByRole('status')).toContainText('inactive candidate');
