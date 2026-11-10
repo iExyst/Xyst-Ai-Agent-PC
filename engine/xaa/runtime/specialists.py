@@ -318,7 +318,12 @@ class SpecialistRunner:
         required_manifests: set[str] = set()
         for dependency_id in task["dependencies"]:
             dependency = candidate_evidence(
-                self.store, run_id, dependency_id, include_change_diffs=False
+                self.store,
+                run_id,
+                dependency_id,
+                include_change_diffs=False,
+                include_all_file_evidence=True,
+                include_file_excerpts=False,
             )
             if (
                 dependency["evidence"]
@@ -335,7 +340,13 @@ class SpecialistRunner:
                     required_outputs.add((dependency_id, item[key]))
         if not (required_source_paths or required_artifacts or required_outputs):
             return []
-        own_evidence = candidate_evidence(self.store, run_id, task["local_id"])
+        own_evidence = candidate_evidence(
+            self.store,
+            run_id,
+            task["local_id"],
+            include_all_file_evidence=True,
+            include_file_excerpts=False,
+        )
         reviewed_source_paths = {item["path"] for item in own_evidence["evidence"]}
         reviewed_manifest_ranges: dict[str, list[tuple[int, int, int]]] = {}
         reviewed_manifests: set[str] = set()
@@ -469,7 +480,14 @@ class SpecialistRunner:
     def _review_dependency_manifest(
         self, run_id: str, dependency_id: str, *, offset: int, limit: int
     ) -> dict[str, Any]:
-        snapshot = candidate_evidence(self.store, run_id, dependency_id, include_change_diffs=False)
+        snapshot = candidate_evidence(
+            self.store,
+            run_id,
+            dependency_id,
+            include_change_diffs=False,
+            include_all_file_evidence=True,
+            include_file_excerpts=False,
+        )
         entries: list[dict[str, Any]] = []
         evidence_items = cast(list[dict[str, Any]], snapshot["evidence"])
         change_items = cast(list[dict[str, Any]], snapshot["workspace_changes"])

@@ -50,6 +50,148 @@ def setup(root):
     return store, run_id, owner, tasks, project
 
 
+async def test_reviewer_manifest_includes_source_evidence_beyond_ui_summary_limit(
+    workspace_tmp_path,
+):
+    project = workspace_tmp_path / "many-source-files"
+    project.mkdir()
+    for index in range(17):
+        (project / f"source-{index:02}.txt").write_text(f"evidence {index}\n", encoding="utf-8")
+    database_directory = workspace_tmp_path / "database"
+    database_directory.mkdir()
+    store = RunStore(database_directory / "manifest-db.sqlite3")
+    run_id = store.create_run(
+        objective="Review every source",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model="fixture",
+        max_iterations=10,
+    )["id"]
+    owner = store.acquire_lease(run_id, "parent", seconds=300)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [
+            TaskDefinition(
+                id="reader",
+                objective="Read each source file",
+                permissions=["workspace.read", "workspace.write"],
+                max_iterations=3,
+            ),
+            TaskDefinition(
+                id="reviewer",
+                objective="Review the source evidence",
+                dependencies=["reader"],
+                role="reviewer",
+                permissions=["workspace.read"],
+                max_iterations=3,
+            ),
+        ],
+    )
+    claim = tasks.claim_ready(run_id, owner)
+    assert claim is not None and claim["task"]["local_id"] == "reader"
+    workspaces = TaskWorkspaces(store)
+    workspaces.initialize(run_id, owner, "reader", claim["token"])
+    for index in range(17):
+        call_id = f"source-read-{index:02}"
+        result = workspaces.operate(
+            run_id,
+            owner,
+            "reader",
+            claim["token"],
+            call_id,
+            "branch_read",
+            {"path": f"source-{index:02}.txt"},
+            idempotency_key=call_id,
+        )
+        tasks.record_read_worker_event(
+            run_id,
+            owner,
+            "reader",
+            claim["token"],
+            "task.tool.result",
+            {
+                "task_id": "reader",
+                "call_id": call_id,
+                "journal_id": call_id,
+                "result": result,
+            },
+        )
+
+    # The ordinary task detail remains bounded, while reviewer discovery must be complete.
+    assert len(candidate_evidence(store, run_id, "reader")["evidence"]) == 16
+    reviewer = next(row for row in tasks.records(run_id) if row["local_id"] == "reviewer")
+    runner = SpecialistRunner(store, LMStudioProvider())
+    try:
+        missing = runner._review_evidence_gaps(run_id, reviewer)
+        assert "source:source-00.txt" in missing
+        pages = []
+        offset = 0
+        while True:
+            page = runner._review_dependency_manifest(run_id, "reader", offset=offset, limit=8)
+            pages.extend(page["items"])
+            offset = page["next_offset"]
+            if page["eof"]:
+                break
+        sources = {item["path"] for item in pages if item["kind"] == "source_file"}
+        assert len(sources) == 17
+        assert "source-00.txt" in sources
+
+        with store.connection() as connection:
+            connection.execute(
+                "UPDATE tasks SET status='completed' WHERE id=?",
+                (f"{run_id}:reader",),
+            )
+        reviewer_claim = tasks.claim_ready(run_id, owner)
+        assert reviewer_claim is not None and reviewer_claim["task"]["local_id"] == "reviewer"
+        reviewer_store = RunStore(
+            store.path,
+            task_scope=TaskReadScope(run_id, owner, "reviewer", reviewer_claim["token"]),
+            internal_tools=True,
+        )
+        for index in range(17):
+            path = f"source-{index:02}.txt"
+            call_id = f"reviewer-read-{index:02}"
+            result = {
+                "path": path,
+                "text": f"evidence {index}\n",
+                "truncated": False,
+                "sha256": hashlib.sha256(f"evidence {index}\n".encode()).hexdigest(),
+                "trust": "untrusted_workspace_content",
+            }
+            reviewer_store.record_tool_intent(
+                run_id,
+                owner,
+                call_id=call_id,
+                tool="workspace.read_file",
+                version="1",
+                arguments={"path": path},
+                idempotency_key=call_id,
+            )
+            reviewer_store.record_tool_result(run_id, owner, call_id, result)
+            tasks.record_read_worker_event(
+                run_id,
+                owner,
+                "reviewer",
+                reviewer_claim["token"],
+                "task.tool.result",
+                {
+                    "task_id": "reviewer",
+                    "call_id": call_id,
+                    "journal_id": call_id,
+                    "result": result,
+                },
+            )
+        reviewer = next(row for row in tasks.records(run_id) if row["local_id"] == "reviewer")
+        missing = runner._review_evidence_gaps(run_id, reviewer)
+        assert not any(item.startswith("source:") for item in missing)
+        assert "manifest:reader" in missing
+    finally:
+        await runner.provider.close()
+
+
 async def test_specialist_snapshot_worker_rejects_source_workspace_junction(workspace_tmp_path):
     store, run_id, owner, tasks, project = setup(workspace_tmp_path)
     outside = workspace_tmp_path / "outside"

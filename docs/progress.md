@@ -1,5 +1,9 @@
 # Progress
 
+## Preserve all source reads in reviewer evidence discovery (2026-11-10)
+
+The normal candidate summary intentionally shows at most 16 source reads, but reviewer discovery had reused that summary and silently omitted older evidence. Reviewer gating and its paged manifest now enumerate every completed, hash-verified source read while omitting excerpts; the desktop and ordinary candidate summary remain capped at 16. A deterministic 17-file regression confirms the first source read appears in the manifest and blocks submission until reviewed. The task workspace and specialist suites pass (41 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. No live model inference was used. Broader Phase 4 reliability acceptance remains open.
+
 ## Avoid rebuilding private diffs for reviewer evidence paging (2026-11-10)
 
 Reviewer dependency-manifest paging and evidence-gate checks now request change metadata without generating full unified diffs. This avoids repeated diff allocation for every page while preserving full diffs for the owner review UI and normal candidate evidence. The task workspace and specialist suites pass (40 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. Hosted Windows run [42891572306](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42891572306) passed the full source workflow, including the Python suite and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. This bounds one repeated allocation in reviewer inventory; broader Phase 4 resource/reliability coverage remains open. No live model inference was used.

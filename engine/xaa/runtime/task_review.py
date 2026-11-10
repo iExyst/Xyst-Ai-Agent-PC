@@ -29,7 +29,13 @@ class TaskReviewDecision(BaseModel):
 
 
 def candidate_evidence(
-    store: RunStore, run_id: str, task_id: str, *, include_change_diffs: bool = True
+    store: RunStore,
+    run_id: str,
+    task_id: str,
+    *,
+    include_change_diffs: bool = True,
+    include_all_file_evidence: bool = False,
+    include_file_excerpts: bool = True,
 ) -> dict[str, Any]:
     task = next(
         (row for row in TaskStore(store).records(run_id) if row["local_id"] == task_id), None
@@ -51,22 +57,22 @@ def candidate_evidence(
         result = json.loads(journal["result"])
         if result != payload["result"] or result.get("truncated") or not result.get("sha256"):
             continue
-        evidence.append(
-            {
-                "call_id": payload["journal_id"],
-                "path": result["path"],
-                "sha256": result["sha256"],
-                "excerpt": result["text"][:4096],
-                "excerpt_truncated": len(result["text"]) > 4096,
-            }
-        )
+        item = {
+            "call_id": payload["journal_id"],
+            "path": result["path"],
+            "sha256": result["sha256"],
+        }
+        if include_file_excerpts:
+            item["excerpt"] = result["text"][:4096]
+            item["excerpt_truncated"] = len(result["text"]) > 4096
+        evidence.append(item)
     result: dict[str, Any] = json.loads(task["result"]) if task["result"] else {}
     return {
         "task_id": task_id,
         "status": task["status"],
         "candidate": result.get("candidate"),
         "acceptance_criteria": task["acceptance_criteria"],
-        "evidence": evidence[-16:],
+        "evidence": evidence if include_all_file_evidence else evidence[-16:],
         "workspace_changes": TaskWorkspaces(store).changes(
             run_id, task_id, include_diffs=include_change_diffs
         ),
