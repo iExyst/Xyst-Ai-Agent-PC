@@ -310,7 +310,15 @@ class TaskStore:
                     "SELECT input_artifacts FROM tasks WHERE id=? AND run_id=?",
                     (identity, run_id),
                 ).fetchone()
-                required_inputs = set(json.loads(task_row["input_artifacts"]))
+                assigned_inputs = set(json.loads(task_row["input_artifacts"]))
+                required_inputs = {
+                    row["id"]
+                    for row in connection.execute(
+                        "SELECT id,media_type FROM artifacts WHERE run_id=?",
+                        (run_id,),
+                    ).fetchall()
+                    if row["id"] in assigned_inputs and row["media_type"] == "text/plain"
+                }
                 observed: dict[str, tuple[int, list[tuple[int, int]]]] = {}
                 if required_inputs:
                     for event in connection.execute(
@@ -391,14 +399,30 @@ class TaskStore:
                 raise ValueError(
                     "Task input artifacts must reference artifacts already saved in this run."
                 )
+            if any(row["task_id"] is not None for row in rows):
+                raise ValueError("Task inputs must be unowned artifacts from the same run.")
             if any(
-                row["task_id"] is not None
-                or row["media_type"] != "text/plain"
-                or row["size_bytes"] > 4 * 1024 * 1024
+                row["media_type"] not in {"text/plain", "image/png", "image/jpeg"}
+                or (row["media_type"] == "text/plain" and row["size_bytes"] > 4 * 1024 * 1024)
+                or (
+                    row["media_type"] in {"image/png", "image/jpeg"}
+                    and row["size_bytes"] > 3 * 1024 * 1024
+                )
                 for row in rows
             ):
                 raise ValueError(
-                    "Task inputs must be unowned plain-text run artifacts no larger than 4 MiB."
+                    "Task inputs must be supported unowned text or image artifacts within size limits."
+                )
+            image_bytes = sum(
+                row["size_bytes"]
+                for row in rows
+                if row["media_type"] in {"image/png", "image/jpeg"}
+            )
+            if image_bytes > 6 * 1024 * 1024:
+                raise ValueError("Assigned images exceed the 6 MiB combined specialist limit.")
+            if image_bytes and run["limits"].get("pre_inference_token_reservations") is True:
+                raise ValueError(
+                    "Specialist image inputs are unavailable with exact text-token admission."
                 )
         permissions = {"workspace.read"}
         if run.get("approved_web_hosts"):

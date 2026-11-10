@@ -175,8 +175,8 @@ class RunStore:
         provenance: str,
         media_type: str = "text/plain",
     ) -> dict[str, Any]:
-        if media_type not in {"text/plain", "image/png"}:
-            raise ValueError("Managed artifacts support only plain text and PNG images.")
+        if media_type not in {"text/plain", "image/png", "image/jpeg"}:
+            raise ValueError("Managed artifacts support plain text, PNG and JPEG images.")
         root = (self.path.parent / "artifacts").resolve(strict=True)
         if Path(filename).name != filename:
             raise ValueError("Artifact name must not contain a path.")
@@ -1276,6 +1276,58 @@ class RunStore:
         ):
             raise ValueError("Run image failed artifact integrity verification.")
         return f"data:{row['media_type']};base64," + base64.b64encode(content).decode("ascii")
+
+    def assigned_image_data_urls(
+        self, run_id: str, artifact_ids: list[str]
+    ) -> list[dict[str, str]]:
+        """Read and integrity-check explicitly assigned image artifacts for specialist context."""
+        if not artifact_ids:
+            return []
+        if len(artifact_ids) > 8 or len(set(artifact_ids)) != len(artifact_ids):
+            raise ValueError("Assigned image artifact IDs must be unique and bounded.")
+        placeholders = ",".join("?" for _ in artifact_ids)
+        with self._connection() as connection:
+            rows = connection.execute(
+                f"SELECT id, task_id, media_type, storage_key, size_bytes, sha256 FROM artifacts WHERE run_id=? AND id IN ({placeholders})",
+                (run_id, *artifact_ids),
+            ).fetchall()
+        by_id = {row["id"]: row for row in rows}
+        if set(by_id) != set(artifact_ids):
+            raise ValueError("Assigned image artifact is no longer available in this run.")
+        root = (self.path.parent / "artifacts").resolve(strict=True)
+        result: list[dict[str, str]] = []
+        total_bytes = 0
+        for artifact_id in artifact_ids:
+            row = by_id[artifact_id]
+            if row["task_id"] is not None:
+                raise PermissionError("Assigned image is no longer an unowned run artifact.")
+            if row["media_type"] not in {"image/png", "image/jpeg"}:
+                raise ValueError("Assigned artifact is not a supported image.")
+            if row["size_bytes"] > 3 * 1024 * 1024:
+                raise ValueError("Assigned image exceeds the 3 MiB specialist limit.")
+            total_bytes += row["size_bytes"]
+            if total_bytes > 6 * 1024 * 1024:
+                raise ValueError("Assigned images exceed the 6 MiB combined specialist limit.")
+            target = (root / row["storage_key"]).resolve(strict=True)
+            if not target.is_relative_to(root):
+                raise PermissionError("Assigned image escaped managed artifact storage.")
+            with target.open("rb") as source:
+                if not opened_file_path(source).is_relative_to(root):
+                    raise PermissionError("Opened assigned image escaped managed artifact storage.")
+                content = source.read(3 * 1024 * 1024 + 1)
+            if (
+                len(content) != row["size_bytes"]
+                or hashlib.sha256(content).hexdigest() != row["sha256"]
+            ):
+                raise ValueError("Assigned image failed artifact integrity verification.")
+            result.append(
+                {
+                    "artifact_id": artifact_id,
+                    "data_url": f"data:{row['media_type']};base64,"
+                    + base64.b64encode(content).decode("ascii"),
+                }
+            )
+        return result
 
     def document_text(self, run_id: str) -> str | None:
         with self._connection() as connection:
