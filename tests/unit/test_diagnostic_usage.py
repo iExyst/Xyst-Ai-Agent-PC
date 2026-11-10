@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -57,13 +58,14 @@ class DiagnosticProvider(LMStudioProvider):
         return response
 
 
-def create(store, root, limit):
+def create(store, root, limit, *, max_seconds=900):
     return store.create_run(
         objective="Inspect workspace",
         acceptance_criteria=[],
         workspace=str(root),
         mode="observe",
         model="fixture",
+        max_seconds=max_seconds,
         max_total_tokens=limit,
     )["id"]
 
@@ -99,7 +101,7 @@ async def test_unknown_diagnostic_usage_survives_reopen_and_blocks_retry(
     workspace_tmp_path, interrupted
 ):
     store = RunStore(workspace_tmp_path / "unknown.sqlite3")
-    identity = create(store, workspace_tmp_path, 100)
+    identity = create(store, workspace_tmp_path, 100, max_seconds=1)
     provider = DiagnosticProvider(missing=True, interrupted=interrupted)
     try:
         if interrupted:
@@ -239,3 +241,27 @@ async def test_explicit_specialist_dispatch_obeys_diagnostic_threshold(workspace
     assert provider.calls == 1
     assert store.token_usage(identity)["total_tokens"] == 3
     assert not any(e["event_type"] == "task.inference.started" for e in store.list_events(identity))
+
+
+async def test_explicit_specialist_dispatch_blocks_when_run_deadline_expires(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "dispatch-deadline.sqlite3")
+    identity = create(store, workspace_tmp_path, 100, max_seconds=1)
+    token = store.acquire_lease(identity, "dispatcher")
+    store.transition(identity, RunState.PLANNING, owner=token)
+    store.transition(identity, RunState.RUNNING, owner=token)
+
+    class SlowProvider(DiagnosticProvider):
+        async def chat(self, **kwargs):
+            self.calls += 1
+            await asyncio.sleep(5)
+
+    provider = SlowProvider()
+    try:
+        await Coordinator(store, provider).continue_plan(identity, token)
+    finally:
+        await provider.close()
+    assert store.get_run(identity)["state"] == "blocked"
+    state_events = [
+        event for event in store.list_events(identity) if event["event_type"] == "run.state_changed"
+    ]
+    assert state_events[-1]["payload"]["reason"] == "time_budget_exhausted"

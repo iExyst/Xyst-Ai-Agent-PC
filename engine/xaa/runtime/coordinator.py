@@ -1079,6 +1079,7 @@ class Coordinator:
 
     async def continue_plan(self, run_id: str, token: str) -> None:
         """Continue user-dispatched specialists under ownership reserved by the API."""
+        run_timeout: asyncio.Timeout | None = None
         try:
             run = self.store.get_run(run_id)
             if run is None or run["state"] != "running" or not run["model"]:
@@ -1100,7 +1101,8 @@ class Coordinator:
                 )
                 return
             deadline = time.monotonic() + remaining
-            async with asyncio.timeout(remaining):
+            run_timeout = asyncio.timeout(remaining)
+            async with run_timeout:
                 await self.diagnose_run_tools(run_id, token, run["model"])
                 outcomes = await SpecialistRunner(
                     self.store,
@@ -1122,6 +1124,20 @@ class Coordinator:
                 RunState.BLOCKED if blocked else RunState.VERIFYING,
                 reason="specialist_tasks_blocked" if blocked else "specialist_candidates_available",
                 owner=token,
+            )
+        except TimeoutError:
+            # A provider may raise TimeoutError itself. Treat only this scope's
+            # deadline as a run budget outcome.
+            if run_timeout is None or not run_timeout.expired():
+                try:
+                    self.store.transition(
+                        run_id, RunState.FAILED, reason="TimeoutError", owner=token
+                    )
+                except LeaseLost:
+                    pass
+                raise
+            self.store.transition(
+                run_id, RunState.BLOCKED, reason="time_budget_exhausted", owner=token
             )
         except ContextLimitError as exc:
             self._record_context_admission_failure(run_id, token, exc)
