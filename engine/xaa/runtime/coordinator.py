@@ -26,15 +26,7 @@ from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.browser import BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
-from xaa.runtime.directory_listing import ListDirectoryArguments
-from xaa.runtime.executor import (
-    ApplyPatchArguments,
-    CreateFileArguments,
-    ReadFileArguments,
-    ReconciliationRequired,
-    ReplaceTextArguments,
-    WriteFileArguments,
-)
+from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.git_tools import GIT_TOOL, GitArguments, inspect_git
 from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
 from xaa.runtime.planning import (
@@ -45,8 +37,8 @@ from xaa.runtime.planning import (
 )
 from xaa.runtime.specialists import RUN_READY_TOOL, RunReadyArguments, SpecialistRunner
 from xaa.runtime.states import RunState
+from xaa.runtime.tool_contracts import WORKSPACE_TOOL_CONTRACTS, WORKSPACE_TOOL_OPERATIONS
 from xaa.runtime.tool_worker import (
-    FilesystemOperation,
     FilesystemWorkerError,
     FilesystemWorkerTimeout,
     execute_filesystem,
@@ -895,28 +887,21 @@ class Coordinator:
                     idempotency_key=f"{iteration}:{call['id']}",
                     deadline=deadline,
                 )
-        operations: dict[str, FilesystemOperation] = {
-            "workspace_read_file": "read",
-            "workspace_list_directory": "list",
-            "workspace_search": "search",
-            "workspace_write_file": "write",
-            "workspace_create_file": "create",
-            "workspace_replace_text": "replace",
-            "workspace_apply_patch": "patch",
-        }
-        if name not in operations:
+        contract = WORKSPACE_TOOL_CONTRACTS.get(name)
+        if contract is None or contract["internal_only"]:
             raise ValueError("Model requested an unavailable tool.")
-        if operations[name] not in {"read", "list", "search"} and run["mode"] != "workspace":
+        operation = WORKSPACE_TOOL_OPERATIONS[name]
+        if "workspace.write" in contract["permissions"] and run["mode"] != "workspace":
             raise PermissionError("File edits are not authorized for this run.")
         return await execute_filesystem(
             self.store,
             run_id,
             token,
             call["id"],
-            operations[name],
+            operation,
             arguments,
             idempotency_key=f"{iteration}:{call['id']}",
-            timeout=min(10, max(0, deadline - time.monotonic())),
+            timeout=min(contract["timeout_seconds"], max(0, deadline - time.monotonic())),
         )
 
     def _reject_plan_tool_batch(
@@ -1209,7 +1194,9 @@ class Coordinator:
                 "function": {
                     "name": "workspace_list_directory",
                     "description": "List one workspace directory, at most 256 entries and 32 KiB. Start with path '.' to discover files. Links are not traversed.",
-                    "parameters": ListDirectoryArguments.model_json_schema(),
+                    "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_list_directory"][
+                        "input_schema"
+                    ],
                 },
             },
             {
@@ -1217,7 +1204,9 @@ class Coordinator:
                 "function": {
                     "name": "workspace_read_file",
                     "description": "Read a UTF-8 file relative to the selected workspace.",
-                    "parameters": ReadFileArguments.model_json_schema(),
+                    "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_read_file"][
+                        "input_schema"
+                    ],
                 },
             },
         ]
@@ -1359,7 +1348,9 @@ class Coordinator:
                     "function": {
                         "name": "workspace_create_file",
                         "description": "Create a NEW UTF-8 file, at most 64 KiB. Windows only. Existing destination is never overwritten; all parent directories must already exist, with no links/junctions. Use a plain relative path. Creation is journaled and uncertain effects must be reconciled before retrying.",
-                        "parameters": CreateFileArguments.model_json_schema(),
+                        "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_create_file"][
+                            "input_schema"
+                        ],
                     },
                 }
             )
@@ -1369,7 +1360,9 @@ class Coordinator:
                     "function": {
                         "name": "workspace_apply_patch",
                         "description": "Apply a strict single-file unified diff to an existing UTF-8 file, at most 64 KiB and 128 hunks. Read first and copy sha256. Headers must be --- a/path and +++ b/path matching path exactly. Exact context, coordinates and line endings required; no fuzzy matching, rename, creation or deletion. Validated output uses the journaled hash-checked write path.",
-                        "parameters": ApplyPatchArguments.model_json_schema(),
+                        "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_apply_patch"][
+                            "input_schema"
+                        ],
                     },
                 }
             )
@@ -1379,7 +1372,9 @@ class Coordinator:
                     "function": {
                         "name": "workspace_replace_text",
                         "description": "Replace one unique old_text occurrence in an existing UTF-8 file, preserving every other byte including trailing newlines. Prefer this for small changes. Read first and copy the exact returned sha256 into expected_sha256.",
-                        "parameters": ReplaceTextArguments.model_json_schema(),
+                        "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_replace_text"][
+                            "input_schema"
+                        ],
                     },
                 }
             )
@@ -1389,11 +1384,17 @@ class Coordinator:
                     "function": {
                         "name": "workspace_write_file",
                         "description": "Edit an existing UTF-8 workspace file (64 KiB maximum). Read it first and copy its returned sha256 into expected_sha256. Supply the full replacement content. Only selected-workspace files are permitted.",
-                        "parameters": WriteFileArguments.model_json_schema(),
+                        "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_write_file"][
+                            "input_schema"
+                        ],
                     },
                 }
             )
-        tools.append(SEARCH_TOOL)
+        search_tool = json.loads(json.dumps(SEARCH_TOOL))
+        search_tool["function"]["parameters"] = WORKSPACE_TOOL_CONTRACTS[
+            "workspace_search"
+        ]["input_schema"]
+        tools.append(search_tool)
         approved_web_hosts = run.get("approved_web_hosts", [])
         if run.get("approved_web_search"):
             tools.append(json.loads(json.dumps(WEB_SEARCH_TOOL)))

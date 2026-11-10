@@ -54,50 +54,6 @@ class ApplyPatchArguments(ReadFileArguments):
     expected_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
-PATCH_METADATA = {
-    "name": "workspace.apply_patch",
-    "version": "1",
-    "permissions": ["workspace.read", "workspace.write"],
-    "behavior": "write existing file after complete patch validation",
-    "input_schema": ApplyPatchArguments.model_json_schema(),
-    "output_schema": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string"},
-            "sha256": {"type": "string"},
-            "bytes_written": {"type": "integer"},
-        },
-        "required": ["path", "sha256", "bytes_written"],
-    },
-    "timeout": "bounded synchronous filesystem operation; worker timeout isolation pending",
-    "cancellation": "lease checked before write; no interruption inside compare/write/fsync",
-    "retry": "no automatic retries; reconcile normalized write intent first",
-    "limits": {"input_bytes": 65536, "output_bytes": 65536, "hunks": 128},
-    "audit": ["run_id", "call_id", "arguments", "tool.executing", "sha256", "bytes_written"],
-}
-
-CREATE_METADATA = {
-    **PATCH_METADATA,
-    "name": "workspace.create_file",
-    "permissions": ["workspace.write"],
-    "behavior": "exclusive creation in existing verified Windows directories",
-    "input_schema": CreateFileArguments.model_json_schema(),
-    "output_schema": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string"},
-            "sha256": {"type": "string"},
-            "bytes_written": {"type": "integer"},
-            "created": {"const": True},
-        },
-        "required": ["path", "sha256", "bytes_written", "created"],
-    },
-    "cancellation": "lease checked before creation; failures after exclusive create remain uncertain",
-    "retry": "none; confirm exact destination bytes without rewriting on recovery",
-    "limits": {"input_bytes": 65536, "output_bytes": 65536, "path_components": 32},
-}
-
-
 class ReconciliationRequired(RuntimeError):
     """An existing action must be inspected before attempting execution again."""
 
