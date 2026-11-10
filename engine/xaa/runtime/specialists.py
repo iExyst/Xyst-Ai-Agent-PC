@@ -236,30 +236,41 @@ class SpecialistRunner:
     ) -> None:
         task = claim["task"]
         identity, worker = task["local_id"], claim["token"]
+        task_allowance = task["budgets"]["max_seconds"]
+        run_remaining = max(0.0, deadline - time.monotonic())
+        timeout_reason = (
+            "RunTimeBudgetExceeded" if run_remaining <= task_allowance else "TaskTimeBudgetExceeded"
+        )
+        budget_timeout = asyncio.timeout(min(task_allowance, run_remaining))
         try:
-            async with asyncio.timeout(
-                min(task["budgets"]["max_seconds"], max(0, deadline - time.monotonic()))
-            ):
-                async with asyncio.TaskGroup() as group:
-                    heartbeat = group.create_task(self._heartbeat(run_id, parent, identity, worker))
-                    try:
-                        await self._execute(
-                            run_id,
-                            parent,
-                            task,
-                            worker,
-                            deadline=min(
-                                deadline, time.monotonic() + task["budgets"]["max_seconds"]
-                            ),
-                        )
-                    finally:
-                        heartbeat.cancel()
+            async with budget_timeout, asyncio.TaskGroup() as group:
+                heartbeat = group.create_task(self._heartbeat(run_id, parent, identity, worker))
+                try:
+                    await self._execute(
+                        run_id,
+                        parent,
+                        task,
+                        worker,
+                        deadline=min(deadline, time.monotonic() + task["budgets"]["max_seconds"]),
+                    )
+                finally:
+                    heartbeat.cancel()
         except asyncio.CancelledError:
             # The parent may already be paused/cancelled. Leave ownership for fenced recovery.
             raise
         except (LeaseLost, PermissionError):
             raise
         except (ExceptionGroup, TimeoutError) as exc:
+            if budget_timeout.expired():
+                self.tasks.record_outcome(
+                    run_id,
+                    parent,
+                    identity,
+                    worker,
+                    state="blocked",
+                    result={"error": timeout_reason, "causes": [timeout_reason]},
+                )
+                return
             causes = _failure_types(exc)
             self.tasks.record_outcome(
                 run_id,

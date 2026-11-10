@@ -1,5 +1,8 @@
 # Progress
 
+## Report specialist wall-clock exhaustion as a blocked budget outcome (2026-11-10)
+
+`SpecialistRunner.run_claim` now distinguishes its own task/run deadline expiration from a provider-raised timeout. Expired time budgets persist as blocked outcomes with separate `task_time_budget_exhausted` and `run_time_budget_exhausted` reasons; the plan view explains each case. Provider timeouts continue to be classified as inference failures. Fake-provider tests verify cancellation and both budget reasons. The specialist and plan API suites pass (24 tests); Ruff, formatting, Pyright, API/TypeScript contract checks, desktop typecheck, and `git diff --check` pass. Hosted validation is pending. No live model inference was used.
 ## Remove the stateless inference path outside the coordinator (2026-11-10)
 
 Removed authenticated `POST /chat/stream`, which called `provider.stream` directly without a durable run, saved usage, run budgets, or coordinator lifecycle. No desktop caller used the route. Interactive chat remains available through the persisted CLI/desktop sessions and coordinator; callers of the legacy raw API path now receive 404 and must use durable runs. Regenerated `contracts/openapi.json` and desktop API types. The API suite passes (37 tests), API and TypeScript contract checks, desktop typecheck, Ruff, formatting, targeted Pyright, and `git diff --check` pass. Hosted Windows source run [42906303731](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42906303731) passed the full source workflow and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. No live model inference was used.

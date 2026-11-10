@@ -587,6 +587,10 @@ class TaskStore:
                 record["blocked_reason"] = "review_evidence_missing"
             elif "TaskTokenBudgetExceeded" in outcome.get("causes", []):
                 record["blocked_reason"] = "token_budget_exhausted_or_unmeasured"
+            elif "TaskTimeBudgetExceeded" in outcome.get("causes", []):
+                record["blocked_reason"] = "task_time_budget_exhausted"
+            elif "RunTimeBudgetExceeded" in outcome.get("causes", []):
+                record["blocked_reason"] = "run_time_budget_exhausted"
             elif any(
                 statuses.get(dependency) in {"failed", "blocked", "cancelled"}
                 for dependency in record["dependencies"]

@@ -761,6 +761,68 @@ async def test_provider_timeout_is_classified_as_specialist_inference_failure(wo
     assert sum(event["event_type"] == "task.result" for event in events) == 1
 
 
+@pytest.mark.parametrize(
+    ("run_deadline_seconds", "task_seconds", "expected_blocked_reason", "expected_cause"),
+    [
+        (0.05, 10, "run_time_budget_exhausted", "RunTimeBudgetExceeded"),
+        (30, 1, "task_time_budget_exhausted", "TaskTimeBudgetExceeded"),
+    ],
+)
+async def test_specialist_time_budget_expiry_is_reported_as_blocked(
+    workspace_tmp_path,
+    run_deadline_seconds,
+    task_seconds,
+    expected_blocked_reason,
+    expected_cause,
+):
+    store = RunStore(workspace_tmp_path / f"specialist-{expected_blocked_reason}.sqlite3")
+    run_id = store.create_run(
+        objective="Respect specialist wall-clock limits",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="bounded", objective="Wait for the provider", max_seconds=task_seconds)],
+    )
+
+    class SlowProvider(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+            self.cancelled = False
+
+        async def chat(self, **kwargs):
+            self.calls += 1
+            try:
+                await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+
+    provider = SlowProvider()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id,
+            parent,
+            deadline=time.monotonic() + run_deadline_seconds,
+        )
+    finally:
+        await provider.close()
+
+    assert provider.calls == 1
+    assert provider.cancelled
+    assert statuses == [{"task_id": "bounded", "status": "blocked"}]
+    record = tasks.records(run_id)[0]
+    assert record["blocked_reason"] == expected_blocked_reason
+    assert json.loads(record["result"])["causes"] == [expected_cause]
+
+
 async def test_invalid_private_read_path_returns_tool_error_and_can_be_corrected(
     workspace_tmp_path,
 ):
