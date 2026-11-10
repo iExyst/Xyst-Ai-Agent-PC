@@ -50,6 +50,8 @@ reconciliation guidance; server-provided descriptions remain labeled untrusted.
 
 `plan.save` declares the typed dependency-graph proposal, saved/rejected result shapes, `task.delegate` permission, 64-task limit, run-deadline boundary, durable-call recovery rule, and plan audit fields. The coordinator exposes its input schema directly from this contract. A saved plan is not dispatched by the same call.
 
+`procedure.catalog` is a versioned read contract with a strict page schema, 50-item limit, output field bounds, ten-second timeout, audit fields and a 512 KiB final serialized-result ceiling. Oversized output is replaced with a bounded, untrusted `output_limit` result.
+
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. The command entry is a typed execution contract used for its
 model-facing input schema; the coordinator still enforces its saved grant and
