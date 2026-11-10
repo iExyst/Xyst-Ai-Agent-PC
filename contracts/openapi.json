@@ -559,6 +559,77 @@
         "title": "CompatibleProviderSelectionRequest",
         "type": "object"
       },
+      "CreateMCPServerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Args",
+            "type": "array"
+          },
+          "command": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Command",
+            "type": "string"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "secret_env": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Secret Env",
+            "type": "array"
+          },
+          "transport": {
+            "default": "stdio",
+            "enum": [
+              "stdio",
+              "streamable_http"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateMCPServerRequest",
+        "type": "object"
+      },
       "CreateRunRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2090,109 +2161,6 @@
           "tools"
         ],
         "title": "MCPServerResponse",
-        "type": "object"
-      },
-      "MCPServerSpec": {
-        "additionalProperties": false,
-        "properties": {
-          "args": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 64,
-            "title": "Args",
-            "type": "array"
-          },
-          "command": {
-            "default": "",
-            "maxLength": 512,
-            "title": "Command",
-            "type": "string"
-          },
-          "cwd": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cwd"
-          },
-          "endpoint": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint"
-          },
-          "name": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "plugin_data": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plugin Data"
-          },
-          "plugin_headers": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "maxProperties": 32,
-            "title": "Plugin Headers",
-            "type": "object"
-          },
-          "plugin_root": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plugin Root"
-          },
-          "secret_env": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 64,
-            "title": "Secret Env",
-            "type": "array"
-          },
-          "transport": {
-            "default": "stdio",
-            "enum": [
-              "stdio",
-              "streamable_http"
-            ],
-            "title": "Transport",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "MCPServerSpec",
         "type": "object"
       },
       "MCPToolPermissionRequest": {
@@ -7435,7 +7403,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MCPServerSpec"
+                "$ref": "#/components/schemas/CreateMCPServerRequest"
               }
             }
           },

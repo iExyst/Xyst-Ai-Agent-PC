@@ -5,7 +5,7 @@ import zipfile
 import pytest
 from xaa.storage.backup_bundle import create_backup_bundle, restore_backup_bundle
 from xaa.storage.restore import restore_database
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
 
 
 def test_backup_reopens_with_exact_run_and_events(workspace_tmp_path):
@@ -94,6 +94,22 @@ def test_bundle_restore_rejects_archive_path_traversal(workspace_tmp_path):
     with pytest.raises(ValueError, match="entries do not match"):
         restore_backup_bundle(malicious, workspace_tmp_path / "recovered")
     assert not (workspace_tmp_path / "escape.txt").exists()
+
+
+def test_previous_schema_backup_migrates_after_restore(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "previous-schema.sqlite3")
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN plugin_sha256")
+        connection.execute("PRAGMA user_version=24")
+    bundle = create_backup_bundle(store)
+
+    restored_path = restore_backup_bundle(bundle, workspace_tmp_path / "previous-schema-restored")
+    restored = RunStore(restored_path)
+    with restored.connection() as connection:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(mcp_servers)")}
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert "plugin_sha256" in columns
+    assert version == DATABASE_SCHEMA_VERSION
 
 
 def test_bundle_publication_retries_transient_windows_directory_lock(

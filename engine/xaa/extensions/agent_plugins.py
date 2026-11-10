@@ -36,6 +36,9 @@ MAX_INSTALL_ARCHIVE_BYTES = 16 * 1024 * 1024
 MAX_INSTALL_FILES = 1024
 MAX_INSTALL_FILE_BYTES = 2 * 1024 * 1024
 MAX_INSTALL_TOTAL_BYTES = 16 * 1024 * 1024
+MAX_PLUGIN_FINGERPRINT_ENTRIES = 1024
+MAX_PLUGIN_FINGERPRINT_FILE_BYTES = 2 * 1024 * 1024
+MAX_PLUGIN_FINGERPRINT_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_READINESS_COMMAND_CHECKS = 256
 _SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
@@ -967,6 +970,91 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
         except (OSError, RuntimeError, ValueError) as exc:
             diagnostics.append(PluginDiagnostic(path=candidate.name[:256], message=str(exc)[:300]))
     return PluginDiscovery(root=str(root), packages=packages, diagnostics=diagnostics)
+
+
+def plugin_source_sha256(directory: Path) -> str:
+    """Hash a bounded package tree while refusing symlinks and changing files."""
+    try:
+        root = directory.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("installed MCP package folder is unavailable") from exc
+    if not root.is_dir():
+        raise ValueError("installed MCP package folder is not a directory")
+    digest = hashlib.sha256()
+    entry_count = 0
+    file_count = 0
+    total_bytes = 0
+    seen_paths: set[str] = set()
+
+    def raise_walk_error(error: OSError) -> None:
+        raise ValueError("installed MCP package could not be read") from error
+
+    for current, directories, files in os.walk(
+        root, topdown=True, followlinks=False, onerror=raise_walk_error
+    ):
+        directories.sort(key=str.casefold)
+        files.sort(key=str.casefold)
+        current_path = Path(current)
+        for name in [*directories, *files]:
+            entry_count += 1
+            if entry_count > MAX_PLUGIN_FINGERPRINT_ENTRIES:
+                raise ValueError("installed MCP package exceeds the 1024-entry verification limit")
+            path = current_path / name
+            is_junction = getattr(path, "is_junction", lambda: False)
+            if path.is_symlink() or is_junction():
+                raise ValueError("installed MCP package contains a link or junction")
+            try:
+                resolved = path.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise ValueError("installed MCP package contains an unavailable path") from exc
+            if not _inside(resolved, root):
+                raise ValueError("installed MCP package path escapes its root")
+            relative_name = path.relative_to(root).as_posix()
+            key = relative_name.casefold()
+            if key in seen_paths:
+                raise ValueError("installed MCP package contains duplicate case-insensitive paths")
+            seen_paths.add(key)
+            relative = relative_name.encode("utf-8")
+            if name in directories:
+                digest.update(b"D" + len(relative).to_bytes(4, "big") + relative)
+                continue
+            try:
+                before = path.stat()
+            except OSError as exc:
+                raise ValueError("installed MCP package file could not be read") from exc
+            if not path.is_file() or before.st_size > MAX_PLUGIN_FINGERPRINT_FILE_BYTES:
+                raise ValueError("installed MCP package contains an unsupported or oversized file")
+            file_count += 1
+            total_bytes += before.st_size
+            if (
+                file_count > MAX_PLUGIN_FINGERPRINT_ENTRIES
+                or total_bytes > MAX_PLUGIN_FINGERPRINT_TOTAL_BYTES
+            ):
+                raise ValueError("installed MCP package exceeds its source verification limits")
+            digest.update(b"F" + len(relative).to_bytes(4, "big") + relative)
+            digest.update(before.st_size.to_bytes(8, "big"))
+            read_bytes = 0
+            try:
+                with path.open("rb") as source:
+                    while chunk := source.read(64 * 1024):
+                        read_bytes += len(chunk)
+                        if read_bytes > MAX_PLUGIN_FINGERPRINT_FILE_BYTES:
+                            raise ValueError(
+                                "installed MCP package file exceeds its verification limit"
+                            )
+                        digest.update(chunk)
+                after = path.stat()
+            except OSError as exc:
+                raise ValueError("installed MCP package file could not be read") from exc
+            if read_bytes != before.st_size or (
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            ) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                raise ValueError("installed MCP package changed during source verification")
+    if not file_count:
+        raise ValueError("installed MCP package is empty")
+    return digest.hexdigest()
 
 
 def install_agent_plugin_archive(archive_path: str, managed_root: Path) -> PluginInstallResult:

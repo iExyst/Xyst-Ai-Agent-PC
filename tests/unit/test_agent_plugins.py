@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.extensions import agent_plugins
-from xaa.extensions.agent_plugins import discover_agent_plugins, read_plugin_skill
+from xaa.extensions.agent_plugins import (
+    discover_agent_plugins,
+    plugin_source_sha256,
+    read_plugin_skill,
+)
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.storage.mcp import MCPRegistry
 from xaa.storage.runs import RunStore
@@ -581,9 +585,13 @@ def test_plugin_mcp_server_import_stores_secrets_in_vault_and_stays_disconnected
     assert "secret-value" not in response.text
     assert credentials.values[f"mcp:{response.json()['id']}:API_TOKEN"] == "secret-value"
     assert "secret-value" not in listed.text
+    assert "plugin_sha256" not in listed.text
     saved = MCPRegistry(store).get_server(response.json()["id"])
     assert saved is not None
     assert saved.plugin_root == str((tmp_path / "sample").resolve())
+    assert saved.plugin_root is not None
+    assert saved.plugin_sha256 == plugin_source_sha256(Path(saved.plugin_root))
+    assert "plugin_sha256" not in response.text
     assert saved.secret_env == ["API_TOKEN"]
     assert saved.args == ["server.py", "secret-argument"]
 

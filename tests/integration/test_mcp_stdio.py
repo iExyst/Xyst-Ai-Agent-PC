@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from mcp.types import CallToolResult, TextContent
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.mcp_manager import (
@@ -101,6 +102,77 @@ def test_plugin_parameters_expand_paths_and_reject_package_escape(workspace_tmp_
     )
     with pytest.raises(MCPConnectionError, match="escapes its package"):
         MCPManager(registry.store, None)._parameters(escaping)
+
+
+@pytest.mark.asyncio
+async def test_changed_plugin_package_is_refused_before_launch(workspace_tmp_path: Path) -> None:
+    package = workspace_tmp_path / "changed-package"
+    package.mkdir()
+    source = package / "server.py"
+    source.write_text("print('reviewed')", encoding="utf-8")
+    store = RunStore(workspace_tmp_path / "mcp-changed-package.sqlite3")
+    server = MCPRegistry(store).create_server(
+        MCPServerSpec(
+            name="Changed package",
+            command=sys.executable,
+            args=["-c", "raise SystemExit('package launched')"],
+            plugin_root=str(package),
+            plugin_data=str(workspace_tmp_path / "plugin-data"),
+            plugin_sha256=plugin_source_sha256(package),
+        )
+    )
+    source.write_text("print('changed after review')", encoding="utf-8")
+    manager = MCPManager(store, None)
+    with pytest.raises(MCPConnectionError, match="changed after it was added"):
+        await manager.connect_server(server.id)
+    assert manager.server_status(server.id) == (
+        "error",
+        "The installed MCP package changed after it was added. Review it, then remove and re-add the integration before connecting.",
+    )
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_changed_plugin_package_disconnects_before_next_tool_call(
+    workspace_tmp_path: Path,
+) -> None:
+    package = workspace_tmp_path / "live-package"
+    package.mkdir()
+    source = package / "server.py"
+    source.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    store = RunStore(workspace_tmp_path / "mcp-live-package.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Live package",
+            command=sys.executable,
+            args=["${PLUGIN_ROOT}/server.py"],
+            plugin_root=str(package),
+            plugin_data=str(workspace_tmp_path / "plugin-data"),
+            plugin_sha256=plugin_source_sha256(package),
+        )
+    )
+    manager = MCPManager(store, None)
+    try:
+        tools = await manager.connect_server(server.id)
+        tool = next(item for item in tools if item.name == "add")
+        registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+        tool = next(item for item in registry.list_tools(server.id) if item.name == "add")
+        source.write_text(source.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+        with pytest.raises(MCPInvocationError, match="changed after it was added"):
+            await manager.call_tool(tool.qualified_name, {"left": 1, "right": 2}, require_read=True)
+        assert manager.server_status(server.id)[0] == "error"
+        source.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+        await manager.connect_server(server.id)
+        source.write_text(
+            source.read_text(encoding="utf-8") + "\n# changed again\n", encoding="utf-8"
+        )
+        with pytest.raises(MCPConnectionError, match="changed after it was added"):
+            await manager.connect_server(server.id)
+        assert server.id not in manager._connected
+        assert manager.server_status(server.id)[0] == "error"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

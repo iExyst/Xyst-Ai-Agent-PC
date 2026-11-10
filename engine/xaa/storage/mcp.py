@@ -28,6 +28,7 @@ class MCPServerSpec(BaseModel):
     plugin_root: str | None = Field(default=None, max_length=2048)
     plugin_data: str | None = Field(default=None, max_length=2048)
     plugin_headers: dict[str, str] = Field(default_factory=dict, max_length=32)
+    plugin_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
     @field_validator("name")
     @classmethod
@@ -154,6 +155,8 @@ class MCPServerSpec(BaseModel):
             for value in [self.command, *self.args, self.cwd or ""]
         ):
             raise ValueError("Package path placeholders require an installed MCP package.")
+        if self.plugin_root is None and self.plugin_sha256 is not None:
+            raise ValueError("Package source fingerprints require an installed MCP package.")
         return self
 
 
@@ -189,7 +192,7 @@ class MCPRegistry:
         now = utc_now()
         with self.store.connection() as connection:
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data,plugin_headers) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -204,6 +207,7 @@ class MCPRegistry:
                     spec.plugin_root,
                     spec.plugin_data,
                     json.dumps(spec.plugin_headers),
+                    spec.plugin_sha256,
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -328,6 +332,7 @@ class MCPRegistry:
             plugin_root=row.get("plugin_root"),
             plugin_data=row.get("plugin_data"),
             plugin_headers=json.loads(row.get("plugin_headers") or "{}"),
+            plugin_sha256=row.get("plugin_sha256"),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

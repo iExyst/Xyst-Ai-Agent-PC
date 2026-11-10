@@ -2164,6 +2164,30 @@ export interface components {
             /** Model */
             model?: string | null;
         };
+        /** CreateMCPServerRequest */
+        CreateMCPServerRequest: {
+            /** Args */
+            args?: string[];
+            /**
+             * Command
+             * @default
+             */
+            command: string;
+            /** Cwd */
+            cwd?: string | null;
+            /** Endpoint */
+            endpoint?: string | null;
+            /** Name */
+            name: string;
+            /** Secret Env */
+            secret_env?: string[];
+            /**
+             * Transport
+             * @default stdio
+             * @enum {string}
+             */
+            transport: "stdio" | "streamable_http";
+        };
         /** CreateRunRequest */
         CreateRunRequest: {
             /** Acceptance Criteria */
@@ -2747,38 +2771,6 @@ export interface components {
             transport: "stdio" | "streamable_http";
             /** Updated At */
             updated_at: string;
-        };
-        /** MCPServerSpec */
-        MCPServerSpec: {
-            /** Args */
-            args?: string[];
-            /**
-             * Command
-             * @default
-             */
-            command: string;
-            /** Cwd */
-            cwd?: string | null;
-            /** Endpoint */
-            endpoint?: string | null;
-            /** Name */
-            name: string;
-            /** Plugin Data */
-            plugin_data?: string | null;
-            /** Plugin Headers */
-            plugin_headers?: {
-                [key: string]: string;
-            };
-            /** Plugin Root */
-            plugin_root?: string | null;
-            /** Secret Env */
-            secret_env?: string[];
-            /**
-             * Transport
-             * @default stdio
-             * @enum {string}
-             */
-            transport: "stdio" | "streamable_http";
         };
         /** MCPToolPermissionRequest */
         MCPToolPermissionRequest: {
@@ -5215,7 +5207,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MCPServerSpec"];
+                "application/json": components["schemas"]["CreateMCPServerRequest"];
             };
         };
         responses: {

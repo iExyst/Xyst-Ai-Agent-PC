@@ -52,6 +52,7 @@ from pydantic import AnyUrl, TypeAdapter
 from uritemplate import URITemplate
 
 from xaa.credentials import CredentialStore
+from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.storage.mcp import (
     MCPDiscoveredTool,
     MCPRegistry,
@@ -223,6 +224,14 @@ class MCPManager:
         server = self.registry.get_server(server_id)
         if server is None:
             raise KeyError(server_id)
+        source_error = self._plugin_source_error(server)
+        if source_error is not None:
+            async with self._lock:
+                previous = self._connected.pop(server_id, None)
+                if previous is not None:
+                    await previous.close()
+                self._errors[server_id] = source_error
+            raise MCPConnectionError(source_error)
         async with self._lock:
             previous = self._connected.pop(server_id, None)
             if previous is not None:
@@ -259,6 +268,26 @@ class MCPManager:
                 raise MCPConnectionError(safe_error)
             self._connected[server_id] = connection
             return discovered
+
+    @staticmethod
+    def _plugin_source_error(server: MCPServerRecord) -> str | None:
+        if server.plugin_root is None:
+            return None
+        if server.plugin_sha256 is None:
+            return (
+                "This package integration predates source verification. Remove and re-add it "
+                "after reviewing the package."
+            )
+        try:
+            current_sha256 = plugin_source_sha256(Path(server.plugin_root))
+        except ValueError:
+            return "The installed MCP package is unavailable or fails source verification."
+        if current_sha256 != server.plugin_sha256:
+            return (
+                "The installed MCP package changed after it was added. Review it, then remove "
+                "and re-add the integration before connecting."
+            )
+        return None
 
     async def _own_connection(
         self,
@@ -1063,6 +1092,12 @@ class MCPManager:
                 "The MCP server is disconnected; reconnect it before retrying.",
                 status="not_connected",
             )
+        server = self.registry.get_server(record.server_id)
+        source_error = self._plugin_source_error(server) if server is not None else None
+        if source_error is not None:
+            await self._drop_failed_connection(record.server_id, connection)
+            self._errors[record.server_id] = source_error
+            raise MCPInvocationError(source_error, status="not_connected")
         if (
             record.permission == "none"
             or (require_read and record.permission != "read")

@@ -19,7 +19,8 @@ def restore_database(snapshot: Path, destination: Path) -> Path:
     try:
         if source.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Snapshot integrity check failed.")
-        if source.execute("PRAGMA user_version").fetchone()[0] not in {1, DATABASE_SCHEMA_VERSION}:
+        schema_version = source.execute("PRAGMA user_version").fetchone()[0]
+        if schema_version < 1 or schema_version > DATABASE_SCHEMA_VERSION:
             raise ValueError("Snapshot schema version is unsupported.")
         if source.execute("PRAGMA foreign_key_check").fetchone() is not None:
             raise ValueError("Snapshot contains invalid foreign-key references.")

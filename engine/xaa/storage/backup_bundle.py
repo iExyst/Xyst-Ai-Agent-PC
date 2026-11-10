@@ -162,7 +162,7 @@ def restore_backup_bundle(bundle: Path, destination: Path) -> Path:
                 if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                     raise ValueError("Backup database has invalid foreign-key references.")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {1, DATABASE_SCHEMA_VERSION}:
+                if version < 1 or version > DATABASE_SCHEMA_VERSION:
                     raise ValueError("Backup database schema is unsupported.")
                 if not {
                     row[0]

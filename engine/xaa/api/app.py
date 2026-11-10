@@ -66,6 +66,7 @@ from xaa.extensions.agent_plugins import (
     discover_agent_plugins,
     export_procedure_package,
     install_agent_plugin_archive,
+    plugin_source_sha256,
     read_plugin_mcp_server,
     read_plugin_skill,
 )
@@ -383,6 +384,17 @@ class PluginMCPImportRequest(BaseModel):
     root: str = Field(min_length=1, max_length=2048)
     package_name: str = Field(min_length=1, max_length=128)
     server_name: str = Field(min_length=1, max_length=128)
+
+
+class CreateMCPServerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=80)
+    transport: Literal["stdio", "streamable_http"] = "stdio"
+    endpoint: str | None = Field(default=None, max_length=2048)
+    command: str = Field(default="", max_length=512)
+    args: list[str] = Field(default_factory=list, max_length=64)
+    cwd: str | None = Field(default=None, max_length=2048)
+    secret_env: list[str] = Field(default_factory=list, max_length=64)
 
 
 class CreateScheduleRequest(BaseModel):
@@ -845,6 +857,7 @@ def create_app(
             )
             raw = imported["spec"]
             package_root = Path(imported["package_root"]).resolve(strict=True)
+            source_sha256 = plugin_source_sha256(package_root)
             package_name = str(imported["package_name"])
             server_name = str(imported["server_name"])
             if raw["type"] == "stdio":
@@ -861,6 +874,7 @@ def create_app(
                     cwd=cast(str | None, raw["cwd"]),
                     secret_env=sorted(inline_values),
                     plugin_root=str(package_root),
+                    plugin_sha256=source_sha256,
                     plugin_data=str(
                         run_store.path.parent / "plugin-data" / package_name / server_name
                     ),
@@ -907,6 +921,7 @@ def create_app(
                     endpoint=endpoint,
                     secret_env=sorted(vault_values),
                     plugin_root=str(package_root),
+                    plugin_sha256=source_sha256,
                     plugin_data=str(
                         run_store.path.parent / "plugin-data" / package_name / server_name
                     ),
@@ -960,7 +975,9 @@ def create_app(
             }
             servers.append(
                 {
-                    **server.model_dump(exclude={"plugin_root", "plugin_data", "plugin_headers"}),
+                    **server.model_dump(
+                        exclude={"plugin_root", "plugin_data", "plugin_headers", "plugin_sha256"}
+                    ),
                     "plugin_backed": server.plugin_root is not None,
                     "state": state,
                     "error": error,
@@ -975,19 +992,12 @@ def create_app(
 
     @app.post("/mcp/servers", status_code=201, response_model=MCPServerResponse)
     def create_mcp_server(
-        payload: MCPServerSpec, _: None = Depends(authenticate)
+        payload: CreateMCPServerRequest, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
-        if (
-            payload.plugin_root is not None
-            or payload.plugin_data is not None
-            or payload.plugin_headers
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="Installed package paths can only be set by validated package import.",
-            )
         try:
-            server = MCPRegistry(run_store).create_server(payload)
+            server = MCPRegistry(run_store).create_server(
+                MCPServerSpec.model_validate(payload.model_dump())
+            )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(
                 status_code=409, detail="An MCP server with that name already exists."
@@ -995,7 +1005,9 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
-            **server.model_dump(exclude={"plugin_root", "plugin_data", "plugin_headers"}),
+            **server.model_dump(
+                exclude={"plugin_root", "plugin_data", "plugin_headers", "plugin_sha256"}
+            ),
             "plugin_backed": server.plugin_root is not None,
             "state": "disconnected",
             "error": None,

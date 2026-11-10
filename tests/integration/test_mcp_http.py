@@ -14,6 +14,7 @@ import pytest
 import uvicorn
 from mcp.server.mcpserver import Context, MCPServer
 from pydantic import ValidationError
+from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
 from xaa.storage.mcp import MCPServerSpec
 from xaa.storage.runs import RunStore
@@ -81,6 +82,9 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
     web_server = uvicorn.Server(config)
     serving = asyncio.create_task(web_server.serve(sockets=[host]))
     store = RunStore(workspace_tmp_path / "mcp-http.sqlite3")
+    plugin_root = workspace_tmp_path / "http-package"
+    plugin_root.mkdir()
+    (plugin_root / "plugin.json").write_text("fixture package source", encoding="utf-8")
     credentials = MemoryCredentials()
     manager = MCPManager(store, credentials)  # type: ignore[arg-type]
     try:
@@ -93,8 +97,9 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
                 transport="streamable_http",
                 endpoint=f"http://127.0.0.1:{port}/mcp",
                 secret_env=["MCP_TOKEN", "CUSTOM_TOKEN"],
-                plugin_root=str(workspace_tmp_path),
+                plugin_root=str(plugin_root),
                 plugin_data=str(workspace_tmp_path / "plugin-data"),
+                plugin_sha256=plugin_source_sha256(plugin_root),
                 plugin_headers={
                     "Authorization": "Bearer ${secret:MCP_TOKEN}",
                     "X-Fixture-Secret": "${secret:CUSTOM_TOKEN}",

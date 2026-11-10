@@ -398,6 +398,37 @@ def test_schema_twenty_four_adds_agent_plugin_http_header_mapping(workspace_tmp_
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
+def test_schema_twenty_five_adds_agent_plugin_source_fingerprint(workspace_tmp_path):
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    database = workspace_tmp_path / "schema-twenty-five-plugin-source.sqlite3"
+    store = RunStore(database)
+    registry = MCPRegistry(store)
+    root = workspace_tmp_path / "legacy-plugin"
+    root.mkdir()
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Legacy package server",
+            command="python",
+            plugin_root=str(root),
+            plugin_data=str(workspace_tmp_path / "plugin-data"),
+            plugin_sha256="a" * 64,
+        )
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN plugin_sha256")
+        connection.execute("PRAGMA user_version=24")
+
+    migrated = RunStore(database)
+    restored = MCPRegistry(migrated).get_server(server.id)
+    assert restored is not None
+    assert restored.plugin_sha256 is None
+    with migrated.connection() as connection:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(mcp_servers)")}
+        assert "plugin_sha256" in columns
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
 def test_schema_twelve_adds_snapshotted_specialist_instructions(workspace_tmp_path):
     from xaa.storage.specialist_profiles import SpecialistProfileStore
 
