@@ -49,7 +49,7 @@ async def test_connection_that_dies_immediately_after_discovery_is_not_registere
                 raise RuntimeError("Fixture connection task is missing.")
             connection = _ConnectedServer(
                 server,
-                    client=None,  # type: ignore[arg-type]  # The task ends before any client operation.
+                client=None,  # type: ignore[arg-type]  # The task ends before any client operation.
                 session=None,  # type: ignore[arg-type]  # The task ends before any session operation.
                 tools={},
                 resources={},

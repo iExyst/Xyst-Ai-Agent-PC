@@ -72,6 +72,8 @@ def test_prompt_preview_embedded_resources_and_links_stay_metadata_only():
 
 def test_prompt_preview_rejects_invalid_or_oversized_media():
     with pytest.raises(MCPConnectionError, match="invalid base64"):
-        _prompt_content_payload(ImageContent(type="image", data="not-base64", mime_type="image/png"))
+        _prompt_content_payload(
+            ImageContent(type="image", data="not-base64", mime_type="image/png")
+        )
     with pytest.raises(MCPConnectionError, match="256 KiB"):
         _prompt_content_payload(TextContent(type="text", text="x" * (256 * 1024 + 1)))

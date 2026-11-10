@@ -299,7 +299,9 @@ class MCPManager:
                 class ResourceNotificationExtension(ClientExtension):
                     identifier = "dev.xyst.xaa/resource-notifications"
 
-                    def notifications(self) -> list[NotificationBinding[ResourceUpdatedNotificationParams]]:
+                    def notifications(
+                        self,
+                    ) -> list[NotificationBinding[ResourceUpdatedNotificationParams]]:
                         return [
                             NotificationBinding(
                                 method="notifications/resources/updated",
@@ -805,7 +807,9 @@ class MCPManager:
             if capabilities.resources is None or (
                 not modern_listen and not capabilities.resources.subscribe
             ):
-                raise MCPConnectionError("This MCP server does not advertise resource subscriptions.")
+                raise MCPConnectionError(
+                    "This MCP server does not advertise resource subscriptions."
+                )
             try:
                 if subscribe:
                     connection.subscribed_resources.add(uri)
