@@ -139,13 +139,6 @@ from xaa.version import APP_VERSION
 SCANNED_PAGE_OCR_TOKEN_RESERVATION = 4_608
 
 
-class ChatRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    model: str = Field(min_length=1, max_length=256)
-    messages: list[dict[str, Any]] = Field(min_length=1)
-
-
 class CreateRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -3762,28 +3755,5 @@ def create_app(
         if record["state"] not in {RunState.CANCELLED.value, RunState.COMPLETED.value}:
             record = transition_run(run_id, RunState.CANCELLED, "user_requested")
         return record
-
-    @app.post("/chat/stream")
-    async def stream_chat(
-        payload: ChatRequest,
-        request: Request,
-        _: None = Depends(authenticate),
-    ) -> StreamingResponse:
-        async def events() -> AsyncIterator[str]:
-            sequence = 0
-            try:
-                async for chunk in provider.stream(model=payload.model, messages=payload.messages):
-                    if await request.is_disconnected():
-                        return
-                    sequence += 1
-                    event = json.dumps(
-                        {"sequence": sequence, "chunk": chunk}, separators=(",", ":")
-                    )
-                    yield f"id: {sequence}\nevent: token\ndata: {event}\n\n"
-                yield f"event: done\ndata: {json.dumps({'sequence': sequence})}\n\n"
-            except ProviderError as exc:
-                yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
-
-        return StreamingResponse(events(), media_type="text/event-stream")
 
     return app

@@ -825,7 +825,7 @@ def test_authenticated_backup_endpoint_returns_verified_artifact_bundle(workspac
         assert {"manifest.json", "xaa.sqlite3"}.issubset(archive.namelist())
 
 
-def test_stream_emits_ordered_events(workspace_tmp_path) -> None:
+def test_raw_chat_stream_endpoint_is_removed(workspace_tmp_path) -> None:
     client = TestClient(
         create_app(
             FakeProvider(), SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "api.sqlite3")
@@ -836,10 +836,7 @@ def test_stream_emits_ordered_events(workspace_tmp_path) -> None:
         headers={"Authorization": f"Bearer {TOKEN}"},
         json={"model": "fixture/model", "messages": [{"role": "user", "content": "hello"}]},
     )
-    assert response.status_code == 200
-    assert "id: 1\nevent: token" in response.text
-    assert "id: 2\nevent: token" in response.text
-    assert "event: done" in response.text
+    assert response.status_code == 404
 
 
 def test_api_rejects_short_token() -> None:

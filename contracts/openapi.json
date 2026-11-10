@@ -431,32 +431,6 @@
         "title": "ChannelIdentityLinkRequest",
         "type": "object"
       },
-      "ChatRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "messages": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "minItems": 1,
-            "title": "Messages",
-            "type": "array"
-          },
-          "model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Model",
-            "type": "string"
-          }
-        },
-        "required": [
-          "model",
-          "messages"
-        ],
-        "title": "ChatRequest",
-        "type": "object"
-      },
       "CommandGrant": {
         "additionalProperties": false,
         "properties": {
@@ -7153,47 +7127,6 @@
           }
         ],
         "summary": "Append Cli Chat Turn"
-      }
-    },
-    "/chat/stream": {
-      "post": {
-        "operationId": "stream_chat_chat_stream_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Stream Chat"
       }
     },
     "/execution/distributions": {

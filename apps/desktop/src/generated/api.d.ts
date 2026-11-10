@@ -464,23 +464,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/chat/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Stream Chat */
-        post: operations["stream_chat_chat_stream_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/execution/distributions": {
         parameters: {
             query?: never;
@@ -2187,15 +2170,6 @@ export interface components {
             binding_ids: string[];
             /** Shared History Binding Id */
             shared_history_binding_id: string;
-        };
-        /** ChatRequest */
-        ChatRequest: {
-            /** Messages */
-            messages: {
-                [key: string]: unknown;
-            }[];
-            /** Model */
-            model: string;
         };
         /** CommandGrant */
         CommandGrant: {
@@ -5021,39 +4995,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CLIChatSessionRecord"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stream_chat_chat_stream_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
