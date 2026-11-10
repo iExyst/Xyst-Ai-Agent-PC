@@ -1,5 +1,9 @@
 # Progress
 
+## Correct the X.A.A. package license in release inventory (2026-11-10)
+
+The development-environment `pip-licenses` scan reports the project's own `xaa-engine==0.1.1` distribution as `UNKNOWN`, although `pyproject.toml` declares MIT and the root `LICENSE` contains the selected source license. The release inventory now classifies this row from authoritative project metadata and identifies the project repository. This removes a false unknown for X.A.A. itself; third-party license/copyright review and the provisional notice bundle remain open. Documentation consistency and `git diff --check` pass.
+
 ## Preserve all source reads in reviewer evidence discovery (2026-11-10)
 
 The normal candidate summary intentionally shows at most 16 source reads, but reviewer discovery had reused that summary and silently omitted older evidence. Reviewer gating and its paged manifest now enumerate every completed, hash-verified source read while omitting excerpts; the desktop and ordinary candidate summary remain capped at 16. The submission gate now requires the reviewer to read the same path and SHA-256 recorded by the dependency; reading a changed version of that path does not satisfy the evidence requirement. The deterministic 17-file regression confirms early evidence remains in the manifest, all matching reviewer reads pass, and a mismatched hash stays missing. The task workspace and specialist suites pass (41 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. Hosted Windows run [42897738572](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42897738572) passed the full source workflow, including the Python suite, Hermes inventories and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. No live model inference was used. Broader Phase 4 reliability acceptance remains open.
