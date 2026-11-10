@@ -72,6 +72,13 @@ class ReviewDependencyFileArguments(BaseModel):
     limit: int = Field(default=16_384, ge=1, le=16_384)
 
 
+class ReviewDependencyManifestArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    dependency_id: str = Field(min_length=1, max_length=128)
+    offset: int = Field(default=0, ge=0, le=100_000)
+    limit: int = Field(default=8, ge=1, le=8)
+
+
 class ReviewDependencyOutputArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     dependency_id: str = Field(min_length=1, max_length=128)
@@ -308,8 +315,15 @@ class SpecialistRunner:
         required_source_paths: set[str] = set()
         required_artifacts: set[tuple[str, str]] = set()
         required_outputs: set[tuple[str, str]] = set()
+        required_manifests: set[str] = set()
         for dependency_id in task["dependencies"]:
             dependency = candidate_evidence(self.store, run_id, dependency_id)
+            if (
+                dependency["evidence"]
+                or dependency["workspace_changes"]
+                or dependency["validation_evidence"]
+            ):
+                required_manifests.add(dependency_id)
             required_source_paths.update(item["path"] for item in dependency["evidence"])
             required_artifacts.update(
                 (dependency_id, item["path"]) for item in dependency["workspace_changes"]
@@ -321,6 +335,8 @@ class SpecialistRunner:
             return []
         own_evidence = candidate_evidence(self.store, run_id, task["local_id"])
         reviewed_source_paths = {item["path"] for item in own_evidence["evidence"]}
+        reviewed_manifest_ranges: dict[str, list[tuple[int, int, int]]] = {}
+        reviewed_manifests: set[str] = set()
         reviewed_artifact_ranges: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
         reviewed_deletions: set[tuple[str, str]] = set()
         reviewed_output_ranges: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
@@ -328,6 +344,27 @@ class SpecialistRunner:
             payload = cast(dict[str, Any], event["payload"])
             if payload.get("task_id") != task["local_id"]:
                 continue
+            manifest = payload.get("reviewed_dependency_manifest")
+            if isinstance(manifest, dict):
+                manifest = cast(dict[str, Any], manifest)
+                dependency_id = manifest.get("dependency_id")
+                offset = manifest.get("offset")
+                total = manifest.get("total_items")
+                count = manifest.get("items_read")
+                if (
+                    isinstance(dependency_id, str)
+                    and isinstance(offset, int)
+                    and isinstance(total, int)
+                    and isinstance(count, int)
+                    and offset >= 0
+                    and total >= 0
+                    and count >= 0
+                    and manifest.get("eof") is (offset + count >= total)
+                ):
+                    reviewed_manifests.add(dependency_id)
+                    reviewed_manifest_ranges.setdefault(dependency_id, []).append(
+                        (offset, offset + count, total)
+                    )
             artifact = payload.get("reviewed_dependency_artifact")
             if isinstance(artifact, dict):
                 artifact = cast(dict[str, Any], artifact)
@@ -378,9 +415,24 @@ class SpecialistRunner:
                     reviewed_output_ranges.setdefault(key, []).append(
                         (offset, offset + bytes_read, total_bytes)
                     )
-        missing = [
+        missing: list[str] = []
+        for dependency_id in sorted(required_manifests):
+            ranges = reviewed_manifest_ranges.get(dependency_id, [])
+            totals = {total for _, _, total in ranges}
+            complete = dependency_id in reviewed_manifests and len(totals) == 1
+            if complete:
+                total = next(iter(totals))
+                cursor = 0
+                for start, end, _ in sorted(ranges):
+                    if start > cursor:
+                        break
+                    cursor = max(cursor, end)
+                complete = cursor >= total
+            if not complete:
+                missing.append(f"manifest:{dependency_id}")
+        missing.extend(
             f"source:{path}" for path in sorted(required_source_paths - reviewed_source_paths)
-        ]
+        )
         for dependency_id, path in sorted(required_artifacts):
             key = (dependency_id, path)
             ranges = reviewed_artifact_ranges.get(key, [])
@@ -411,6 +463,55 @@ class SpecialistRunner:
             if not complete:
                 missing.append(f"test-output:{dependency_id}:{artifact_id}")
         return missing[:32]
+
+    def _review_dependency_manifest(
+        self, run_id: str, dependency_id: str, *, offset: int, limit: int
+    ) -> dict[str, Any]:
+        snapshot = candidate_evidence(self.store, run_id, dependency_id)
+        entries: list[dict[str, Any]] = []
+        evidence_items = cast(list[dict[str, Any]], snapshot["evidence"])
+        change_items = cast(list[dict[str, Any]], snapshot["workspace_changes"])
+        validation_items = cast(list[dict[str, Any]], snapshot["validation_evidence"])
+        entries.extend(
+            {"kind": "source_file", "path": item["path"], "sha256": item["sha256"]}
+            for item in evidence_items
+        )
+        entries.extend(
+            {
+                "kind": "changed_artifact",
+                "path": item["path"],
+                "base_sha256": item["base_sha256"],
+                "proposed_sha256": item["proposed_sha256"],
+                "deleted": item["proposed_sha256"] is None,
+            }
+            for item in change_items
+        )
+        for item in validation_items:
+            for name in ("stdout_artifact_id", "stderr_artifact_id"):
+                artifact_id = item.get(name)
+                if isinstance(artifact_id, str):
+                    entries.append(
+                        {
+                            "kind": "validation_output",
+                            "call_id": item["call_id"],
+                            "artifact_id": artifact_id,
+                            "stream": name.removesuffix("_artifact_id"),
+                            "succeeded": item["succeeded"],
+                            "exit_code": item["exit_code"],
+                        }
+                    )
+        page = entries[offset : offset + limit]
+        result = {
+            "dependency_id": dependency_id,
+            "offset": offset,
+            "total_items": len(entries),
+            "items": page,
+            "next_offset": offset + len(page),
+            "eof": offset + len(page) >= len(entries),
+        }
+        if len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > 64 * 1024:
+            raise ValueError("Dependency review manifest page exceeds its 64 KiB limit.")
+        return result
 
     async def _request_and_record(
         self,
@@ -687,6 +788,7 @@ class SpecialistRunner:
                         "acceptance_criteria": task["acceptance_criteria"],
                         "input_artifact_ids": task["input_artifacts"],
                         "image_input_artifact_ids": image_input_ids,
+                        "dependency_task_ids": task["dependencies"],
                         "expected_outputs": task["expected_outputs"],
                         "budgets": task["budgets"],
                         "prerequisites_untrusted": prerequisites,
@@ -718,7 +820,9 @@ class SpecialistRunner:
         if task["assigned_role"] == "reviewer":
             messages[0]["content"] += (
                 " You are the independent reviewer. Do not accept a dependency's summary as evidence. "
-                "Inspect every listed source file with workspace_read_file, every changed private artifact "
+                "For each dependency_task_id, use review_dependency_manifest and page through its full manifest "
+                "before inspecting evidence; this is required even when prerequisite details were omitted "
+                "from the initial context. Inspect every listed source file with workspace_read_file, every changed private artifact "
                 "with review_dependency_file, paging from offset zero until EOF, and the saved stdout and "
                 "stderr for each listed validation with review_dependency_output. Page through each until "
                 "EOF. Report concrete defects or "
@@ -833,6 +937,14 @@ class SpecialistRunner:
         if task["assigned_role"] == "reviewer" and task["dependencies"]:
             tools.extend(
                 [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "review_dependency_manifest",
+                            "description": "List bounded metadata for one completed dependency's source evidence, private changes and validation outputs. Available only for dependencies listed in your saved assignment. Page with offset until eof is true, then inspect each item with its corresponding review tool.",
+                            "parameters": ReviewDependencyManifestArguments.model_json_schema(),
+                        },
+                    },
                     {
                         "type": "function",
                         "function": {
@@ -1176,6 +1288,50 @@ class SpecialistRunner:
                             "call_id": call["id"],
                             "journal_id": journal_id,
                             "mcp_tool": name,
+                            "result": result,
+                        },
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
+                    )
+                    continue
+                if name == "review_dependency_manifest":
+                    if task["assigned_role"] != "reviewer":
+                        raise PermissionError(
+                            "Only reviewer tasks may inspect dependency artifacts."
+                        )
+                    parsed = ReviewDependencyManifestArguments.model_validate(arguments)
+                    if parsed.dependency_id not in task["dependencies"]:
+                        raise PermissionError(
+                            "Dependency manifest access is limited to saved reviewer dependencies."
+                        )
+                    result = self._review_dependency_manifest(
+                        run_id,
+                        parsed.dependency_id,
+                        offset=parsed.offset,
+                        limit=parsed.limit,
+                    )
+                    self.tasks.record_read_worker_event(
+                        run_id,
+                        parent,
+                        identity,
+                        worker,
+                        "task.tool.result",
+                        {
+                            "task_id": identity,
+                            "call_id": call["id"],
+                            "journal_id": journal_id,
+                            "reviewed_dependency_manifest": {
+                                "dependency_id": parsed.dependency_id,
+                                "offset": parsed.offset,
+                                "total_items": result["total_items"],
+                                "items_read": len(result["items"]),
+                                "eof": result["eof"],
+                            },
                             "result": result,
                         },
                     )

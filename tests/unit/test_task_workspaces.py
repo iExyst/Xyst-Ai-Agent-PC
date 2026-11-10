@@ -205,6 +205,7 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     idle_provider = LMStudioProvider()
     runner = SpecialistRunner(store, idle_provider)
     gaps = runner._review_evidence_gaps(run_id, review["task"])
+    assert "manifest:implementation" in gaps
     assert "artifact:implementation:fixture.txt" in gaps
     assert "artifact:implementation:removed.txt" in gaps
     assert f"test-output:implementation:{command['stdout_artifact_id']}" in gaps
@@ -308,6 +309,13 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
                     },
                 }
             )
+    calls.insert(
+        0,
+        {
+            "name": "review_dependency_manifest",
+            "arguments": {"dependency_id": "implementation", "offset": 0, "limit": 8},
+        },
+    )
 
     class Reviewer(LMStudioProvider):
         def __init__(self):
@@ -317,8 +325,20 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
 
         async def chat(self, *, model, messages, tools=None, **kwargs):
             assert model is None
+            task_prompt = next(
+                message["content"]
+                for message in messages
+                if message["role"] == "user"
+                and isinstance(message["content"], str)
+                and '"dependency_task_ids"' in message["content"]
+            )
+            assert json.loads(task_prompt)["dependency_task_ids"] == ["implementation"]
             names = {item["function"]["name"] for item in tools or []}
-            assert {"review_dependency_file", "review_dependency_output"} <= names
+            assert {
+                "review_dependency_manifest",
+                "review_dependency_file",
+                "review_dependency_output",
+            } <= names
             if self.first_response:
                 self.first_response = False
                 message = {"role": "assistant", "content": "I reviewed the proposed change."}
@@ -378,9 +398,23 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
             for item in review_events
             if "call_id" in item
         )
-        == len(calls) - file_page_count - 1
+        == len(calls) - file_page_count - 2
     )
     assert runner._review_evidence_gaps(run_id, review["task"]) == []
+    manifests = [
+        item["reviewed_dependency_manifest"]
+        for item in review_events
+        if item.get("reviewed_dependency_manifest")
+    ]
+    assert manifests == [
+        {
+            "dependency_id": "implementation",
+            "offset": 0,
+            "total_items": 4,
+            "items_read": 4,
+            "eof": True,
+        }
+    ]
     assert next(row for row in tasks.records(run_id) if row["local_id"] == "review")["status"] == (
         "verifying"
     )

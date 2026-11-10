@@ -16,6 +16,55 @@ from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
+async def test_dependency_review_manifest_pages_all_evidence_with_bounded_results(
+    workspace_tmp_path, monkeypatch
+):
+    store = RunStore(workspace_tmp_path / "review-manifest.sqlite3")
+    runner = SpecialistRunner(store, LMStudioProvider())
+    snapshot = {
+        "evidence": [{"path": f"source-{index}.py", "sha256": "a" * 64} for index in range(17)],
+        "workspace_changes": [
+            {
+                "path": f"changed-{index}.py",
+                "base_sha256": "b" * 64,
+                "proposed_sha256": "c" * 64,
+            }
+            for index in range(9)
+        ],
+        "validation_evidence": [
+            {
+                "call_id": f"validation-{index}",
+                "stdout_artifact_id": f"stdout-{index}",
+                "stderr_artifact_id": f"stderr-{index}",
+                "succeeded": index == 0,
+                "exit_code": 0 if index == 0 else 1,
+            }
+            for index in range(2)
+        ],
+    }
+    monkeypatch.setattr(specialist_module, "candidate_evidence", lambda *_args: snapshot)
+    pages = []
+    offset = 0
+    while True:
+        page = runner._review_dependency_manifest("run", "dependency", offset=offset, limit=8)
+        assert len(json.dumps(page).encode("utf-8")) <= 64 * 1024
+        assert len(page["items"]) <= 8
+        pages.append(page)
+        offset = page["next_offset"]
+        if page["eof"]:
+            break
+    items = [item for page in pages for item in page["items"]]
+    assert len(items) == 30
+    assert [page["offset"] for page in pages] == [0, 8, 16, 24]
+    assert pages[-1]["eof"] is True
+    assert {item["kind"] for item in items} == {
+        "source_file",
+        "changed_artifact",
+        "validation_output",
+    }
+    await runner.provider.close()
+
+
 @pytest.mark.parametrize(
     "threshold,output_limit,pre_reserve",
     [(None, None, False), (20, 8, False), (100, 8, True)],
