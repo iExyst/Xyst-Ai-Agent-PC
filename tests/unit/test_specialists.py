@@ -8,6 +8,7 @@ from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime import specialists as specialist_module
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
+from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.task_review import candidate_evidence
 from xaa.storage.memory import MemoryStore
@@ -762,7 +763,7 @@ async def test_provider_timeout_is_classified_as_specialist_inference_failure(wo
 
 
 async def test_provider_failure_blocks_transitive_dependents_without_inference(
-    workspace_tmp_path,
+    workspace_tmp_path, monkeypatch
 ):
     store = RunStore(workspace_tmp_path / "specialist-dependency-failure.sqlite3")
     run_id = store.create_run(
@@ -773,6 +774,7 @@ async def test_provider_failure_blocks_transitive_dependents_without_inference(
         model="fixture",
     )["id"]
     parent = store.acquire_lease(run_id, "parent")
+    store.transition(run_id, RunState.PLANNING, owner=parent)
     tasks = TaskStore(store)
     tasks.save_plan(
         run_id,
@@ -793,6 +795,7 @@ async def test_provider_failure_blocks_transitive_dependents_without_inference(
             ),
         ],
     )
+    store.transition(run_id, RunState.RUNNING, owner=parent)
 
     class FailingProvider(LMStudioProvider):
         def __init__(self):
@@ -803,20 +806,27 @@ async def test_provider_failure_blocks_transitive_dependents_without_inference(
             self.calls += 1
             raise ConnectionError("fixture provider disconnect")
 
+    async def skip_diagnostic(self, run_id, token, model):
+        return None
+
+    monkeypatch.setattr(Coordinator, "diagnose_run_tools", skip_diagnostic)
     provider = FailingProvider()
     try:
-        statuses = await SpecialistRunner(store, provider).run_ready(
-            run_id, parent, deadline=time.monotonic() + 30
-        )
+        await Coordinator(store, provider).continue_plan(run_id, parent)
     finally:
         await provider.close()
 
     assert provider.calls == 1
-    assert {item["task_id"]: item["status"] for item in statuses} == {
+    assert {record["local_id"]: record["status"] for record in tasks.records(run_id)} == {
         "source": "failed",
         "review": "blocked",
         "publish": "blocked",
     }
+    assert store.get_run(run_id)["state"] == "blocked"
+    state_events = [
+        event for event in store.list_events(run_id) if event["event_type"] == "run.state_changed"
+    ]
+    assert state_events[-1]["payload"]["reason"] == "specialist_tasks_blocked"
     records = {record["local_id"]: record for record in tasks.records(run_id)}
     assert records["review"]["blocked_reason"] == "dependency_failed"
     assert records["publish"]["blocked_reason"] == "dependency_failed"
