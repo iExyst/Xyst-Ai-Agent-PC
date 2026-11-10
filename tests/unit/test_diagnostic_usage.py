@@ -7,7 +7,9 @@ import pytest
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.states import RunState
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore, TokenBudgetExceeded
+from xaa.storage.tasks import TaskStore
 
 
 class DiagnosticProvider(LMStudioProvider):
@@ -180,22 +182,35 @@ def test_concurrent_reservations_cannot_exceed_shared_run_token_budget(workspace
         pre_inference_token_reservations=True,
     )["id"]
     owner = store.acquire_lease(run_id, "coordinator")
-    inference_ids = ("specialist-a", "specialist-b")
-    with store.connection() as connection:
-        for inference_id in inference_ids:
-            store.record_event(
-                connection,
-                run_id,
-                "task.inference.started",
-                {"task_id": inference_id, "inference_id": inference_id},
-            )
-
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [
+            TaskDefinition(id=task_id, objective=task_id, max_iterations=1, max_seconds=10)
+            for task_id in ("a", "b")
+        ],
+    )
+    claims = {task_id: tasks.claim_ready(run_id, owner) for task_id in ("a", "b")}
+    assert all(claim is not None for claim in claims.values())
+    inference_ids = {
+        task_id: tasks.reserve_inference(run_id, owner, task_id, claims[task_id]["token"])
+        for task_id in ("a", "b")
+    }
     barrier = Barrier(len(inference_ids))
 
-    def reserve(inference_id: str) -> bool:
+    def reserve(task_id: str) -> bool:
         barrier.wait(timeout=5)
         try:
-            store.reserve_tokens(run_id, owner, inference_id, 40, 20)
+            tasks.reserve_tokens(
+                run_id,
+                owner,
+                inference_ids[task_id],
+                40,
+                20,
+                task_id=task_id,
+                task_token=claims[task_id]["token"],
+            )
         except TokenBudgetExceeded:
             return False
         return True

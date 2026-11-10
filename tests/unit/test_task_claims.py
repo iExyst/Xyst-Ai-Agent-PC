@@ -79,6 +79,64 @@ def test_claims_are_distinct_and_failed_dependency_is_blocked(workspace_tmp_path
     assert second.recover_expired(run_id, parent) == []
 
 
+def test_token_reservation_is_bound_to_its_started_specialist(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "task-reservation-identity.sqlite3")
+    run_id = runs.create_run(
+        objective="Bind reservations to specialists",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=4,
+        max_total_tokens=100,
+        pre_inference_token_reservations=True,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="a", objective="A", max_iterations=1, max_seconds=10),
+            TaskDefinition(id="b", objective="B", max_iterations=1, max_seconds=10),
+        ],
+    )
+    a = tasks.claim_ready(run_id, parent)
+    b = tasks.claim_ready(run_id, parent)
+    assert a is not None and b is not None
+    inference_id = tasks.reserve_inference(run_id, parent, "a", a["token"])
+
+    with pytest.raises(ValueError, match="requires its task identity"):
+        runs.reserve_tokens(run_id, parent, inference_id, 20, 20)
+    with pytest.raises(ValueError, match="must match its started task inference"):
+        tasks.reserve_tokens(
+            run_id,
+            parent,
+            inference_id,
+            20,
+            20,
+            task_id="b",
+            task_token=b["token"],
+        )
+
+    tasks.reserve_tokens(
+        run_id,
+        parent,
+        inference_id,
+        20,
+        20,
+        task_id="a",
+        task_token=a["token"],
+    )
+    report = runs.usage_report(run_id)
+    assert report["outstanding_reservations"] == 1
+    assert report["outstanding_reserved_tokens"] == 40
+    hold = next(
+        event for event in runs.list_events(run_id) if event["event_type"] == "tokens.reserved"
+    )
+    assert hold["payload"]["task_id"] == "a"
+
+
 def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "recovery.sqlite3")
     run_id = runs.create_run(

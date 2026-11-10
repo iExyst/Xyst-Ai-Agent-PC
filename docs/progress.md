@@ -1,5 +1,8 @@
 # Progress
 
+## Bind specialist token holds to their task inference (2026-11-10)
+
+`RunStore.reserve_tokens` now matches a specialist reservation to the exact durable `task.inference.started` event and task ID. It rejects attempts to reserve a specialist inference as a parent call, to attach it under another task's live lease, or to attach a parent inference to a child task. The regression proves these mismatches fail and that the owning task can still reserve its allowance; the concurrent parent-cap regression now exercises two claimed specialists through `TaskStore.reserve_tokens`. The claim and diagnostic-usage suites pass (25 tests), with Ruff, format, and `git diff --check` clean. No live model inference was used.
 ## Prove concurrent specialist holds stay within the shared token ceiling (2026-11-10)
 
 Added a two-thread storage regression that races two independent 60-token reservations against a 100-token run cap. The immediate SQLite transaction admits exactly one hold; the other raises `TokenBudgetExceeded`, and the durable usage report retains one 60-token reservation. `uv run pytest tests/unit/test_diagnostic_usage.py -q` passes (10 tests); Ruff lint, format check, and `git diff --check` pass. Hosted Windows source run [42901433641](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42901433641) passed the full source workflow and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. This verifies the atomic parent-run cap for this race; it does not establish tokenizer accuracy, external-client accounting, or full Phase 4 acceptance. No live model inference was used.

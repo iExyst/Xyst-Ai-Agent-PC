@@ -2476,18 +2476,29 @@ class RunStore:
             connection.execute("BEGIN IMMEDIATE")
             self.require_lease(connection, run_id, token)
             events = self.list_events(run_id)
-            starts = {
-                e["payload"].get("inference_id")
-                for e in events
-                if e["event_type"]
-                in {
-                    "model.inference.started",
-                    "task.inference.started",
-                    "diagnostic.inference.started",
-                }
-            }
-            if inference_id not in starts:
+            start = next(
+                (
+                    event
+                    for event in events
+                    if event["event_type"]
+                    in {
+                        "model.inference.started",
+                        "task.inference.started",
+                        "diagnostic.inference.started",
+                    }
+                    and event["payload"].get("inference_id") == inference_id
+                ),
+                None,
+            )
+            if start is None:
                 raise ValueError("Reservation requires a durable inference attempt.")
+            if task_id is None and start["event_type"] == "task.inference.started":
+                raise ValueError("A specialist inference reservation requires its task identity.")
+            if task_id is not None and (
+                start["event_type"] != "task.inference.started"
+                or start["payload"].get("task_id") != task_id
+            ):
+                raise ValueError("Specialist reservation must match its started task inference.")
             holds = [e["payload"] for e in events if e["event_type"] == "tokens.reserved"]
             if any(h["inference_id"] == inference_id for h in holds):
                 raise ValueError("Inference already has a token reservation.")
