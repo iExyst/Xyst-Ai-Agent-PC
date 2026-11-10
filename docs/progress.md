@@ -6,8 +6,7 @@ Delegated specialists exposed search, fetch, and browser inputs from static tool
 constants, while the coordinator used the bounded contract metadata. Specialist
 calls now source each input schema from the same metadata as coordinator calls.
 The permission-scoped specialist workflow asserts all three schemas match;
-focused coverage passes (3 passed). Ruff, formatting, strict Pyright and diff
-checks pass. Hosted validation is pending. No LLM inference was used.
+focused coverage passes (3 passed). Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42859332060](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42859332060) passed; installer checks were skipped for this source-only change. No LLM inference was used.
 
 ## Validate MCP structured outputs (2026-11-10)
 
@@ -17,8 +16,7 @@ schemas had no discovery size check. MCP now caps output schemas at 128 KiB and
 validates any structured result when a schema is declared. Invalid read output
 is reported as invalid; invalid write output remains an unknown outcome and
 requires reconciliation. The existing 256 KiB result bound remains enforced.
-Focused MCP tests: 3 passed; Ruff, formatting, strict Pyright and diff checks
-pass. Hosted validation is pending. No LLM inference was used.
+The full MCP stdio integration file passes (13 passed); Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42859332060](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42859332060) passed; installer checks were skipped for this source-only change. No LLM inference was used.
 
 ## Bound managed-browser tool results (2026-11-10)
 
@@ -28,20 +26,19 @@ The browser now checks the serialized result before journaling or delivery and
 returns a small read failure if it exceeds the same ceiling. The output schema
 declares field and nested form-option limits; the coordinator exposes the input
 schema from browser metadata. Screenshots remain separate managed artifacts.
-Two focused browser-contract tests pass; Ruff, formatting, strict Pyright and
-diff checks pass. Hosted validation is pending. No LLM inference was used.
+Two focused browser-contract tests pass; Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42857284995](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42857284995) passed; installer checks were skipped for this source-only change. No LLM inference was used.
 
 ## Bound web-search results and align schemas (2026-11-10)
 
-Audited the configured Brave search tool's declared 250,000-byte output cap against actual result serialization. Each of ten results may include a 500-character title, 2,048-character URL, and 1,500-character description; the actual worst-case escaped JSON can exceed the old declaration. Search now declares a 512 KiB serialized-result limit, verifies it before journaling/delivery, and replaces overflow with a bounded read failure. The output schema describes every result field and separately models success versus failure/cancellation; the coordinator exposes input schema from search metadata. Metadata and Unicode-overflow tests pass. `tests/unit/test_web_search.py`: 9 passed; Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42854487032](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42854487032) passed for the preceding checkpoint; hosted validation of this web-search change is pending. No LLM inference was used.
+Audited the configured Brave search tool's declared 250,000-byte output cap against actual result serialization. Each of ten results may include a 500-character title, 2,048-character URL, and 1,500-character description; the actual worst-case escaped JSON can exceed the old declaration. Search now declares a 512 KiB serialized-result limit, verifies it before journaling/delivery, and replaces overflow with a bounded read failure. The output schema describes every result field and separately models success versus failure/cancellation; the coordinator exposes input schema from search metadata. Metadata and Unicode-overflow tests pass. `tests/unit/test_web_search.py`: 9 passed; Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42855951331](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42855951331) passed; installer checks were skipped for this source-only change. No LLM inference was used.
 
 ## Bound serialized web-fetch results (2026-11-10)
 
-Corrected `web.fetch`'s output contract, which had called a 20,000-character content cap a 20,000-byte total output limit despite returning title and URL fields too. The fetch path now validates every redirect URL against the 2,048-character bound, models URL/title/content/error character limits in the output schema, and caps the serialized tool result at 300 KiB before journaling or returning it. Metadata distinguishes the 512 KiB response-body cap from the result cap and declares URL, title, content, redirect, and host limits. The Unicode-heavy overflow regression verifies an oversized result becomes a small `read_failed` result; schema and metadata bounds are checked. `tests/unit/test_web_fetch.py`: 10 passed; Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42854487032](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42854487032) passed for the preceding checkpoint; hosted validation of this web-fetch change is pending. No LLM inference was used.
+Corrected `web.fetch`'s output contract, which had called a 20,000-character content cap a 20,000-byte total output limit despite returning title and URL fields too. The fetch path now validates every redirect URL against the 2,048-character bound, models URL/title/content/error character limits in the output schema, and caps the serialized tool result at 300 KiB before journaling or returning it. Metadata distinguishes the 512 KiB response-body cap from the result cap and declares URL, title, content, redirect, and host limits. The Unicode-heavy overflow regression verifies an oversized result becomes a small `read_failed` result; schema and metadata bounds are checked. `tests/unit/test_web_fetch.py`: 10 passed; Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42855951331](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42855951331) passed; installer checks were skipped for this source-only change. No LLM inference was used.
 
 ## Make project-validation timeouts recoverable (2026-11-10)
 
-The authenticated project-validation POST now maps a bounded execution timeout to HTTP 409 with owner guidance to refresh evidence and reconcile unresolved saved execution before retrying, matching the existing reconciliation endpoint. Previously, an execution deadline could escape as HTTP 500. An API regression injects the timeout and asserts the recoverable response. Focused API regression passes (1 passed); Ruff, formatting, strict Pyright and diff checks pass. Hosted validation is pending in the current source workflow after push. No model inference was used.
+The authenticated project-validation POST now maps a bounded execution timeout to HTTP 409 with owner guidance to refresh evidence and reconcile unresolved saved execution before retrying, matching the existing reconciliation endpoint. Previously, an execution deadline could escape as HTTP 500. An API regression injects the timeout and asserts the recoverable response. Focused API regression passes (1 passed); Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42854487032](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42854487032) passed; installer checks were skipped for this source-only change. No model inference was used.
 
 ## Versioned workspace tool contracts (2026-11-10)
 
