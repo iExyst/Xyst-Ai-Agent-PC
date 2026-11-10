@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -69,7 +69,7 @@ class BrowserFormControl(BaseModel):
     name: str = Field(max_length=200)
     label: str = Field(max_length=200)
     required: bool
-    options: list[str] = Field(max_length=20)
+    options: list[Annotated[str, Field(max_length=200)]] = Field(max_length=20)
 
 
 class BrowserForm(BaseModel):
@@ -100,8 +100,8 @@ class BrowserOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     status: Literal["ok", "read_failed", "cancelled"]
     trust: Literal["untrusted_web_content"]
-    url: str | None = None
-    title: str | None = None
+    url: str | None = Field(default=None, max_length=2048)
+    title: str | None = Field(default=None, max_length=500)
     content: str | None = Field(default=None, max_length=20_000)
     truncated: bool | None = None
     blocked_subresources: BrowserBlockedSubresources | None = None
@@ -223,8 +223,20 @@ async def run_approved_browser(
             "error": str(error)[:500],
             "trust": "untrusted_web_content",
         }
+    result = _bounded_result(result)
     store.record_tool_result(run_id, token, call_id, result)
     return result
+
+
+def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
+    encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
+    if len(encoded) <= MAX_WORKER_BYTES:
+        return result
+    return {
+        "status": "read_failed",
+        "error": "Browser output exceeded the bounded tool-result size.",
+        "trust": "untrusted_web_content",
+    }
 
 
 BROWSER_TOOL: dict[str, Any] = {
@@ -247,5 +259,20 @@ BROWSER_METADATA = {
     "cancellation": "owned worker process tree is stopped and journaled",
     "retry": "none; inspect the saved result before requesting again",
     "output_size_bytes": MAX_WORKER_BYTES,
+    "limits": {
+        "worker_output_bytes": MAX_WORKER_BYTES,
+        "tool_result_bytes": MAX_WORKER_BYTES,
+        "url_characters": 2048,
+        "title_characters": 500,
+        "content_characters": 20_000,
+        "links": 5,
+        "link_name_characters": 200,
+        "forms": 20,
+        "controls": 100,
+        "options_per_control": 20,
+        "option_characters": 200,
+        "screenshot_artifact_bytes": 8 * 1024 * 1024,
+        "approved_hostnames": 10,
+    },
     "audit": ["run_id", "call_id", "approved_hosts", "final_url", "status"],
 }

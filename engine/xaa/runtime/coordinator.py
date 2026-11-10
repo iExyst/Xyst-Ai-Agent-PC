@@ -23,7 +23,7 @@ from xaa.providers.lm_studio import (
 )
 from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
-from xaa.runtime.browser import BROWSER_TOOL, run_approved_browser
+from xaa.runtime.browser import BROWSER_METADATA, BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.executor import ReconciliationRequired
@@ -1418,6 +1418,7 @@ class Coordinator:
             tools.append(web_tool)
         if run.get("approved_browser") and approved_web_hosts:
             browser_tool = json.loads(json.dumps(BROWSER_TOOL))
+            browser_tool["function"]["parameters"] = BROWSER_METADATA["input_schema"]
             browser_tool["function"]["description"] += (
                 " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
             )

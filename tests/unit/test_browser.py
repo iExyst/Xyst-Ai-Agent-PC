@@ -15,8 +15,11 @@ import pytest
 from xaa.runtime import browser as browser_runtime
 from xaa.runtime import browser_worker
 from xaa.runtime.browser import (
+    BROWSER_METADATA,
+    MAX_WORKER_BYTES,
     BrowserArguments,
     BrowserOutput,
+    _bounded_result,
     _execute_worker,
     browser_worker_environment,
 )
@@ -69,6 +72,26 @@ def test_browser_form_inspection_is_opt_in_and_output_contains_metadata_only() -
     }
     with pytest.raises(ValueError, match="extra"):
         BrowserOutput.model_validate(unsafe)
+
+
+def test_browser_contract_bounds_the_model_facing_result() -> None:
+    assert BROWSER_METADATA["output_size_bytes"] == MAX_WORKER_BYTES
+    assert BROWSER_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
+    assert BROWSER_METADATA["limits"]["option_characters"] == 200
+    output_properties = BROWSER_METADATA["output_schema"]["properties"]
+    assert output_properties["url"]["anyOf"][0]["maxLength"] == 2048
+    assert output_properties["title"]["anyOf"][0]["maxLength"] == 500
+    assert (
+        BROWSER_METADATA["output_schema"]["$defs"]["BrowserFormControl"]["properties"]["options"][
+            "items"
+        ]["maxLength"]
+        == 200
+    )
+    oversized = _bounded_result(
+        {"status": "ok", "trust": "untrusted_web_content", "content": "x" * MAX_WORKER_BYTES}
+    )
+    assert oversized["status"] == "read_failed"
+    assert len(json.dumps(oversized).encode("ascii")) <= MAX_WORKER_BYTES
 
 
 def test_browser_worker_receives_only_os_runtime_environment(
@@ -386,6 +409,8 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     names = {tool["function"]["name"] for tool in coordinator._tools(run["id"], run)}
     assert "browser_run" not in names
     browser_run = dict(run, approved_browser=True)
-    assert "browser_run" in {
-        tool["function"]["name"] for tool in coordinator._tools(run["id"], browser_run)
+    exposed = {
+        tool["function"]["name"]: tool["function"]["parameters"]
+        for tool in coordinator._tools(run["id"], browser_run)
     }
+    assert exposed["browser_run"] == BROWSER_METADATA["input_schema"]

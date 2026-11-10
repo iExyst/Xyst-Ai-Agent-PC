@@ -1,5 +1,16 @@
 # Progress
 
+## Bound managed-browser tool results (2026-11-10)
+
+The browser worker's 1 MiB response ceiling did not by itself bound the final
+serialized tool result after URL, title, content and form data were assembled.
+The browser now checks the serialized result before journaling or delivery and
+returns a small read failure if it exceeds the same ceiling. The output schema
+declares field and nested form-option limits; the coordinator exposes the input
+schema from browser metadata. Screenshots remain separate managed artifacts.
+Two focused browser-contract tests pass; Ruff, formatting, strict Pyright and
+diff checks pass. Hosted validation is pending. No LLM inference was used.
+
 ## Bound web-search results and align schemas (2026-11-10)
 
 Audited the configured Brave search tool's declared 250,000-byte output cap against actual result serialization. Each of ten results may include a 500-character title, 2,048-character URL, and 1,500-character description; the actual worst-case escaped JSON can exceed the old declaration. Search now declares a 512 KiB serialized-result limit, verifies it before journaling/delivery, and replaces overflow with a bounded read failure. The output schema describes every result field and separately models success versus failure/cancellation; the coordinator exposes input schema from search metadata. Metadata and Unicode-overflow tests pass. `tests/unit/test_web_search.py`: 9 passed; Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42854487032](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42854487032) passed for the preceding checkpoint; hosted validation of this web-search change is pending. No LLM inference was used.
