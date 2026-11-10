@@ -3581,7 +3581,22 @@ def create_app(
             await validate_project(run_store, run_id, payload)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Run not found.") from exc
-        except (ValueError, OSError, PermissionError, LeaseLost, FilesystemWorkerError) as exc:
+        except (
+            ValueError,
+            OSError,
+            PermissionError,
+            LeaseLost,
+            FilesystemWorkerError,
+            TimeoutError,
+        ) as exc:
+            if isinstance(exc, TimeoutError):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Validation exceeded its deadline; refresh evidence and reconcile any "
+                        "unresolved saved execution before retrying."
+                    ),
+                ) from exc
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         token = run_store.acquire_lease(run_id, "local-user-project-validation-read", seconds=180)
         if token is None:

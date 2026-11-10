@@ -98,6 +98,35 @@ def test_mcp_oauth_credentials_are_private_and_owner_clearable(workspace_tmp_pat
         assert credentials.get(f"mcp:{server_id}:oauth-client") is None
 
 
+def test_project_validation_timeout_requires_reconciliation_before_retry(
+    workspace_tmp_path, monkeypatch
+):
+    async def timeout(*_args, **_kwargs):
+        raise TimeoutError("deadline expired")
+
+    monkeypatch.setattr("xaa.api.app.validate_project", timeout)
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=RunStore(workspace_tmp_path / "validation-timeout.sqlite3"),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/runs/example/validation",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={
+                "request_id": "d12a331d-3a3f-40e1-b96d-013be46d405a",
+                "expected_revision": 0,
+                "argv": ["/usr/bin/true"],
+                "max_seconds": 15,
+            },
+        )
+
+    assert response.status_code == 409
+    assert "refresh evidence" in response.json()["detail"]
+    assert "reconcile" in response.json()["detail"]
+
+
 def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "identity-links-api.sqlite3")
     now = "2026-11-08T00:00:00+00:00"
