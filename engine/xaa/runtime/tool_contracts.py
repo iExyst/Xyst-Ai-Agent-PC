@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import (
     ApplyPatchArguments,
@@ -14,6 +15,8 @@ from xaa.runtime.executor import (
     WriteFileArguments,
 )
 from xaa.runtime.workspace_search import SearchArguments, SearchOutput
+from xaa.storage.commands import TOOL as COMMAND_TOOL
+from xaa.storage.commands import CommandOutcome
 
 _WRITE_OUTPUT: dict[str, Any] = {
     "type": "object",
@@ -187,4 +190,48 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
 
 WORKSPACE_TOOL_OPERATIONS = {
     name: contract["operation"] for name, contract in WORKSPACE_TOOL_CONTRACTS.items()
+}
+
+
+COMMAND_TOOL_CONTRACT: dict[str, Any] = {
+    "name": COMMAND_TOOL,
+    "version": "1",
+    "operation": "execute_in_private_sandbox",
+    "permissions": ["workspace.command"],
+    "effect": "ephemeral_sandbox_execution",
+    "input_schema": CommandArguments.model_json_schema(),
+    "output_schema": CommandOutcome.model_json_schema(),
+    "timeout": {
+        "command_seconds_max": 30,
+        "outer_deadline": "run_deadline",
+        "cleanup_seconds": 20,
+        "cleanup_is_outside_execution_budget": True,
+    },
+    "cancellation": (
+        "Stop the owned sandbox execution, request bounded cleanup, and reconcile its saved "
+        "execution identity and receipt before releasing admission."
+    ),
+    "retry": (
+        "Never automatically replay; reconcile the exact saved execution identity and receipt "
+        "before a new invocation."
+    ),
+    "limits": {
+        "argv_items": 64,
+        "argument_bytes": 16_384,
+        "command_seconds_max": 30,
+        "combined_output_bytes": 1_048_576,
+        "active_commands": 2,
+    },
+    "audit": [
+        "run_id",
+        "call_id",
+        "tool",
+        "version",
+        "execution_id",
+        "profile_sha256",
+        "snapshot_sha256",
+        "termination_reason",
+        "stdout_sha256",
+        "stderr_sha256",
+    ],
 }

@@ -4,7 +4,7 @@ from typing import Any
 
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
-from xaa.runtime.tool_contracts import WORKSPACE_TOOL_CONTRACTS
+from xaa.runtime.tool_contracts import COMMAND_TOOL_CONTRACT, WORKSPACE_TOOL_CONTRACTS
 from xaa.storage.runs import RunStore
 
 
@@ -71,3 +71,19 @@ def test_workspace_contract_schemas_are_serializable() -> None:
     encoded = json.dumps(WORKSPACE_TOOL_CONTRACTS, sort_keys=True)
     decoded: dict[str, Any] = json.loads(encoded)
     assert set(decoded) == set(WORKSPACE_TOOL_CONTRACTS)
+
+
+def test_bounded_command_contract_declares_execution_boundaries() -> None:
+    contract = COMMAND_TOOL_CONTRACT
+    assert contract["name"] == "workspace.run_command"
+    assert contract["version"] == "1"
+    assert contract["permissions"] == ["workspace.command"]
+    assert contract["effect"] == "ephemeral_sandbox_execution"
+    assert contract["input_schema"]["type"] == "object"
+    assert contract["output_schema"]["type"] == "object"
+    assert contract["timeout"]["outer_deadline"] == "run_deadline"
+    assert contract["timeout"]["cleanup_is_outside_execution_budget"] is True
+    assert contract["limits"]["combined_output_bytes"] == 1_048_576
+    assert contract["limits"]["command_seconds_max"] == 30
+    assert "Never automatically replay" in contract["retry"]
+    assert {"run_id", "call_id", "execution_id", "profile_sha256"} <= set(contract["audit"])

@@ -1,7 +1,7 @@
 # Workspace tool contracts
 
 `engine/xaa/runtime/tool_contracts.py` is the coordinator's source of truth for the
-public workspace file tools. Each versioned contract records its input/output
+public workspace file tools and bounded command tool. Each versioned contract records its input/output
 schema, permission, effect class, timeout, cancellation behavior, retry rule,
 resource limits, audit fields, and whether the coordinator may expose it to a
 model. The coordinator builds model-facing schemas and chooses the filesystem
@@ -16,7 +16,10 @@ joined when the timeout or cancellation boundary is reached; uncertain effects
 must be reconciled from the durable journal before any retry.
 
 The registry is a scoped first slice, not the contract inventory for every
-coordinator tool. Browser, web, command, Git, MCP, specialist, and messaging
-contracts still need the same consistent treatment. Their existing behavior and
-limits remain documented with their respective implementations until those
-slices are migrated.
+coordinator tool. The command entry is a typed execution contract used for its
+model-facing input schema; the coordinator still enforces its saved grant and
+run deadline, while the command controller owns snapshot, execution, output,
+cancellation, and recovery behavior. Browser, web, Git, MCP, specialist, and
+messaging contracts still need the same consistent treatment. Their existing
+behavior and limits remain documented with their respective implementations
+until those slices are migrated.
