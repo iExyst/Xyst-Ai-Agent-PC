@@ -10,6 +10,7 @@ import json
 import os
 import re
 import socket
+import time
 import webbrowser
 from collections.abc import Generator, Iterator
 from contextlib import AsyncExitStack, contextmanager
@@ -87,10 +88,33 @@ class _VaultOAuthStorage(TokenStorage):
 
     async def get_tokens(self) -> OAuthToken | None:
         value = self.credentials.get(self.tokens_profile)
-        return OAuthToken.model_validate_json(value) if value else None
+        if value is None:
+            return None
+        decoded: Any = json.loads(value)
+        if not isinstance(decoded, dict):
+            raise TypeError("Stored MCP OAuth tokens have an invalid format.")
+        saved = cast(dict[str, Any], decoded)
+        if "token" in saved:
+            tokens = OAuthToken.model_validate(saved["token"])
+            expires_at = saved.get("expires_at")
+            if isinstance(expires_at, (int, float)):
+                remaining = int(expires_at - time.time())
+                return tokens.model_copy(update={"expires_in": remaining if remaining > 0 else -1})
+            return (
+                tokens
+                if tokens.expires_in is None
+                else tokens.model_copy(update={"expires_in": -1})
+            )
+        # Older builds stored only the response and have no trustworthy expiry timestamp.
+        tokens = OAuthToken.model_validate_json(value)
+        return tokens.model_copy(update={"expires_in": -1})
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
-        self.credentials.set(tokens.model_dump_json(), self.tokens_profile)
+        expires_at = time.time() + tokens.expires_in if tokens.expires_in is not None else None
+        self.credentials.set(
+            json.dumps({"token": tokens.model_dump(mode="json"), "expires_at": expires_at}),
+            self.tokens_profile,
+        )
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         value = self.credentials.get(self.client_profile)
@@ -98,6 +122,13 @@ class _VaultOAuthStorage(TokenStorage):
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         self.credentials.set(client_info.model_dump_json(), self.client_profile)
+
+
+class _PersistedExpiryOAuthClientProvider(OAuthClientProvider):
+    async def _initialize(self) -> None:
+        await super()._initialize()
+        if self.context.current_tokens is not None:
+            self.context.update_token_expiry(self.context.current_tokens)
 
 
 class _ConnectedServer:
@@ -1131,7 +1162,7 @@ class MCPManager:
                     callback_server.close()
                     await callback_server.wait_closed()
 
-        provider = OAuthClientProvider(
+        provider = _PersistedExpiryOAuthClientProvider(
             server_url=server.endpoint,
             client_metadata=OAuthClientMetadata(
                 redirect_uris=[

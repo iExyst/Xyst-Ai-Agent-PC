@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import json
 import socket
+import time
 from pathlib import Path
 from types import MethodType
 from typing import Any
@@ -249,7 +251,10 @@ async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path
         path = scope["path"]
         if path == "/mcp":
             auth = dict(scope["headers"]).get(b"authorization", b"").decode()
-            if auth != "Bearer fixture-oauth-token":
+            if auth not in {
+                "Bearer fixture-oauth-token",
+                "Bearer fixture-refreshed-token",
+            }:
                 await respond(
                     send,
                     401,
@@ -304,30 +309,50 @@ async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path
             await respond(send, 201, {**registration, "client_id": "fixture-client"})
         elif path == "/token":
             values = parse_qs(bytes(body).decode())
-            verifier = values.get("code_verifier", [""])[0]
-            challenge = (
-                base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-                .decode()
-                .rstrip("=")
-            )
-            token_requests.append(values.get("grant_type", [""])[0])
-            if (
-                values.get("code", [""])[0] != "fixture-code"
-                or not issued_challenge
-                or challenge != issued_challenge[-1]
-            ):
-                await respond(send, 400, {"error": "invalid_grant"})
+            grant_type = values.get("grant_type", [""])[0]
+            token_requests.append(grant_type)
+            if grant_type == "refresh_token":
+                if values.get("refresh_token", [""])[0] not in {
+                    "fixture-refresh",
+                    "fixture-refresh-next",
+                }:
+                    await respond(send, 400, {"error": "invalid_grant"})
+                else:
+                    await respond(
+                        send,
+                        200,
+                        {
+                            "access_token": "fixture-refreshed-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                            "refresh_token": "fixture-refresh-next",
+                        },
+                    )
             else:
-                await respond(
-                    send,
-                    200,
-                    {
-                        "access_token": "fixture-oauth-token",
-                        "token_type": "Bearer",
-                        "expires_in": 3600,
-                        "refresh_token": "fixture-refresh",
-                    },
+                verifier = values.get("code_verifier", [""])[0]
+                challenge = (
+                    base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+                    .decode()
+                    .rstrip("=")
                 )
+                if (
+                    grant_type != "authorization_code"
+                    or values.get("code", [""])[0] != "fixture-code"
+                    or not issued_challenge
+                    or challenge != issued_challenge[-1]
+                ):
+                    await respond(send, 400, {"error": "invalid_grant"})
+                else:
+                    await respond(
+                        send,
+                        200,
+                        {
+                            "access_token": "fixture-oauth-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                            "refresh_token": "fixture-refresh",
+                        },
+                    )
         else:
             await respond(send, 404, {"error": "not_found"})
 
@@ -373,9 +398,19 @@ async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path
         assert token_requests == ["authorization_code"]
         assert credentials.get(f"mcp:{record.id}:oauth-tokens") is not None
         assert await manager.disconnect_server(record.id)
+        saved_tokens = json.loads(credentials.get(f"mcp:{record.id}:oauth-tokens") or "{}")
+        saved_tokens["expires_at"] = time.time() - 1
+        credentials.set(json.dumps(saved_tokens), f"mcp:{record.id}:oauth-tokens")
         await manager.connect_server(record.id)
         assert len(redirects) == 1
-        assert token_requests == ["authorization_code"]
+        assert token_requests == ["authorization_code", "refresh_token"]
+        refreshed = json.loads(credentials.get(f"mcp:{record.id}:oauth-tokens") or "{}")
+        assert refreshed["token"]["access_token"] == "fixture-refreshed-token"
+        assert await manager.disconnect_server(record.id)
+        credentials.set(json.dumps(refreshed["token"]), f"mcp:{record.id}:oauth-tokens")
+        await manager.connect_server(record.id)
+        assert len(redirects) == 1
+        assert token_requests == ["authorization_code", "refresh_token", "refresh_token"]
         assert await manager.delete_server(record.id)
         assert credentials.get(f"mcp:{record.id}:oauth-tokens") is None
         assert credentials.get(f"mcp:{record.id}:oauth-client") is None
