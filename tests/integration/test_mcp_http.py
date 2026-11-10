@@ -103,10 +103,32 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
                 "name": "item",
                 "title": None,
                 "uri_template": "xaa://http-fixture/items/{item_id}",
+                "variables": ["item_id"],
                 "description": "Return a deterministic Streamable HTTP resource template.",
                 "mime_type": "text/plain",
             }
         ]
+        template_read = await manager.read_resource_template(
+            record.id, "item", {"item_id": "sample-42"}
+        )
+        assert template_read == {
+            "trust": "untrusted_mcp_output",
+            "contents": [
+                {
+                    "uri": "xaa://http-fixture/items/sample-42",
+                    "mime_type": "text/plain",
+                    "kind": "text",
+                    "text": "HTTP fixture item: sample-42",
+                }
+            ],
+        }
+        encoded_template_read = await manager.read_resource_template(
+            record.id, "item", {"item_id": "two words"}
+        )
+        assert encoded_template_read["contents"][0]["uri"] == (
+            "xaa://http-fixture/items/two%20words"
+        )
+        assert encoded_template_read["contents"][0]["text"] == "HTTP fixture item: two%20words"
         inspected = await manager.read_resource(record.id, resource_uri)
         assert inspected == {
             "trust": "untrusted_mcp_output",

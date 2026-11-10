@@ -1899,6 +1899,29 @@
         "title": "MCPResourceReadRequest",
         "type": "object"
       },
+      "MCPResourceTemplateReadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MCPResourceTemplateReadRequest",
+        "type": "object"
+      },
       "MCPSecretRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7507,6 +7530,62 @@
           }
         ],
         "summary": "List Mcp Resource Templates"
+      }
+    },
+    "/mcp/servers/{server_id}/resource-templates/read": {
+      "post": {
+        "operationId": "read_mcp_resource_template_mcp_servers__server_id__resource_templates_read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPResourceTemplateReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Mcp Resource Template Mcp Servers  Server Id  Resource Templates Read Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Mcp Resource Template"
       }
     },
     "/mcp/servers/{server_id}/resources": {

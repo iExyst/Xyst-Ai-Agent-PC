@@ -277,6 +277,25 @@ class MCPResourceReadRequest(BaseModel):
     uri: str = Field(min_length=1, max_length=2048)
 
 
+class MCPResourceTemplateReadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=2048)
+    arguments: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("arguments")
+    @classmethod
+    def validate_argument_bounds(cls, arguments: dict[str, str]) -> dict[str, str]:
+        if len(arguments) > 32:
+            raise ValueError("Resource template accepts at most 32 arguments.")
+        if any(not key or len(key) > 128 or len(value) > 8192 for key, value in arguments.items()):
+            raise ValueError(
+                "Resource template argument names or values exceeded their size limits."
+            )
+        if sum(len(value.encode("utf-8")) for value in arguments.values()) > 32 * 1024:
+            raise ValueError("Resource template arguments exceed the 32 KiB total limit.")
+        return arguments
+
+
 class MCPPromptPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=2048)
@@ -860,6 +879,21 @@ def create_app(
             return {"resource_templates": await mcp_manager.list_resource_templates(server_id)}
         except MCPConnectionError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/resource-templates/read")
+    async def read_mcp_resource_template(
+        server_id: str,
+        payload: MCPResourceTemplateReadRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return await mcp_manager.read_resource_template(
+                server_id, payload.name, payload.arguments
+            )
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/mcp/servers/{server_id}/resources/read")
     async def read_mcp_resource(

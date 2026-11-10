@@ -686,6 +686,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/servers/{server_id}/resource-templates/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read Mcp Resource Template */
+        post: operations["read_mcp_resource_template_mcp_servers__server_id__resource_templates_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp/servers/{server_id}/resources": {
         parameters: {
             query?: never;
@@ -2578,6 +2595,15 @@ export interface components {
         MCPResourceReadRequest: {
             /** Uri */
             uri: string;
+        };
+        /** MCPResourceTemplateReadRequest */
+        MCPResourceTemplateReadRequest: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: string;
+            };
+            /** Name */
+            name: string;
         };
         /** MCPSecretRequest */
         MCPSecretRequest: {
@@ -5194,6 +5220,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_mcp_resource_template_mcp_servers__server_id__resource_templates_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPResourceTemplateReadRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

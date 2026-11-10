@@ -56,7 +56,8 @@ test('configure an MCP server, discover tools and explicitly grant write access'
       return route.fulfill({json:{state:'connected',tools:[tool]},headers});
     }
     if (path === `/mcp/servers/${serverId}/resources`) return route.fulfill({json:{resources:[{uri:'xaa://fixture/readme',name:'readme',title:'Fixture readme',description:'Owner inspection fixture.',mime_type:'text/plain',size:20}]},headers});
-    if (path === `/mcp/servers/${serverId}/resource-templates`) return route.fulfill({json:{resource_templates:[{name:'item',title:'Fixture item',uri_template:'xaa://fixture/items/{item_id}',description:'Owner template catalog fixture.',mime_type:'text/plain'}]},headers});
+    if (path === `/mcp/servers/${serverId}/resource-templates`) return route.fulfill({json:{resource_templates:[{name:'item',title:'Fixture item',uri_template:'xaa://fixture/items/{item_id}',variables:['item_id'],description:'Owner template catalog fixture.',mime_type:'text/plain'}]},headers});
+    if (path === `/mcp/servers/${serverId}/resource-templates/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:'xaa://fixture/items/sample-42',mime_type:'text/plain',kind:'text',text:'Fixture item: sample-42'}]},headers});
     if (path === `/mcp/servers/${serverId}/resources/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:body.uri,mime_type:'text/plain',kind:'text',text:'Fixture resource data.'}]},headers});
     if (path === `/mcp/servers/${serverId}/prompts`) return route.fulfill({json:{prompts:[{name:'summarize_topic',title:'Summarize topic',description:'Text-only preview fixture.',arguments:[{name:'topic',description:null,required:true}]}]},headers});
     if (path === `/mcp/servers/${serverId}/prompts/preview`) return route.fulfill({json:{trust:'untrusted_mcp_output',description:null,messages:[{role:'user',content:{kind:'text',text:`Summarize: ${body.arguments.topic}`}}]},headers});
@@ -89,6 +90,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByRole('button',{name:'List resource templates'}).click();
   await expect(panel.locator('.mcp-resource-template')).toContainText('xaa://fixture/items/{item_id}');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resource-templates'))).toBe(true);
+  await panel.getByLabel('Arguments JSON for resource template item').fill('{"item_id":"sample-42"}');
+  await panel.getByRole('button',{name:'Read template resource'}).click();
+  await expect(panel.getByRole('complementary',{name:'Untrusted MCP resource data'})).toContainText('Fixture item: sample-42');
+  expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resource-templates/read')&&item.body.arguments.item_id==='sample-42')).toBe(true);
   await panel.getByRole('button',{name:'List prompts'}).click();
   const promptArgs=panel.getByLabel('Arguments JSON for summarize_topic');
   await expect(promptArgs).toBeVisible();

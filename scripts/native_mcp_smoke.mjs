@@ -148,6 +148,18 @@ try {
   if (resourceTemplates.resource_templates.length !== 1) {
     throw new Error('The native MCP resource template catalog did not return the expected template.');
   }
+  const nativeTemplate = panel.locator('.mcp-resource-template').filter({ hasText: 'xaa://fixture/items/{item_id}' });
+  await nativeTemplate.getByLabel('Arguments JSON for resource template item').fill('{"item_id":"native-acceptance"}');
+  await nativeTemplate.getByRole('button', { name: 'Read template resource', exact: true }).click();
+  await expect(panel.getByRole('complementary', { name: 'Untrusted MCP resource data' }))
+    .toContainText('Fixture item: native-acceptance', { timeout: 20_000 });
+  const templateRead = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/resource-templates/read`, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'item', arguments: { item_id: 'native-api' } }),
+  })).json();
+  if (templateRead.trust !== 'untrusted_mcp_output' || templateRead.contents[0].text !== 'Fixture item: native-api') {
+    throw new Error('The native MCP resource template read did not return untrusted fixture data.');
+  }
   await panel.getByRole('button', { name: 'List prompts', exact: true }).click();
   const nativePrompt = panel.locator('.mcp-prompt').filter({ hasText: 'summarize_topic' });
   await expect(nativePrompt).toBeVisible({ timeout: 20_000 });
@@ -215,6 +227,7 @@ try {
     owner_resource_catalog: true,
     owner_resource_read: true,
     owner_resource_template_catalog: true,
+    owner_resource_template_read: templateRead.trust === 'untrusted_mcp_output',
     resource_output_labeled_untrusted: resourceRead.trust === 'untrusted_mcp_output',
     owner_prompt_catalog: true,
     owner_prompt_preview: true,

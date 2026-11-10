@@ -32,7 +32,7 @@ export type MCPTool = components['schemas']['MCPToolResponse'];
 export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
 export type MCPResource = {uri:string;name:string;title:string|null;description:string|null;mime_type:string|null;size:number|null};
-export type MCPResourceTemplate = {name:string;title:string|null;uri_template:string;description:string|null;mime_type:string|null};
+export type MCPResourceTemplate = {name:string;title:string|null;uri_template:string;variables:string[];description:string|null;mime_type:string|null};
 export type MCPResourceRead = {trust:'untrusted_mcp_output';contents:Array<{uri:string;mime_type:string|null;kind:'text';text:string}|{uri:string;mime_type:string|null;kind:'blob';base64:string}>};
 export type MCPPrompt = {name:string;title:string|null;description:string|null;arguments:Array<{name:string;description:string|null;required:boolean}>};
 export type MCPPromptPreview = {trust:'untrusted_mcp_output';description:string|null;messages:Array<{role:'user'|'assistant';content:Record<string,unknown>}>};
@@ -113,6 +113,7 @@ export class EngineClient {
   disconnectMCPServer(id:string):Promise<{state:string}>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/disconnect`,{method:'POST'});}
   async listMCPResources(id:string):Promise<MCPResource[]>{const result=await this.#request<{resources:unknown}>(`/mcp/servers/${encodeURIComponent(id)}/resources`,{method:'POST'});if(!Array.isArray(result.resources))throw new Error('MCP resource listing response was invalid.');return result.resources as MCPResource[];}
   async listMCPResourceTemplates(id:string):Promise<MCPResourceTemplate[]>{const result=await this.#request<{resource_templates:unknown}>(`/mcp/servers/${encodeURIComponent(id)}/resource-templates`,{method:'POST'});if(!Array.isArray(result.resource_templates))throw new Error('MCP resource template listing response was invalid.');return result.resource_templates as MCPResourceTemplate[];}
+  readMCPResourceTemplate(id:string,name:string,arguments_:Record<string,string>):Promise<MCPResourceRead>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/resource-templates/read`,{method:'POST',body:JSON.stringify({name,arguments:arguments_})});}
   readMCPResource(id:string,uri:string):Promise<MCPResourceRead>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/resources/read`,{method:'POST',body:JSON.stringify({uri})});}
   async listMCPPrompts(id:string):Promise<MCPPrompt[]>{const result=await this.#request<{prompts:unknown}>(`/mcp/servers/${encodeURIComponent(id)}/prompts`,{method:'POST'});if(!Array.isArray(result.prompts))throw new Error('MCP prompt listing response was invalid.');return result.prompts as MCPPrompt[];}
   previewMCPPrompt(id:string,name:string,arguments_:Record<string,string>):Promise<MCPPromptPreview>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/prompts/preview`,{method:'POST',body:JSON.stringify({name,arguments:arguments_})});}

@@ -33,6 +33,7 @@ from mcp.types import (
     Tool,
 )
 from pydantic import AnyUrl, TypeAdapter
+from uritemplate import URITemplate
 
 from xaa.credentials import CredentialStore
 from xaa.storage.mcp import (
@@ -75,6 +76,7 @@ class _ConnectedServer:
         resources: dict[str, Any],
         prompts: dict[str, Prompt],
         resource_templates: dict[str, ResourceTemplate],
+        expanded_resource_uris: set[str],
         shutdown: asyncio.Event,
         owner_task: asyncio.Task[None],
     ) -> None:
@@ -84,6 +86,7 @@ class _ConnectedServer:
         self.resources = resources
         self.prompts = prompts
         self.resource_templates = resource_templates
+        self.expanded_resource_uris = expanded_resource_uris
         self.shutdown = shutdown
         self.owner_task = owner_task
         self.lock = asyncio.Lock()
@@ -185,6 +188,7 @@ class MCPManager:
                     {},
                     {},
                     {},
+                    set(),
                     asyncio.Event(),
                     task,
                 )
@@ -470,7 +474,11 @@ class MCPManager:
         try:
             async with connection.lock:
                 connection.resource_templates = {}
+                connection.expanded_resource_uris.clear()
                 templates: dict[str, ResourceTemplate] = {}
+                template_uris: set[str] = set()
+                template_names: set[str] = set()
+                template_variables: dict[str, list[str]] = {}
                 template_count = 0
                 cursor: str | None = None
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
@@ -491,11 +499,37 @@ class MCPManager:
                                 raise MCPConnectionError(
                                     "The MCP resource template catalog exceeded its safety limit."
                                 )
-                            if uri_template in templates:
+                            if uri_template in template_uris:
                                 raise MCPConnectionError(
                                     "The MCP server advertised duplicate resource templates."
                                 )
-                            templates[uri_template] = template
+                            if template.name in template_names:
+                                raise MCPConnectionError(
+                                    "The MCP server advertised duplicate resource template names."
+                                )
+                            try:
+                                parsed_template = URITemplate(uri_template)
+                                variables = list(
+                                    dict.fromkeys(
+                                        variable_name
+                                        for variable in parsed_template.variables
+                                        for variable_name in variable.variable_names
+                                    )
+                                )
+                            except Exception as error:
+                                raise MCPConnectionError(
+                                    "The MCP server advertised an invalid resource template."
+                                ) from error
+                            if len(variables) > MCP_PROMPT_ARGUMENT_LIMIT or any(
+                                not variable or len(variable) > 128 for variable in variables
+                            ):
+                                raise MCPConnectionError(
+                                    "An MCP resource template exceeded its variable limit."
+                                )
+                            templates[template.name] = template
+                            template_uris.add(uri_template)
+                            template_names.add(template.name)
+                            template_variables[template.name] = variables
                         cursor = response.nextCursor
                         if cursor is None:
                             break
@@ -508,12 +542,14 @@ class MCPManager:
                         "name": _bounded_text(template.name, MCP_RESOURCE_FIELD_LIMIT),
                         "title": _bounded_text(template.title, MCP_RESOURCE_FIELD_LIMIT),
                         "uri_template": uri_template,
+                        "variables": template_variables[name],
                         "description": _bounded_text(
                             template.description, MCP_RESOURCE_FIELD_LIMIT
                         ),
                         "mime_type": _bounded_text(template.mimeType, 256),
                     }
-                    for uri_template, template in templates.items()
+                    for name, template in templates.items()
+                    for uri_template in (template.uriTemplate,)
                 ]
                 if (
                     len(json.dumps(catalog, separators=(",", ":")).encode("utf-8"))
@@ -533,17 +569,83 @@ class MCPManager:
                 "The MCP server could not list resource templates; it may not support resource templates."
             ) from error
 
+    async def read_resource_template(
+        self, server_id: str, name: str, arguments: dict[str, str]
+    ) -> dict[str, Any]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before reading a resource template.")
+        if len(arguments) > MCP_PROMPT_ARGUMENT_LIMIT:
+            raise MCPConnectionError("A resource template accepts at most 32 arguments.")
+        if any(not key or len(key) > 128 or len(value) > 8192 for key, value in arguments.items()):
+            raise MCPConnectionError(
+                "Resource template argument names or values exceeded their size limits."
+            )
+        if sum(len(value.encode("utf-8")) for value in arguments.values()) > 32 * 1024:
+            raise MCPConnectionError("Resource template arguments exceed the 32 KiB total limit.")
+        try:
+            async with connection.lock:
+                template = connection.resource_templates.get(name)
+                if template is None:
+                    raise MCPConnectionError(
+                        "Read only a resource template currently advertised by this connected server."
+                    )
+                parsed = URITemplate(template.uriTemplate)
+                variables = {
+                    variable_name
+                    for variable in parsed.variables
+                    for variable_name in variable.variable_names
+                }
+                if set(arguments) != variables:
+                    missing = variables - set(arguments)
+                    extra = set(arguments) - variables
+                    if missing:
+                        raise MCPConnectionError(
+                            "A value is required for every variable in the resource template."
+                        )
+                    if extra:
+                        raise MCPConnectionError(
+                            "Resource template arguments include an undeclared variable."
+                        )
+                uri = parsed.expand(cast(dict[str, Any], arguments))
+                if not uri or len(uri) > MCP_RESOURCE_FIELD_LIMIT:
+                    raise MCPConnectionError(
+                        "The expanded MCP resource URI exceeded the 2048 character limit."
+                    )
+                TypeAdapter(AnyUrl).validate_python(uri)
+                if connection.resource_templates.get(name) is not template:
+                    raise MCPConnectionError(
+                        "The resource template changed during the owner read request."
+                    )
+                if (
+                    uri not in connection.expanded_resource_uris
+                    and len(connection.expanded_resource_uris) >= MCP_RESOURCE_COUNT_LIMIT
+                ):
+                    raise MCPConnectionError(
+                        "This connection already has 256 expanded resource URIs; refresh the template catalog to continue."
+                    )
+                connection.expanded_resource_uris.add(uri)
+            return await self.read_resource(server_id, uri)
+        except MCPConnectionError:
+            raise
+        except Exception as error:
+            raise MCPConnectionError(
+                "The MCP resource template could not be expanded safely."
+            ) from error
+
     async def read_resource(self, server_id: str, uri: str) -> dict[str, Any]:
         connection = self._connected.get(server_id)
         if connection is None:
             raise MCPConnectionError("Connect the MCP server before reading a resource.")
-        if len(uri) > MCP_RESOURCE_FIELD_LIMIT or uri not in connection.resources:
+        if len(uri) > MCP_RESOURCE_FIELD_LIMIT or (
+            uri not in connection.resources and uri not in connection.expanded_resource_uris
+        ):
             raise MCPConnectionError(
                 "Read only a resource URI currently advertised by this connected server."
             )
         try:
             async with connection.lock:
-                if uri not in connection.resources:
+                if uri not in connection.resources and uri not in connection.expanded_resource_uris:
                     raise MCPConnectionError(
                         "The resource is no longer in the connected server catalog."
                     )

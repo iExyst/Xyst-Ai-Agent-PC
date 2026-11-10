@@ -22,6 +22,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
   const [resourceCatalogs, setResourceCatalogs] = useState<Record<string,MCPResource[]>>({});
   const [resourceReads, setResourceReads] = useState<Record<string,MCPResourceRead>>({});
   const [resourceTemplateCatalogs, setResourceTemplateCatalogs] = useState<Record<string,MCPResourceTemplate[]>>({});
+  const [resourceTemplateArguments, setResourceTemplateArguments] = useState<Record<string,string>>({});
   const [promptCatalogs, setPromptCatalogs] = useState<Record<string,MCPPrompt[]>>({});
   const [promptArguments, setPromptArguments] = useState<Record<string,string>>({});
   const [promptPreviews, setPromptPreviews] = useState<Record<string,MCPPromptPreview>>({});
@@ -79,7 +80,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>
-        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateCatalogs(prev=>({...prev,[server.id]:[]}));setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});setPromptCatalogs(prev=>({...prev,[server.id]:[]}));setPromptPreviews(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});})}>Disconnect</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateArguments(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});setPromptCatalogs(prev=>({...prev,[server.id]:[]}));setPromptPreviews(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});})}>Disconnect</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const resources=await client.listMCPResources(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:resources}));})}>List resources</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const templates=await client.listMCPResourceTemplates(server.id);setResourceTemplateCatalogs(prev=>({...prev,[server.id]:templates}));})}>List resource templates</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const prompts=await client.listMCPPrompts(server.id);setPromptCatalogs(prev=>({...prev,[server.id]:prompts}));})}>List prompts</button>
@@ -93,6 +94,9 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
       {(resourceTemplateCatalogs[server.id]??[]).map(template=><div key={template.uri_template} className="mcp-resource-template">
         <strong>{template.title||template.name}</strong> <code>{template.uri_template}</code>
         {template.description&&<p>{template.description}</p>}
+        <p>Variables: {template.variables.join(', ')||'none'}</p>
+        <label>Arguments JSON<textarea rows={3} aria-label={`Arguments JSON for resource template ${template.name}`} value={resourceTemplateArguments[`${server.id}:${template.name}`]??'{}'} onChange={event=>setResourceTemplateArguments(prev=>({...prev,[`${server.id}:${template.name}`]:event.target.value}))}/></label>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const parsed:unknown=JSON.parse(resourceTemplateArguments[`${server.id}:${template.name}`]??'{}');if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Resource template arguments must be a JSON object with text values.');const result=await client.readMCPResourceTemplate(server.id,template.name,parsed as Record<string,string>);setResourceReads(prev=>({...prev,[server.id]:result}));})}>Read template resource</button>
       </div>)}
       {resourceReads[server.id]&&<aside aria-label="Untrusted MCP resource data">
         <strong>Untrusted MCP resource data</strong>

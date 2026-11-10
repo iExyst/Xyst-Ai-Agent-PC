@@ -1161,6 +1161,15 @@ wheels = [
 ]
 
 [[package]]
+name = "uritemplate"
+version = "4.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/60/f174043244c5306c9988380d2cb10009f91563fc4b31293d27e17201af56/uritemplate-4.2.0.tar.gz", hash = "sha256:480c2ed180878955863323eea31b0ede668795de182617fef9c6ca09e6ec9d0e", size = 33267, upload-time = "2025-06-02T15:12:06.318Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/99/3ae339466c9183ea5b8ae87b34c0b897eda475d2aec2307cae60e5cd4f29/uritemplate-4.2.0-py3-none-any.whl", hash = "sha256:962201ba1c4edcab02e60f9a0d3821e82dfc5d2d6662a21abd533879bdb8a686", size = 11488, upload-time = "2025-06-02T15:12:03.405Z" },
+]
+
+[[package]]
 name = "uvicorn"
 version = "0.54.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1281,6 +1290,7 @@ dependencies = [
     { name = "pypdfium2" },
     { name = "pyyaml" },
     { name = "tzdata" },
+    { name = "uritemplate" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1308,6 +1318,7 @@ requires-dist = [
     { name = "pypdfium2", specifier = ">=4,<6" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "tzdata", specifier = ">=2026.6" },
+    { name = "uritemplate", specifier = ">=4.2,<5" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38,<1" },
 ]
 

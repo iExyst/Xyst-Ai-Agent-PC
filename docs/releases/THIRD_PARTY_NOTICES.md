@@ -1,6 +1,6 @@
 # Provisional third-party notices
 
-Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies and 2026-11-09 with 22 lock-source license/NOTICE text groups for five omitted Python packages and setuptools-vendored dependencies. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
+Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies and 2026-11-09 with 23 source-hash-grouped texts covering the five omitted locked Python packages and their vendored dependencies plus the `uritemplate` direct dependency. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
 
 **This is a provisional third-party notice file, not release approval.** X.A.A. source is licensed under MIT in the root LICENSE; this third-party notice draft remains provisional. Six Windows-target Cargo crate archives omit license files; their declared license texts are represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below. The unsigned installer stages this file with the dependency inventory and release notes; install acceptance checks each document against its manifest hash. Review package-specific exceptions and copyright notices before distribution.
 
@@ -96,7 +96,7 @@ Creator: Person: Daniel Thompson-Yvetot
 
 ### 4. Python (locked development environment) — Apache Software License; GNU General Public License v2 (GPLv2)
 
-**Packages:** `pyinstaller-hooks-contrib@2026.9`
+**Packages:** `pyinstaller-hooks-contrib@2026.9`, `uritemplate@4.2.0` (Apache-2.0 alternative; BSD-3-Clause text follows)
 
 ```text
 ============================================
@@ -29301,4 +29301,34 @@ The externally maintained libraries used by libuv are:
   - inet_pton and inet_ntop implementations, contained in src/inet.c, are
     copyright the Internet Systems Consortium, Inc., and licensed under the ISC
     license.
+</pre>
+
+### 272. Python direct dependency — uritemplate BSD-3-Clause alternative
+
+**Verified source file:** `uritemplate==4.2.0` — `uritemplate-4.2.0/LICENSE.BSD` (source archive SHA-256 `480c2ed180878955863323eea31b0ede668795de182617fef9c6ca09e6ec9d0e`; license text SHA-256 `c03c6bc1445ed4283d9334d648cb8de3baa3c66da1aeb786a33fbe9ef5cda235`). The package also offers Apache-2.0; its exact full text is already included in section 4 above.
+
+<pre>
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+3. The name of the author may not be used to endorse or promote products
+derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
 </pre>

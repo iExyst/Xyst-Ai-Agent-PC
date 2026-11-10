@@ -349,10 +349,54 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
                 "name": "item",
                 "title": None,
                 "uri_template": "xaa://fixture/items/{item_id}",
+                "variables": ["item_id"],
                 "description": "Expose an MCP resource template for owner catalog inspection tests.",
                 "mime_type": "text/plain",
             }
         ]
+        template_read = client.post(
+            f"/mcp/servers/{server_id}/resource-templates/read",
+            headers=headers,
+            json={"name": "item", "arguments": {"item_id": "sample-42"}},
+        )
+        assert template_read.json() == {
+            "trust": "untrusted_mcp_output",
+            "contents": [
+                {
+                    "uri": "xaa://fixture/items/sample-42",
+                    "mime_type": "text/plain",
+                    "kind": "text",
+                    "text": "Fixture item: sample-42",
+                }
+            ],
+        }
+        missing_template_argument = client.post(
+            f"/mcp/servers/{server_id}/resource-templates/read",
+            headers=headers,
+            json={"name": "item", "arguments": {}},
+        )
+        assert missing_template_argument.status_code == 400
+        oversized_template_arguments = client.post(
+            f"/mcp/servers/{server_id}/resource-templates/read",
+            headers=headers,
+            json={
+                "name": "item",
+                "arguments": {f"arg{index}": "x" for index in range(33)},
+            },
+        )
+        assert oversized_template_arguments.status_code == 422
+        oversized_template_value = client.post(
+            f"/mcp/servers/{server_id}/resource-templates/read",
+            headers=headers,
+            json={"name": "item", "arguments": {"item_id": "x" * 8193}},
+        )
+        assert oversized_template_value.status_code == 422
+        unadvertised_template = client.post(
+            f"/mcp/servers/{server_id}/resource-templates/read",
+            headers=headers,
+            json={"name": "other", "arguments": {"item_id": "sample-42"}},
+        )
+        assert unadvertised_template.status_code == 400
         assert client.post(f"/mcp/servers/{server_id}/prompts").status_code == 401
         prompts = client.post(f"/mcp/servers/{server_id}/prompts", headers=headers)
         assert prompts.status_code == 200
