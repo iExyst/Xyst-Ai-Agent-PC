@@ -129,6 +129,52 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert str(package) == summary.path
 
 
+def test_plugin_manifest_accepts_optional_version_and_reports_ignored_fields(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    manifest_path = package / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("version")
+    manifest["author"] = {"name": "Xyst", "email": "owner@example.test"}
+    manifest["homepage"] = "not required to be a URL by the portable schema"
+    manifest["keywords"] = ["tools", "local"]
+    manifest["futureClientField"] = {"ignored": True}
+    manifest["extensions"] = "unsupported shape is ignored by v1 clients"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = discover_agent_plugins(str(tmp_path))
+    assert len(result.packages) == 1
+    assert result.packages[0].version is None
+    assert [diagnostic.message for diagnostic in result.diagnostics] == [
+        "plugin.json has unsupported field 'futureClientField'; ignored",
+        "plugin.json extensions is not an object; ignored",
+    ]
+
+
+@pytest.mark.parametrize(
+    "field_value",
+    [
+        ("version", 1),
+        ("author", {"name": 3}),
+        ("author", {"name": "Xyst", "website": "https://example.test"}),
+        ("keywords", ["valid", 3]),
+    ],
+)
+def test_plugin_manifest_rejects_invalid_standard_metadata(
+    tmp_path: Path, field_value: tuple[str, object]
+) -> None:
+    package = make_package(tmp_path)
+    manifest_path = package / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest[field_value[0]] = field_value[1]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = discover_agent_plugins(str(tmp_path))
+    assert result.packages == []
+    assert len(result.diagnostics) == 1
+
+
 def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path: Path) -> None:
     skills_root = tmp_path / "hermes-skills"
     skill_directory = skills_root / "summarize"

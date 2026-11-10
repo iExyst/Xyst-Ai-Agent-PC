@@ -639,16 +639,37 @@ def _package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSu
         raise ValueError("plugin.json declares an unsupported or missing Agent Plugins schema")
     if not isinstance(name, str) or len(name) > 64 or not _PLUGIN_NAME.fullmatch(name):
         raise ValueError("plugin.json name does not satisfy Agent Plugins v1 constraints")
-    if not isinstance(version, str) or len(version) > 128:
-        raise ValueError("plugin.json version is invalid")
-    if description is not None and (not isinstance(description, str) or len(description) > 2048):
-        raise ValueError("plugin.json description is invalid")
+    # Agent Plugins v1 requires clients to report and ignore unknown top-level
+    # fields. They do not invalidate otherwise well-formed components.
+    if "version" in manifest and not isinstance(version, str):
+        raise ValueError("plugin.json version must be a string")
+    if "description" in manifest and not isinstance(description, str):
+        raise ValueError("plugin.json description must be a string")
+    author = manifest.get("author")
+    if "author" in manifest:
+        if not isinstance(author, dict):
+            raise ValueError("plugin.json author must contain only name, email, and url strings")
+        author = cast(dict[str, Any], author)
+        if set(author) - {"name", "email", "url"}:
+            raise ValueError("plugin.json author must contain only name, email, and url strings")
+        if any(not isinstance(value, str) for value in author.values()):
+            raise ValueError("plugin.json author must contain only name, email, and url strings")
+    for field in ("homepage", "repository", "license"):
+        if field in manifest and not isinstance(manifest[field], str):
+            raise ValueError(f"plugin.json {field} must be a string")
+    keywords = manifest.get("keywords")
+    if "keywords" in manifest and (
+        not isinstance(keywords, list)
+        or any(not isinstance(keyword, str) for keyword in cast(list[Any], keywords))
+    ):
+        raise ValueError("plugin.json keywords must be an array of strings")
     extensions = manifest.get("extensions", {})
     if not isinstance(extensions, dict):
-        raise TypeError("plugin.json extensions must map namespaces to objects")
-    extensions = cast(dict[str, Any], extensions)
-    if any(not isinstance(value, dict) for value in extensions.values()):
-        raise ValueError("plugin.json extensions must map namespaces to objects")
+        # The normative client loading rules make a non-object extensions field
+        # non-fatal, despite the stricter machine-readable schema.
+        extensions = {}
+    # No extension namespace is implemented by X.A.A.; the v1 contract requires
+    # clients to ignore those values without interpreting or validating them.
     return PluginSummary(
         name=name,
         version=version,
@@ -688,7 +709,35 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
             if not resolved.is_dir():
                 continue
             if (resolved / "plugin.json").exists():
-                packages.append(_package(resolved, root, command_cache))
+                summary = _package(resolved, root, command_cache)
+                packages.append(summary)
+                manifest = _json(resolved / "plugin.json", resolved)
+                known_fields = {
+                    "$schema",
+                    "name",
+                    "version",
+                    "description",
+                    "author",
+                    "homepage",
+                    "repository",
+                    "license",
+                    "keywords",
+                    "extensions",
+                }
+                for field in sorted(set(manifest) - known_fields):
+                    diagnostics.append(
+                        PluginDiagnostic(
+                            path=candidate.name[:256],
+                            message=f"plugin.json has unsupported field {field!r}; ignored",
+                        )
+                    )
+                if "extensions" in manifest and not isinstance(manifest["extensions"], dict):
+                    diagnostics.append(
+                        PluginDiagnostic(
+                            path=candidate.name[:256],
+                            message="plugin.json extensions is not an object; ignored",
+                        )
+                    )
             elif (resolved / "SKILL.md").exists():
                 packages.append(_hermes_skill_package(resolved, root, command_cache))
         except (OSError, RuntimeError, ValueError) as exc:
