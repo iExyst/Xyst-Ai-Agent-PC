@@ -1204,9 +1204,7 @@ class Coordinator:
                 "function": {
                     "name": "workspace_read_file",
                     "description": "Read a UTF-8 file relative to the selected workspace.",
-                    "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_read_file"][
-                        "input_schema"
-                    ],
+                    "parameters": WORKSPACE_TOOL_CONTRACTS["workspace_read_file"]["input_schema"],
                 },
             },
         ]
@@ -1391,9 +1389,9 @@ class Coordinator:
                 }
             )
         search_tool = json.loads(json.dumps(SEARCH_TOOL))
-        search_tool["function"]["parameters"] = WORKSPACE_TOOL_CONTRACTS[
-            "workspace_search"
-        ]["input_schema"]
+        search_tool["function"]["parameters"] = WORKSPACE_TOOL_CONTRACTS["workspace_search"][
+            "input_schema"
+        ]
         tools.append(search_tool)
         approved_web_hosts = run.get("approved_web_hosts", [])
         if run.get("approved_web_search"):
