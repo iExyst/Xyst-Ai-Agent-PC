@@ -253,7 +253,7 @@ async def test_browser_route_guard_applies_to_redirect_and_subresource_requests(
 
 @pytest.mark.parametrize("is_main_frame", [True, False])
 @pytest.mark.asyncio
-async def test_browser_route_guard_tracks_only_blocked_top_level_documents(
+async def test_browser_route_guard_reports_blocked_child_frames_separately_from_main_navigation(
     is_main_frame: bool,
 ) -> None:
     class FakeFrame:
@@ -282,13 +282,16 @@ async def test_browser_route_guard_tracks_only_blocked_top_level_documents(
             self.action = ("continue", None)
 
     blocked_main_navigations: dict[str, int] = {}
+    blocked_subresources: dict[str, int] = {}
     await browser_worker.guard_browser_route(
         FakeRoute(),
         {"docs.example.com"},
+        blocked_subresources,
         main_frame=main_frame,
         blocked_main_navigations=blocked_main_navigations,
     )
     assert blocked_main_navigations == ({"count": 1} if is_main_frame else {})
+    assert blocked_subresources == ({} if is_main_frame else {"frame": 1})
 
 
 @pytest.mark.asyncio

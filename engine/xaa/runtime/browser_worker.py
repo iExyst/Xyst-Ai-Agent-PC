@@ -87,6 +87,13 @@ async def guard_browser_route(
             blocked_main_navigations["count"] = blocked_main_navigations.get("count", 0) + 1
         elif blocked_subresources is not None and resource_type != "document":
             blocked_subresources[resource_type] = blocked_subresources.get(resource_type, 0) + 1
+        elif (
+            blocked_subresources is not None
+            and resource_type == "document"
+            and main_frame is not None
+            and not is_top_level_navigation
+        ):
+            blocked_subresources["frame"] = blocked_subresources.get("frame", 0) + 1
         await route.abort("blockedbyclient")
     else:
         await route.continue_()
