@@ -7463,6 +7463,52 @@
         "summary": "Preview Mcp Prompt"
       }
     },
+    "/mcp/servers/{server_id}/resource-templates": {
+      "post": {
+        "operationId": "list_mcp_resource_templates_mcp_servers__server_id__resource_templates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Resource Templates Mcp Servers  Server Id  Resource Templates Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mcp Resource Templates"
+      }
+    },
     "/mcp/servers/{server_id}/resources": {
       "post": {
         "operationId": "list_mcp_resources_mcp_servers__server_id__resources_post",

@@ -30,6 +30,12 @@ def large_resource() -> str:
     return "x" * (256 * 1024 + 1)
 
 
+@mcp.resource("xaa://fixture/items/{item_id}")
+def item(item_id: str) -> str:
+    """Expose an MCP resource template for owner catalog inspection tests."""
+    return f"Fixture item: {item_id}"
+
+
 @mcp.prompt()
 def summarize_topic(topic: str) -> str:
     """Return a deterministic text-only prompt template."""

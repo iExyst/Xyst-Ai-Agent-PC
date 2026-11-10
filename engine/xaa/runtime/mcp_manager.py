@@ -27,6 +27,7 @@ from mcp.types import (
     PaginatedRequestParams,
     Prompt,
     ResourceLink,
+    ResourceTemplate,
     TextContent,
     TextResourceContents,
     Tool,
@@ -73,6 +74,7 @@ class _ConnectedServer:
         tools: dict[str, MCPDiscoveredTool],
         resources: dict[str, Any],
         prompts: dict[str, Prompt],
+        resource_templates: dict[str, ResourceTemplate],
         shutdown: asyncio.Event,
         owner_task: asyncio.Task[None],
     ) -> None:
@@ -81,6 +83,7 @@ class _ConnectedServer:
         self.tools = tools
         self.resources = resources
         self.prompts = prompts
+        self.resource_templates = resource_templates
         self.shutdown = shutdown
         self.owner_task = owner_task
         self.lock = asyncio.Lock()
@@ -179,6 +182,7 @@ class MCPManager:
                     server,
                     session,
                     {tool.name: tool for tool in tools},
+                    {},
                     {},
                     {},
                     asyncio.Event(),
@@ -455,6 +459,78 @@ class MCPManager:
         except Exception as error:
             raise MCPConnectionError(
                 "The MCP server could not list resources; it may not support resource discovery."
+            ) from error
+
+    async def list_resource_templates(self, server_id: str) -> list[dict[str, Any]]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError(
+                "Connect the MCP server before listing its resource templates."
+            )
+        try:
+            async with connection.lock:
+                connection.resource_templates = {}
+                templates: dict[str, ResourceTemplate] = {}
+                template_count = 0
+                cursor: str | None = None
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    for _ in range(8):
+                        response = await connection.session.list_resource_templates(
+                            params=PaginatedRequestParams(cursor=cursor)
+                        )
+                        for template in response.resourceTemplates:
+                            template_count += 1
+                            uri_template = template.uriTemplate
+                            if (
+                                not template.name
+                                or len(template.name) > MCP_RESOURCE_FIELD_LIMIT
+                                or not uri_template
+                                or len(uri_template) > MCP_RESOURCE_FIELD_LIMIT
+                                or template_count > MCP_RESOURCE_COUNT_LIMIT
+                            ):
+                                raise MCPConnectionError(
+                                    "The MCP resource template catalog exceeded its safety limit."
+                                )
+                            if uri_template in templates:
+                                raise MCPConnectionError(
+                                    "The MCP server advertised duplicate resource templates."
+                                )
+                            templates[uri_template] = template
+                        cursor = response.nextCursor
+                        if cursor is None:
+                            break
+                    else:
+                        raise MCPConnectionError(
+                            "The MCP resource template listing exceeded its pagination limit."
+                        )
+                catalog = [
+                    {
+                        "name": _bounded_text(template.name, MCP_RESOURCE_FIELD_LIMIT),
+                        "title": _bounded_text(template.title, MCP_RESOURCE_FIELD_LIMIT),
+                        "uri_template": uri_template,
+                        "description": _bounded_text(
+                            template.description, MCP_RESOURCE_FIELD_LIMIT
+                        ),
+                        "mime_type": _bounded_text(template.mimeType, 256),
+                    }
+                    for uri_template, template in templates.items()
+                ]
+                if (
+                    len(json.dumps(catalog, separators=(",", ":")).encode("utf-8"))
+                    > MCP_RESULT_BYTES
+                ):
+                    raise MCPConnectionError(
+                        "The MCP resource template catalog exceeded the 256 KiB response limit."
+                    )
+                connection.resource_templates = templates
+                return catalog
+        except MCPConnectionError:
+            raise
+        except TimeoutError as error:
+            raise MCPConnectionError("The MCP resource template listing timed out.") from error
+        except Exception as error:
+            raise MCPConnectionError(
+                "The MCP server could not list resource templates; it may not support resource templates."
             ) from error
 
     async def read_resource(self, server_id: str, uri: str) -> dict[str, Any]:

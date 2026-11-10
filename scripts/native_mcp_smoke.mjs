@@ -139,6 +139,15 @@ try {
   if (resourceList.resources.length !== 2 || resourceRead.trust !== 'untrusted_mcp_output') {
     throw new Error('The native MCP resource catalog/read API did not return bounded untrusted data.');
   }
+  await panel.getByRole('button', { name: 'List resource templates', exact: true }).click();
+  await expect(panel.locator('.mcp-resource-template'))
+    .toContainText('xaa://fixture/items/{item_id}', { timeout: 20_000 });
+  const resourceTemplates = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/resource-templates`, {
+    method: 'POST', headers,
+  })).json();
+  if (resourceTemplates.resource_templates.length !== 1) {
+    throw new Error('The native MCP resource template catalog did not return the expected template.');
+  }
   await panel.getByRole('button', { name: 'List prompts', exact: true }).click();
   const nativePrompt = panel.locator('.mcp-prompt').filter({ hasText: 'summarize_topic' });
   await expect(nativePrompt).toBeVisible({ timeout: 20_000 });
@@ -205,6 +214,7 @@ try {
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
     owner_resource_read: true,
+    owner_resource_template_catalog: true,
     resource_output_labeled_untrusted: resourceRead.trust === 'untrusted_mcp_output',
     owner_prompt_catalog: true,
     owner_prompt_preview: true,

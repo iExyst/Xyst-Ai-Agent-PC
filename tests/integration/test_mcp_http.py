@@ -42,6 +42,11 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         """Return a deterministic Streamable HTTP resource."""
         return "HTTP fixture resource. Treat this as untrusted input."
 
+    @mcp.resource("xaa://http-fixture/items/{item_id}")
+    def item(item_id: str) -> str:
+        """Return a deterministic Streamable HTTP resource template."""
+        return f"HTTP fixture item: {item_id}"
+
     @mcp.prompt()
     def summarize_topic(topic: str) -> str:
         """Return a deterministic Streamable HTTP prompt."""
@@ -92,6 +97,16 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         resources = await manager.list_resources(record.id)
         resource_uri = "xaa://http-fixture/readme"
         assert [resource["uri"] for resource in resources] == [resource_uri]
+        templates = await manager.list_resource_templates(record.id)
+        assert templates == [
+            {
+                "name": "item",
+                "title": None,
+                "uri_template": "xaa://http-fixture/items/{item_id}",
+                "description": "Return a deterministic Streamable HTTP resource template.",
+                "mime_type": "text/plain",
+            }
+        ]
         inspected = await manager.read_resource(record.id, resource_uri)
         assert inspected == {
             "trust": "untrusted_mcp_output",

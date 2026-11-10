@@ -669,6 +669,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/servers/{server_id}/resource-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List Mcp Resource Templates */
+        post: operations["list_mcp_resource_templates_mcp_servers__server_id__resource_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp/servers/{server_id}/resources": {
         parameters: {
             query?: never;
@@ -5144,6 +5161,39 @@ export interface operations {
                 "application/json": components["schemas"]["MCPPromptPreviewRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mcp_resource_templates_mcp_servers__server_id__resource_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

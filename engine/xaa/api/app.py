@@ -850,6 +850,17 @@ def create_app(
         except MCPConnectionError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    @app.post("/mcp/servers/{server_id}/resource-templates")
+    async def list_mcp_resource_templates(
+        server_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return {"resource_templates": await mcp_manager.list_resource_templates(server_id)}
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     @app.post("/mcp/servers/{server_id}/resources/read")
     async def read_mcp_resource(
         server_id: str,

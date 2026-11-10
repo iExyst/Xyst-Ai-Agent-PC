@@ -341,6 +341,18 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
         )
         assert oversized.status_code == 400
         assert "256 KiB" in oversized.json()["detail"]
+        assert client.post(f"/mcp/servers/{server_id}/resource-templates").status_code == 401
+        templates = client.post(f"/mcp/servers/{server_id}/resource-templates", headers=headers)
+        assert templates.status_code == 200
+        assert templates.json()["resource_templates"] == [
+            {
+                "name": "item",
+                "title": None,
+                "uri_template": "xaa://fixture/items/{item_id}",
+                "description": "Expose an MCP resource template for owner catalog inspection tests.",
+                "mime_type": "text/plain",
+            }
+        ]
         assert client.post(f"/mcp/servers/{server_id}/prompts").status_code == 401
         prompts = client.post(f"/mcp/servers/{server_id}/prompts", headers=headers)
         assert prompts.status_code == 200
