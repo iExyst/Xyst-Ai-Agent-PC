@@ -5,9 +5,10 @@ type Props = {
   client: EngineClient;
   selectedRunWriteTools: string[];
   onRunWriteToolsChange: (names: string[]) => void;
+  onUsePromptText: (context: string) => void;
 };
 
-export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange }: Props) {
+export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange, onUsePromptText }: Props) {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [name, setName] = useState('');
   const [transport, setTransport] = useState<'stdio'|'streamable_http'>('stdio');
@@ -115,7 +116,11 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
           {prompt.arguments.length>0&&<p>Arguments: {prompt.arguments.map(argument=>`${argument.name}${argument.required?' (required)':''}`).join(', ')}</p>}
           <label>Arguments JSON<textarea rows={3} aria-label={`Arguments JSON for ${prompt.name}`} value={promptArguments[key]??'{}'} onChange={event=>setPromptArguments(prev=>({...prev,[key]:event.target.value}))}/></label>
           <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const parsed:unknown=JSON.parse(promptArguments[key]??'{}');if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Prompt arguments must be a JSON object with text values.');const preview=await client.previewMCPPrompt(server.id,prompt.name,parsed as Record<string,string>);setPromptPreviews(prev=>({...prev,[key]:preview}));})}>Preview prompt</button>
-          {promptPreviews[key]&&<aside aria-label="Untrusted MCP prompt preview"><strong>Untrusted MCP prompt preview</strong><pre>{JSON.stringify(promptPreviews[key],null,2)}</pre></aside>}
+          {promptPreviews[key]&&<aside aria-label="Untrusted MCP prompt preview"><strong>Untrusted MCP prompt preview</strong><pre>{JSON.stringify(promptPreviews[key],null,2)}</pre>
+            {promptPreviews[key]!.messages.length>0&&promptPreviews[key]!.messages.every(message=>message.content.kind==='text'&&typeof message.content.text==='string')
+              ? <button type="button" disabled={busy} onClick={()=>onUsePromptText(JSON.stringify({source:'MCP',server:server.name,prompt:prompt.name,messages:promptPreviews[key]!.messages.map(message=>({role:message.role,text:message.content.text}))},null,2))}>Add text to objective for review</button>
+              : <p>Only text-only prompt previews can be added to an objective. Other content types stay available for inspection here.</p>}
+          </aside>}
         </div>;
       })}
       {server.secret_env.map(env=>{const key=`${server.id}:${env}`;return <label key={env}>{env} {server.transport==='streamable_http'?'bearer token': 'environment secret'} {server.secret_env_configured[env]?'(saved in OS credential store)':'(not set)'}

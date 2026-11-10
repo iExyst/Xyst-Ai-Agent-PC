@@ -109,6 +109,15 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByRole('button',{name:'Preview prompt'}).click();
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP prompt preview'})).toContainText('Summarize: browser acceptance');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/prompts/preview')&&item.body.arguments.topic==='browser acceptance')).toBe(true);
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/runs')).toBe(false);
+  await panel.getByRole('button',{name:'Add text to objective for review'}).click();
+  await expect(page.locator('#run-objective')).toContainText('Untrusted MCP prompt preview');
+  await expect(page.locator('#run-objective')).toContainText('Summarize: browser acceptance');
+  const oversizedObjective='x'.repeat(9990);
+  await page.locator('#run-objective').fill(oversizedObjective);
+  await panel.getByRole('button',{name:'Add text to objective for review'}).click();
+  await expect(page.getByRole('alert')).toContainText('10,000-character objective limit');
+  await expect(page.locator('#run-objective')).toHaveValue(oversizedObjective);
   await panel.getByLabel('Permission').selectOption('write');
   const grant = panel.getByLabel('Allow this write tool for the next run');
   await expect(grant).toBeVisible();
