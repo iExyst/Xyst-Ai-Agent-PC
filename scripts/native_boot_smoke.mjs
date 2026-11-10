@@ -29,7 +29,7 @@ if(recoverStartupRun){
   ownerRecoveryAcceptance=JSON.parse(execFileSync('uv',['run','python','scripts/native_recovery_fixture.py','--database',recoveryDatabase,'--workspace',recoveryWorkspace,'--report',recoveryReportPath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
   if(ownerRecoveryAcceptance.state_at_seed!=='blocked'||ownerRecoveryAcceptance.inference_attempts_at_seed!==0)throw new Error('Recovery fixture was not seeded as a blocked, inference-free run.');
 }
-const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:root,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:localAppData,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection,page;
