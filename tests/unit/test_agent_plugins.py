@@ -236,6 +236,40 @@ def test_invalid_mcp_configuration_does_not_hide_package_skills(tmp_path: Path) 
     assert "mcp.json" in result.diagnostics[0].message
 
 
+def test_invalid_plugin_skill_does_not_hide_valid_siblings_or_mcp_servers(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    invalid_skill = package / "skills" / "bad-skill"
+    invalid_skill.mkdir()
+    (invalid_skill / "SKILL.md").write_text(
+        "---\nname: mismatch\ndescription: Invalid package skill.\n---\nIgnored body.\n",
+        encoding="utf-8",
+    )
+
+    result = discover_agent_plugins(str(tmp_path))
+    assert len(result.packages) == 1
+    summary = result.packages[0]
+    assert [skill.name for skill in summary.skills] == ["summarize"]
+    assert [server.name for server in summary.servers] == ["local-helper", "remote-helper"]
+    assert len(result.diagnostics) == 1
+    assert "bad-skill" in result.diagnostics[0].message
+
+
+def test_invalid_skills_component_does_not_hide_plugin_mcp_servers(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    skills_root = package / "skills"
+    skills_root.rename(package / "skills-saved")
+    skills_root.write_text("not a directory", encoding="utf-8")
+
+    result = discover_agent_plugins(str(tmp_path))
+    assert len(result.packages) == 1
+    summary = result.packages[0]
+    assert summary.skills == []
+    assert [server.name for server in summary.servers] == ["local-helper", "remote-helper"]
+    assert any("skills component is not a directory" in item.message for item in result.diagnostics)
+
+
 def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path: Path) -> None:
     skills_root = tmp_path / "hermes-skills"
     skill_directory = skills_root / "summarize"
@@ -377,8 +411,9 @@ def test_discovery_rejects_yaml_aliases_in_skill_metadata(tmp_path: Path) -> Non
         "---\nname: &skill summarize\ndescription: *skill\n---\ntext", encoding="utf-8"
     )
     result = discover_agent_plugins(str(tmp_path))
-    assert result.packages == []
-    assert "aliases" in result.diagnostics[0].message
+    assert len(result.packages) == 1
+    assert result.packages[0].skills == []
+    assert any("aliases" in item.message for item in result.diagnostics)
 
 
 def test_discovery_rejects_invalid_skill_category_metadata(tmp_path: Path) -> None:
@@ -391,8 +426,9 @@ def test_discovery_rejects_invalid_skill_category_metadata(tmp_path: Path) -> No
         encoding="utf-8",
     )
     result = discover_agent_plugins(str(tmp_path))
-    assert result.packages == []
-    assert "category" in result.diagnostics[0].message
+    assert len(result.packages) == 1
+    assert result.packages[0].skills == []
+    assert any("category" in item.message for item in result.diagnostics)
 
 
 def test_discovery_accepts_hermes_metadata_and_uses_its_category(tmp_path: Path) -> None:
@@ -420,8 +456,9 @@ def test_discovery_rejects_conflicting_standard_and_hermes_categories(tmp_path: 
 
     result = discover_agent_plugins(str(tmp_path))
 
-    assert result.packages == []
-    assert "disagree" in result.diagnostics[0].message
+    assert len(result.packages) == 1
+    assert result.packages[0].skills == []
+    assert any("disagree" in item.message for item in result.diagnostics)
 
 
 def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path) -> None:

@@ -498,21 +498,40 @@ def _skill_summary(
     )
 
 
-def _skill_summaries(package_root: Path, command_cache: dict[str, bool]) -> list[PluginSkill]:
+def _skill_summaries(
+    package_root: Path, command_cache: dict[str, bool]
+) -> tuple[list[PluginSkill], list[str]]:
     skills_root = package_root / "skills"
-    if not skills_root.exists():
-        return []
-    if not _inside(skills_root.resolve(strict=True), package_root):
-        raise ValueError("skills directory escapes package")
+    if not skills_root.exists() and not skills_root.is_symlink():
+        return [], []
+    diagnostics: list[str] = []
+    try:
+        resolved_skills_root = skills_root.resolve(strict=True)
+        if not _inside(resolved_skills_root, package_root.resolve(strict=True)):
+            return [], ["skills component escapes package"]
+        if not resolved_skills_root.is_dir():
+            return [], ["skills component is not a directory"]
+    except (OSError, RuntimeError, ValueError) as exc:
+        return [], [f"skills component could not be read: {str(exc)[:220]}"]
     summaries: list[PluginSkill] = []
-    for directory in sorted(islice(skills_root.iterdir(), MAX_SKILLS), key=lambda item: item.name):
-        if not _SLUG.fullmatch(directory.name):
-            continue
+    try:
+        directories = sorted(
+            islice(resolved_skills_root.iterdir(), MAX_SKILLS), key=lambda item: item.name
+        )
+    except OSError as exc:
+        return [], [f"skills component could not be enumerated: {str(exc)[:220]}"]
+    for directory in directories:
         skill_file = directory / "SKILL.md"
-        if skill_file.exists():
-            summary, _ = _skill_summary(package_root, directory, skill_file, command_cache)
+        if not skill_file.exists() and not skill_file.is_symlink():
+            continue
+        try:
+            summary, _ = _skill_summary(
+                package_root.resolve(strict=True), directory, skill_file, command_cache
+            )
             summaries.append(summary)
-    return summaries
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            diagnostics.append(f"skill {directory.name!r}: {str(exc)[:220]}")
+    return summaries, diagnostics
 
 
 def _hermes_skill_package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSummary:
@@ -738,15 +757,16 @@ def _package(
         raise ValueError("plugin.json keywords must be an array of strings")
     # No extension namespace is implemented by X.A.A.; ignore unimplemented data.
     servers, server_diagnostics = _servers(package_root)
+    skills, skill_diagnostics = _skill_summaries(package_root, command_cache)
     summary = PluginSummary(
         name=name,
         version=version,
         description=description,
         path=str(package_root),
-        skills=_skill_summaries(package_root, command_cache),
+        skills=skills,
         servers=servers,
     )
-    return summary, server_diagnostics
+    return summary, skill_diagnostics + server_diagnostics
 
 
 def discover_agent_plugins(directory: str) -> PluginDiscovery:
