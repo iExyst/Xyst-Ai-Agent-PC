@@ -4,6 +4,7 @@ from typing import Any
 
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.git_tools import GIT_TOOL
 from xaa.runtime.tool_contracts import COMMAND_TOOL_CONTRACT, WORKSPACE_TOOL_CONTRACTS
 from xaa.storage.runs import RunStore
 
@@ -87,3 +88,26 @@ def test_bounded_command_contract_declares_execution_boundaries() -> None:
     assert contract["limits"]["command_seconds_max"] == 30
     assert "Never automatically replay" in contract["retry"]
     assert {"run_id", "call_id", "execution_id", "profile_sha256"} <= set(contract["audit"])
+
+
+def test_git_tool_contract_declares_read_limits_and_audit() -> None:
+    required = {
+        "name",
+        "version",
+        "input_schema",
+        "output_schema",
+        "permissions",
+        "effect",
+        "timeout_seconds",
+        "cancellation",
+        "retry",
+        "limits",
+        "audit",
+    }
+    assert required <= GIT_TOOL.keys()
+    assert GIT_TOOL["version"] == "2"
+    assert GIT_TOOL["permissions"] == ["workspace.read"]
+    assert GIT_TOOL["effect"] == "read"
+    assert GIT_TOOL["timeout_seconds"] == 10
+    assert GIT_TOOL["limits"] == {"excerpt_bytes": 4096, "artifact_bytes": 8 * 1024 * 1024}
+    assert {"run_id", "call_id", "tool", "version", "artifact_sha256"} <= set(GIT_TOOL["audit"])

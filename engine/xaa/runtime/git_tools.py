@@ -42,6 +42,20 @@ GIT_TOOL: dict[str, Any] = {
     "cancellation": "terminate and await the owned Git process",
     "retry_policy": "no automatic retries",
     "audit_fields": ["run_id", "call_id", "artifact_id", "exit_code"],
+    "permissions": ["workspace.read"],
+    "effect": "read",
+    "retry": "No automatic retry; inspect the saved journal result before requesting again.",
+    "limits": {"excerpt_bytes": 4096, "artifact_bytes": 8 * 1024 * 1024},
+    "audit": [
+        "run_id",
+        "call_id",
+        "tool",
+        "version",
+        "operation",
+        "exit_code",
+        "artifact_id",
+        "artifact_sha256",
+    ],
 }
 
 
@@ -70,7 +84,13 @@ def git_executable(workspace: Path) -> str:
 
 
 async def inspect_git(
-    store: RunStore, run_id: str, token: str, call_id: str, operation: Literal["status", "diff"]
+    store: RunStore,
+    run_id: str,
+    token: str,
+    call_id: str,
+    operation: Literal["status", "diff"],
+    *,
+    timeout_seconds: float = GIT_TOOL["timeout_seconds"],
 ) -> dict[str, Any]:
     run = store.get_run(run_id)
     if run is None or not run["workspace"]:
@@ -130,7 +150,7 @@ async def inspect_git(
     total = 0
     truncated = False
     try:
-        async with asyncio.timeout(10):
+        async with asyncio.timeout(timeout_seconds):
             assert process.stdout is not None
             with artifact.open("xb") as output:
                 while chunk := await process.stdout.read(4096):

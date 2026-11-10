@@ -872,8 +872,16 @@ class Coordinator:
             return result
         if name == "workspace_git_inspect":
             parsed = GitArguments.model_validate(arguments)
-            async with asyncio.timeout(max(0, deadline - time.monotonic())):
-                return await inspect_git(self.store, run_id, token, call["id"], parsed.operation)
+            timeout = min(GIT_TOOL["timeout_seconds"], max(0, deadline - time.monotonic()))
+            async with asyncio.timeout(timeout):
+                return await inspect_git(
+                    self.store,
+                    run_id,
+                    token,
+                    call["id"],
+                    parsed.operation,
+                    timeout_seconds=timeout,
+                )
         if name == "workspace_run_command":
             parsed_command = CommandArguments.model_validate(arguments)
             grant = CommandJournal(self.store).grant(run_id, owner=token)
