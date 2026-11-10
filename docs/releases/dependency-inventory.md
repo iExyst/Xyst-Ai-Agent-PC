@@ -1,13 +1,13 @@
 # Locked dependency and license metadata inventory
 
-Snapshot date: 2026-11-09. This is an inventory of the current lockfiles and build environment, not a legal opinion or a complete third-party notice bundle.
+Snapshot date: 2026-11-10. This is an inventory of the current lockfiles and build environment, not a legal opinion or a complete third-party notice bundle.
 
 ## Scope and collection
 
 - Python: `uv.lock`; 80 installed distribution records from `uv run --with pip-licenses pip-licenses --format=json --with-urls` (pip-licenses 5.5.5). This environment scan omits some lockfile entries that are not installed on this host and includes the three `jaraco.*` records using their original dotted names; the lockfile itself contains those names normalized with hyphens. A full lock cross-check found five missing third-party rows: `jeepney`, `macholib`, `SecretStorage`, `setuptools`, and `uvloop`. Their exact pinned source archives were downloaded and matched against the SHA-256 hashes in `uv.lock`; license files and package metadata are preserved in `.acceptance/conditional-lock-license-audit-20261109/verification.json`. Four are platform-conditional; `setuptools` is a transitive PyInstaller dependency. This fills the lock metadata table but does not expand the separately scoped notice draft or complete the package copyright review. The added direct `uritemplate==4.2.0` dependency is licensed BSD-3-Clause OR Apache-2.0; its pinned source archive and both license texts are hash-recorded in `.acceptance/uritemplate-license-audit-20261109/verification.json`.
 - JavaScript: `package-lock.json`; 6 runtime dependency records and 61 total records from `npx license-checker@25.0.1 --production --json` and `npx license-checker@25.0.1 --json`.
 - Rust: `apps/desktop/src-tauri/Cargo.lock`; 411 package records from `cargo metadata --format-version 1 --locked` (Cargo 1.99.1). Target-specific and build dependencies are included.
-- Combined table: 555 unique ecosystem/name/version/license/source rows. Prior command outputs remain at `.acceptance/dependency-inventory-971fa5b/`; after adding Discord, current Python, npm, and Cargo collection outputs are retained at `.acceptance/discord-dependency-audit/`.
+- Combined table: 558 unique ecosystem/name/version/license/source rows. The MCP SDK v2.3.0 lock migration replaces `httpx-sse` and `pydantic-settings` with `httpcore2`, `httpx2`, platform-conditional `httpx2-jsfetch`, `mcp-types`, and `truststore`; the pinned `httpx2-jsfetch` wheel hash and BSD-3-Clause text were checked against `uv.lock`. Prior command outputs remain at `.acceptance/dependency-inventory-971fa5b/`; after adding Discord, current Python, npm, and Cargo collection outputs are retained at `.acceptance/discord-dependency-audit/`.
 
 License expressions below are copied from package metadata without normalization. A package expression such as `MIT OR Apache-2.0` must be reviewed with the package license text; it is not a substitute for that text.
 
@@ -107,7 +107,9 @@ License expressions below are copied from package metadata without normalization
 | Python | httpcore | 1.0.9 | BSD-3-Clause | https://www.encode.io/httpcore/ |
 | Python | httptools | 0.9.0 | MIT | https://github.com/MagicStack/httptools |
 | Python | httpx | 0.28.1 | BSD License | https://github.com/encode/httpx |
-| Python | httpx-sse | 0.4.3 | MIT | https://github.com/florimondmanca/httpx-sse |
+| Python | httpcore2 | 2.16.0 | BSD-3-Clause | https://github.com/pydantic/httpx2 |
+| Python | httpx2 | 2.16.0 | BSD-3-Clause | https://github.com/pydantic/httpx2 |
+| Python | httpx2-jsfetch | 1.0 | BSD-3-Clause | https://github.com/pydantic/httpx2 |
 | Python | httpx-ws | 0.9.0 | MIT License | https://github.com/frankie567/httpx-ws |
 | Python | idna | 3.20 | BSD-3-Clause | https://github.com/kjd/idna |
 | Python | iniconfig | 2.3.1 | MIT | https://github.com/pytest-dev/iniconfig |
@@ -120,7 +122,8 @@ License expressions below are copied from package metadata without normalization
 | Python | keyring | 25.7.0 | MIT | https://github.com/jaraco/keyring |
 | Python | lmstudio | 1.6.0b1 | MIT | https://github.com/lmstudio-ai/lmstudio-sdk-python |
 | Python | macholib | 1.16.4 | MIT | https://github.com/ronaldoussoren/macholib |
-| Python | mcp | 1.30.0 | MIT License | https://modelcontextprotocol.io |
+| Python | mcp | 2.3.0 | MIT | https://modelcontextprotocol.io |
+| Python | mcp-types | 2.3.0 | MIT | https://modelcontextprotocol.io |
 | Python | more-itertools | 11.2.1 | MIT | https://github.com/more-itertools/more-itertools |
 | Python | multidict | 7.2.1 | Apache-2.0 | https://github.com/aio-libs/multidict |
 | Python | msgspec | 0.22.0 | BSD-3-Clause | https://msgspec.dev |
@@ -133,7 +136,6 @@ License expressions below are copied from package metadata without normalization
 | Python | propcache | 0.5.4 | Apache-2.0 | https://github.com/aio-libs/propcache |
 | Python | pycparser | 3.12 | BSD-3-Clause | https://github.com/eliben/pycparser |
 | Python | pydantic | 2.14.2 | MIT | https://github.com/pydantic/pydantic |
-| Python | pydantic-settings | 2.16.2 | MIT | https://github.com/pydantic/pydantic-settings |
 | Python | pydantic_core | 2.50.2 | MIT | https://github.com/pydantic |
 | Python | pyee | 14.0.0 | MIT License | https://github.com/jfhbrook/pyee |
 | Python | Pygments | 2.21.0 | BSD-2-Clause | https://pygments.org |
@@ -157,6 +159,7 @@ License expressions below are copied from package metadata without normalization
 | Python | ruff | 0.17.3 | MIT | https://docs.astral.sh/ruff |
 | Python | sse-starlette | 3.6.0 | BSD-3-Clause | https://github.com/sysid/sse-starlette |
 | Python | starlette | 1.10.0 | BSD-3-Clause | https://github.com/Kludex/starlette |
+| Python | truststore | 0.10.5 | MIT | https://github.com/sethmlarson/truststore |
 | Python | typing-inspection | 0.4.4 | MIT | https://github.com/pydantic/typing-inspection |
 | Python | typing_extensions | 4.16.0 | PSF-2.0 | https://github.com/python/typing_extensions |
 | Python | tzdata | 2026.6 | Apache-2.0 | https://github.com/python/tzdata |

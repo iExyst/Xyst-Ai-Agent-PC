@@ -49,6 +49,7 @@ async def test_connection_that_dies_immediately_after_discovery_is_not_registere
                 raise RuntimeError("Fixture connection task is missing.")
             connection = _ConnectedServer(
                 server,
+                    client=None,  # type: ignore[arg-type]  # The task ends before any client operation.
                 session=None,  # type: ignore[arg-type]  # The task ends before any session operation.
                 tools={},
                 resources={},
@@ -125,14 +126,14 @@ class MemoryCredentials:
 
 def test_write_error_and_output_overflow_are_unknown_outcomes():
     server_error = _result_payload(
-        CallToolResult(content=[TextContent(type="text", text="partial failure")], isError=True),
+        CallToolResult(content=[TextContent(type="text", text="partial failure")], is_error=True),
         write=True,
     )
     assert server_error["status"] == "unknown_outcome"
     assert "reconcile" in server_error["error"]
 
     oversized = CallToolResult(
-        content=[TextContent(type="text", text="x" * MCP_RESULT_BYTES)], isError=False
+        content=[TextContent(type="text", text="x" * MCP_RESULT_BYTES)], is_error=False
     )
     assert _result_payload(oversized, write=True)["status"] == "unknown_outcome"
     assert _result_payload(oversized, write=False)["status"] == "output_limit"

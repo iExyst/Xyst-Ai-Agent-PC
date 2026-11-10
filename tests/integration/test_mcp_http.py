@@ -7,14 +7,13 @@ import json
 import socket
 import time
 from pathlib import Path
-from types import MethodType
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 import uvicorn
-from mcp.server.fastmcp import FastMCP
-from pydantic import AnyUrl, ValidationError
+from mcp.server.mcpserver import Context, MCPServer
+from pydantic import ValidationError
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
 from xaa.storage.mcp import MCPServerSpec
 from xaa.storage.runs import RunStore
@@ -36,36 +35,13 @@ class MemoryCredentials:
 
 @pytest.mark.asyncio
 async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_path: Path):
-    mcp = FastMCP("HTTP fixture")
-    subscribed: set[str] = set()
-
-    get_capabilities = mcp._mcp_server.get_capabilities
-
-    def get_capabilities_with_subscriptions(self, notification_options, experimental_capabilities):
-        capabilities = get_capabilities(notification_options, experimental_capabilities)
-        if capabilities.resources is not None:
-            capabilities.resources.subscribe = True
-        return capabilities
-
-    mcp._mcp_server.get_capabilities = MethodType(
-        get_capabilities_with_subscriptions, mcp._mcp_server
-    )
-
-    @mcp._mcp_server.subscribe_resource()
-    async def subscribe(uri: AnyUrl) -> None:
-        subscribed.add(str(uri))
-
-    @mcp._mcp_server.unsubscribe_resource()
-    async def unsubscribe(uri: AnyUrl) -> None:
-        subscribed.discard(str(uri))
+    mcp = MCPServer("HTTP fixture")
 
     @mcp.tool()
-    async def add(left: int, right: int) -> int:
+    async def add(left: int, right: int, ctx: Context) -> int:
         """Add two numbers in the HTTP fixture."""
-        if "xaa://http-fixture/readme" in subscribed:
-            context = mcp.get_context()
-            for _ in range(130):
-                await context.session.send_resource_updated(AnyUrl("xaa://http-fixture/readme"))
+        for _ in range(130):
+            await ctx.notify_resource_updated("xaa://http-fixture/readme")
         return left + right
 
     @mcp.resource("xaa://http-fixture/readme")
@@ -177,7 +153,7 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         assert encoded_template_read["contents"][0]["uri"] == (
             "xaa://http-fixture/items/two%20words"
         )
-        assert encoded_template_read["contents"][0]["text"] == "HTTP fixture item: two%20words"
+        assert encoded_template_read["contents"][0]["text"] == "HTTP fixture item: two words"
         inspected = await manager.read_resource(record.id, resource_uri)
         assert inspected == {
             "trust": "untrusted_mcp_output",
@@ -211,7 +187,7 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
 
 @pytest.mark.asyncio
 async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path: Path):
-    mcp = FastMCP("OAuth fixture")
+    mcp = MCPServer("OAuth fixture")
 
     @mcp.tool()
     async def add(left: int, right: int) -> int:

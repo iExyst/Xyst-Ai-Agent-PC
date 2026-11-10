@@ -2,9 +2,9 @@
 
 import os
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP("XAA MCP disconnect fixture")
+mcp = MCPServer("XAA MCP disconnect fixture")
 
 
 @mcp.tool()

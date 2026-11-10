@@ -14,18 +14,24 @@ import time
 import webbrowser
 from collections.abc import Generator, Iterator
 from contextlib import AsyncExitStack, contextmanager
-from datetime import timedelta
 from typing import Any, Literal, TextIO, cast
 from urllib.parse import parse_qs, urlsplit
 
-import httpx
+import httpx2 as httpx
 from jsonschema import validators
+from mcp import Client, ClientSession
 from mcp.client.auth.exceptions import OAuthFlowError
 from mcp.client.auth.oauth2 import OAuthClientProvider, TokenStorage
-from mcp.client.session import ClientSession
+from mcp.client.extension import ClientExtension, NotificationBinding
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.client.subscriptions import ResourceUpdated
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
 from mcp.types import (
     AudioContent,
     CallToolResult,
@@ -35,12 +41,12 @@ from mcp.types import (
     Prompt,
     ResourceLink,
     ResourceTemplate,
-    ResourceUpdatedNotification,
-    ServerNotification,
+    ResourceUpdatedNotificationParams,
     TextContent,
     TextResourceContents,
     Tool,
 )
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl, TypeAdapter
 from uritemplate import URITemplate
 
@@ -135,6 +141,7 @@ class _ConnectedServer:
     def __init__(
         self,
         server: MCPServerRecord,
+        client: Client,
         session: ClientSession,
         tools: dict[str, MCPDiscoveredTool],
         resources: dict[str, Any],
@@ -146,6 +153,7 @@ class _ConnectedServer:
         notifications: asyncio.Queue[dict[str, Any]],
     ) -> None:
         self.server = server
+        self.client = client
         self.session = session
         self.tools = tools
         self.resources = resources
@@ -156,12 +164,36 @@ class _ConnectedServer:
         self.owner_task = owner_task
         self.notifications = notifications
         self.subscribed_resources: set[str] = set()
+        self.subscription_task: asyncio.Task[None] | None = None
         self.lock = asyncio.Lock()
 
     async def close(self) -> None:
         self.shutdown.set()
+        if self.subscription_task is not None and not self.subscription_task.done():
+            self.subscription_task.cancel()
+            await asyncio.gather(self.subscription_task, return_exceptions=True)
         if asyncio.current_task() is not self.owner_task:
             await self.owner_task
+
+    def enqueue_resource_update(self, uri: str) -> None:
+        uri = uri[:MCP_RESOURCE_FIELD_LIMIT]
+        if uri not in self.subscribed_resources:
+            return
+        payload: dict[str, Any] = {
+            "kind": "resource_updated",
+            "uri": uri,
+            "trust": "untrusted_mcp_output",
+        }
+        if self.notifications.full():
+            while not self.notifications.empty():
+                self.notifications.get_nowait()
+            payload = {"kind": "resync_required", "trust": "untrusted_mcp_output"}
+        self.notifications.put_nowait(payload)
+
+    def enqueue_resync_required(self) -> None:
+        while not self.notifications.empty():
+            self.notifications.get_nowait()
+        self.notifications.put_nowait({"kind": "resync_required", "trust": "untrusted_mcp_output"})
 
 
 class MCPManager:
@@ -231,9 +263,7 @@ class MCPManager:
                 if server.transport == "stdio":
                     params = self._parameters(server)
                     errlog = stack.enter_context(_discard_stdio_output())
-                    read_stream, write_stream = await stack.enter_async_context(
-                        stdio_client(params, errlog=errlog)
-                    )
+                    transport = stdio_client(params, errlog=errlog)
                 else:
                     if server.endpoint is None:
                         raise MCPConnectionError("The MCP HTTP endpoint is missing.")
@@ -251,56 +281,49 @@ class MCPManager:
                         auth=auth,
                     )
                     await stack.enter_async_context(http_client)
-                    read_stream, write_stream, _ = await stack.enter_async_context(
-                        streamable_http_client(
-                            server.endpoint,
-                            http_client=http_client,
-                        )
+                    transport = streamable_http_client(
+                        server.endpoint,
+                        http_client=http_client,
                     )
                 notifications: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
                     maxsize=MCP_NOTIFICATION_LIMIT
                 )
                 connection_subscriptions: set[str] = set()
 
-                class OwnerNotificationSession(ClientSession):
-                    async def _received_notification(
-                        self, notification: ServerNotification
-                    ) -> None:
-                        await super()._received_notification(notification)
-                        if isinstance(notification.root, ResourceUpdatedNotification):
-                            uri = str(notification.root.params.uri)[:MCP_RESOURCE_FIELD_LIMIT]
-                            if uri not in connection_subscriptions:
-                                return
-                            payload = {
-                                "kind": "resource_updated",
-                                "uri": uri,
-                                "trust": "untrusted_mcp_output",
-                            }
-                            if notifications.full():
-                                while not notifications.empty():
-                                    notifications.get_nowait()
-                                payload = {
-                                    "kind": "resync_required",
-                                    "trust": "untrusted_mcp_output",
-                                }
-                            notifications.put_nowait(payload)
+                async def on_legacy_resource_updated(
+                    params: ResourceUpdatedNotificationParams,
+                ) -> None:
+                    if connection is not None:
+                        connection.enqueue_resource_update(str(params.uri))
 
-                session = OwnerNotificationSession(
-                    read_stream,
-                    write_stream,
-                    read_timeout_seconds=timedelta(
-                        seconds=initialization_timeout
+                class ResourceNotificationExtension(ClientExtension):
+                    identifier = "dev.xyst.xaa/resource-notifications"
+
+                    def notifications(self) -> list[NotificationBinding[ResourceUpdatedNotificationParams]]:
+                        return [
+                            NotificationBinding(
+                                method="notifications/resources/updated",
+                                params_type=ResourceUpdatedNotificationParams,
+                                handler=on_legacy_resource_updated,
+                            )
+                        ]
+
+                client = Client(
+                    transport,
+                    read_timeout_seconds=float(
+                        initialization_timeout
                         if server.transport == "streamable_http"
                         else MCP_CONNECT_TIMEOUT
                     ),
+                    extensions=[ResourceNotificationExtension()],
                 )
-                await stack.enter_async_context(session)
+                await stack.enter_async_context(client)
+                session = client.session
                 async with asyncio.timeout(
                     initialization_timeout
                     if server.transport == "streamable_http"
                     else MCP_CONNECT_TIMEOUT
                 ):
-                    await session.initialize()
                     tools = await self._list_tools(session, server.id)
                 records = self.registry.synchronize_tools(server.id, tools)
                 task = asyncio.current_task()
@@ -308,6 +331,7 @@ class MCPManager:
                     raise RuntimeError("MCP connection task was not scheduled.")
                 connection = _ConnectedServer(
                     server,
+                    client,
                     session,
                     {tool.name: tool for tool in tools},
                     {},
@@ -429,7 +453,7 @@ class MCPManager:
                                     )
                                 argument_names.add(argument.name)
                             prompts[prompt.name] = prompt
-                        cursor = response.nextCursor
+                        cursor = response.next_cursor
                         if cursor is None:
                             break
                     else:
@@ -556,7 +580,7 @@ class MCPManager:
                                     "The MCP resource catalog exceeded its safety limit."
                                 )
                             resources[uri] = resource
-                        cursor = response.nextCursor
+                        cursor = response.next_cursor
                         if cursor is None:
                             break
                     else:
@@ -571,7 +595,7 @@ class MCPManager:
                         "description": _bounded_text(
                             resource.description, MCP_RESOURCE_FIELD_LIMIT
                         ),
-                        "mime_type": _bounded_text(resource.mimeType, 256),
+                        "mime_type": _bounded_text(resource.mime_type, 256),
                         "size": resource.size,
                     }
                     for uri, resource in resources.items()
@@ -615,9 +639,9 @@ class MCPManager:
                         response = await connection.session.list_resource_templates(
                             params=PaginatedRequestParams(cursor=cursor)
                         )
-                        for template in response.resourceTemplates:
+                        for template in response.resource_templates:
                             template_count += 1
-                            uri_template = template.uriTemplate
+                            uri_template = template.uri_template
                             if (
                                 not template.name
                                 or len(template.name) > MCP_RESOURCE_FIELD_LIMIT
@@ -659,7 +683,7 @@ class MCPManager:
                             template_uris.add(uri_template)
                             template_names.add(template.name)
                             template_variables[template.name] = variables
-                        cursor = response.nextCursor
+                        cursor = response.next_cursor
                         if cursor is None:
                             break
                     else:
@@ -675,10 +699,10 @@ class MCPManager:
                         "description": _bounded_text(
                             template.description, MCP_RESOURCE_FIELD_LIMIT
                         ),
-                        "mime_type": _bounded_text(template.mimeType, 256),
+                        "mime_type": _bounded_text(template.mime_type, 256),
                     }
                     for name, template in templates.items()
-                    for uri_template in (template.uriTemplate,)
+                    for uri_template in (template.uri_template,)
                 ]
                 if (
                     len(json.dumps(catalog, separators=(",", ":")).encode("utf-8"))
@@ -719,7 +743,7 @@ class MCPManager:
                     raise MCPConnectionError(
                         "Read only a resource template currently advertised by this connected server."
                     )
-                parsed = URITemplate(template.uriTemplate)
+                parsed = URITemplate(template.uri_template)
                 variables = {
                     variable_name
                     for variable in parsed.variables
@@ -771,56 +795,95 @@ class MCPManager:
         if not uri or len(uri) > MCP_RESOURCE_FIELD_LIMIT:
             raise MCPConnectionError("The MCP resource URI is invalid or too long.")
         async with connection.lock:
+            previous = set(connection.subscribed_resources)
             if uri not in connection.resources and uri not in connection.expanded_resource_uris:
                 raise MCPConnectionError(
                     "Subscribe only to a resource currently advertised by this connected server."
                 )
-            capabilities = connection.session.get_server_capabilities()
-            if (
-                capabilities is None
-                or capabilities.resources is None
-                or not capabilities.resources.subscribe
+            capabilities = connection.client.server_capabilities
+            modern_listen = connection.client.protocol_version in MODERN_PROTOCOL_VERSIONS
+            if capabilities.resources is None or (
+                not modern_listen and not capabilities.resources.subscribe
             ):
-                raise MCPConnectionError(
-                    "This MCP server does not advertise resource subscriptions."
-                )
+                raise MCPConnectionError("This MCP server does not advertise resource subscriptions.")
             try:
                 if subscribe:
                     connection.subscribed_resources.add(uri)
                 else:
                     connection.subscribed_resources.discard(uri)
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
-                    if subscribe:
-                        await connection.session.subscribe_resource(
-                            TypeAdapter(AnyUrl).validate_python(uri)
-                        )
+                    if modern_listen:
+                        await self._restart_resource_listener(connection)
+                    elif subscribe:
+                        await connection.session.subscribe_resource(uri)  # pyright: ignore[reportDeprecated]
                     else:
-                        await connection.session.unsubscribe_resource(
-                            TypeAdapter(AnyUrl).validate_python(uri)
-                        )
+                        await connection.session.unsubscribe_resource(uri)  # pyright: ignore[reportDeprecated]
             except TimeoutError as error:
-                if not subscribe:
-                    connection.subscribed_resources.add(uri)
+                connection.subscribed_resources = previous
+                if modern_listen:
+                    await self._restart_resource_listener(connection)
                 raise MCPConnectionError(
                     "The MCP resource subscription request timed out."
                 ) from error
             except MCPConnectionError:
-                if subscribe:
-                    connection.subscribed_resources.discard(uri)
-                else:
-                    connection.subscribed_resources.add(uri)
+                connection.subscribed_resources = previous
+                if modern_listen:
+                    await self._restart_resource_listener(connection)
                 raise
             except Exception as error:
-                if subscribe:
-                    connection.subscribed_resources.discard(uri)
-                else:
-                    connection.subscribed_resources.add(uri)
+                connection.subscribed_resources = previous
+                if modern_listen:
+                    await self._restart_resource_listener(connection)
                 raise MCPConnectionError("The MCP resource subscription request failed.") from error
             return {
                 "uri": uri,
                 "subscribed": subscribe,
                 "trust": "untrusted_mcp_output",
             }
+
+    async def _restart_resource_listener(self, connection: _ConnectedServer) -> None:
+        previous = connection.subscription_task
+        if previous is not None and not previous.done():
+            previous.cancel()
+            await asyncio.gather(previous, return_exceptions=True)
+        connection.subscription_task = None
+        if not connection.subscribed_resources:
+            return
+        ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+
+        async def listen() -> None:
+            try:
+                async with connection.client.listen(
+                    resource_subscriptions=sorted(connection.subscribed_resources)
+                ) as subscription:
+                    if not ready.done():
+                        ready.set_result(None)
+                    async for event in subscription:
+                        if isinstance(event, ResourceUpdated):
+                            connection.enqueue_resource_update(event.uri)
+                    connection.enqueue_resync_required()
+            except asyncio.CancelledError:
+                if not ready.done():
+                    ready.cancel()
+                raise
+            except Exception as error:  # noqa: BLE001 - close dropped subscription with an owner-visible resync notice.
+                if not ready.done():
+                    ready.set_exception(error)
+                else:
+                    connection.enqueue_resync_required()
+
+        task = asyncio.create_task(listen())
+        connection.subscription_task = task
+        try:
+            async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                await ready
+        except BaseException:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            if connection.subscription_task is task:
+                connection.subscription_task = None
+            raise
 
     async def drain_resource_notifications(self, server_id: str) -> dict[str, Any]:
         connection = self._connected.get(server_id)
@@ -848,9 +911,7 @@ class MCPManager:
                         "The resource is no longer in the connected server catalog."
                     )
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
-                    response = await connection.session.read_resource(
-                        TypeAdapter(AnyUrl).validate_python(uri)
-                    )
+                    response = await connection.session.read_resource(uri)
             contents: list[dict[str, Any]] = []
             total = 0
             for item in response.contents:
@@ -883,7 +944,7 @@ class MCPManager:
                 contents.append(
                     {
                         "uri": str(item.uri)[:MCP_RESOURCE_FIELD_LIMIT],
-                        "mime_type": _bounded_text(item.mimeType, 256),
+                        "mime_type": _bounded_text(item.mime_type, 256),
                         **body,
                     }
                 )
@@ -1152,11 +1213,12 @@ class MCPManager:
             elif not await asyncio.to_thread(webbrowser.open, authorization_url):
                 raise OAuthFlowError("Could not open a browser for MCP sign-in.")
 
-        async def callback_handler() -> tuple[str, str | None]:
+        async def callback_handler() -> AuthorizationCodeResult:
             if callback is None:
                 raise OAuthFlowError("The sign-in callback was not initialized.")
             try:
-                return await asyncio.wait_for(callback, timeout=300)
+                code, state = await asyncio.wait_for(callback, timeout=300)
+                return AuthorizationCodeResult(code=code, state=state)
             finally:
                 if callback_server is not None:
                     callback_server.close()
@@ -1176,7 +1238,6 @@ class MCPManager:
             storage=_VaultOAuthStorage(self.credential_store, server.id),
             redirect_handler=redirect_handler,
             callback_handler=callback_handler,
-            timeout=300,
         )
         provider._xaa_listener = listener  # type: ignore[attr-defined]
         return provider
@@ -1189,7 +1250,7 @@ class MCPManager:
             tools.extend(response.tools)
             if len(tools) > MCP_TOOL_COUNT_LIMIT:
                 raise MCPConnectionError("The MCP server exposed more than 256 tools.")
-            cursor = response.nextCursor
+            cursor = response.next_cursor
             if cursor is None:
                 break
         else:
@@ -1198,7 +1259,7 @@ class MCPManager:
         discovered: list[MCPDiscoveredTool] = []
         qualified_names: set[str] = set()
         for tool in tools:
-            input_schema = tool.inputSchema
+            input_schema = tool.input_schema
             if (
                 len(json.dumps(input_schema, separators=(",", ":")).encode())
                 > MCP_TOOL_SCHEMA_BYTES
@@ -1213,7 +1274,7 @@ class MCPManager:
             if qualified in qualified_names:
                 raise MCPConnectionError("MCP tool names collide after namespacing.")
             qualified_names.add(qualified)
-            output_schema = tool.outputSchema
+            output_schema = tool.output_schema
             if output_schema is not None:
                 _validator(output_schema)
             identity = {
@@ -1300,7 +1361,7 @@ def _prompt_content_payload(content: Any) -> dict[str, Any]:
             raise MCPConnectionError("The MCP prompt returned invalid base64 content.") from error
         return {
             "kind": "image" if isinstance(content, ImageContent) else "audio",
-            "mime_type": _bounded_text(content.mimeType, 256),
+            "mime_type": _bounded_text(content.mime_type, 256),
             "base64": content.data,
         }
     if isinstance(content, ResourceLink):
@@ -1310,7 +1371,7 @@ def _prompt_content_payload(content: Any) -> dict[str, Any]:
             "name": _bounded_text(content.name, MCP_RESOURCE_FIELD_LIMIT),
             "title": _bounded_text(content.title, MCP_RESOURCE_FIELD_LIMIT),
             "description": _bounded_text(content.description, MCP_RESOURCE_FIELD_LIMIT),
-            "mime_type": _bounded_text(content.mimeType, 256),
+            "mime_type": _bounded_text(content.mime_type, 256),
         }
     if isinstance(content, EmbeddedResource):
         resource = content.resource
@@ -1320,7 +1381,7 @@ def _prompt_content_payload(content: Any) -> dict[str, Any]:
             return {
                 "kind": "embedded_text_resource",
                 "uri": str(resource.uri)[:MCP_RESOURCE_FIELD_LIMIT],
-                "mime_type": _bounded_text(resource.mimeType, 256),
+                "mime_type": _bounded_text(resource.mime_type, 256),
                 "text": resource.text,
             }
         if len(resource.blob) > MCP_RESULT_BYTES:
@@ -1332,7 +1393,7 @@ def _prompt_content_payload(content: Any) -> dict[str, Any]:
         return {
             "kind": "embedded_blob_resource",
             "uri": str(resource.uri)[:MCP_RESOURCE_FIELD_LIMIT],
-            "mime_type": _bounded_text(resource.mimeType, 256),
+            "mime_type": _bounded_text(resource.mime_type, 256),
             "base64": resource.blob,
         }
     raise MCPConnectionError("The MCP prompt returned an unsupported content block.")
@@ -1357,15 +1418,15 @@ def _discard_stdio_output() -> Generator[TextIO]:
 def _result_payload(result: CallToolResult, *, write: bool) -> dict[str, Any]:
     payload = {
         "status": "unknown_outcome"
-        if write and result.isError
+        if write and result.is_error
         else "tool_error"
-        if result.isError
+        if result.is_error
         else "ok",
         "trust": "untrusted_mcp_output",
         "content": [block.model_dump(mode="json", by_alias=True) for block in result.content],
-        "structured_content": result.structuredContent,
+        "structured_content": result.structured_content,
     }
-    if write and result.isError:
+    if write and result.is_error:
         payload["error"] = (
             "The MCP server reported a write error; reconcile its external effect before retrying."
         )

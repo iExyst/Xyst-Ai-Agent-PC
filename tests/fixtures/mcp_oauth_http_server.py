@@ -11,13 +11,13 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode
 
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 
 def create_app(port: int) -> Any:
     origin = f"http://127.0.0.1:{port}"
     endpoint = f"{origin}/mcp"
-    server = FastMCP("Native OAuth fixture")
+    server = MCPServer("Native OAuth fixture")
     challenges: dict[str, str] = {}
 
     @server.tool()

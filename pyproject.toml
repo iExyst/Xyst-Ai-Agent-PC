@@ -13,7 +13,7 @@ dependencies = [
     "lmstudio==1.6.0b1",
     "tzdata>=2026.6",
     "playwright>=1.52,<2",
-    "mcp>=1.26,<2",
+    "mcp==2.3.0",
     "pypdf>=6.21.4,<7",
     "pyyaml>=6,<7",
     "agent-client-protocol==0.9.0",
