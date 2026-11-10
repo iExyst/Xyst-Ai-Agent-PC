@@ -164,7 +164,7 @@ Hosted run [42558548184](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs
 
 ## Completion accounting
 
-The rough percentage estimates in older entries below were copied forward without recalculation as implementation continued. They are historical and stale. A defensible current percentage requires a phase-gate audit with explicit weights; until then, this record does not claim a current numeric completion estimate.
+The rough percentage estimates in older entries below were copied forward without recalculation and are historical. Current broad-spec completion is estimated at **about 56%** as of 2026-11-10: phases 0–10 are equally weighted, completed gates receive full credit, selected/partial evidence receives proportionate credit, and incomplete parity receives low credit. This is a planning estimate, not a claim that the release criteria are 56% verified. Phase 10 now has hosted Windows evidence for install, upgrade, recovery, backup/restore, standard-user install and uninstall in [run 42740255498](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42740255498); signing, clean end-user-machine coverage, third-party notice/legal review and the wider Phase 9 parity gate remain open. Further live LLM acceptance remains deferred until the end as requested.
 ## Objective phase-gate snapshot (2026-11-08)
 
 | Phase | Current gate assessment | Main remaining evidence or work |
