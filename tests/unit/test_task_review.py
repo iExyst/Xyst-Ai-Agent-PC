@@ -307,3 +307,81 @@ def test_accepted_prerequisite_enables_supervised_dependent_dispatch(workspace_t
         assert store.get_run(run_id)["lease_owner"] is None
         assert client.post(dispatch, headers=headers).status_code == 409
         assert store.conversation_messages(run_id) == []
+
+
+def test_ready_specialists_can_be_dispatched_in_multiple_batches(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "dispatch-batches.sqlite3")
+    run_id = store.create_run(
+        objective="Complete every independent specialist task",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "planner")
+    store.transition(run_id, RunState.PLANNING, owner=parent)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id=identity, objective=f"Complete independent task {identity}", max_iterations=1
+            )
+            for identity in ("alpha", "beta", "gamma")
+        ],
+    )
+    store.transition(run_id, RunState.RUNNING, owner=parent)
+    store.transition(run_id, RunState.VERIFYING, owner=parent)
+    store.release_lease(run_id, parent)
+
+    class CandidateProvider(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+            self.lock = threading.Lock()
+
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            task = json.loads(messages[-1]["content"])["objective"]
+            with self.lock:
+                self.calls += 1
+            return {
+                "choices": [{"message": {"role": "assistant", "content": f"Candidate for {task}"}}]
+            }
+
+    provider = CandidateProvider()
+    token = "x" * 32
+    headers = {"Authorization": f"Bearer {token}"}
+    dispatch = f"/runs/{run_id}/plan/dispatch"
+
+    def wait_for(expected_tasks):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            records = {record["local_id"]: record["status"] for record in tasks.records(run_id)}
+            run = store.get_run(run_id)
+            if records == expected_tasks and run["state"] == "verifying" and not run["lease_owner"]:
+                return
+            time.sleep(0.01)
+        pytest.fail(f"Dispatch did not reach {expected_tasks}: {records}, run={run}")
+
+    try:
+        with TestClient(create_app(provider, SecretStr(token), store=store)) as client:
+            first = client.post(dispatch, headers=headers)
+            assert first.status_code == 202
+            wait_for({"alpha": "verifying", "beta": "verifying", "gamma": "queued"})
+            assert tasks.readiness(run_id)[0] == ["gamma"]
+
+            second = client.post(dispatch, headers=headers)
+            assert second.status_code == 202
+            wait_for({"alpha": "verifying", "beta": "verifying", "gamma": "verifying"})
+            assert tasks.readiness(run_id)[0] == []
+            assert client.post(dispatch, headers=headers).status_code == 409
+    finally:
+        import asyncio
+
+        asyncio.run(provider.close())
+
+    assert provider.calls == 3
