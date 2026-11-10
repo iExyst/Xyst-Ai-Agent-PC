@@ -2,7 +2,7 @@
 
 ## Verify live Edge blocks off-host page subresources (2026-11-10)
 
-Added `scripts/browser_subresource_smoke.py` and wired it into the hosted Windows source workflow. On real Microsoft Edge, the managed worker loaded `https://en.wikipedia.org/wiki/HTTPS` with only `en.wikipedia.org` approved, retained the expected page text, and blocked five image subresource requests to unapproved hosts. The check records the report plus source hashes and requests no model inference. Local evidence: `.acceptance/browser-subresource-edge-fdf4c7ab2dec4c0b9ad1e77cfa408a05/report.json`. Deeper nested-frame/subresource-chain coverage and real Edge proxy-navigation acceptance remain open. The hosted Windows Edge check is wired into the workflow and awaits its first run.
+Added `scripts/browser_subresource_smoke.py` and wired it into the hosted Windows source workflow. On real Microsoft Edge, the managed worker loaded `https://en.wikipedia.org/wiki/HTTPS` with only `en.wikipedia.org` approved, retained the expected page text, and blocked five image subresource requests to unapproved hosts. The check records the report plus source hashes and requests no model inference. Local evidence: `.acceptance/browser-subresource-edge-fdf4c7ab2dec4c0b9ad1e77cfa408a05/report.json`. Deeper nested-frame/subresource-chain coverage and real Edge proxy-navigation acceptance remain open. Hosted Windows run [42812057478](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42812057478) passed this Edge check and artifact upload, plus the full source workflow (948 Python tests); the installer job was skipped.
 
 
 ## Upgrade MCP client to SDK v2 and add subscriptions/listen (2026-11-10)
