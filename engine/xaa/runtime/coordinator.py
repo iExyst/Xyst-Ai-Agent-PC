@@ -35,11 +35,16 @@ from xaa.runtime.planning import (
 )
 from xaa.runtime.procedure_tools import (
     PROCEDURE_CATALOG_CONTRACT,
+    PROCEDURE_CONTENT_REVISION_CONTRACT,
+    PROCEDURE_DRAFT_CONTRACT,
     PROCEDURE_RESOURCE_READ_CONTRACT,
+    PROCEDURE_RESOURCE_REMOVAL_CONTRACT,
+    PROCEDURE_RESOURCE_REVISION_CONTRACT,
     PROCEDURE_VIEW_CONTRACT,
     ProcedureCatalogArguments,
     bounded_procedure_catalog,
     bounded_procedure_read_result,
+    selected_procedure_write_schema,
 )
 from xaa.runtime.specialists import RUN_READY_TOOL, RunReadyArguments, SpecialistRunner
 from xaa.runtime.states import RunState
@@ -1260,15 +1265,16 @@ class Coordinator:
                     "function": {
                         "name": "procedure_draft",
                         "description": "Create a versioned reusable procedure candidate from this work. This is a persistent library change the user explicitly authorized for this run. The candidate stays inactive and unevaluated. Do not copy secrets or unrelated project data. Never claim this draft is verified. This tool cannot revise, activate, evaluate, select, or execute a procedure; the user reviews it separately.",
-                        "parameters": SkillDraft.model_json_schema(),
+                        "parameters": PROCEDURE_DRAFT_CONTRACT["input_schema"],
                     },
                 },
             )
         if run.get("allow_procedure_revision") and run.get("procedure_trial"):
             trial = run["procedure_trial"]
-            schema = SkillContentRevision.model_json_schema()
-            schema["properties"]["skill_id"]["enum"] = [trial["skill_id"]]
-            schema["properties"]["expected_version"]["enum"] = [trial["version"]]
+            schema = selected_procedure_write_schema(
+                PROCEDURE_CONTENT_REVISION_CONTRACT,
+                trial=trial,
+            )
             tools.append(
                 {
                     "type": "function",
@@ -1281,11 +1287,11 @@ class Coordinator:
             )
         if run.get("allow_procedure_resource_revision") and run.get("procedure_trial"):
             trial = run["procedure_trial"]
-            schema = SkillResourceRevision.model_json_schema()
-            schema["properties"]["skill_id"]["enum"] = [trial["skill_id"]]
-            schema["properties"]["expected_version"]["enum"] = [trial["version"]]
-            if not run.get("allow_procedure_resource_removal"):
-                schema["properties"].pop("remove_paths", None)
+            schema = selected_procedure_write_schema(
+                PROCEDURE_RESOURCE_REVISION_CONTRACT,
+                trial=trial,
+                allow_resource_removal=bool(run.get("allow_procedure_resource_removal")),
+            )
             tools.append(
                 {
                     "type": "function",
@@ -1302,9 +1308,10 @@ class Coordinator:
             and run.get("procedure_trial")
         ):
             trial = run["procedure_trial"]
-            schema = SkillResourceRemoval.model_json_schema()
-            schema["properties"]["skill_id"]["enum"] = [trial["skill_id"]]
-            schema["properties"]["expected_version"]["enum"] = [trial["version"]]
+            schema = selected_procedure_write_schema(
+                PROCEDURE_RESOURCE_REMOVAL_CONTRACT,
+                trial=trial,
+            )
             tools.append(
                 {
                     "type": "function",

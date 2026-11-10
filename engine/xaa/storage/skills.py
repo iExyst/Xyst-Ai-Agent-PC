@@ -537,6 +537,16 @@ class SkillConflict(ValueError):
     """A concurrent edit or duplicate name must be resolved explicitly."""
 
 
+MODEL_PROCEDURE_RESULT_BYTES = 32 * 1024
+
+
+def ensure_model_procedure_result_bounded(result: dict[str, Any]) -> None:
+    """Keep committed model-authored procedure receipts within their advertised bound."""
+    encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
+    if len(encoded) > MODEL_PROCEDURE_RESULT_BYTES:
+        raise SkillConflict("Procedure tool result exceeded its 32 KiB limit.")
+
+
 class SkillStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
@@ -656,6 +666,7 @@ class SkillStore:
                 "requires_user_review": True,
                 "notice": "The candidate was not evaluated, activated, selected, or executed.",
             }
+            ensure_model_procedure_result_bounded(result)
             connection.execute(
                 "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.draft','1',?,?,'completed',?,NULL,?,?,?)",
                 (
@@ -835,6 +846,7 @@ class SkillStore:
                 "requires_user_review": True,
                 "notice": "The new version inherits the existing tools, permissions, metadata and resources. It was not evaluated or made active.",
             }
+            ensure_model_procedure_result_bounded(result)
             connection.execute(
                 "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.revise','1',?,?,'completed',?,NULL,?,?,?)",
                 (
@@ -1060,6 +1072,7 @@ class SkillStore:
                 "requires_user_review": True,
                 "notice": "Only the listed linked resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
             }
+            ensure_model_procedure_result_bounded(result)
             connection.execute(
                 "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.resource_revise','1',?,?,'completed',?,NULL,?,?,?)",
                 (
@@ -1229,6 +1242,7 @@ class SkillStore:
                 "trust": "untrusted_model_resource_removal",
                 "requires_user_review": True,
             }
+            ensure_model_procedure_result_bounded(result)
             connection.execute(
                 "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) "
                 "VALUES (?,NULL,?,'procedure.resource_remove','1',?,?,'completed',?,NULL,?,?,?)",

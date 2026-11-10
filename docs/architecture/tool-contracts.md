@@ -52,6 +52,8 @@ reconciliation guidance; server-provided descriptions remain labeled untrusted.
 
 `procedure.view` and `procedure.read_resource` declare the exact selected-version inputs and untrusted text outputs. Their final serialized results are capped at 512 KiB before journaling or model delivery; the resource path schema is narrowed to the selected package paths.
 
+Model-authored `procedure.draft`, `procedure.revise`, `procedure.resource_revise`, and `procedure.resource_remove` use versioned contracts sourced from the storage validators. Revision schemas are narrowed to the run's selected procedure/version, and the resource-removal field is exposed only with its separate grant. The local SQLite transaction checks that each bounded success receipt stays within 32 KiB before committing the candidate and durable tool result together. Contracts state the grant, candidate-only effect, lock timeout, retry/reconciliation rule, limits, and audit fields.
+
 `procedure.catalog` is a versioned read contract with a strict page schema, 50-item limit, output field bounds, ten-second timeout, audit fields and a 512 KiB final serialized-result ceiling. Oversized output is replaced with a bounded, untrusted `output_limit` result.
 
 The registry is a scoped first slice, not the contract inventory for every
