@@ -2,7 +2,7 @@
 
 ## Contract model-authored procedure changes (2026-11-10)
 
-Procedure draft, content revision, linked-resource revision and removal calls now have shared versioned contracts for input/output schemas, explicit run grants, 10-second SQLite lock bounds, candidate-only effects, retries and audit fields. Coordinator schemas come from those contracts and bind revisions to the selected procedure/version; linked-resource removal fields appear only with the separate removal grant. Each transaction checks its durable receipt against a 32 KiB serialized cap before committing the candidate and tool result together. Focused procedure draft/revision/trial/contract tests pass (50); Ruff, formatting, strict Pyright and diff checks pass. Hosted validation is pending. No model inference was used.
+Procedure draft, content revision, linked-resource revision and removal calls now have shared versioned contracts for input/output schemas, explicit run grants, 10-second SQLite lock bounds, candidate-only effects, retries and audit fields. Coordinator schemas come from those contracts and bind revisions to the selected procedure/version; linked-resource removal fields appear only with the separate removal grant. Each transaction checks its durable receipt against a 32 KiB serialized cap before committing the candidate and tool result together. Focused procedure draft/revision/trial/contract tests pass (50); Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows run [42871186247](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42871186247) passed, including 988 Python tests and all recovery checks; the installer job was skipped for this source-only change. No model inference was used.
 
 ## Keep specialist web-tool schemas aligned (2026-11-10)
 
