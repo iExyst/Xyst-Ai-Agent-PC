@@ -2,7 +2,7 @@
 
 ## Reject MCP connections that exit during discovery (2026-11-10)
 
-`MCPManager.connect_server` now checks that the connection-owner task is still alive after discovery and before publishing the server's tools. An immediate post-discovery exit is reported as a connection error and the manager does not register the stale connection. A deterministic integration regression reproduces the owner-task race. The MCP stdio suite passes (8), Ruff/format checks pass, and strict Pyright passes for the manager. Hosted source verification is pending. No model inference was used.
+`MCPManager.connect_server` now checks that the connection-owner task is still alive after discovery and before publishing the server's tools. An immediate post-discovery exit is reported as a connection error and the manager does not register the stale connection. A deterministic integration regression reproduces the owner-task race. The MCP stdio suite passes (8), Ruff/format checks pass, and strict Pyright passes for the manager. Hosted Windows source run [42787219777](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42787219777) passed the full suite and UI/API checks; the installer job was skipped as expected for the feature push. No model inference was used.
 
 ## Correct installed backup acceptance data-root handoff (2026-11-10)
 
