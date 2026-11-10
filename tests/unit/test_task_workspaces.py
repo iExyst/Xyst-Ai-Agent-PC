@@ -125,8 +125,19 @@ async def test_reviewer_manifest_includes_source_evidence_beyond_ui_summary_limi
     reviewer = next(row for row in tasks.records(run_id) if row["local_id"] == "reviewer")
     runner = SpecialistRunner(store, LMStudioProvider())
     try:
+        first_source_hash = next(
+            item["sha256"]
+            for item in candidate_evidence(
+                store,
+                run_id,
+                "reader",
+                include_all_file_evidence=True,
+                include_file_excerpts=False,
+            )["evidence"]
+            if item["path"] == "source-00.txt"
+        )
         missing = runner._review_evidence_gaps(run_id, reviewer)
-        assert "source:source-00.txt" in missing
+        assert f"source:source-00.txt@{first_source_hash}" in missing
         pages = []
         offset = 0
         while True:
@@ -154,11 +165,12 @@ async def test_reviewer_manifest_includes_source_evidence_beyond_ui_summary_limi
         for index in range(17):
             path = f"source-{index:02}.txt"
             call_id = f"reviewer-read-{index:02}"
+            source_bytes = (project / path).read_bytes()
             result = {
                 "path": path,
-                "text": f"evidence {index}\n",
+                "text": source_bytes.decode("utf-8"),
                 "truncated": False,
-                "sha256": hashlib.sha256(f"evidence {index}\n".encode()).hexdigest(),
+                "sha256": hashlib.sha256(source_bytes).hexdigest(),
                 "trust": "untrusted_workspace_content",
             }
             reviewer_store.record_tool_intent(
@@ -188,6 +200,31 @@ async def test_reviewer_manifest_includes_source_evidence_beyond_ui_summary_limi
         missing = runner._review_evidence_gaps(run_id, reviewer)
         assert not any(item.startswith("source:") for item in missing)
         assert "manifest:reader" in missing
+
+        changed_result = {
+            "path": "source-00.txt",
+            "text": "different evidence\n",
+            "truncated": False,
+            "sha256": hashlib.sha256(b"different evidence\n").hexdigest(),
+            "trust": "untrusted_workspace_content",
+        }
+        with store.connection() as connection:
+            event = connection.execute(
+                "SELECT sequence,payload FROM run_events WHERE run_id=? AND event_type='task.tool.result' AND json_extract(payload,'$.journal_id')=?",
+                (run_id, "reviewer-read-00"),
+            ).fetchone()
+            payload = json.loads(event["payload"])
+            payload["result"] = changed_result
+            connection.execute(
+                "UPDATE tool_calls SET result=? WHERE run_id=? AND provider_call_id=?",
+                (json.dumps(changed_result), run_id, "reviewer-read-00"),
+            )
+            connection.execute(
+                "UPDATE run_events SET payload=? WHERE run_id=? AND sequence=?",
+                (json.dumps(payload), run_id, event["sequence"]),
+            )
+        missing = runner._review_evidence_gaps(run_id, reviewer)
+        assert f"source:source-00.txt@{first_source_hash}" in missing
     finally:
         await runner.provider.close()
 

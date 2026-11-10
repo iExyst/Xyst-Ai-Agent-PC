@@ -312,7 +312,7 @@ class SpecialistRunner:
     def _review_evidence_gaps(self, run_id: str, task: dict[str, Any]) -> list[str]:
         if task["assigned_role"] != "reviewer":
             return []
-        required_source_paths: set[str] = set()
+        required_source_evidence: set[tuple[str, str]] = set()
         required_artifacts: set[tuple[str, str]] = set()
         required_outputs: set[tuple[str, str]] = set()
         required_manifests: set[str] = set()
@@ -331,14 +331,16 @@ class SpecialistRunner:
                 or dependency["validation_evidence"]
             ):
                 required_manifests.add(dependency_id)
-            required_source_paths.update(item["path"] for item in dependency["evidence"])
+            required_source_evidence.update(
+                (item["path"], item["sha256"]) for item in dependency["evidence"]
+            )
             required_artifacts.update(
                 (dependency_id, item["path"]) for item in dependency["workspace_changes"]
             )
             for item in dependency["validation_evidence"]:
                 for key in ("stdout_artifact_id", "stderr_artifact_id"):
                     required_outputs.add((dependency_id, item[key]))
-        if not (required_source_paths or required_artifacts or required_outputs):
+        if not (required_source_evidence or required_artifacts or required_outputs):
             return []
         own_evidence = candidate_evidence(
             self.store,
@@ -347,7 +349,9 @@ class SpecialistRunner:
             include_all_file_evidence=True,
             include_file_excerpts=False,
         )
-        reviewed_source_paths = {item["path"] for item in own_evidence["evidence"]}
+        reviewed_source_evidence = {
+            (item["path"], item["sha256"]) for item in own_evidence["evidence"]
+        }
         reviewed_manifest_ranges: dict[str, list[tuple[int, int, int]]] = {}
         reviewed_manifests: set[str] = set()
         reviewed_artifact_ranges: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
@@ -444,7 +448,8 @@ class SpecialistRunner:
             if not complete:
                 missing.append(f"manifest:{dependency_id}")
         missing.extend(
-            f"source:{path}" for path in sorted(required_source_paths - reviewed_source_paths)
+            f"source:{path}@{sha256}"
+            for path, sha256 in sorted(required_source_evidence - reviewed_source_evidence)
         )
         for dependency_id, path in sorted(required_artifacts):
             key = (dependency_id, path)
