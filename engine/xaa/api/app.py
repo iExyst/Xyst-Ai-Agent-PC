@@ -61,16 +61,20 @@ from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramServ
 from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import (
+    PluginDataListing,
+    PluginDataRemovalResult,
     PluginDiscovery,
     PluginInstallResult,
     PluginRemovalResult,
     discover_agent_plugins,
     export_procedure_package,
     install_agent_plugin_archive,
+    list_managed_plugin_data,
     plugin_source_sha256,
     read_plugin_mcp_server,
     read_plugin_skill,
     remove_installed_agent_plugin,
+    remove_managed_plugin_data,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
@@ -797,6 +801,37 @@ def create_app(
         managed_root = run_store.path.parent / "agent-plugins"
         managed_root.mkdir(parents=True, exist_ok=True)
         return discover_agent_plugins(str(managed_root))
+
+    @app.get("/extensions/packages/data", response_model=PluginDataListing)
+    def list_extension_package_data(
+        _: None = Depends(authenticate),
+    ) -> PluginDataListing:
+        return list_managed_plugin_data(run_store.path.parent / "plugin-data")
+
+    @app.post("/extensions/packages/data/remove", response_model=PluginDataRemovalResult)
+    def remove_extension_package_data(
+        payload: PluginRemovalRequest, _: None = Depends(authenticate)
+    ) -> PluginDataRemovalResult:
+        managed_root = run_store.path.parent / "agent-plugins"
+        expected = managed_root.resolve()
+        for server in MCPRegistry(run_store).list_servers():
+            if server.plugin_root is None:
+                continue
+            try:
+                referenced = Path(server.plugin_root).resolve(strict=False)
+            except (OSError, RuntimeError):
+                continue
+            if referenced.parent == expected and referenced.name == payload.package_name:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Remove this package's MCP integrations before deleting its data.",
+                )
+        try:
+            return remove_managed_plugin_data(
+                run_store.path.parent / "plugin-data", payload.package_name
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/extensions/packages/install", status_code=201, response_model=PluginInstallResult)
     def install_extension_package(

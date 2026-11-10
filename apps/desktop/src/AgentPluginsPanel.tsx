@@ -53,6 +53,8 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
 export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImported:()=>void}) {
   const [root,setRoot]=useState('');
   const [managedRoot,setManagedRoot]=useState('');
+  const [dataRoot,setDataRoot]=useState('');
+  const [dataPackages,setDataPackages]=useState<string[]>([]);
   const [result,setResult]=useState<PluginDiscovery>();
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
@@ -95,6 +97,25 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
     } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
     finally {setBusy(false);}
   }
+  async function discoverPackageData() {
+    setBusy(true);setError('');setNotice('');
+    try {
+      const listing=await client.listAgentPluginData();
+      setDataRoot(listing.root);setDataPackages(listing.package_names);
+    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setBusy(false);}
+  }
+  async function removePackageData(packageName:string) {
+    if(!window.confirm(`Permanently delete retained data for “${packageName}”? This cannot be undone.`))return;
+    setBusy(true);setError('');setNotice('');
+    try {
+      await client.removeAgentPluginData(packageName);
+      const listing=await client.listAgentPluginData();
+      setDataRoot(listing.root);setDataPackages(listing.package_names);
+      setNotice(`Retained data for ${packageName} was deleted.`);
+    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setBusy(false);}
+  }
   async function importSkill(packageName:string,skillName:string) {
     setBusy(true);setError('');setNotice('');
     try {
@@ -118,11 +139,13 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
     <p>Discovery does not run commands, connect servers, or register tools. Importing a skill reads its bounded text into an inactive candidate for review.</p>
     <button disabled={busy} onClick={()=>void installArchive()}>{busy?'Installing…':'Install plugin ZIP'}</button>
     <button disabled={busy} onClick={()=>void discoverInstalled()}>Show installed packages</button>
+    <button disabled={busy} onClick={()=>void discoverPackageData()}>Show retained package data</button>
     <label htmlFor="plugin-root">Package folder</label>
     <div><input id="plugin-root" value={root} onChange={event=>{const value=event.target.value;setRoot(value);if(value.trim()!==managedRoot)setManagedRoot('');}} maxLength={2048} placeholder="C:\\path\\to\\plugins"/>
     <button disabled={busy||!root.trim()} onClick={()=>void discover()}>{busy?'Discovering…':'Discover packages'}</button></div>
     {error&&<p role="alert">{error}</p>}
     {notice&&<p role="status">{notice}</p>}
+    {dataRoot&&<section aria-label="Retained plugin data"><h3>Retained package data</h3><p>Data root: <code>{dataRoot}</code></p>{dataPackages.length===0?<p>No retained package data found.</p>:<ul>{dataPackages.map(name=><li key={name}>{name} <button disabled={busy} onClick={()=>void removePackageData(name)}>Delete retained data for {name}</button></li>)}</ul>}</section>}
     {result&&<>
       <p>Scanned {result.root}. {result.packages.length} package(s) found.</p>
       {result.packages.map(item=><article key={item.path}>

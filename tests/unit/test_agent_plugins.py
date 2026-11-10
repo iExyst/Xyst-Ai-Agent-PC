@@ -545,7 +545,13 @@ def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: 
             headers={"Authorization": f"Bearer {TOKEN}"},
             json={"package_name": "sample-package"},
         )
+        blocked_data = client.post(
+            "/extensions/packages/data/remove",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"package_name": "sample-package"},
+        )
         assert blocked.status_code == 409
+        assert blocked_data.status_code == 409
     assert installed.exists()
     assert MCPRegistry(store).delete_server(integration.id)
     with TestClient(app) as client:
@@ -557,11 +563,32 @@ def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: 
         listing = client.get(
             "/extensions/packages/installed", headers={"Authorization": f"Bearer {TOKEN}"}
         )
+        retained = client.get(
+            "/extensions/packages/data", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+        unauthenticated_data_removal = client.post(
+            "/extensions/packages/data/remove", json={"package_name": "sample-package"}
+        )
+    assert data_file.read_text(encoding="utf-8") == "preserved"
+    with TestClient(app) as client:
+        removed_data = client.post(
+            "/extensions/packages/data/remove",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"package_name": "sample-package"},
+        )
+        retained_after_removal = client.get(
+            "/extensions/packages/data", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
     assert removed.status_code == 200
     assert removed.json() == {"removed": True, "package_name": "sample-package"}
     assert not installed.exists()
-    assert data_file.read_text(encoding="utf-8") == "preserved"
     assert listing.json()["packages"] == []
+    assert retained.json()["package_names"] == ["sample-package"]
+    assert unauthenticated_data_removal.status_code == 401
+    assert removed_data.status_code == 200
+    assert removed_data.json() == {"removed": True, "package_name": "sample-package"}
+    assert not data_file.parent.parent.exists()
+    assert retained_after_removal.json()["package_names"] == []
 
 
 def test_plugin_archive_install_rejects_traversal_and_existing_package(tmp_path: Path) -> None:

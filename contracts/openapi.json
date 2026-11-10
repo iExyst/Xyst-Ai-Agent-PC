@@ -2592,6 +2592,47 @@
         "title": "PlanTaskRecord",
         "type": "object"
       },
+      "PluginDataListing": {
+        "additionalProperties": false,
+        "properties": {
+          "package_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Package Names",
+            "type": "array"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "package_names"
+        ],
+        "title": "PluginDataListing",
+        "type": "object"
+      },
+      "PluginDataRemovalResult": {
+        "additionalProperties": false,
+        "properties": {
+          "package_name": {
+            "title": "Package Name",
+            "type": "string"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed",
+          "package_name"
+        ],
+        "title": "PluginDataRemovalResult",
+        "type": "object"
+      },
       "PluginDiagnostic": {
         "additionalProperties": false,
         "properties": {
@@ -7203,6 +7244,72 @@
           }
         ],
         "summary": "Check Execution Readiness"
+      }
+    },
+    "/extensions/packages/data": {
+      "get": {
+        "operationId": "list_extension_package_data_extensions_packages_data_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDataListing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Extension Package Data"
+      }
+    },
+    "/extensions/packages/data/remove": {
+      "post": {
+        "operationId": "remove_extension_package_data_extensions_packages_data_remove_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRemovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDataRemovalResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Extension Package Data"
       }
     },
     "/extensions/packages/discover": {

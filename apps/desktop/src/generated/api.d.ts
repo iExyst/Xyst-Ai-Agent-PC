@@ -515,6 +515,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/extensions/packages/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Extension Package Data */
+        get: operations["list_extension_package_data_extensions_packages_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/extensions/packages/data/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove Extension Package Data */
+        post: operations["remove_extension_package_data_extensions_packages_data_remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/extensions/packages/discover": {
         parameters: {
             query?: never;
@@ -2947,6 +2981,20 @@ export interface components {
             /** Workspace */
             workspace: string | null;
         };
+        /** PluginDataListing */
+        PluginDataListing: {
+            /** Package Names */
+            package_names: string[];
+            /** Root */
+            root: string;
+        };
+        /** PluginDataRemovalResult */
+        PluginDataRemovalResult: {
+            /** Package Name */
+            package_name: string;
+            /** Removed */
+            removed: boolean;
+        };
         /** PluginDiagnostic */
         PluginDiagnostic: {
             /** Message */
@@ -5055,6 +5103,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_extension_package_data_extensions_packages_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDataListing"];
+                };
+            };
+        };
+    };
+    remove_extension_package_data_extensions_packages_data_remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRemovalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDataRemovalResult"];
                 };
             };
             /** @description Validation Error */

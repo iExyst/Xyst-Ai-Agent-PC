@@ -123,6 +123,18 @@ class PluginRemovalResult(BaseModel):
     package_name: str
 
 
+class PluginDataListing(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    root: str
+    package_names: list[str]
+
+
+class PluginDataRemovalResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    removed: bool
+    package_name: str
+
+
 class PluginSkillImport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     source_format: Literal["agent_plugins_v1", "hermes_skill"]
@@ -1195,6 +1207,49 @@ def remove_installed_agent_plugin(managed_root: Path, package_name: str) -> Plug
     except (OSError, RuntimeError) as exc:
         raise ValueError("selected managed plugin package could not be removed") from exc
     return PluginRemovalResult(removed=True, package_name=package_name)
+
+
+def list_managed_plugin_data(data_root: Path) -> PluginDataListing:
+    """List direct package data directories without following links."""
+    root = data_root.expanduser().resolve(strict=False)
+    package_names: list[str] = []
+    try:
+        if root.exists():
+            if data_root.is_symlink() or not root.is_dir():
+                raise ValueError("managed plugin data directory is unavailable")
+            for child in root.iterdir():
+                if (
+                    _PLUGIN_NAME.fullmatch(child.name)
+                    and not child.is_symlink()
+                    and not getattr(child, "is_junction", lambda: False)()
+                    and child.is_dir()
+                ):
+                    package_names.append(child.name)
+    except OSError as exc:
+        raise ValueError("managed plugin data directory could not be listed") from exc
+    return PluginDataListing(root=str(root), package_names=sorted(package_names))
+
+
+def remove_managed_plugin_data(data_root: Path, package_name: str) -> PluginDataRemovalResult:
+    """Remove one explicitly selected package data directory under its managed root."""
+    if not _PLUGIN_NAME.fullmatch(package_name):
+        raise ValueError("selected plugin package name is invalid")
+    try:
+        root = data_root.expanduser().resolve(strict=True)
+        if not root.is_dir() or data_root.is_symlink():
+            raise ValueError("managed plugin data directory is unavailable")
+        candidate = root / package_name
+        if candidate.is_symlink() or getattr(candidate, "is_junction", lambda: False)():
+            raise ValueError("managed plugin data cannot be a symbolic link or junction")
+        target = candidate.resolve(strict=True)
+        if target.parent != root or not target.is_dir():
+            raise ValueError("selected package data is not a managed directory")
+        shutil.rmtree(target)
+    except FileNotFoundError as exc:
+        raise ValueError("selected managed plugin data was not found") from exc
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("selected managed plugin data could not be removed") from exc
+    return PluginDataRemovalResult(removed=True, package_name=package_name)
 
 
 def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> PluginSkillImport:

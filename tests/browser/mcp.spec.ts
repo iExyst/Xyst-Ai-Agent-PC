@@ -8,6 +8,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   let importedPackageServer: any;
   let importedPackageHTTPServer: any;
   let installedPackagePresent = false;
+  let retainedDataPresent = false;
   const tool = {
     server_id: serverId,
     name: 'change_value',
@@ -41,6 +42,12 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     if (path === '/extensions/packages/installed') return route.fulfill({json:{root:'C:\\plugins',packages:installedPackagePresent?[{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample-package',skills:[],servers:[]}]:[],diagnostics:[]},headers});
     if (path === '/extensions/packages/remove') {
       installedPackagePresent=false;
+      retainedDataPresent=true;
+      return route.fulfill({json:{removed:true,package_name:body.package_name},headers});
+    }
+    if (path === '/extensions/packages/data') return route.fulfill({json:{root:'C:\\plugin-data',package_names:retainedDataPresent?['sample-package']:[]},headers});
+    if (path === '/extensions/packages/data/remove') {
+      retainedDataPresent=false;
       return route.fulfill({json:{removed:true,package_name:body.package_name},headers});
     }
     if (path === '/runs/latest-unfinished') return route.fulfill({json:null,headers});
@@ -205,5 +212,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await plugins.getByRole('button',{name:'Remove sample-package'}).click();
   await expect(plugins.getByRole('status')).toContainText('Imported skill versions and package data were kept');
   expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/remove'&&item.body.package_name==='sample-package')).toBe(true);
+  await plugins.getByRole('button',{name:'Show retained package data'}).click();
+  await expect(plugins.getByRole('button',{name:'Delete retained data for sample-package'})).toBeVisible();
+  await plugins.getByRole('button',{name:'Delete retained data for sample-package'}).click();
+  await expect(plugins.getByText('No retained package data found.')).toBeVisible();
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/data/remove'&&item.body.package_name==='sample-package')).toBe(true);
   expect(errors).toEqual([]);
 });

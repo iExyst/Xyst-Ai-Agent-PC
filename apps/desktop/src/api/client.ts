@@ -42,6 +42,8 @@ export type WorkspaceWriteReconciliationItem = components['schemas']['WorkspaceW
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
 export type PluginInstallResult = components['schemas']['PluginInstallResult'];
 export type PluginRemovalResult = components['schemas']['PluginRemovalResult'];
+export type PluginDataListing = components['schemas']['PluginDataListing'];
+export type PluginDataRemovalResult = components['schemas']['PluginDataRemovalResult'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
 export type ChatSession = components['schemas']['CLIChatSessionRecord'];
 export type ChatSessionSummary = components['schemas']['CLIChatSessionSummary'];
@@ -130,6 +132,8 @@ export class EngineClient {
   listInstalledAgentPlugins():Promise<PluginDiscovery>{return this.#request('/extensions/packages/installed',{method:'GET'});}
   installAgentPluginArchive(archive_path:string):Promise<PluginInstallResult>{return this.#request('/extensions/packages/install',{method:'POST',body:JSON.stringify({archive_path})});}
   removeInstalledAgentPlugin(package_name:string):Promise<PluginRemovalResult>{return this.#request('/extensions/packages/remove',{method:'POST',body:JSON.stringify({package_name})});}
+  listAgentPluginData():Promise<PluginDataListing>{return this.#request('/extensions/packages/data',{method:'GET'});}
+  removeAgentPluginData(package_name:string):Promise<PluginDataRemovalResult>{return this.#request('/extensions/packages/data/remove',{method:'POST',body:JSON.stringify({package_name})});}
   importAgentPluginSkill(input:{root:string;package_name:string;skill_name:string}):Promise<components['schemas']['SkillSummary']>{return this.#request('/extensions/packages/import-skill',{method:'POST',body:JSON.stringify(input)});}
   importAgentPluginMCPServer(input:{root:string;package_name:string;server_name:string}):Promise<{id:string;name:string;transport:'stdio';state:'disconnected';secret_env:string[]}>{return this.#request('/extensions/packages/import-mcp-server',{method:'POST',body:JSON.stringify(input)});}
   async exportSkillPackage(id:string,version:number):Promise<Blob>{
