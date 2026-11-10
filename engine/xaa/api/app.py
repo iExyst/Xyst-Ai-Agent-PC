@@ -346,6 +346,7 @@ class MCPServerResponse(BaseModel):
     state: Literal["connected", "disconnected", "error"]
     error: str | None
     secret_env_configured: dict[str, bool]
+    oauth_configured: bool
     tools: list[MCPToolResponse]
 
 
@@ -818,6 +819,9 @@ def create_app(
                     "state": state,
                     "error": error,
                     "secret_env_configured": configured,
+                    "oauth_configured": bool(
+                        credential_store and credential_store.get(f"mcp:{server.id}:oauth-tokens")
+                    ),
                     "tools": [tool.model_dump() for tool in registry.list_tools(server.id)],
                 }
             )
@@ -838,6 +842,7 @@ def create_app(
             "state": "disconnected",
             "error": None,
             "secret_env_configured": {name: False for name in server.secret_env},
+            "oauth_configured": False,
             "tools": [],
         }
 
@@ -845,6 +850,19 @@ def create_app(
     async def delete_mcp_server(server_id: str, _: None = Depends(authenticate)) -> Response:
         if not await mcp_manager.delete_server(server_id):
             raise HTTPException(status_code=404, detail="MCP server not found.")
+        return Response(status_code=204)
+
+    @app.delete("/mcp/servers/{server_id}/oauth")
+    async def delete_mcp_oauth(server_id: str, _: None = Depends(authenticate)) -> Response:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        state, _error = mcp_manager.server_status(server_id)
+        if state == "connected" and not await mcp_manager.disconnect_server(server_id):
+            raise HTTPException(status_code=503, detail="Could not disconnect the MCP server.")
+        credential_store.delete(f"mcp:{server_id}:oauth-tokens")
+        credential_store.delete(f"mcp:{server_id}:oauth-client")
         return Response(status_code=204)
 
     @app.post("/mcp/servers/{server_id}/connect", response_model=MCPConnectResponse)

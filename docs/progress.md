@@ -1,3 +1,6 @@
+## Add OAuth authorization for HTTP MCP servers (2026-11-10)
+
+Streamable HTTP MCP connections now respond to OAuth challenges through the pinned MCP SDK's authorization-code + PKCE flow. The client binds an ephemeral loopback callback on `127.0.0.1` with a random path, opens the owner’s browser, and saves dynamic client registration metadata and access/refresh tokens in per-server Windows Credential Manager profiles. Connect allows up to five minutes for sign-in; subsequent reconnects reuse the token, and the desktop can show saved authorization and clear it. Configured static bearer credentials continue to take precedence. A real local ASGI authorization fixture verifies metadata discovery, client registration, callback/state handling, PKCE verifier exchange, vault persistence and reconnect without a second browser launch. The combined MCP HTTP, stdio and API test batch passes (48 tests); Ruff, format, strict Pyright, API contract export/generated types and desktop TypeScript pass. No external OAuth provider, real user credential or model inference was used. Hosted Windows verification, installed-app browser acceptance and broad provider interoperability remain open.
 # Progress
 
 ## Verify owner-driven MCP reconnect after live transport loss (2026-11-10)

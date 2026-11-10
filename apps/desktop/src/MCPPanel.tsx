@@ -123,6 +123,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
         <button type="button" disabled={busy||!secrets[key]} onClick={()=>void act(async()=>{await client.setMCPSecret(server.id,env,secrets[key]!);setSecrets(prev=>({...prev,[key]:''}));})}>Save secret</button>
         <button type="button" disabled={busy||!server.secret_env_configured[env]} onClick={()=>void act(()=>client.clearMCPSecret(server.id,env))}>Clear</button>
       </label>;})}
+      {server.transport==='streamable_http'&&server.secret_env.length===0&&<p>MCP OAuth {server.oauth_configured?'authorization is saved in the OS credential store.':'will open a browser if this server requires sign-in.'} {server.oauth_configured&&<button type="button" disabled={busy} onClick={()=>void act(()=>client.clearMCPOAuth(server.id))}>Clear sign-in</button>}</p>}
       {server.tools.map(tool=><div key={tool.name} className="mcp-tool">
         <strong>{tool.title||tool.name}</strong><p>{tool.description||'No description supplied.'}</p>
         <label>Permission<select value={tool.permission} disabled={busy} onChange={e=>void changePermission(server,tool,e.target.value as MCPTool['permission'])}>

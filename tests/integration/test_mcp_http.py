@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import socket
 from pathlib import Path
 from types import MethodType
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 import uvicorn
@@ -198,6 +201,180 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         assert set(captured_auth) == {"Bearer fixture-bearer-token"}
         assert await manager.disconnect_server(record.id)
         assert manager.server_status(record.id)[0] == "disconnected"
+    finally:
+        await manager.close()
+        web_server.should_exit = True
+        await serving
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path: Path):
+    mcp = FastMCP("OAuth fixture")
+
+    @mcp.tool()
+    async def add(left: int, right: int) -> int:
+        """Add numbers after OAuth authorization."""
+        return left + right
+
+    mcp_app = mcp.streamable_http_app()
+    host = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host.bind(("127.0.0.1", 0))
+    port = host.getsockname()[1]
+    origin = f"http://127.0.0.1:{port}"
+    endpoint = f"{origin}/mcp"
+    issued_challenge: list[str] = []
+    token_requests: list[str] = []
+
+    async def respond(
+        send: Any,
+        status: int,
+        payload: dict[str, Any],
+        headers: list[tuple[bytes, bytes]] | None = None,
+    ) -> None:
+        import json
+
+        body = json.dumps(payload).encode()
+        response_headers = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ]
+        response_headers.extend(headers or [])
+        await send({"type": "http.response.start", "status": status, "headers": response_headers})
+        await send({"type": "http.response.body", "body": body})
+
+    async def fixture(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] == "lifespan":
+            await mcp_app(scope, receive, send)
+            return
+        path = scope["path"]
+        if path == "/mcp":
+            auth = dict(scope["headers"]).get(b"authorization", b"").decode()
+            if auth != "Bearer fixture-oauth-token":
+                await respond(
+                    send,
+                    401,
+                    {"error": "unauthorized"},
+                    [
+                        (
+                            b"www-authenticate",
+                            f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/mcp"'.encode(),
+                        )
+                    ],
+                )
+                return
+            await mcp_app(scope, receive, send)
+            return
+        if path == "/.well-known/oauth-protected-resource/mcp":
+            await respond(
+                send,
+                200,
+                {
+                    "resource": endpoint,
+                    "authorization_servers": [origin],
+                    "scopes_supported": ["mcp"],
+                },
+            )
+            return
+        if path == "/.well-known/oauth-authorization-server":
+            await respond(
+                send,
+                200,
+                {
+                    "issuer": origin,
+                    "authorization_endpoint": f"{origin}/authorize",
+                    "token_endpoint": f"{origin}/token",
+                    "registration_endpoint": f"{origin}/register",
+                    "response_types_supported": ["code"],
+                    "grant_types_supported": ["authorization_code", "refresh_token"],
+                    "token_endpoint_auth_methods_supported": ["none"],
+                    "code_challenge_methods_supported": ["S256"],
+                },
+            )
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            body.extend(message.get("body", b""))
+            if not message.get("more_body", False):
+                break
+        if path == "/register":
+            import json
+
+            registration = json.loads(body)
+            await respond(send, 201, {**registration, "client_id": "fixture-client"})
+        elif path == "/token":
+            values = parse_qs(bytes(body).decode())
+            verifier = values.get("code_verifier", [""])[0]
+            challenge = (
+                base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+                .decode()
+                .rstrip("=")
+            )
+            token_requests.append(values.get("grant_type", [""])[0])
+            if (
+                values.get("code", [""])[0] != "fixture-code"
+                or not issued_challenge
+                or challenge != issued_challenge[-1]
+            ):
+                await respond(send, 400, {"error": "invalid_grant"})
+            else:
+                await respond(
+                    send,
+                    200,
+                    {
+                        "access_token": "fixture-oauth-token",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                        "refresh_token": "fixture-refresh",
+                    },
+                )
+        else:
+            await respond(send, 404, {"error": "not_found"})
+
+    web_server = uvicorn.Server(
+        uvicorn.Config(fixture, host="127.0.0.1", port=port, log_level="critical")
+    )
+    serving = asyncio.create_task(web_server.serve(sockets=[host]))
+    store = RunStore(workspace_tmp_path / "mcp-oauth.sqlite3")
+    credentials = MemoryCredentials()
+    redirects: list[str] = []
+
+    async def authorize(url: str) -> None:
+        from httpx import AsyncClient
+
+        redirects.append(url)
+        params = parse_qs(urlsplit(url).query)
+        issued_challenge.append(params["code_challenge"][0])
+        callback_url = params["redirect_uri"][0]
+        async with AsyncClient() as client:
+            response = await client.get(
+                callback_url
+                + "?"
+                + urlencode({"code": "fixture-code", "state": params["state"][0]})
+            )
+            assert response.status_code == 200
+
+    manager = MCPManager(store, credentials, authorization_redirect_handler=authorize)  # type: ignore[arg-type]
+    try:
+        async with asyncio.timeout(5):
+            while not web_server.started:
+                await asyncio.sleep(0.01)
+        record = manager.registry.create_server(
+            MCPServerSpec(name="OAuth fixture", transport="streamable_http", endpoint=endpoint)
+        )
+        tools = await manager.connect_server(record.id)
+        assert [tool.name for tool in tools] == ["add"]
+        assert len(redirects) == 1
+        assert "code_challenge_method=S256" in redirects[0]
+        assert token_requests == ["authorization_code"]
+        assert credentials.get(f"mcp:{record.id}:oauth-tokens") is not None
+        assert await manager.disconnect_server(record.id)
+        await manager.connect_server(record.id)
+        assert len(redirects) == 1
+        assert token_requests == ["authorization_code"]
+        assert await manager.delete_server(record.id)
+        assert credentials.get(f"mcp:{record.id}:oauth-tokens") is None
+        assert credentials.get(f"mcp:{record.id}:oauth-client") is None
     finally:
         await manager.close()
         web_server.should_exit = True

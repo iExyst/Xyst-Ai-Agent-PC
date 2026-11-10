@@ -49,6 +49,55 @@ class FakeProvider(LMStudioProvider):
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 
 
+def test_mcp_oauth_credentials_are_private_and_owner_clearable(workspace_tmp_path):
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    credentials = Credentials()
+    store = RunStore(workspace_tmp_path / "mcp-oauth-api.sqlite3")
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "OAuth API fixture",
+                "transport": "streamable_http",
+                "endpoint": "https://mcp.example.test/mcp",
+                "command": "",
+                "args": [],
+                "cwd": None,
+                "secret_env": [],
+            },
+        )
+        assert created.status_code == 201, created.text
+        server_id = created.json()["id"]
+        credentials.set('{"access_token":"private-token"}', f"mcp:{server_id}:oauth-tokens")
+        credentials.set('{"client_id":"private-client"}', f"mcp:{server_id}:oauth-client")
+        assert client.get("/mcp/servers", headers=headers).json()[0]["oauth_configured"] is True
+        assert "private-token" not in client.get("/mcp/servers", headers=headers).text
+        assert client.delete(f"/mcp/servers/{server_id}/oauth").status_code == 401
+        assert client.delete(f"/mcp/servers/{server_id}/oauth", headers=headers).status_code == 204
+        assert credentials.get(f"mcp:{server_id}:oauth-tokens") is None
+        assert credentials.get(f"mcp:{server_id}:oauth-client") is None
+
+
 def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "identity-links-api.sqlite3")
     now = "2026-11-08T00:00:00+00:00"

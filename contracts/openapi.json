@@ -2019,6 +2019,10 @@
             "title": "Name",
             "type": "string"
           },
+          "oauth_configured": {
+            "title": "Oauth Configured",
+            "type": "boolean"
+          },
           "secret_env": {
             "items": {
               "type": "string"
@@ -2076,6 +2080,7 @@
           "state",
           "error",
           "secret_env_configured",
+          "oauth_configured",
           "tools"
         ],
         "title": "MCPServerResponse",
@@ -7403,6 +7408,48 @@
           }
         ],
         "summary": "Disconnect Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/oauth": {
+      "delete": {
+        "operationId": "delete_mcp_oauth_mcp_servers__server_id__oauth_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Mcp Oauth"
       }
     },
     "/mcp/servers/{server_id}/prompts": {

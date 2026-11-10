@@ -9,16 +9,22 @@ import hashlib
 import json
 import os
 import re
+import socket
+import webbrowser
 from collections.abc import Generator, Iterator
 from contextlib import AsyncExitStack, contextmanager
 from datetime import timedelta
 from typing import Any, Literal, TextIO, cast
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from jsonschema import validators
+from mcp.client.auth.exceptions import OAuthFlowError
+from mcp.client.auth.oauth2 import OAuthClientProvider, TokenStorage
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 from mcp.types import (
     AudioContent,
     CallToolResult,
@@ -47,6 +53,7 @@ from xaa.storage.mcp import (
 from xaa.storage.runs import RunStore
 
 MCP_CONNECT_TIMEOUT = 15
+MCP_OAUTH_CONNECT_TIMEOUT = 302
 MCP_CALL_TIMEOUT = 45
 MCP_TOOL_COUNT_LIMIT = 256
 MCP_TOOL_SCHEMA_BYTES = 128 * 1024
@@ -56,6 +63,8 @@ MCP_RESOURCE_FIELD_LIMIT = 2048
 MCP_PROMPT_ARGUMENT_LIMIT = 32
 MCP_NOTIFICATION_LIMIT = 128
 MCP_ENV_PROFILE = "mcp:{}:{}"
+MCP_OAUTH_TOKENS_PROFILE = "mcp:{}:oauth-tokens"
+MCP_OAUTH_CLIENT_PROFILE = "mcp:{}:oauth-client"
 
 
 class MCPConnectionError(RuntimeError):
@@ -68,6 +77,27 @@ class MCPInvocationError(RuntimeError):
     def __init__(self, message: str, *, status: Literal["not_connected", "unknown_outcome"]):
         super().__init__(message)
         self.status = status
+
+
+class _VaultOAuthStorage(TokenStorage):
+    def __init__(self, credentials: CredentialStore, server_id: str) -> None:
+        self.credentials = credentials
+        self.tokens_profile = MCP_OAUTH_TOKENS_PROFILE.format(server_id)
+        self.client_profile = MCP_OAUTH_CLIENT_PROFILE.format(server_id)
+
+    async def get_tokens(self) -> OAuthToken | None:
+        value = self.credentials.get(self.tokens_profile)
+        return OAuthToken.model_validate_json(value) if value else None
+
+    async def set_tokens(self, tokens: OAuthToken) -> None:
+        self.credentials.set(tokens.model_dump_json(), self.tokens_profile)
+
+    async def get_client_info(self) -> OAuthClientInformationFull | None:
+        value = self.credentials.get(self.client_profile)
+        return OAuthClientInformationFull.model_validate_json(value) if value else None
+
+    async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
+        self.credentials.set(client_info.model_dump_json(), self.client_profile)
 
 
 class _ConnectedServer:
@@ -108,9 +138,11 @@ class MCPManager:
         self,
         store: RunStore,
         credential_store: CredentialStore | None,
+        authorization_redirect_handler: Any | None = None,
     ) -> None:
         self.registry = MCPRegistry(store)
         self.credential_store = credential_store
+        self.authorization_redirect_handler = authorization_redirect_handler
         self._connected: dict[str, _ConnectedServer] = {}
         self._errors: dict[str, str] = {}
         self._lock = asyncio.Lock()
@@ -129,9 +161,14 @@ class MCPManager:
             )
             owner = asyncio.create_task(self._own_connection(server, ready))
             try:
-                connection, discovered = await asyncio.wait_for(
-                    ready, timeout=MCP_CONNECT_TIMEOUT + 2
+                timeout = (
+                    302
+                    if server.transport == "streamable_http"
+                    and not server.secret_env
+                    and self.credential_store is not None
+                    else MCP_CONNECT_TIMEOUT + 2
                 )
+                connection, discovered = await asyncio.wait_for(ready, timeout=timeout)
             except BaseException as error:
                 if isinstance(error, asyncio.CancelledError):
                     owner.cancel()
@@ -159,6 +196,7 @@ class MCPManager:
         connection: _ConnectedServer | None = None
         try:
             async with AsyncExitStack() as stack:
+                initialization_timeout = MCP_CONNECT_TIMEOUT
                 if server.transport == "stdio":
                     params = self._parameters(server)
                     errlog = stack.enter_context(_discard_stdio_output())
@@ -168,10 +206,18 @@ class MCPManager:
                 else:
                     if server.endpoint is None:
                         raise MCPConnectionError("The MCP HTTP endpoint is missing.")
+                    auth = self._oauth_provider(server) if not server.secret_env else None
+                    initialization_timeout = (
+                        MCP_OAUTH_CONNECT_TIMEOUT if auth is not None else MCP_CONNECT_TIMEOUT
+                    )
+                    oauth_listener = getattr(auth, "_xaa_listener", None)
+                    if oauth_listener is not None:
+                        stack.callback(oauth_listener.close)
                     http_client = httpx.AsyncClient(
                         headers=self._http_headers(server),
                         timeout=httpx.Timeout(MCP_CALL_TIMEOUT, connect=MCP_CONNECT_TIMEOUT),
                         follow_redirects=False,
+                        auth=auth,
                     )
                     await stack.enter_async_context(http_client)
                     read_stream, write_stream, _ = await stack.enter_async_context(
@@ -211,10 +257,18 @@ class MCPManager:
                 session = OwnerNotificationSession(
                     read_stream,
                     write_stream,
-                    read_timeout_seconds=timedelta(seconds=MCP_CONNECT_TIMEOUT),
+                    read_timeout_seconds=timedelta(
+                        seconds=initialization_timeout
+                        if server.transport == "streamable_http"
+                        else MCP_CONNECT_TIMEOUT
+                    ),
                 )
                 await stack.enter_async_context(session)
-                async with asyncio.timeout(MCP_CONNECT_TIMEOUT):
+                async with asyncio.timeout(
+                    initialization_timeout
+                    if server.transport == "streamable_http"
+                    else MCP_CONNECT_TIMEOUT
+                ):
                     await session.initialize()
                     tools = await self._list_tools(session, server.id)
                 records = self.registry.synchronize_tools(server.id, tools)
@@ -273,6 +327,8 @@ class MCPManager:
         if self.credential_store is not None:
             for name in server.secret_env:
                 self.credential_store.delete(MCP_ENV_PROFILE.format(server_id, name))
+            self.credential_store.delete(MCP_OAUTH_TOKENS_PROFILE.format(server_id))
+            self.credential_store.delete(MCP_OAUTH_CLIENT_PROFILE.format(server_id))
         return self.registry.delete_server(server_id)
 
     async def close(self) -> None:
@@ -1002,6 +1058,94 @@ class MCPManager:
             )
         return {"Authorization": f"Bearer {secret}"}
 
+    def _oauth_provider(self, server: MCPServerRecord) -> OAuthClientProvider | None:
+        if self.credential_store is None or server.endpoint is None:
+            return None
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        listener.setblocking(False)
+        port = listener.getsockname()[1]
+        callback_path = "/oauth/" + os.urandom(24).hex()
+        callback: asyncio.Future[tuple[str, str | None]] | None = None
+        callback_server: asyncio.AbstractServer | None = None
+
+        async def redirect_handler(authorization_url: str) -> None:
+            nonlocal callback, callback_server
+            callback = asyncio.get_running_loop().create_future()
+
+            async def receive(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+                try:
+                    line = await asyncio.wait_for(reader.readline(), timeout=30)
+                    if len(line) > 8192:
+                        raise ValueError("callback request too large")
+                    parts = line.decode("ascii").strip().split(" ")
+                    if len(parts) != 3 or parts[0] != "GET":
+                        raise ValueError("invalid callback request")
+                    for _ in range(32):
+                        header = await asyncio.wait_for(reader.readline(), timeout=5)
+                        if header in (b"\r\n", b"\n", b""):
+                            break
+                    path = urlsplit(parts[1]).path
+                    if path != callback_path:
+                        writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+                        await writer.drain()
+                        return
+                    params = parse_qs(urlsplit(parts[1]).query)
+                    code = params.get("code", [""])[0]
+                    state = params.get("state", [None])[0]
+                    if callback is not None and not callback.done():
+                        callback.set_result((code, state))
+                    body = b"Sign-in received. You can close this window."
+                    writer.write(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
+                        + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+                        + body
+                    )
+                    await writer.drain()
+                except (TimeoutError, OSError, ValueError):
+                    if callback is not None and not callback.done():
+                        callback.set_exception(OAuthFlowError("The sign-in callback was invalid."))
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+
+            callback_server = await asyncio.start_server(receive, sock=listener)
+            if self.authorization_redirect_handler is not None:
+                await self.authorization_redirect_handler(authorization_url)
+            elif not await asyncio.to_thread(webbrowser.open, authorization_url):
+                raise OAuthFlowError("Could not open a browser for MCP sign-in.")
+
+        async def callback_handler() -> tuple[str, str | None]:
+            if callback is None:
+                raise OAuthFlowError("The sign-in callback was not initialized.")
+            try:
+                return await asyncio.wait_for(callback, timeout=300)
+            finally:
+                if callback_server is not None:
+                    callback_server.close()
+                    await callback_server.wait_closed()
+
+        provider = OAuthClientProvider(
+            server_url=server.endpoint,
+            client_metadata=OAuthClientMetadata(
+                redirect_uris=[
+                    TypeAdapter(AnyUrl).validate_python(f"http://127.0.0.1:{port}{callback_path}")
+                ],
+                token_endpoint_auth_method="none",
+                grant_types=["authorization_code", "refresh_token"],
+                response_types=["code"],
+                client_name="Xyst AI Agent",
+            ),
+            storage=_VaultOAuthStorage(self.credential_store, server.id),
+            redirect_handler=redirect_handler,
+            callback_handler=callback_handler,
+            timeout=300,
+        )
+        provider._xaa_listener = listener  # type: ignore[attr-defined]
+        return provider
+
     async def _list_tools(self, session: ClientSession, server_id: str) -> list[MCPDiscoveredTool]:
         tools: list[Tool] = []
         cursor: str | None = None
@@ -1068,7 +1212,11 @@ class MCPManager:
         elif isinstance(error, OSError):
             message = "Could not start the MCP server. Check its command, arguments, and working directory."
         elif isinstance(error, TimeoutError):
-            message = "The MCP server did not complete initialization within 15 seconds."
+            message = "The MCP server did not complete initialization or sign-in in time."
+        elif isinstance(error, OAuthFlowError):
+            message = (
+                "MCP sign-in could not be completed. Check the authorization server and try again."
+            )
         else:
             message = "The MCP server failed during initialization or tool discovery."
         for name in server.secret_env:
