@@ -18,7 +18,7 @@ from xaa.runtime.browser import (
     BrowserArguments,
     BrowserOutput,
     _execute_worker,
-    _worker_environment,
+    browser_worker_environment,
 )
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.web_fetch import validate_web_target
@@ -75,7 +75,7 @@ def test_browser_worker_receives_only_os_runtime_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("XAA_TEST_BROWSER_SECRET", "must-not-be-inherited")
-    assert "XAA_TEST_BROWSER_SECRET" not in _worker_environment()
+    assert "XAA_TEST_BROWSER_SECRET" not in browser_worker_environment()
 
 
 @pytest.mark.asyncio

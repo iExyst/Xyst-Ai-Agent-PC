@@ -2,7 +2,7 @@
 
 ## Report blocked browser child-frame navigations (2026-11-10)
 
-The managed browser now includes off-host iframe document requests in `blocked_subresources` under the `frame` resource type, while keeping blocked top-level document navigations in their separate refusal counter. A regression test verifies the child-frame/main-frame distinction. `tests/unit/test_browser.py` passes all 32 tests with an isolated pytest temp directory; Ruff and Pyright pass for the changed worker and test. This improves owner visibility into embedded content blocked by the host grant. No model inference was used.
+The managed browser now includes off-host iframe document requests in `blocked_subresources` under the `frame` resource type, while keeping blocked top-level document navigations in their separate refusal counter. A real Microsoft Edge check loads MDN’s iframe reference with only `developer.mozilla.org` approved, scrolls to trigger interactive examples, and verifies three off-host frame documents are aborted by the shared route guard before network; Edge 157 report: `.acceptance/browser-subresource-edge-61258a70743343fc87fb79eee5fd458f/report.json`. A regression test verifies the child-frame/main-frame distinction. `tests/unit/test_browser.py` passes all 32 tests with an isolated pytest temp directory; Ruff and Pyright pass for the changed worker and smoke script. Hosted validation of the expanded frame scenario is pending. No model inference was used.
 
 
 ## Verify live Edge blocks off-host page subresources (2026-11-10)

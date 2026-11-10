@@ -34,7 +34,7 @@ WINDOWS_WORKER_ENV = {
 }
 
 
-def _worker_environment() -> dict[str, str]:
+def browser_worker_environment() -> dict[str, str]:
     allowed = WINDOWS_WORKER_ENV if os.name == "nt" else {"PATH", "HOME", "TMPDIR", "TEMP", "TMP"}
     return {key: value for key, value in os.environ.items() if key.upper() in allowed}
 
@@ -121,7 +121,7 @@ async def _execute_worker(payload: dict[str, Any], timeout: float) -> dict[str, 
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
-        env=_worker_environment(),
+        env=browser_worker_environment(),
         creationflags=0x08000000 if os.name == "nt" else 0,
     )
     try:
