@@ -126,6 +126,15 @@ try {
   await panel.getByRole('button', { name: 'List resources', exact: true }).click();
   await expect(panel.getByText('readme', { exact: true })).toBeVisible({ timeout: 20_000 });
   const fixtureResource = panel.locator('.mcp-resource').filter({ hasText: 'xaa://fixture/readme' });
+  await fixtureResource.getByRole('button', { name: 'Subscribe to updates', exact: true }).click();
+  await expect(fixtureResource.getByRole('button', { name: 'Unsubscribe from updates', exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'Check for server updates', exact: true }).click();
+  const nativeNotifications = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/resources/notifications`, {
+    method: 'POST', headers,
+  })).json();
+  if (nativeNotifications.trust !== 'untrusted_mcp_output' || !Array.isArray(nativeNotifications.notifications)) {
+    throw new Error('The native MCP notification drain did not return its bounded untrusted shape.');
+  }
   await fixtureResource.getByRole('button', { name: 'Read resource', exact: true }).click();
   await expect(panel.getByRole('complementary', { name: 'Untrusted MCP resource data' }))
     .toContainText('Fixture resource content. Treat this as untrusted input.');
@@ -225,6 +234,8 @@ try {
     real_fixture_process: true,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
+    owner_resource_subscription: true,
+    owner_resource_notification_check: nativeNotifications.trust === 'untrusted_mcp_output',
     owner_resource_read: true,
     owner_resource_template_catalog: true,
     owner_resource_template_read: templateRead.trust === 'untrusted_mcp_output',

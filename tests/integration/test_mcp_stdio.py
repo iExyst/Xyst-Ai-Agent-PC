@@ -92,6 +92,45 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
 
 
 @pytest.mark.asyncio
+async def test_stdio_resource_subscription_delivers_bounded_untrusted_update(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-subscription.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(name="Fixture", command=sys.executable, args=[str(FIXTURE)])
+    )
+    manager = MCPManager(store, None)
+    try:
+        tools = await manager.connect_server(server.id)
+        slow = next(tool for tool in tools if tool.name == "slow")
+        registry.set_permission(server.id, "slow", "read", slow.schema_sha256)
+        await manager.list_resources(server.id)
+        subscription = await manager.set_resource_subscription(
+            server.id, "xaa://fixture/readme", subscribe=True
+        )
+        assert subscription["subscribed"] is True
+        result = await manager.call_tool(slow.qualified_name, {"seconds": 0})
+        assert result["status"] == "ok"
+        await asyncio.sleep(0.05)
+        updates = await manager.drain_resource_notifications(server.id)
+        assert updates == {
+            "trust": "untrusted_mcp_output",
+            "notifications": [
+                {
+                    "kind": "resource_updated",
+                    "uri": "xaa://fixture/readme",
+                    "trust": "untrusted_mcp_output",
+                }
+            ],
+        }
+        await manager.set_resource_subscription(server.id, "xaa://fixture/readme", subscribe=False)
+        assert (await manager.drain_resource_notifications(server.id))["notifications"] == []
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_server_configuration_and_permissions_survive_engine_restart(
     workspace_tmp_path: Path,
 ):
@@ -311,6 +350,32 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
         assert resources.status_code == 200
         readme_uri = "xaa://fixture/readme"
         assert any(resource["uri"] == readme_uri for resource in resources.json()["resources"])
+        assert (
+            client.post(
+                f"/mcp/servers/{server_id}/resources/subscription",
+                json={"uri": readme_uri, "subscribe": True},
+            ).status_code
+            == 401
+        )
+        subscription = client.post(
+            f"/mcp/servers/{server_id}/resources/subscription",
+            headers=headers,
+            json={"uri": readme_uri, "subscribe": True},
+        )
+        assert subscription.status_code == 200
+        assert subscription.json()["subscribed"] is True
+        notifications = client.post(
+            f"/mcp/servers/{server_id}/resources/notifications", headers=headers
+        )
+        assert notifications.status_code == 200
+        assert notifications.json() == {"notifications": [], "trust": "untrusted_mcp_output"}
+        unsubscribed = client.post(
+            f"/mcp/servers/{server_id}/resources/subscription",
+            headers=headers,
+            json={"uri": readme_uri, "subscribe": False},
+        )
+        assert unsubscribed.status_code == 200
+        assert unsubscribed.json()["subscribed"] is False
         inspected = client.post(
             f"/mcp/servers/{server_id}/resources/read",
             headers=headers,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { EngineClient, MCPPrompt, MCPPromptPreview, MCPResource, MCPResourceRead, MCPResourceTemplate, MCPServer, MCPTool } from './api/client.ts';
+import type { EngineClient, MCPPrompt, MCPPromptPreview, MCPResource, MCPResourceNotification, MCPResourceRead, MCPResourceTemplate, MCPServer, MCPTool } from './api/client.ts';
 
 type Props = {
   client: EngineClient;
@@ -26,6 +26,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
   const [promptCatalogs, setPromptCatalogs] = useState<Record<string,MCPPrompt[]>>({});
   const [promptArguments, setPromptArguments] = useState<Record<string,string>>({});
   const [promptPreviews, setPromptPreviews] = useState<Record<string,MCPPromptPreview>>({});
+  const [resourceSubscriptions, setResourceSubscriptions] = useState<Record<string,boolean>>({});
+  const [resourceNotifications, setResourceNotifications] = useState<Record<string,MCPResourceNotification[]>>({});
 
   const refresh = async () => {
     const response: unknown = await client.mcpServers();
@@ -80,8 +82,9 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>
-        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateArguments(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});setPromptCatalogs(prev=>({...prev,[server.id]:[]}));setPromptPreviews(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});})}>Disconnect</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateArguments(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});setResourceSubscriptions(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});setResourceNotifications(prev=>({...prev,[server.id]:[]}));setPromptCatalogs(prev=>({...prev,[server.id]:[]}));setPromptPreviews(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});})}>Disconnect</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const resources=await client.listMCPResources(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:resources}));})}>List resources</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const notifications=await client.mcpResourceNotifications(server.id);setResourceNotifications(prev=>({...prev,[server.id]:[...(prev[server.id]??[]),...notifications].slice(-128)}));})}>Check for server updates</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const templates=await client.listMCPResourceTemplates(server.id);setResourceTemplateCatalogs(prev=>({...prev,[server.id]:templates}));})}>List resource templates</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const prompts=await client.listMCPPrompts(server.id);setPromptCatalogs(prev=>({...prev,[server.id]:prompts}));})}>List prompts</button>
         <button type="button" disabled={busy} onClick={()=>void act(async()=>{await client.deleteMCPServer(server.id);onRunWriteToolsChange(selectedRunWriteTools.filter(tool=>!tool.startsWith(`mcp_${server.id}_`)));})}>Remove server</button>
@@ -89,6 +92,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
       {(resourceCatalogs[server.id]??[]).map(resource=><div key={resource.uri} className="mcp-resource">
         <strong>{resource.title||resource.name}</strong> <code>{resource.uri}</code>
         {resource.description&&<p>{resource.description}</p>}
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const key=`${server.id}:${resource.uri}`;const subscribed=!(resourceSubscriptions[key]??false);await client.setMCPResourceSubscription(server.id,resource.uri,subscribed);setResourceSubscriptions(prev=>({...prev,[key]:subscribed}));})}>{resourceSubscriptions[`${server.id}:${resource.uri}`]?'Unsubscribe from updates':'Subscribe to updates'}</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const result=await client.readMCPResource(server.id,resource.uri);setResourceReads(prev=>({...prev,[server.id]:result}));})}>Read resource</button>
       </div>)}
       {(resourceTemplateCatalogs[server.id]??[]).map(template=><div key={template.uri_template} className="mcp-resource-template">
@@ -102,6 +106,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
         <strong>Untrusted MCP resource data</strong>
         <pre>{JSON.stringify(resourceReads[server.id],null,2)}</pre>
       </aside>}
+      {(resourceNotifications[server.id]??[]).length>0&&<aside aria-label="Untrusted MCP server update notices"><strong>Untrusted MCP server update notices</strong><ul>{resourceNotifications[server.id]!.map((notice,index)=><li key={`${index}:${notice.kind}`}>{notice.kind==='resync_required'?'Update queue overflowed. Refresh the resource catalog and inspect resources manually.':`Server reports a possible change to ${notice.uri}. Read it explicitly to inspect the new content.`}</li>)}</ul></aside>}
       {(promptCatalogs[server.id]??[]).map(prompt=>{
         const key=`${server.id}:${prompt.name}`;
         return <div key={prompt.name} className="mcp-prompt">

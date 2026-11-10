@@ -277,6 +277,12 @@ class MCPResourceReadRequest(BaseModel):
     uri: str = Field(min_length=1, max_length=2048)
 
 
+class MCPResourceSubscriptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    uri: str = Field(min_length=1, max_length=2048)
+    subscribe: bool
+
+
 class MCPResourceTemplateReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=2048)
@@ -905,6 +911,32 @@ def create_app(
             raise HTTPException(status_code=404, detail="MCP server not found.")
         try:
             return await mcp_manager.read_resource(server_id, payload.uri)
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/resources/subscription")
+    async def set_mcp_resource_subscription(
+        server_id: str,
+        payload: MCPResourceSubscriptionRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return await mcp_manager.set_resource_subscription(
+                server_id, payload.uri, subscribe=payload.subscribe
+            )
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/resources/notifications")
+    async def drain_mcp_resource_notifications(
+        server_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return await mcp_manager.drain_resource_notifications(server_id)
         except MCPConnectionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -1899,6 +1899,27 @@
         "title": "MCPResourceReadRequest",
         "type": "object"
       },
+      "MCPResourceSubscriptionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "subscribe": {
+            "title": "Subscribe",
+            "type": "boolean"
+          },
+          "uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri",
+          "subscribe"
+        ],
+        "title": "MCPResourceSubscriptionRequest",
+        "type": "object"
+      },
       "MCPResourceTemplateReadRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7634,6 +7655,52 @@
         "summary": "List Mcp Resources"
       }
     },
+    "/mcp/servers/{server_id}/resources/notifications": {
+      "post": {
+        "operationId": "drain_mcp_resource_notifications_mcp_servers__server_id__resources_notifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Drain Mcp Resource Notifications Mcp Servers  Server Id  Resources Notifications Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Drain Mcp Resource Notifications"
+      }
+    },
     "/mcp/servers/{server_id}/resources/read": {
       "post": {
         "operationId": "read_mcp_resource_mcp_servers__server_id__resources_read_post",
@@ -7688,6 +7755,62 @@
           }
         ],
         "summary": "Read Mcp Resource"
+      }
+    },
+    "/mcp/servers/{server_id}/resources/subscription": {
+      "post": {
+        "operationId": "set_mcp_resource_subscription_mcp_servers__server_id__resources_subscription_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPResourceSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Mcp Resource Subscription Mcp Servers  Server Id  Resources Subscription Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Mcp Resource Subscription"
       }
     },
     "/mcp/servers/{server_id}/secrets/{env_name}": {

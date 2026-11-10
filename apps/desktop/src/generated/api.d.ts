@@ -720,6 +720,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/servers/{server_id}/resources/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Mcp Resource Notifications */
+        post: operations["drain_mcp_resource_notifications_mcp_servers__server_id__resources_notifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp/servers/{server_id}/resources/read": {
         parameters: {
             query?: never;
@@ -731,6 +748,23 @@ export interface paths {
         put?: never;
         /** Read Mcp Resource */
         post: operations["read_mcp_resource_mcp_servers__server_id__resources_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/servers/{server_id}/resources/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Mcp Resource Subscription */
+        post: operations["set_mcp_resource_subscription_mcp_servers__server_id__resources_subscription_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2593,6 +2627,13 @@ export interface components {
         };
         /** MCPResourceReadRequest */
         MCPResourceReadRequest: {
+            /** Uri */
+            uri: string;
+        };
+        /** MCPResourceSubscriptionRequest */
+        MCPResourceSubscriptionRequest: {
+            /** Subscribe */
+            subscribe: boolean;
             /** Uri */
             uri: string;
         };
@@ -5313,6 +5354,39 @@ export interface operations {
             };
         };
     };
+    drain_mcp_resource_notifications_mcp_servers__server_id__resources_notifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_mcp_resource_mcp_servers__server_id__resources_read_post: {
         parameters: {
             query?: never;
@@ -5325,6 +5399,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MCPResourceReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_mcp_resource_subscription_mcp_servers__server_id__resources_subscription_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPResourceSubscriptionRequest"];
             };
         };
         responses: {

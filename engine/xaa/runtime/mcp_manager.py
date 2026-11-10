@@ -28,6 +28,8 @@ from mcp.types import (
     Prompt,
     ResourceLink,
     ResourceTemplate,
+    ResourceUpdatedNotification,
+    ServerNotification,
     TextContent,
     TextResourceContents,
     Tool,
@@ -52,6 +54,7 @@ MCP_RESULT_BYTES = 256 * 1024
 MCP_RESOURCE_COUNT_LIMIT = 256
 MCP_RESOURCE_FIELD_LIMIT = 2048
 MCP_PROMPT_ARGUMENT_LIMIT = 32
+MCP_NOTIFICATION_LIMIT = 128
 MCP_ENV_PROFILE = "mcp:{}:{}"
 
 
@@ -79,6 +82,7 @@ class _ConnectedServer:
         expanded_resource_uris: set[str],
         shutdown: asyncio.Event,
         owner_task: asyncio.Task[None],
+        notifications: asyncio.Queue[dict[str, Any]],
     ) -> None:
         self.server = server
         self.session = session
@@ -89,6 +93,8 @@ class _ConnectedServer:
         self.expanded_resource_uris = expanded_resource_uris
         self.shutdown = shutdown
         self.owner_task = owner_task
+        self.notifications = notifications
+        self.subscribed_resources: set[str] = set()
         self.lock = asyncio.Lock()
 
     async def close(self) -> None:
@@ -168,7 +174,35 @@ class MCPManager:
                             http_client=http_client,
                         )
                     )
-                session = ClientSession(
+                notifications: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+                    maxsize=MCP_NOTIFICATION_LIMIT
+                )
+                connection_subscriptions: set[str] = set()
+
+                class OwnerNotificationSession(ClientSession):
+                    async def _received_notification(
+                        self, notification: ServerNotification
+                    ) -> None:
+                        await super()._received_notification(notification)
+                        if isinstance(notification.root, ResourceUpdatedNotification):
+                            uri = str(notification.root.params.uri)[:MCP_RESOURCE_FIELD_LIMIT]
+                            if uri not in connection_subscriptions:
+                                return
+                            payload = {
+                                "kind": "resource_updated",
+                                "uri": uri,
+                                "trust": "untrusted_mcp_output",
+                            }
+                            if notifications.full():
+                                while not notifications.empty():
+                                    notifications.get_nowait()
+                                payload = {
+                                    "kind": "resync_required",
+                                    "trust": "untrusted_mcp_output",
+                                }
+                            notifications.put_nowait(payload)
+
+                session = OwnerNotificationSession(
                     read_stream,
                     write_stream,
                     read_timeout_seconds=timedelta(seconds=MCP_CONNECT_TIMEOUT),
@@ -191,7 +225,9 @@ class MCPManager:
                     set(),
                     asyncio.Event(),
                     task,
+                    notifications,
                 )
+                connection.subscribed_resources = connection_subscriptions
                 if not ready.done():
                     ready.set_result((connection, records))
                 await connection.shutdown.wait()
@@ -632,6 +668,75 @@ class MCPManager:
             raise MCPConnectionError(
                 "The MCP resource template could not be expanded safely."
             ) from error
+
+    async def set_resource_subscription(
+        self, server_id: str, uri: str, *, subscribe: bool
+    ) -> dict[str, Any]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before managing subscriptions.")
+        if not uri or len(uri) > MCP_RESOURCE_FIELD_LIMIT:
+            raise MCPConnectionError("The MCP resource URI is invalid or too long.")
+        async with connection.lock:
+            if uri not in connection.resources and uri not in connection.expanded_resource_uris:
+                raise MCPConnectionError(
+                    "Subscribe only to a resource currently advertised by this connected server."
+                )
+            capabilities = connection.session.get_server_capabilities()
+            if (
+                capabilities is None
+                or capabilities.resources is None
+                or not capabilities.resources.subscribe
+            ):
+                raise MCPConnectionError(
+                    "This MCP server does not advertise resource subscriptions."
+                )
+            try:
+                if subscribe:
+                    connection.subscribed_resources.add(uri)
+                else:
+                    connection.subscribed_resources.discard(uri)
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    if subscribe:
+                        await connection.session.subscribe_resource(
+                            TypeAdapter(AnyUrl).validate_python(uri)
+                        )
+                    else:
+                        await connection.session.unsubscribe_resource(
+                            TypeAdapter(AnyUrl).validate_python(uri)
+                        )
+            except TimeoutError as error:
+                if not subscribe:
+                    connection.subscribed_resources.add(uri)
+                raise MCPConnectionError(
+                    "The MCP resource subscription request timed out."
+                ) from error
+            except MCPConnectionError:
+                if subscribe:
+                    connection.subscribed_resources.discard(uri)
+                else:
+                    connection.subscribed_resources.add(uri)
+                raise
+            except Exception as error:
+                if subscribe:
+                    connection.subscribed_resources.discard(uri)
+                else:
+                    connection.subscribed_resources.add(uri)
+                raise MCPConnectionError("The MCP resource subscription request failed.") from error
+            return {
+                "uri": uri,
+                "subscribed": subscribe,
+                "trust": "untrusted_mcp_output",
+            }
+
+    async def drain_resource_notifications(self, server_id: str) -> dict[str, Any]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before checking updates.")
+        updates: list[dict[str, Any]] = []
+        while len(updates) < MCP_NOTIFICATION_LIMIT and not connection.notifications.empty():
+            updates.append(connection.notifications.get_nowait())
+        return {"notifications": updates, "trust": "untrusted_mcp_output"}
 
     async def read_resource(self, server_id: str, uri: str) -> dict[str, Any]:
         connection = self._connected.get(server_id)
