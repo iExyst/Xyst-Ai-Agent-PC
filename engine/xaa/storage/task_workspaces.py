@@ -352,7 +352,9 @@ class TaskWorkspaces:
             )
             return result
 
-    def changes(self, run_id: str, task_id: str) -> list[dict[str, Any]]:
+    def changes(
+        self, run_id: str, task_id: str, *, include_diffs: bool = True
+    ) -> list[dict[str, Any]]:
         with self.store.connection() as connection:
             if self.binding(connection, run_id, task_id) is None:
                 return []
@@ -364,17 +366,19 @@ class TaskWorkspaces:
             data = files.get(name)
             if before == data:
                 continue
-            diff = "".join(
-                line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
-                for line in difflib.unified_diff(
-                    (before or b"").decode("utf-8", errors="replace").splitlines(keepends=True),
-                    data.decode("utf-8", errors="replace").splitlines(keepends=True)
-                    if data is not None
-                    else [],
-                    fromfile="a/" + name,
-                    tofile="b/" + name,
+            diff = ""
+            if include_diffs:
+                diff = "".join(
+                    line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
+                    for line in difflib.unified_diff(
+                        (before or b"").decode("utf-8", errors="replace").splitlines(keepends=True),
+                        data.decode("utf-8", errors="replace").splitlines(keepends=True)
+                        if data is not None
+                        else [],
+                        fromfile="a/" + name,
+                        tofile="b/" + name,
+                    )
                 )
-            )
             changes.append(
                 {
                     "path": name,

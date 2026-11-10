@@ -1,5 +1,9 @@
 # Progress
 
+## Avoid rebuilding private diffs for reviewer evidence paging (2026-11-10)
+
+Reviewer dependency-manifest paging and evidence-gate checks now request change metadata without generating full unified diffs. This avoids repeated diff allocation for every page while preserving full diffs for the owner review UI and normal candidate evidence. The task workspace and specialist suites pass (40 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. This bounds one repeated allocation in reviewer inventory; broader Phase 4 resource/reliability coverage remains open. No live model inference was used.
+
 ## Keep reviewer evidence discoverable beyond the prompt budget (2026-11-10)
 
 Reviewer prompts always carry saved dependency IDs, even when dependency summaries exceed the 8 KiB initial-context budget. A reviewer-only `review_dependency_manifest` lists source-file evidence, private changes and validation-output IDs in pages of up to eight items, dynamically kept under 64 KiB using worst-case JSON escaping. Candidate submission requires complete manifest paging for each dependency with evidence, plus direct reading of source files, changed artifacts and validation outputs through their existing tools. A deterministic 30-item pagination test covers worst-case Unicode expansion; the fake-reviewer integration verifies discovery, full reads and the gate. The specialist, workspace and task-command suites passed (59); Ruff, formatting and strict Pyright pass. Hosted Windows run [42888770822](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42888770822) passed the complete source workflow, including the full Python suite and recovery diagnostics. Installer checks were skipped because packaging inputs did not change. Broader orchestration reliability and the Phase 4 gate remain open. No live LLM inference was used.

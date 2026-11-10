@@ -28,7 +28,9 @@ class TaskReviewDecision(BaseModel):
     )
 
 
-def candidate_evidence(store: RunStore, run_id: str, task_id: str) -> dict[str, Any]:
+def candidate_evidence(
+    store: RunStore, run_id: str, task_id: str, *, include_change_diffs: bool = True
+) -> dict[str, Any]:
     task = next(
         (row for row in TaskStore(store).records(run_id) if row["local_id"] == task_id), None
     )
@@ -65,7 +67,9 @@ def candidate_evidence(store: RunStore, run_id: str, task_id: str) -> dict[str, 
         "candidate": result.get("candidate"),
         "acceptance_criteria": task["acceptance_criteria"],
         "evidence": evidence[-16:],
-        "workspace_changes": TaskWorkspaces(store).changes(run_id, task_id),
+        "workspace_changes": TaskWorkspaces(store).changes(
+            run_id, task_id, include_diffs=include_change_diffs
+        ),
         "validation_required": "workspace.command" in task["permission_scope"],
         "validation_evidence": command_evidence(store, run_id, task_id),
     }

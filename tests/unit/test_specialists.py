@@ -44,7 +44,11 @@ async def test_dependency_review_manifest_pages_all_evidence_with_bounded_result
             for index in range(2)
         ],
     }
-    monkeypatch.setattr(specialist_module, "candidate_evidence", lambda *_args: snapshot)
+    monkeypatch.setattr(
+        specialist_module,
+        "candidate_evidence",
+        lambda *_args, **_kwargs: snapshot,
+    )
     pages = []
     offset = 0
     while True:

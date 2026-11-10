@@ -466,6 +466,10 @@ async def test_real_workers_keep_each_private_edit_and_original_project_separate
         changes = TaskWorkspaces(store).changes(run_id, name)
         assert len(changes) == 1 and changes[0]["base_sha256"] == digest
         assert name + " version" in changes[0]["diff"]
+        manifest_changes = TaskWorkspaces(store).changes(run_id, name, include_diffs=False)
+        assert manifest_changes[0]["base_sha256"] == changes[0]["base_sha256"]
+        assert manifest_changes[0]["proposed_sha256"] == changes[0]["proposed_sha256"]
+        assert manifest_changes[0]["diff"] == ""
     assert (project / "shared.txt").read_bytes() == b"original\n"
     assert store.conversation_messages(run_id) == []
     assert not store.unresolved_tool_calls(run_id)

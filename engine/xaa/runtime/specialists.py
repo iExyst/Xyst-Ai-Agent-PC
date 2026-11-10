@@ -317,7 +317,9 @@ class SpecialistRunner:
         required_outputs: set[tuple[str, str]] = set()
         required_manifests: set[str] = set()
         for dependency_id in task["dependencies"]:
-            dependency = candidate_evidence(self.store, run_id, dependency_id)
+            dependency = candidate_evidence(
+                self.store, run_id, dependency_id, include_change_diffs=False
+            )
             if (
                 dependency["evidence"]
                 or dependency["workspace_changes"]
@@ -467,7 +469,7 @@ class SpecialistRunner:
     def _review_dependency_manifest(
         self, run_id: str, dependency_id: str, *, offset: int, limit: int
     ) -> dict[str, Any]:
-        snapshot = candidate_evidence(self.store, run_id, dependency_id)
+        snapshot = candidate_evidence(self.store, run_id, dependency_id, include_change_diffs=False)
         entries: list[dict[str, Any]] = []
         evidence_items = cast(list[dict[str, Any]], snapshot["evidence"])
         change_items = cast(list[dict[str, Any]], snapshot["workspace_changes"])
