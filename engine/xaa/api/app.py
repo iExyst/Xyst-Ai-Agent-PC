@@ -908,12 +908,19 @@ def create_app(
     def create_mcp_server(
         payload: MCPServerSpec, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
+        if payload.plugin_root is not None or payload.plugin_data is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Installed package paths can only be set by validated package import.",
+            )
         try:
             server = MCPRegistry(run_store).create_server(payload)
         except sqlite3.IntegrityError as exc:
             raise HTTPException(
                 status_code=409, detail="An MCP server with that name already exists."
             ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             **server.model_dump(exclude={"plugin_root", "plugin_data"}),
             "plugin_backed": server.plugin_root is not None,
