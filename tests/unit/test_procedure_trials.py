@@ -8,6 +8,10 @@ from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.procedure_tools import (
+    PROCEDURE_RESOURCE_READ_CONTRACT,
+    PROCEDURE_VIEW_CONTRACT,
+)
 from xaa.storage.runs import RunStore
 from xaa.storage.skills import SkillAsset, SkillDraft, SkillRevision, SkillStore
 
@@ -60,7 +64,9 @@ async def test_explicit_trial_uses_immutable_snapshot_after_revision_and_deletio
                 assert "TRIAL_ORIGINAL" not in combined
                 assert "REVISION_NOT_SELECTED" not in combined
                 view_tool = next(t for t in tools if t["function"]["name"] == "procedure_view")
-                assert view_tool["function"]["parameters"]["additionalProperties"] is False
+                assert (
+                    view_tool["function"]["parameters"] == PROCEDURE_VIEW_CONTRACT["input_schema"]
+                )
                 return {
                     "choices": [
                         {
@@ -116,7 +122,9 @@ async def test_procedure_view_returns_only_selected_integrity_checked_version(wo
         async def chat(self, *, model, messages, tools=None):
             if messages[-1]["role"] == "user":
                 view_tool = next(t for t in tools if t["function"]["name"] == "procedure_view")
-                assert view_tool["function"]["parameters"]["additionalProperties"] is False
+                assert (
+                    view_tool["function"]["parameters"] == PROCEDURE_VIEW_CONTRACT["input_schema"]
+                )
                 return {
                     "choices": [
                         {
@@ -308,6 +316,9 @@ async def test_selected_procedure_exposes_only_scoped_untrusted_resource_reader(
         async def chat(self, *, model, messages, tools=None):
             if messages[-1]["role"] == "user":
                 tool = next(t for t in tools if t["function"]["name"] == "procedure_read_resource")
+                resource_schema = json.loads(json.dumps(tool["function"]["parameters"]))
+                resource_schema["properties"]["path"].pop("enum")
+                assert resource_schema == PROCEDURE_RESOURCE_READ_CONTRACT["input_schema"]
                 assert tool["function"]["parameters"]["properties"]["path"]["enum"] == [
                     "references/guide.md"
                 ]

@@ -5,8 +5,12 @@ from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.procedure_tools import (
     PROCEDURE_CATALOG_CONTRACT,
     PROCEDURE_CATALOG_RESULT_BYTES,
+    PROCEDURE_READ_RESULT_BYTES,
+    PROCEDURE_RESOURCE_READ_CONTRACT,
+    PROCEDURE_VIEW_CONTRACT,
     ProcedureCatalogArguments,
     bounded_procedure_catalog,
+    bounded_procedure_read_result,
 )
 from xaa.storage.runs import RunStore
 
@@ -58,3 +62,20 @@ def test_procedure_catalog_result_falls_back_when_serialized_limit_is_exceeded()
     result = bounded_procedure_catalog(oversized)
     assert result["status"] == "output_limit"
     assert result["trust"] == "untrusted_procedure_metadata"
+
+
+def test_selected_procedure_reads_enforce_final_serialized_output_limit() -> None:
+    assert PROCEDURE_VIEW_CONTRACT["limits"]["result_bytes"] == PROCEDURE_READ_RESULT_BYTES
+    assert PROCEDURE_RESOURCE_READ_CONTRACT["limits"]["result_bytes"] == (
+        PROCEDURE_READ_RESULT_BYTES
+    )
+    oversized = {
+        "content": "é" * PROCEDURE_READ_RESULT_BYTES,
+        "trust": "untrusted_selected_procedure",
+    }
+    result = bounded_procedure_read_result(
+        oversized,
+        trust="untrusted_selected_procedure",
+    )
+    assert result["status"] == "output_limit"
+    assert result["trust"] == "untrusted_selected_procedure"

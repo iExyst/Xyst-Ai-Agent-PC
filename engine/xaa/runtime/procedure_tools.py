@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 PROCEDURE_CATALOG_RESULT_BYTES = 512 * 1024
+PROCEDURE_READ_RESULT_BYTES = 512 * 1024
 
 
 class ProcedureCatalogArguments(BaseModel):
@@ -114,6 +115,92 @@ PROCEDURE_CATALOG_CONTRACT: dict[str, Any] = {
 }
 
 
+PROCEDURE_VIEW_CONTRACT: dict[str, Any] = {
+    "name": "procedure.view",
+    "version": "1",
+    "operation": "read_selected_procedure_text",
+    "permissions": ["procedure.selected.read"],
+    "effect": "read",
+    "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    "output_schema": {
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["skill_id", "version", "name", "content", "trust", "authority"],
+                "properties": {
+                    "skill_id": {"type": "string", "maxLength": 128},
+                    "version": {"type": "integer", "minimum": 1, "maximum": 128},
+                    "name": {"type": "string", "maxLength": 80},
+                    "content": {"type": "string", "maxLength": 80 * 1024},
+                    "trust": {"const": "untrusted_selected_procedure"},
+                    "authority": {"const": "selection_does_not_expand_permissions_or_tools"},
+                },
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "required": ["status", "error", "trust"],
+                "properties": {
+                    "status": {"const": "output_limit"},
+                    "error": {"type": "string", "maxLength": 160},
+                    "trust": {"const": "untrusted_selected_procedure"},
+                },
+                "additionalProperties": False,
+            },
+        ]
+    },
+    "timeout_seconds": 10,
+    "cancellation": "Read-only selected snapshot; cancellation has no external effect.",
+    "retry": "No automatic retry; inspect the saved tool result before requesting again.",
+    "limits": {"content_bytes": 80 * 1024, "result_bytes": PROCEDURE_READ_RESULT_BYTES},
+    "audit": ["run_id", "call_id", "tool", "version", "skill_id", "procedure_version"],
+}
+
+
+PROCEDURE_RESOURCE_READ_CONTRACT: dict[str, Any] = {
+    "name": "procedure.read_resource",
+    "version": "1",
+    "operation": "read_selected_linked_text_resource",
+    "permissions": ["procedure.selected.read"],
+    "effect": "read",
+    "input_schema": {
+        "type": "object",
+        "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 512}},
+        "required": ["path"],
+        "additionalProperties": False,
+    },
+    "output_schema": {
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["path", "content", "trust"],
+                "properties": {
+                    "path": {"type": "string", "maxLength": 512},
+                    "content": {"type": "string", "maxLength": 64 * 1024},
+                    "trust": {"const": "untrusted_skill_resource"},
+                },
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "required": ["status", "error", "trust"],
+                "properties": {
+                    "status": {"const": "output_limit"},
+                    "error": {"type": "string", "maxLength": 160},
+                    "trust": {"const": "untrusted_skill_resource"},
+                },
+                "additionalProperties": False,
+            },
+        ]
+    },
+    "timeout_seconds": 10,
+    "cancellation": "Read-only selected package resource; cancellation has no external effect.",
+    "retry": "No automatic retry; inspect the saved tool result before requesting again.",
+    "limits": {"content_bytes": 64 * 1024, "result_bytes": PROCEDURE_READ_RESULT_BYTES},
+    "audit": ["run_id", "call_id", "tool", "version", "path", "resource_sha256"],
+}
+
+
 def bounded_procedure_catalog(result: dict[str, Any]) -> dict[str, Any]:
     encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
     if len(encoded) <= PROCEDURE_CATALOG_RESULT_BYTES:
@@ -122,4 +209,15 @@ def bounded_procedure_catalog(result: dict[str, Any]) -> dict[str, Any]:
         "status": "output_limit",
         "error": "Procedure catalog result exceeded the 512 KiB tool limit; request a smaller page.",
         "trust": "untrusted_procedure_metadata",
+    }
+
+
+def bounded_procedure_read_result(result: dict[str, Any], *, trust: str) -> dict[str, Any]:
+    encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
+    if len(encoded) <= PROCEDURE_READ_RESULT_BYTES:
+        return result
+    return {
+        "status": "output_limit",
+        "error": "Selected procedure read exceeded the 512 KiB tool limit.",
+        "trust": trust,
     }
