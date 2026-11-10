@@ -1,5 +1,16 @@
 # Progress
 
+## Validate MCP structured outputs (2026-11-10)
+
+MCP tool discovery already pinned server output schemas with each tool identity,
+but calls did not check structured results against those schemas and output
+schemas had no discovery size check. MCP now caps output schemas at 128 KiB and
+validates any structured result when a schema is declared. Invalid read output
+is reported as invalid; invalid write output remains an unknown outcome and
+requires reconciliation. The existing 256 KiB result bound remains enforced.
+Focused MCP tests: 3 passed; Ruff, formatting, strict Pyright and diff checks
+pass. Hosted validation is pending. No LLM inference was used.
+
 ## Bound managed-browser tool results (2026-11-10)
 
 The browser worker's 1 MiB response ceiling did not by itself bound the final

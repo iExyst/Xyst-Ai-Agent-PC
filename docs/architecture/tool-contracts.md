@@ -36,6 +36,13 @@ content, form controls and options. The coordinator derives the model-facing
 input schema from browser metadata. Screenshots remain managed artifacts rather
 than inline result bytes.
 
+MCP discovery validates and pins both tool schemas with the discovered tool
+identity. Output schemas are capped at 128 KiB and validated against structured
+call results when supplied by the server. A mismatch on a read is reported as
+invalid output; a mismatch on a write remains an unknown external outcome that
+requires reconciliation. MCP content, structured values, catalogs, prompts and
+resource reads retain their existing 256 KiB serialized bounds.
+
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. The command entry is a typed execution contract used for its
 model-facing input schema; the coordinator still enforces its saved grant and

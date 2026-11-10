@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2 as httpx
 from jsonschema import validators
+from jsonschema.exceptions import ValidationError
 from mcp import Client, ClientSession
 from mcp.client.auth.exceptions import OAuthFlowError
 from mcp.client.auth.oauth2 import OAuthClientProvider, TokenStorage
@@ -1152,7 +1153,11 @@ class MCPManager:
                 "The MCP server disconnected during the call; its external effect is unknown.",
                 status="unknown_outcome",
             ) from error
-        return _result_payload(result, write=record.permission == "write")
+        return _result_payload(
+            result,
+            write=record.permission == "write",
+            output_schema=server_tool.output_schema,
+        )
 
     async def _drop_failed_connection(self, server_id: str, connection: _ConnectedServer) -> None:
         async with self._lock:
@@ -1442,7 +1447,7 @@ class MCPManager:
             qualified_names.add(qualified)
             output_schema = tool.output_schema
             if output_schema is not None:
-                _validator(output_schema)
+                _validate_output_schema(output_schema)
             identity = {
                 "name": name,
                 "title": tool.title,
@@ -1498,15 +1503,21 @@ def _contains_oauth_flow_error(error: BaseException) -> bool:
     return any(_contains_oauth_flow_error(nested) for nested in group.exceptions)
 
 
-def _validator(schema: dict[str, Any]) -> Any:
-    if schema.get("type") != "object":
-        raise ValueError("MCP tool input schema must be a JSON object schema.")
+def _validator(schema: dict[str, Any], *, object_only: bool = True) -> Any:
+    if object_only and schema.get("type") != "object":
+        raise ValueError("MCP tool input schema must describe a JSON object.")
     for key, value in _walk(schema):
         if key == "$ref" and (not isinstance(value, str) or not value.startswith("#")):
             raise ValueError("MCP schemas cannot resolve references outside the server response.")
     validator_type = validators.validator_for(schema)
     validator_type.check_schema(schema)
     return validator_type(schema)
+
+
+def _validate_output_schema(schema: dict[str, Any]) -> Any:
+    if len(json.dumps(schema, separators=(",", ":")).encode("utf-8")) > MCP_TOOL_SCHEMA_BYTES:
+        raise MCPConnectionError("An MCP output schema exceeded the 128 KiB limit.")
+    return _validator(schema, object_only=False)
 
 
 def _bounded_text(value: str | None, limit: int) -> str | None:
@@ -1581,7 +1592,12 @@ def _discard_stdio_output() -> Generator[TextIO]:
         yield stream
 
 
-def _result_payload(result: CallToolResult, *, write: bool) -> dict[str, Any]:
+def _result_payload(
+    result: CallToolResult,
+    *,
+    write: bool,
+    output_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     payload = {
         "status": "unknown_outcome"
         if write and result.is_error
@@ -1596,6 +1612,22 @@ def _result_payload(result: CallToolResult, *, write: bool) -> dict[str, Any]:
         payload["error"] = (
             "The MCP server reported a write error; reconcile its external effect before retrying."
         )
+    if output_schema is not None and result.structured_content is not None:
+        try:
+            _validate_output_schema(output_schema).validate(result.structured_content)
+        except ValidationError:
+            return {
+                "status": "unknown_outcome" if write else "output_invalid",
+                "trust": "untrusted_mcp_output",
+                "content": [],
+                "structured_content": None,
+                "error": (
+                    "MCP write returned data that failed its declared output schema; "
+                    "reconcile its external effect before retrying."
+                    if write
+                    else "MCP structured output did not match its declared schema."
+                ),
+            }
     encoded = json.dumps(payload, separators=(",", ":")).encode()
     if len(encoded) > MCP_RESULT_BYTES:
         return {

@@ -21,6 +21,7 @@ from xaa.runtime.mcp_manager import (
     MCPManager,
     _ConnectedServer,
     _result_payload,
+    _validate_output_schema,
 )
 from xaa.storage.mcp import MCPRegistry, MCPServerRecord, MCPServerSpec, MCPToolRecord
 from xaa.storage.runs import RunStore
@@ -242,6 +243,25 @@ def test_write_error_and_output_overflow_are_unknown_outcomes():
     )
     assert _result_payload(oversized, write=True)["status"] == "unknown_outcome"
     assert _result_payload(oversized, write=False)["status"] == "output_limit"
+
+
+def test_mcp_structured_output_is_checked_against_declared_schema():
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "integer"}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    }
+    valid = CallToolResult(content=[], structured_content={"answer": 42})
+    invalid = CallToolResult(content=[], structured_content={"answer": "42"})
+    assert _result_payload(valid, write=False, output_schema=schema)["status"] == "ok"
+    assert _result_payload(invalid, write=False, output_schema=schema)["status"] == "output_invalid"
+    write_failure = _result_payload(invalid, write=True, output_schema=schema)
+    assert write_failure["status"] == "unknown_outcome"
+    assert "reconcile" in write_failure["error"]
+
+    with pytest.raises(MCPConnectionError, match="output schema exceeded"):
+        _validate_output_schema({"type": "object", "description": "x" * MCP_RESULT_BYTES})
 
 
 @pytest.mark.asyncio
