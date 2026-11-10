@@ -42,7 +42,10 @@ identity. Output schemas are capped at 128 KiB and validated against structured
 call results when supplied by the server. A mismatch on a read is reported as
 invalid output; a mismatch on a write remains an unknown external outcome that
 requires reconciliation. MCP content, structured values, catalogs, prompts and
-resource reads retain their existing 256 KiB serialized bounds.
+resource reads retain their existing 256 KiB serialized bounds. Model-facing MCP
+tool descriptions include the discovered schema hash, 45-second timeout,
+no-automatic-retry rule, result cap, structured-output validation, and write
+reconciliation guidance; server-provided descriptions remain labeled untrusted.
 
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. The command entry is a typed execution contract used for its

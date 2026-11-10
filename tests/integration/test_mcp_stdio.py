@@ -282,9 +282,14 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
         registry.set_permission(server.id, "add", "write", tool.schema_sha256)
         qualified = registry.list_tools(server.id)[0].qualified_name
         assert manager.tools_for_run(set()) == []
-        assert [item["function"]["name"] for item in manager.tools_for_run({qualified})] == [
-            qualified
-        ]
+        advertised = manager.tools_for_run({qualified})
+        assert [item["function"]["name"] for item in advertised] == [qualified]
+        description = advertised[0]["function"]["description"]
+        assert tool.schema_sha256 in description
+        assert "45 seconds" in description
+        assert "no automatic retries" in description
+        assert "256 KiB" in description
+        assert "output schema" in description
         result = await manager.call_tool(qualified, {"left": 20, "right": 22})
         assert result["status"] == "ok"
         assert result["trust"] == "untrusted_mcp_output"
