@@ -485,6 +485,58 @@ def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path
     assert "secret-value" not in response.text
 
 
+def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: Path) -> None:
+    package = make_package(tmp_path / "source")
+    archive_path = tmp_path / "sample.zip"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in package.rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(package).as_posix())
+    app = create_app(
+        FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "state" / "api.sqlite3")
+    )
+    with TestClient(app) as client:
+        assert (
+            client.post(
+                "/extensions/packages/install", json={"archive_path": str(archive_path)}
+            ).status_code
+            == 401
+        )
+        response = client.post(
+            "/extensions/packages/install",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"archive_path": str(archive_path)},
+        )
+    assert response.status_code == 201
+    body = response.json()
+    installed = Path(body["package"]["path"])
+    assert installed == tmp_path / "state" / "agent-plugins" / "sample-package"
+    assert body["package"]["skills"][0]["name"] == "summarize"
+    assert (installed / "plugin.json").is_file()
+    assert not list((tmp_path / "state" / "agent-plugins").glob("install-*"))
+
+
+def test_plugin_archive_install_rejects_traversal_and_existing_package(tmp_path: Path) -> None:
+    malicious = tmp_path / "traversal.zip"
+    with zipfile.ZipFile(malicious, "w") as archive:
+        archive.writestr("plugin.json", '{"name":"sample-package","version":"1"}')
+        archive.writestr("../outside.txt", "escaped")
+    with pytest.raises(ValueError, match="unsafe"):
+        agent_plugins.install_agent_plugin_archive(str(malicious), tmp_path / "managed")
+    assert not (tmp_path / "outside.txt").exists()
+
+    package = make_package(tmp_path / "source")
+    valid = tmp_path / "valid.zip"
+    with zipfile.ZipFile(valid, "w") as archive:
+        for path in package.rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(package).as_posix())
+    installed = agent_plugins.install_agent_plugin_archive(str(valid), tmp_path / "managed")
+    with pytest.raises(FileExistsError, match="already installed"):
+        agent_plugins.install_agent_plugin_archive(str(valid), tmp_path / "managed")
+    assert Path(installed.package.path).is_dir()
+
+
 def test_plugin_mcp_server_import_stores_secrets_in_vault_and_stays_disconnected(
     tmp_path: Path,
 ) -> None:

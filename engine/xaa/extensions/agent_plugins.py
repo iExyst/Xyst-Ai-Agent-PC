@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import zipfile
 from collections.abc import Iterable
 from itertools import islice
@@ -31,6 +32,10 @@ MAX_MANIFEST_BYTES = 256 * 1024
 MAX_SKILL_RESOURCE_COUNT = 32
 MAX_SKILL_RESOURCE_BYTES = 64 * 1024
 MAX_SKILL_RESOURCE_TOTAL_BYTES = 1024 * 1024
+MAX_INSTALL_ARCHIVE_BYTES = 16 * 1024 * 1024
+MAX_INSTALL_FILES = 1024
+MAX_INSTALL_FILE_BYTES = 2 * 1024 * 1024
+MAX_INSTALL_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_READINESS_COMMAND_CHECKS = 256
 _SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
@@ -101,6 +106,12 @@ class PluginDiscovery(BaseModel):
     root: str
     packages: list[PluginSummary]
     diagnostics: list[PluginDiagnostic]
+
+
+class PluginInstallResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    root: str
+    package: PluginSummary
 
 
 class PluginSkillImport(BaseModel):
@@ -956,6 +967,118 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
         except (OSError, RuntimeError, ValueError) as exc:
             diagnostics.append(PluginDiagnostic(path=candidate.name[:256], message=str(exc)[:300]))
     return PluginDiscovery(root=str(root), packages=packages, diagnostics=diagnostics)
+
+
+def install_agent_plugin_archive(archive_path: str, managed_root: Path) -> PluginInstallResult:
+    """Safely extract and validate a package ZIP without executing its contents."""
+    try:
+        source = Path(archive_path).expanduser().resolve(strict=True)
+        if not source.is_file() or source.stat().st_size > MAX_INSTALL_ARCHIVE_BYTES:
+            raise ValueError("selected plugin archive is missing or exceeds the 16 MiB limit")
+        root = managed_root.expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        root = root.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(
+            "selected plugin archive or managed package directory is unavailable"
+        ) from exc
+
+    try:
+        with zipfile.ZipFile(source) as archive:
+            entries = archive.infolist()
+            if not entries or len(entries) > MAX_INSTALL_FILES:
+                raise ValueError("plugin archive must contain between 1 and 1024 entries")
+            seen: set[str] = set()
+            total_declared = 0
+            for entry in entries:
+                name = entry.filename
+                relative = PurePosixPath(name.rstrip("/"))
+                mode = entry.external_attr >> 16
+                kind = mode & 0o170000
+                if (
+                    not name
+                    or "\x00" in name
+                    or "\\" in name
+                    or relative.is_absolute()
+                    or any(part in {"", ".", ".."} for part in relative.parts)
+                    or any(":" in part for part in relative.parts)
+                    or name.startswith("/")
+                    or entry.flag_bits & 0x1
+                    or kind not in {0, 0o100000, 0o040000}
+                ):
+                    raise ValueError("plugin archive contains an unsafe or unsupported path")
+                key = relative.as_posix().casefold()
+                if key in seen:
+                    raise ValueError("plugin archive contains duplicate paths")
+                seen.add(key)
+                if entry.is_dir():
+                    continue
+                if entry.file_size > MAX_INSTALL_FILE_BYTES:
+                    raise ValueError("plugin archive contains a file over the 2 MiB limit")
+                total_declared += entry.file_size
+                if total_declared > MAX_INSTALL_TOTAL_BYTES:
+                    raise ValueError("plugin archive expands beyond the 16 MiB limit")
+
+            if "plugin.json" not in seen:
+                raise ValueError("plugin archive must contain plugin.json at its root")
+
+            with tempfile.TemporaryDirectory(prefix="install-", dir=root) as temporary:
+                stage = Path(temporary)
+                total_written = 0
+                for entry in entries:
+                    relative = PurePosixPath(entry.filename.rstrip("/"))
+                    destination = stage.joinpath(*relative.parts)
+                    if entry.is_dir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    written = 0
+                    with archive.open(entry) as source_file, destination.open("xb") as target:
+                        while chunk := source_file.read(64 * 1024):
+                            written += len(chunk)
+                            total_written += len(chunk)
+                            if (
+                                written > MAX_INSTALL_FILE_BYTES
+                                or total_written > MAX_INSTALL_TOTAL_BYTES
+                            ):
+                                raise ValueError("plugin archive expanded beyond its size limit")
+                            target.write(chunk)
+                    if written != entry.file_size:
+                        raise ValueError(
+                            "plugin archive entry size does not match its directory record"
+                        )
+
+                discovery = discover_agent_plugins(str(stage))
+                package = next(
+                    (
+                        item
+                        for item in discovery.packages
+                        if Path(item.path).resolve(strict=True) == stage.resolve(strict=True)
+                    ),
+                    None,
+                )
+                if package is None or not _PLUGIN_NAME.fullmatch(package.name):
+                    detail = "; ".join(item.message for item in discovery.diagnostics[:3])
+                    suffix = f": {detail}" if detail else ""
+                    raise ValueError(
+                        f"plugin archive does not contain a valid root package{suffix}"
+                    )
+                target = root / package.name
+                if target.exists():
+                    raise FileExistsError(f"plugin package {package.name!r} is already installed")
+                os.replace(stage, target)
+                installed = discover_agent_plugins(str(target)).packages
+                installed_package = next(
+                    (item for item in installed if item.name == package.name), None
+                )
+                if installed_package is None:
+                    shutil.rmtree(target, ignore_errors=True)
+                    raise ValueError("installed plugin package failed its final validation")
+                return PluginInstallResult(root=str(root), package=installed_package)
+    except FileExistsError:
+        raise
+    except (zipfile.BadZipFile, OSError, RuntimeError) as exc:
+        raise ValueError("selected plugin archive is invalid or could not be installed") from exc
 
 
 def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> PluginSkillImport:

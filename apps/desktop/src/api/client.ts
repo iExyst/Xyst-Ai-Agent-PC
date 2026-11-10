@@ -40,6 +40,7 @@ export type MCPPromptPreview = {trust:'untrusted_mcp_output';description:string|
 export type MCPReconciliationItem = components['schemas']['MCPReconciliationItem'];
 export type WorkspaceWriteReconciliationItem = components['schemas']['WorkspaceWriteReconciliationItem'];
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
+export type PluginInstallResult = components['schemas']['PluginInstallResult'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
 export type ChatSession = components['schemas']['CLIChatSessionRecord'];
 export type ChatSessionSummary = components['schemas']['CLIChatSessionSummary'];
@@ -125,6 +126,7 @@ export class EngineClient {
   clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}
   clearMCPOAuth(serverId:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/oauth`,{method:'DELETE'});}
   discoverAgentPlugins(root:string):Promise<PluginDiscovery>{return this.#request('/extensions/packages/discover',{method:'POST',body:JSON.stringify({root})});}
+  installAgentPluginArchive(archive_path:string):Promise<PluginInstallResult>{return this.#request('/extensions/packages/install',{method:'POST',body:JSON.stringify({archive_path})});}
   importAgentPluginSkill(input:{root:string;package_name:string;skill_name:string}):Promise<components['schemas']['SkillSummary']>{return this.#request('/extensions/packages/import-skill',{method:'POST',body:JSON.stringify(input)});}
   importAgentPluginMCPServer(input:{root:string;package_name:string;server_name:string}):Promise<{id:string;name:string;transport:'stdio';state:'disconnected';secret_env:string[]}>{return this.#request('/extensions/packages/import-mcp-server',{method:'POST',body:JSON.stringify(input)});}
   async exportSkillPackage(id:string,version:number):Promise<Blob>{

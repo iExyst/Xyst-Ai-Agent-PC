@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 import type { EngineClient, PluginDiscovery } from './api/client.ts';
 
 function declaredRequirementsSummary(value: Record<string, unknown> | undefined): string {
@@ -61,6 +62,19 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
     catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
     finally {setBusy(false);}
   }
+  async function installArchive() {
+    setError('');setNotice('');
+    try {
+      const selected=await open({directory:false,multiple:false,title:'Install Agent Plugin package',filters:[{name:'Agent Plugin ZIP',extensions:['zip']}]});
+      if(typeof selected!=='string')return;
+      setBusy(true);
+      const installed=await client.installAgentPluginArchive(selected);
+      setRoot(installed.root);
+      setResult(await client.discoverAgentPlugins(installed.root));
+      setNotice(`${installed.package.name} was installed for discovery. Its commands were not run; add skills as inactive candidates or MCP servers as disconnected integrations.`);
+    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setBusy(false);}
+  }
   async function importSkill(packageName:string,skillName:string) {
     setBusy(true);setError('');setNotice('');
     try {
@@ -82,6 +96,7 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
   return <section aria-label="Agent plugin package discovery">
     <h2>Agent plugin packages</h2>
     <p>Discovery does not run commands, connect servers, or register tools. Importing a skill reads its bounded text into an inactive candidate for review.</p>
+    <button disabled={busy} onClick={()=>void installArchive()}>{busy?'Installing…':'Install plugin ZIP'}</button>
     <label htmlFor="plugin-root">Package folder</label>
     <div><input id="plugin-root" value={root} onChange={event=>setRoot(event.target.value)} maxLength={2048} placeholder="C:\\path\\to\\plugins"/>
     <button disabled={busy||!root.trim()} onClick={()=>void discover()}>{busy?'Discovering…':'Discover packages'}</button></div>

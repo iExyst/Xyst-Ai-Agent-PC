@@ -2689,6 +2689,40 @@
         "title": "PluginDiscoveryRequest",
         "type": "object"
       },
+      "PluginInstallRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Archive Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "archive_path"
+        ],
+        "title": "PluginInstallRequest",
+        "type": "object"
+      },
+      "PluginInstallResult": {
+        "additionalProperties": false,
+        "properties": {
+          "package": {
+            "$ref": "#/components/schemas/PluginSummary"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "package"
+        ],
+        "title": "PluginInstallResult",
+        "type": "object"
+      },
       "PluginMCPImportRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7297,6 +7331,49 @@
           }
         ],
         "summary": "Import Extension Skill"
+      }
+    },
+    "/extensions/packages/install": {
+      "post": {
+        "operationId": "install_extension_package_extensions_packages_install_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginInstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Install Extension Package"
       }
     },
     "/health": {

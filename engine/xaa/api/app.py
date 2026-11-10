@@ -62,8 +62,10 @@ from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identit
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import (
     PluginDiscovery,
+    PluginInstallResult,
     discover_agent_plugins,
     export_procedure_package,
+    install_agent_plugin_archive,
     read_plugin_mcp_server,
     read_plugin_skill,
 )
@@ -362,6 +364,11 @@ class MCPConnectResponse(BaseModel):
 class PluginDiscoveryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     root: str = Field(min_length=1, max_length=2048)
+
+
+class PluginInstallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archive_path: str = Field(min_length=1, max_length=4096)
 
 
 class PluginSkillImportRequest(BaseModel):
@@ -761,6 +768,20 @@ def create_app(
     ) -> PluginDiscovery:
         try:
             return discover_agent_plugins(payload.root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/extensions/packages/install", status_code=201, response_model=PluginInstallResult)
+    def install_extension_package(
+        payload: PluginInstallRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            installed = install_agent_plugin_archive(
+                payload.archive_path, run_store.path.parent / "agent-plugins"
+            )
+            return installed.model_dump(mode="json")
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

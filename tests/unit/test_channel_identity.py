@@ -8,7 +8,7 @@ from xaa.channels.discord import DiscordIdentity, DiscordMessage, DiscordStore
 from xaa.channels.email import EmailConfig, EmailStore
 from xaa.channels.telegram import TelegramIdentity, TelegramStore
 from xaa.storage.channel_identity import ChannelIdentityLinks
-from xaa.storage.runs import RunStore, utc_now
+from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore, utc_now
 
 
 def _binding(store: RunStore, channel: str, account: str, external: str) -> tuple[str, str]:
@@ -256,7 +256,7 @@ def test_schema_20_database_migrates_identity_link_tables_without_losing_binding
         ).fetchone()
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(channel_bindings)")}
         indexes = {row["name"] for row in connection.execute("PRAGMA index_list(channel_bindings)")}
-    assert version == 22
+    assert version == DATABASE_SCHEMA_VERSION
     assert {"channel_identity_links", "channel_identity_link_events"} <= tables
     assert binding["id"] == binding_id
     assert "identity_link_id" in columns

@@ -566,6 +566,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/extensions/packages/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Extension Package */
+        post: operations["install_extension_package_extensions_packages_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2925,6 +2942,17 @@ export interface components {
             /** Root */
             root: string;
         };
+        /** PluginInstallRequest */
+        PluginInstallRequest: {
+            /** Archive Path */
+            archive_path: string;
+        };
+        /** PluginInstallResult */
+        PluginInstallResult: {
+            package: components["schemas"]["PluginSummary"];
+            /** Root */
+            root: string;
+        };
         /** PluginMCPImportRequest */
         PluginMCPImportRequest: {
             /** Package Name */
@@ -5090,6 +5118,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_extension_package_extensions_packages_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallResult"];
                 };
             };
             /** @description Validation Error */
