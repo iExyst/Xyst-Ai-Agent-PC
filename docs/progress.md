@@ -1720,7 +1720,11 @@ Expanded the task-claim regression to exercise a failed prerequisite with two qu
 
 ## Race concurrent specialist claims through independent SQLite stores (2026-11-10)
 
-Added a barrier-synchronized race where two worker threads call `claim_ready` through separate `RunStore`/`TaskStore` instances against the same SQLite database. Both independent ready tasks receive distinct live task leases and durable `running` states; neither task is double-claimed. The task-claim suite passes (16 tests), including eight repeated executions of the new race. Ruff, formatting, storage Pyright and `git diff --check` pass. This verifies atomic concurrent task assignment for this SQLite path; it does not prove full specialist parallel execution, resource contention behavior, or the Phase 4 gate. No model inference was used.
+Added a barrier-synchronized race where two worker threads call `claim_ready` through separate `RunStore`/`TaskStore` instances against the same SQLite database. Both independent ready tasks receive distinct live task leases and durable `running` states; neither task is double-claimed. The task-claim suite passes (16 tests), including eight repeated executions of the new race. Hosted Windows run [42911105044](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42911105044) passed with 1,004 Python tests and browser/desktop plus recovery checks; installer validation was skipped because packaging inputs were unchanged. This verifies atomic concurrent task assignment for this SQLite path; it does not prove full specialist parallel execution, resource contention behavior, or the Phase 4 gate. No model inference was used.
+
+## Exercise transitive dependency blocking through a failed specialist (2026-11-10)
+
+Added a deterministic runtime regression where the provider disconnects while the prerequisite specialist is running. `SpecialistRunner.run_ready` records that task as failed, marks two dependent levels blocked with `dependency_failed`, and starts no inference for either descendant. The new regression passes; the combined specialist and task-claim suites pass (39 tests), Ruff and formatting pass, and Pyright passes for the specialist runtime. This verifies failure propagation through the runtime worker path with a fake provider; it does not establish live-model reliability or the Phase 4 acceptance gate. No model inference was used.
 
 ## Windows junction containment acceptance (2026-11-08)
 

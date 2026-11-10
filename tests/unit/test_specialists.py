@@ -761,6 +761,74 @@ async def test_provider_timeout_is_classified_as_specialist_inference_failure(wo
     assert sum(event["event_type"] == "task.result" for event in events) == 1
 
 
+async def test_provider_failure_blocks_transitive_dependents_without_inference(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "specialist-dependency-failure.sqlite3")
+    run_id = store.create_run(
+        objective="Block dependent work after a specialist fails",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="source", objective="Perform the prerequisite", max_iterations=1),
+            TaskDefinition(
+                id="review",
+                objective="Review the prerequisite result",
+                dependencies=("source",),
+                max_iterations=1,
+            ),
+            TaskDefinition(
+                id="publish",
+                objective="Publish the reviewed result",
+                dependencies=("review",),
+                max_iterations=1,
+            ),
+        ],
+    )
+
+    class FailingProvider(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        async def chat(self, **kwargs):
+            self.calls += 1
+            raise ConnectionError("fixture provider disconnect")
+
+    provider = FailingProvider()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+
+    assert provider.calls == 1
+    assert {item["task_id"]: item["status"] for item in statuses} == {
+        "source": "failed",
+        "review": "blocked",
+        "publish": "blocked",
+    }
+    records = {record["local_id"]: record for record in tasks.records(run_id)}
+    assert records["review"]["blocked_reason"] == "dependency_failed"
+    assert records["publish"]["blocked_reason"] == "dependency_failed"
+    started = [
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.inference.started"
+    ]
+    assert len(started) == 1
+    assert started[0]["payload"]["task_id"] == "source"
+
+
 @pytest.mark.parametrize(
     ("run_deadline_seconds", "task_seconds", "expected_blocked_reason", "expected_cause"),
     [
