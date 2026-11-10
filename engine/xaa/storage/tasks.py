@@ -305,6 +305,62 @@ class TaskStore:
             ).fetchone()
             if lease is None:
                 raise PermissionError("Task worker no longer holds a live lease.")
+            if state == "verifying":
+                task_row = connection.execute(
+                    "SELECT input_artifacts FROM tasks WHERE id=? AND run_id=?",
+                    (identity, run_id),
+                ).fetchone()
+                required_inputs = set(json.loads(task_row["input_artifacts"]))
+                observed: dict[str, tuple[int, list[tuple[int, int]]]] = {}
+                if required_inputs:
+                    for event in connection.execute(
+                        "SELECT payload FROM run_events WHERE run_id=? AND event_type='task.tool.result' AND json_extract(payload,'$.task_id')=?",
+                        (run_id, task_id),
+                    ).fetchall():
+                        payload = cast(dict[str, Any], json.loads(event["payload"]))
+                        read_value = payload.get("read_input_artifact")
+                        result_value = payload.get("result")
+                        if not isinstance(read_value, dict) or not isinstance(result_value, dict):
+                            continue
+                        read = cast(dict[str, Any], read_value)
+                        result_page = cast(dict[str, Any], result_value)
+                        artifact_id = read.get("artifact_id")
+                        offset = result_page.get("offset")
+                        count = result_page.get("characters_read")
+                        total = result_page.get("total_characters")
+                        if (
+                            not isinstance(artifact_id, str)
+                            or artifact_id not in required_inputs
+                            or not isinstance(offset, int)
+                            or not isinstance(count, int)
+                            or not isinstance(total, int)
+                            or offset < 0
+                            or count < 0
+                            or total < 0
+                            or read.get("eof") is not (offset + count >= total)
+                        ):
+                            continue
+                        previous = observed.get(artifact_id)
+                        if previous is None:
+                            observed[artifact_id] = (total, [(offset, offset + count)])
+                        elif previous[0] == total:
+                            previous[1].append((offset, offset + count))
+                    for artifact_id in required_inputs:
+                        page_data = observed.get(artifact_id)
+                        if page_data is None:
+                            raise ValueError(
+                                "Read every assigned input artifact before submitting a candidate."
+                            )
+                        total, intervals = page_data
+                        cursor = 0
+                        for start, end in sorted(intervals):
+                            if start > cursor:
+                                break
+                            cursor = max(cursor, end)
+                        if cursor < total:
+                            raise ValueError(
+                                "Read every page of each assigned input artifact before submitting a candidate."
+                            )
             changed = connection.execute(
                 "UPDATE tasks SET status=?, result=?, updated_at=? WHERE id=? AND run_id=? AND status='running'",
                 (state, json.dumps(result), utc_now(), identity, run_id),
@@ -322,6 +378,28 @@ class TaskStore:
         run = self.runs.get_run(run_id)
         if run is None:
             raise KeyError(run_id)
+        for task in tasks:
+            if not task.input_artifacts:
+                continue
+            placeholders = ",".join("?" for _ in task.input_artifacts)
+            with self.runs.connection() as connection:
+                rows = connection.execute(
+                    f"SELECT id,task_id,media_type,size_bytes FROM artifacts WHERE run_id=? AND id IN ({placeholders})",
+                    (run_id, *task.input_artifacts),
+                ).fetchall()
+            if len(rows) != len(task.input_artifacts):
+                raise ValueError(
+                    "Task input artifacts must reference artifacts already saved in this run."
+                )
+            if any(
+                row["task_id"] is not None
+                or row["media_type"] != "text/plain"
+                or row["size_bytes"] > 4 * 1024 * 1024
+                for row in rows
+            ):
+                raise ValueError(
+                    "Task inputs must be unowned plain-text run artifacts no larger than 4 MiB."
+                )
         permissions = {"workspace.read"}
         if run.get("approved_web_hosts"):
             permissions.add("web.read")
@@ -389,12 +467,14 @@ class TaskStore:
             }
             for task in graph.tasks.values():
                 connection.execute(
-                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
                     (
                         f"{run_id}:{task.id}",
                         run_id,
                         task.objective,
                         json.dumps(task.acceptance_criteria),
+                        json.dumps(task.input_artifacts),
+                        json.dumps(task.expected_outputs),
                         task.role,
                         specialist_profiles.get(task.role, {}).get("display_name") or task.role,
                         specialist_profiles.get(task.role, {}).get("model_route") or run["model"],
@@ -460,7 +540,13 @@ class TaskStore:
                         (record["id"],),
                     ).fetchall()
                 ]
-                for field in ("acceptance_criteria", "permission_scope", "budgets"):
+                for field in (
+                    "acceptance_criteria",
+                    "input_artifacts",
+                    "expected_outputs",
+                    "permission_scope",
+                    "budgets",
+                ):
                     record[field] = json.loads(record[field])
                 records.append(record)
         statuses = {record["local_id"]: record["status"] for record in records}
@@ -1262,6 +1348,8 @@ class TaskStore:
                 id=row["local_id"],
                 objective=row["objective"],
                 acceptance_criteria=row["acceptance_criteria"],
+                input_artifacts=row["input_artifacts"],
+                expected_outputs=row["expected_outputs"],
                 dependencies=row["dependencies"],
                 role=row["assigned_role"],
                 permissions=row["permission_scope"],

@@ -1,8 +1,10 @@
 import json
 
 import pytest
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore, utc_now
+from xaa.storage.tasks import TaskStore
 
 
 def test_v1_tool_journal_migrates_without_changing_approval_references(workspace_tmp_path):
@@ -85,6 +87,31 @@ def test_newer_database_is_refused_without_resetting_version(workspace_tmp_path)
         assert (
             connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION + 1
         )
+
+
+def test_schema_twenty_five_adds_specialist_input_and_output_contracts(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-twenty-five.sqlite3"
+    store = RunStore(database)
+    run_id = store.create_run(
+        objective="Preserve prior tasks",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "planner")
+    TaskStore(store).save_plan(run_id, token, [TaskDefinition(id="old", objective="Old task")])
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE tasks DROP COLUMN input_artifacts")
+        connection.execute("ALTER TABLE tasks DROP COLUMN expected_outputs")
+        connection.execute("PRAGMA user_version=25")
+
+    migrated = RunStore(database)
+    record = TaskStore(migrated).records(run_id)[0]
+    assert record["input_artifacts"] == []
+    assert record["expected_outputs"] == []
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
 def test_schema_thirteen_adds_durable_cli_chat_session_configuration(workspace_tmp_path):

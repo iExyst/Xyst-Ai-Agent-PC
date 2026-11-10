@@ -29,6 +29,10 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
             : 'Task execution is blocked. Inspect the activity before starting a new objective.'}</p>}
           <h4>Acceptance criteria</h4>
           {task.acceptance_criteria.length ? <ul>{task.acceptance_criteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ul> : <p>No criteria recorded.</p>}
+          <h4>Assigned input artifacts</h4>
+          {task.input_artifacts.length ? <ul>{task.input_artifacts.map(id => <li key={id}>{id}</li>)}</ul> : <p>None</p>}
+          <h4>Expected outputs</h4>
+          {task.expected_outputs.length ? <ul>{task.expected_outputs.map((output, index) => <li key={index}>{output}</li>)}</ul> : <p>None recorded.</p>}
           {partials[task.local_id]&&<article aria-live="polite"><h4>Partial specialist draft · unverified</h4><p style={{whiteSpace:'pre-wrap'}}>{partials[task.local_id]}</p></article>}
           {task.status==='verifying'&&<TaskReviewPanel client={client} runId={runId} taskId={task.local_id} onReviewed={onReviewed}/>}
           {task.status==='blocked'&&task.blocked_reason==='worker_lost_reconciliation_required'&&<TaskRecoveryPanel client={client} runId={runId} taskId={task.local_id} onUpdated={onReviewed}/>}

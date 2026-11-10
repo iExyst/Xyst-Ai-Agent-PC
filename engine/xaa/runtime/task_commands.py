@@ -146,6 +146,60 @@ def read_dependency_command_output(
     }
 
 
+def read_task_input_artifact(
+    store: RunStore,
+    scope: TaskReadScope,
+    artifact_id: str,
+    *,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    """Read a bounded character page from an artifact explicitly assigned to this task."""
+    if offset < 0 or not 1 <= limit <= 16384:
+        raise ValueError("Task input reads require a valid offset and a 16 KiB maximum.")
+    with store.connection() as connection:
+        store.require_lease(connection, scope.run_id, scope.parent_token)
+        store.require_task_read_scope(connection, scope.run_id, scope.task_id, scope.task_token)
+        row = connection.execute(
+            "SELECT a.* FROM artifacts a JOIN tasks t ON t.run_id=a.run_id "
+            "WHERE a.id=? AND a.run_id=? AND a.task_id IS NULL AND t.id=?",
+            (artifact_id, scope.run_id, f"{scope.run_id}:{scope.task_id}"),
+        ).fetchone()
+        task_row = connection.execute(
+            "SELECT input_artifacts FROM tasks WHERE id=? AND run_id=?",
+            (f"{scope.run_id}:{scope.task_id}", scope.run_id),
+        ).fetchone()
+    if (
+        row is None
+        or task_row is None
+        or artifact_id not in json.loads(task_row["input_artifacts"])
+    ):
+        raise PermissionError("Artifact is not assigned as input to this task.")
+    if row["media_type"] != "text/plain" or row["size_bytes"] > 4 * 1024 * 1024:
+        raise ValueError("Task input must be a supported plain-text artifact no larger than 4 MiB.")
+    root = (store.path.parent / "artifacts").resolve(strict=True)
+    if Path(row["storage_key"]).name != row["storage_key"]:
+        raise PermissionError("Task input artifact path is invalid.")
+    with open_for_read(root / row["storage_key"]) as source:
+        if not opened_file_path(source).is_relative_to(root):
+            raise PermissionError("Task input artifact escaped managed storage.")
+        data = source.read(4 * 1024 * 1024 + 1)
+    if len(data) != row["size_bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"]:
+        raise ValueError("Task input artifact changed after it was saved.")
+    content = data.decode("utf-8", errors="replace")
+    page = content[offset : offset + limit]
+    return {
+        "artifact_id": artifact_id,
+        "offset": offset,
+        "total_characters": len(content),
+        "characters_read": len(page),
+        "sha256": row["sha256"],
+        "content": page,
+        "trust": "untrusted_user_artifact",
+        "eof": offset + len(page) >= len(content),
+    }
+
+
 async def execute_task_command(
     store: RunStore,
     scope: TaskReadScope,

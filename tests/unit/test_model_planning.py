@@ -1,11 +1,28 @@
 import json
 
 import pytest
+from pydantic import ValidationError
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
-from xaa.runtime.planning import save_model_plan
+from xaa.runtime.planning import SavePlanArguments, save_model_plan
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
+
+
+def test_model_proposals_require_expected_outputs():
+    with pytest.raises(ValidationError, match="expected_outputs"):
+        SavePlanArguments.model_validate(
+            {
+                "tasks": [
+                    {
+                        "id": "inspect",
+                        "objective": "Inspect source",
+                        "dependencies": [],
+                        "acceptance_criteria": ["Evidence is recorded"],
+                    }
+                ]
+            }
+        )
 
 
 async def test_model_plan_round_trip_is_saved_and_replayable(workspace_tmp_path):
@@ -26,6 +43,7 @@ async def test_model_plan_round_trip_is_saved_and_replayable(workspace_tmp_path)
                 "max_iterations": 2,
                 "dependencies": [],
                 "acceptance_criteria": ["Evidence collected"],
+                "expected_outputs": ["Inspection report"],
             },
             {
                 "id": "review",
@@ -34,6 +52,7 @@ async def test_model_plan_round_trip_is_saved_and_replayable(workspace_tmp_path)
                 "max_iterations": 2,
                 "dependencies": ["inspect"],
                 "acceptance_criteria": ["Evidence inspected"],
+                "expected_outputs": ["Review decision"],
             },
         ]
     }
@@ -88,6 +107,7 @@ async def test_model_plan_round_trip_is_saved_and_replayable(workspace_tmp_path)
                         "objective": "Edit",
                         "dependencies": [],
                         "acceptance_criteria": ["Edited"],
+                        "expected_outputs": ["Updated file"],
                         "permissions": ["workspace.write"],
                         "max_iterations": 1,
                     }
@@ -103,6 +123,7 @@ async def test_model_plan_round_trip_is_saved_and_replayable(workspace_tmp_path)
                         "objective": "Inspect",
                         "dependencies": [],
                         "acceptance_criteria": ["Evidence"],
+                        "expected_outputs": ["Evidence report"],
                         "max_iterations": 100,
                     }
                 ]
@@ -130,6 +151,7 @@ async def test_model_can_correct_rejected_plan_without_uncertain_actions(
                 "objective": "Inspect",
                 "dependencies": [],
                 "acceptance_criteria": ["Actual evidence"],
+                "expected_outputs": ["Inspection result"],
                 "max_iterations": 1,
             }
         ]
@@ -210,6 +232,7 @@ async def test_malformed_plan_tool_batch_cannot_persist_partial_graph(workspace_
                 "objective": "Inspect the requested evidence.",
                 "dependencies": [],
                 "acceptance_criteria": ["Evidence recorded."],
+                "expected_outputs": ["Evidence summary"],
                 "max_iterations": 1,
                 "max_seconds": 60,
             }
@@ -405,6 +428,7 @@ def test_model_plan_cannot_escalate_permissions_or_exceed_budget(workspace_tmp_p
                         "permissions": ["workspace.write"],
                         "dependencies": [],
                         "acceptance_criteria": ["Edited"],
+                        "expected_outputs": ["Updated file"],
                     }
                 ]
             },
@@ -423,6 +447,7 @@ def test_model_plan_cannot_escalate_permissions_or_exceed_budget(workspace_tmp_p
                         "max_iterations": 100,
                         "dependencies": [],
                         "acceptance_criteria": ["Read"],
+                        "expected_outputs": ["Read result"],
                     }
                 ]
             },

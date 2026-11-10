@@ -178,6 +178,8 @@ class PlanTaskRecord(BaseModel):
     local_id: str
     objective: str
     acceptance_criteria: list[str]
+    input_artifacts: list[str]
+    expected_outputs: list[str]
     dependencies: list[str]
     assigned_role: str
     identity_name: str

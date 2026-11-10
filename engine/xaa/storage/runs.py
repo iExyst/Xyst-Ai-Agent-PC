@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 25
+DATABASE_SCHEMA_VERSION = 26
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -328,6 +328,8 @@ class RunStore:
                     parent_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
                     objective TEXT NOT NULL,
                     acceptance_criteria TEXT NOT NULL,
+                    input_artifacts TEXT NOT NULL DEFAULT '[]',
+                    expected_outputs TEXT NOT NULL DEFAULT '[]',
                     assigned_role TEXT NOT NULL,
                     identity_name TEXT NOT NULL DEFAULT '',
                     model_route TEXT,
@@ -690,6 +692,14 @@ class RunStore:
                     (role, display_name, instructions, utc_now()),
                 )
             task_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+            if "input_artifacts" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN input_artifacts TEXT NOT NULL DEFAULT '[]'"
+                )
+            if "expected_outputs" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN expected_outputs TEXT NOT NULL DEFAULT '[]'"
+                )
             if "identity_instructions" not in task_columns:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN identity_instructions TEXT NOT NULL DEFAULT ''"

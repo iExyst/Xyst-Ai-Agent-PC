@@ -68,6 +68,7 @@ def test_plan_reservations_deduct_parent_attempts_and_keep_response_headroom(wor
         "id": "child",
         "objective": "Inspect",
         "acceptance_criteria": ["Evidence"],
+        "expected_outputs": ["Evidence report"],
         "dependencies": [],
         "max_iterations": 2,
     }

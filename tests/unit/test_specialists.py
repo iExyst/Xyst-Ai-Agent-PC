@@ -154,6 +154,85 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
         )
 
 
+async def test_specialist_receives_and_reads_only_its_declared_artifact_inputs(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-input.sqlite3")
+    artifact_root = store.path.parent / "artifacts"
+    artifact_root.mkdir(exist_ok=True)
+    (artifact_root / "source.txt").write_text("assigned source", encoding="utf-8")
+    run_id = store.create_run(
+        objective="Summarize supplied source",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "coordinator")
+    artifact = store.register_artifact(run_id, parent, "source.txt", provenance="user.upload")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="summarize",
+                objective="Summarize supplied source",
+                input_artifacts=[artifact["id"]],
+                expected_outputs=["A concise summary"],
+                max_iterations=2,
+            )
+        ],
+    )
+
+    class ArtifactReader(LMStudioProvider):
+        async def chat(self, *, model, messages, tools=None):
+            if messages[-1]["role"] == "user":
+                assignment = json.loads(messages[-1]["content"])
+                assert assignment["input_artifact_ids"] == [artifact["id"]]
+                assert assignment["expected_outputs"] == ["A concise summary"]
+                assert "untrusted" in messages[0]["content"]
+                read_tool = next(
+                    tool["function"]
+                    for tool in tools
+                    if tool["function"]["name"] == "task_read_input_artifact"
+                )
+                assert read_tool["parameters"]["properties"]["artifact_id"]
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "read-source",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "task_read_input_artifact",
+                                            "arguments": json.dumps(
+                                                {"artifact_id": artifact["id"]}
+                                            ),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            result = json.loads(messages[-1]["content"])
+            assert result["content"] == "assigned source"
+            assert result["trust"] == "untrusted_user_artifact"
+            return {"choices": [{"message": {"role": "assistant", "content": "Source summary"}}]}
+
+    provider = ArtifactReader()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+    assert statuses == [{"task_id": "summarize", "status": "verifying"}]
+    assert json.loads(tasks.records(run_id)[0]["result"]) == {"candidate": "Source summary"}
+
+
 @pytest.mark.parametrize(
     "tool_name,permission,approvals,arguments,journal_name",
     [

@@ -15,6 +15,7 @@ PLAN_TOOL_VERSION = "1"
 
 class ProposedTask(TaskDefinition):
     acceptance_criteria: tuple[str, ...] = Field(min_length=1)
+    expected_outputs: tuple[str, ...] = Field(min_length=1, max_length=16)
     dependencies: tuple[str, ...] = Field()
 
 

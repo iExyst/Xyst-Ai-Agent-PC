@@ -2516,6 +2516,13 @@
             "title": "Dependencies",
             "type": "array"
           },
+          "expected_outputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Expected Outputs",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2523,6 +2530,13 @@
           "identity_name": {
             "title": "Identity Name",
             "type": "string"
+          },
+          "input_artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Input Artifacts",
+            "type": "array"
           },
           "local_id": {
             "title": "Local Id",
@@ -2580,6 +2594,8 @@
           "local_id",
           "objective",
           "acceptance_criteria",
+          "input_artifacts",
+          "expected_outputs",
           "dependencies",
           "assigned_role",
           "identity_name",

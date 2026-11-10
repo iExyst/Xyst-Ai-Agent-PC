@@ -2961,10 +2961,14 @@ export interface components {
             budgets: components["schemas"]["TaskBudgets"];
             /** Dependencies */
             dependencies: string[];
+            /** Expected Outputs */
+            expected_outputs: string[];
             /** Id */
             id: string;
             /** Identity Name */
             identity_name: string;
+            /** Input Artifacts */
+            input_artifacts: string[];
             /** Local Id */
             local_id: string;
             /** Model Route */

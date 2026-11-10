@@ -39,3 +39,12 @@ def test_cycles_permissions_and_shared_budget_are_rejected():
         graph([TaskDefinition(id="a", objective="A", permissions=["workspace.write"])])
     with pytest.raises(ValueError, match="budget"):
         graph([TaskDefinition(id="a", objective="A", max_iterations=17)])
+
+
+def test_task_artifact_and_output_contracts_are_bounded_and_explicit():
+    with pytest.raises(ValueError):
+        TaskDefinition(id="a", objective="A", input_artifacts=["x", "x"])
+    with pytest.raises(ValueError):
+        TaskDefinition(id="a", objective="A", input_artifacts=["x"] * 9)
+    with pytest.raises(ValueError):
+        TaskDefinition(id="a", objective="A", expected_outputs=["x" * 501])

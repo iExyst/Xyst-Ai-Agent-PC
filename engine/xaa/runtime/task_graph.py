@@ -13,6 +13,8 @@ class TaskDefinition(BaseModel):
     objective: str = Field(min_length=1, max_length=10000)
     acceptance_criteria: tuple[str, ...] = ()
     dependencies: tuple[str, ...] = ()
+    input_artifacts: tuple[str, ...] = Field(default=(), max_length=8)
+    expected_outputs: tuple[str, ...] = Field(default=(), max_length=16)
     role: Literal["planner", "researcher", "developer", "reviewer", "tester", "executor"] = (
         "executor"
     )
@@ -22,10 +24,33 @@ class TaskDefinition(BaseModel):
     max_total_tokens: int | None = Field(default=None, ge=1, le=100_000_000)
     max_output_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
 
-    @field_validator("acceptance_criteria", "dependencies", "permissions", mode="before")
+    @field_validator(
+        "acceptance_criteria",
+        "dependencies",
+        "input_artifacts",
+        "expected_outputs",
+        "permissions",
+        mode="before",
+    )
     @classmethod
     def freeze_sequences(cls, value: Any) -> Any:
         return tuple(cast(list[Any], value)) if isinstance(value, list) else value
+
+    @field_validator("input_artifacts")
+    @classmethod
+    def unique_input_artifacts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value) or any(not item.strip() for item in value):
+            raise ValueError("Input artifact IDs must be nonempty and unique.")
+        return value
+
+    @field_validator("expected_outputs")
+    @classmethod
+    def valid_expected_outputs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item.strip() or len(item) > 500 for item in value):
+            raise ValueError(
+                "Expected outputs must be nonempty descriptions of at most 500 characters."
+            )
+        return value
 
 
 TaskStatus = Literal[
