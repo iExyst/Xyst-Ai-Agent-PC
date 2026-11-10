@@ -33,6 +33,9 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     expect(request.headers()['authorization']).toBe(`Bearer ${'x'.repeat(32)}`);
     const body = ['POST','PUT'].includes(request.method()) ? request.postDataJSON() : undefined;
     requests.push({method:request.method(),path,...(body?{body}:{})});
+    if (path === '/extensions/packages/install') {
+      return route.fulfill({status:201,json:{root:'C:\\plugins',package:{name:'sample-package',version:'1.2.3',description:'Fixture',path:'C:\\plugins\\sample-package',skills:[],servers:[]}},headers});
+    }
     if (path === '/runs/latest-unfinished') return route.fulfill({json:null,headers});
     if (path === '/runs') return route.fulfill({json:{items:[],next_cursor:null},headers});
     if (path === '/models') return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -145,6 +148,15 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.transport==='streamable_http'&&item.body.endpoint==='https://mcp.example.com/mcp'&&item.body.secret_env[0]==='MCP_TOKEN')).toBe(true);
   await page.locator('summary').filter({hasText:'Agent plugin discovery'}).click();
   const plugins=page.getByRole('region',{name:'Agent plugin package discovery'});
+  await page.evaluate(()=>{
+    (window as any).__TAURI_INTERNALS__={invoke:async(command:string)=>{
+      if(command==='plugin:dialog|open')return 'C:\\downloads\\sample.zip';
+      throw new Error(`Unexpected native command: ${command}`);
+    }};
+  });
+  await plugins.getByRole('button',{name:'Install plugin ZIP'}).click();
+  await expect(plugins.getByRole('status')).toContainText('installed for discovery');
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/install'&&item.body.archive_path==='C:\\downloads\\sample.zip')).toBe(true);
   await plugins.getByLabel('Package folder').fill('C:\\plugins');
   await plugins.getByRole('button',{name:'Discover packages'}).click();
   await expect(plugins.getByText('sample-package · 1.2.3')).toBeVisible();
