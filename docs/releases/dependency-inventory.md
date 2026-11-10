@@ -13,6 +13,8 @@ License expressions below are copied from package metadata without normalization
 
 ## Release review findings
 
+- The Windows installer workflow runs `scripts/verify_release_notice_coverage.py` after restoring Python, npm, and Rust tooling. It compares all locked Python third-party packages, the resolved npm production tree, and Cargo's `x86_64-pc-windows-msvc` dependency graph with package/version references in `THIRD_PARTY_NOTICES.md`. It also checks that those scoped lock packages appear in this inventory. The check catches missing references; it does not verify license text accuracy, copyright notices, license compatibility, or legal completeness.
+
 - X.A.A. source is licensed under MIT in the root [`LICENSE`](../../LICENSE). The license is also declared in `pyproject.toml`, `apps/desktop/src-tauri/Cargo.toml`, and the private npm workspace metadata. Third-party dependencies retain their own licenses and notices; this inventory is not a legal opinion or release approval.
 - `xaa-engine==0.1.1` is the project's own Python distribution, not a third-party dependency. The host `pip-licenses` record reports `UNKNOWN`, but the authoritative project metadata in `pyproject.toml` declares MIT and the root `LICENSE` supplies its text; the package table records that source-backed license instead of propagating the scanner's false unknown.
 - `agent-client-protocol==0.9.0` has unknown PyPI license metadata. The installed pinned distribution's `.dist-info/licenses/LICENSE` was inspected and contains the Apache License 2.0 text; its [upstream Python SDK repository](https://github.com/agentclientprotocol/python-sdk) also identifies Apache-2.0.

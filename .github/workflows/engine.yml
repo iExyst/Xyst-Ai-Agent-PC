@@ -211,6 +211,8 @@ jobs:
         with:
           path: ~/AppData/Local/tauri/NSIS
           key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+      - name: Verify release notice package coverage
+        run: uv run python scripts/verify_release_notice_coverage.py
       - name: Prepare verified Tauri NSIS tools
         shell: pwsh
         run: |
