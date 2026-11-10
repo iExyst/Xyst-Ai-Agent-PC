@@ -142,6 +142,12 @@ class MCPManager:
                 safe_error = self._safe_error(error, server)
                 self._errors[server_id] = safe_error
                 raise MCPConnectionError(safe_error) from error
+            if connection.owner_task.done():
+                safe_error = self._errors.get(server_id) or (
+                    "The MCP server disconnected during connection setup; reconnect before use."
+                )
+                self._errors[server_id] = safe_error
+                raise MCPConnectionError(safe_error)
             self._connected[server_id] = connection
             return discovered
 

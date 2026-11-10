@@ -15,15 +15,57 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.mcp_manager import (
     MCP_RESULT_BYTES,
+    MCPConnectionError,
     MCPInvocationError,
     MCPManager,
+    _ConnectedServer,
     _result_payload,
 )
-from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+from xaa.storage.mcp import MCPRegistry, MCPServerRecord, MCPServerSpec, MCPToolRecord
 from xaa.storage.runs import RunStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py"
+
+
+@pytest.mark.asyncio
+async def test_connection_that_dies_immediately_after_discovery_is_not_registered(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-immediate-disconnect.sqlite3")
+    server = MCPRegistry(store).create_server(
+        MCPServerSpec(name="Fixture", command=sys.executable, args=[str(FIXTURE)])
+    )
+
+    class DisconnectAfterDiscoveryManager(MCPManager):
+        async def _own_connection(
+            self,
+            server: MCPServerRecord,
+            ready: asyncio.Future[tuple[_ConnectedServer, list[MCPToolRecord]]],
+        ) -> None:
+            owner = asyncio.current_task()
+            if owner is None:
+                raise RuntimeError("Fixture connection task is missing.")
+            connection = _ConnectedServer(
+                server,
+                session=None,  # type: ignore[arg-type]  # The task ends before any session operation.
+                tools={},
+                resources={},
+                prompts={},
+                resource_templates={},
+                expanded_resource_uris=set(),
+                shutdown=asyncio.Event(),
+                owner_task=owner,
+                notifications=asyncio.Queue(maxsize=128),
+            )
+            ready.set_result((connection, []))
+
+    manager = DisconnectAfterDiscoveryManager(store, None)
+    with pytest.raises(MCPConnectionError, match="disconnected during connection setup"):
+        await manager.connect_server(server.id)
+    assert manager.server_status(server.id)[0] == "error"
+    assert server.id not in manager._connected
+    await manager.close()
 
 
 class MemoryCredentials:

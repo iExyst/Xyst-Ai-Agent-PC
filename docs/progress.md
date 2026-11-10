@@ -1,5 +1,9 @@
 # Progress
 
+## Reject MCP connections that exit during discovery (2026-11-10)
+
+`MCPManager.connect_server` now checks that the connection-owner task is still alive after discovery and before publishing the server's tools. An immediate post-discovery exit is reported as a connection error and the manager does not register the stale connection. A deterministic integration regression reproduces the owner-task race. The MCP stdio suite passes (8), Ruff/format checks pass, and strict Pyright passes for the manager. Hosted source verification is pending. No model inference was used.
+
 ## Correct installed backup acceptance data-root handoff (2026-11-10)
 
 Hosted installer run [42738796927](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42738796927) passed the native restart, specialist recovery, frozen worker and private task-scope checks, then failed when the installed boot smoke could not see its seeded backup run. The fixture is stored under the isolated user's `%LOCALAPPDATA%\XAA`, but `native_boot_smoke.mjs` set `XAA_DATA_DIR` to its separate evidence directory, so the engine opened a different database. The smoke now sets `XAA_DATA_DIR` to the same isolated local-data root used by fixture seeding. The local installed-package backup/restore acceptance passes against the staged installer and installed desktop; the restored run, four events, binary artifact, SQLite integrity and foreign-key checks all match. Evidence: `.acceptance/native-installed-backup-86876a9ff50e4ccf819292bc2996a959/report.json`. Hosted installer run [42740255498](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42740255498) then passed install, upgrade, boot, backup/restore, standard-user install, and uninstall; its report records `installed_backup_restore_verified: true`. No model inference was used.
