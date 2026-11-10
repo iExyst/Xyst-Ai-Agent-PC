@@ -1,8 +1,12 @@
 # Progress
 
+## Isolate Agent Plugins MCP configuration failures (2026-11-10)
+
+Root `mcp.json` discovery now enforces the supported v1 envelope locally, validates stdio and Streamable HTTP entries, and reports malformed config or invalid/unsupported entries without hiding valid skills or sibling servers. Stdio command tokens and `cwd` forms are checked against the plugin-root containment rules; reserved `PLUGIN_ROOT`/`PLUGIN_DATA` environment keys and duplicate case-insensitive HTTP header names are rejected. SSE remains unsupported and is skipped with a diagnostic. Focused fixtures pass (26 passed, 1 skipped); Ruff, strict Pyright and formatting pass. This is static discovery only: package install/activation, stdio placeholder expansion and data-directory management, launching servers, dependency installation and third-party compatibility remain open. No model inference was used. See the [Agent Plugins loading rules](https://agent-plugins.org/specification#72-mcp-servers).
+
 ## Validate Agent Plugins v1 portable manifest metadata (2026-11-10)
 
-Package discovery now validates supported `plugin.json` metadata types, accepts an omitted version, and applies the normative non-fatal handling for unknown top-level fields and a non-object `extensions` value. Both cases are reported in discovery diagnostics; schema selection stays local, and no package code is executed. Added invalid-type and forward-compatibility fixtures. Local focused suite: 24 passed, 1 skipped; Ruff and strict Pyright pass. This closes the root-manifest metadata slice only: portable `mcp.json` path/placeholder expansion, server-level failure isolation, dependency installation, package activation and broader Agent Skills field semantics remain open. No LLM inference was used.
+Package discovery now validates supported `plugin.json` metadata types, accepts an omitted version, and applies the normative non-fatal handling for unknown top-level fields and a non-object `extensions` value. Both cases are reported in discovery diagnostics; schema selection stays local, and no package code is executed. Added invalid-type and forward-compatibility fixtures. Local focused suite: 24 passed, 1 skipped; Ruff and strict Pyright pass. Hosted Windows source workflow [42817646684](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42817646684) passed for this change; the installer job was skipped. This closes the root-manifest metadata slice only: portable `mcp.json` path/placeholder expansion, server-level failure isolation, dependency installation, package activation and broader Agent Skills field semantics remain open. No LLM inference was used.
 
 ## Report blocked browser child-frame navigations (2026-11-10)
 

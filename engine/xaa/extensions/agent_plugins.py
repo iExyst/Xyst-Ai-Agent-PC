@@ -531,103 +531,176 @@ def _hermes_skill_package(path: Path, root: Path, command_cache: dict[str, bool]
     )
 
 
-def _servers(manifest: dict[str, Any], package_root: Path) -> list[PluginServer]:
+def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
     config_path = package_root / "mcp.json"
-    if not config_path.exists():
-        return []
-    data = _json(config_path, package_root)
+    if not config_path.exists() and not config_path.is_symlink():
+        return [], []
+    diagnostics: list[str] = []
+    try:
+        data = _json(config_path, package_root)
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        return [], [f"mcp.json could not be read: {str(exc)[:240]}"]
     if set(data) != {"$schema", "mcpServers"} or data.get("$schema") != MCP_SCHEMA_V1:
-        raise ValueError("mcp.json declares an unsupported schema or top-level shape")
+        return [], ["mcp.json declares an unsupported schema or top-level shape"]
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
-        raise TypeError("MCP server list must be an object")
+        return [], ["mcp.json mcpServers must be an object"]
     servers = cast(dict[str, Any], servers)
     if len(servers) > MAX_SERVERS:
-        raise ValueError("MCP server list is invalid or too large")
+        diagnostics.append(f"mcp.json has more than {MAX_SERVERS} servers; excess entries ignored")
     result: list[PluginServer] = []
-    for name, spec in servers.items():
-        if not _SLUG.fullmatch(name) or not isinstance(spec, dict):
-            raise ValueError("MCP server entry is invalid")
-        spec = cast(dict[str, Any], spec)
-        transport = spec.get("type")
-        if transport == "stdio":
-            if set(spec) - {"type", "command", "args", "env", "cwd"}:
-                raise ValueError(f"MCP server {name} has unsupported stdio fields")
-            command = spec.get("command")
-            args = spec.get("args", [])
-            env = spec.get("env", {})
-            if not isinstance(command, str) or not command.strip():
-                raise ValueError(f"MCP server {name} has invalid stdio command or arguments")
-            if not isinstance(args, list):
-                raise ValueError(f"MCP server {name} has invalid stdio command or arguments")
-            args = cast(list[Any], args)
-            if len(args) > 64 or any(not isinstance(arg, str) or len(arg) > 2048 for arg in args):
-                raise ValueError(f"MCP server {name} has invalid stdio command or arguments")
-            if not isinstance(env, dict):
-                raise ValueError(f"MCP server {name} has invalid environment mapping")
-            env = cast(dict[str, Any], env)
-            if any(
-                not _ENV.fullmatch(key) or not isinstance(value, str) for key, value in env.items()
-            ):
-                raise ValueError(f"MCP server {name} has invalid environment mapping")
-            result.append(
-                PluginServer(
-                    name=name,
-                    transport="stdio",
-                    command_name=Path(command).name,
-                    argument_count=len(args),
-                    environment_names=sorted(env),
-                )
-            )
-        elif transport == "streamable-http":
-            if set(spec) - {"type", "url", "headers"}:
-                raise ValueError(f"MCP server {name} has unsupported HTTP fields")
-            endpoint = spec.get("url")
-            if not isinstance(endpoint, str) or len(endpoint) > 2048:
-                raise ValueError(f"MCP server {name} has invalid HTTP endpoint")
-            parsed = urlsplit(endpoint)
-            if (
-                parsed.scheme not in {"https", "http"}
-                or not parsed.hostname
-                or parsed.username is not None
-                or parsed.password is not None
-                or parsed.fragment
-            ):
-                raise ValueError(f"MCP server {name} endpoint is not an allowed URL")
-            if not isinstance(spec.get("headers", {}), dict):
-                raise ValueError(f"MCP server {name} headers must be an object")
-            headers = cast(dict[str, Any], spec.get("headers", {}))
-            if any(
-                not _HEADER.fullmatch(key)
-                or not isinstance(value, str)
-                or "\r" in value
-                or "\n" in value
-                for key, value in headers.items()
-            ):
-                raise ValueError(f"MCP server {name} has invalid HTTP headers")
-            if parsed.scheme == "http":
-                try:
-                    loopback = (
-                        parsed.hostname == "localhost"
-                        or ipaddress.ip_address(parsed.hostname).is_loopback
+    for name, raw_spec in list(servers.items())[:MAX_SERVERS]:
+        try:
+            if not name or len(name) > 128:
+                raise ValueError("server name is invalid")
+            if not isinstance(raw_spec, dict):
+                raise TypeError("server entry must be an object")
+            spec = cast(dict[str, Any], raw_spec)
+            transport = spec.get("type")
+            if transport == "stdio":
+                if set(spec) - {"type", "command", "args", "env", "cwd"}:
+                    raise ValueError("stdio entry has unsupported fields")
+                command = spec.get("command")
+                args = spec.get("args", [])
+                env = spec.get("env", {})
+                if (
+                    not isinstance(command, str)
+                    or not command.strip()
+                    or command != command.strip()
+                    or any(character.isspace() for character in command)
+                ):
+                    raise ValueError("stdio command must be one executable token")
+                if command.startswith("./"):
+                    if "\\" in command or not _inside(
+                        (package_root / command[2:]).resolve(strict=False),
+                        package_root.resolve(strict=True),
+                    ):
+                        raise ValueError("stdio command escapes the package root")
+                elif "/" in command or "\\" in command or command in {".", ".."}:
+                    raise ValueError(
+                        "stdio command must be a bare executable or package-relative path"
                     )
-                except ValueError:
-                    loopback = False
-                if not loopback:
-                    raise ValueError(f"MCP server {name} cleartext endpoint must be loopback")
-            if parsed.port == 0:
-                raise ValueError(f"MCP server {name} endpoint cannot use port zero")
-            port = f":{parsed.port}" if parsed.port is not None else ""
-            safe_endpoint = f"{parsed.scheme}://{parsed.hostname}{port}/…"
-            result.append(
-                PluginServer(name=name, transport="streamable_http", endpoint=safe_endpoint)
-            )
-        else:
-            raise ValueError(f"MCP server {name} uses an unsupported transport")
-    return result
+                if not isinstance(args, list):
+                    raise ValueError("stdio args must be an array of strings")
+                args = cast(list[Any], args)
+                if len(args) > 64 or any(
+                    not isinstance(arg, str) or len(arg) > 2048 for arg in args
+                ):
+                    raise ValueError("stdio args must be at most 64 strings of 2 KiB each")
+                if not isinstance(env, dict):
+                    raise ValueError("stdio env must be an object of strings")
+                env = cast(dict[str, Any], env)
+                if any(
+                    not key
+                    or "=" in key
+                    or "\x00" in key
+                    or key.upper() in {"PLUGIN_ROOT", "PLUGIN_DATA"}
+                    or not isinstance(value, str)
+                    for key, value in env.items()
+                ):
+                    raise ValueError("stdio env keys/values are invalid or use reserved names")
+                cwd = spec.get("cwd")
+                if "cwd" in spec:
+                    if not isinstance(cwd, str):
+                        raise ValueError("stdio cwd must be a supported relative path")
+                    if cwd in {"${PLUGIN_ROOT}", "${PLUGIN_DATA}"}:
+                        pass
+                    elif cwd.startswith("${PLUGIN_ROOT}/"):
+                        cwd_relative = cwd[len("${PLUGIN_ROOT}/") :]
+                        if not cwd_relative or "\\" in cwd_relative:
+                            raise ValueError("stdio cwd has an invalid PLUGIN_ROOT path")
+                        if not _inside(
+                            (package_root / cwd_relative).resolve(strict=False),
+                            package_root.resolve(strict=True),
+                        ):
+                            raise ValueError("stdio cwd escapes the package root")
+                    elif cwd.startswith("${PLUGIN_DATA}/"):
+                        relative = PurePosixPath(cwd[len("${PLUGIN_DATA}/") :])
+                        if (
+                            not relative.parts
+                            or relative.is_absolute()
+                            or ".." in relative.parts
+                            or "\\" in cwd
+                        ):
+                            raise ValueError("stdio cwd has an invalid PLUGIN_DATA path")
+                    elif cwd.startswith("./"):
+                        if "\\" in cwd or not _inside(
+                            (package_root / cwd[2:]).resolve(strict=False),
+                            package_root.resolve(strict=True),
+                        ):
+                            raise ValueError("stdio cwd escapes the package root")
+                    else:
+                        raise ValueError(
+                            "stdio cwd must be plugin-relative or use a supported placeholder"
+                        )
+                result.append(
+                    PluginServer(
+                        name=name,
+                        transport="stdio",
+                        command_name=Path(command.replace("\\", "/")).name,
+                        argument_count=len(args),
+                        environment_names=sorted(env),
+                    )
+                )
+            elif transport == "streamable-http":
+                if set(spec) - {"type", "url", "headers"}:
+                    raise ValueError("HTTP entry has unsupported fields")
+                endpoint = spec.get("url")
+                if not isinstance(endpoint, str) or len(endpoint) > 2048:
+                    raise ValueError("HTTP endpoint is invalid")
+                parsed = urlsplit(endpoint)
+                if (
+                    parsed.scheme not in {"https", "http"}
+                    or not parsed.hostname
+                    or parsed.username is not None
+                    or parsed.password is not None
+                    or parsed.fragment
+                ):
+                    raise ValueError("HTTP endpoint is not an allowed URL")
+                headers_value = spec.get("headers", {})
+                if not isinstance(headers_value, dict):
+                    raise ValueError("HTTP headers must be an object of strings")
+                headers = cast(dict[str, Any], headers_value)
+                lowered_headers = [key.lower() for key in headers]
+                if len(lowered_headers) != len(set(lowered_headers)) or any(
+                    not _HEADER.fullmatch(key)
+                    or not isinstance(value, str)
+                    or "\r" in value
+                    or "\n" in value
+                    for key, value in headers.items()
+                ):
+                    raise ValueError("HTTP headers are invalid or contain duplicate names")
+                if parsed.scheme == "http":
+                    try:
+                        loopback = (
+                            parsed.hostname == "localhost"
+                            or ipaddress.ip_address(parsed.hostname).is_loopback
+                        )
+                    except ValueError:
+                        loopback = False
+                    if not loopback:
+                        raise ValueError("cleartext HTTP endpoint must use loopback")
+                if parsed.port == 0:
+                    raise ValueError("HTTP endpoint cannot use port zero")
+                port = f":{parsed.port}" if parsed.port is not None else ""
+                safe_endpoint = f"{parsed.scheme}://{parsed.hostname}{port}/…"
+                result.append(
+                    PluginServer(
+                        name=name,
+                        transport="streamable_http",
+                        endpoint=safe_endpoint,
+                    )
+                )
+            else:
+                raise ValueError(f"unsupported MCP transport {transport!r}")
+        except (TypeError, ValueError) as exc:
+            diagnostics.append(f"MCP server {name!r}: {str(exc)[:220]}")
+    return result, diagnostics
 
 
-def _package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSummary:
+def _package(
+    path: Path, root: Path, command_cache: dict[str, bool]
+) -> tuple[PluginSummary, list[str]]:
     package_root = path.resolve(strict=True)
     if not _inside(package_root, root) or not package_root.is_dir():
         raise ValueError("package directory escapes selected root")
@@ -663,21 +736,17 @@ def _package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSu
         or any(not isinstance(keyword, str) for keyword in cast(list[Any], keywords))
     ):
         raise ValueError("plugin.json keywords must be an array of strings")
-    extensions = manifest.get("extensions", {})
-    if not isinstance(extensions, dict):
-        # The normative client loading rules make a non-object extensions field
-        # non-fatal, despite the stricter machine-readable schema.
-        extensions = {}
-    # No extension namespace is implemented by X.A.A.; the v1 contract requires
-    # clients to ignore those values without interpreting or validating them.
-    return PluginSummary(
+    # No extension namespace is implemented by X.A.A.; ignore unimplemented data.
+    servers, server_diagnostics = _servers(package_root)
+    summary = PluginSummary(
         name=name,
         version=version,
         description=description,
         path=str(package_root),
         skills=_skill_summaries(package_root, command_cache),
-        servers=_servers(manifest, package_root),
+        servers=servers,
     )
+    return summary, server_diagnostics
 
 
 def discover_agent_plugins(directory: str) -> PluginDiscovery:
@@ -709,8 +778,12 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
             if not resolved.is_dir():
                 continue
             if (resolved / "plugin.json").exists():
-                summary = _package(resolved, root, command_cache)
+                summary, server_diagnostics = _package(resolved, root, command_cache)
                 packages.append(summary)
+                diagnostics.extend(
+                    PluginDiagnostic(path=candidate.name[:256], message=message)
+                    for message in server_diagnostics
+                )
                 manifest = _json(resolved / "plugin.json", resolved)
                 known_fields = {
                     "$schema",

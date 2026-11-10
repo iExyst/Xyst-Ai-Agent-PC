@@ -175,6 +175,67 @@ def test_plugin_manifest_rejects_invalid_standard_metadata(
     assert len(result.diagnostics) == 1
 
 
+def test_mcp_package_discovery_keeps_valid_servers_and_skills_when_entries_fail(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    mcp_path = package / "mcp.json"
+    config = json.loads(mcp_path.read_text(encoding="utf-8"))
+    config["mcpServers"]["bad-cwd"] = {
+        "type": "stdio",
+        "command": "python.exe",
+        "cwd": "./../../outside",
+    }
+    config["mcpServers"]["legacy-sse"] = {
+        "type": "sse",
+        "url": "https://example.test/events",
+    }
+    config["mcpServers"]["bad-headers"] = {
+        "type": "streamable-http",
+        "url": "https://example.test/duplicate-headers",
+        "headers": {"X-Tenant": "one", "x-tenant": "two"},
+    }
+    config["mcpServers"]["local_helper"] = {
+        "type": "streamable-http",
+        "url": "https://example.test/underscore-name",
+    }
+    mcp_path.write_text(json.dumps(config), encoding="utf-8")
+
+    result = discover_agent_plugins(str(tmp_path))
+    assert len(result.packages) == 1
+    summary = result.packages[0]
+    assert [skill.name for skill in summary.skills] == ["summarize"]
+    assert [server.name for server in summary.servers] == [
+        "local-helper",
+        "remote-helper",
+        "local_helper",
+    ]
+    assert len(result.diagnostics) == 3
+    assert any(
+        "bad-cwd" in item.message and "escapes" in item.message for item in result.diagnostics
+    )
+    assert any(
+        "legacy-sse" in item.message and "unsupported" in item.message
+        for item in result.diagnostics
+    )
+    assert any(
+        "bad-headers" in item.message and "duplicate" in item.message for item in result.diagnostics
+    )
+
+
+def test_invalid_mcp_configuration_does_not_hide_package_skills(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    mcp_path = package / "mcp.json"
+    mcp_path.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    result = discover_agent_plugins(str(tmp_path))
+    assert len(result.packages) == 1
+    assert [skill.name for skill in result.packages[0].skills] == ["summarize"]
+    assert result.packages[0].servers == []
+    assert len(result.diagnostics) == 1
+    assert "mcp.json" in result.diagnostics[0].message
+
+
 def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path: Path) -> None:
     skills_root = tmp_path / "hermes-skills"
     skill_directory = skills_root / "summarize"
