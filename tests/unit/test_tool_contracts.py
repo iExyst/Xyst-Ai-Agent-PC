@@ -5,7 +5,11 @@ from typing import Any
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.git_tools import GIT_TOOL
-from xaa.runtime.tool_contracts import COMMAND_TOOL_CONTRACT, WORKSPACE_TOOL_CONTRACTS
+from xaa.runtime.tool_contracts import (
+    COMMAND_TOOL_CONTRACT,
+    PLAN_TOOL_CONTRACT,
+    WORKSPACE_TOOL_CONTRACTS,
+)
 from xaa.storage.runs import RunStore
 
 
@@ -64,6 +68,21 @@ def test_coordinator_exposes_workspace_schemas_from_contracts(workspace_tmp_path
         if contract["internal_only"]:
             continue
         assert exposed[name] == contract["input_schema"]
+    assert exposed["plan_save"] == PLAN_TOOL_CONTRACT["input_schema"]
+
+
+def test_plan_tool_contract_declares_durable_graph_write_boundaries() -> None:
+    contract = PLAN_TOOL_CONTRACT
+    assert contract["name"] == "plan.save"
+    assert contract["version"] == "1"
+    assert contract["permissions"] == ["task.delegate"]
+    assert contract["effect"] == "persistent_plan_write"
+    assert contract["input_schema"]["type"] == "object"
+    assert len(contract["output_schema"]["oneOf"]) == 2
+    assert contract["limits"]["tasks"] == 64
+    assert "run_deadline" in contract["timeout"]["outer_deadline"]
+    assert "No automatic retry" in contract["retry"]
+    assert {"run_id", "call_id", "version", "task_ids"} <= set(contract["audit"])
 
 
 def test_workspace_contract_schemas_are_serializable() -> None:

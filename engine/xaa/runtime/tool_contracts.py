@@ -1,4 +1,4 @@
-"""Versioned contracts for coordinator-exposed workspace file tools."""
+"""Versioned contracts for coordinator-exposed tools."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from xaa.runtime.executor import (
     ReplaceTextArguments,
     WriteFileArguments,
 )
+from xaa.runtime.planning import PLAN_TOOL_NAME, PLAN_TOOL_VERSION, SavePlanArguments
 from xaa.runtime.workspace_search import SearchArguments, SearchOutput
 from xaa.storage.commands import TOOL as COMMAND_TOOL
 from xaa.storage.commands import CommandOutcome
@@ -190,6 +191,68 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
 
 WORKSPACE_TOOL_OPERATIONS = {
     name: contract["operation"] for name, contract in WORKSPACE_TOOL_CONTRACTS.items()
+}
+
+
+PLAN_TOOL_CONTRACT: dict[str, Any] = {
+    "name": PLAN_TOOL_NAME,
+    "version": PLAN_TOOL_VERSION,
+    "operation": "save_dependency_graph",
+    "permissions": ["task.delegate"],
+    "effect": "persistent_plan_write",
+    "input_schema": SavePlanArguments.model_json_schema(),
+    "output_schema": {
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["task_ids", "ready", "blocked", "status", "execution"],
+                "properties": {
+                    "task_ids": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "items": {"type": "string", "maxLength": 128},
+                    },
+                    "ready": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {"type": "string", "maxLength": 128},
+                    },
+                    "blocked": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {"type": "string", "maxLength": 128},
+                    },
+                    "status": {"const": "saved"},
+                    "execution": {"type": "string", "maxLength": 200},
+                },
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "required": ["status", "code", "message", "remaining_child_iterations"],
+                "properties": {
+                    "status": {"const": "rejected"},
+                    "code": {
+                        "enum": [
+                            "invalid_schema",
+                            "permission_denied",
+                            "invalid_graph_or_budget",
+                            "plan_save_must_be_unique_final_call",
+                        ]
+                    },
+                    "message": {"type": "string", "maxLength": 300},
+                    "remaining_child_iterations": {"type": "integer", "minimum": 0},
+                },
+                "additionalProperties": False,
+            },
+        ]
+    },
+    "timeout": {"outer_deadline": "run_deadline", "database_operations": "bounded local SQLite"},
+    "cancellation": "The durable tool-call identity settles the plan result; inspect the journal before retrying.",
+    "retry": "No automatic retry; reuse only after reconciling the saved tool-call identity.",
+    "limits": {"tasks": 64, "max_output_bytes": 32_768},
+    "audit": ["run_id", "call_id", "tool", "version", "proposal", "task_ids", "status"],
 }
 
 

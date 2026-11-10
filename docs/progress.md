@@ -18,6 +18,10 @@ is reported as invalid; invalid write output remains an unknown outcome and
 requires reconciliation. The existing 256 KiB result bound remains enforced.
 The full MCP stdio integration file passes (13 passed); Ruff, formatting, strict Pyright and diff checks pass. Hosted Windows source run [42859332060](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42859332060) passed; installer checks were skipped for this source-only change. No LLM inference was used.
 
+## Version the saved-plan tool contract (2026-11-10)
+
+`plan.save` now has a versioned contract for its validated dependency-graph input, saved/rejected output shapes, `task.delegate` permission, 64-task limit, run-deadline boundary, durable-call recovery rule and audit fields. The coordinator exposes the contract schema. The focused tool-contract suite passes (6 passed), along with the model-planning suite (7 passed); Ruff, formatting, strict Pyright and diff checks pass. Hosted validation is pending. No LLM inference was used.
+
 ## Declare dynamic MCP tool boundaries (2026-11-10)
 
 Model-facing MCP descriptions now state the discovered schema hash, 45-second timeout, no automatic retries, 256 KiB result limit, structured-output validation, and write reconciliation rule. Server descriptions remain labeled as untrusted metadata. The MCP stdio integration suite passes (13 passed), as do Ruff, formatting, strict Pyright and diff checks. Hosted validation is pending. No LLM inference was used.

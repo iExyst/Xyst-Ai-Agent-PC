@@ -30,7 +30,6 @@ from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.git_tools import GIT_TOOL, GitArguments, inspect_git
 from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
 from xaa.runtime.planning import (
-    SavePlanArguments,
     reject_model_plan,
     save_model_plan,
     validate_model_plan,
@@ -39,6 +38,7 @@ from xaa.runtime.specialists import RUN_READY_TOOL, RunReadyArguments, Specialis
 from xaa.runtime.states import RunState
 from xaa.runtime.tool_contracts import (
     COMMAND_TOOL_CONTRACT,
+    PLAN_TOOL_CONTRACT,
     WORKSPACE_TOOL_CONTRACTS,
     WORKSPACE_TOOL_OPERATIONS,
 )
@@ -1198,7 +1198,7 @@ class Coordinator:
                 "function": {
                     "name": "plan_save",
                     "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, permissions, max_iterations and max_seconds. Total reservations cannot exceed {run['limits']['max_iterations']} iterations and {run['limits']['max_seconds']} seconds. Permissions may include workspace.read{' and workspace.write' if run['mode'] == 'workspace' else ''}{' and web.search' if run.get('approved_web_search') else ''}{' and web.read for exact run-approved hosts' if run.get('approved_web_hosts') else ''}{' and web.browser.read for the exact run-approved hosts' if run.get('approved_browser') and run.get('approved_web_hosts') else ''}. Tasks with workspace.write use private working trees. Only when this run has a saved command grant may a private read/write task additionally receive workspace.command to validate its private files. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
-                    "parameters": SavePlanArguments.model_json_schema(),
+                    "parameters": PLAN_TOOL_CONTRACT["input_schema"],
                 },
             },
             {

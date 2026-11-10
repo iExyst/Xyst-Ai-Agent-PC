@@ -1,9 +1,10 @@
-# Workspace tool contracts
+# Coordinator tool contracts
 
-`engine/xaa/runtime/tool_contracts.py` is the coordinator's source of truth for the
-public workspace file tools and bounded command tool. The bounded Git inspection
-contract is declared beside its implementation in `git_tools.py`. Each versioned
-contract records its input/output schema, permission, effect class, timeout,
+`engine/xaa/runtime/tool_contracts.py` is the coordinator's source of truth for
+the public workspace file tools, bounded command tool, and saved-plan tool. The
+bounded Git inspection contract is declared beside its implementation in
+`git_tools.py`. Each versioned contract records its input/output schema,
+permission, effect class, timeout,
 cancellation behavior, retry rule, resource limits, and audit fields. The
 coordinator builds model-facing schemas and chooses the filesystem worker
 operation and timeout from these contracts; Git inspection uses its declared
@@ -47,10 +48,12 @@ tool descriptions include the discovered schema hash, 45-second timeout,
 no-automatic-retry rule, result cap, structured-output validation, and write
 reconciliation guidance; server-provided descriptions remain labeled untrusted.
 
+`plan.save` declares the typed dependency-graph proposal, saved/rejected result shapes, `task.delegate` permission, 64-task limit, run-deadline boundary, durable-call recovery rule, and plan audit fields. The coordinator exposes its input schema directly from this contract. A saved plan is not dispatched by the same call.
+
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. The command entry is a typed execution contract used for its
 model-facing input schema; the coordinator still enforces its saved grant and
 run deadline, while the command controller owns snapshot, execution, output,
-cancellation, and recovery behavior. MCP, specialist, and messaging contracts
-still need inventory and serialized-output consistency review. Their
+cancellation, and recovery behavior. Further MCP, specialist, and messaging
+contracts still need inventory and serialized-output consistency review. Their
 existing behavior and limits remain documented with their respective implementations.

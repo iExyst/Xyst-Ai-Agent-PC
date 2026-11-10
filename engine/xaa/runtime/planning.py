@@ -9,6 +9,9 @@ from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
+PLAN_TOOL_NAME = "plan.save"
+PLAN_TOOL_VERSION = "1"
+
 
 class ProposedTask(TaskDefinition):
     acceptance_criteria: tuple[str, ...] = Field(min_length=1)
@@ -48,8 +51,8 @@ def reject_model_plan(
         run_id,
         token,
         call_id=call_id,
-        tool="plan.save",
-        version="1",
+        tool=PLAN_TOOL_NAME,
+        version=PLAN_TOOL_VERSION,
         arguments={"rejected_proposal": arguments},
         idempotency_key=call_id,
     ):
@@ -87,8 +90,8 @@ def save_model_plan(
         run_id,
         token,
         call_id=call_id,
-        tool="plan.save",
-        version="1",
+        tool=PLAN_TOOL_NAME,
+        version=PLAN_TOOL_VERSION,
         arguments=proposal.model_dump(),
         idempotency_key=call_id,
     ):
