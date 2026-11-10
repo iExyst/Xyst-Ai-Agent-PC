@@ -15,7 +15,7 @@ from xaa.providers.contracts import TokenUsage, validate_completion
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
-from xaa.runtime.browser import BROWSER_TOOL, run_approved_browser
+from xaa.runtime.browser import BROWSER_METADATA, BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import (
@@ -29,8 +29,8 @@ from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
 from xaa.runtime.task_commands import execute_task_command, read_dependency_command_output
 from xaa.runtime.task_review import candidate_evidence
 from xaa.runtime.tool_worker import FilesystemOperation, execute_filesystem
-from xaa.runtime.web_fetch import WEB_FETCH_TOOL, fetch_approved_web_page
-from xaa.runtime.web_search import WEB_SEARCH_TOOL, search_web
+from xaa.runtime.web_fetch import WEB_FETCH_METADATA, WEB_FETCH_TOOL, fetch_approved_web_page
+from xaa.runtime.web_search import WEB_SEARCH_METADATA, WEB_SEARCH_TOOL, search_web
 from xaa.runtime.workspace_snapshot import checked_path
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import LeaseLost, RunStore, TaskReadScope
@@ -725,10 +725,13 @@ class SpecialistRunner:
             ]
         ]
         if "web.search" in task_permissions and run.get("approved_web_search"):
-            tools.append(json.loads(json.dumps(WEB_SEARCH_TOOL)))
+            search_tool = json.loads(json.dumps(WEB_SEARCH_TOOL))
+            search_tool["function"]["parameters"] = WEB_SEARCH_METADATA["input_schema"]
+            tools.append(search_tool)
         approved_hosts = run.get("approved_web_hosts", [])
         if "web.read" in task_permissions and approved_hosts:
             fetch_tool = json.loads(json.dumps(WEB_FETCH_TOOL))
+            fetch_tool["function"]["parameters"] = WEB_FETCH_METADATA["input_schema"]
             fetch_tool["function"]["description"] += (
                 " Approved exact hostnames: " + ", ".join(approved_hosts) + "."
             )
@@ -739,6 +742,7 @@ class SpecialistRunner:
             and approved_hosts
         ):
             browser_tool = json.loads(json.dumps(BROWSER_TOOL))
+            browser_tool["function"]["parameters"] = BROWSER_METADATA["input_schema"]
             browser_tool["function"]["description"] += (
                 " Approved exact hostnames: " + ", ".join(approved_hosts) + ". "
                 "Any requested screenshot is stored as an untrusted run artifact."

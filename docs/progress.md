@@ -1,5 +1,14 @@
 # Progress
 
+## Keep specialist web-tool schemas aligned (2026-11-10)
+
+Delegated specialists exposed search, fetch, and browser inputs from static tool
+constants, while the coordinator used the bounded contract metadata. Specialist
+calls now source each input schema from the same metadata as coordinator calls.
+The permission-scoped specialist workflow asserts all three schemas match;
+focused coverage passes (3 passed). Ruff, formatting, strict Pyright and diff
+checks pass. Hosted validation is pending. No LLM inference was used.
+
 ## Validate MCP structured outputs (2026-11-10)
 
 MCP tool discovery already pinned server output schemas with each tool identity,

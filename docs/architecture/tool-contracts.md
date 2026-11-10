@@ -28,13 +28,14 @@ field bounds so the provider-facing declaration matches runtime behavior.
 `web.search` separately caps Brave's response at 1 MiB and the serialized result
 at 512 KiB. Its schema limits ten results and declares each result field's
 character bound; the coordinator exposes its input schema from the same
-metadata. Search errors and cancellation have a separate bounded result shape.
+metadata for coordinator and specialist calls. Search errors and cancellation
+have a separate bounded result shape.
 
 `browser.open` caps the serialized tool result at 1 MiB after worker processing,
 in addition to the worker response cap. Its schema bounds the final URL, title,
 content, form controls and options. The coordinator derives the model-facing
-input schema from browser metadata. Screenshots remain managed artifacts rather
-than inline result bytes.
+input schema from browser metadata for coordinator and specialist calls.
+Screenshots remain managed artifacts rather than inline result bytes.
 
 MCP discovery validates and pins both tool schemas with the discovered tool
 identity. Output schemas are capped at 128 KiB and validated against structured

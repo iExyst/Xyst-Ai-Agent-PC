@@ -183,7 +183,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
 async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
     workspace_tmp_path, monkeypatch, tool_name, permission, approvals, arguments, journal_name
 ):
-    from xaa.runtime import web_fetch, web_search
+    from xaa.runtime import browser, web_fetch, web_search
 
     store = RunStore(workspace_tmp_path / "specialist-web.sqlite3")
     run_id = store.create_run(
@@ -271,6 +271,17 @@ async def test_researcher_uses_only_run_approved_task_scoped_web_reads(
             names = {tool["function"]["name"] for tool in tools or []}
             assert tool_name in names
             assert ({"web_search", "web_fetch"} - {tool_name}).isdisjoint(names)
+            exposed = next(
+                tool["function"]["parameters"]
+                for tool in tools or []
+                if tool["function"]["name"] == tool_name
+            )
+            expected_schema = {
+                "web_search": web_search.WEB_SEARCH_METADATA["input_schema"],
+                "web_fetch": web_fetch.WEB_FETCH_METADATA["input_schema"],
+                "browser_run": browser.BROWSER_METADATA["input_schema"],
+            }[tool_name]
+            assert exposed == expected_schema
             if tool_name == "browser_run":
                 browser_schema = next(
                     tool["function"]["parameters"]
