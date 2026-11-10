@@ -1,5 +1,8 @@
 # Progress
 
+## Prove concurrent specialist holds stay within the shared token ceiling (2026-11-10)
+
+Added a two-thread storage regression that races two independent 60-token reservations against a 100-token run cap. The immediate SQLite transaction admits exactly one hold; the other raises `TokenBudgetExceeded`, and the durable usage report retains one 60-token reservation. `uv run pytest tests/unit/test_diagnostic_usage.py -q` passes (10 tests); Ruff lint, format check, and `git diff --check` pass. This verifies the atomic parent-run cap for this race; it does not establish tokenizer accuracy, external-client accounting, or full Phase 4 acceptance. No live model inference was used.
 ## Verify PyInstaller license notice source text (2026-11-10)
 
 Removed generated `Additional notice: UNKNOWN` placeholders from the PyInstaller and community-hooks notice blocks. The remaining fenced texts match the pinned installed package files (`pyinstaller==6.22.3` `COPYING.txt`; `pyinstaller-hooks-contrib==2026.9` `LICENSE`) after normalizing line endings, markdown fence boundaries, and whitespace-only line differences. The inventory now records PyInstaller's metadata-declared GPLv2-or-later exception and keeps package-specific copyright and complete installer-notice review open. `git diff --check` passes. No live model inference was used.

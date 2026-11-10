@@ -1,5 +1,7 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
@@ -164,6 +166,47 @@ async def test_pre_inference_reservations_cover_diagnostics_and_parent_requests(
     assert len(starts) == provider.calls
     assert holds == starts
     assert store.usage_report(run["id"])["outstanding_reservations"] == 0
+
+
+def test_concurrent_reservations_cannot_exceed_shared_run_token_budget(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "concurrent-reservations.sqlite3")
+    run_id = store.create_run(
+        objective="Share a hard token ceiling",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+        max_total_tokens=100,
+        pre_inference_token_reservations=True,
+    )["id"]
+    owner = store.acquire_lease(run_id, "coordinator")
+    inference_ids = ("specialist-a", "specialist-b")
+    with store.connection() as connection:
+        for inference_id in inference_ids:
+            store.record_event(
+                connection,
+                run_id,
+                "task.inference.started",
+                {"task_id": inference_id, "inference_id": inference_id},
+            )
+
+    barrier = Barrier(len(inference_ids))
+
+    def reserve(inference_id: str) -> bool:
+        barrier.wait(timeout=5)
+        try:
+            store.reserve_tokens(run_id, owner, inference_id, 40, 20)
+        except TokenBudgetExceeded:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=len(inference_ids)) as executor:
+        admitted = list(executor.map(reserve, inference_ids))
+
+    assert sum(admitted) == 1
+    report = store.usage_report(run_id)
+    assert report["outstanding_reservations"] == 1
+    assert report["outstanding_reserved_tokens"] == 60
 
 
 async def test_explicit_specialist_dispatch_obeys_diagnostic_threshold(workspace_tmp_path):
