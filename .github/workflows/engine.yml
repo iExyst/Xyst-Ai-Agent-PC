@@ -232,6 +232,16 @@ jobs:
           path: ~/AppData/Local/tauri/NSIS
           key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - run: npm run build:installer
+      - name: Verify installed-stage MCP OAuth and credential clearing in native desktop
+        shell: pwsh
+        env:
+          XAA_NATIVE_STAGE: native-release
+          XAA_NATIVE_DEBUG_PORT: '19230'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node scripts/native_mcp_smoke.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Native MCP/OAuth acceptance exited with code $LASTEXITCODE." }
+        timeout-minutes: 10
       - name: Verify recovery after native Tauri desktop process death
         shell: pwsh
         run: |
@@ -432,7 +442,9 @@ jobs:
             .acceptance/**/report.json
             .acceptance/**/desktop-stdout.log
             .acceptance/**/desktop-stderr.log
+            .acceptance/**/engine.log
             .acceptance/**/engine-startup.log
+            .acceptance/**/oauth-fixture.log
             .acceptance/**/failure.png
           include-hidden-files: true
           if-no-files-found: error

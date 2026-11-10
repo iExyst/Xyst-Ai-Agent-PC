@@ -2,14 +2,18 @@ import { chromium, expect } from '@playwright/test';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import path from 'node:path';
 
 const root = path.resolve('.acceptance', randomUUID());
 await mkdir(root, { recursive: true });
 await writeFile(path.join(root, 'desktop-settings.json'), JSON.stringify({ close_behavior: 'exit_on_close' }));
-const desktop = path.resolve('build/native-dev/xaa-desktop.exe');
-const engine = path.resolve('build/native-dev/xaa-engine.exe');
-const manifest = JSON.parse(await readFile('build/native-dev/manifest.json', 'utf8'));
+const stage = process.env.XAA_NATIVE_STAGE || 'native-dev';
+if (!['native-dev', 'native-release'].includes(stage)) throw new Error(`Unsupported native stage: ${stage}`);
+const stageRoot = path.resolve('build', stage);
+const desktop = path.join(stageRoot, 'xaa-desktop.exe');
+const engine = path.join(stageRoot, 'xaa-engine.exe');
+const manifest = JSON.parse(await readFile(path.join(stageRoot, 'manifest.json'), 'utf8'));
 const engineLogPath = path.join(process.env.LOCALAPPDATA, 'dev.xyst.xaa', 'logs', 'engine.log');
 const previousEngineLog = await readFile(engineLogPath, 'utf8').catch(() => '');
 const runtimeEnv = Object.fromEntries(
@@ -25,7 +29,7 @@ const proc = spawn(desktop, [], {
     XAA_TEST_HIDDEN: '1',
     XAA_DATA_DIR: root,
     WEBVIEW2_USER_DATA_FOLDER: webviewProfile,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=19223',
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${process.env.XAA_NATIVE_DEBUG_PORT || 19223}`,
   },
 });
 let stdout = '';
@@ -34,17 +38,20 @@ proc.stdout.on('data', (chunk) => { stdout = (stdout + chunk.toString()).slice(-
 proc.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-32768); });
 let browser;
 let connection;
+let oauthFixture;
+let fixtureOutput = '';
 let passed = false;
 
 try {
   const debugDeadline = Date.now() + 60_000;
   while (Date.now() < debugDeadline) {
     try {
-      const response = await fetch('http://127.0.0.1:19223/json/version', { signal: AbortSignal.timeout(750) });
+      const debugPort = process.env.XAA_NATIVE_DEBUG_PORT || '19223';
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(750) });
       if (!response.ok) throw new Error(`WebView debug metadata returned HTTP ${response.status}.`);
       const metadata = await response.json();
       const endpoint = new URL(metadata.webSocketDebuggerUrl);
-      if (endpoint.protocol !== 'ws:' || !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname) || endpoint.port !== '19223') {
+      if (endpoint.protocol !== 'ws:' || !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname) || endpoint.port !== debugPort) {
         throw new Error('WebView exposed an unexpected debug address.');
       }
       endpoint.hostname = '127.0.0.1';
@@ -206,6 +213,81 @@ try {
   if ((await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json()).length !== 0) {
     throw new Error('The native MCP fixture configuration was not removed.');
   }
+
+  const oauthPort = await new Promise((resolve, reject) => {
+    const listener = net.createServer();
+    listener.once('error', reject);
+    listener.listen(0, '127.0.0.1', () => {
+      const address = listener.address();
+      if (!address || typeof address === 'string') return reject(new Error('Could not allocate OAuth fixture port.'));
+      listener.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
+  const fixturePython = path.resolve('.venv/Scripts/python.exe');
+  const oauthFixturePath = path.resolve('tests/fixtures/mcp_oauth_http_server.py');
+  oauthFixture = spawn(fixturePython, [oauthFixturePath, '--port', String(oauthPort)], {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  oauthFixture.stdout.on('data', (chunk) => { fixtureOutput = (fixtureOutput + chunk.toString()).slice(-16384); });
+  oauthFixture.stderr.on('data', (chunk) => { fixtureOutput = (fixtureOutput + chunk.toString()).slice(-16384); });
+  let fixtureReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${oauthPort}/health`, { signal: AbortSignal.timeout(250) });
+      if (response.ok) { fixtureReady = true; break; }
+    } catch { /* fixture is still starting */ }
+    if (oauthFixture.exitCode !== null) throw new Error(`Native OAuth fixture exited: ${fixtureOutput}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!fixtureReady) throw new Error(`Native OAuth fixture did not start: ${fixtureOutput}`);
+
+  await panel.getByLabel('Transport').selectOption('streamable_http');
+  await panel.getByLabel('Server name').fill('Native OAuth fixture');
+  await panel.getByLabel('Streamable HTTP endpoint').fill(`http://127.0.0.1:${oauthPort}/mcp`);
+  const oauthCreated = page.waitForResponse((response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST');
+  await panel.getByRole('button', { name: 'Add MCP server', exact: true }).click();
+  if ((await oauthCreated).status() !== 201) throw new Error('Native OAuth MCP configuration failed.');
+  const oauthConnect = panel.getByRole('button', { name: 'Connect and discover', exact: true });
+  await oauthConnect.click();
+  const oauthDeadline = Date.now() + 120_000;
+  let oauthState;
+  while (Date.now() < oauthDeadline) {
+    const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    const current = servers.find((server) => server.name === 'Native OAuth fixture');
+    oauthState = current?.state;
+    if (oauthState === 'connected') break;
+    if (oauthState === 'error') throw new Error(`Native OAuth connect failed: ${current.error}`);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (oauthState !== 'connected') throw new Error('Native OAuth authorization did not finish within 120 seconds.');
+  let oauthServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  let oauthServer = oauthServers.find((server) => server.name === 'Native OAuth fixture');
+  if (!oauthServer?.oauth_configured || oauthServer.tools.map((tool) => tool.name).join(',') !== 'add') {
+    throw new Error('Native desktop OAuth did not persist sign-in and discover the protected MCP tool.');
+  }
+  const oauthArticle = panel.locator('.mcp-server').filter({ hasText: 'Native OAuth fixture' });
+  await oauthArticle.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await oauthArticle.getByRole('button', { name: 'Connect and discover', exact: true }).click();
+  await expect.poll(async () => {
+    const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    return servers.find((server) => server.name === 'Native OAuth fixture')?.state;
+  }, { timeout: 30_000 }).toBe('connected');
+  oauthServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  oauthServer = oauthServers.find((server) => server.name === 'Native OAuth fixture');
+  if (!oauthServer?.oauth_configured) throw new Error('Native OAuth reconnect did not retain the saved vault token.');
+  await oauthArticle.getByRole('button', { name: 'Clear sign-in', exact: true }).click();
+  await expect.poll(async () => {
+    const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    return servers.find((server) => server.name === 'Native OAuth fixture')?.oauth_configured;
+  }, { timeout: 10_000 }).toBe(false);
+  oauthServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  oauthServer = oauthServers.find((server) => server.name === 'Native OAuth fixture');
+  if (oauthServer?.oauth_configured || oauthServer.state !== 'disconnected') {
+    throw new Error(`Native OAuth clear-sign-in left unexpected state: ${JSON.stringify(oauthServer)}`);
+  }
+  await oauthArticle.getByRole('button', { name: 'Remove server', exact: true }).click();
+  await writeFile(path.join(root, 'oauth-fixture.log'), fixtureOutput);
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' })).catch(() => {});
   for (let attempt = 0; attempt < 60 && proc.exitCode === null; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -231,6 +313,13 @@ try {
     bundled_engine_ready: ready,
     authenticated_api: true,
     transport: 'stdio',
+    oauth_transport: 'streamable_http',
+    packaged_stage: stage,
+    native_http_oauth: true,
+    native_oauth_pkce_fixture: true,
+    native_oauth_vault_persistence: true,
+    native_oauth_reconnect: true,
+    native_oauth_clear_sign_in: true,
     real_fixture_process: true,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
@@ -261,9 +350,13 @@ try {
   await writeFile(path.join(root, 'desktop-stdout.log'), stdout);
   await writeFile(path.join(root, 'desktop-stderr.log'), stderr);
   await writeFile(path.join(root, 'engine.log'), engineLog.slice(previousEngineLog.length));
+  if (oauthFixture) await writeFile(path.join(root, 'oauth-fixture.log'), fixtureOutput ?? '');
   await writeFile(path.join(root, 'report.json'), JSON.stringify({ passed, error: String(error) }, null, 2));
   throw error;
 } finally {
+  if (oauthFixture && oauthFixture.exitCode === null) {
+    execFileSync(path.join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(oauthFixture.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+  }
   await browser?.close().catch(() => {});
   if (proc.exitCode === null) {
     const taskkill = path.join(process.env.SystemRoot, 'System32', 'taskkill.exe');
