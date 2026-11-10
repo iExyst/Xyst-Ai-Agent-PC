@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import socket
 from pathlib import Path
+from types import MethodType
 from typing import Any
 
 import pytest
 import uvicorn
 from mcp.server.fastmcp import FastMCP
-from pydantic import ValidationError
+from pydantic import AnyUrl, ValidationError
 from xaa.runtime.mcp_manager import MCPManager
 from xaa.storage.mcp import MCPServerSpec
 from xaa.storage.runs import RunStore
@@ -31,10 +32,35 @@ class MemoryCredentials:
 @pytest.mark.asyncio
 async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_path: Path):
     mcp = FastMCP("HTTP fixture")
+    subscribed: set[str] = set()
+
+    get_capabilities = mcp._mcp_server.get_capabilities
+
+    def get_capabilities_with_subscriptions(self, notification_options, experimental_capabilities):
+        capabilities = get_capabilities(notification_options, experimental_capabilities)
+        if capabilities.resources is not None:
+            capabilities.resources.subscribe = True
+        return capabilities
+
+    mcp._mcp_server.get_capabilities = MethodType(
+        get_capabilities_with_subscriptions, mcp._mcp_server
+    )
+
+    @mcp._mcp_server.subscribe_resource()
+    async def subscribe(uri: AnyUrl) -> None:
+        subscribed.add(str(uri))
+
+    @mcp._mcp_server.unsubscribe_resource()
+    async def unsubscribe(uri: AnyUrl) -> None:
+        subscribed.discard(str(uri))
 
     @mcp.tool()
-    def add(left: int, right: int) -> int:
+    async def add(left: int, right: int) -> int:
         """Add two numbers in the HTTP fixture."""
+        if "xaa://http-fixture/readme" in subscribed:
+            context = mcp.get_context()
+            for _ in range(130):
+                await context.session.send_resource_updated(AnyUrl("xaa://http-fixture/readme"))
         return left + right
 
     @mcp.resource("xaa://http-fixture/readme")
@@ -97,6 +123,24 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         resources = await manager.list_resources(record.id)
         resource_uri = "xaa://http-fixture/readme"
         assert [resource["uri"] for resource in resources] == [resource_uri]
+        await manager.set_resource_subscription(record.id, resource_uri, subscribe=True)
+        update_result = await manager.call_tool(tool.qualified_name, {"left": 1, "right": 2})
+        assert update_result["status"] == "ok"
+        await asyncio.sleep(0.05)
+        updates = await manager.drain_resource_notifications(record.id)
+        assert updates["trust"] == "untrusted_mcp_output"
+        assert len(updates["notifications"]) <= 128
+        assert updates["notifications"][0] == {
+            "kind": "resync_required",
+            "trust": "untrusted_mcp_output",
+        }
+        assert all(
+            notification["trust"] == "untrusted_mcp_output"
+            for notification in updates["notifications"]
+        )
+        await manager.set_resource_subscription(record.id, resource_uri, subscribe=False)
+        await manager.call_tool(tool.qualified_name, {"left": 2, "right": 1})
+        assert (await manager.drain_resource_notifications(record.id))["notifications"] == []
         templates = await manager.list_resource_templates(record.id)
         assert templates == [
             {
