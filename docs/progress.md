@@ -2,7 +2,7 @@
 
 ## Verify owner-driven MCP reconnect after live transport loss (2026-11-10)
 
-Added a real stdio fixture that terminates its process during a tool call. The manager records the call as `unknown_outcome`, clears the dead connection and exposes an error state; the owner explicitly reconnects, the unchanged schema-matched read permission is restored, and a subsequent `add` call succeeds. The ambiguous call is not replayed. The full MCP stdio integration file passes (9 tests), with Ruff, formatting and strict manager Pyright checks passing. This verifies explicit reconnect on the SDK fixture; automatic retries and third-party transport behavior remain unverified. No model inference was used.
+Added a real stdio fixture that terminates its process during a tool call. The manager records the call as `unknown_outcome`, clears the dead connection and exposes an error state; the owner explicitly reconnects, the unchanged schema-matched read permission is restored, and a subsequent `add` call succeeds. The ambiguous call is not replayed. The full MCP stdio integration file passes (9 tests), with Ruff, formatting and strict manager Pyright checks passing. Hosted Windows source run [42789022373](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42789022373) passed the full source suite and UI/API checks. Automatic retries and third-party transport behavior remain unverified. No model inference was used.
 
 ## Reject MCP connections that exit during discovery (2026-11-10)
 
