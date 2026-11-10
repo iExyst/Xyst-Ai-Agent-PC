@@ -13,7 +13,7 @@ import pytest
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyUrl, ValidationError
-from xaa.runtime.mcp_manager import MCPManager
+from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
 from xaa.storage.mcp import MCPServerSpec
 from xaa.storage.runs import RunStore
 
@@ -338,6 +338,8 @@ async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path
     store = RunStore(workspace_tmp_path / "mcp-oauth.sqlite3")
     credentials = MemoryCredentials()
     redirects: list[str] = []
+    deny_authorization = False
+    callback_messages: list[str] = []
 
     async def authorize(url: str) -> None:
         from httpx import AsyncClient
@@ -346,13 +348,15 @@ async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path
         params = parse_qs(urlsplit(url).query)
         issued_challenge.append(params["code_challenge"][0])
         callback_url = params["redirect_uri"][0]
+        callback_params = {"state": params["state"][0]}
+        if deny_authorization:
+            callback_params["error"] = "access_denied"
+        else:
+            callback_params["code"] = "fixture-code"
         async with AsyncClient() as client:
-            response = await client.get(
-                callback_url
-                + "?"
-                + urlencode({"code": "fixture-code", "state": params["state"][0]})
-            )
+            response = await client.get(callback_url + "?" + urlencode(callback_params))
             assert response.status_code == 200
+            callback_messages.append(response.text)
 
     manager = MCPManager(store, credentials, authorization_redirect_handler=authorize)  # type: ignore[arg-type]
     try:
@@ -375,6 +379,15 @@ async def test_streamable_http_oauth_pkce_vault_and_reconnect(workspace_tmp_path
         assert await manager.delete_server(record.id)
         assert credentials.get(f"mcp:{record.id}:oauth-tokens") is None
         assert credentials.get(f"mcp:{record.id}:oauth-client") is None
+        deny_authorization = True
+        denied_record = manager.registry.create_server(
+            MCPServerSpec(name="OAuth denied", transport="streamable_http", endpoint=endpoint)
+        )
+        with pytest.raises(MCPConnectionError, match="MCP sign-in could not be completed"):
+            await manager.connect_server(denied_record.id)
+        assert callback_messages[-1] == "Sign-in was not completed. You can close this window."
+        assert credentials.get(f"mcp:{denied_record.id}:oauth-tokens") is None
+        assert manager.server_status(denied_record.id)[0] != "connected"
     finally:
         await manager.close()
         web_server.should_exit = True

@@ -1097,7 +1097,11 @@ class MCPManager:
                     state = params.get("state", [None])[0]
                     if callback is not None and not callback.done():
                         callback.set_result((code, state))
-                    body = b"Sign-in received. You can close this window."
+                    body = (
+                        b"Sign-in was not completed. You can close this window."
+                        if params.get("error")
+                        else b"Sign-in received. You can close this window."
+                    )
                     writer.write(
                         b"HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
                         + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
@@ -1213,7 +1217,7 @@ class MCPManager:
             message = "Could not start the MCP server. Check its command, arguments, and working directory."
         elif isinstance(error, TimeoutError):
             message = "The MCP server did not complete initialization or sign-in in time."
-        elif isinstance(error, OAuthFlowError):
+        elif _contains_oauth_flow_error(error):
             message = (
                 "MCP sign-in could not be completed. Check the authorization server and try again."
             )
@@ -1225,6 +1229,15 @@ class MCPManager:
                 if secret:
                     message = message.replace(secret, "[redacted]")
         return message[:500]
+
+
+def _contains_oauth_flow_error(error: BaseException) -> bool:
+    if isinstance(error, OAuthFlowError):
+        return True
+    if not isinstance(error, BaseExceptionGroup):
+        return False
+    group = cast(BaseExceptionGroup[BaseException], error)
+    return any(_contains_oauth_flow_error(nested) for nested in group.exceptions)
 
 
 def _validator(schema: dict[str, Any]) -> Any:
