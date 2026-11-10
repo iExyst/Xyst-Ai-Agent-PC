@@ -44,7 +44,7 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
 
 test('specialist streamed drafts stay attached to their task and visibly unverified',async({page})=>{
   const run={id:'specialist-stream-run',objective:'Inspect one fixture',state:'running',revision:1,acceptance_criteria:[],model:'fixture/model',limits:{max_iterations:3,max_seconds:60}};
-  const task={id:'specialist-stream-run:inspect',local_id:'inspect',objective:'Read the fixture evidence',acceptance_criteria:['Report the file evidence'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:30},status:'running'};
+  const task={id:'specialist-stream-run:inspect',local_id:'inspect',objective:'Read the fixture evidence',acceptance_criteria:['Report the file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:30},status:'running'};
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request();
     const path=new URL(request.url()).pathname;

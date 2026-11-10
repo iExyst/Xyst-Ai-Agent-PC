@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 
 test('inspect evidence and explicitly accept a specialist candidate',async({page})=>{
   const run={id:'review-run',objective:'Inspect evidence',state:'verifying',acceptance_criteria:[],revision:3};
-  const task={id:'review-run:inspect',local_id:'inspect',objective:'Inspect evidence',acceptance_criteria:['Reports actual file evidence'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'verifying'};
+  const task={id:'review-run:inspect',local_id:'inspect',objective:'Inspect evidence',acceptance_criteria:['Reports actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'verifying'};
   let reviewed=false;
   let dispatched=false;
   const graph=()=>({tasks:[{...task,status:reviewed?'completed':'verifying'},{...task,id:'review-run:review',local_id:'review',objective:'Inspect prerequisite evidence independently',dependencies:['inspect'],assigned_role:'reviewer',status:dispatched?'verifying':'queued'}],ready:reviewed&&!dispatched?['review']:[],blocked:[]});
@@ -62,7 +62,7 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
 for(const choice of ['current','proposed'] as const){
   test(`conflicted specialist edits require an explicit ${choice} integration choice`,async({page})=>{
     const run={id:`conflict-${choice}-run`,objective:'Review a conflicting private edit',state:'verifying',acceptance_criteria:[],revision:1};
-    const task={id:`${run.id}:edit`,local_id:'edit',objective:'Propose a private file edit',acceptance_criteria:['The file evidence supports the proposed change'],dependencies:[],assigned_role:'developer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read','workspace.write'],budgets:{max_iterations:4,max_seconds:90},status:'verifying'};
+    const task={id:`${run.id}:edit`,local_id:'edit',objective:'Propose a private file edit',acceptance_criteria:['The file evidence supports the proposed change'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'developer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read','workspace.write'],budgets:{max_iterations:4,max_seconds:90},status:'verifying'};
     const baseHash='c'.repeat(64);
     const currentHash='a'.repeat(64);
     const proposedHash='b'.repeat(64);

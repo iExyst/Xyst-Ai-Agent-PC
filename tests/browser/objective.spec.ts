@@ -32,8 +32,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
     if (path.endsWith('/plan') && ++planReads === 1) return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if (path.endsWith('/plan')) return route.fulfill({json: {tasks: [
-      {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},status:'queued'},
-      {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
+      {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},status:'queued'},
+      {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
     ],ready:['inspect'],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain' },
