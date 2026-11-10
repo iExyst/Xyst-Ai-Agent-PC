@@ -19,7 +19,18 @@ from jsonschema import validators
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CallToolResult, PaginatedRequestParams, TextResourceContents, Tool
+from mcp.types import (
+    AudioContent,
+    CallToolResult,
+    EmbeddedResource,
+    ImageContent,
+    PaginatedRequestParams,
+    Prompt,
+    ResourceLink,
+    TextContent,
+    TextResourceContents,
+    Tool,
+)
 from pydantic import AnyUrl, TypeAdapter
 
 from xaa.credentials import CredentialStore
@@ -38,6 +49,7 @@ MCP_TOOL_SCHEMA_BYTES = 128 * 1024
 MCP_RESULT_BYTES = 256 * 1024
 MCP_RESOURCE_COUNT_LIMIT = 256
 MCP_RESOURCE_FIELD_LIMIT = 2048
+MCP_PROMPT_ARGUMENT_LIMIT = 32
 MCP_ENV_PROFILE = "mcp:{}:{}"
 
 
@@ -60,6 +72,7 @@ class _ConnectedServer:
         session: ClientSession,
         tools: dict[str, MCPDiscoveredTool],
         resources: dict[str, Any],
+        prompts: dict[str, Prompt],
         shutdown: asyncio.Event,
         owner_task: asyncio.Task[None],
     ) -> None:
@@ -67,6 +80,7 @@ class _ConnectedServer:
         self.session = session
         self.tools = tools
         self.resources = resources
+        self.prompts = prompts
         self.shutdown = shutdown
         self.owner_task = owner_task
         self.lock = asyncio.Lock()
@@ -162,7 +176,13 @@ class MCPManager:
                 if task is None:
                     raise RuntimeError("MCP connection task was not scheduled.")
                 connection = _ConnectedServer(
-                    server, session, {tool.name: tool for tool in tools}, {}, asyncio.Event(), task
+                    server,
+                    session,
+                    {tool.name: tool for tool in tools},
+                    {},
+                    {},
+                    asyncio.Event(),
+                    task,
                 )
                 if not ready.done():
                     ready.set_result((connection, records))
@@ -226,6 +246,152 @@ class MCPManager:
         if server_id in self._errors:
             return "error", self._errors[server_id]
         return "disconnected", None
+
+    async def list_prompts(self, server_id: str) -> list[dict[str, Any]]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before listing its prompts.")
+        try:
+            async with connection.lock:
+                connection.prompts = {}
+                prompts: dict[str, Prompt] = {}
+                prompt_count = 0
+                cursor: str | None = None
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    for _ in range(8):
+                        response = await connection.session.list_prompts(
+                            params=PaginatedRequestParams(cursor=cursor)
+                        )
+                        for prompt in response.prompts:
+                            prompt_count += 1
+                            if (
+                                not prompt.name
+                                or len(prompt.name) > MCP_RESOURCE_FIELD_LIMIT
+                                or prompt_count > MCP_RESOURCE_COUNT_LIMIT
+                            ):
+                                raise MCPConnectionError(
+                                    "The MCP prompt catalog exceeded its safety limit."
+                                )
+                            if prompt.name in prompts:
+                                raise MCPConnectionError(
+                                    "The MCP server advertised duplicate prompt names."
+                                )
+                            if len(prompt.arguments or []) > MCP_PROMPT_ARGUMENT_LIMIT:
+                                raise MCPConnectionError(
+                                    "An MCP prompt declared more than 32 arguments."
+                                )
+                            argument_names: set[str] = set()
+                            for argument in prompt.arguments or []:
+                                if (
+                                    not argument.name
+                                    or len(argument.name) > 128
+                                    or argument.name in argument_names
+                                ):
+                                    raise MCPConnectionError(
+                                        "An MCP prompt exposed an invalid or duplicate argument name."
+                                    )
+                                argument_names.add(argument.name)
+                            prompts[prompt.name] = prompt
+                        cursor = response.nextCursor
+                        if cursor is None:
+                            break
+                    else:
+                        raise MCPConnectionError(
+                            "The MCP prompt listing exceeded its pagination limit."
+                        )
+                catalog = [
+                    {
+                        "name": prompt.name,
+                        "title": _bounded_text(prompt.title, MCP_RESOURCE_FIELD_LIMIT),
+                        "description": _bounded_text(prompt.description, MCP_RESOURCE_FIELD_LIMIT),
+                        "arguments": [
+                            {
+                                "name": _bounded_text(argument.name, 128),
+                                "description": _bounded_text(argument.description, 512),
+                                "required": bool(argument.required),
+                            }
+                            for argument in prompt.arguments or []
+                        ],
+                    }
+                    for prompt in prompts.values()
+                ]
+                if (
+                    len(json.dumps(catalog, separators=(",", ":")).encode("utf-8"))
+                    > MCP_RESULT_BYTES
+                ):
+                    raise MCPConnectionError(
+                        "The MCP prompt catalog exceeded the 256 KiB response limit."
+                    )
+                connection.prompts = prompts
+                return catalog
+        except MCPConnectionError:
+            raise
+        except TimeoutError as error:
+            raise MCPConnectionError("The MCP prompt listing timed out.") from error
+        except Exception as error:
+            raise MCPConnectionError(
+                "The MCP server could not list prompts; it may not support prompt discovery."
+            ) from error
+
+    async def preview_prompt(
+        self, server_id: str, name: str, arguments: dict[str, str]
+    ) -> dict[str, Any]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before previewing a prompt.")
+        prompt = connection.prompts.get(name)
+        if prompt is None:
+            raise MCPConnectionError(
+                "Preview only a prompt currently advertised by this connected server."
+            )
+        if len(arguments) > MCP_PROMPT_ARGUMENT_LIMIT:
+            raise MCPConnectionError("A prompt preview accepts at most 32 arguments.")
+        declared = {item.name: item for item in prompt.arguments or []}
+        if set(arguments) - set(declared):
+            raise MCPConnectionError("Prompt preview includes an undeclared argument.")
+        if any(len(value) > 8192 for value in arguments.values()):
+            raise MCPConnectionError("Each prompt argument must be text no longer than 8 KiB.")
+        if sum(len(value.encode("utf-8")) for value in arguments.values()) > 32 * 1024:
+            raise MCPConnectionError("Prompt arguments exceed the 32 KiB total limit.")
+        if any(bool(item.required) and item.name not in arguments for item in declared.values()):
+            raise MCPConnectionError("A required prompt argument is missing.")
+        try:
+            async with connection.lock:
+                if connection.prompts.get(name) is not prompt:
+                    raise MCPConnectionError(
+                        "The prompt is no longer in the connected server catalog."
+                    )
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    result = await connection.session.get_prompt(name, arguments or None)
+            if len(result.messages) > MCP_RESOURCE_COUNT_LIMIT:
+                raise MCPConnectionError("The MCP prompt returned too many messages.")
+            messages: list[dict[str, Any]] = []
+            total_bytes = 0
+            for message in result.messages:
+                content = _prompt_content_payload(message.content)
+                item = {"role": message.role, "content": content}
+                total_bytes += len(json.dumps(item, separators=(",", ":")).encode("utf-8"))
+                if total_bytes > MCP_RESULT_BYTES:
+                    raise MCPConnectionError(
+                        "The MCP prompt preview exceeded the 256 KiB response limit."
+                    )
+                messages.append(item)
+            payload = {
+                "trust": "untrusted_mcp_output",
+                "description": _bounded_text(result.description, MCP_RESOURCE_FIELD_LIMIT),
+                "messages": messages,
+            }
+            if len(json.dumps(payload, separators=(",", ":")).encode("utf-8")) > MCP_RESULT_BYTES:
+                raise MCPConnectionError(
+                    "The MCP prompt preview exceeded the 256 KiB response limit."
+                )
+            return payload
+        except MCPConnectionError:
+            raise
+        except TimeoutError as error:
+            raise MCPConnectionError("The MCP prompt preview timed out.") from error
+        except Exception as error:
+            raise MCPConnectionError("The MCP prompt preview failed.") from error
 
     async def list_resources(self, server_id: str) -> list[dict[str, Any]]:
         connection = self._connected.get(server_id)
@@ -637,6 +803,58 @@ def _validator(schema: dict[str, Any]) -> Any:
 
 def _bounded_text(value: str | None, limit: int) -> str | None:
     return value[:limit] if value is not None else None
+
+
+def _prompt_content_payload(content: Any) -> dict[str, Any]:
+    if isinstance(content, TextContent):
+        if len(content.text.encode("utf-8")) > MCP_RESULT_BYTES:
+            raise MCPConnectionError("The MCP prompt preview exceeded the 256 KiB limit.")
+        return {"kind": "text", "text": content.text}
+    if isinstance(content, (ImageContent, AudioContent)):
+        if len(content.data) > MCP_RESULT_BYTES:
+            raise MCPConnectionError("The MCP prompt preview exceeded the 256 KiB limit.")
+        try:
+            base64.b64decode(content.data, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise MCPConnectionError("The MCP prompt returned invalid base64 content.") from error
+        return {
+            "kind": "image" if isinstance(content, ImageContent) else "audio",
+            "mime_type": _bounded_text(content.mimeType, 256),
+            "base64": content.data,
+        }
+    if isinstance(content, ResourceLink):
+        return {
+            "kind": "resource_link",
+            "uri": str(content.uri)[:MCP_RESOURCE_FIELD_LIMIT],
+            "name": _bounded_text(content.name, MCP_RESOURCE_FIELD_LIMIT),
+            "title": _bounded_text(content.title, MCP_RESOURCE_FIELD_LIMIT),
+            "description": _bounded_text(content.description, MCP_RESOURCE_FIELD_LIMIT),
+            "mime_type": _bounded_text(content.mimeType, 256),
+        }
+    if isinstance(content, EmbeddedResource):
+        resource = content.resource
+        if isinstance(resource, TextResourceContents):
+            if len(resource.text.encode("utf-8")) > MCP_RESULT_BYTES:
+                raise MCPConnectionError("The MCP prompt preview exceeded the 256 KiB limit.")
+            return {
+                "kind": "embedded_text_resource",
+                "uri": str(resource.uri)[:MCP_RESOURCE_FIELD_LIMIT],
+                "mime_type": _bounded_text(resource.mimeType, 256),
+                "text": resource.text,
+            }
+        if len(resource.blob) > MCP_RESULT_BYTES:
+            raise MCPConnectionError("The MCP prompt preview exceeded the 256 KiB limit.")
+        try:
+            base64.b64decode(resource.blob, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise MCPConnectionError("The MCP prompt returned invalid base64 content.") from error
+        return {
+            "kind": "embedded_blob_resource",
+            "uri": str(resource.uri)[:MCP_RESOURCE_FIELD_LIMIT],
+            "mime_type": _bounded_text(resource.mimeType, 256),
+            "base64": resource.blob,
+        }
+    raise MCPConnectionError("The MCP prompt returned an unsupported content block.")
 
 
 def _walk(value: Any) -> Iterator[tuple[str, Any]]:

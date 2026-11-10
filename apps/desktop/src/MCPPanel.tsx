@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { EngineClient, MCPResource, MCPResourceRead, MCPServer, MCPTool } from './api/client.ts';
+import type { EngineClient, MCPPrompt, MCPPromptPreview, MCPResource, MCPResourceRead, MCPServer, MCPTool } from './api/client.ts';
 
 type Props = {
   client: EngineClient;
@@ -21,6 +21,9 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
   const [busy, setBusy] = useState(false);
   const [resourceCatalogs, setResourceCatalogs] = useState<Record<string,MCPResource[]>>({});
   const [resourceReads, setResourceReads] = useState<Record<string,MCPResourceRead>>({});
+  const [promptCatalogs, setPromptCatalogs] = useState<Record<string,MCPPrompt[]>>({});
+  const [promptArguments, setPromptArguments] = useState<Record<string,string>>({});
+  const [promptPreviews, setPromptPreviews] = useState<Record<string,MCPPromptPreview>>({});
 
   const refresh = async () => {
     const response: unknown = await client.mcpServers();
@@ -75,8 +78,9 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>
-        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});})}>Disconnect</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});setPromptCatalogs(prev=>({...prev,[server.id]:[]}));setPromptPreviews(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});})}>Disconnect</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const resources=await client.listMCPResources(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:resources}));})}>List resources</button>
+        <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const prompts=await client.listMCPPrompts(server.id);setPromptCatalogs(prev=>({...prev,[server.id]:prompts}));})}>List prompts</button>
         <button type="button" disabled={busy} onClick={()=>void act(async()=>{await client.deleteMCPServer(server.id);onRunWriteToolsChange(selectedRunWriteTools.filter(tool=>!tool.startsWith(`mcp_${server.id}_`)));})}>Remove server</button>
       </div>
       {(resourceCatalogs[server.id]??[]).map(resource=><div key={resource.uri} className="mcp-resource">
@@ -88,6 +92,17 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange 
         <strong>Untrusted MCP resource data</strong>
         <pre>{JSON.stringify(resourceReads[server.id],null,2)}</pre>
       </aside>}
+      {(promptCatalogs[server.id]??[]).map(prompt=>{
+        const key=`${server.id}:${prompt.name}`;
+        return <div key={prompt.name} className="mcp-prompt">
+          <strong>{prompt.title||prompt.name}</strong>
+          {prompt.description&&<p>{prompt.description}</p>}
+          {prompt.arguments.length>0&&<p>Arguments: {prompt.arguments.map(argument=>`${argument.name}${argument.required?' (required)':''}`).join(', ')}</p>}
+          <label>Arguments JSON<textarea rows={3} aria-label={`Arguments JSON for ${prompt.name}`} value={promptArguments[key]??'{}'} onChange={event=>setPromptArguments(prev=>({...prev,[key]:event.target.value}))}/></label>
+          <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const parsed:unknown=JSON.parse(promptArguments[key]??'{}');if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Prompt arguments must be a JSON object with text values.');const preview=await client.previewMCPPrompt(server.id,prompt.name,parsed as Record<string,string>);setPromptPreviews(prev=>({...prev,[key]:preview}));})}>Preview prompt</button>
+          {promptPreviews[key]&&<aside aria-label="Untrusted MCP prompt preview"><strong>Untrusted MCP prompt preview</strong><pre>{JSON.stringify(promptPreviews[key],null,2)}</pre></aside>}
+        </div>;
+      })}
       {server.secret_env.map(env=>{const key=`${server.id}:${env}`;return <label key={env}>{env} {server.transport==='streamable_http'?'bearer token': 'environment secret'} {server.secret_env_configured[env]?'(saved in OS credential store)':'(not set)'}
         <input type="password" autoComplete="off" value={secrets[key]??''} onChange={e=>setSecrets(prev=>({...prev,[key]:e.target.value}))}/>
         <button type="button" disabled={busy||!secrets[key]} onClick={()=>void act(async()=>{await client.setMCPSecret(server.id,env,secrets[key]!);setSecrets(prev=>({...prev,[key]:''}));})}>Save secret</button>

@@ -341,6 +341,63 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
         )
         assert oversized.status_code == 400
         assert "256 KiB" in oversized.json()["detail"]
+        assert client.post(f"/mcp/servers/{server_id}/prompts").status_code == 401
+        prompts = client.post(f"/mcp/servers/{server_id}/prompts", headers=headers)
+        assert prompts.status_code == 200
+        assert prompts.json()["prompts"] == [
+            {
+                "name": "summarize_topic",
+                "title": None,
+                "description": "Return a deterministic text-only prompt template.",
+                "arguments": [{"name": "topic", "description": None, "required": True}],
+            }
+        ]
+        missing_argument = client.post(
+            f"/mcp/servers/{server_id}/prompts/preview",
+            headers=headers,
+            json={"name": "summarize_topic", "arguments": {}},
+        )
+        assert missing_argument.status_code == 400
+        undeclared_argument = client.post(
+            f"/mcp/servers/{server_id}/prompts/preview",
+            headers=headers,
+            json={"name": "summarize_topic", "arguments": {"surprise": "value"}},
+        )
+        assert undeclared_argument.status_code == 400
+        too_many_arguments = client.post(
+            f"/mcp/servers/{server_id}/prompts/preview",
+            headers=headers,
+            json={
+                "name": "summarize_topic",
+                "arguments": {f"arg{index}": "x" for index in range(33)},
+            },
+        )
+        assert too_many_arguments.status_code == 422
+        preview = client.post(
+            f"/mcp/servers/{server_id}/prompts/preview",
+            headers=headers,
+            json={"name": "summarize_topic", "arguments": {"topic": "local acceptance"}},
+        )
+        assert preview.status_code == 200
+        assert preview.json() == {
+            "trust": "untrusted_mcp_output",
+            "description": "Return a deterministic text-only prompt template.",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": {
+                        "kind": "text",
+                        "text": "Summarize the supplied topic: local acceptance",
+                    },
+                }
+            ],
+        }
+        not_advertised_prompt = client.post(
+            f"/mcp/servers/{server_id}/prompts/preview",
+            headers=headers,
+            json={"name": "unadvertised", "arguments": {}},
+        )
+        assert not_advertised_prompt.status_code == 400
         tool = next(item for item in connected.json()["tools"] if item["name"] == "add")
         denied = client.put(
             f"/mcp/servers/{server_id}/tools/add/permission",

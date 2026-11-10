@@ -30,5 +30,11 @@ def large_resource() -> str:
     return "x" * (256 * 1024 + 1)
 
 
+@mcp.prompt()
+def summarize_topic(topic: str) -> str:
+    """Return a deterministic text-only prompt template."""
+    return f"Summarize the supplied topic: {topic}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

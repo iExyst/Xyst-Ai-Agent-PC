@@ -277,6 +277,23 @@ class MCPResourceReadRequest(BaseModel):
     uri: str = Field(min_length=1, max_length=2048)
 
 
+class MCPPromptPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=2048)
+    arguments: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("arguments")
+    @classmethod
+    def validate_argument_bounds(cls, arguments: dict[str, str]) -> dict[str, str]:
+        if len(arguments) > 32:
+            raise ValueError("Prompt preview accepts at most 32 arguments.")
+        if any(not key or len(key) > 128 or len(value) > 8192 for key, value in arguments.items()):
+            raise ValueError("Prompt argument names or text values exceeded their size limits.")
+        if sum(len(value.encode("utf-8")) for value in arguments.values()) > 32 * 1024:
+            raise ValueError("Prompt arguments exceed the 32 KiB total limit.")
+        return arguments
+
+
 class MCPToolResponse(BaseModel):
     server_id: str
     name: str
@@ -843,6 +860,28 @@ def create_app(
             raise HTTPException(status_code=404, detail="MCP server not found.")
         try:
             return await mcp_manager.read_resource(server_id, payload.uri)
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/prompts")
+    async def list_mcp_prompts(server_id: str, _: None = Depends(authenticate)) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return {"prompts": await mcp_manager.list_prompts(server_id)}
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/prompts/preview")
+    async def preview_mcp_prompt(
+        server_id: str,
+        payload: MCPPromptPreviewRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return await mcp_manager.preview_prompt(server_id, payload.name, payload.arguments)
         except MCPConnectionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

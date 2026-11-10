@@ -1804,6 +1804,29 @@
         "title": "MCPConnectResponse",
         "type": "object"
       },
+      "MCPPromptPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MCPPromptPreviewRequest",
+        "type": "object"
+      },
       "MCPReconciliationDecision": {
         "additionalProperties": false,
         "properties": {
@@ -7336,6 +7359,108 @@
           }
         ],
         "summary": "Disconnect Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/prompts": {
+      "post": {
+        "operationId": "list_mcp_prompts_mcp_servers__server_id__prompts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Prompts Mcp Servers  Server Id  Prompts Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mcp Prompts"
+      }
+    },
+    "/mcp/servers/{server_id}/prompts/preview": {
+      "post": {
+        "operationId": "preview_mcp_prompt_mcp_servers__server_id__prompts_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPPromptPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Mcp Prompt Mcp Servers  Server Id  Prompts Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Mcp Prompt"
       }
     },
     "/mcp/servers/{server_id}/resources": {

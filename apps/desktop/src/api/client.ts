@@ -33,6 +33,8 @@ export type MCPServer = components['schemas']['MCPServerResponse'];
 export type MCPConnect = components['schemas']['MCPConnectResponse'];
 export type MCPResource = {uri:string;name:string;title:string|null;description:string|null;mime_type:string|null;size:number|null};
 export type MCPResourceRead = {trust:'untrusted_mcp_output';contents:Array<{uri:string;mime_type:string|null;kind:'text';text:string}|{uri:string;mime_type:string|null;kind:'blob';base64:string}>};
+export type MCPPrompt = {name:string;title:string|null;description:string|null;arguments:Array<{name:string;description:string|null;required:boolean}>};
+export type MCPPromptPreview = {trust:'untrusted_mcp_output';description:string|null;messages:Array<{role:'user'|'assistant';content:Record<string,unknown>}>};
 export type MCPReconciliationItem = components['schemas']['MCPReconciliationItem'];
 export type WorkspaceWriteReconciliationItem = components['schemas']['WorkspaceWriteReconciliationItem'];
 export type PluginDiscovery = components['schemas']['PluginDiscovery'];
@@ -110,6 +112,8 @@ export class EngineClient {
   disconnectMCPServer(id:string):Promise<{state:string}>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/disconnect`,{method:'POST'});}
   async listMCPResources(id:string):Promise<MCPResource[]>{const result=await this.#request<{resources:unknown}>(`/mcp/servers/${encodeURIComponent(id)}/resources`,{method:'POST'});if(!Array.isArray(result.resources))throw new Error('MCP resource listing response was invalid.');return result.resources as MCPResource[];}
   readMCPResource(id:string,uri:string):Promise<MCPResourceRead>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/resources/read`,{method:'POST',body:JSON.stringify({uri})});}
+  async listMCPPrompts(id:string):Promise<MCPPrompt[]>{const result=await this.#request<{prompts:unknown}>(`/mcp/servers/${encodeURIComponent(id)}/prompts`,{method:'POST'});if(!Array.isArray(result.prompts))throw new Error('MCP prompt listing response was invalid.');return result.prompts as MCPPrompt[];}
+  previewMCPPrompt(id:string,name:string,arguments_:Record<string,string>):Promise<MCPPromptPreview>{return this.#request(`/mcp/servers/${encodeURIComponent(id)}/prompts/preview`,{method:'POST',body:JSON.stringify({name,arguments:arguments_})});}
   setMCPToolPermission(serverId:string,tool:MCPTool,permission:MCPTool['permission']):Promise<MCPTool>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(tool.name)}/permission`,{method:'PUT',body:JSON.stringify({permission,schema_sha256:tool.schema_sha256})});}
   setMCPSecret(serverId:string,name:string,value:string):Promise<{configured:boolean}>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({value})});}
   clearMCPSecret(serverId:string,name:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/secrets/${encodeURIComponent(name)}`,{method:'DELETE'});}

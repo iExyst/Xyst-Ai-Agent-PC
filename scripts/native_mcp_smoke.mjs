@@ -139,6 +139,23 @@ try {
   if (resourceList.resources.length !== 2 || resourceRead.trust !== 'untrusted_mcp_output') {
     throw new Error('The native MCP resource catalog/read API did not return bounded untrusted data.');
   }
+  await panel.getByRole('button', { name: 'List prompts', exact: true }).click();
+  const nativePrompt = panel.locator('.mcp-prompt').filter({ hasText: 'summarize_topic' });
+  await expect(nativePrompt).toBeVisible({ timeout: 20_000 });
+  await nativePrompt.getByLabel('Arguments JSON for summarize_topic').fill('{"topic":"native acceptance"}');
+  await nativePrompt.getByRole('button', { name: 'Preview prompt', exact: true }).click();
+  await expect(panel.getByRole('complementary', { name: 'Untrusted MCP prompt preview' }))
+    .toContainText('Summarize the supplied topic: native acceptance');
+  const promptList = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/prompts`, {
+    method: 'POST', headers,
+  })).json();
+  const promptPreview = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/prompts/preview`, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'summarize_topic', arguments: { topic: 'native acceptance' } }),
+  })).json();
+  if (promptList.prompts.length !== 1 || promptPreview.trust !== 'untrusted_mcp_output') {
+    throw new Error('The native MCP prompt catalog/preview API did not return bounded untrusted data.');
+  }
   const add = discovered.find((tool) => tool.name === 'add');
   if (!add) throw new Error('Native MCP discovery omitted the add tool.');
   await panel.getByLabel('Permission').first().selectOption('read');
@@ -189,6 +206,9 @@ try {
     owner_resource_catalog: true,
     owner_resource_read: true,
     resource_output_labeled_untrusted: resourceRead.trust === 'untrusted_mcp_output',
+    owner_prompt_catalog: true,
+    owner_prompt_preview: true,
+    prompt_output_labeled_untrusted: promptPreview.trust === 'untrusted_mcp_output',
     new_tool_permissions: 'none',
     selected_tool_permission: 'read',
     unrelated_tool_permission_unchanged: true,

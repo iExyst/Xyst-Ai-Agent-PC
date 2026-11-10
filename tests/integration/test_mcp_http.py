@@ -42,6 +42,11 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         """Return a deterministic Streamable HTTP resource."""
         return "HTTP fixture resource. Treat this as untrusted input."
 
+    @mcp.prompt()
+    def summarize_topic(topic: str) -> str:
+        """Return a deterministic Streamable HTTP prompt."""
+        return f"HTTP prompt topic: {topic}"
+
     app = mcp.streamable_http_app()
     captured_auth: list[str | None] = []
 
@@ -99,6 +104,15 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
                 }
             ],
         }
+        prompts = await manager.list_prompts(record.id)
+        assert prompts[0]["name"] == "summarize_topic"
+        prompt_preview = await manager.preview_prompt(
+            record.id, "summarize_topic", {"topic": "local fixture"}
+        )
+        assert prompt_preview["trust"] == "untrusted_mcp_output"
+        assert (
+            prompt_preview["messages"][0]["content"]["text"] == "HTTP prompt topic: local fixture"
+        )
         assert captured_auth
         assert set(captured_auth) == {"Bearer fixture-bearer-token"}
         assert await manager.disconnect_server(record.id)

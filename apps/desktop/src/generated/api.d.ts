@@ -635,6 +635,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/servers/{server_id}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List Mcp Prompts */
+        post: operations["list_mcp_prompts_mcp_servers__server_id__prompts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/servers/{server_id}/prompts/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Mcp Prompt */
+        post: operations["preview_mcp_prompt_mcp_servers__server_id__prompts_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp/servers/{server_id}/resources": {
         parameters: {
             query?: never;
@@ -2486,6 +2520,15 @@ export interface components {
             state: "connected";
             /** Tools */
             tools: components["schemas"]["MCPToolResponse"][];
+        };
+        /** MCPPromptPreviewRequest */
+        MCPPromptPreviewRequest: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: string;
+            };
+            /** Name */
+            name: string;
         };
         /** MCPReconciliationDecision */
         MCPReconciliationDecision: {
@@ -5040,6 +5083,76 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mcp_prompts_mcp_servers__server_id__prompts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_mcp_prompt_mcp_servers__server_id__prompts_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPPromptPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };

@@ -57,6 +57,8 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     }
     if (path === `/mcp/servers/${serverId}/resources`) return route.fulfill({json:{resources:[{uri:'xaa://fixture/readme',name:'readme',title:'Fixture readme',description:'Owner inspection fixture.',mime_type:'text/plain',size:20}]},headers});
     if (path === `/mcp/servers/${serverId}/resources/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:body.uri,mime_type:'text/plain',kind:'text',text:'Fixture resource data.'}]},headers});
+    if (path === `/mcp/servers/${serverId}/prompts`) return route.fulfill({json:{prompts:[{name:'summarize_topic',title:'Summarize topic',description:'Text-only preview fixture.',arguments:[{name:'topic',description:null,required:true}]}]},headers});
+    if (path === `/mcp/servers/${serverId}/prompts/preview`) return route.fulfill({json:{trust:'untrusted_mcp_output',description:null,messages:[{role:'user',content:{kind:'text',text:`Summarize: ${body.arguments.topic}`}}]},headers});
     if (path === `/mcp/servers/${serverId}/tools/change_value/permission`) {
       Object.assign(tool,body);
       server = {...server,tools:[tool]};
@@ -83,6 +85,13 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByRole('button',{name:'Read resource'}).click();
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP resource data'})).toContainText('Fixture resource data.');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/read')&&item.body.uri==='xaa://fixture/readme')).toBe(true);
+  await panel.getByRole('button',{name:'List prompts'}).click();
+  const promptArgs=panel.getByLabel('Arguments JSON for summarize_topic');
+  await expect(promptArgs).toBeVisible();
+  await promptArgs.fill('{"topic":"browser acceptance"}');
+  await panel.getByRole('button',{name:'Preview prompt'}).click();
+  await expect(panel.getByRole('complementary',{name:'Untrusted MCP prompt preview'})).toContainText('Summarize: browser acceptance');
+  expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/prompts/preview')&&item.body.arguments.topic==='browser acceptance')).toBe(true);
   await panel.getByLabel('Permission').selectOption('write');
   const grant = panel.getByLabel('Allow this write tool for the next run');
   await expect(grant).toBeVisible();
