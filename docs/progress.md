@@ -1718,6 +1718,10 @@ Extended `scripts/native_smoke.mjs` to accept an explicit executable and manifes
 
 Expanded the task-claim regression to exercise a failed prerequisite with two queued downstream levels. A claim poll marks both descendants blocked with the public `dependency_failed` reason, emits one durable block event for each, and a repeated poll leaves those events unchanged. The focused task-claim suite passes (9 tests). This strengthens the Phase 4 failed-dependency gate at the storage boundary; it does not add a new dependency behavior or establish broad concurrent failure/recovery reliability.
 
+## Race concurrent specialist claims through independent SQLite stores (2026-11-10)
+
+Added a barrier-synchronized race where two worker threads call `claim_ready` through separate `RunStore`/`TaskStore` instances against the same SQLite database. Both independent ready tasks receive distinct live task leases and durable `running` states; neither task is double-claimed. The task-claim suite passes (16 tests), including eight repeated executions of the new race. Ruff, formatting, storage Pyright and `git diff --check` pass. This verifies atomic concurrent task assignment for this SQLite path; it does not prove full specialist parallel execution, resource contention behavior, or the Phase 4 gate. No model inference was used.
+
 ## Windows junction containment acceptance (2026-11-08)
 
 Verified the existing workspace snapshot guard against an actual Windows directory junction: `capture_workspace` rejects the reparse point before following it and the outside sentinel bytes remain unchanged. The complete focused snapshot suite passes (15 tests), including Unicode/binary preservation, bounds, manifest integrity, opened-handle containment and the junction case; Ruff and `git diff --check` pass. This proves containment for the isolated snapshot capture path on this Windows host. It does not prove every workspace read/write/search/delete or task command path against junctions; each path still needs scoped coverage.

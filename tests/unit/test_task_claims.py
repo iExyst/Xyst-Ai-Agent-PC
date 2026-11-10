@@ -1,11 +1,50 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 
 import pytest
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
+
+
+def test_concurrent_workers_claim_distinct_ready_specialists(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "concurrent-claims.sqlite3")
+    run_id = runs.create_run(
+        objective="Run independent specialists concurrently",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    TaskStore(runs).save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="alpha", objective="Independent task alpha"),
+            TaskDefinition(id="beta", objective="Independent task beta"),
+        ],
+    )
+    barrier = Barrier(3)
+
+    def claim():
+        tasks = TaskStore(RunStore(runs.path))
+        barrier.wait(timeout=5)
+        return tasks.claim_ready(run_id, parent)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(claim) for _ in range(2)]
+        barrier.wait(timeout=5)
+        claims = [future.result(timeout=10) for future in futures]
+
+    assert all(claim is not None for claim in claims)
+    assert len({claim["task"]["local_id"] for claim in claims if claim is not None}) == 2
+    assert len({claim["token"] for claim in claims if claim is not None}) == 2
+    assert {record["status"] for record in TaskStore(runs).records(run_id)} == {"running"}
 
 
 def test_claims_are_distinct_and_failed_dependency_is_blocked(workspace_tmp_path):
