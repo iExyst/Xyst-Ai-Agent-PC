@@ -19,10 +19,16 @@ must be reconciled from the durable journal before any retry. Git inspection is
 read-only, kills and joins its process on cancellation or timeout, and caps the
 saved output artifact at 8 MiB.
 
+`web.fetch` declares and enforces a 300 KiB serialized-result ceiling, separate
+from its 512 KiB response-body limit. Its contract distinguishes character
+limits for the final URL, title, and extracted text; redirect URLs receive the
+same URL-length check as the initial request. Its output schema carries these
+field bounds so the provider-facing declaration matches runtime behavior.
+
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. The command entry is a typed execution contract used for its
 model-facing input schema; the coordinator still enforces its saved grant and
 run deadline, while the command controller owns snapshot, execution, output,
-cancellation, and recovery behavior. Browser, web, MCP, specialist, and
+cancellation, and recovery behavior. Web search, browser, MCP, specialist, and
 messaging contracts still need inventory and consistency review. Their existing
 behavior and limits remain documented with their respective implementations.

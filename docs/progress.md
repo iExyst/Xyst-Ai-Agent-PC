@@ -1,5 +1,9 @@
 # Progress
 
+## Bound serialized web-fetch results (2026-11-10)
+
+Corrected `web.fetch`'s output contract, which had called a 20,000-character content cap a 20,000-byte total output limit despite returning title and URL fields too. The fetch path now validates every redirect URL against the 2,048-character bound, models URL/title/content/error character limits in the output schema, and caps the serialized tool result at 300 KiB before journaling or returning it. Metadata distinguishes the 512 KiB response-body cap from the result cap and declares URL, title, content, redirect, and host limits. The Unicode-heavy overflow regression verifies an oversized result becomes a small `read_failed` result; schema and metadata bounds are checked. `tests/unit/test_web_fetch.py`: 10 passed; Ruff, formatting, strict Pyright and diff checks pass. Hosted validation will follow the currently running workflow. No LLM inference was used.
+
 ## Make project-validation timeouts recoverable (2026-11-10)
 
 The authenticated project-validation POST now maps a bounded execution timeout to HTTP 409 with owner guidance to refresh evidence and reconcile unresolved saved execution before retrying, matching the existing reconciliation endpoint. Previously, an execution deadline could escape as HTTP 500. An API regression injects the timeout and asserts the recoverable response. Focused API regression passes (1 passed); Ruff, formatting, strict Pyright and diff checks pass. Hosted validation is pending in the current source workflow after push. No model inference was used.

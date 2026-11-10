@@ -9,6 +9,11 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime import web_fetch
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.web_fetch import (
+    MAX_RESULT_BYTES,
+    MAX_TEXT_CHARS,
+    MAX_TITLE_CHARS,
+    MAX_URL_CHARS,
+    WEB_FETCH_METADATA,
     _PinnedBackend,
     _read_url,
     _resolve_public,
@@ -47,6 +52,27 @@ async def test_web_fetch_rejects_unapproved_hosts_and_non_https_before_dns(
         await _read_url("https://user:secret@approved.example/", {"approved.example"})
     with pytest.raises(PermissionError, match="credential query"):
         await _read_url("https://approved.example/?access_token=secret", {"approved.example"})
+    with pytest.raises(PermissionError, match="2,048-character"):
+        await _read_url("https://approved.example/" + "x" * MAX_URL_CHARS, {"approved.example"})
+
+
+def test_web_fetch_metadata_declares_serialized_output_bounds() -> None:
+    assert WEB_FETCH_METADATA["output_size_bytes"] == MAX_RESULT_BYTES
+    output_properties = WEB_FETCH_METADATA["output_schema"]["properties"]
+    assert output_properties["url"]["anyOf"][0]["maxLength"] == MAX_URL_CHARS
+    assert output_properties["title"]["anyOf"][0]["maxLength"] == MAX_TITLE_CHARS
+    assert output_properties["content"]["anyOf"][0]["maxLength"] == MAX_TEXT_CHARS
+    assert output_properties["error"]["anyOf"][0]["maxLength"] == 500
+    assert WEB_FETCH_METADATA["limits"] == {
+        "response_bytes": web_fetch.MAX_RESPONSE_BYTES,
+        "result_bytes": MAX_RESULT_BYTES,
+        "url_characters": MAX_URL_CHARS,
+        "title_characters": MAX_TITLE_CHARS,
+        "content_characters": MAX_TEXT_CHARS,
+        "redirects": web_fetch.MAX_REDIRECTS,
+        "approved_hostnames": 10,
+    }
+    assert web_fetch.WEB_FETCH_TOOL["function"]["parameters"] == WEB_FETCH_METADATA["input_schema"]
 
 
 @pytest.mark.asyncio
@@ -175,6 +201,54 @@ async def test_web_fetch_deadline_saves_a_bounded_failure_result(
     assert result["status"] == "read_failed"
     assert len(result["error"]) <= 500
     assert store.unresolved_tool_calls(run["id"]) == []
+    store.release_lease(run["id"], token)
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_caps_serialized_unicode_result_before_journaling(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(workspace_tmp_path / "web-fetch-output-limit.sqlite3")
+    run = store.create_run(
+        objective="Read docs",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture/model",
+        approved_web_hosts=["docs.example.com"],
+    )
+    token = store.acquire_lease(run["id"], "web-output-limit-test")
+    assert token is not None
+
+    async def oversized_read(url: str, hosts: set[str]) -> dict[str, object]:
+        return {
+            "url": url,
+            "title": "😀" * MAX_TITLE_CHARS,
+            "content": "😀" * (MAX_TEXT_CHARS * 2),
+            "truncated": False,
+            "trust": "untrusted_web_content",
+            "status": "ok",
+        }
+
+    monkeypatch.setattr(web_fetch, "_read_url", oversized_read)
+    result = await fetch_approved_web_page(
+        store,
+        run["id"],
+        token,
+        "web-output-limit-call",
+        "https://docs.example.com/guide",
+        run["approved_web_hosts"],
+        deadline=time.monotonic() + 5,
+    )
+
+    assert result["status"] == "read_failed"
+    assert len(json.dumps(result).encode("ascii")) <= MAX_RESULT_BYTES
+    with store.connection() as connection:
+        row = connection.execute(
+            "SELECT result FROM tool_calls WHERE provider_call_id=?",
+            ("web-output-limit-call",),
+        ).fetchone()
+    assert len(row["result"].encode("ascii")) <= MAX_RESULT_BYTES
     store.release_lease(run["id"], token)
 
 
