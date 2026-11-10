@@ -13,6 +13,7 @@ from xaa.api.app import create_app
 from xaa.extensions import agent_plugins
 from xaa.extensions.agent_plugins import discover_agent_plugins, read_plugin_skill
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
+from xaa.storage.mcp import MCPRegistry
 from xaa.storage.runs import RunStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
@@ -480,6 +481,57 @@ def test_discovery_api_requires_auth_and_returns_static_summaries(tmp_path: Path
     assert readiness["platform_status"] in {"compatible", "incompatible", "unrecognized"}
     assert "must-not-appear" not in response.text
     assert "secret-value" not in response.text
+
+
+def test_plugin_mcp_server_import_stores_secrets_in_vault_and_stays_disconnected(
+    tmp_path: Path,
+) -> None:
+    make_package(tmp_path)
+
+    class FakeCredentials:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def get(self, profile: str = "lm-studio") -> str | None:
+            return self.values.get(profile)
+
+        def set(self, token: str, profile: str = "lm-studio") -> None:
+            self.values[profile] = token
+
+        def delete(self, profile: str = "lm-studio") -> None:
+            self.values.pop(profile, None)
+
+    store = RunStore(tmp_path / "package-mcp.sqlite3")
+    credentials = FakeCredentials()
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,  # type: ignore[arg-type]
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        response = client.post(
+            "/extensions/packages/import-mcp-server",
+            headers=headers,
+            json={
+                "root": str(tmp_path),
+                "package_name": "sample-package",
+                "server_name": "local-helper",
+            },
+        )
+        listed = client.get("/mcp/servers", headers=headers)
+
+    assert response.status_code == 201
+    assert response.json()["state"] == "disconnected"
+    assert "secret-value" not in response.text
+    assert credentials.values[f"mcp:{response.json()['id']}:API_TOKEN"] == "secret-value"
+    assert "secret-value" not in listed.text
+    saved = MCPRegistry(store).get_server(response.json()["id"])
+    assert saved is not None
+    assert saved.plugin_root == str((tmp_path / "sample").resolve())
+    assert saved.secret_env == ["API_TOKEN"]
+    assert saved.args == ["server.py", "secret-argument"]
 
 
 def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path: Path) -> None:

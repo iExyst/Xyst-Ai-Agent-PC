@@ -1962,6 +1962,7 @@
         "type": "object"
       },
       "MCPServerResponse": {
+        "additionalProperties": false,
         "properties": {
           "args": {
             "items": {
@@ -2023,6 +2024,10 @@
             "title": "Oauth Configured",
             "type": "boolean"
           },
+          "plugin_backed": {
+            "title": "Plugin Backed",
+            "type": "boolean"
+          },
           "secret_env": {
             "items": {
               "type": "string"
@@ -2075,6 +2080,7 @@
           "args",
           "cwd",
           "secret_env",
+          "plugin_backed",
           "created_at",
           "updated_at",
           "state",
@@ -2132,6 +2138,30 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "plugin_data": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Data"
+          },
+          "plugin_root": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Root"
           },
           "secret_env": {
             "items": {
@@ -2649,6 +2679,36 @@
           "root"
         ],
         "title": "PluginDiscoveryRequest",
+        "type": "object"
+      },
+      "PluginMCPImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "package_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Package Name",
+            "type": "string"
+          },
+          "root": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          },
+          "server_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Server Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "package_name",
+          "server_name"
+        ],
+        "title": "PluginMCPImportRequest",
         "type": "object"
       },
       "PluginServer": {
@@ -7141,6 +7201,51 @@
           }
         ],
         "summary": "Discover Extension Packages"
+      }
+    },
+    "/extensions/packages/import-mcp-server": {
+      "post": {
+        "operationId": "import_extension_mcp_server_extensions_packages_import_mcp_server_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginMCPImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Extension Mcp Server Extensions Packages Import Mcp Server Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Extension Mcp Server"
       }
     },
     "/extensions/packages/import-skill": {

@@ -532,6 +532,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/extensions/packages/import-mcp-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Extension Mcp Server */
+        post: operations["import_extension_mcp_server_extensions_packages_import_mcp_server_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/extensions/packages/import-skill": {
         parameters: {
             query?: never;
@@ -2691,6 +2708,8 @@ export interface components {
             name: string;
             /** Oauth Configured */
             oauth_configured: boolean;
+            /** Plugin Backed */
+            plugin_backed: boolean;
             /** Secret Env */
             secret_env: string[];
             /** Secret Env Configured */
@@ -2727,6 +2746,10 @@ export interface components {
             endpoint?: string | null;
             /** Name */
             name: string;
+            /** Plugin Data */
+            plugin_data?: string | null;
+            /** Plugin Root */
+            plugin_root?: string | null;
             /** Secret Env */
             secret_env?: string[];
             /**
@@ -2897,6 +2920,15 @@ export interface components {
         PluginDiscoveryRequest: {
             /** Root */
             root: string;
+        };
+        /** PluginMCPImportRequest */
+        PluginMCPImportRequest: {
+            /** Package Name */
+            package_name: string;
+            /** Root */
+            root: string;
+            /** Server Name */
+            server_name: string;
         };
         /** PluginServer */
         PluginServer: {
@@ -4986,6 +5018,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginDiscovery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_extension_mcp_server_extensions_packages_import_mcp_server_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginMCPImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

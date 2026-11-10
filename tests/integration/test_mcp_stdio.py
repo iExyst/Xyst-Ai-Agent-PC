@@ -70,6 +70,39 @@ async def test_connection_that_dies_immediately_after_discovery_is_not_registere
     await manager.close()
 
 
+def test_plugin_parameters_expand_paths_and_reject_package_escape(workspace_tmp_path: Path) -> None:
+    package = workspace_tmp_path / "installed-package"
+    package.mkdir()
+    data = workspace_tmp_path / "plugin-data" / "sample"
+    registry = MCPRegistry(RunStore(workspace_tmp_path / "plugin-parameters.sqlite3"))
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Package helper",
+            command="./bin/server.exe",
+            args=["${PLUGIN_ROOT}/config.json", "${PLUGIN_DATA}/state.json"],
+            cwd="${PLUGIN_DATA}",
+            plugin_root=str(package),
+            plugin_data=str(data),
+        )
+    )
+    parameters = MCPManager(registry.store, None)._parameters(server)
+    assert parameters.command == str(package / "bin" / "server.exe")
+    assert parameters.args == [str(package / "config.json"), str(data / "state.json")]
+    assert parameters.cwd == str(data.resolve())
+    assert parameters.env == {"PLUGIN_ROOT": str(package), "PLUGIN_DATA": str(data.resolve())}
+
+    escaping = registry.create_server(
+        MCPServerSpec(
+            name="Escaping package helper",
+            command="./../outside.exe",
+            plugin_root=str(package),
+            plugin_data=str(data),
+        )
+    )
+    with pytest.raises(MCPConnectionError, match="escapes its package"):
+        MCPManager(registry.store, None)._parameters(escaping)
+
+
 @pytest.mark.asyncio
 async def test_owner_reconnects_after_live_stdio_transport_loss(
     workspace_tmp_path: Path,

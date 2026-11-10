@@ -615,9 +615,13 @@ def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
                     or "\x00" in key
                     or key.upper() in {"PLUGIN_ROOT", "PLUGIN_DATA"}
                     or not isinstance(value, str)
+                    or len(value) > 8192
+                    or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", value)
                     for key, value in env.items()
                 ):
                     raise ValueError("stdio env keys/values are invalid or use reserved names")
+                if any(re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", arg) for arg in args):
+                    raise ValueError("stdio args contain an unsupported placeholder")
                 cwd = spec.get("cwd")
                 if "cwd" in spec:
                     if not isinstance(cwd, str):
@@ -715,6 +719,72 @@ def _servers(package_root: Path) -> tuple[list[PluginServer], list[str]]:
         except (TypeError, ValueError) as exc:
             diagnostics.append(f"MCP server {name!r}: {str(exc)[:220]}")
     return result, diagnostics
+
+
+def read_plugin_mcp_server(directory: str, package_name: str, server_name: str) -> dict[str, Any]:
+    """Read one validated MCP declaration from a freshly discovered plugin package."""
+    discovery = discover_agent_plugins(directory)
+    package = next((item for item in discovery.packages if item.name == package_name), None)
+    if package is None:
+        raise ValueError("selected package is not a valid discovered package")
+    server = next((item for item in package.servers if item.name == server_name), None)
+    if server is None:
+        raise ValueError("selected MCP server is not present in the discovered package")
+    package_root = Path(package.path).resolve(strict=True)
+    data = _json(package_root / "mcp.json", package_root)
+    raw_servers: Any = data.get("mcpServers")
+    if not isinstance(raw_servers, dict) or server_name not in raw_servers:
+        raise ValueError("selected MCP server changed since discovery")
+    raw_spec_value: Any = cast(Any, raw_servers)[server_name]
+    if not isinstance(raw_spec_value, dict):
+        raise TypeError("selected MCP server changed since discovery")
+    selected = cast(dict[str, Any], raw_spec_value)
+    if server.transport == "stdio":
+        spec: dict[str, Any] = {
+            "type": "stdio",
+            "command": selected.get("command"),
+            "args": selected.get("args", []),
+            "env": selected.get("env", {}),
+            "cwd": selected.get("cwd"),
+        }
+        if not isinstance(spec["command"], str) or not isinstance(spec["args"], list):
+            raise ValueError("selected MCP server changed since discovery")
+        if not isinstance(spec["env"], dict) or any(
+            not isinstance(key, str)
+            or not isinstance(value, str)
+            or len(value) > 8192
+            or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", value)
+            for key, value in cast(dict[Any, Any], spec["env"]).items()
+        ):
+            raise ValueError("selected MCP environment changed since discovery")
+        if any(
+            not isinstance(argument, str)
+            or len(argument) > 2048
+            or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", argument)
+            for argument in cast(list[Any], spec["args"])
+        ):
+            raise ValueError("selected MCP arguments changed since discovery")
+        if spec["cwd"] is not None and not isinstance(spec["cwd"], str):
+            raise ValueError("selected MCP working directory changed since discovery")
+        _validated, diagnostics = _servers(package_root)
+        if any(item.startswith(f"MCP server {server_name!r}:") for item in diagnostics):
+            raise ValueError("selected MCP server no longer passes package validation")
+        return {
+            "package_root": str(package_root),
+            "package_name": package.name,
+            "server_name": server.name,
+            "spec": spec,
+        }
+    endpoint = selected.get("url")
+    headers = selected.get("headers", {})
+    if not isinstance(endpoint, str) or not isinstance(headers, dict):
+        raise TypeError("selected MCP server changed since discovery")
+    return {
+        "package_root": str(package_root),
+        "package_name": package.name,
+        "server_name": server.name,
+        "spec": {"type": "streamable-http", "url": endpoint, "headers": headers},
+    }
 
 
 def _package(

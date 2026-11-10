@@ -70,6 +70,15 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
     } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
     finally {setBusy(false);}
   }
+  async function importMCPServer(packageName:string,serverName:string) {
+    setBusy(true);setError('');setNotice('');
+    try {
+      const created=await client.importAgentPluginMCPServer({root:result?.root??root.trim(),package_name:packageName,server_name:serverName});
+      setNotice(`${created.name} was added as a disconnected MCP server. Review it in MCP servers and connect it when ready.`);
+      onImported();
+    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setBusy(false);}
+  }
   return <section aria-label="Agent plugin package discovery">
     <h2>Agent plugin packages</h2>
     <p>Discovery does not run commands, connect servers, or register tools. Importing a skill reads its bounded text into an inactive candidate for review.</p>
@@ -84,7 +93,7 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
         <h3>{item.name}{item.version?` · ${item.version}`:''}</h3>{item.description&&<p>{item.description}</p>}
         <p>Package: <code>{item.path}</code></p>
         <h4>Skills ({item.skills.length})</h4><ul>{item.skills.map(skill=><li key={skill.path}><strong>{skill.name}</strong>: {skill.description} <code>{skill.path}</code><p>Package-declared tools: {skill.allowed_tools?.join(', ')||'none'}</p><p>Untrusted package requirements (not X.A.A. permissions): {declaredRequirementsSummary(skill.declared_requirements)}</p><p>Current-machine declaration check only (does not establish execution readiness or grant permission): {requirementReadinessSummary(skill.requirement_readiness)}</p><button disabled={busy} onClick={()=>void importSkill(item.name,skill.name)}>Import as candidate</button></li>)}</ul>
-        <h4>MCP servers ({item.servers.length})</h4><ul>{item.servers.map(server=><li key={server.name}>{server.name}: {server.transport==='stdio'?`stdio · ${server.command_name} · ${server.argument_count} arguments · environment names: ${server.environment_names.join(', ')||'none'}`:`${server.transport} · ${server.endpoint}`}</li>)}</ul>
+        <h4>MCP servers ({item.servers.length})</h4><ul>{item.servers.map(server=><li key={server.name}>{server.name}: {server.transport==='stdio'?`stdio · ${server.command_name} · ${server.argument_count} arguments · environment names: ${server.environment_names.join(', ')||'none'}`:`${server.transport} · ${server.endpoint}`} {server.transport==='stdio'&&<button disabled={busy} onClick={()=>void importMCPServer(item.name,server.name)}>Add disconnected server</button>}</li>)}</ul>
       </article>)}
       {result.diagnostics.length>0&&<><h3>Package diagnostics</h3><ul>{result.diagnostics.map((diagnostic,index)=><li key={`${diagnostic.path}:${index}`}><code>{diagnostic.path}</code>: {diagnostic.message}</li>)}</ul></>}
     </>}

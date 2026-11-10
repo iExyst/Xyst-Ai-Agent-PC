@@ -350,6 +350,29 @@ def test_schema_fourteen_adds_streamable_http_mcp_fields(workspace_tmp_path):
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
+def test_schema_twenty_three_adds_agent_plugin_mcp_paths(workspace_tmp_path):
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    database = workspace_tmp_path / "schema-twenty-three-plugin-mcp.sqlite3"
+    store = RunStore(database)
+    registry = MCPRegistry(store)
+    original = registry.create_server(MCPServerSpec(name="Legacy Plugin", command="python"))
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN plugin_root")
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN plugin_data")
+        connection.execute("PRAGMA user_version=22")
+
+    migrated = RunStore(database)
+    restored = MCPRegistry(migrated).get_server(original.id)
+    assert restored is not None
+    assert restored.plugin_root is None
+    assert restored.plugin_data is None
+    with migrated.connection() as connection:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(mcp_servers)")}
+        assert {"plugin_root", "plugin_data"}.issubset(columns)
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
 def test_schema_twelve_adds_snapshotted_specialist_instructions(workspace_tmp_path):
     from xaa.storage.specialist_profiles import SpecialistProfileStore
 

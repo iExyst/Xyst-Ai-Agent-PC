@@ -126,6 +126,7 @@ export class EngineClient {
   clearMCPOAuth(serverId:string):Promise<void>{return this.#request(`/mcp/servers/${encodeURIComponent(serverId)}/oauth`,{method:'DELETE'});}
   discoverAgentPlugins(root:string):Promise<PluginDiscovery>{return this.#request('/extensions/packages/discover',{method:'POST',body:JSON.stringify({root})});}
   importAgentPluginSkill(input:{root:string;package_name:string;skill_name:string}):Promise<components['schemas']['SkillSummary']>{return this.#request('/extensions/packages/import-skill',{method:'POST',body:JSON.stringify(input)});}
+  importAgentPluginMCPServer(input:{root:string;package_name:string;server_name:string}):Promise<{id:string;name:string;transport:'stdio';state:'disconnected';secret_env:string[]}>{return this.#request('/extensions/packages/import-mcp-server',{method:'POST',body:JSON.stringify(input)});}
   async exportSkillPackage(id:string,version:number):Promise<Blob>{
     const path=`/skills/${encodeURIComponent(id)}/versions/${version}/export`;
     const response=await this.#fetch(new URL(path,this.#base),{headers:{Authorization:`Bearer ${this.#token}`},redirect:'error'});

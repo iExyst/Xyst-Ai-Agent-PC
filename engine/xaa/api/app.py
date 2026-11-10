@@ -63,6 +63,7 @@ from xaa.extensions.agent_plugins import (
     PluginDiscovery,
     discover_agent_plugins,
     export_procedure_package,
+    read_plugin_mcp_server,
     read_plugin_skill,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
@@ -333,6 +334,7 @@ class MCPToolResponse(BaseModel):
 
 
 class MCPServerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     id: str
     name: str
     transport: Literal["stdio", "streamable_http"]
@@ -341,6 +343,7 @@ class MCPServerResponse(BaseModel):
     args: list[str]
     cwd: str | None
     secret_env: list[str]
+    plugin_backed: bool
     created_at: str
     updated_at: str
     state: Literal["connected", "disconnected", "error"]
@@ -365,6 +368,13 @@ class PluginSkillImportRequest(BaseModel):
     root: str = Field(min_length=1, max_length=2048)
     package_name: str = Field(min_length=1, max_length=128)
     skill_name: str = Field(min_length=1, max_length=80)
+
+
+class PluginMCPImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    root: str = Field(min_length=1, max_length=2048)
+    package_name: str = Field(min_length=1, max_length=128)
+    server_name: str = Field(min_length=1, max_length=128)
 
 
 class CreateScheduleRequest(BaseModel):
@@ -803,6 +813,72 @@ def create_app(
                 status_code=400, detail="Selected package files could not be read."
             ) from exc
 
+    @app.post("/extensions/packages/import-mcp-server", status_code=201)
+    def import_extension_mcp_server(
+        payload: PluginMCPImportRequest, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            imported = read_plugin_mcp_server(
+                payload.root, payload.package_name, payload.server_name
+            )
+            raw = imported["spec"]
+            package_root = Path(imported["package_root"]).resolve(strict=True)
+            package_name = str(imported["package_name"])
+            server_name = str(imported["server_name"])
+            if raw["type"] == "stdio":
+                inline_values = cast(dict[str, str], raw["env"])
+                if inline_values and credential_store is None:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="OS credential storage is required for package environment values.",
+                    )
+                transport_spec = MCPServerSpec(
+                    name=f"{package_name}:{server_name}",
+                    command=cast(str, raw["command"]),
+                    args=cast(list[str], raw["args"]),
+                    cwd=cast(str | None, raw["cwd"]),
+                    secret_env=sorted(inline_values),
+                    plugin_root=str(package_root),
+                    plugin_data=str(
+                        run_store.path.parent / "plugin-data" / package_name / server_name
+                    ),
+                )
+            else:
+                raise ValueError("Import of package Streamable HTTP servers is not supported yet.")
+            registry = MCPRegistry(run_store)
+            server = registry.create_server(transport_spec)
+            try:
+                if inline_values and credential_store is not None:
+                    for env_name, secret in inline_values.items():
+                        credential_store.set(secret, f"mcp:{server.id}:{env_name}")
+            except (OSError, RuntimeError, ValueError) as error:
+                registry.delete_server(server.id)
+                cleanup_error: Exception | None = None
+                for env_name in inline_values:
+                    if credential_store is not None:
+                        try:
+                            credential_store.delete(f"mcp:{server.id}:{env_name}")
+                        except (OSError, RuntimeError, ValueError) as cleanup_failure:
+                            cleanup_error = cleanup_failure
+                raise HTTPException(
+                    status_code=503, detail="Could not save package environment credentials."
+                ) from (cleanup_error or error)
+            return {
+                "id": server.id,
+                "name": server.name,
+                "transport": server.transport,
+                "state": "disconnected",
+                "secret_env": server.secret_env,
+            }
+        except HTTPException:
+            raise
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=400, detail="Selected package files could not be read."
+            ) from exc
+
     @app.get("/mcp/servers", response_model=list[MCPServerResponse])
     def list_mcp_servers(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
         registry = MCPRegistry(run_store)
@@ -815,7 +891,8 @@ def create_app(
             }
             servers.append(
                 {
-                    **server.model_dump(),
+                    **server.model_dump(exclude={"plugin_root", "plugin_data"}),
+                    "plugin_backed": server.plugin_root is not None,
                     "state": state,
                     "error": error,
                     "secret_env_configured": configured,
@@ -838,7 +915,8 @@ def create_app(
                 status_code=409, detail="An MCP server with that name already exists."
             ) from exc
         return {
-            **server.model_dump(),
+            **server.model_dump(exclude={"plugin_root", "plugin_data"}),
+            "plugin_backed": server.plugin_root is not None,
             "state": "disconnected",
             "error": None,
             "secret_env_configured": {name: False for name in server.secret_env},

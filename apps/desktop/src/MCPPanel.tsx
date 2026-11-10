@@ -6,9 +6,10 @@ type Props = {
   selectedRunWriteTools: string[];
   onRunWriteToolsChange: (names: string[]) => void;
   onUsePromptText: (context: string) => void;
+  refreshKey?: number;
 };
 
-export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange, onUsePromptText }: Props) {
+export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange, onUsePromptText, refreshKey=0 }: Props) {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [name, setName] = useState('');
   const [transport, setTransport] = useState<'stdio'|'streamable_http'>('stdio');
@@ -35,7 +36,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     if (!Array.isArray(response)) throw new Error('MCP server list response was invalid.');
     setServers(response as MCPServer[]);
   };
-  useEffect(() => { void refresh().catch(e => setError(String(e))); }, [client]);
+  useEffect(() => { void refresh().catch(e => setError(String(e))); }, [client, refreshKey]);
   const act = async (work:()=>Promise<unknown>) => {
     setBusy(true); setError('');
     try { await work(); await refresh(); }

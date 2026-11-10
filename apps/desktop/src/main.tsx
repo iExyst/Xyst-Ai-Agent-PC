@@ -86,6 +86,7 @@ function App() {
   const [chatSessionId,setChatSessionId]=useState('');
   const [chatSession,setChatSession]=useState<ChatSession>();
   const [skillsRefresh,setSkillsRefresh]=useState(0);
+  const [mcpRefresh,setMcpRefresh]=useState(0);
   const [preview, setPreview] = useState('');
   const [error, setError] = useState('');
   const [closeBehavior,setCloseBehavior]=useState<DesktopCloseBehavior>('keep_running');
@@ -343,8 +344,8 @@ function App() {
       <section><details><summary>Automations</summary><AutomationsPanel client={client} model={model} workspace={workspace}/></details></section>
       <section><details><summary>Messaging channels</summary><ChannelsPanel client={client}/></details></section>
       <section><details><summary>Web search integration</summary><SearchProviderPanel client={client}/></details></section>
-      <section><details><summary>MCP integrations</summary><MCPPanel client={client} selectedRunWriteTools={approvedMCPTools} onRunWriteToolsChange={setApprovedMCPTools} onUsePromptText={useMCPPromptText}/></details></section>
-      <section><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client} onImported={()=>setSkillsRefresh(value=>value+1)}/></details></section>
+      <section><details><summary>MCP integrations</summary><MCPPanel client={client} selectedRunWriteTools={approvedMCPTools} onRunWriteToolsChange={setApprovedMCPTools} onUsePromptText={useMCPPromptText} refreshKey={mcpRefresh}/></details></section>
+      <section><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client} onImported={()=>{setSkillsRefresh(value=>value+1);setMcpRefresh(value=>value+1);}}/></details></section>
       <ExecutionSetup client={client} onReady={setSandbox}/>
       <SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/>
       {(commandOutput.stdout||commandOutput.stderr)&&<section aria-label="Streaming command output"><h2>Command output (untrusted, streaming)</h2>{(['stdout','stderr'] as const).map(stream=>commandOutput[stream]&&<div key={stream}><h3>{stream}</h3><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:360,overflow:'auto'}}>{commandOutput[stream]}</pre></div>)}</section>}

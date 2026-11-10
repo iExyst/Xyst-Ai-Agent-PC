@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -11,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from xaa.storage.runs import RunStore, utc_now
 
-MCP_ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
+MCP_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 MCP_TOOL_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 
 
@@ -24,6 +25,8 @@ class MCPServerSpec(BaseModel):
     args: list[str] = Field(default_factory=list, max_length=64)
     cwd: str | None = Field(default=None, max_length=2048)
     secret_env: list[str] = Field(default_factory=list, max_length=12)
+    plugin_root: str | None = Field(default=None, max_length=2048)
+    plugin_data: str | None = Field(default=None, max_length=2048)
 
     @field_validator("name")
     @classmethod
@@ -44,7 +47,12 @@ class MCPServerSpec(BaseModel):
     @field_validator("args")
     @classmethod
     def validate_args(cls, value: list[str]) -> list[str]:
-        if any(len(arg) > 2048 or any(ord(char) < 32 for char in arg) for arg in value):
+        if any(
+            len(arg) > 2048
+            or any(ord(char) < 32 for char in arg)
+            or re.search(r"\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})", arg)
+            for arg in value
+        ):
             raise ValueError("MCP arguments must be bounded plain text strings.")
         return value
 
@@ -54,7 +62,7 @@ class MCPServerSpec(BaseModel):
         if len(value) != len(set(value)) or any(
             MCP_ENV_NAME.fullmatch(name) is None for name in value
         ):
-            raise ValueError("MCP secret environment names must be unique uppercase identifiers.")
+            raise ValueError("MCP secret environment names must be unique identifiers.")
         return value
 
     @model_validator(mode="after")
@@ -62,8 +70,21 @@ class MCPServerSpec(BaseModel):
         if self.transport == "stdio":
             if not self.command.strip() or self.endpoint is not None:
                 raise ValueError("stdio MCP servers need a command and cannot set an endpoint.")
+            if (self.plugin_root is None) != (self.plugin_data is None):
+                raise ValueError("Plugin stdio servers require both package and data paths.")
+            for path in (self.plugin_root, self.plugin_data):
+                if path is not None and (
+                    not path or not Path(path).is_absolute() or any(ord(char) < 32 for char in path)
+                ):
+                    raise ValueError("Plugin package and data paths must be absolute plain paths.")
         else:
-            if self.command or self.args or self.cwd:
+            if (
+                self.command
+                or self.args
+                or self.cwd
+                or self.plugin_root is not None
+                or self.plugin_data is not None
+            ):
                 raise ValueError(
                     "Streamable HTTP MCP servers cannot set a command, arguments or working directory."
                 )
@@ -101,6 +122,11 @@ class MCPServerSpec(BaseModel):
                     raise ValueError("Remote MCP endpoints must use HTTPS.")
             if len(self.secret_env) > 1:
                 raise ValueError("Streamable HTTP supports one OS-stored bearer token name.")
+        if self.plugin_root is None and any(
+            "${PLUGIN_ROOT}" in value or "${PLUGIN_DATA}" in value
+            for value in [self.command, *self.args, self.cwd or ""]
+        ):
+            raise ValueError("Package path placeholders require an installed MCP package.")
         return self
 
 
@@ -136,7 +162,7 @@ class MCPRegistry:
         now = utc_now()
         with self.store.connection() as connection:
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -148,6 +174,8 @@ class MCPRegistry:
                     now,
                     spec.transport,
                     spec.endpoint,
+                    spec.plugin_root,
+                    spec.plugin_data,
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -269,6 +297,8 @@ class MCPRegistry:
             secret_env=json.loads(row["secret_env"]),
             transport=row.get("transport", "stdio"),
             endpoint=row.get("endpoint"),
+            plugin_root=row.get("plugin_root"),
+            plugin_data=row.get("plugin_data"),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

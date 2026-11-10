@@ -14,6 +14,7 @@ import time
 import webbrowser
 from collections.abc import Generator, Iterator
 from contextlib import AsyncExitStack, contextmanager
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal, TextIO, cast
 from urllib.parse import parse_qs, urlsplit
 
@@ -72,6 +73,14 @@ MCP_NOTIFICATION_LIMIT = 128
 MCP_ENV_PROFILE = "mcp:{}:{}"
 MCP_OAUTH_TOKENS_PROFILE = "mcp:{}:oauth-tokens"
 MCP_OAUTH_CLIENT_PROFILE = "mcp:{}:oauth-client"
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 class MCPConnectionError(RuntimeError):
@@ -1123,6 +1132,91 @@ class MCPManager:
 
     def _parameters(self, server: MCPServerRecord) -> StdioServerParameters:
         environment: dict[str, str] = {}
+        plugin_root: str | None = None
+        plugin_data: str | None = None
+        command = server.command
+        args = list(server.args)
+        cwd = server.cwd
+        if server.plugin_root is not None and server.plugin_data is not None:
+            try:
+                root_path = Path(server.plugin_root).resolve(strict=True)
+            except (OSError, RuntimeError) as error:
+                raise MCPConnectionError(
+                    "The installed MCP package folder is unavailable."
+                ) from error
+            if not root_path.is_dir():
+                raise MCPConnectionError("The installed MCP package folder is unavailable.")
+            data_path = Path(server.plugin_data)
+            try:
+                data_path.mkdir(parents=True, exist_ok=True)
+                data_path = data_path.resolve(strict=True)
+            except OSError as error:
+                raise MCPConnectionError(
+                    "The MCP package data folder could not be created."
+                ) from error
+            if not data_path.is_dir():
+                raise MCPConnectionError("The MCP package data path is not a directory.")
+            plugin_root = str(root_path)
+            plugin_data = str(data_path)
+            environment["PLUGIN_ROOT"] = plugin_root
+            environment["PLUGIN_DATA"] = plugin_data
+
+            if command.startswith("./"):
+                if "\\" in command:
+                    raise MCPConnectionError("The packaged MCP executable path is invalid.")
+                resolved_command = (root_path / command[2:]).resolve(strict=False)
+                if not _inside(resolved_command, root_path):
+                    raise MCPConnectionError("The packaged MCP executable escapes its package.")
+                command = str(resolved_command)
+
+            def expand(value: str) -> str:
+                return (
+                    value.replace("${PLUGIN_ROOT}", plugin_root or "")
+                    .replace("${PLUGIN_DATA}", plugin_data or "")
+                    .replace("/", os.sep)
+                )
+
+            args = [expand(argument) for argument in args]
+            if cwd is None:
+                cwd = plugin_root
+            elif cwd in {"${PLUGIN_ROOT}", "${PLUGIN_DATA}"}:
+                cwd = expand(cwd)
+            elif cwd.startswith("${PLUGIN_ROOT}/"):
+                relative = cwd[len("${PLUGIN_ROOT}/") :]
+                if "\\" in relative:
+                    raise MCPConnectionError("The MCP package working directory is invalid.")
+                resolved_cwd = (root_path / relative).resolve(strict=False)
+                if not _inside(resolved_cwd, root_path):
+                    raise MCPConnectionError(
+                        "The MCP package working directory escapes its package."
+                    )
+                cwd = str(resolved_cwd)
+            elif cwd.startswith("${PLUGIN_DATA}/"):
+                relative = PurePosixPath(cwd[len("${PLUGIN_DATA}/") :])
+                if (
+                    not relative.parts
+                    or relative.is_absolute()
+                    or ".." in relative.parts
+                    or "\\" in cwd
+                ):
+                    raise MCPConnectionError("The MCP package data working directory is invalid.")
+                resolved_cwd = (data_path / Path(*relative.parts)).resolve(strict=False)
+                if not _inside(resolved_cwd, data_path):
+                    raise MCPConnectionError(
+                        "The MCP package data working directory escapes its data folder."
+                    )
+                cwd = str(resolved_cwd)
+            elif cwd.startswith("./"):
+                if "\\" in cwd:
+                    raise MCPConnectionError("The MCP package working directory is invalid.")
+                resolved_cwd = (root_path / cwd[2:]).resolve(strict=False)
+                if not _inside(resolved_cwd, root_path):
+                    raise MCPConnectionError(
+                        "The MCP package working directory escapes its package."
+                    )
+                cwd = str(resolved_cwd)
+            else:
+                raise MCPConnectionError("The MCP package working directory form is unsupported.")
         if server.secret_env:
             if self.credential_store is None:
                 raise MCPConnectionError(
@@ -1135,11 +1229,18 @@ class MCPManager:
                         f"Set the configured {name} credential before connecting this MCP server."
                     )
                 environment[name] = secret
+        if plugin_root is not None and plugin_data is not None:
+            for name in server.secret_env:
+                environment[name] = (
+                    environment[name]
+                    .replace("${PLUGIN_ROOT}", plugin_root)
+                    .replace("${PLUGIN_DATA}", plugin_data)
+                )
         return StdioServerParameters(
-            command=server.command,
-            args=server.args,
+            command=command,
+            args=args,
             env=environment,
-            cwd=server.cwd,
+            cwd=cwd,
         )
 
     def _http_headers(self, server: MCPServerRecord) -> dict[str, str]:
