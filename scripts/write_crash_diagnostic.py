@@ -253,7 +253,9 @@ def recover(root: Path, run_id: str) -> None:
                     {"provider_call_id": "edit-1"},
                     idempotency_key="workspace-reconciliation-edit-1",
                     internal=True,
-                    timeout=10,
+                    # The frozen worker starts a second packaged engine process;
+                    # allow for cold extraction/startup on hosted Windows runners.
+                    timeout=30,
                 )
             )
         store.transition(

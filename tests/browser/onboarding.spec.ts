@@ -25,6 +25,12 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('note')).toContainText('keeps it running in the system tray');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  const navigation=page.getByRole('navigation',{name:'Main sections'});
+  await expect(navigation.getByRole('link',{name:'New objective'})).toBeVisible();
+  await navigation.getByRole('link',{name:'New objective'}).click();
+  await expect(page.locator('#new-objective')).toBeInViewport();
+  await navigation.getByRole('link',{name:'Tools & integrations'}).click();
+  await expect(page.locator('#integrations')).toBeInViewport();
   const demo=page.getByRole('button',{name:'Start read-only onboarding demonstration'});
   await expect(demo).toBeDisabled();
   await page.getByLabel('Local model').selectOption('fixture/model');
@@ -35,6 +41,8 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(demo).toBeEnabled();
   await demo.click();
   await expect(page.getByRole('heading',{name:'Active run verifying'})).toBeVisible();
+  await navigation.getByRole('link',{name:'Active run'}).click();
+  await expect(page.locator('#active-run')).toBeInViewport();
   expect(created).toMatchObject({workspace:'C:\\fixture-project',mode:'observe',command_grant:null});
   expect(created?.objective).toContain('Do not modify files or run commands');
 });
