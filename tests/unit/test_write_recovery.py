@@ -143,13 +143,15 @@ async def test_write_effect_is_reconciled_without_repeating_it(
         model=None,
     )["id"]
     token = store.acquire_lease(run_id, "old-worker")
+    executor = WorkspaceExecutor(store)
+    executor.read_file(run_id, token, "read", {"path": "file.txt"}, idempotency_key="read")
 
     def interrupted(*args, **kwargs):
         raise RuntimeError("Simulated interruption after fsync")
 
     monkeypatch.setattr(store, "record_tool_result", interrupted)
     with pytest.raises(RuntimeError, match="interruption"):
-        WorkspaceExecutor(store).write_file(
+        executor.write_file(
             run_id,
             token,
             "write-1",

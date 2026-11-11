@@ -132,6 +132,35 @@ def _is_reconcilable_workspace_write(tool_name: str, version: str, arguments: st
     return False
 
 
+def has_completed_workspace_read(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    task_id: str | None,
+    path: str,
+    sha256: str,
+    before_sequence: int | None = None,
+) -> bool:
+    """Check for a completed same-scope read of the exact path/version before a write."""
+    return (
+        connection.execute(
+            "SELECT 1 FROM tool_calls AS calls "
+            "JOIN run_events AS completed ON completed.run_id=calls.run_id "
+            "AND completed.event_type='tool.completed' "
+            "AND json_extract(completed.payload,'$.call_id')=calls.provider_call_id "
+            "WHERE calls.run_id=? AND calls.task_id IS ? "
+            "AND calls.tool_name='workspace.read_file' AND calls.tool_version='1' "
+            "AND calls.state='completed' "
+            "AND json_extract(calls.arguments,'$.path')=? "
+            "AND json_extract(calls.result,'$.sha256')=? "
+            "AND json_extract(calls.result,'$.truncated')=0 "
+            "AND (? IS NULL OR completed.sequence < ?) LIMIT 1",
+            (run_id, task_id, path, sha256, before_sequence, before_sequence),
+        ).fetchone()
+        is not None
+    )
+
+
 def default_database_path() -> Path:
     root = os.environ.get("XAA_DATA_DIR") or os.environ.get("LOCALAPPDATA")
     if root:

@@ -311,6 +311,7 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
     worker = implementation["token"]
     for call_id, operation, arguments in [
         ("branch-init", "branch_init", {}),
+        ("branch-read-edit", "branch_read", {"path": "fixture.txt"}),
         (
             "branch-edit",
             "branch_write",
@@ -320,6 +321,7 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
                 "expected_sha256": hashlib.sha256(b"fixture").hexdigest(),
             },
         ),
+        ("branch-read-delete", "branch_read", {"path": "removed.txt"}),
         (
             "branch-delete",
             "branch_delete",
@@ -623,6 +625,25 @@ async def test_real_workers_keep_each_private_edit_and_original_project_separate
         *(call(claim, "init-" + claim["task"]["local_id"], "branch_init", {}) for claim in claims)
     )
     digest = hashlib.sha256(b"original\n").hexdigest()
+    with pytest.raises(FilesystemWorkerError):
+        await call(
+            claims[0],
+            "write-before-read-a",
+            "branch_write",
+            {"path": "shared.txt", "content": "must not appear\n", "expected_sha256": digest},
+        )
+    assert TaskWorkspaces(store).changes(run_id, "a") == []
+    await asyncio.gather(
+        *(
+            call(
+                claim,
+                "read-before-edit-" + claim["task"]["local_id"],
+                "branch_read",
+                {"path": "shared.txt"},
+            )
+            for claim in claims
+        )
+    )
     await asyncio.gather(
         *(
             call(
@@ -674,6 +695,7 @@ async def test_real_workers_keep_each_private_edit_and_original_project_separate
         )
     with pytest.raises(FilesystemWorkerError):
         await call(claims[0], "escape", "branch_create", {"path": "../escape.txt", "content": "no"})
+    await call(claims[0], "newline-read", "branch_read", {"path": "shared.txt"})
     await call(
         claims[0],
         "newline-only",
@@ -727,12 +749,14 @@ async def test_private_journal_replays_cas_operations_in_order_across_delete_and
 
     await call("journal-init", "branch_init", {})
     original_hash = hashlib.sha256(b"original\n").hexdigest()
+    await call("journal-read-original", "branch_read", {"path": "shared.txt"})
     await call(
         "journal-write",
         "branch_write",
         {"path": "shared.txt", "content": "temporary\n", "expected_sha256": original_hash},
     )
     temporary_hash = hashlib.sha256(b"temporary\n").hexdigest()
+    await call("journal-read-temporary", "branch_read", {"path": "shared.txt"})
     await call(
         "journal-delete",
         "branch_delete",
@@ -766,6 +790,18 @@ async def test_private_delete_replay_rejects_mismatched_expected_hash_in_journal
         task_token=claim["token"],
     )
     digest = hashlib.sha256(b"original\n").hexdigest()
+    await execute_filesystem(
+        store,
+        run_id,
+        owner,
+        "tamper-read",
+        "branch_read",
+        {"path": "shared.txt"},
+        idempotency_key="tamper-read",
+        internal=True,
+        task_id="a",
+        task_token=claim["token"],
+    )
     await execute_filesystem(
         store,
         run_id,
@@ -890,6 +926,18 @@ async def test_private_change_limit_counts_deletions_and_can_return_under_limit(
     assert init["effect"] == "private_copy_only"
     for index in range(16):
         path = f"file-{index}.txt"
+        await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            f"quota-read-{index}",
+            "branch_read",
+            {"path": path},
+            idempotency_key=f"quota-read-{index}",
+            internal=True,
+            task_id="a",
+            task_token=claim["token"],
+        )
         await execute_filesystem(
             store,
             run_id,
@@ -1063,6 +1111,7 @@ async def test_integration_recovery_never_replays_uncertain_or_completed_writes(
     claim = tasks.claim_ready(run_id, owner)
     for identity, operation, arguments in [
         ("init", "branch_init", {}),
+        ("read", "branch_read", {"path": "shared.txt"}),
         (
             "write",
             "branch_write",

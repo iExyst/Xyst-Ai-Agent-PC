@@ -22,7 +22,7 @@ from xaa.runtime.file_handles import (
     stat_read_path,
 )
 from xaa.runtime.unified_patch import apply_unified_patch
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import RunStore, has_completed_workspace_read
 
 
 class ReadFileArguments(BaseModel):
@@ -674,6 +674,26 @@ class WorkspaceExecutor:
             return ToolPreconditionError(
                 self.store.record_tool_failure(run_id, token, call_id, code=code, message=message)
             )
+
+        with self.store.connection() as connection:
+            self.store.require_lease(connection, run_id, token)
+            intent = connection.execute(
+                "SELECT sequence FROM run_events WHERE run_id=? AND event_type='tool.intended' "
+                "AND json_extract(payload,'$.call_id')=? ORDER BY sequence DESC LIMIT 1",
+                (run_id, call_id),
+            ).fetchone()
+            if intent is None or not has_completed_workspace_read(
+                connection,
+                run_id=run_id,
+                task_id=None,
+                path=parsed.path,
+                sha256=parsed.expected_sha256,
+                before_sequence=int(intent["sequence"]),
+            ):
+                raise reject(
+                    "read_required",
+                    "Read this exact file version in the current run before editing it.",
+                )
 
         with ExitStack() as stack:
             try:

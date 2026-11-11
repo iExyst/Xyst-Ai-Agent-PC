@@ -44,7 +44,9 @@ async def test_model_can_reread_and_correct_known_prewrite_failure(workspace_tmp
             elif messages[-1]["tool_call_id"] == "stale":
                 result = json.loads(messages[-1]["content"])
                 assert result["effect"] == "not_started"
-                assert result["error"]["code"] == "file_changed"
+                assert result["error"]["code"] == (
+                    "file_changed" if replacement else "read_required"
+                )
                 assert target.read_bytes() == b"before"
                 name, identity, args = "workspace_read_file", "reread", {"path": "file.txt"}
             elif messages[-1]["tool_call_id"] == "reread":
@@ -128,13 +130,15 @@ def test_error_after_write_started_remains_uncertain(workspace_tmp_path, monkeyp
         model=None,
     )["id"]
     token = store.acquire_lease(run_id, "worker")
+    executor = WorkspaceExecutor(store)
+    executor.read_file(run_id, token, "read", {"path": "file.txt"}, idempotency_key="read")
 
     def failed_flush(descriptor):
         raise OSError("Injected fsync failure after write")
 
     monkeypatch.setattr("xaa.runtime.executor.os.fsync", failed_flush)
     with pytest.raises(OSError, match="fsync"):
-        WorkspaceExecutor(store).write_file(
+        executor.write_file(
             run_id,
             token,
             "write",

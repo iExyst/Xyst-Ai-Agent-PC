@@ -25,7 +25,7 @@ from xaa.runtime.workspace_snapshot import (
     checked_path,
 )
 from xaa.storage.commands import command_artifact_root
-from xaa.storage.runs import RunStore, utc_now
+from xaa.storage.runs import RunStore, has_completed_workspace_read, utc_now
 
 BranchOperation = Literal[
     "branch_read", "branch_list", "branch_write", "branch_create", "branch_delete"
@@ -249,6 +249,16 @@ class TaskWorkspaces:
                 }
             elif operation == "branch_delete":
                 delete = DeleteFileArguments.model_validate(arguments)
+                if not has_completed_workspace_read(
+                    connection,
+                    run_id=run_id,
+                    task_id=f"{run_id}:{task_id}",
+                    path=path,
+                    sha256=delete.expected_sha256,
+                ):
+                    raise ValueError(
+                        "Specialist must read this exact file version before deleting it."
+                    )
                 if (
                     path not in files
                     or hashlib.sha256(files[path]).hexdigest() != delete.expected_sha256
@@ -281,6 +291,16 @@ class TaskWorkspaces:
                     if operation == "branch_write"
                     else CreateFileArguments.model_validate(arguments)
                 )
+                if operation == "branch_write" and not has_completed_workspace_read(
+                    connection,
+                    run_id=run_id,
+                    task_id=f"{run_id}:{task_id}",
+                    path=path,
+                    sha256=WriteFileArguments.model_validate(arguments).expected_sha256,
+                ):
+                    raise ValueError(
+                        "Specialist must read this exact file version before editing it."
+                    )
                 data = write.content.encode("utf-8")
                 if len(data) > 65536:
                     raise ValueError("Specialist edits exceed the 64 KiB file limit.")
