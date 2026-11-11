@@ -106,6 +106,13 @@ try {
         throw "Installed binary checksums do not match the manifest. Desktop expected $($xaaManifest.artifacts.desktop.sha256), actual $xaaDesktopHash; engine expected $($xaaManifest.artifacts.engine.sha256), actual $xaaEngineHash."
     }
     $xaaReport.installed_binary_hashes_match = $true
+    $xaaReadinessOutput = & uv run python scripts/installed_skill_readiness_diagnostic.py --engine $xaaEngine
+    if ($LASTEXITCODE -ne 0) { throw 'Installed Agent Skill dependency readiness acceptance failed.' }
+    $xaaReadinessAcceptance = ($xaaReadinessOutput | Out-String | ConvertFrom-Json)
+    if (-not $xaaReadinessAcceptance.graceful_shutdown -or $xaaReadinessAcceptance.model_inference_requested -or -not $xaaReadinessAcceptance.dependencies_unresolved -or $xaaReadinessAcceptance.unverified_dependency_count -lt 1 -or 'packaging>=26.3,<27' -notin $xaaReadinessAcceptance.available_python_dependency_specs -or 'packaging==0.0' -notin $xaaReadinessAcceptance.incompatible_python_dependency_specs -or 'xaa-readiness-missing-fixture==99.0' -notin $xaaReadinessAcceptance.missing_python_dependency_specs) {
+        throw 'Installed Agent Skill dependency readiness evidence was incomplete.'
+    }
+    $xaaReport.installed_skill_readiness_acceptance = $xaaReadinessAcceptance
     $xaaReport.default_per_user_install_directory_verified = (Test-Path -LiteralPath $xaaInstallDir) -and $xaaInstallDir.StartsWith($xaaInstallParent, [StringComparison]::OrdinalIgnoreCase)
     if (-not $xaaReport.default_per_user_install_directory_verified) { throw 'Installer did not use the isolated per-user default install directory.' }
     if (-not $xaaPriorInstaller) {
@@ -227,7 +234,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue

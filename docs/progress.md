@@ -1,5 +1,17 @@
 # Progress
 
+## Query skill readiness through the installed engine (2026-11-11)
+
+Added `scripts/installed_skill_readiness_diagnostic.py` to launch the installed frozen engine,
+authenticate to its local API, and discover a synthetic Agent Skill with an installed, missing,
+version-incompatible, and unsupported-manager dependency. It verifies the packaged engine reports
+each class correctly, shuts down cleanly, and makes no model inference. The installer acceptance
+now runs this diagnostic against the actual per-user installed `xaa-engine.exe` and records its
+report. Local readiness and freezer-metadata tests pass (37 passed, 1 skipped); Ruff, formatting,
+Pyright, PowerShell parsing and `git diff --check` pass. The frozen installed-process check is now
+part of hosted installer acceptance but has not run yet, so installed readiness remains pending
+until that run passes.
+
 ## Check declared Python skill dependency versions (2026-11-11)
 
 Agent Plugins discovery now evaluates bounded Python requirements declared under `python`,
@@ -16,8 +28,9 @@ full source suite and process-recovery acceptances. Installer-only workflow
 [43115455977](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43115455977) built the
 frozen engine and NSIS package, then passed native recovery, OAuth, install/upgrade/boot,
 standard-user, uninstall, and data-removal acceptance. These package checks prove the revised
-engine builds and the existing installed workflows still pass; a dedicated installed-app query
-of Python skill dependency readiness remains untested. No live model inference was used.
+engine builds and the existing installed workflows still pass; see the follow-up above for the
+new dedicated installed-app readiness acceptance and its pending hosted run. No live model
+inference was used.
 
 ## Bound specialist plan dependency depth (2026-11-11)
 
