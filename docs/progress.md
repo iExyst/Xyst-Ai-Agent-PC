@@ -1,5 +1,9 @@
 # Progress
 
+## Audit Hermes trajectory compression source (2026-11-11)
+
+The pinned Hermes README's trajectory-compression claim is implemented by the repository-root `trajectory_compressor.py` and `scripts/sample_and_compress.py`, beyond the basic `agent/trajectory.py` writer. At commit `1e208b280deb18f01d015b0acdf3ef3552d08039`, the compressor counts tokens, protects configured head/tail turns, summarizes a bounded middle region, avoids splitting tool-call/response boundaries, and records compression metrics; the helper samples datasets and feeds the compressor. The compressor defaults to a Transformers tokenizer with `trust_remote_code=True` and a separately configured summarizer provider, so reproducing it in X.A.A. needs explicit provider/data consent and bounded inference accounting. X.A.A.'s review-gated text-only export is a different capability and does not close this parity item. Updated the Hermes matrix accordingly. This source audit does not run upstream code or model inference.
+
 ## Bind batch trajectories to their requested run (2026-11-11)
 
 Batch execution now validates each downloaded trajectory envelope before persistence or scoring and rejects it unless its embedded run ID matches the durable run ID saved for that case. This prevents scoring or retaining a different run’s data as the requested case. Batch resume also adopts the exported state so a concurrent owner review between status polling and trajectory download is reflected in the checkpoint. The new mismatched-run regression and the complete batch suite pass (11 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. No live model inference was used. This closes one provenance check only; broader trajectory redaction review and replay remain open.
