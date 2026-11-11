@@ -73,14 +73,34 @@ def read_inventory(path: Path) -> dict[str, set[tuple[str, str]]]:
 
 
 def read_notice_references(path: Path) -> dict[str, set[tuple[str, str]]]:
-    """Read explicit name@version and name==version references from the bundle."""
+    """Read package/version pairs from explicit package or verified-source lists."""
     result: dict[str, set[tuple[str, str]]] = {ecosystem: set() for ecosystem in KEYS}
-    text = path.read_text(encoding="utf-8")
-    references = re.compile(r"(?<![\w./-])([@\w./+-]+?)(?:@|==)([0-9][\w.+!-]*)")
-    for match in references.finditer(text):
-        name, version = match.groups()
-        for ecosystem, normalize in KEYS.items():
-            result[ecosystem].add((normalize(name), version))
+    package_line = re.compile(r"^\*\*Packages:\*\*\s*(.*)$")
+    reference = re.compile(r"(?<![\w./-])([@\w./+-]+?)(?:@|==)([0-9][\w.+!-]*)")
+    source_section = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        package_attribution = package_line.match(line)
+        if package_attribution is not None:
+            source_section = False
+            values = reference.findall(package_attribution.group(1))
+        elif line.startswith(("**Packages and source files:**", "**Verified source files:**")):
+            source_section = True
+            continue
+        elif line.startswith(("**", "##")):
+            source_section = False
+            values = []
+        elif source_section:
+            source = re.match(r"^\s*-\s+`([^`]+)`", line)
+            if source is not None:
+                values = reference.findall(source.group(1))
+            else:
+                source_section = not line.strip()
+                values = []
+        else:
+            values = []
+        for name, version in values:
+            for ecosystem, normalize in KEYS.items():
+                result[ecosystem].add((normalize(name), version))
     return result
 
 

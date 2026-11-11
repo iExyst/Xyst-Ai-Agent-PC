@@ -18735,6 +18735,8 @@ X.A.A. itself is excluded from the third-party package list. Its source is licen
 
 ## PDFium binary license texts included by pypdfium2 5.15.1
 
+**Packages:** `pypdfium2@5.15.1`
+
 X.A.A. packages the Windows PDFium binary from the exact locked `pypdfium2==5.15.1` wheel. The wheel metadata lists BSD-3-Clause, Apache-2.0 and dependency licenses; the following texts were copied from that installed wheel’s `.dist-info/licenses` directory. The wheel contains platform-specific files for more than Windows, so this records the complete bundled license directory. This is attribution, not legal review.
 
 ### `Apache-2.0.txt` (`pypdfium2-5.15.1.dist-info/licenses/BUILD_LICENSES/SHARED/Apache-2.0.txt`)
