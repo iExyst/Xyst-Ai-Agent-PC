@@ -242,7 +242,15 @@ jobs:
         with:
           path: ~/AppData/Local/tauri/NSIS
           key: ${{ runner.os }}-xaa-nsis-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
-      - run: npm run build:installer
+      - name: Build Windows installer
+        id: build_installer
+        shell: pwsh
+        env:
+          XAA_SIGNING_CERTIFICATE_BASE64: ${{ secrets.XAA_SIGNING_CERTIFICATE_BASE64 }}
+          XAA_SIGNING_PASSWORD: ${{ secrets.XAA_SIGNING_PASSWORD }}
+          XAA_SIGNTOOL: ${{ vars.XAA_SIGNTOOL }}
+          XAA_SIGNING_TIMESTAMP_URL: ${{ vars.XAA_SIGNING_TIMESTAMP_URL }}
+        run: uv run python scripts/build_installer_ci.py
       - name: Verify installed-stage MCP OAuth and credential clearing in native desktop
         shell: pwsh
         env:
@@ -470,7 +478,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: xaa-windows-installer-unsigned
+          name: ${{ steps.build_installer.outputs.signing_mode == 'signed' && 'xaa-windows-installer-signed' || 'xaa-windows-installer-unsigned' }}
           path: |
             build/installer/*
             .acceptance/**/report.json

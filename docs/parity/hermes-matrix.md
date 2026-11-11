@@ -1,5 +1,7 @@
 # Hermes capability reference matrix
 
+2026-11-10 Windows release workflow can optionally consume a base64 PFX and password from repository secrets through a bounded CI wrapper; the PFX is materialized in a temporary runner directory and the uploaded artifact name reports signed/unsigned mode. Absent signing credentials retain unsigned output. Local wrapper and installer tests pass (12), with Ruff, formatting, strict Pyright and diff checks clean. No secrets are configured and hosted installer execution has not yet exercised this path; signing remains unverified. No live inference was used. See [`../progress.md`](../progress.md).
+
 Audit baseline: 2026-11-03; selected skill-source follow-up: 2026-11-04
 Pinned upstream: [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) at [`1e208b280deb18f01d015b0acdf3ef3552d08039`](https://github.com/NousResearch/hermes-agent/tree/1e208b280deb18f01d015b0acdf3ef3552d08039).
 Evidence checked locally: pinned README, platform manifests/registrations and selected adapter declarations, terminal registry/factory and selected lifecycle paths. This is not exhaustive source-level parity verification. README/catalog claims are leads; implementation and acceptance evidence are required before any item can be called verified.
