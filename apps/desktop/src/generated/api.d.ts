@@ -3492,6 +3492,8 @@ export interface components {
             created_at: string;
             /** Delivery Attempt Count */
             delivery_attempt_count: number | null;
+            /** Delivery Destination */
+            delivery_destination: string | null;
             /** Delivery Evidence */
             delivery_evidence: string | null;
             /** Delivery Next Attempt At */

@@ -3985,6 +3985,17 @@
             ],
             "title": "Delivery Attempt Count"
           },
+          "delivery_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Destination"
+          },
           "delivery_evidence": {
             "anyOf": [
               {
@@ -4037,6 +4048,7 @@
           "run_id",
           "state",
           "delivery_evidence",
+          "delivery_destination",
           "delivery_attempt_count",
           "delivery_next_attempt_at",
           "created_at",

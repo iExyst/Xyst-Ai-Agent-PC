@@ -706,6 +706,9 @@ def test_schedule_uses_separate_failure_notification_destination(workspace_tmp_p
     assert delivery["chat_id"] == "456"
     assert "could not complete" in delivery["text"]
     assert schedule["failure_notification_destination"] == "telegram:42:456"
+    saved = ScheduleStore(runs).get(schedule["id"])
+    assert saved is not None
+    assert saved["executions"][0]["delivery_destination"] == "telegram:42:456"
 
 
 def test_schedule_keeps_result_on_result_destination_when_failure_is_separate(
@@ -753,6 +756,8 @@ def test_schedule_keeps_result_on_result_destination_when_failure_is_separate(
     assert delivery is not None
     assert delivery["chat_id"] == "123"
     assert delivery["text"] == "Scheduled result."
+    saved = ScheduleStore(runs).list()[0]
+    assert saved["executions"][0]["delivery_destination"] == "telegram:42:123"
 
 
 def test_failure_only_schedule_skips_success_delivery(workspace_tmp_path: Path) -> None:

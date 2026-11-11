@@ -98,10 +98,10 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <button type="button" onClick={()=>void create()} disabled={busy||!objective.trim()||!model||!startAt||!timezone.trim()}>Create schedule</button>
     {items.length>0&&<ul>{items.map(item=><li key={item.id}>
       <p>{item.objective}</p>
-      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''}{item.delivery_destination?` · Telegram user ${item.delivery_destination.split(':')[2]}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
+      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''}{item.delivery_destination?` · Telegram result user ${item.delivery_destination.split(':')[2]}`:''}{item.failure_notification_destination?` · Telegram failure user ${item.failure_notification_destination.split(':')[2]}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
       {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>
-        {execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''}{execution.delivery_attempt_count!==null?` · send attempts ${execution.delivery_attempt_count}/3`:''}{execution.delivery_next_attempt_at?` · retry after ${execution.delivery_next_attempt_at}`:''} · {execution.created_at}
+        {execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''}{execution.delivery_destination?` · Telegram destination user ${execution.delivery_destination.split(':')[2]}`:''}{execution.delivery_attempt_count!==null?` · send attempts ${execution.delivery_attempt_count}/3`:''}{execution.delivery_next_attempt_at?` · retry after ${execution.delivery_next_attempt_at}`:''} · {execution.created_at}
         {execution.delivery_evidence==='unknown'&&<>
           <p>Check the selected Telegram chat before resolving this uncertain scheduled send.</p>
           <div className="controls">

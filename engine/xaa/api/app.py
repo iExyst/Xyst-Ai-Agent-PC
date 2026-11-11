@@ -426,6 +426,7 @@ class ScheduleExecutionRecord(BaseModel):
     run_id: str | None
     state: str
     delivery_evidence: str | None
+    delivery_destination: str | None
     delivery_attempt_count: int | None
     delivery_next_attempt_at: str | None
     created_at: str

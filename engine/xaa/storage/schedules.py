@@ -143,7 +143,7 @@ class ScheduleStore:
             if schedule is None:
                 return None
             executions = connection.execute(
-                "SELECT e.id,e.occurrence_id,e.run_id,e.state,e.delivery_evidence,e.created_at,e.completed_at,d.attempt_count AS delivery_attempt_count,d.next_attempt_at AS delivery_next_attempt_at FROM schedule_executions e LEFT JOIN schedule_deliveries d ON d.execution_id=e.id WHERE e.schedule_id=? AND (e.id IN (SELECT id FROM schedule_executions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20) OR e.delivery_evidence='unknown') ORDER BY e.created_at DESC",
+                "SELECT e.id,e.occurrence_id,e.run_id,e.state,e.delivery_evidence,e.created_at,e.completed_at,CASE WHEN d.external_identity IS NOT NULL THEN 'telegram:'||d.account_id||':'||d.external_identity ELSE NULL END AS delivery_destination,d.attempt_count AS delivery_attempt_count,d.next_attempt_at AS delivery_next_attempt_at FROM schedule_executions e LEFT JOIN schedule_deliveries d ON d.execution_id=e.id WHERE e.schedule_id=? AND (e.id IN (SELECT id FROM schedule_executions WHERE schedule_id=? ORDER BY created_at DESC LIMIT 20) OR e.delivery_evidence='unknown') ORDER BY e.created_at DESC",
                 (schedule_id, schedule_id),
             ).fetchall()
         result = dict(schedule)
