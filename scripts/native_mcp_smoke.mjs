@@ -22,7 +22,7 @@ async function removeMcpServer(page, button) {
 }
 const stage = process.env.XAA_NATIVE_STAGE || 'native-dev';
 if (!['native-dev', 'native-release'].includes(stage)) throw new Error(`Unsupported native stage: ${stage}`);
-const stageRoot = path.resolve('build', stage);
+const stageRoot = path.resolve(process.env.XAA_NATIVE_STAGE_ROOT || path.join('build', stage));
 const desktop = path.join(stageRoot, 'xaa-desktop.exe');
 const engine = path.join(stageRoot, 'xaa-engine.exe');
 const manifest = JSON.parse(await readFile(path.join(stageRoot, 'manifest.json'), 'utf8'));
@@ -84,7 +84,8 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!page) throw new Error('Native WebView did not expose its application page.');
-  await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('navigation', { name: 'Main sections' })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('link', { name: /Tools & integrations/ }).click();
 
   const desktopSha256 = createHash('sha256').update(await readFile(desktop)).digest('hex');
   const engineSha256 = createHash('sha256').update(await readFile(engine)).digest('hex');
