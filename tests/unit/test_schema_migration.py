@@ -445,6 +445,7 @@ def test_schema_twenty_four_adds_agent_plugin_http_header_mapping(workspace_tmp_
 
 
 def test_schema_twenty_five_adds_agent_plugin_source_fingerprint(workspace_tmp_path):
+    from xaa.extensions.agent_plugins import plugin_source_sha256
     from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 
     database = workspace_tmp_path / "schema-twenty-five-plugin-source.sqlite3"
@@ -452,13 +453,14 @@ def test_schema_twenty_five_adds_agent_plugin_source_fingerprint(workspace_tmp_p
     registry = MCPRegistry(store)
     root = workspace_tmp_path / "legacy-plugin"
     root.mkdir()
+    (root / "plugin.json").write_text("{}", encoding="utf-8")
     server = registry.create_server(
         MCPServerSpec(
             name="Legacy package server",
             command="python",
             plugin_root=str(root),
             plugin_data=str(workspace_tmp_path / "plugin-data"),
-            plugin_sha256="a" * 64,
+            plugin_sha256=plugin_source_sha256(root),
         )
     )
     with store.connection() as connection:
