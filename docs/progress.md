@@ -2,7 +2,7 @@
 
 ## Honor partial DOCX numbering overrides (2026-11-11)
 
-DOCX numbering now applies per-instance level overrides field by field: a `numFmt` or `lvlText` override keeps the other value inherited from the abstract level. Duplicate overrides for one list level are rejected. The focused document suite passes (32 tests), Ruff and formatting pass, and strict parser Pyright reports no issues. This continues to preserve marker templates only; sequence arithmetic and restart behavior are not calculated. No live model inference was used.
+DOCX numbering now applies per-instance level overrides field by field: a `numFmt` or `lvlText` override keeps the other value inherited from the abstract level. Duplicate overrides for one list level are rejected. The focused document suite passes (32 tests), Ruff and formatting pass, and strict parser Pyright reports no issues. Hosted Windows run [43030555424](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43030555424) passed the full source workflow with 1,055 Python tests, desktop acceptances and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. This continues to preserve marker templates only; sequence arithmetic and restart behavior are not calculated. No live model inference was used.
 
 ## Preserve DOCX numbering marker formats and templates (2026-11-11)
 
