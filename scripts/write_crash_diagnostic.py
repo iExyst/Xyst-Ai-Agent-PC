@@ -407,7 +407,7 @@ def main() -> None:
         check=False,
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=45,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     if recovery_process.returncode != 0:
