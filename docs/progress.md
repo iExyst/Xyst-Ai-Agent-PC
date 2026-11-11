@@ -2,7 +2,7 @@
 
 ## Keep revoked schedule recipients explicit in the editor (2026-11-11)
 
-When a saved Telegram identity is unlinked, the Automations editor now labels it as unavailable and disables Save until the owner selects a currently linked recipient or clears the stale one. This prevents the select control from appearing blank and avoids silently dropping a saved destination. The browser acceptance refreshes the linked-account list, checks the warning/disabled state, clears the revoked target, and confirms historical execution routing is unchanged. The Automations Playwright flow (1), desktop TypeScript check, and generated-contract check pass.
+When a saved Telegram identity is unlinked, the Automations editor now labels it as unavailable and disables Save until the owner selects a currently linked recipient or clears the stale one. This prevents the select control from appearing blank and avoids silently dropping a saved destination. The browser acceptance refreshes the linked-account list, checks the warning/disabled state, clears the revoked target, and confirms historical execution routing is unchanged. The Automations Playwright flow (1), desktop TypeScript check, and generated-contract check pass. Hosted Windows run [42990758043](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42990758043) passed the full source workflow and recovery diagnostics; installer acceptance was skipped because packaging did not change.
 
 ## Verify saved destinations across schedule edits (2026-11-11)
 
