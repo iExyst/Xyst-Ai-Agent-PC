@@ -43,7 +43,7 @@ def main() -> None:
     acceptance = Path(".acceptance") / f"installed-skill-readiness-{uuid4().hex}"
     acceptance.mkdir(parents=True, exist_ok=False)
     plugin_root = acceptance / "plugins"
-    skill_dir = plugin_root / "readiness-fixture"
+    skill_dir = plugin_root / "readiness-check"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(SKILL_TEXT, encoding="utf-8")
     token = secrets.token_urlsafe(48)

@@ -9,8 +9,7 @@ each class correctly, shuts down cleanly, and makes no model inference. The inst
 now runs this diagnostic against the actual per-user installed `xaa-engine.exe` and records its
 report. Local readiness and freezer-metadata tests pass (37 passed, 1 skipped); Ruff, formatting,
 Pyright, PowerShell parsing and `git diff --check` pass. The frozen installed-process check is now
-part of hosted installer acceptance but has not run yet, so installed readiness remains pending
-until that run passes.
+part of hosted installer acceptance. Source workflow [43118618308](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43118618308) passed. The first installer run [43118647239](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43118647239) caught a mismatch between the fixture skill name and its directory; discovery rejected it as designed. The fixture directory now matches its declared name, and installed readiness remains pending a successful hosted rerun. No model inference was used.
 
 ## Check declared Python skill dependency versions (2026-11-11)
 
