@@ -1,5 +1,9 @@
 # Progress
 
+## Verify installed MCP package activation path (2026-11-11)
+
+Added a deterministic integration acceptance that creates and installs a bounded Agent Plugin ZIP, discovers and imports its MCP declaration as disconnected, confirms package removal is refused while the integration exists, then explicitly connects its real stdio fixture, verifies default-deny, grants read access, calls the tool, disconnects and removes the integration/package. All 16 MCP stdio integration tests pass; Ruff, formatting, and `git diff --check` pass. No model inference was used. Updated stale MCP architecture/parity statements: package installation and stdio placeholder expansion are implemented, while the native installed-package UI path and broad third-party compatibility still need acceptance.
+
 ## Audit Hermes trajectory compression source (2026-11-11)
 
 The pinned Hermes README's trajectory-compression claim is implemented by the repository-root `trajectory_compressor.py` and `scripts/sample_and_compress.py`, beyond the basic `agent/trajectory.py` writer. At commit `1e208b280deb18f01d015b0acdf3ef3552d08039`, the compressor counts tokens, protects configured head/tail turns, summarizes a bounded middle region, avoids splitting tool-call/response boundaries, and records compression metrics; the helper samples datasets and feeds the compressor. The compressor defaults to a Transformers tokenizer with `trust_remote_code=True` and a separately configured summarizer provider, so reproducing it in X.A.A. needs explicit provider/data consent and bounded inference accounting. X.A.A.'s review-gated text-only export is a different capability and does not close this parity item. Updated the Hermes matrix accordingly. This source audit does not run upstream code or model inference.

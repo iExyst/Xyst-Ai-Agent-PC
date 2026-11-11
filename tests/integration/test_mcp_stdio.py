@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -388,6 +390,120 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
             await manager.call_tool(qualified, {"left": 1, "right": 1})
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_installed_agent_plugin_mcp_explicit_activation_lifecycle(
+    workspace_tmp_path: Path,
+):
+    source = workspace_tmp_path / "package-source"
+    source.mkdir()
+    (source / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "fixture-mcp-package",
+                "version": "1.0.0",
+                "description": "Local MCP lifecycle fixture",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (source / "mcp.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                "mcpServers": {
+                    "local-helper": {
+                        "type": "stdio",
+                        "command": Path(sys.executable).name,
+                        "args": ["${PLUGIN_ROOT}/server.py"],
+                        "cwd": "${PLUGIN_ROOT}",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    shutil.copyfile(FIXTURE, source / "server.py")
+    archive_path = workspace_tmp_path / "fixture-plugin.zip"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for package_file in source.iterdir():
+            archive.write(package_file, package_file.name)
+
+    store = RunStore(workspace_tmp_path / "plugin-mcp.sqlite3")
+    app = create_app(
+        LMStudioProvider(),
+        SecretStr(TOKEN),
+        store=store,
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        installed = client.post(
+            "/extensions/packages/install",
+            headers=headers,
+            json={"archive_path": str(archive_path)},
+        )
+        assert installed.status_code == 201
+        package_root = Path(installed.json()["package"]["path"])
+        discovered = client.post(
+            "/extensions/packages/discover",
+            headers=headers,
+            json={"root": str(package_root)},
+        )
+        assert discovered.status_code == 200
+        assert discovered.json()["packages"][0]["servers"][0]["name"] == "local-helper"
+
+        imported = client.post(
+            "/extensions/packages/import-mcp-server",
+            headers=headers,
+            json={
+                "root": str(package_root),
+                "package_name": "fixture-mcp-package",
+                "server_name": "local-helper",
+            },
+        )
+        assert imported.status_code == 201
+        server_id = imported.json()["id"]
+        assert imported.json()["state"] == "disconnected"
+        assert (
+            client.post(
+                "/extensions/packages/remove",
+                headers=headers,
+                json={"package_name": "fixture-mcp-package"},
+            ).status_code
+            == 409
+        )
+
+    manager = MCPManager(store, None)
+    try:
+        tools = await manager.connect_server(server_id)
+        assert {tool.name for tool in tools} == {"add", "slow"}
+        add = next(tool for tool in tools if tool.name == "add")
+        assert add.permission == "none"
+        manager.registry.set_permission(server_id, "add", "read", add.schema_sha256)
+        result = await manager.call_tool(
+            add.qualified_name,
+            {"left": 20, "right": 22},
+            require_read=True,
+        )
+        assert result["status"] == "ok"
+        assert result["structured_content"] == {"result": 42}
+        assert result["trust"] == "untrusted_mcp_output"
+        assert await manager.disconnect_server(server_id)
+    finally:
+        await manager.close()
+
+    with TestClient(app) as client:
+        removed_server = client.delete(f"/mcp/servers/{server_id}", headers=headers)
+        assert removed_server.status_code == 204
+        removed_package = client.post(
+            "/extensions/packages/remove",
+            headers=headers,
+            json={"package_name": "fixture-mcp-package"},
+        )
+        assert removed_package.status_code == 200
+        assert not package_root.exists()
     assert manager.tools_for_run(set()) == []
 
 
