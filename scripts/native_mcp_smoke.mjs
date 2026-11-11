@@ -115,6 +115,42 @@ try {
     throw new Error('The MCP configuration API did not require authentication.');
   }
 
+  const sharedChatSessionId = `native-${randomUUID()}`;
+  const openedChat = await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'fixture/model', workspace: null, mode: 'observe' }),
+  });
+  if (openedChat.status !== 200) throw new Error(`Could not seed a shared conversation (${openedChat.status}).`);
+  await page.getByRole('link', { name: 'New objective' }).click();
+  const conversations = page.getByRole('region', { name: 'Shared conversation sessions' });
+  await conversations.getByRole('button', { name: 'Load shared conversations' }).click();
+  await conversations.getByLabel('Saved terminal and desktop sessions').selectOption(sharedChatSessionId);
+  await expect(conversations.getByLabel('Conversation title')).toHaveValue(sharedChatSessionId);
+  await conversations.getByLabel('Conversation title').fill('Native chat acceptance');
+  const titleUpdate = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/chat/sessions/${sharedChatSessionId}`
+      && response.request().method() === 'PATCH',
+  );
+  await conversations.getByRole('button', { name: 'Save title' }).click();
+  if (!(await titleUpdate).ok()) throw new Error('The native desktop title update request failed.');
+  const renamedChat = await (await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers })).json();
+  if (renamedChat.title !== 'Native chat acceptance') throw new Error('The native desktop did not persist the conversation title.');
+  page.once('dialog', (dialog) => void dialog.accept());
+  const chatDeletion = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/chat/sessions/${sharedChatSessionId}`
+      && response.request().method() === 'DELETE',
+  );
+  await conversations.getByRole('button', { name: 'Delete shared conversation' }).click();
+  if ((await chatDeletion).status() !== 204) throw new Error('The native desktop conversation delete request failed.');
+  const deletedChat = await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers });
+  if (deletedChat.status !== 404) throw new Error('The native desktop did not remove the shared conversation.');
+  const remainingChats = await (await fetch(`${connection.base_url}/chat/sessions`, { headers })).json();
+  if (remainingChats.some((session) => session.session_id === sharedChatSessionId)) {
+    throw new Error('The deleted native desktop conversation remains in the shared-session list.');
+  }
+  await page.getByRole('link', { name: /Tools & integrations/ }).click();
+
   const panel = page.getByRole('region', { name: 'MCP integrations' });
   await page.locator('summary').filter({ hasText: 'MCP integrations' }).click();
   const command = path.resolve('.venv/Scripts/python.exe');
@@ -406,6 +442,13 @@ try {
     unrelated_tool_permission_unchanged: true,
     disconnected_cleanly: disconnected[0].state === 'disconnected',
     removed_server: true,
+    native_shared_chat: {
+      listed_from_frozen_api: true,
+      opened_in_native_webview: true,
+      title_update_visible_in_api: true,
+      delete_removed_api_record: true,
+      model_inference_requested: false,
+    },
     model_inference_requested: false,
     desktop_exit: true,
     emergency_stop_control_verified: true,

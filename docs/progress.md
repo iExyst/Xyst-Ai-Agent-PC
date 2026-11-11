@@ -1,5 +1,14 @@
 # Progress
 
+## Exercise saved chat sessions in the native desktop window (2026-11-11)
+
+Extended the native Tauri WebView acceptance to load a conversation from the frozen engine API,
+rename it in the desktop UI, and verify the authenticated API reflects the change; confirmed the
+desktop delete action removes the session from the API and shared-session list. The flow uses an
+isolated disposable profile and makes no model inference. `node --check` passes, the existing
+desktop chat browser acceptance passes, and all 11 CLI/chat API and SQLite tests pass. The new
+native frozen-app scenario is wired into installer acceptance and awaits its hosted run.
+
 ## Verify shared chat rename and deletion across desktop API and terminal storage (2026-11-11)
 
 Extended the real SQLite/API cross-client acceptance: the terminal creates and appends a saved
