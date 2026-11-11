@@ -34,6 +34,7 @@ test('reopen saved runs and replay only the selected result',async({page})=>{
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByRole('link',{name:/Saved runs/}).click();
   await page.getByRole('button',{name:'Load older runs',exact:true}).click();
   await page.getByRole('button',{name:'Open Saved first objective',exact:true}).click();
   await expect(page.getByText('Persisted result for first',{exact:true})).toBeVisible();
