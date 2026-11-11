@@ -1483,12 +1483,69 @@ def _docx_related_parts(
     namespace: str,
     initial_xml_bytes: int,
 ) -> list[tuple[str, ElementTree.Element]]:
-    """Read only referenced, bounded header/footer parts from a DOCX package."""
-    references = [
+    """Read bounded header/footer parts using each section's effective references."""
+    all_references = [
         item
         for item in root.iter()
         if item.tag in {namespace + "headerReference", namespace + "footerReference"}
     ]
+    if not all_references:
+        return []
+    parent_by_element = {child: parent for parent in root.iter() for child in parent}
+
+    def inside_section_revision(element: ElementTree.Element) -> bool:
+        parent = parent_by_element.get(element)
+        while parent is not None:
+            if parent.tag == namespace + "sectPrChange":
+                return True
+            parent = parent_by_element.get(parent)
+        return False
+
+    section_properties = [
+        item
+        for item in root.iter()
+        if item.tag == namespace + "sectPr" and not inside_section_revision(item)
+    ]
+    effective_references: dict[tuple[str, str], ElementTree.Element] = {}
+    references: list[tuple[ElementTree.Element, int]] = []
+    active_reference_ids: set[int] = set()
+    for section_index, section in enumerate(section_properties, start=1):
+        section_references = [
+            child
+            for child in section
+            if child.tag in {namespace + "headerReference", namespace + "footerReference"}
+        ]
+        seen_reference_types: set[tuple[str, str]] = set()
+        for reference in section_references:
+            section_type = reference.attrib.get(namespace + "type", "default")
+            if section_type not in {"default", "first", "even"}:
+                raise ValueError("DOCX header/footer reference has an invalid section type.")
+            key = reference.tag, section_type
+            if key in seen_reference_types:
+                raise ValueError("DOCX section contains duplicate header/footer references.")
+            seen_reference_types.add(key)
+            effective_references[key] = reference
+            active_reference_ids.add(id(reference))
+        if section_references:
+            inherited = [
+                reference
+                for key, reference in effective_references.items()
+                if key not in seen_reference_types
+            ]
+            references.extend((reference, section_index) for reference in section_references)
+            references.extend((reference, section_index) for reference in inherited)
+        elif effective_references:
+            references.extend(
+                (reference, section_index) for reference in effective_references.values()
+            )
+
+    misplaced_references = [
+        reference
+        for reference in all_references
+        if not inside_section_revision(reference) and id(reference) not in active_reference_ids
+    ]
+    if misplaced_references:
+        raise ValueError("DOCX header/footer reference is outside section properties.")
     if not references:
         return []
     if relationships_root is None:
@@ -1508,12 +1565,12 @@ def _docx_related_parts(
     office_relationship_namespace = (
         "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
     )
-    visited_parts: dict[str, str] = {}
+    visited_parts: dict[str, tuple[str, int, set[str], list[int]]] = {}
     total_xml_bytes = initial_xml_bytes
     related_parts: list[tuple[str, ElementTree.Element]] = []
     with ZipFile(BytesIO(content)) as archive:
         entries = archive.infolist()
-        for reference in references:
+        for reference, section_index in references:
             identity = reference.attrib.get(office_relationship_namespace + "id")
             relation = relations.get(identity or "")
             if relation is None:
@@ -1547,11 +1604,22 @@ def _docx_related_parts(
                 raise ValueError("DOCX header/footer relationship escapes the package.")
             kind = "Header" if is_header else "Footer"
             if part in visited_parts:
-                if visited_parts[part] != kind:
+                visited_kind, part_index, part_types, sections = visited_parts[part]
+                if visited_kind != kind:
                     raise ValueError("DOCX header and footer references cannot share one part.")
+                part_types.add(reference.attrib.get(namespace + "type", "default"))
+                if section_index not in sections:
+                    sections.append(section_index)
+                section_list = ", ".join(str(index) for index in sections)
+                type_list = ", ".join(
+                    value for value in ("default", "first", "even") if value in part_types
+                )
+                related_parts[part_index] = (
+                    f"[Sections {section_list}] [Document {kind}: {type_list}]",
+                    related_parts[part_index][1],
+                )
                 continue
-            visited_parts[part] = kind
-            if len(visited_parts) > MAX_DOCX_RELATED_PARTS:
+            if len(visited_parts) >= MAX_DOCX_RELATED_PARTS:
                 raise ValueError("DOCX contains too many referenced headers and footers.")
             matches = [item for item in entries if item.filename == part]
             if len(matches) != 1:
@@ -1576,9 +1644,11 @@ def _docx_related_parts(
             if part_root.tag != expected_root:
                 raise ValueError("DOCX header/footer part has an invalid root element.")
             section_type = reference.attrib.get(namespace + "type", "default")
-            if section_type not in {"default", "first", "even"}:
-                raise ValueError("DOCX header/footer reference has an invalid section type.")
-            related_parts.append((f"[Document {kind}: {section_type}]", part_root))
+            related_parts.append(
+                (f"[Sections {section_index}] [Document {kind}: {section_type}]", part_root)
+            )
+            visited_parts[part] = (kind, len(related_parts) - 1, {section_type}, [section_index])
+            visited_parts[part] = (kind, len(related_parts) - 1, {section_type}, [section_index])
     return related_parts
 
 

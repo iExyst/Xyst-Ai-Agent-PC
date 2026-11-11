@@ -54,10 +54,12 @@ def make_docx(
     table_row_exceptions: dict[int, str] | None = None,
     header: str | None = None,
     footer: str | None = None,
+    additional_header: str | None = None,
     header_target: str = "header1.xml",
     header_mode: str = "Internal",
     header_type: str = "default",
     footer_type: str = "default",
+    body_section_properties: str | None = None,
 ) -> bytes:
     body = (
         "".join(paragraph_xml)
@@ -133,6 +135,16 @@ def make_docx(
             '<Override PartName="/word/header1.xml" '
             'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
         )
+    if additional_header is not None:
+        relationships.append(
+            '<Relationship Id="rIdHeader2" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
+            'Target="header2.xml"/>'
+        )
+        content_type_overrides.append(
+            '<Override PartName="/word/header2.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+        )
     if footer is not None:
         footer_reference = f'<w:footerReference w:type="{footer_type}" r:id="rIdFooter"/>'
         relationships.append(
@@ -144,7 +156,9 @@ def make_docx(
             '<Override PartName="/word/footer1.xml" '
             'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
         )
-    if header_reference or footer_reference:
+    if body_section_properties is not None:
+        body += body_section_properties
+    elif header_reference or footer_reference:
         body += f"<w:sectPr>{header_reference}{footer_reference}</w:sectPr>"
     if styles_xml is not None:
         content_type_overrides.append(
@@ -183,6 +197,12 @@ def make_docx(
                 "word/header1.xml",
                 '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                 f"<w:p><w:r><w:t>{header}</w:t></w:r></w:p></w:hdr>",
+            )
+        if additional_header is not None:
+            archive.writestr(
+                "word/header2.xml",
+                '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                f"<w:p><w:r><w:t>{additional_header}</w:t></w:r></w:p></w:hdr>",
             )
         if footer is not None:
             archive.writestr(
@@ -1163,6 +1183,57 @@ def test_labels_first_and_even_docx_header_footer_variants():
     )
     assert "[Document Header: first]\nFirst page" in result
     assert "[Document Footer: even]\nEven page" in result
+
+
+def test_inherits_docx_header_and_footer_references_across_sections():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    "<w:p><w:pPr><w:sectPr>"
+                    '<w:headerReference w:type="default" r:id="rIdHeader"/>'
+                    '<w:footerReference w:type="default" r:id="rIdFooter"/>'
+                    "</w:sectPr></w:pPr><w:r><w:t>Section one</w:t></w:r></w:p>"
+                ),
+                "<w:p><w:r><w:t>Section two</w:t></w:r></w:p>",
+            ],
+            header="Shared header",
+            footer="Shared footer",
+            body_section_properties="<w:sectPr/>",
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[Sections 1, 2] [Document Header: default]\nShared header" in result
+    assert "[Sections 1, 2] [Document Footer: default]\nShared footer" in result
+
+
+def test_docx_section_header_override_is_inherited_by_following_section():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    "<w:p><w:pPr><w:sectPr>"
+                    '<w:headerReference w:type="default" r:id="rIdHeader"/>'
+                    "</w:sectPr></w:pPr><w:r><w:t>Section one</w:t></w:r></w:p>"
+                ),
+                (
+                    "<w:p><w:pPr><w:sectPr>"
+                    '<w:headerReference w:type="default" r:id="rIdHeader2"/>'
+                    "</w:sectPr></w:pPr><w:r><w:t>Section two</w:t></w:r></w:p>"
+                ),
+            ],
+            header="First header",
+            additional_header="Replacement header",
+            body_section_properties="<w:sectPr/>",
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[Sections 1] [Document Header: default]\nFirst header" in result
+    assert "[Sections 2, 3] [Document Header: default]\nReplacement header" in result
 
 
 @pytest.mark.parametrize(
