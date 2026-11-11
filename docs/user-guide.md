@@ -1,6 +1,6 @@
 # Xyst AI Agent user guide
 
-**Development preview · updated 2026-11-09**
+**Development preview · updated 2026-11-11**
 
 Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends model requests to the LM Studio server you configure, records runs in SQLite, and requires explicit review before accepting agent results. The product is still under development; this guide describes behavior currently present in the repository and does not claim full Hermes parity or production release readiness.
 
@@ -10,7 +10,7 @@ Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends mode
 - LM Studio installed separately, with its local server started and a model loaded when you want to run an objective.
 - A model that supports the required tool calls for the selected workflow. X.A.A. discovers model IDs; it does not download or select a model automatically.
 
-The current Windows installer is an unsigned development build. Open the repository's [GitHub Actions runs](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions), select a successful **Engine checks** run, and download its `xaa-windows-installer-unsigned` artifact while it is retained. The installer bundles X.A.A.'s engine; Python and Node are not runtime prerequisites. Hosted acceptance covers current-user installation, upgrade from a retained prior build, desktop boot, backup/restore, uninstall and user-data preservation on a clean GitHub runner. These checks use synthetic data and a short-lived CI baseline; they do not establish signed distribution or recovery of a real user's profile. See [installer scope and evidence](releases/windows-installer.md).
+The current Windows installer is an unsigned development build. GitHub Actions is only the build dashboard; you do not run the workflow page as the application. Open the verified [Windows installer run](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43101993010), choose **Summary**, then download the `xaa-windows-installer-unsigned` artifact. Extract its ZIP and run `Xyst AI Agent_0.1.1_x64-setup.exe` for a per-user install. This artifact is retained for 90 days. The installer bundles X.A.A.'s engine; Python and Node are not runtime prerequisites. Hosted acceptance covers upgrade, desktop boot, backup/restore, uninstall and per-user installation on disposable GitHub runners. These checks use synthetic data; they do not establish signed distribution or recovery of a real user's profile. See [installer scope and evidence](releases/windows-installer.md).
 
 For a development build, follow the commands in the repository [README](../README.md). Do not run the source checkout as if it were an installed production release.
 
