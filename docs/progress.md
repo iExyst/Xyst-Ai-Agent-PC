@@ -7,8 +7,8 @@ plan to chain all 64 tasks serially. Added a 16-level maximum prerequisite chain
 the 64-task graph limit, with a regression covering the allowed boundary and the first rejected
 level. This bounds dependency/review depth; it does not add recursive specialist delegation.
 Focused graph, planning, and plan-API suites pass (14 tests), as do Ruff formatting/lint, Pyright
-for the changed runtime module, and `git diff --check`. Hosted CI and broader live-model
-acceptance are not yet run for this slice. Hosted Windows source workflow
+for the changed runtime module, and `git diff --check`. Broader live-model acceptance was not run
+for this deterministic graph change. Hosted Windows source workflow
 [43111503649](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43111503649) passed the
 full Python suite, static/client checks, Hermes inventories, browser checks, and process recovery
 acceptances; installer validation was skipped because packaging inputs did not change.
