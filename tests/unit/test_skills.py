@@ -3,6 +3,7 @@ import hashlib
 import io
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
@@ -79,9 +80,11 @@ def test_immutable_versions_concurrent_edit_backup_and_delete(workspace_tmp_path
     store = SkillStore(runs)
     saved = store.create(draft())
     identity = saved["id"]
+    edit_barrier = Barrier(2)
     assert saved["lifecycle_state"] == "candidate" and saved["active_version"] is None
 
     def revise(content):
+        edit_barrier.wait(timeout=5)
         try:
             return SkillStore(RunStore(runs.path)).revise(
                 identity, SkillRevision(**draft(content).model_dump(), expected_version=1)
