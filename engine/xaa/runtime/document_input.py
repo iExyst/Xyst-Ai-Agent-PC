@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from binascii import crc32
+from datetime import date, timedelta
 from io import BytesIO
 from math import ceil, isfinite
 from posixpath import join as join_posix
@@ -1766,6 +1767,17 @@ def _extract_xlsx_text(content: bytes) -> str:
                     raise ValueError("XLSX XML exceeds its extraction limit.")
                 number_formats = _parse_xlsx_number_formats(archive.read(style_info))
             spreadsheet_namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+            workbook_properties = [
+                item for item in workbook_root if item.tag == spreadsheet_namespace + "workbookPr"
+            ]
+            if len(workbook_properties) > 1:
+                raise ValueError("XLSX workbook contains duplicate workbook properties.")
+            date_1904_value = (
+                workbook_properties[0].attrib.get("date1904", "0") if workbook_properties else "0"
+            )
+            if date_1904_value not in {"0", "1", "false", "true"}:
+                raise ValueError("XLSX workbook contains an invalid date system setting.")
+            date_1904 = date_1904_value in {"1", "true"}
             workbook_rel_namespace = (
                 "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
             )
@@ -1818,6 +1830,7 @@ def _extract_xlsx_text(content: bytes) -> str:
                                 f"XLSX exceeds the {MAX_XLSX_CELLS}-cell extraction limit."
                             )
                         value = _xlsx_cell_value(cell, shared_strings, spreadsheet_namespace)
+                        raw_value = value
                         formula = next(
                             (node for node in cell if node.tag == spreadsheet_namespace + "f"),
                             None,
@@ -1846,6 +1859,11 @@ def _extract_xlsx_text(content: bytes) -> str:
                             except (ValueError, IndexError):
                                 raise ValueError("XLSX cell references an invalid style.") from None
                             if number_format:
+                                display_value = _xlsx_date_display(
+                                    raw_value, number_format, date_1904=date_1904
+                                )
+                                if display_value is not None:
+                                    value = f"{value} [display: {display_value}]"
                                 format_text = number_format
                                 if len(format_text) > MAX_XLSX_FORMAT_CHARS:
                                     format_text = (
@@ -1960,6 +1978,96 @@ def _parse_xlsx_number_formats(content: bytes) -> list[str | None]:
     if not result:
         raise ValueError("XLSX styles contain no cell formats.")
     return result
+
+
+def _xlsx_date_display(value: str, format_code: str, *, date_1904: bool) -> str | None:
+    """Render simple date formats while retaining the original serial in extraction output."""
+    if not value or any(
+        marker in format_code for marker in ('"', "\\", "[", "]", "!", "_", "*", ";")
+    ):
+        return None
+    tokens = list(
+        re.finditer(r"yyyy|yyy|yy|y|mmmmm|mmmm|mmm|mm|m|dddd|ddd|dd|d", format_code, re.IGNORECASE)
+    )
+    if not tokens or not any(token.group().lower().startswith(("y", "d")) for token in tokens):
+        return None
+    remaining = list(format_code)
+    for token in tokens:
+        for index in range(token.start(), token.end()):
+            remaining[index] = " "
+    if any(char.isalpha() or char not in " /-.,:;()" for char in remaining):
+        return None
+    try:
+        serial = float(value)
+        if not isfinite(serial) or serial < 0 or serial >= 2_958_466:
+            return None
+        whole_days = int(serial)
+        if date_1904:
+            calendar_date = date(1904, 1, 1) + timedelta(days=whole_days)
+        elif whole_days == 60:
+            calendar_date = None  # Excel preserves the fictitious 1900-02-29 for compatibility.
+        elif whole_days < 60:
+            calendar_date = date(1899, 12, 31) + timedelta(days=whole_days)
+        else:
+            calendar_date = date(1899, 12, 30) + timedelta(days=whole_days)
+    except (OverflowError, ValueError):
+        return None
+
+    year, month, day = (
+        (1900, 2, 29)
+        if calendar_date is None
+        else (calendar_date.year, calendar_date.month, calendar_date.day)
+    )
+    month_names = (
+        "",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    )
+    weekday_names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    if calendar_date is None:
+        weekday = 3  # Thursday, matching Excel's 1900 leap-year compatibility calendar.
+    else:
+        weekday = calendar_date.weekday()
+
+    output: list[str] = []
+    position = 0
+    for token in tokens:
+        output.append(format_code[position : token.start()])
+        marker = token.group().lower()
+        if marker.startswith("y"):
+            output.append(f"{year % 100:02d}" if marker == "yy" else f"{year:04d}")
+        elif marker.startswith("d"):
+            if marker == "d":
+                output.append(str(day))
+            elif marker == "dd":
+                output.append(f"{day:02d}")
+            elif marker == "ddd":
+                output.append(weekday_names[weekday][:3])
+            else:
+                output.append(weekday_names[weekday])
+        elif marker == "m":
+            output.append(str(month))
+        elif marker == "mm":
+            output.append(f"{month:02d}")
+        elif marker == "mmm":
+            output.append(month_names[month][:3])
+        elif marker == "mmmm":
+            output.append(month_names[month])
+        elif marker == "mmmmm":
+            output.append(month_names[month][0])
+        position = token.end()
+    output.append(format_code[position:])
+    return "".join(output)
 
 
 def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str], namespace: str) -> str:

@@ -236,8 +236,11 @@ def make_xlsx(
     target: str = "worksheets/sheet1.xml",
     marker: str = "XLSX-MARKER-42",
     formula: str = "B1*2",
+    date_1904: bool = False,
+    date_serial: str = "45292",
 ) -> bytes:
     output = BytesIO()
+    workbook_properties = '<workbookPr date1904="1"/>' if date_1904 else ""
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
             "[Content_Types].xml",
@@ -257,7 +260,8 @@ def make_xlsx(
             "xl/workbook.xml",
             '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-            '<sheets><sheet name="Fixture" sheetId="1" r:id="rId1"/></sheets></workbook>',
+            + workbook_properties
+            + '<sheets><sheet name="Fixture" sheetId="1" r:id="rId1"/></sheets></workbook>',
         )
         archive.writestr(
             "xl/_rels/workbook.xml.rels",
@@ -272,9 +276,10 @@ def make_xlsx(
         archive.writestr(
             "xl/styles.xml",
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<numFmts count="1"><numFmt numFmtId="164" formatCode="$#,##0.00"/></numFmts>'
-            '<cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="14"/>'
-            '<xf numFmtId="164" applyNumberFormat="1"/></cellXfs></styleSheet>',
+            '<numFmts count="2"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
+            '<numFmt numFmtId="165" formatCode="d-mmm-yy"/></numFmts>'
+            '<cellXfs count="4"><xf numFmtId="0"/><xf numFmtId="14"/>'
+            '<xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="165"/></cellXfs></styleSheet>',
         )
         archive.writestr(
             "xl/sharedStrings.xml",
@@ -286,8 +291,12 @@ def make_xlsx(
             '<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c>'
             '<c r="B1"><v>42</v></c><c r="C1" t="inlineStr"><is><t>inline-value</t>'
             f'</is></c><c r="D1"><f>{formula}</f><v>84</v></c>'
-            '<c r="E1"><f>NOW()</f></c><c r="F1" s="1"><v>45292</v></c>'
-            '<c r="G1" s="2"><v>12.5</v></c></row></sheetData></worksheet>',
+            '<c r="E1"><f>NOW()</f></c><c r="F1" s="1"><v>'
+            f"{date_serial}"
+            "</v></c>"
+            '<c r="G1" s="2"><v>12.5</v></c><c r="H1" s="3"><v>'
+            f"{date_serial}"
+            "</v></c></row></sheetData></worksheet>",
         )
     return output.getvalue()
 
@@ -1278,8 +1287,17 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "C1=inline-value" in result
     assert "D1=84 [formula: =B1*2]" in result
     assert "E1=[formula: =NOW()]" in result
-    assert "F1=45292 [number format: m/d/yy]" in result
+    assert "F1=45292 [display: 1/1/24] [number format: m/d/yy]" in result
     assert "G1=12.5 [number format: $#,##0.00]" in result
+    assert "H1=45292 [display: 1-Jan-24] [number format: d-mmm-yy]" in result
+
+
+def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
+    leap_compatibility = extract_document_text(make_xlsx(date_serial="60"), XLSX_TYPE)
+    date_1904 = extract_document_text(make_xlsx(date_1904=True, date_serial="0"), XLSX_TYPE)
+
+    assert "F1=60 [display: 2/29/00] [number format: m/d/yy]" in leap_compatibility
+    assert "F1=0 [display: 1/1/04] [number format: m/d/yy]" in date_1904
 
 
 def test_xlsx_formula_text_is_capped_per_cell():
