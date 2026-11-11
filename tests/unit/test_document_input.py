@@ -244,6 +244,8 @@ def make_xlsx(
     hidden_row: str = "0",
     column_ranges: tuple[tuple[str, str, str], ...] = (),
     merged_ranges: tuple[str, ...] = (),
+    hyperlinks: tuple[str, ...] = (),
+    worksheet_relationships: tuple[str, ...] = (),
 ) -> bytes:
     output = BytesIO()
     workbook_properties = '<workbookPr date1904="1"/>' if date_1904 else ""
@@ -258,6 +260,7 @@ def make_xlsx(
     if merged_ranges:
         definitions = "".join(f'<mergeCell ref="{reference}"/>' for reference in merged_ranges)
         merged_cells_xml = f'<mergeCells count="{len(merged_ranges)}">{definitions}</mergeCells>'
+    hyperlinks_xml = f"<hyperlinks>{''.join(hyperlinks)}</hyperlinks>" if hyperlinks else ""
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
             "[Content_Types].xml",
@@ -317,7 +320,8 @@ def make_xlsx(
         )
         archive.writestr(
             "xl/worksheets/sheet1.xml",
-            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
             + columns_xml
             + f'<sheetData><row r="1" hidden="{hidden_row}"><c r="A1" t="s"><v>0</v></c>'
             '<c r="B1"><v>42</v></c><c r="C1" t="inlineStr"><is><t>inline-value</t>'
@@ -337,8 +341,15 @@ def make_xlsx(
             '<c r="P1" s="11"><v>45292.75</v></c>'
             '<c r="Q1" s="12"><v>45292.524259259259259</v></c>'
             '<c r="R1" s="11"><v>45292.99999999</v></c>'
-            "</row></sheetData>" + merged_cells_xml + "</worksheet>",
+            "</row></sheetData>" + merged_cells_xml + hyperlinks_xml + "</worksheet>",
         )
+        if worksheet_relationships:
+            archive.writestr(
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + "".join(worksheet_relationships)
+                + "</Relationships>",
+            )
     return output.getvalue()
 
 
@@ -1413,6 +1424,82 @@ def test_xlsx_rejects_invalid_or_overlapping_merged_ranges(
 ):
     with pytest.raises(ValueError, match=error):
         extract_document_text(make_xlsx(merged_ranges=merged_ranges), XLSX_TYPE)
+
+
+def test_xlsx_preserves_external_and_internal_hyperlinks_as_text_only_metadata():
+    result = extract_document_text(
+        make_xlsx(
+            hyperlinks=(
+                '<hyperlink ref="A1" r:id="rIdLink" display="Open site" tooltip="Visit source"/>',
+                '<hyperlink ref="B1:C1" location="Fixture!A1" display="Jump inside"/>',
+            ),
+            worksheet_relationships=(
+                (
+                    '<Relationship Id="rIdLink" '
+                    'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                    'Target="https://user:pass@example.invalid/private?token=sample#secret" '
+                    'TargetMode="External"/>'
+                ),
+            ),
+        ),
+        XLSX_TYPE,
+    )
+
+    assert (
+        "A1=XLSX-MARKER-42 [hyperlink ref=A1; "
+        "target=https://example.invalid [path, credentials, query and fragment omitted]; "
+        "display=Open site; tooltip=Visit source]" in result
+    )
+    assert "B1=42 [hyperlink ref=B1:C1; location=Fixture!A1; display=Jump inside]" in result
+    for secret_fragment in ("user:pass", "private", "token=sample", "#secret"):
+        assert secret_fragment not in result
+
+
+def test_xlsx_preserves_unanchored_hyperlinks_without_opening_them():
+    result = extract_document_text(
+        make_xlsx(
+            hyperlinks=('<hyperlink ref="Z10" location="Fixture!A1"/>',),
+        ),
+        XLSX_TYPE,
+    )
+
+    assert "[hyperlink ref=Z10; location=Fixture!A1]" in result
+
+
+def test_xlsx_rejects_unresolved_or_nonexternal_hyperlink_relationships():
+    hyperlink = '<hyperlink ref="A1" r:id="rIdLink"/>'
+    with pytest.raises(ValueError, match="relationship is missing or unsupported"):
+        extract_document_text(make_xlsx(hyperlinks=(hyperlink,)), XLSX_TYPE)
+    with pytest.raises(ValueError, match="relationship is missing or unsupported"):
+        extract_document_text(
+            make_xlsx(
+                hyperlinks=(hyperlink,),
+                worksheet_relationships=(
+                    (
+                        '<Relationship Id="rIdLink" '
+                        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                        'Target="internal.xml"/>'
+                    ),
+                ),
+            ),
+            XLSX_TYPE,
+        )
+
+
+@pytest.mark.parametrize("reference", ["A0", "A1:B0", "B1:A1", "XFE1"])
+def test_xlsx_rejects_invalid_hyperlink_cell_references(reference: str):
+    with pytest.raises(ValueError, match="invalid hyperlink reference"):
+        extract_document_text(
+            make_xlsx(hyperlinks=(f'<hyperlink ref="{reference}" location="Fixture!A1"/>',)),
+            XLSX_TYPE,
+        )
+
+
+def test_xlsx_bounds_hyperlink_metadata_across_the_workbook():
+    hyperlinks = tuple(f'<hyperlink ref="A{row}" location="Fixture!A1"/>' for row in range(1, 1026))
+
+    with pytest.raises(ValueError, match="hyperlink metadata limit per workbook"):
+        extract_document_text(make_xlsx(hyperlinks=hyperlinks), XLSX_TYPE)
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():

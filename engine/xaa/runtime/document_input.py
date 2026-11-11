@@ -12,7 +12,7 @@ from posixpath import join as join_posix
 from posixpath import normpath
 from struct import pack
 from typing import Any, NamedTuple, cast
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile, ZipInfo
 from zlib import compress
@@ -49,6 +49,8 @@ MAX_XLSX_COLUMN_RANGES = 1_024
 MAX_XLSX_COLUMNS = 16_384
 MAX_XLSX_ROWS = 1_048_576
 MAX_XLSX_MERGED_RANGES = 1_024
+MAX_XLSX_HYPERLINKS = 1_024
+MAX_XLSX_LINK_TEXT_CHARS = 512
 MAX_XLSX_SHARED_STRINGS = 50_000
 MAX_XLSX_XML_BYTES = 8 * 1024 * 1024
 MAX_XLSX_FORMULA_CHARS = 2048
@@ -1806,6 +1808,7 @@ def _extract_xlsx_text(content: bytes) -> str:
             parts = {item.filename: item for item in entries}
             extracted: list[str] = []
             cell_count = 0
+            hyperlink_count = 0
             visited: set[str] = set()
             for name, relationship_id, visibility in sheet_specs:
                 relation = relation_targets.get(relationship_id or "")
@@ -1831,6 +1834,15 @@ def _extract_xlsx_text(content: bytes) -> str:
                 if total_xml_bytes > MAX_XLSX_XML_BYTES:
                     raise ValueError("XLSX XML exceeds its extraction limit.")
                 sheet_root = _parse_office_xml(archive.read(info), "XLSX worksheet")
+                sheet_relationships, relationship_bytes = _xlsx_sheet_relationships(
+                    part,
+                    entries,
+                    archive,
+                    package_namespace,
+                )
+                total_xml_bytes += relationship_bytes
+                if total_xml_bytes > MAX_XLSX_XML_BYTES:
+                    raise ValueError("XLSX XML exceeds its extraction limit.")
                 visibility_text = f"; visibility: {visibility}" if visibility != "visible" else ""
                 extracted.append(f"[Sheet: {name}{visibility_text}]")
                 column_sections = [
@@ -1849,6 +1861,15 @@ def _extract_xlsx_text(content: bytes) -> str:
                     merge_sections,
                     spreadsheet_namespace,
                 )
+                hyperlink_anchors = _xlsx_hyperlink_anchors(
+                    sheet_root,
+                    sheet_relationships,
+                    spreadsheet_namespace,
+                    workbook_rel_namespace,
+                    MAX_XLSX_HYPERLINKS - hyperlink_count,
+                )
+                hyperlink_count += sum(len(items) for items in hyperlink_anchors.values())
+                seen_hyperlink_anchors: set[tuple[int, int]] = set()
                 for row in sheet_root.iter(spreadsheet_namespace + "row"):
                     values: list[str] = []
                     hidden_value = row.attrib.get("hidden", "0")
@@ -1874,6 +1895,13 @@ def _extract_xlsx_text(content: bytes) -> str:
                                 if value
                                 else (f"[merged range: {merged_range}]")
                             )
+                        hyperlink_metadata = (
+                            hyperlink_anchors.get(coordinates, []) if coordinates else []
+                        )
+                        if coordinates is not None and hyperlink_metadata:
+                            seen_hyperlink_anchors.add(coordinates)
+                            suffix = " ".join(item[1] for item in hyperlink_metadata)
+                            value = f"{value} {suffix}" if value else suffix
                         if hidden_columns:
                             column_index = coordinates[0] if coordinates else None
                             if column_index is None:
@@ -1936,6 +1964,9 @@ def _extract_xlsx_text(content: bytes) -> str:
                         values.insert(0, "[hidden row]")
                     if values:
                         extracted.append("\t".join(values))
+                for coordinate, metadata in hyperlink_anchors.items():
+                    if coordinate not in seen_hyperlink_anchors:
+                        extracted.extend(label for _, label in metadata)
     except ValueError:
         raise
     except (BadZipFile, RuntimeError, OSError, EOFError, KeyError):
@@ -2303,6 +2334,141 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     currency = match.group("currency") or ""
     percent = "%" if match.group("percent") else ""
     return f"{sign}{currency}{rendered}{percent}"
+
+
+def _xlsx_sheet_relationships(
+    part: str,
+    entries: list[ZipInfo],
+    archive: ZipFile,
+    namespace: str,
+) -> tuple[dict[str, dict[str, str]], int]:
+    directory, _, filename = part.rpartition("/")
+    relationship_part = f"{directory}/_rels/{filename}.rels"
+    matches = [item for item in entries if item.filename == relationship_part]
+    if len(matches) > 1:
+        raise ValueError("XLSX worksheet has duplicate relationship parts.")
+    if not matches:
+        return {}, 0
+    info = matches[0]
+    if info.flag_bits & 1 or info.file_size > MAX_OOXML_PART_BYTES:
+        raise ValueError("XLSX worksheet relationships exceed their extraction limit.")
+    root = _parse_office_xml(archive.read(info), "XLSX worksheet relationships")
+    if root.tag != namespace + "Relationships":
+        raise ValueError("XLSX worksheet relationships have an invalid root element.")
+    relationships: dict[str, dict[str, str]] = {}
+    for item in root:
+        if item.tag != namespace + "Relationship":
+            raise ValueError("XLSX worksheet relationships contain an invalid entry.")
+        relationship_id = item.attrib.get("Id", "")
+        target_mode = item.attrib.get("TargetMode", "Internal")
+        if (
+            not relationship_id
+            or relationship_id in relationships
+            or not item.attrib.get("Type")
+            or not item.attrib.get("Target")
+            or target_mode not in {"Internal", "External"}
+        ):
+            raise ValueError("XLSX worksheet relationships contain invalid metadata.")
+        relationships[relationship_id] = item.attrib
+    return relationships, info.file_size
+
+
+def _xlsx_hyperlink_anchors(
+    sheet_root: ElementTree.Element,
+    relationships: dict[str, dict[str, str]],
+    spreadsheet_namespace: str,
+    relationship_namespace: str,
+    remaining_limit: int,
+) -> dict[tuple[int, int], list[tuple[str, str]]]:
+    sections = [item for item in sheet_root if item.tag == spreadsheet_namespace + "hyperlinks"]
+    if len(sections) > 1:
+        raise ValueError("XLSX worksheet contains duplicate hyperlink definitions.")
+    if not sections:
+        return {}
+    hyperlinks = [item for item in sections[0] if item.tag == spreadsheet_namespace + "hyperlink"]
+    if len(hyperlinks) != len(sections[0]):
+        raise ValueError("XLSX worksheet contains an unsupported hyperlink entry.")
+    if len(hyperlinks) > remaining_limit:
+        raise ValueError(
+            f"XLSX exceeds the {MAX_XLSX_HYPERLINKS}-hyperlink metadata limit per workbook."
+        )
+    anchors: dict[tuple[int, int], list[tuple[str, str]]] = {}
+    for hyperlink in hyperlinks:
+        reference = hyperlink.attrib.get("ref", "")
+        if len(reference) > 32:
+            raise ValueError("XLSX worksheet contains an invalid hyperlink reference.")
+        bounds = _xlsx_reference_bounds(reference)
+        if bounds is None:
+            raise ValueError("XLSX worksheet contains an invalid hyperlink reference.")
+        first, _ = bounds
+        relationship_id = hyperlink.attrib.get(relationship_namespace + "id")
+        target = ""
+        if relationship_id is not None:
+            relation = relationships.get(relationship_id)
+            if (
+                relation is None
+                or not relation.get("Type", "").endswith("/hyperlink")
+                or relation.get("TargetMode") != "External"
+            ):
+                raise ValueError("XLSX hyperlink relationship is missing or unsupported.")
+            target = relation.get("Target", "")
+            if not target:
+                raise ValueError("XLSX hyperlink relationship has no target.")
+        location = hyperlink.attrib.get("location", "")
+        if not target and not location:
+            raise ValueError("XLSX hyperlink has neither a target nor an internal location.")
+        details = [f"ref={reference}"]
+        if target:
+            details.append(f"target={_xlsx_safe_link_target(target)}")
+        if location:
+            details.append(f"location={_xlsx_bound_link_text(location)}")
+        display = hyperlink.attrib.get("display", "")
+        if display:
+            details.append(f"display={_xlsx_bound_link_text(display)}")
+        tooltip = hyperlink.attrib.get("tooltip", "")
+        if tooltip:
+            details.append(f"tooltip={_xlsx_bound_link_text(tooltip)}")
+        anchors.setdefault(first, []).append((reference, "[hyperlink " + "; ".join(details) + "]"))
+    return anchors
+
+
+def _xlsx_reference_bounds(
+    reference: str,
+) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    endpoints = reference.split(":")
+    if len(endpoints) not in {1, 2}:
+        return None
+    first = _xlsx_cell_coordinates(endpoints[0])
+    last = _xlsx_cell_coordinates(endpoints[-1])
+    if first is None or last is None or first[0] > last[0] or first[1] > last[1]:
+        return None
+    return first, last
+
+
+def _xlsx_bound_link_text(value: str) -> str:
+    value = value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    if len(value) > MAX_XLSX_LINK_TEXT_CHARS:
+        return value[:MAX_XLSX_LINK_TEXT_CHARS] + "…[link text truncated]"
+    return value
+
+
+def _xlsx_safe_link_target(value: str) -> str:
+    try:
+        target = urlsplit(value)
+        hostname = target.hostname
+        port = target.port
+    except ValueError:
+        return "[external target omitted]"
+    scheme = target.scheme.casefold()
+    if scheme in {"http", "https"} and hostname:
+        if ":" in hostname and not hostname.startswith("["):
+            hostname = f"[{hostname}]"
+        hostname = _xlsx_bound_link_text(hostname)
+        authority = f"{hostname}:{port}" if port is not None else hostname
+        return f"{scheme}://{authority} [path, credentials, query and fragment omitted]"
+    if scheme:
+        return f"{scheme}:[target details omitted]"
+    return "[external target omitted]"
 
 
 def _xlsx_hidden_column_ranges(
