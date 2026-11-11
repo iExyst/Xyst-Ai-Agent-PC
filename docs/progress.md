@@ -6,7 +6,7 @@ The README and user guide now explain that GitHub Actions displays build logs, l
 
 ## Exercise the desktop emergency-stop control (2026-11-11)
 
-The native MCP installer acceptance now opens Settings and clicks the actual **Quit and stop the agent** control, then verifies the desktop exits, the bundled engine is unreachable, and graceful shutdown is logged. This exercises the UI stop action without model inference; the existing native boot acceptance separately covers close-to-tray and quit-on-close behavior. Hosted package verification is pending.
+The native MCP installer acceptance now opens Settings and clicks the actual **Quit and stop the agent** control, then verifies the desktop exits, the bundled engine is unreachable, and graceful shutdown is logged. This exercises the UI stop action without model inference; the existing native boot acceptance separately covers close-to-tray and quit-on-close behavior. The first run, [43106889673](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43106889673), passed earlier MCP/OAuth checks but stopped before the click because Playwright did not match the visible Settings sidebar link by exact accessible name. The failure screenshot confirmed the link was present; the test now selects that link by its stable `#app-settings` destination. Hosted package verification is pending.
 
 ## Build the current Windows program package (2026-11-11)
 

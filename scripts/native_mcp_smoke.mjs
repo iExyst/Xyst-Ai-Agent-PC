@@ -350,7 +350,7 @@ try {
   }
   await removeMcpServer(page, oauthArticle.getByRole('button', { name: 'Remove server', exact: true }));
   await writeFile(path.join(root, 'oauth-fixture.log'), fixtureOutput);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.locator('nav.side-nav a[href="#app-settings"]').click();
   const emergencyStop = page.getByRole('button', { name: 'Quit and stop the agent', exact: true });
   await emergencyStop.waitFor({ timeout: 10_000 });
   await emergencyStop.click().catch(() => {});
