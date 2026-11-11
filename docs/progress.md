@@ -1,5 +1,9 @@
 # Progress
 
+## Re-run hosted Windows installer acceptance on current branch (2026-11-11)
+
+Manual Windows workflow [42962317968](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42962317968) on `7461bc3` passed the unsigned installer build, release-notice package coverage, installed MCP OAuth/credential clearing, native desktop and specialist restart recovery, frozen API/task recovery, browser cancellation, task scope checks, upgrade/install/boot/uninstall, standard-user install, and explicit data removal. The source job was skipped by the manual-dispatch workflow condition; this is packaged Windows acceptance only. The 77 MB installer artifact and reports are retained locally in `.acceptance/hosted-installer-42962317968/`; artifact expires 2027-02-09. Installer SHA-256 is `3489972c1f67f090db8b5da7c9dfb1f47aab1b487cd3141b55ea5192b5c18fb1`. The artifact remains unsigned; no live LM Studio inference was used.
+
 ## Keep MCP sampling inside coordinator controls (2026-11-10)
 
 Reviewed the installed MCP SDK 2.3.0 callback surface and X.A.A.'s connection/coordinator boundary. Directly connecting `sampling_callback` to the provider would allow an MCP server to initiate inference without a durable run/task event, shared token reservation, or the saved provider/model route. Sampling therefore remains unavailable until it can be authorized for a specific run, journaled with bounded request content and recovery behavior, admitted through the existing inference budget, and constrained to text-only responses without tool grants. This is a dependency finding for Phase 9, not an implementation claim; no model inference or test run was performed.
