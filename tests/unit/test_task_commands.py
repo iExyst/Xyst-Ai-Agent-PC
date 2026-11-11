@@ -45,6 +45,7 @@ async def private_tasks(root, transport, *, command_permission=True):
         scopes.append(scope)
         for operation, arguments in [
             ("branch_init", {}),
+            ("branch_read", {"path": "fixture.txt"}),
             (
                 "branch_write",
                 {
@@ -100,6 +101,18 @@ async def test_commands_capture_each_private_tree_and_stale_validation_is_visibl
     assert (project / "fixture.txt").read_bytes() == b"fixture"
     assert store.conversation_messages(run_id) == []
     scope = scopes[0]
+    await execute_filesystem(
+        store,
+        run_id,
+        owner,
+        "read-before-edit-after-test",
+        "branch_read",
+        {"path": "fixture.txt"},
+        idempotency_key="read-before-edit-after-test",
+        internal=True,
+        task_id="a",
+        task_token=scope.task_token,
+    )
     await execute_filesystem(
         store,
         run_id,
@@ -758,6 +771,18 @@ async def test_review_requires_actual_successful_current_private_validation(
         deadline=time.monotonic() + 15,
     )
     if stale:
+        await execute_filesystem(
+            store,
+            run_id,
+            owner,
+            "read-before-later-edit",
+            "branch_read",
+            {"path": "fixture.txt"},
+            idempotency_key="read-before-later-edit",
+            internal=True,
+            task_id="a",
+            task_token=scope.task_token,
+        )
         await execute_filesystem(
             store,
             run_id,
