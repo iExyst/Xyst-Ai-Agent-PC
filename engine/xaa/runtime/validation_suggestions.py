@@ -234,6 +234,101 @@ def _cmake_test_workflows(content: bytes) -> list[str]:
     return sorted(set(names), key=str.casefold)[:8]
 
 
+def _parse_jsonc(content: bytes) -> object | None:
+    """Parse the JSON-with-comments form used by Deno's .jsonc configuration."""
+    try:
+        source = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+    without_comments: list[str] = []
+    index = 0
+    in_string = False
+    escaped = False
+    while index < len(source):
+        char = source[index]
+        if in_string:
+            without_comments.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            without_comments.append(char)
+            index += 1
+            continue
+        if source.startswith("//", index):
+            newline = source.find("\n", index + 2)
+            if newline == -1:
+                break
+            without_comments.append("\n")
+            index = newline + 1
+            continue
+        if source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            if end == -1:
+                return None
+            without_comments.extend("\n" for char in source[index : end + 2] if char == "\n")
+            index = end + 2
+            continue
+        without_comments.append(char)
+        index += 1
+
+    if in_string:
+        return None
+
+    json_source = "".join(without_comments)
+    without_trailing_commas: list[str] = []
+    in_string = False
+    escaped = False
+    for index, char in enumerate(json_source):
+        if in_string:
+            without_trailing_commas.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            without_trailing_commas.append(char)
+        elif char == ",":
+            following = index + 1
+            while following < len(json_source) and json_source[following].isspace():
+                following += 1
+            if following == len(json_source) or json_source[following] not in "}]":
+                without_trailing_commas.append(char)
+        else:
+            without_trailing_commas.append(char)
+    try:
+        return json.loads("".join(without_trailing_commas))
+    except json.JSONDecodeError:
+        return None
+
+
+def _deno_test_declared(content: bytes) -> bool:
+    document = _parse_jsonc(content)
+    if not isinstance(document, dict):
+        return False
+    tasks = cast(dict[str, object], document).get("tasks")
+    if not isinstance(tasks, dict):
+        return False
+    test_task = cast(dict[str, object], tasks).get("test")
+    if isinstance(test_task, str):
+        return bool(test_task.strip())
+    if isinstance(test_task, dict):
+        command = cast(dict[str, object], test_task).get("command")
+        return isinstance(command, str) and bool(command.strip())
+    return False
+
+
 def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, object]]:
     """Return deterministic command presets inferred from project manifests.
 
@@ -339,6 +434,40 @@ def suggest_validation_commands(snapshot: WorkspaceSnapshot) -> list[dict[str, o
                 "label": f"JavaScript tests ({manager}){suffix}",
                 "rationale": f"{package} declares a test script. Confirm {manager} and dependencies are available in the restricted WSL environment.",
                 "argv": argv,
+            }
+        )
+
+    deno_configs = [
+        path
+        for key, path in paths.items()
+        if PurePosixPath(key).name in {"deno.json", "deno.jsonc"}
+    ]
+    deno_by_directory: dict[str, list[str]] = {}
+    for config in deno_configs:
+        directory = str(PurePosixPath(config).parent)
+        deno_by_directory.setdefault(directory.casefold(), []).append(config)
+    for configs in sorted(deno_by_directory.values(), key=lambda values: values[0].casefold()):
+        # If both formats are present, avoid guessing which configuration is intended.
+        if len(configs) != 1:
+            continue
+        config = configs[0]
+        try:
+            content = next(
+                entry.content
+                for entry in snapshot.files
+                if entry.path.casefold() == config.casefold()
+            )
+        except StopIteration:
+            continue
+        if not _deno_test_declared(content):
+            continue
+        directory = str(PurePosixPath(config).parent)
+        suffix = "" if directory == "." else f" — {directory}"
+        suggestions.append(
+            {
+                "label": f"Deno tests (task){suffix}",
+                "rationale": f"{config} explicitly defines a test task. Confirm Deno and its required dependencies are available in the restricted network-disabled WSL environment.",
+                "argv": ["/usr/bin/env", "deno", "task", "--config", config, "test"],
             }
         )
 

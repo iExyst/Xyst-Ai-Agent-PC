@@ -134,6 +134,43 @@ def test_javascript_suggestions_require_a_declared_test_script():
     assert result[0]["argv"] == ["/usr/bin/env", "npm", "--prefix", "apps/valid", "test"]
 
 
+def test_deno_suggestions_require_an_explicit_test_task_and_support_jsonc():
+    result = suggest_validation_commands(
+        snapshot(
+            (
+                "deno.jsonc",
+                (
+                    b"{\n"
+                    b"  // Deno configuration comments and trailing commas are valid.\n"
+                    b'  "imports": {"example": "https://example.test/a//b",},\n'
+                    b'  "tasks": {"test": "deno test",},\n'
+                    b"}\n"
+                ),
+            ),
+            ("services/api/deno.json", b'{"tasks":{"test":{"command":"deno test"}}}'),
+            ("services/no-test/deno.json", b'{"tasks":{"check":"deno check ."}}'),
+            ("services/blank/deno.json", b'{"tasks":{"test":"  "}}'),
+            ("services/malformed/deno.jsonc", b'{"tasks": /* unfinished comment */'),
+            ("services/ambiguous/deno.json", b'{"tasks":{"test":"deno test"}}'),
+            ("services/ambiguous/deno.jsonc", b'{"tasks":{"test":"deno test --doc"}}'),
+        )
+    )
+
+    assert [item["label"] for item in result] == [
+        "Deno tests (task)",
+        "Deno tests (task) — services/api",
+    ]
+    assert result[0]["argv"] == [
+        "/usr/bin/env",
+        "deno",
+        "task",
+        "--config",
+        "deno.jsonc",
+        "test",
+    ]
+    assert result[1]["argv"][-3:] == ["--config", "services/api/deno.json", "test"]
+
+
 def test_javascript_suggestions_follow_declared_managers_and_local_lockfiles():
     result = suggest_validation_commands(
         snapshot(
@@ -373,9 +410,11 @@ def test_suggests_every_supported_manifest_in_a_monorepo():
             ("dotnet/one.sln", b""),
             ("dotnet/two.sln", b""),
             ("ios/Package.swift", b"// swift-tools-version: 6.0"),
+            ("apps/deno/deno.jsonc", b'{"tasks":{"test":"deno test"}}'),
         )
     )
 
-    assert len(result) == 11
-    assert len({tuple(item["argv"]) for item in result}) == 11
+    assert len(result) == 12
+    assert len({tuple(item["argv"]) for item in result}) == 12
     assert any("services/two" in str(item["argv"]) for item in result)
+    assert any("apps/deno" in str(item["argv"]) for item in result)
