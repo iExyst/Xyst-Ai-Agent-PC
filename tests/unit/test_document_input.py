@@ -44,6 +44,7 @@ def make_docx(
     *,
     paragraph_xml: list[str] | None = None,
     numbering_xml: str | None = None,
+    styles_xml: str | None = None,
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     header: str | None = None,
     footer: str | None = None,
@@ -104,6 +105,11 @@ def make_docx(
         )
     if header_reference or footer_reference:
         body += f"<w:sectPr>{header_reference}{footer_reference}</w:sectPr>"
+    if styles_xml is not None:
+        content_type_overrides.append(
+            '<Override PartName="/word/styles.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+        )
     document = (
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
@@ -122,6 +128,8 @@ def make_docx(
         archive.writestr("word/document.xml", document)
         if numbering_xml is not None:
             archive.writestr("word/numbering.xml", numbering_xml)
+        if styles_xml is not None:
+            archive.writestr("word/styles.xml", styles_xml)
         if relationships:
             archive.writestr(
                 "word/_rels/document.xml.rels",
@@ -245,6 +253,147 @@ def test_extracts_docx_heading_style_and_list_level_markers():
 
     assert "[Heading: Heading2] Project plan" in result
     assert "[List decimal, level 2, marker %2.; numbered marker 1.] First action" in result
+
+
+def test_inherits_docx_numbering_from_based_on_paragraph_styles():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Parent action</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:pStyle w:val="NestedAction"/></w:pPr>'
+                    "<w:r><w:t>Read the document</w:t></w:r></w:p>"
+                ),
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0">'
+                '<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+                '<w:lvl w:ilvl="1"><w:start w:val="2"/><w:numFmt w:val="upperRoman"/>'
+                '<w:lvlText w:val="%1.%2"/></w:lvl></w:abstractNum>'
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+            ),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="paragraph" w:styleId="BaseAction">'
+                '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                "</w:numPr></w:pPr></w:style>"
+                '<w:style w:type="paragraph" w:styleId="NestedAction">'
+                '<w:basedOn w:val="BaseAction"/><w:pPr><w:numPr>'
+                '<w:ilvl w:val="1"/></w:numPr></w:pPr></w:style></w:styles>'
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "List decimal, level 1, marker %1.; numbered marker 2." in result
+    assert "Read the document" in result
+
+
+def test_direct_docx_numbering_overrides_paragraph_style_numbering():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:pStyle w:val="Numbered"/><w:numPr>'
+                    '<w:ilvl w:val="0"/><w:numId w:val="5"/></w:numPr></w:pPr>'
+                    "<w:r><w:t>Direct override</w:t></w:r></w:p>"
+                )
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                '<w:start w:val="1"/><w:numFmt w:val="decimal"/>'
+                '<w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
+                '<w:num w:numId="5"><w:abstractNumId w:val="0"/>'
+                '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="7"/>'
+                "</w:lvlOverride></w:num></w:numbering>"
+            ),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="paragraph" w:styleId="Numbered"><w:pPr><w:numPr>'
+                '<w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                "</w:numPr></w:pPr></w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "numbered marker 7." in result
+    assert "numbered marker 1." not in result
+
+
+def test_direct_docx_num_id_zero_disables_style_numbering():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:pStyle w:val="Numbered"/><w:numPr>'
+                    '<w:numId w:val="0"/></w:numPr></w:pPr>'
+                    "<w:r><w:t>Unnumbered</w:t></w:r></w:p>"
+                )
+            ],
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="paragraph" w:styleId="Numbered"><w:pPr><w:numPr>'
+                '<w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                "</w:numPr></w:pPr></w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List " not in result
+    assert "Unnumbered" in result
+
+
+def test_rejects_docx_paragraph_style_based_on_cycles():
+    with pytest.raises(ValueError, match="basedOn cycle"):
+        extract_document_text(
+            make_docx(
+                ["Text"],
+                styles_xml=(
+                    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                    '<w:style w:type="paragraph" w:styleId="First">'
+                    '<w:basedOn w:val="Second"/></w:style>'
+                    '<w:style w:type="paragraph" w:styleId="Second">'
+                    '<w:basedOn w:val="First"/></w:style></w:styles>'
+                ),
+            ),
+            DOCX_TYPE,
+        )
+
+
+def test_ignores_based_on_style_with_a_different_style_type():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:pStyle w:val="ParagraphStyle"/></w:pPr>'
+                    "<w:r><w:t>Plain paragraph</w:t></w:r></w:p>"
+                )
+            ],
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="character" w:styleId="CharacterBase">'
+                '<w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr></w:style>'
+                '<w:style w:type="paragraph" w:styleId="ParagraphStyle">'
+                '<w:basedOn w:val="CharacterBase"/></w:style></w:styles>'
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List " not in result
+    assert "Plain paragraph" in result
 
 
 def test_extracts_docx_numbering_override_marker_template():

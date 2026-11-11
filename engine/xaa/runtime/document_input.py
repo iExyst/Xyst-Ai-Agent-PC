@@ -228,6 +228,7 @@ def _extract_docx_text(content: bytes) -> str:
                 item for item in entries if item.filename == "word/_rels/document.xml.rels"
             ]
             numbering_parts = [item for item in entries if item.filename == "word/numbering.xml"]
+            styles_parts = [item for item in entries if item.filename == "word/styles.xml"]
             if len(content_types) != 1 or len(documents) != 1:
                 raise ValueError(
                     "DOCX package is missing its unique content types or document part."
@@ -236,12 +237,21 @@ def _extract_docx_text(content: bytes) -> str:
                 raise ValueError("DOCX package contains duplicate document relationships.")
             if len(numbering_parts) > 1:
                 raise ValueError("DOCX package contains duplicate numbering definitions.")
+            if len(styles_parts) > 1:
+                raise ValueError("DOCX package contains duplicate style definitions.")
             content_type_info, document_info = content_types[0], documents[0]
             relationship_info = relationship_parts[0] if relationship_parts else None
             numbering_info = numbering_parts[0] if numbering_parts else None
+            styles_info = styles_parts[0] if styles_parts else None
             if any(
                 info.flag_bits & 1
-                for info in (content_type_info, document_info, relationship_info, numbering_info)
+                for info in (
+                    content_type_info,
+                    document_info,
+                    relationship_info,
+                    numbering_info,
+                    styles_info,
+                )
                 if info is not None
             ):
                 raise ValueError("Encrypted DOCX files are not supported.")
@@ -253,6 +263,7 @@ def _extract_docx_text(content: bytes) -> str:
                     and relationship_info.file_size > MAX_OOXML_PART_BYTES
                 )
                 or (numbering_info is not None and numbering_info.file_size > MAX_OOXML_PART_BYTES)
+                or (styles_info is not None and styles_info.file_size > MAX_OOXML_PART_BYTES)
                 or sum(
                     info.file_size
                     for info in (
@@ -260,6 +271,7 @@ def _extract_docx_text(content: bytes) -> str:
                         document_info,
                         relationship_info,
                         numbering_info,
+                        styles_info,
                     )
                     if info is not None
                 )
@@ -270,6 +282,7 @@ def _extract_docx_text(content: bytes) -> str:
             xml = archive.read(document_info)
             relationship_xml = archive.read(relationship_info) if relationship_info else None
             numbering_xml = archive.read(numbering_info) if numbering_info else None
+            styles_xml = archive.read(styles_info) if styles_info else None
     except ValueError:
         raise
     except (BadZipFile, RuntimeError, OSError, EOFError):
@@ -286,6 +299,10 @@ def _extract_docx_text(content: bytes) -> str:
         b"<!DOCTYPE" in numbering_xml.upper() or b"<!ENTITY" in numbering_xml.upper()
     ):
         raise ValueError("DOCX numbering XML declarations are not supported.")
+    if styles_xml is not None and (
+        b"<!DOCTYPE" in styles_xml.upper() or b"<!ENTITY" in styles_xml.upper()
+    ):
+        raise ValueError("DOCX style XML declarations are not supported.")
     try:
         types_root = ElementTree.fromstring(declared)
         root = ElementTree.fromstring(xml)
@@ -306,6 +323,7 @@ def _extract_docx_text(content: bytes) -> str:
         raise ValueError("ZIP document is not a supported DOCX file.")
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     list_markers = _parse_docx_numbering(numbering_xml, namespace)
+    style_numbering = _parse_docx_style_numbering(styles_xml, namespace)
     list_counters: dict[int, dict[int, int]] = {}
 
     def paragraph_text(paragraph: ElementTree.Element) -> str:
@@ -328,6 +346,9 @@ def _extract_docx_text(content: bytes) -> str:
         if len(style_properties) > 1:
             raise ValueError("DOCX paragraph contains duplicate style markers.")
         prefix: list[str] = []
+        style_id: str | None = None
+        effective_number_id: int | None = None
+        effective_level_id: int | None = None
         if style_properties:
             style_id = style_properties[0].attrib.get(namespace + "val", "")
             if not style_id or len(style_id) > 128 or not style_id.isprintable():
@@ -335,6 +356,7 @@ def _extract_docx_text(content: bytes) -> str:
             normalized_style = style_id.replace(" ", "").casefold()
             if normalized_style.startswith("heading"):
                 prefix.append(f"Heading: {style_id}")
+            effective_number_id, effective_level_id = style_numbering.get(style_id, (None, None))
         numbering_properties = [item for item in property_group if item.tag == namespace + "numPr"]
         if len(numbering_properties) > 1:
             raise ValueError("DOCX paragraph contains duplicate numbering markers.")
@@ -346,41 +368,51 @@ def _extract_docx_text(content: bytes) -> str:
                 raise ValueError("DOCX paragraph contains duplicate list metadata.")
             if ids:
                 raw_id = ids[0].attrib.get(namespace + "val", "")
-                raw_level = levels[0].attrib.get(namespace + "val", "0") if levels else "0"
+                if not raw_id.isascii() or not raw_id.isdecimal() or len(raw_id) > 10:
+                    raise ValueError("DOCX paragraph contains invalid list metadata.")
+                number_id = int(raw_id)
+                if number_id == 0:
+                    effective_number_id = 0
+                    effective_level_id = None
+                else:
+                    if (
+                        style_id is None
+                        or number_id != style_numbering.get(style_id, (None, None))[0]
+                    ):
+                        effective_level_id = None
+                    effective_number_id = number_id
+            if levels:
+                raw_level = levels[0].attrib.get(namespace + "val", "")
                 if (
-                    not raw_id.isascii()
-                    or not raw_id.isdecimal()
-                    or len(raw_id) > 10
-                    or not raw_level.isascii()
+                    not raw_level.isascii()
                     or not raw_level.isdecimal()
                     or len(raw_level) > 2
                     or int(raw_level) > 8
                 ):
                     raise ValueError("DOCX paragraph contains invalid list metadata.")
-                if raw_id != "0":
-                    number_id = int(raw_id)
-                    level_id = int(raw_level)
-                    marker = list_markers.get((number_id, level_id))
-                    if marker is None:
-                        prefix.append(f"List item, level {level_id + 1}")
-                    else:
-                        number_format, marker_text, start, restart_level = marker
-                        prefix.append(
-                            f"List {number_format}, level {level_id + 1}, marker {marker_text}"
-                        )
-                        _next_docx_list_number(
-                            list_counters.setdefault(number_id, {}),
-                            list_markers,
-                            number_id,
-                            level_id,
-                            start,
-                            restart_level,
-                        )
-                        rendered_marker = _render_docx_list_marker(
-                            marker_text, list_counters[number_id], list_markers, number_id
-                        )
-                        if rendered_marker is not None:
-                            prefix.append(f"numbered marker {rendered_marker}")
+                effective_level_id = int(raw_level)
+        if effective_number_id is not None and effective_number_id != 0:
+            number_id = effective_number_id
+            level_id = effective_level_id if effective_level_id is not None else 0
+            marker = list_markers.get((number_id, level_id))
+            if marker is None:
+                prefix.append(f"List item, level {level_id + 1}")
+            else:
+                number_format, marker_text, start, restart_level = marker
+                prefix.append(f"List {number_format}, level {level_id + 1}, marker {marker_text}")
+                _next_docx_list_number(
+                    list_counters.setdefault(number_id, {}),
+                    list_markers,
+                    number_id,
+                    level_id,
+                    start,
+                    restart_level,
+                )
+                rendered_marker = _render_docx_list_marker(
+                    marker_text, list_counters[number_id], list_markers, number_id
+                )
+                if rendered_marker is not None:
+                    prefix.append(f"numbered marker {rendered_marker}")
         if prefix and value:
             value = f"[{'; '.join(prefix)}] {value}"
         return value
@@ -458,6 +490,112 @@ def _extract_docx_text(content: bytes) -> str:
     if not text:
         raise ValueError("DOCX contains no extractable text.")
     return _bound(text)
+
+
+def _parse_docx_style_numbering(
+    xml: bytes | None, namespace: str
+) -> dict[str, tuple[int | None, int | None]]:
+    """Resolve paragraph-style numbering, including bounded basedOn chains."""
+    if xml is None:
+        return {}
+    try:
+        root = ElementTree.fromstring(xml)
+    except ElementTree.ParseError:
+        raise ValueError("DOCX style definitions could not be safely parsed.") from None
+    if root.tag != namespace + "styles":
+        raise ValueError("DOCX style definitions have an invalid root element.")
+
+    raw_styles: dict[str, tuple[str | None, int | None, int | None]] = {}
+    all_style_ids: set[str] = set()
+
+    def decimal_attribute(value: str, label: str, maximum: int = 10) -> int:
+        if not value.isascii() or not value.isdecimal() or len(value) > maximum:
+            raise ValueError(f"DOCX style definitions contain an invalid {label}.")
+        return int(value)
+
+    def list_level(value: str) -> int:
+        level = decimal_attribute(value, "list level", 2)
+        if level > 8:
+            raise ValueError("DOCX style definitions contain an invalid list level.")
+        return level
+
+    for style in root:
+        if style.tag != namespace + "style":
+            continue
+        style_id = style.attrib.get(namespace + "styleId", "")
+        if not style_id or len(style_id) > 128 or not style_id.isprintable():
+            raise ValueError("DOCX style definitions contain an invalid style ID.")
+        if style_id in all_style_ids:
+            raise ValueError("DOCX style definitions contain duplicate style IDs.")
+        all_style_ids.add(style_id)
+        if style.attrib.get(namespace + "type", "paragraph") not in {"", "paragraph"}:
+            continue
+
+        parents = [item for item in style if item.tag == namespace + "basedOn"]
+        if len(parents) > 1:
+            raise ValueError("DOCX paragraph style contains duplicate basedOn references.")
+        parent_id: str | None = None
+        if parents:
+            parent_id = parents[0].attrib.get(namespace + "val", "")
+            if not parent_id or len(parent_id) > 128 or not parent_id.isprintable():
+                raise ValueError("DOCX paragraph style contains an invalid basedOn reference.")
+
+        properties = [item for item in style if item.tag == namespace + "pPr"]
+        if len(properties) > 1:
+            raise ValueError("DOCX paragraph style contains duplicate property groups.")
+        number_id: int | None = None
+        if properties:
+            numberings = [item for item in properties[0] if item.tag == namespace + "numPr"]
+            if len(numberings) > 1:
+                raise ValueError("DOCX paragraph style contains duplicate numbering markers.")
+            if numberings:
+                ids = [item for item in numberings[0] if item.tag == namespace + "numId"]
+                levels = [item for item in numberings[0] if item.tag == namespace + "ilvl"]
+                if len(ids) > 1 or len(levels) > 1:
+                    raise ValueError("DOCX paragraph style contains duplicate list metadata.")
+                if ids:
+                    number_id = decimal_attribute(
+                        ids[0].attrib.get(namespace + "val", ""), "list ID"
+                    )
+                if levels:
+                    # The standard ignores ilvl when numPr is declared on a paragraph style.
+                    list_level(levels[0].attrib.get(namespace + "val", ""))
+        raw_styles[style_id] = parent_id, number_id, None
+
+    resolved: dict[str, tuple[int | None, int | None]] = {}
+    active: set[str] = set()
+
+    def resolve(style_id: str, depth: int = 0) -> tuple[int | None, int | None]:
+        existing = resolved.get(style_id)
+        if existing is not None:
+            return existing
+        if depth > 256:
+            raise ValueError("DOCX paragraph styles contain a basedOn chain that is too deep.")
+        definition = raw_styles.get(style_id)
+        if definition is None:
+            raise ValueError("DOCX paragraph style references a missing basedOn style.")
+        if style_id in active:
+            raise ValueError("DOCX paragraph styles contain a basedOn cycle.")
+        active.add(style_id)
+        parent_id, own_number_id, own_level_id = definition
+        inherited_number_id: int | None = None
+        inherited_level_id: int | None = None
+        if parent_id is not None:
+            if parent_id in raw_styles:
+                inherited_number_id, inherited_level_id = resolve(parent_id, depth + 1)
+            elif parent_id not in all_style_ids:
+                raise ValueError("DOCX paragraph style references a missing basedOn style.")
+        value = (
+            own_number_id if own_number_id is not None else inherited_number_id,
+            own_level_id if own_level_id is not None else inherited_level_id,
+        )
+        active.remove(style_id)
+        resolved[style_id] = value
+        return value
+
+    for style_id in raw_styles:
+        resolve(style_id)
+    return resolved
 
 
 def _parse_docx_numbering(
