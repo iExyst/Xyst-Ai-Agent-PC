@@ -92,7 +92,7 @@ try{
     page.on('request',request=>{if(request.url().startsWith(connection.base_url))desktopApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);});
     page.on('dialog',dialog=>void dialog.accept());
     await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible({timeout:20000});
-    await expect(page.getByText(ownerRecoveryAcceptance.objective??'Review and recover interrupted workspace writes',{exact:true})).toBeVisible();
+    await expect(page.getByRole('region',{name:'Active run'}).getByText(ownerRecoveryAcceptance.objective??'Review and recover interrupted workspace writes',{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Inspect uncertain workspace writes'}).click();
     await expect(page.getByText('Edit edit.txt',{exact:false})).toBeVisible();
     await expect(page.getByText('Create partial-create.txt',{exact:false})).toBeVisible();
