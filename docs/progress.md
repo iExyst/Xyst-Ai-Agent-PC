@@ -6,7 +6,7 @@ XLSX extraction now adds a readable date beside the original numeric serial when
 
 ## Render common XLSX numeric display formats (2026-11-11)
 
-The bounded XLSX formatter now also renders common fixed-point and grouped values, simple currency prefixes, and percentages beside the original cached numeric value. It applies explicit decimal precision and half-up rounding. Advanced Excel format sections, locale-specific currency behavior, scientific notation, fractions and column-width display remain unsupported; formulas remain uncalculated. The focused document suite passes (62 tests); Ruff, formatting, Pyright for the changed parser and `git diff --check` pass. No live model inference was used. Hosted CI is pending.
+The bounded XLSX formatter now also renders common fixed-point and grouped values, simple currency prefixes, and percentages beside the original cached numeric value. It applies explicit decimal precision and half-up rounding. Advanced Excel format sections, locale-specific currency behavior, scientific notation, fractions and column-width display remain unsupported; formulas remain uncalculated. The focused document suite passes (62 tests); Ruff, formatting, Pyright for the changed parser and `git diff --check` pass. No live model inference was used. Hosted Windows workflow [43066750065](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43066750065) passed, including the full Python suite and desktop/recovery checks; the installer job was skipped because packaging inputs were unchanged.
 
 ## Resolve inherited DOCX section headers and footers (2026-11-11)
 
