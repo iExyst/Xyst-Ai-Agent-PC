@@ -16,7 +16,7 @@ GitHub Actions is the build dashboard, so its pages show workflow logs rather th
 
 ## Development use
 
-Build the native development bundle with `npm ci`, `uv sync`, then `npm run build:native:dev`. Launch `build/native-dev/xaa-desktop.exe`; it starts its bundled engine and connects automatically. Closing the native app stops that engine and keeps saved database records. The bundle is for development and has not passed installer or clean-machine acceptance.
+Build the native development bundle with `npm ci`, `uv sync`, then `npm run build:native:dev`. Launch `build/native-dev/xaa-desktop.exe`; it starts its bundled engine and connects automatically. Closing the main window hides X.A.A. in the system tray and keeps the engine running by default. To stop the app and engine, choose **Quit and stop the agent** in Settings or the tray menu. Saved database records remain on disk. The bundle is for development and is separate from the hosted installer acceptance.
 
 After connecting, explicitly choose a discovered local model; the app does not select the first model automatically. See [the local-model baseline](docs/evaluations/local-model-baseline.md) for measured results and limitations.
 

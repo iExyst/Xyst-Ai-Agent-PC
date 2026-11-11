@@ -2,7 +2,7 @@
 
 ## Explain how to get the desktop app from GitHub Actions (2026-11-11)
 
-The README and user guide now explain that GitHub Actions displays build logs, link directly to the latest successful 0.1.1 Windows installer run [43108277137](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43108277137), and give the exact steps to download the ZIP artifact, extract it, and run the per-user setup program. Corrected the artifact retention period to 90 days based on the workflow configuration. This addresses the workflow-versus-product confusion without presenting the unsigned development build as a general release.
+The README and user guide now explain that GitHub Actions displays build logs, link directly to the latest successful 0.1.1 Windows installer run [43108277137](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43108277137), and give the exact steps to download the ZIP artifact, extract it, and run the per-user setup program. The README also correctly says closing the main window hides the app to the tray by default, while **Quit and stop the agent** stops the engine. Corrected the artifact retention period to 90 days based on the workflow configuration. This addresses the workflow-versus-product confusion without presenting the unsigned development build as a general release.
 
 ## Exercise the desktop emergency-stop control (2026-11-11)
 
