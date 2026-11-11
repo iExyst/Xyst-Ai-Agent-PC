@@ -503,12 +503,14 @@ def _parse_docx_numbering(
         if base_levels is None:
             raise ValueError("DOCX numbering instance references a missing abstract definition.")
         effective_levels: dict[int, tuple[str, str]] = base_levels.copy()
+        overridden_levels: set[int] = set()
         for override in (item for item in instance if item.tag == namespace + "lvlOverride"):
             level_id = decimal_attribute(
                 override.attrib.get(namespace + "ilvl", ""), "override level", 2
             )
-            if level_id > 8:
-                raise ValueError("DOCX numbering override has an invalid level.")
+            if level_id > 8 or level_id in overridden_levels:
+                raise ValueError("DOCX numbering override has a duplicate or invalid level.")
+            overridden_levels.add(level_id)
             replacements = [item for item in override if item.tag == namespace + "lvl"]
             if len(replacements) > 1:
                 raise ValueError("DOCX numbering override contains duplicate levels.")
@@ -518,9 +520,22 @@ def _parse_docx_numbering(
                 texts = [item for item in replacement_level if item.tag == namespace + "lvlText"]
                 if len(formats) > 1 or len(texts) > 1:
                     raise ValueError("DOCX numbering override contains duplicate marker metadata.")
-                if formats and texts:
-                    number_format = formats[0].attrib.get(namespace + "val", "")
-                    marker_text = texts[0].attrib.get(namespace + "val", "")
+                if formats or texts:
+                    inherited = effective_levels.get(level_id)
+                    number_format = (
+                        formats[0].attrib.get(namespace + "val", "")
+                        if formats
+                        else inherited[0]
+                        if inherited
+                        else ""
+                    )
+                    marker_text = (
+                        texts[0].attrib.get(namespace + "val", "")
+                        if texts
+                        else inherited[1]
+                        if inherited
+                        else ""
+                    )
                     if (
                         not number_format
                         or len(number_format) > 64

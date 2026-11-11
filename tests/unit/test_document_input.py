@@ -275,6 +275,34 @@ def test_extracts_docx_numbering_override_marker_template():
     assert "[List bullet, level 1, marker •] Bullet action" in result
 
 
+def test_inherits_unmodified_marker_field_from_partial_numbering_override():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/>'
+                    '<w:numId w:val="4"/></w:numPr></w:pPr>'
+                    "<w:r><w:t>Item</w:t></w:r></w:p>"
+                )
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/>'
+                '<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0">'
+                '<w:lvlText w:val="%1)"/></w:lvl></w:lvlOverride>'
+                "</w:num></w:numbering>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1)] Item" in result
+
+
 @pytest.mark.parametrize(
     ("numbering_xml", "error"),
     [
@@ -293,6 +321,18 @@ def test_extracts_docx_numbering_override_marker_template():
                 '<w:num w:numId="4"><w:abstractNumId w:val="8"/></w:num></w:numbering>'
             ),
             "missing abstract definition",
+        ),
+        (
+            (
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/>'
+                '<w:lvlOverride w:ilvl="0"/><w:lvlOverride w:ilvl="0"/>'
+                "</w:num></w:numbering>"
+            ),
+            "duplicate or invalid level",
         ),
     ],
 )
