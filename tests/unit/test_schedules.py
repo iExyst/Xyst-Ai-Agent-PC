@@ -94,6 +94,59 @@ def test_daily_ambiguous_wall_time_runs_once_at_earlier_fall_back_instant(
     assert submitted == first_occurrence
 
 
+def test_recipient_edits_apply_to_future_occurrences_only(workspace_tmp_path: Path) -> None:
+    store = RunStore(workspace_tmp_path / "schedule-recipient-edit.sqlite3")
+    schedules = ScheduleStore(store)
+    schedule = schedules.create(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2030-01-02T12:00"),
+        frequency="daily",
+        timezone="UTC",
+        missed_run_policy="run_once",
+        max_iterations=4,
+        max_seconds=60,
+        delivery_destination="telegram:42:123",
+        failure_notification_destination="telegram:42:456",
+    )
+    service = ScheduleService(store, lambda _run_id: None)
+    first = service.tick(datetime(2030, 1, 2, 12, 0, tzinfo=UTC))
+    assert len(first) == 1
+
+    assert schedules.set_delivery_destinations(schedule["id"], "telegram:42:789", "telegram:42:987")
+    with store.connection() as connection:
+        first_delivery = connection.execute(
+            "SELECT result_external_identity,failure_external_identity FROM schedule_deliveries WHERE execution_id=(SELECT id FROM schedule_executions WHERE schedule_id=? ORDER BY created_at LIMIT 1)",
+            (schedule["id"],),
+        ).fetchone()
+        connection.execute("UPDATE runs SET state='completed' WHERE id=?", (first[0],))
+    assert first_delivery is not None
+    assert (
+        first_delivery["result_external_identity"],
+        first_delivery["failure_external_identity"],
+    ) == (
+        "123",
+        "456",
+    )
+
+    second = service.tick(datetime(2030, 1, 3, 12, 0, tzinfo=UTC))
+    assert len(second) == 1
+    with store.connection() as connection:
+        deliveries = connection.execute(
+            "SELECT e.occurrence_id,d.result_external_identity,d.failure_external_identity FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id WHERE e.schedule_id=?",
+            (schedule["id"],),
+        ).fetchall()
+    assert {
+        row["occurrence_id"]: (row["result_external_identity"], row["failure_external_identity"])
+        for row in deliveries
+    } == {
+        f"{schedule['id']}:2030-01-02T12:00": ("123", "456"),
+        f"{schedule['id']}:2030-01-03T12:00": ("789", "987"),
+    }
+
+
 def test_quiet_hours_support_local_day_and_overnight_windows() -> None:
     assert quiet_hours_active(
         "22:00-07:00", "America/New_York", datetime(2026, 11, 5, 4, tzinfo=UTC)
