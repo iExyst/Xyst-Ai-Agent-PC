@@ -511,14 +511,91 @@ def _extract_docx_text(content: bytes) -> str:
                     "neCell",
                     "swCell",
                     "seCell",
-                } and any(
-                    node.tag in {namespace + "cnfStyle", namespace + "tblPrEx"}
-                    for row in rows
-                    for node in row.iter()
-                ):
+                } and any(node.tag == namespace + "tblPrEx" for row in rows for node in row.iter()):
                     raise ValueError(
-                        "DOCX table conditional numbering with row/cell exceptions is unsupported."
+                        "DOCX table conditional numbering with row property exceptions is unsupported."
                     )
+
+                cnf_attribute_flags = {
+                    "firstRow": "firstRow",
+                    "lastRow": "lastRow",
+                    "firstColumn": "firstCol",
+                    "lastColumn": "lastCol",
+                    "oddHBand": "band1Horz",
+                    "evenHBand": "band2Horz",
+                    "oddVBand": "band1Vert",
+                    "evenVBand": "band2Vert",
+                    "firstRowFirstColumn": "nwCell",
+                    "firstRowLastColumn": "neCell",
+                    "lastRowFirstColumn": "swCell",
+                    "lastRowLastColumn": "seCell",
+                }
+                cnf_bit_flags = (
+                    "firstRow",
+                    "lastRow",
+                    "firstCol",
+                    "lastCol",
+                    "band1Vert",
+                    "band2Vert",
+                    "band1Horz",
+                    "band2Horz",
+                    "neCell",
+                    "nwCell",
+                    "seCell",
+                    "swCell",
+                )
+
+                def conditional_style_flags(
+                    element: ElementTree.Element,
+                    *,
+                    attribute_flags: dict[str, str] = cnf_attribute_flags,
+                    bit_flags: tuple[str, ...] = cnf_bit_flags,
+                    xml_namespace: str = namespace,
+                ) -> dict[str, bool] | None:
+                    markers = [
+                        child for child in element if child.tag == xml_namespace + "cnfStyle"
+                    ]
+                    if len(markers) > 1:
+                        raise ValueError("DOCX table contains duplicate conditional style masks.")
+                    if not markers:
+                        return None
+                    marker = markers[0]
+                    explicit = [
+                        name for name in attribute_flags if xml_namespace + name in marker.attrib
+                    ]
+                    if explicit:
+
+                        def flag(raw_value: str, name: str) -> bool:
+                            normalized = raw_value.casefold()
+                            if normalized in {"1", "true", "on", ""}:
+                                return True
+                            if normalized in {"0", "false", "off"}:
+                                return False
+                            raise ValueError(f"DOCX table contains an invalid {name} flag.")
+
+                        return {
+                            target: flag(marker.attrib[xml_namespace + source], source)
+                            for source, target in attribute_flags.items()
+                            if xml_namespace + source in marker.attrib
+                        } | {
+                            target: False
+                            for source, target in attribute_flags.items()
+                            if xml_namespace + source not in marker.attrib
+                        }
+                    raw_mask = marker.attrib.get(xml_namespace + "val", "")
+                    if len(raw_mask) != 12 or any(char not in "01" for char in raw_mask):
+                        raise ValueError("DOCX table contains an invalid conditional style mask.")
+                    return {name: raw_mask[index] == "1" for index, name in enumerate(bit_flags)}
+
+                def property_conditional_flags(
+                    container: ElementTree.Element, property_name: str
+                ) -> dict[str, bool] | None:
+                    groups = [
+                        child for child in container if child.tag == namespace + property_name
+                    ]
+                    if len(groups) > 1:
+                        raise ValueError(f"DOCX table contains duplicate {property_name} groups.")
+                    return conditional_style_flags(groups[0]) if groups else None
 
                 look_elements = (
                     [child for child in table_property_group if child.tag == namespace + "tblLook"]
@@ -691,6 +768,7 @@ def _extract_docx_text(content: bytes) -> str:
                 for row_index, row in enumerate(rows):
                     cells: list[str] = []
                     column_index = grid_offset(row, "gridBefore")
+                    row_flags = property_conditional_flags(row, "trPr")
                     for cell in (child for child in row if child.tag == namespace + "tc"):
                         span = cell_span(cell)
                         final_column = column_index + span - 1
@@ -738,6 +816,45 @@ def _extract_docx_text(content: bytes) -> str:
                             conditions.append("swCell")
                         if last_row and last_column:
                             conditions.append("seCell")
+                        if row_flags is not None:
+                            conditions = [
+                                condition
+                                for condition in (
+                                    "band1Horz",
+                                    "band2Horz",
+                                    "band1Vert",
+                                    "band2Vert",
+                                    "firstCol",
+                                    "lastCol",
+                                    "firstRow",
+                                    "lastRow",
+                                    "nwCell",
+                                    "neCell",
+                                    "swCell",
+                                    "seCell",
+                                )
+                                if row_flags.get(condition, False)
+                            ]
+                        cell_flags = property_conditional_flags(cell, "tcPr")
+                        if cell_flags is not None:
+                            conditions = [
+                                condition
+                                for condition in (
+                                    "band1Horz",
+                                    "band2Horz",
+                                    "band1Vert",
+                                    "band2Vert",
+                                    "firstCol",
+                                    "lastCol",
+                                    "firstRow",
+                                    "lastRow",
+                                    "nwCell",
+                                    "neCell",
+                                    "swCell",
+                                    "seCell",
+                                )
+                                if cell_flags.get(condition, False)
+                            ]
                         for condition in conditions:
                             cell_number_id = table_rules.get(condition, cell_number_id)
                         cells.append(table_cell_text(cell, cell_number_id))

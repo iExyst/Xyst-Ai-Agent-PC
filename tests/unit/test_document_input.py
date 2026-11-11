@@ -49,6 +49,8 @@ def make_docx(
     table_look: str | None = None,
     table_paragraph_xml: dict[tuple[int, int], str] | None = None,
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
+    table_row_properties: dict[int, dict[str, str | None]] | None = None,
+    table_cell_properties_xml: dict[tuple[int, int], str] | None = None,
     header: str | None = None,
     footer: str | None = None,
     header_target: str = "header1.xml",
@@ -77,11 +79,32 @@ def make_docx(
                         )
                         + "</w:tcPr>"
                     )
+                if (
+                    table_cell_properties_xml
+                    and (row_index, cell_index) in table_cell_properties_xml
+                ):
+                    raw_properties = table_cell_properties_xml[(row_index, cell_index)]
+                    property_xml = (
+                        "<w:tcPr>" + raw_properties + "</w:tcPr>"
+                        if not property_xml
+                        else property_xml.replace("</w:tcPr>", raw_properties + "</w:tcPr>")
+                    )
                 paragraph = (table_paragraph_xml or {}).get(
                     (row_index, cell_index), f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"
                 )
                 cells.append(f"<w:tc>{property_xml}{paragraph}</w:tc>")
-            rows.append("<w:tr>" + "".join(cells) + "</w:tr>")
+            row_properties = (table_row_properties or {}).get(row_index, {})
+            row_property_xml = ""
+            if row_properties:
+                row_property_xml = (
+                    "<w:trPr>"
+                    + "".join(
+                        f"<w:{name}" + (f' w:val="{value}"' if value is not None else "") + "/>"
+                        for name, value in row_properties.items()
+                    )
+                    + "</w:trPr>"
+                )
+            rows.append("<w:tr>" + row_property_xml + "".join(cells) + "</w:tr>")
         table_property_parts = []
         if table_style is not None:
             table_property_parts.append(f'<w:tblStyle w:val="{table_style}"/>')
@@ -394,6 +417,54 @@ def test_applies_docx_first_row_table_style_numbering_only_to_enabled_row():
     assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" in result
     assert "Body action" in result
     assert "[List decimal, level 1, marker %1.; numbered marker 2.] Body action" not in result
+
+
+def test_docx_row_conditional_style_mask_overrides_table_position():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Header action"], ["Body action"]],
+            table_style="ActionTable",
+            table_row_properties={
+                0: {"cnfStyle": "000000000000"},
+                1: {"cnfStyle": "100000000000"},
+            },
+            numbering_xml=make_numbering_xml({4: "decimal"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" not in result
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Body action" in result
+
+
+def test_docx_explicit_conditional_style_flags_take_precedence_over_mask():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Header action"]],
+            table_style="ActionTable",
+            table_cell_properties_xml={(0, 0): '<w:cnfStyle w:val="100000000000" w:firstRow="0"/>'},
+            numbering_xml=make_numbering_xml({4: "decimal"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" not in result
 
 
 def test_reads_docx_table_look_legacy_bitmask():
