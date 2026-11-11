@@ -3918,6 +3918,37 @@
         "title": "RunSummary",
         "type": "object"
       },
+      "ScheduleDeliveryDestinationsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "telegram_failure_user_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,20}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Failure User Id"
+          },
+          "telegram_user_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,20}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram User Id"
+          }
+        },
+        "title": "ScheduleDeliveryDestinationsRequest",
+        "type": "object"
+      },
       "ScheduleDeliveryReconciliationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -11207,6 +11238,60 @@
           }
         ],
         "summary": "Create Schedule"
+      }
+    },
+    "/schedules/{schedule_id}/delivery": {
+      "put": {
+        "operationId": "set_schedule_delivery_destinations_schedules__schedule_id__delivery_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleDeliveryDestinationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Schedule Delivery Destinations"
       }
     },
     "/schedules/{schedule_id}/enabled": {

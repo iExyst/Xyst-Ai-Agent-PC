@@ -252,6 +252,10 @@ export class EngineClient {
     return this.#request(`/schedules/${encodeURIComponent(id)}/enabled`, {method:'PUT',body:JSON.stringify({enabled})});
   }
 
+  setScheduleDeliveryDestinations(id: string, input: components['schemas']['ScheduleDeliveryDestinationsRequest']): Promise<Schedule> {
+    return this.#request(`/schedules/${encodeURIComponent(id)}/delivery`, {method:'PUT',body:JSON.stringify(input)});
+  }
+
   reconcileScheduleDelivery(scheduleId:string,executionId:string,resolution:'delivered'|'retry'): Promise<Schedule> {
     return this.#request(`/schedules/${encodeURIComponent(scheduleId)}/executions/${encodeURIComponent(executionId)}/delivery/reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_destination_checked:true})});
   }

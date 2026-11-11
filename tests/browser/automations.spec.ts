@@ -34,6 +34,12 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
       schedules[0].enabled=request.postDataJSON().enabled;schedules[0].updated_at='2026-11-05T00:01:00Z';
       return route.fulfill({json:schedules[0],headers});
     }
+    if(path==='/schedules/schedule-1/delivery'&&request.method()==='PUT'){
+      const body=request.postDataJSON();requests.push(body);
+      schedules[0].delivery_destination=body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null;
+      schedules[0].failure_notification_destination=body.telegram_failure_user_id?'telegram:bot-42:'+body.telegram_failure_user_id:null;
+      return route.fulfill({json:schedules[0],headers});
+    }
     return route.fulfill({json:{status:'ok'},headers});
   });
   await page.goto('/');
@@ -60,9 +66,17 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByRole('button',{name:'I checked; retry scheduled message',exact:true}).click();
   await panel.getByRole('button',{name:'Confirm retry',exact:true}).click();
   await expect(panel.getByText(/Telegram delivery pending/)).toBeVisible();
-  expect(requests).toHaveLength(1);
+  await panel.getByRole('button',{name:'Change Telegram recipients',exact:true}).click();
+  await expect(panel.getByText('Recipient changes apply to future occurrences. Existing executions keep their saved destination.')).toBeVisible();
+  await panel.getByLabel('Telegram result destination',{exact:true}).selectOption('654321');
+  await panel.getByLabel('Telegram failure notification destination',{exact:true}).selectOption('123456');
+  await panel.getByRole('button',{name:'Save recipients',exact:true}).click();
+  await expect(panel.getByText(/Telegram result user 654321 · Telegram failure user 123456/)).toBeVisible();
+  await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
+  expect(requests).toHaveLength(2);
   const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
   expect(requests[0]).toMatchObject({objective:'Review repository health',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456',telegram_failure_user_id:'654321',quiet_hours:'22:00-07:00'});
+  expect(requests[1]).toEqual({telegram_user_id:'654321',telegram_failure_user_id:'123456'});
   await panel.getByRole('button',{name:'Pause schedule',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Resume schedule',exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Resume schedule',exact:true}).click();

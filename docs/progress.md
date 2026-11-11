@@ -1,5 +1,9 @@
 # Progress
 
+## Edit scheduled Telegram recipients (2026-11-11)
+
+Schedule owners can change the result and failure-notification recipients after creation. The API revalidates selected accounts against the currently configured bot and linked users; clearing both recipients is supported. Changes update only schedule configuration used for future occurrences. Existing queued and historical delivery rows retain their saved target, confirmed in the Automations browser flow after swapping both destinations. Schedule API tests pass (12), the browser flow passes (1), and desktop typecheck, generated-contract checks, Ruff, formatting and strict Pyright pass. No live Telegram send or model inference was used. Broad project completion remains about 56%; live channel interoperability and release gates remain open.
+
 ## Show the actual recipient on scheduled Telegram executions (2026-11-11)
 
 Each saved schedule now displays its result and separate failure-notification account. Execution history includes the account actually selected for that occurrence, including after failure routing changes the outbox target; this makes the owner-confirmed unknown-send flow identify which chat to inspect before retry. The API response and generated OpenAPI types expose that destination. The two-account Automations Playwright workflow passes (1), and schedule, Telegram and schema-migration suites pass (61); desktop typecheck and contract checks pass. Hosted Windows run [42984450097, attempt 2](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42984450097) passed the source workflow with 1,033 Python tests and all recovery diagnostics; the installer job was skipped because packaging did not change. No real Telegram message or model inference was used.

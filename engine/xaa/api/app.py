@@ -455,6 +455,12 @@ class ScheduleEnabledRequest(BaseModel):
     enabled: bool = Field(strict=True)
 
 
+class ScheduleDeliveryDestinationsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    telegram_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
+    telegram_failure_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
+
+
 class ScheduleDeliveryReconciliationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     resolution: Literal["delivered", "retry"]
@@ -2490,6 +2496,46 @@ def create_app(
         _: None = Depends(authenticate),
     ) -> dict[str, Any]:
         if not schedule_store.set_enabled(schedule_id, payload.enabled):
+            raise HTTPException(status_code=404, detail="Schedule not found.")
+        result = schedule_store.get(schedule_id)
+        assert result is not None
+        return result
+
+    @app.put("/schedules/{schedule_id}/delivery", response_model=ScheduleRecord)
+    def set_schedule_delivery_destinations(
+        schedule_id: str,
+        payload: ScheduleDeliveryDestinationsRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        delivery_destination: str | None = None
+        failure_notification_destination: str | None = None
+        if payload.telegram_user_id is not None or payload.telegram_failure_user_id is not None:
+            if credential_store is None or credential_store.get("telegram-bot") is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Configure a Telegram bot before selecting a delivery destination.",
+                )
+            account_id = (
+                credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
+            )
+            linked_users = telegram_store.linked_users(account_id) if account_id is not None else []
+            if account_id is None or any(
+                selected is not None and selected not in linked_users
+                for selected in (payload.telegram_user_id, payload.telegram_failure_user_id)
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Choose users currently linked to the configured Telegram bot.",
+                )
+            if payload.telegram_user_id is not None:
+                delivery_destination = f"telegram:{account_id}:{payload.telegram_user_id}"
+            if payload.telegram_failure_user_id is not None:
+                failure_notification_destination = (
+                    f"telegram:{account_id}:{payload.telegram_failure_user_id}"
+                )
+        if not schedule_store.set_delivery_destinations(
+            schedule_id, delivery_destination, failure_notification_destination
+        ):
             raise HTTPException(status_code=404, detail="Schedule not found.")
         result = schedule_store.get(schedule_id)
         assert result is not None

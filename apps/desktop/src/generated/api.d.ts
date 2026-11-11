@@ -1721,6 +1721,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules/{schedule_id}/delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Schedule Delivery Destinations */
+        put: operations["set_schedule_delivery_destinations_schedules__schedule_id__delivery_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/schedules/{schedule_id}/enabled": {
         parameters: {
             query?: never;
@@ -3465,6 +3482,13 @@ export interface components {
             updated_at: string;
             /** Workspace */
             workspace: string | null;
+        };
+        /** ScheduleDeliveryDestinationsRequest */
+        ScheduleDeliveryDestinationsRequest: {
+            /** Telegram Failure User Id */
+            telegram_failure_user_id?: string | null;
+            /** Telegram User Id */
+            telegram_user_id?: string | null;
         };
         /** ScheduleDeliveryReconciliationRequest */
         ScheduleDeliveryReconciliationRequest: {
@@ -7786,6 +7810,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_schedule_delivery_destinations_schedules__schedule_id__delivery_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleDeliveryDestinationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -19,6 +19,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [telegramDeliveryUser,setTelegramDeliveryUser]=useState('');
   const [telegramFailureUser,setTelegramFailureUser]=useState('');
   const [scheduleReconcileChoice,setScheduleReconcileChoice]=useState<{scheduleId:string;executionId:string;resolution:'delivered'|'retry'}>();
+  const [editingRecipients,setEditingRecipients]=useState<{scheduleId:string;resultUser:string;failureUser:string}>();
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
 
@@ -49,6 +50,16 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     setBusy(true);setError('');
     try {const updated=await client.setScheduleEnabled(item.id,!item.enabled);setItems(current=>current.map(value=>value.id===item.id?updated:value));}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not update the schedule.');}
+    finally {setBusy(false);}
+  }
+
+  async function saveRecipients() {
+    if(!editingRecipients)return;
+    setBusy(true);setError('');
+    try {
+      const updated=await client.setScheduleDeliveryDestinations(editingRecipients.scheduleId,{telegram_user_id:editingRecipients.resultUser||null,telegram_failure_user_id:editingRecipients.failureUser||null});
+      setItems(current=>current.map(item=>item.id===updated.id?updated:item));setEditingRecipients(undefined);
+    } catch(failure) {setError(failure instanceof Error?failure.message:'Could not update Telegram recipients.');}
     finally {setBusy(false);}
   }
 
@@ -100,6 +111,19 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       <p>{item.objective}</p>
       <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''}{item.delivery_destination?` · Telegram result user ${item.delivery_destination.split(':')[2]}`:''}{item.failure_notification_destination?` · Telegram failure user ${item.failure_notification_destination.split(':')[2]}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
+      {editingRecipients?.scheduleId===item.id?<div className="controls">
+        <p>Recipient changes apply to future occurrences. Existing executions keep their saved destination.</p>
+        <label htmlFor={`schedule-edit-result-${item.id}`}>Telegram result destination</label>
+        <select id={`schedule-edit-result-${item.id}`} value={editingRecipients.resultUser} onChange={event=>setEditingRecipients({...editingRecipients,resultUser:event.target.value})} disabled={busy}>
+          <option value="">Do not send Telegram result messages</option>{telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
+        </select>
+        <label htmlFor={`schedule-edit-failure-${item.id}`}>Telegram failure notification destination</label>
+        <select id={`schedule-edit-failure-${item.id}`} value={editingRecipients.failureUser} onChange={event=>setEditingRecipients({...editingRecipients,failureUser:event.target.value})} disabled={busy}>
+          <option value="">Use result destination for failures, if selected</option>{telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
+        </select>
+        <button type="button" disabled={busy} onClick={()=>void saveRecipients()}>Save recipients</button>
+        <button type="button" disabled={busy} onClick={()=>setEditingRecipients(undefined)}>Cancel</button>
+      </div>:<button type="button" disabled={busy} onClick={()=>setEditingRecipients({scheduleId:item.id,resultUser:item.delivery_destination?.split(':')[2]??'',failureUser:item.failure_notification_destination?.split(':')[2]??''})}>Change Telegram recipients</button>}
       {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>
         {execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''}{execution.delivery_destination?` · Telegram destination user ${execution.delivery_destination.split(':')[2]}`:''}{execution.delivery_attempt_count!==null?` · send attempts ${execution.delivery_attempt_count}/3`:''}{execution.delivery_next_attempt_at?` · retry after ${execution.delivery_next_attempt_at}`:''} · {execution.created_at}
         {execution.delivery_evidence==='unknown'&&<>

@@ -218,6 +218,20 @@ class ScheduleStore:
             )
         return cursor.rowcount == 1
 
+    def set_delivery_destinations(
+        self,
+        schedule_id: str,
+        delivery_destination: str | None,
+        failure_notification_destination: str | None,
+    ) -> bool:
+        """Update destinations used by future occurrences; existing deliveries are snapshots."""
+        with self.runs.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE schedules SET delivery_destination=?,failure_notification_destination=?,updated_at=? WHERE id=?",
+                (delivery_destination, failure_notification_destination, utc_now(), schedule_id),
+            )
+        return cursor.rowcount == 1
+
     def update_execution_states(self) -> None:
         with self.runs.connection() as connection:
             rows = connection.execute(
