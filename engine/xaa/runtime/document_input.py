@@ -322,8 +322,8 @@ def _extract_docx_text(content: bytes) -> str:
     if types_root.tag != content_namespace + "Types" or not has_word_document_type:
         raise ValueError("ZIP document is not a supported DOCX file.")
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    list_markers = _parse_docx_numbering(numbering_xml, namespace)
-    style_numbering = _parse_docx_style_numbering(styles_xml, namespace)
+    style_numbering, numbering_style_ids = _parse_docx_style_numbering(styles_xml, namespace)
+    list_markers = _parse_docx_numbering(numbering_xml, namespace, numbering_style_ids)
     list_counters: dict[int, dict[int, int]] = {}
 
     def paragraph_text(paragraph: ElementTree.Element) -> str:
@@ -494,10 +494,10 @@ def _extract_docx_text(content: bytes) -> str:
 
 def _parse_docx_style_numbering(
     xml: bytes | None, namespace: str
-) -> dict[str, tuple[int | None, int | None]]:
+) -> tuple[dict[str, tuple[int | None, int | None]], dict[str, int]]:
     """Resolve paragraph-style numbering, including bounded basedOn chains."""
     if xml is None:
-        return {}
+        return {}, {}
     try:
         root = ElementTree.fromstring(xml)
     except ElementTree.ParseError:
@@ -507,6 +507,7 @@ def _parse_docx_style_numbering(
 
     raw_styles: dict[str, tuple[str | None, int | None, int | None]] = {}
     all_style_ids: set[str] = set()
+    numbering_style_ids: dict[str, int] = {}
 
     def decimal_attribute(value: str, label: str, maximum: int = 10) -> int:
         if not value.isascii() or not value.isdecimal() or len(value) > maximum:
@@ -528,14 +529,15 @@ def _parse_docx_style_numbering(
         if style_id in all_style_ids:
             raise ValueError("DOCX style definitions contain duplicate style IDs.")
         all_style_ids.add(style_id)
-        if style.attrib.get(namespace + "type", "paragraph") not in {"", "paragraph"}:
+        style_type = style.attrib.get(namespace + "type", "paragraph")
+        if style_type not in {"", "paragraph", "numbering"}:
             continue
 
         parents = [item for item in style if item.tag == namespace + "basedOn"]
-        if len(parents) > 1:
+        if style_type != "numbering" and len(parents) > 1:
             raise ValueError("DOCX paragraph style contains duplicate basedOn references.")
         parent_id: str | None = None
-        if parents:
+        if parents and style_type != "numbering":
             parent_id = parents[0].attrib.get(namespace + "val", "")
             if not parent_id or len(parent_id) > 128 or not parent_id.isprintable():
                 raise ValueError("DOCX paragraph style contains an invalid basedOn reference.")
@@ -560,7 +562,11 @@ def _parse_docx_style_numbering(
                 if levels:
                     # The standard ignores ilvl when numPr is declared on a paragraph style.
                     list_level(levels[0].attrib.get(namespace + "val", ""))
-        raw_styles[style_id] = parent_id, number_id, None
+        if style_type == "numbering":
+            if number_id is not None:
+                numbering_style_ids[style_id] = number_id
+        else:
+            raw_styles[style_id] = parent_id, number_id, None
 
     resolved: dict[str, tuple[int | None, int | None]] = {}
     active: set[str] = set()
@@ -595,11 +601,11 @@ def _parse_docx_style_numbering(
 
     for style_id in raw_styles:
         resolve(style_id)
-    return resolved
+    return resolved, numbering_style_ids
 
 
 def _parse_docx_numbering(
-    xml: bytes | None, namespace: str
+    xml: bytes | None, namespace: str, numbering_style_ids: dict[str, int]
 ) -> dict[tuple[int, int], _DocxListLevel]:
     """Read bounded list marker definitions and per-level sequence behavior."""
     if xml is None:
@@ -639,7 +645,7 @@ def _parse_docx_numbering(
             return level_id - 1 if level_id > 0 else None
         return value - 1
 
-    abstract_definitions: dict[int, dict[int, _DocxListLevel]] = {}
+    abstract_definitions: dict[int, tuple[dict[int, _DocxListLevel], str | None]] = {}
     for abstract in root:
         if abstract.tag != namespace + "abstractNum":
             continue
@@ -648,6 +654,21 @@ def _parse_docx_numbering(
         )
         if abstract_id in abstract_definitions:
             raise ValueError("DOCX numbering definitions contain duplicate abstract IDs.")
+        raw_style_links = [item for item in abstract if item.tag == namespace + "numStyleLink"]
+        if len(raw_style_links) > 1:
+            raise ValueError("DOCX numbering definition contains duplicate numStyleLink markers.")
+        style_id: str | None = None
+        if raw_style_links:
+            style_id = raw_style_links[0].attrib.get(namespace + "val", "")
+            if not style_id or len(style_id) > 128 or not style_id.isprintable():
+                raise ValueError("DOCX numbering definition contains an invalid numStyleLink.")
+        raw_style_links = [item for item in abstract if item.tag == namespace + "styleLink"]
+        if len(raw_style_links) > 1:
+            raise ValueError("DOCX numbering definition contains duplicate styleLink markers.")
+        if raw_style_links:
+            linked_style = raw_style_links[0].attrib.get(namespace + "val", "")
+            if not linked_style or len(linked_style) > 128 or not linked_style.isprintable():
+                raise ValueError("DOCX numbering definition contains an invalid styleLink.")
         levels: dict[int, _DocxListLevel] = {}
         for level in abstract:
             if level.tag != namespace + "lvl":
@@ -673,27 +694,44 @@ def _parse_docx_numbering(
                 number_value(raw_start, "starting number") if raw_start is not None else 1,
                 restart_value(level, level_id),
             )
-        abstract_definitions[abstract_id] = levels
+        abstract_definitions[abstract_id] = levels, style_id
 
-    instances: dict[tuple[int, int], _DocxListLevel] = {}
-    seen_instances: set[int] = set()
+    raw_instances: dict[int, tuple[int, list[ElementTree.Element]]] = {}
     for instance in root:
         if instance.tag != namespace + "num":
             continue
         number_id = decimal_attribute(instance.attrib.get(namespace + "numId", ""), "list ID")
         abstract_ids = [item for item in instance if item.tag == namespace + "abstractNumId"]
-        if len(abstract_ids) != 1 or number_id in seen_instances:
+        if len(abstract_ids) != 1 or number_id in raw_instances:
             raise ValueError("DOCX numbering instances contain missing or duplicate IDs.")
-        seen_instances.add(number_id)
         abstract_id = decimal_attribute(
             abstract_ids[0].attrib.get(namespace + "val", ""), "abstract reference"
         )
-        base_levels = abstract_definitions.get(abstract_id)
-        if base_levels is None:
+        if abstract_id not in abstract_definitions:
             raise ValueError("DOCX numbering instance references a missing abstract definition.")
-        effective_levels: dict[int, _DocxListLevel] = base_levels.copy()
+        overrides = [item for item in instance if item.tag == namespace + "lvlOverride"]
+        raw_instances[number_id] = abstract_id, overrides
+
+    resolved_instances: dict[int, dict[int, _DocxListLevel]] = {}
+    active_instances: set[int] = set()
+    active_abstracts: set[int] = set()
+
+    def resolve_instance(number_id: int, depth: int = 0) -> dict[int, _DocxListLevel]:
+        cached = resolved_instances.get(number_id)
+        if cached is not None:
+            return cached.copy()
+        if depth > 256:
+            raise ValueError("DOCX numbering style chain is too deep.")
+        if number_id in active_instances:
+            raise ValueError("DOCX numbering styles contain a reference cycle.")
+        definition = raw_instances.get(number_id)
+        if definition is None:
+            raise ValueError("DOCX numbering style references a missing numbering instance.")
+        active_instances.add(number_id)
+        abstract_id, overrides = definition
+        effective_levels = resolve_abstract(abstract_id, depth + 1)
         overridden_levels: set[int] = set()
-        for override in (item for item in instance if item.tag == namespace + "lvlOverride"):
+        for override in overrides:
             level_id = decimal_attribute(
                 override.attrib.get(namespace + "ilvl", ""), "override level", 2
             )
@@ -762,7 +800,32 @@ def _parse_docx_numbering(
                     effective_levels[level_id] = inherited._replace(
                         start=number_value(raw_start_override, "starting number override")
                     )
-        for level_id, marker in effective_levels.items():
+        active_instances.remove(number_id)
+        resolved_instances[number_id] = effective_levels.copy()
+        return effective_levels
+
+    def resolve_abstract(abstract_id: int, depth: int) -> dict[int, _DocxListLevel]:
+        if depth > 256:
+            raise ValueError("DOCX numbering style chain is too deep.")
+        if abstract_id in active_abstracts:
+            raise ValueError("DOCX numbering styles contain a reference cycle.")
+        definition = abstract_definitions.get(abstract_id)
+        if definition is None:
+            raise ValueError("DOCX numbering style references a missing abstract definition.")
+        levels, style_id = definition
+        if style_id is None:
+            return levels.copy()
+        number_id = numbering_style_ids.get(style_id)
+        if number_id is None:
+            raise ValueError("DOCX numbering definition references a missing numbering style.")
+        active_abstracts.add(abstract_id)
+        resolved = resolve_instance(number_id, depth + 1)
+        active_abstracts.remove(abstract_id)
+        return resolved
+
+    instances: dict[tuple[int, int], _DocxListLevel] = {}
+    for number_id in raw_instances:
+        for level_id, marker in resolve_instance(number_id).items():
             instances[number_id, level_id] = marker
     return instances
 

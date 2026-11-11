@@ -294,6 +294,68 @@ def test_inherits_docx_numbering_from_based_on_paragraph_styles():
     assert "Read the document" in result
 
 
+def test_resolves_docx_num_style_link_to_its_numbering_instance():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Styled list item</w:t></w:r></w:p>"
+                )
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0">'
+                '<w:numStyleLink w:val="NumberingStyle"/></w:abstractNum>'
+                '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
+                '<w:num w:numId="9"><w:abstractNumId w:val="1"/></w:num></w:numbering>'
+            ),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="numbering" w:styleId="NumberingStyle">'
+                '<w:pPr><w:numPr><w:numId w:val="9"/></w:numPr></w:pPr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Styled list item" in result
+
+
+def test_rejects_cyclic_docx_num_style_link():
+    with pytest.raises(ValueError, match="reference cycle"):
+        extract_document_text(
+            make_docx(
+                [],
+                paragraph_xml=[
+                    (
+                        '<w:p><w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr>'
+                        "<w:r><w:t>Cyclic item</w:t></w:r></w:p>"
+                    )
+                ],
+                numbering_xml=(
+                    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                    '<w:abstractNum w:abstractNumId="0">'
+                    '<w:numStyleLink w:val="CycleStyle"/></w:abstractNum>'
+                    '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
+                    "</w:numbering>"
+                ),
+                styles_xml=(
+                    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                    '<w:style w:type="numbering" w:styleId="CycleStyle">'
+                    '<w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr>'
+                    "</w:style></w:styles>"
+                ),
+            ),
+            DOCX_TYPE,
+        )
+
+
 def test_direct_docx_numbering_overrides_paragraph_style_numbering():
     result = extract_document_text(
         make_docx(
