@@ -2,7 +2,7 @@
 
 ## Preserve DOCX headings and list levels (2026-11-11)
 
-DOCX paragraph extraction now retains common `Heading…` style identifiers as explicit heading markers and preserves list nesting levels from `w:numPr`. Malformed or duplicate paragraph/list metadata is rejected. This gives the model document structure that plain paragraph text discarded; list numbering and bullet glyphs are not reconstructed because numbering definitions are not yet resolved. Focused document tests pass (26), Ruff and formatting pass, and strict Pyright reports no issues for the parser. No live model inference was used.
+DOCX paragraph extraction now retains common `Heading…` style identifiers as explicit heading markers and preserves list nesting levels from `w:numPr`. Malformed or duplicate paragraph/list metadata is rejected. This gives the model document structure that plain paragraph text discarded; list numbering and bullet glyphs are not reconstructed because numbering definitions are not yet resolved. Focused document tests pass (26), Ruff and formatting pass, and strict Pyright reports no issues for the parser. Hosted Windows run [43026932895](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43026932895) passed the full source workflow, including 1,049 Python tests, desktop acceptances and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. No live model inference was used.
 
 ## Preserve DOCX table merge metadata (2026-11-11)
 
