@@ -1,5 +1,9 @@
 # Progress
 
+## Keep manual acceptance runs from being cancelled (2026-11-11)
+
+Hosted source acceptance takes about 7–9 minutes and installer acceptance about 9 minutes. The prior workflow used one ref-only concurrency group with `cancel-in-progress: true`, allowing a newer push to cancel a user-dispatched installer acceptance. CI concurrency is now event-aware: normal push/pull-request runs still replace older runs of the same event/ref, while manually dispatched validation has a separate group and is allowed to finish. Workflow YAML and assertions for the concurrency expressions pass, as does `git diff --check`. A hosted follow-up will verify the configuration on GitHub Actions. No application behavior or live model testing changed.
+
 ## Re-run hosted Windows installer acceptance on current branch (2026-11-11)
 
 Manual Windows workflow [42962317968](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42962317968) on `7461bc3` passed the unsigned installer build, release-notice package coverage, installed MCP OAuth/credential clearing, native desktop and specialist restart recovery, frozen API/task recovery, browser cancellation, task scope checks, upgrade/install/boot/uninstall, standard-user install, and explicit data removal. The source job was skipped by the manual-dispatch workflow condition; this is packaged Windows acceptance only. The 77 MB installer artifact and reports are retained locally in `.acceptance/hosted-installer-42962317968/`; artifact expires 2027-02-09. Installer SHA-256 is `3489972c1f67f090db8b5da7c9dfb1f47aab1b487cd3141b55ea5192b5c18fb1`. The artifact remains unsigned; no live LM Studio inference was used.
