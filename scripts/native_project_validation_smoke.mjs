@@ -17,7 +17,7 @@ let browser,connection,reviewResponse;const report={passed:false,scope:'Frozen d
 try{
   for(let attempt=0;attempt<100;attempt++){try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);break;}catch{if(proc.exitCode!==null)throw new Error('Native app exited during boot');await new Promise(resolve=>setTimeout(resolve,250));}}
   if(!browser)throw new Error('Could not attach to the native WebView');
-  const page=browser.contexts()[0].pages()[0];await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible();connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
+  const page=browser.contexts()[0].pages()[0];await expect(page.getByRole('navigation',{name:'Main sections'})).toBeVisible();connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   page.on('response',async response=>{if(new URL(response.url()).pathname.endsWith('/review'))reviewResponse={status:response.status(),body:await response.text().catch(()=> '')};});
   let ready=false;for(let attempt=0;attempt<120;attempt++){try{const response=await fetch(connection.base_url+`/runs/${fixture.run_id}`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(500)});if(response.ok){ready=true;break;}}catch{}await new Promise(resolve=>setTimeout(resolve,250));}if(!ready)throw new Error('Seeded run unavailable through native API');
   await page.getByRole('button',{name:'Open Validate the integrated answer.py project',exact:true}).click();

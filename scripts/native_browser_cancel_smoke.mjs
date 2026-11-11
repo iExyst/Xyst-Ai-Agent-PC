@@ -272,12 +272,13 @@ try {
     if (!page) await new Promise(resolve => setTimeout(resolve, 100));
   }
   if (!page) throw new Error('The installed desktop did not expose its WebView page.');
-  await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('navigation', { name: 'Main sections' })).toBeVisible({ timeout: 20000 });
   connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
   launchCredentials.push(connection);
   const headers = { Authorization: `Bearer ${connection.token}` };
   await waitForApi(connection.base_url, headers);
 
+  await page.getByRole('link', { name: /Model setup/ }).click();
   const providerStatus = page.locator('section[aria-labelledby="provider-setup-title"] [role="status"]').first();
   await expect(providerStatus).not.toHaveText('Checking the local model server…', { timeout: 30000 });
   await page.locator('#lm-studio-endpoint').fill(providerEndpoint);
@@ -292,6 +293,7 @@ try {
   const diagnosticBody = await diagnosticResult.json();
   if (diagnosticBody.tool_round_trip_verified !== true) throw new Error(`Native harmless diagnostic was not verified: ${JSON.stringify(diagnosticBody)}`);
   await expect(page.getByText(/Tool-use diagnostic passed/)).toBeVisible({ timeout: 15000 });
+  await page.getByRole('link', { name: /New objective/ }).click();
 
   await page.evaluate(() => {
     const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -317,6 +319,7 @@ try {
   await expect(page.getByText(/Attached: Microphone recording\.wav/)).not.toBeVisible();
   microphoneCapturePassed = true;
 
+  await page.locator('summary').filter({ hasText: 'Permissions, attachments and run limits' }).click();
   await page.locator('#approved-web-hosts').fill('httpbin.org');
   await page.getByLabel('Allow managed browser reads for this next run').check();
   await page.getByLabel('Workspace path').fill(workspace);
@@ -361,6 +364,7 @@ try {
   if (toolResult?.status !== 'cancelled') throw new Error(`Browser cancellation result was not durably saved: ${JSON.stringify(toolResult)}`);
   if (fakeState.browserProposals !== 1 || fakeState.browserResultFollowups !== 0) throw new Error('The fake provider observed an unexpected browser proposal or post-cancellation inference.');
 
+  await page.getByRole('link', { name: /New objective/ }).click();
   await page.getByLabel('Workspace path').fill(workspace);
   await page.locator('#run-objective').fill('Read the fixture marker in fixture.txt and report its exact value.');
   const workspaceCreate = page.waitForResponse(response => response.request().method() === 'POST'

@@ -108,7 +108,7 @@ try {
   }
   if (!connected || !browser) throw new Error('Native WebView did not expose its test connection.');
   const page = browser.contexts()[0].pages()[0];
-  await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('navigation', { name: 'Main sections' })).toBeVisible({ timeout: 20000 });
   connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
   const models = await waitForModels();
   const selected = models.find(item => item.id === model);

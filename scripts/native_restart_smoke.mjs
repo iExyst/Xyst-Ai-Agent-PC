@@ -301,7 +301,7 @@ async function startDesktop(label) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     if (!page) throw new Error(`${label} desktop did not expose a WebView page; stdout=${stdout}; stderr=${stderr}`);
-    await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole('navigation', { name: 'Main sections' })).toBeVisible({ timeout: 20000 });
     const connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
     launchCredentials.push(connection);
     const headers = { Authorization: `Bearer ${connection.token}` };
@@ -564,6 +564,9 @@ try {
   });
   fakeState.allowRunResponse = true;
   second = await startDesktop('Restarted');
+  const activeRunLink = second.page.getByRole('link', { name: /Active run/ });
+  await expect(activeRunLink).toBeVisible({ timeout: 15000 });
+  await activeRunLink.click();
   const restoredOutput = second.page.getByRole('region', { name: 'Streaming command output' });
   await expect(restoredOutput).toContainText(restoredCommandOutput, { timeout: 15000 });
   const recoveryDeadline = Date.now() + 45000;

@@ -42,7 +42,7 @@ async function attach(proc,stage){
   if(!browser)throw new Error(`Could not attach to desktop during ${stage}: ${lastError}`);
   const page=browser.contexts().flatMap(context=>context.pages())[0];
   if(!page){await browser.close();throw new Error(`Desktop WebView did not open during ${stage}`);}
-  await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
+  await expect(page.getByRole('navigation',{name:'Main sections'})).toBeVisible({timeout:20000});
   const connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   let ready=false;
   for(let attempt=0;attempt<120;attempt++){

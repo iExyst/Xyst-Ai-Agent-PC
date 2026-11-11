@@ -100,7 +100,7 @@ try {
   browser = await chromium.connectOverCDP(endpoint, { timeout: 5000 });
   const page = browser.contexts().flatMap(context => context.pages())[0];
   if (!page) throw new Error('Native desktop did not expose a WebView page.');
-  await expect(page.getByRole('heading', { name: 'Xyst AI Agent', exact: true })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('navigation', { name: 'Main sections' })).toBeVisible({ timeout: 20000 });
   connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
   const headers = { Authorization: `Bearer ${connection.token}` };
   const apiDeadline = Date.now() + 30000;
@@ -115,6 +115,7 @@ try {
   }
   if (!apiReady) throw new Error('Authenticated native memory API did not become ready.');
 
+  await page.getByRole('link', { name: /Tools & integrations/ }).click();
   await page.getByText('Memory preferences', { exact: true }).click();
   await page.locator('#memory-preference').fill(initialPreference);
   await page.getByRole('button', { name: 'Save preference', exact: true }).click();

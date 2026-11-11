@@ -62,7 +62,7 @@ try{
   if(!page)throw new Error('Packaged WebView debugging endpoint did not expose a page');
   page.on('console',message=>{if(message.type()==='error')pageConsoleErrors.push(message.text());});
   page.on('pageerror',error=>pageErrors.push(String(error)));
-  await expect(page.getByRole('heading',{name:'Xyst AI Agent',exact:true})).toBeVisible({timeout:20000});
+  await expect(page.getByRole('navigation',{name:'Main sections'})).toBeVisible({timeout:20000});
   const initiallyVisible=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible',{label:'main'}));
   if(initiallyVisible)throw new Error('The --background launch argument opened the main window.');
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
@@ -133,6 +133,7 @@ try{
   const startupMilliseconds=Date.now()-started;
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
   await page.screenshot({path:path.join(root,'release-boot.png'),fullPage:true});
+  await page.getByRole('link',{name:'Settings'}).click();
   const closeBehavior=page.getByLabel('When the main window closes');
   const initialCloseBehavior=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_close_behavior'));
   const expectedInitialCloseBehavior=process.env.XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR||'keep_running';
