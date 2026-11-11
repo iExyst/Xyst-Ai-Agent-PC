@@ -113,15 +113,18 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
       {editingRecipients?.scheduleId===item.id?<div className="controls">
         <p>Recipient changes apply to future occurrences. Existing executions keep their saved destination.</p>
+        {([editingRecipients.resultUser,editingRecipients.failureUser].some(userId=>userId&&!telegramUsers.includes(userId)))&&<p role="status">A saved recipient is no longer linked to this bot. Choose a linked account or clear that recipient before saving.</p>}
         <label htmlFor={`schedule-edit-result-${item.id}`}>Telegram result destination</label>
         <select id={`schedule-edit-result-${item.id}`} value={editingRecipients.resultUser} onChange={event=>setEditingRecipients({...editingRecipients,resultUser:event.target.value})} disabled={busy}>
+          {editingRecipients.resultUser&&!telegramUsers.includes(editingRecipients.resultUser)&&<option value={editingRecipients.resultUser} disabled>Previously linked Telegram account {editingRecipients.resultUser} (unavailable)</option>}
           <option value="">Do not send Telegram result messages</option>{telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
         </select>
         <label htmlFor={`schedule-edit-failure-${item.id}`}>Telegram failure notification destination</label>
         <select id={`schedule-edit-failure-${item.id}`} value={editingRecipients.failureUser} onChange={event=>setEditingRecipients({...editingRecipients,failureUser:event.target.value})} disabled={busy}>
+          {editingRecipients.failureUser&&!telegramUsers.includes(editingRecipients.failureUser)&&<option value={editingRecipients.failureUser} disabled>Previously linked Telegram account {editingRecipients.failureUser} (unavailable)</option>}
           <option value="">Use result destination for failures, if selected</option>{telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
         </select>
-        <button type="button" disabled={busy} onClick={()=>void saveRecipients()}>Save recipients</button>
+        <button type="button" disabled={busy||[editingRecipients.resultUser,editingRecipients.failureUser].some(userId=>userId&&!telegramUsers.includes(userId))} onClick={()=>void saveRecipients()}>Save recipients</button>
         <button type="button" disabled={busy} onClick={()=>setEditingRecipients(undefined)}>Cancel</button>
       </div>:<button type="button" disabled={busy} onClick={()=>setEditingRecipients({scheduleId:item.id,resultUser:item.delivery_destination?.split(':')[2]??'',failureUser:item.failure_notification_destination?.split(':')[2]??''})}>Change Telegram recipients</button>}
       {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>

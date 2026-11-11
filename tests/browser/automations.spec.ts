@@ -5,6 +5,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   page.on('pageerror',error=>errors.push(error.message));
   const requests:any[]=[];
   const schedules:any[]=[];
+  const linkedUsers=['123456','654321'];
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
@@ -19,7 +20,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
     if(path==='/memory'||path==='/memory/export')return route.fulfill({json:[],headers});
     if(path.startsWith('/execution/'))return route.fulfill({json:[],headers});
     if(path==='/schedules'&&request.method()==='GET')return route.fulfill({json:schedules,headers});
-    if(path==='/channels/telegram/linked-users')return route.fulfill({json:[{user_id:'123456'},{user_id:'654321'}],headers});
+    if(path==='/channels/telegram/linked-users')return route.fulfill({json:linkedUsers.map(user_id=>({user_id})),headers});
     if(path==='/schedules'&&request.method()==='POST'){
       const body=request.postDataJSON();requests.push(body);
       const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:body.quiet_hours??null,delivery_destination:body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null,failure_notification_destination:body.telegram_failure_user_id?'telegram:bot-42:'+body.telegram_failure_user_id:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[{id:'execution-1',occurrence_id:'schedule-1:2026-11-05T12:00',run_id:'run-1',state:'completed',delivery_evidence:'retrying',delivery_destination:'telegram:bot-42:'+body.telegram_user_id,delivery_attempt_count:2,delivery_next_attempt_at:'2026-11-05T12:00:10+00:00',created_at:'2026-11-05T12:00:00Z',completed_at:'2026-11-05T12:00:01Z'},{id:'execution-2',occurrence_id:'schedule-1:2026-11-06T12:00',run_id:'run-2',state:'completed',delivery_evidence:'unknown',delivery_destination:'telegram:bot-42:'+body.telegram_failure_user_id,delivery_attempt_count:2,delivery_next_attempt_at:null,created_at:'2026-11-06T12:00:00Z',completed_at:'2026-11-06T12:00:01Z'}]};
@@ -77,6 +78,17 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
   expect(requests[0]).toMatchObject({objective:'Review repository health',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456',telegram_failure_user_id:'654321',quiet_hours:'22:00-07:00'});
   expect(requests[1]).toEqual({telegram_user_id:'654321',telegram_failure_user_id:'123456'});
+  linkedUsers.splice(0,1);
+  await panel.getByRole('button',{name:'Refresh schedules',exact:true}).click();
+  await expect(panel.getByText(/Telegram result user 654321 · Telegram failure user 123456/)).toBeVisible();
+  await panel.getByRole('button',{name:'Change Telegram recipients',exact:true}).click();
+  await expect(panel.getByRole('status').filter({hasText:'A saved recipient is no longer linked to this bot'})).toBeVisible();
+  await expect(panel.getByLabel('Telegram failure notification destination',{exact:true}).locator('option:disabled')).toHaveText('Previously linked Telegram account 123456 (unavailable)');
+  await expect(panel.getByRole('button',{name:'Save recipients',exact:true})).toBeDisabled();
+  await panel.getByLabel('Telegram failure notification destination',{exact:true}).selectOption('');
+  await panel.getByRole('button',{name:'Save recipients',exact:true}).click();
+  await expect(panel.getByText(/Telegram result user 654321 · Enabled/)).toBeVisible();
+  expect(requests[2]).toEqual({telegram_user_id:'654321',telegram_failure_user_id:null});
   await panel.getByRole('button',{name:'Pause schedule',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Resume schedule',exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Resume schedule',exact:true}).click();
