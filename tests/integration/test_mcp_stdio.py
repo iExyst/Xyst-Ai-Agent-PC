@@ -254,6 +254,11 @@ async def test_failed_disconnect_retains_integration_and_vault_credentials(
         assert registry.get_server(server.id) is not None
         assert credentials.get(f"mcp:{server.id}:API_TOKEN") == "fixture-secret"
 
+        await manager.close()
+        assert manager.connection_present(server.id)
+        assert manager.server_status(server.id)[0] == "error"
+        assert manager.tools_for_run(set()) == []
+
         monkeypatch.undo()
         assert await manager.disconnect_server(server.id)
         assert not manager.connection_present(server.id)

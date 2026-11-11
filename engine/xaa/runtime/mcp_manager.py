@@ -438,16 +438,8 @@ class MCPManager:
 
     async def close(self) -> None:
         async with self._lock:
-            connections = list(self._connected.values())
-            self._connected.clear()
-            results = await asyncio.gather(
-                *(connection.close() for connection in connections), return_exceptions=True
-            )
-            for connection, result in zip(connections, results, strict=True):
-                if isinstance(result, BaseException):
-                    if isinstance(result, asyncio.CancelledError):
-                        raise result
-                    self._errors[connection.server.id] = "The MCP server did not shut down cleanly."
+            for server_id in list(self._connected):
+                await self._close_connection_locked(server_id)
 
     def server_status(
         self, server_id: str
