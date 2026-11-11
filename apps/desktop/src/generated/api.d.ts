@@ -4096,6 +4096,13 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** TelegramLinkedUsersRecord */
+        TelegramLinkedUsersRecord: {
+            /** Bot Account Id */
+            bot_account_id: string | null;
+            /** Users */
+            users: components["schemas"]["TelegramLinkedUser"][];
+        };
         /** TelegramPairingCode */
         TelegramPairingCode: {
             /** Code */
@@ -4812,7 +4819,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TelegramLinkedUser"][];
+                    "application/json": components["schemas"]["TelegramLinkedUsersRecord"];
                 };
             };
         };

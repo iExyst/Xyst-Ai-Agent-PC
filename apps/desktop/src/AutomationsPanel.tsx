@@ -6,6 +6,12 @@ function localDateTime(value:Date) {
   return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
 }
 
+function recipientKey(destination:string|null|undefined) {
+  if(!destination)return '';
+  const [,accountId,userId]=destination.split(':');
+  return accountId&&userId?`${accountId}:${userId}`:'';
+}
+
 export function AutomationsPanel({client,model,workspace}:{client:EngineClient;model:string;workspace:string}) {
   const [items,setItems]=useState<Schedule[]>([]);
   const [objective,setObjective]=useState('');
@@ -16,6 +22,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [quietStart,setQuietStart]=useState('');
   const [quietEnd,setQuietEnd]=useState('');
   const [telegramUsers,setTelegramUsers]=useState<string[]>([]);
+  const [telegramBotAccountId,setTelegramBotAccountId]=useState<string|null>(null);
   const [telegramDeliveryUser,setTelegramDeliveryUser]=useState('');
   const [telegramFailureUser,setTelegramFailureUser]=useState('');
   const [scheduleReconcileChoice,setScheduleReconcileChoice]=useState<{scheduleId:string;executionId:string;resolution:'delivered'|'retry'}>();
@@ -27,12 +34,18 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     setError('');
     try {
       const [schedules,users]=await Promise.all([client.schedules(),client.telegramLinkedUsers()]);
-      setItems(schedules);setTelegramUsers(users.map(user=>user.user_id));
-      if(!users.some(user=>user.user_id===telegramDeliveryUser))setTelegramDeliveryUser('');
-      if(!users.some(user=>user.user_id===telegramFailureUser))setTelegramFailureUser('');
+      setItems(schedules);setTelegramBotAccountId(users.bot_account_id);setTelegramUsers(users.users.map(user=>user.user_id));
+      if(!users.users.some(user=>user.user_id===telegramDeliveryUser))setTelegramDeliveryUser('');
+      if(!users.users.some(user=>user.user_id===telegramFailureUser))setTelegramFailureUser('');
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not refresh schedules or Telegram destinations.');}
   }
-  useEffect(()=>{let live=true;void Promise.all([client.schedules(),client.telegramLinkedUsers()]).then(([schedules,users])=>{if(live){setItems(schedules);setTelegramUsers(users.map(user=>user.user_id));}}).catch(failure=>{if(live)setError(String(failure));});return()=>{live=false;};},[client]);
+  useEffect(()=>{let live=true;void Promise.all([client.schedules(),client.telegramLinkedUsers()]).then(([schedules,users])=>{if(live){setItems(schedules);setTelegramBotAccountId(users.bot_account_id);setTelegramUsers(users.users.map(user=>user.user_id));}}).catch(failure=>{if(live)setError(String(failure));});return()=>{live=false;};},[client]);
+
+  function recipientIsLinkedHere(value:string) {
+    if(!value)return true;
+    const [accountId,userId]=value.split(':');
+    return Boolean(telegramBotAccountId&&accountId===telegramBotAccountId&&userId&&telegramUsers.includes(userId));
+  }
 
   async function create() {
     setBusy(true);setError('');
@@ -57,7 +70,8 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     if(!editingRecipients)return;
     setBusy(true);setError('');
     try {
-      const updated=await client.setScheduleDeliveryDestinations(editingRecipients.scheduleId,{telegram_user_id:editingRecipients.resultUser||null,telegram_failure_user_id:editingRecipients.failureUser||null});
+      if(!recipientIsLinkedHere(editingRecipients.resultUser)||!recipientIsLinkedHere(editingRecipients.failureUser))throw new Error('Choose a linked Telegram destination for the current bot or clear that recipient.');
+      const updated=await client.setScheduleDeliveryDestinations(editingRecipients.scheduleId,{telegram_user_id:editingRecipients.resultUser.split(':')[1]||null,telegram_failure_user_id:editingRecipients.failureUser.split(':')[1]||null});
       setItems(current=>current.map(item=>item.id===updated.id?updated:item));setEditingRecipients(undefined);
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not update Telegram recipients.');}
     finally {setBusy(false);}
@@ -113,20 +127,20 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
       {editingRecipients?.scheduleId===item.id?<div className="controls">
         <p>Recipient changes apply to future occurrences. Existing executions keep their saved destination.</p>
-        {([editingRecipients.resultUser,editingRecipients.failureUser].some(userId=>userId&&!telegramUsers.includes(userId)))&&<p role="status">A saved recipient is no longer linked to this bot. Choose a linked account or clear that recipient before saving.</p>}
+        {([editingRecipients.resultUser,editingRecipients.failureUser].some(value=>!recipientIsLinkedHere(value)))&&<p role="status">A saved recipient belongs to a different bot or is no longer linked. Choose a linked account or clear that recipient before saving.</p>}
         <label htmlFor={`schedule-edit-result-${item.id}`}>Telegram result destination</label>
         <select id={`schedule-edit-result-${item.id}`} value={editingRecipients.resultUser} onChange={event=>setEditingRecipients({...editingRecipients,resultUser:event.target.value})} disabled={busy}>
-          {editingRecipients.resultUser&&!telegramUsers.includes(editingRecipients.resultUser)&&<option value={editingRecipients.resultUser} disabled>Previously linked Telegram account {editingRecipients.resultUser} (unavailable)</option>}
-          <option value="">Do not send Telegram result messages</option>{telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
+          {editingRecipients.resultUser&&!recipientIsLinkedHere(editingRecipients.resultUser)&&<option value={editingRecipients.resultUser}>Previously saved destination {editingRecipients.resultUser} (unavailable)</option>}
+          <option value="">Do not send Telegram result messages</option>{telegramUsers.map(userId=><option key={userId} value={`${telegramBotAccountId}:${userId}`} disabled={!telegramBotAccountId}>Linked Telegram account {userId}</option>)}
         </select>
         <label htmlFor={`schedule-edit-failure-${item.id}`}>Telegram failure notification destination</label>
         <select id={`schedule-edit-failure-${item.id}`} value={editingRecipients.failureUser} onChange={event=>setEditingRecipients({...editingRecipients,failureUser:event.target.value})} disabled={busy}>
-          {editingRecipients.failureUser&&!telegramUsers.includes(editingRecipients.failureUser)&&<option value={editingRecipients.failureUser} disabled>Previously linked Telegram account {editingRecipients.failureUser} (unavailable)</option>}
-          <option value="">Use result destination for failures, if selected</option>{telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
+          {editingRecipients.failureUser&&!recipientIsLinkedHere(editingRecipients.failureUser)&&<option value={editingRecipients.failureUser} disabled>Previously saved destination {editingRecipients.failureUser} (unavailable)</option>}
+          <option value="">Use result destination for failures, if selected</option>{telegramUsers.map(userId=><option key={userId} value={`${telegramBotAccountId}:${userId}`} disabled={!telegramBotAccountId}>Linked Telegram account {userId}</option>)}
         </select>
-        <button type="button" disabled={busy||[editingRecipients.resultUser,editingRecipients.failureUser].some(userId=>userId&&!telegramUsers.includes(userId))} onClick={()=>void saveRecipients()}>Save recipients</button>
+        <button type="button" disabled={busy||[editingRecipients.resultUser,editingRecipients.failureUser].some(value=>!recipientIsLinkedHere(value))} onClick={()=>void saveRecipients()}>Save recipients</button>
         <button type="button" disabled={busy} onClick={()=>setEditingRecipients(undefined)}>Cancel</button>
-      </div>:<button type="button" disabled={busy} onClick={()=>setEditingRecipients({scheduleId:item.id,resultUser:item.delivery_destination?.split(':')[2]??'',failureUser:item.failure_notification_destination?.split(':')[2]??''})}>Change Telegram recipients</button>}
+      </div>:<button type="button" disabled={busy} onClick={()=>setEditingRecipients({scheduleId:item.id,resultUser:recipientKey(item.delivery_destination),failureUser:recipientKey(item.failure_notification_destination)})}>Change Telegram recipients</button>}
       {item.executions.length>0&&<details><summary>Execution history</summary><ul>{item.executions.map(execution=><li key={execution.id}>
         {execution.state}{execution.run_id?` · run ${execution.run_id}`:''}{execution.delivery_evidence?` · Telegram delivery ${execution.delivery_evidence}`:''}{execution.delivery_destination?` · Telegram destination user ${execution.delivery_destination.split(':')[2]}`:''}{execution.delivery_attempt_count!==null?` · send attempts ${execution.delivery_attempt_count}/3`:''}{execution.delivery_next_attempt_at?` · retry after ${execution.delivery_next_attempt_at}`:''} · {execution.created_at}
         {execution.delivery_evidence==='unknown'&&<>

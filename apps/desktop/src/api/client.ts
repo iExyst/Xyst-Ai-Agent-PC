@@ -300,7 +300,7 @@ export class EngineClient {
     return this.#request(`/channels/discord/deliveries/${encodeURIComponent(messageId)}/reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_destination_checked:true})});
   }
 
-  telegramLinkedUsers(): Promise<components['schemas']['TelegramLinkedUser'][]> {
+  telegramLinkedUsers(): Promise<components['schemas']['TelegramLinkedUsersRecord']> {
     return this.#request('/channels/telegram/linked-users');
   }
 

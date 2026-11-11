@@ -498,9 +498,10 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
         assert cleared_delivery.status_code == 200
         assert cleared_delivery.json()["delivery_destination"] is None
         assert cleared_delivery.json()["failure_notification_destination"] is None
-        assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == [
-            {"user_id": "123"}
-        ]
+        assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == {
+            "bot_account_id": "42",
+            "users": [{"user_id": "123"}],
+        }
         unauthorized_destination = client.post(
             "/schedules",
             headers=HEADERS,

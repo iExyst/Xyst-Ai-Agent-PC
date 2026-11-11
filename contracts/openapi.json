@@ -5683,6 +5683,35 @@
         "title": "TelegramLinkedUser",
         "type": "object"
       },
+      "TelegramLinkedUsersRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "bot_account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Account Id"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/TelegramLinkedUser"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bot_account_id",
+          "users"
+        ],
+        "title": "TelegramLinkedUsersRecord",
+        "type": "object"
+      },
       "TelegramPairingCode": {
         "additionalProperties": false,
         "properties": {
@@ -6820,11 +6849,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/TelegramLinkedUser"
-                  },
-                  "title": "Response List Telegram Linked Users Channels Telegram Linked Users Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/TelegramLinkedUsersRecord"
                 }
               }
             },

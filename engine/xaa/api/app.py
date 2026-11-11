@@ -555,6 +555,12 @@ class TelegramLinkedUser(BaseModel):
     user_id: str
 
 
+class TelegramLinkedUsersRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    bot_account_id: str | None
+    users: list[TelegramLinkedUser]
+
+
 class ChannelIdentityBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -2080,18 +2086,21 @@ def create_app(
             "linked_users": telegram_store.profile(account_id)["linked_users"],
         }
 
-    @app.get("/channels/telegram/linked-users", response_model=list[TelegramLinkedUser])
+    @app.get("/channels/telegram/linked-users", response_model=TelegramLinkedUsersRecord)
     def list_telegram_linked_users(
         _: None = Depends(authenticate),
-    ) -> list[dict[str, str]]:
+    ) -> dict[str, Any]:
         if credential_store is None or credential_store.get("telegram-bot") is None:
-            return []
+            return {"bot_account_id": None, "users": []}
         account_id = (
             credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
         )
         if account_id is None:
-            return []
-        return [{"user_id": user_id} for user_id in telegram_store.linked_users(account_id)]
+            return {"bot_account_id": None, "users": []}
+        return {
+            "bot_account_id": account_id,
+            "users": [{"user_id": user_id} for user_id in telegram_store.linked_users(account_id)],
+        }
 
     @app.post(
         "/channels/telegram/pairing",

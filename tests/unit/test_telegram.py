@@ -1012,9 +1012,10 @@ def test_telegram_credential_and_pairing_api_never_returns_saved_token(
         model="fixture/model",
     )
     assert client.get("/channels/telegram", headers=HEADERS).json()["linked_users"] == 1
-    assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == [
-        {"user_id": "456"}
-    ]
+    assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == {
+        "bot_account_id": "42",
+        "users": [{"user_id": "456"}],
+    }
     uncertain = telegram_store.process_update(
         IDENTITY, private_update(12, 456, "uncertain reply"), model="fixture/model"
     )
