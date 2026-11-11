@@ -322,11 +322,13 @@ def _extract_docx_text(content: bytes) -> str:
     if types_root.tag != content_namespace + "Types" or not has_word_document_type:
         raise ValueError("ZIP document is not a supported DOCX file.")
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    style_numbering, numbering_style_ids = _parse_docx_style_numbering(styles_xml, namespace)
+    style_numbering, numbering_style_ids, table_style_numbering = _parse_docx_style_numbering(
+        styles_xml, namespace
+    )
     list_markers = _parse_docx_numbering(numbering_xml, namespace, numbering_style_ids)
     list_counters: dict[int, dict[int, int]] = {}
 
-    def paragraph_text(paragraph: ElementTree.Element) -> str:
+    def paragraph_text(paragraph: ElementTree.Element, table_number_id: int | None = None) -> str:
         fragments: list[str] = []
         for node in paragraph.iter():
             if node.tag == namespace + "t":
@@ -339,15 +341,17 @@ def _extract_docx_text(content: bytes) -> str:
         properties = [item for item in paragraph if item.tag == namespace + "pPr"]
         if len(properties) > 1:
             raise ValueError("DOCX paragraph contains duplicate property groups.")
-        if not properties:
-            return value
-        property_group = properties[0]
-        style_properties = [item for item in property_group if item.tag == namespace + "pStyle"]
+        property_group = properties[0] if properties else None
+        style_properties = (
+            [item for item in property_group if item.tag == namespace + "pStyle"]
+            if property_group is not None
+            else []
+        )
         if len(style_properties) > 1:
             raise ValueError("DOCX paragraph contains duplicate style markers.")
         prefix: list[str] = []
         style_id: str | None = None
-        effective_number_id: int | None = None
+        effective_number_id: int | None = table_number_id
         effective_level_id: int | None = None
         if style_properties:
             style_id = style_properties[0].attrib.get(namespace + "val", "")
@@ -356,8 +360,14 @@ def _extract_docx_text(content: bytes) -> str:
             normalized_style = style_id.replace(" ", "").casefold()
             if normalized_style.startswith("heading"):
                 prefix.append(f"Heading: {style_id}")
-            effective_number_id, effective_level_id = style_numbering.get(style_id, (None, None))
-        numbering_properties = [item for item in property_group if item.tag == namespace + "numPr"]
+            style_number_id, style_level_id = style_numbering.get(style_id, (None, None))
+            if style_number_id is not None:
+                effective_number_id, effective_level_id = style_number_id, style_level_id
+        numbering_properties = (
+            [item for item in property_group if item.tag == namespace + "numPr"]
+            if property_group is not None
+            else []
+        )
         if len(numbering_properties) > 1:
             raise ValueError("DOCX paragraph contains duplicate numbering markers.")
         if numbering_properties:
@@ -417,9 +427,11 @@ def _extract_docx_text(content: bytes) -> str:
             value = f"[{'; '.join(prefix)}] {value}"
         return value
 
-    def content_blocks(container: ElementTree.Element) -> list[str]:
-        def table_cell_text(cell: ElementTree.Element) -> str:
-            value = " / ".join(content_blocks(cell))
+    def content_blocks(
+        container: ElementTree.Element, table_number_id: int | None = None
+    ) -> list[str]:
+        def table_cell_text(cell: ElementTree.Element, inherited_number_id: int | None) -> str:
+            value = " / ".join(content_blocks(cell, inherited_number_id))
             properties = [item for item in cell if item.tag == namespace + "tcPr"]
             if len(properties) > 1:
                 raise ValueError("DOCX table cell contains duplicate property groups.")
@@ -455,18 +467,49 @@ def _extract_docx_text(content: bytes) -> str:
         blocks: list[str] = []
         for item in container:
             if item.tag == namespace + "p":
-                value = paragraph_text(item)
+                value = paragraph_text(item, table_number_id)
                 if value:
                     blocks.append(value)
             elif item.tag == namespace + "tbl":
+                table_properties = [child for child in item if child.tag == namespace + "tblPr"]
+                if len(table_properties) > 1:
+                    raise ValueError("DOCX table contains duplicate property groups.")
+                table_style_id: str | None = None
+                if table_properties:
+                    style_markers = [
+                        child
+                        for child in table_properties[0]
+                        if child.tag == namespace + "tblStyle"
+                    ]
+                    if len(style_markers) > 1:
+                        raise ValueError("DOCX table contains duplicate style markers.")
+                    if style_markers:
+                        table_style_id = style_markers[0].attrib.get(namespace + "val", "")
+                        if (
+                            not table_style_id
+                            or len(table_style_id) > 128
+                            or not table_style_id.isprintable()
+                        ):
+                            raise ValueError("DOCX table contains an invalid style identifier.")
+                active_table_number_id = table_number_id
+                if table_style_id is not None:
+                    if table_style_id not in table_style_numbering:
+                        raise ValueError("DOCX table references a missing table style.")
+                    active_table_number_id = table_style_numbering.get(table_style_id, {}).get(
+                        "wholeTable", active_table_number_id
+                    )
                 for row in item:
                     if row.tag != namespace + "tr":
                         continue
-                    cells = [table_cell_text(cell) for cell in row if cell.tag == namespace + "tc"]
+                    cells = [
+                        table_cell_text(cell, active_table_number_id)
+                        for cell in row
+                        if cell.tag == namespace + "tc"
+                    ]
                     if any(cells):
                         blocks.append(" | ".join(cells))
             else:
-                blocks.extend(content_blocks(item))
+                blocks.extend(content_blocks(item, table_number_id))
         return blocks
 
     related_parts = _docx_related_parts(
@@ -494,10 +537,14 @@ def _extract_docx_text(content: bytes) -> str:
 
 def _parse_docx_style_numbering(
     xml: bytes | None, namespace: str
-) -> tuple[dict[str, tuple[int | None, int | None]], dict[str, int]]:
+) -> tuple[
+    dict[str, tuple[int | None, int | None]],
+    dict[str, int],
+    dict[str, dict[str, int]],
+]:
     """Resolve paragraph-style numbering, including bounded basedOn chains."""
     if xml is None:
-        return {}, {}
+        return {}, {}, {}
     try:
         root = ElementTree.fromstring(xml)
     except ElementTree.ParseError:
@@ -508,6 +555,7 @@ def _parse_docx_style_numbering(
     raw_styles: dict[str, tuple[str | None, int | None, int | None]] = {}
     all_style_ids: set[str] = set()
     numbering_style_ids: dict[str, int] = {}
+    raw_table_styles: dict[str, tuple[str | None, dict[str, int]]] = {}
 
     def decimal_attribute(value: str, label: str, maximum: int = 10) -> int:
         if not value.isascii() or not value.isdecimal() or len(value) > maximum:
@@ -530,19 +578,23 @@ def _parse_docx_style_numbering(
             raise ValueError("DOCX style definitions contain duplicate style IDs.")
         all_style_ids.add(style_id)
         style_type = style.attrib.get(namespace + "type", "paragraph")
-        if style_type not in {"", "paragraph", "numbering"}:
+        if style_type not in {"", "paragraph", "numbering", "table"}:
             continue
 
         parents = [item for item in style if item.tag == namespace + "basedOn"]
-        if style_type != "numbering" and len(parents) > 1:
+        if style_type in {"", "paragraph", "table"} and len(parents) > 1:
             raise ValueError("DOCX paragraph style contains duplicate basedOn references.")
         parent_id: str | None = None
-        if parents and style_type != "numbering":
+        if parents and style_type in {"", "paragraph", "table"}:
             parent_id = parents[0].attrib.get(namespace + "val", "")
             if not parent_id or len(parent_id) > 128 or not parent_id.isprintable():
                 raise ValueError("DOCX paragraph style contains an invalid basedOn reference.")
 
-        properties = [item for item in style if item.tag == namespace + "pPr"]
+        properties = (
+            [item for item in style if item.tag == namespace + "pPr"]
+            if style_type in {"", "paragraph", "numbering"}
+            else []
+        )
         if len(properties) > 1:
             raise ValueError("DOCX paragraph style contains duplicate property groups.")
         number_id: int | None = None
@@ -565,6 +617,64 @@ def _parse_docx_style_numbering(
         if style_type == "numbering":
             if number_id is not None:
                 numbering_style_ids[style_id] = number_id
+        elif style_type == "table":
+            table_numbering: dict[str, int] = {}
+            conditional_groups = [item for item in style if item.tag == namespace + "tblStylePr"]
+            for conditional in conditional_groups:
+                condition = conditional.attrib.get(namespace + "type", "")
+                if condition not in {
+                    "wholeTable",
+                    "firstRow",
+                    "lastRow",
+                    "firstCol",
+                    "lastCol",
+                    "band1Horz",
+                    "band2Horz",
+                    "band1Vert",
+                    "band2Vert",
+                    "nwCell",
+                    "neCell",
+                    "swCell",
+                    "seCell",
+                }:
+                    raise ValueError("DOCX table style contains an invalid conditional type.")
+                if condition in table_numbering:
+                    raise ValueError("DOCX table style contains duplicate conditional types.")
+                conditional_properties = [
+                    item for item in conditional if item.tag == namespace + "pPr"
+                ]
+                if len(conditional_properties) > 1:
+                    raise ValueError("DOCX table style contains duplicate paragraph properties.")
+                if not conditional_properties:
+                    continue
+                conditional_numberings = [
+                    item for item in conditional_properties[0] if item.tag == namespace + "numPr"
+                ]
+                if len(conditional_numberings) > 1:
+                    raise ValueError("DOCX table style contains duplicate numbering markers.")
+                if not conditional_numberings:
+                    continue
+                if condition != "wholeTable":
+                    raise ValueError(
+                        "DOCX conditional table-style numbering cannot be resolved safely."
+                    )
+                ids = [
+                    item for item in conditional_numberings[0] if item.tag == namespace + "numId"
+                ]
+                levels = [
+                    item for item in conditional_numberings[0] if item.tag == namespace + "ilvl"
+                ]
+                if len(ids) > 1 or len(levels) > 1:
+                    raise ValueError("DOCX table style contains duplicate list metadata.")
+                if ids:
+                    table_numbering[condition] = decimal_attribute(
+                        ids[0].attrib.get(namespace + "val", ""), "list ID"
+                    )
+                else:
+                    raise ValueError(
+                        "DOCX whole-table numbering requires an explicit list identifier."
+                    )
+            raw_table_styles[style_id] = parent_id, table_numbering
         else:
             raw_styles[style_id] = parent_id, number_id, None
 
@@ -601,7 +711,37 @@ def _parse_docx_style_numbering(
 
     for style_id in raw_styles:
         resolve(style_id)
-    return resolved, numbering_style_ids
+
+    resolved_table_styles: dict[str, dict[str, int]] = {}
+    active_table_styles: set[str] = set()
+
+    def resolve_table_style(style_id: str, depth: int = 0) -> dict[str, int]:
+        existing = resolved_table_styles.get(style_id)
+        if existing is not None:
+            return existing
+        if depth > 256:
+            raise ValueError("DOCX table styles contain a basedOn chain that is too deep.")
+        definition = raw_table_styles.get(style_id)
+        if definition is None:
+            raise ValueError("DOCX table style references a missing basedOn style.")
+        if style_id in active_table_styles:
+            raise ValueError("DOCX table styles contain a basedOn cycle.")
+        active_table_styles.add(style_id)
+        parent_id, own_numbering = definition
+        value: dict[str, int] = {}
+        if parent_id is not None:
+            if parent_id in raw_table_styles:
+                value.update(resolve_table_style(parent_id, depth + 1))
+            elif parent_id not in all_style_ids:
+                raise ValueError("DOCX table style references a missing basedOn style.")
+        value.update(own_numbering)
+        active_table_styles.remove(style_id)
+        resolved_table_styles[style_id] = value
+        return value
+
+    for style_id in raw_table_styles:
+        resolve_table_style(style_id)
+    return resolved, numbering_style_ids, resolved_table_styles
 
 
 def _parse_docx_numbering(

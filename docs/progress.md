@@ -1,5 +1,13 @@
 # Progress
 
+## Inherit DOCX numbering from whole-table styles (2026-11-11)
+
+DOCX list extraction now follows a table style's bounded `basedOn` chain and applies `wholeTable` paragraph numbering to cell paragraphs. Paragraph-style numbering and direct paragraph `numPr` take precedence over the table default. Table styles that apply numbering through conditional regions such as `firstRow` are rejected until their row/column activation and precedence can be resolved; malformed and cyclic style chains also fail closed. The focused document suite passes (48 tests); Ruff, formatting, parser Pyright and `git diff --check` pass. No model inference was used. Full conditional table-style numbering and visual Word layout remain open. The behavior follows the Open XML table-style conditional formatting model and its precedence rules ([Microsoft Open Specifications](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/2ac331d4-cf1e-4fa0-8bca-6da74411e284)).
+
+## Verify the rebuilt desktop window (2026-11-11)
+
+Inspected the live native window from `apps/desktop/src-tauri/target/debug/xaa-desktop.exe`; the rendered accessibility tree confirms Home, Runs, Integrations and Settings navigation, connected local engine, saved runs and recovery controls. LM Studio models were unavailable in this desktop session, and the UI showed that state while keeping other screens accessible. Hosted installer coverage still predates the redesigned UI. No model inference was used.
+
 ## Follow DOCX numbering-style links (2026-11-11)
 
 DOCX list extraction now resolves `w:numStyleLink` from an abstract numbering definition through numbering-style `w:pPr/w:numPr` to the referenced concrete list. Resolution tracks both abstract numbering and concrete numbering instances, detects cycles, and applies per-instance level overrides after resolving the linked definition. A bounded cycle and valid linked-style fixture are covered. The focused document suite passes (45 tests); Ruff, formatting, parser Pyright, and `git diff --check` pass. Hosted Windows source run [43045333987](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43045333987) passed with 1,068 Python tests and the full desktop/recovery workflow; installer validation was skipped because packaging inputs were unchanged. Numbering-style `w:styleLink` metadata is validated, while table-style numbering and full visual Word layout remain open. No live model inference was used.

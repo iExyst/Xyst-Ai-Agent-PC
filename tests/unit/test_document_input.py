@@ -45,6 +45,8 @@ def make_docx(
     paragraph_xml: list[str] | None = None,
     numbering_xml: str | None = None,
     styles_xml: str | None = None,
+    table_style: str | None = None,
+    table_paragraph_xml: dict[tuple[int, int], str] | None = None,
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     header: str | None = None,
     footer: str | None = None,
@@ -74,9 +76,17 @@ def make_docx(
                         )
                         + "</w:tcPr>"
                     )
-                cells.append(f"<w:tc>{property_xml}<w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>")
+                paragraph = (table_paragraph_xml or {}).get(
+                    (row_index, cell_index), f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"
+                )
+                cells.append(f"<w:tc>{property_xml}{paragraph}</w:tc>")
             rows.append("<w:tr>" + "".join(cells) + "</w:tr>")
-        body += "<w:tbl>" + "".join(rows) + "</w:tbl>"
+        table_properties = (
+            f'<w:tblPr><w:tblStyle w:val="{table_style}"/></w:tblPr>'
+            if table_style is not None
+            else ""
+        )
+        body += "<w:tbl>" + table_properties + "".join(rows) + "</w:tbl>"
     header_reference = ""
     footer_reference = ""
     relationships = []
@@ -292,6 +302,83 @@ def test_inherits_docx_numbering_from_based_on_paragraph_styles():
 
     assert "List decimal, level 1, marker %1.; numbered marker 2." in result
     assert "Read the document" in result
+
+
+def test_inherits_docx_numbering_from_whole_table_style_chain():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Table action", "Direct action"]],
+            table_style="ActionTable",
+            table_paragraph_xml={
+                (0, 1): (
+                    '<w:p><w:pPr><w:numPr><w:numId w:val="5"/></w:numPr></w:pPr>'
+                    "<w:r><w:t>Direct action</w:t></w:r></w:p>"
+                )
+            },
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1)"/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
+                '<w:num w:numId="5"><w:abstractNumId w:val="1"/></w:num></w:numbering>'
+            ),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="BaseTable">'
+                '<w:tblStylePr w:type="wholeTable"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr></w:style>'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:basedOn w:val="BaseTable"/></w:style></w:styles>'
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Table action" in result
+    assert "[List upperRoman, level 1, marker %1); numbered marker I)] Direct action" in result
+
+
+def test_rejects_docx_table_style_numbering_with_unsupported_conditions():
+    with pytest.raises(ValueError, match="conditional table-style numbering"):
+        extract_document_text(
+            make_docx(
+                [],
+                table=[["Header action"]],
+                table_style="ActionTable",
+                styles_xml=(
+                    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                    '<w:style w:type="table" w:styleId="ActionTable">'
+                    '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                    '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                    "</w:style></w:styles>"
+                ),
+            ),
+            DOCX_TYPE,
+        )
+
+
+def test_rejects_docx_table_style_based_on_cycles():
+    with pytest.raises(ValueError, match="table styles contain a basedOn cycle"):
+        extract_document_text(
+            make_docx(
+                [],
+                table=[["Cycle"]],
+                table_style="First",
+                styles_xml=(
+                    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                    '<w:style w:type="table" w:styleId="First">'
+                    '<w:basedOn w:val="Second"/></w:style>'
+                    '<w:style w:type="table" w:styleId="Second">'
+                    '<w:basedOn w:val="First"/></w:style></w:styles>'
+                ),
+            ),
+            DOCX_TYPE,
+        )
 
 
 def test_resolves_docx_num_style_link_to_its_numbering_instance():
