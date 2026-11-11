@@ -430,6 +430,22 @@ def _extract_docx_text(content: bytes) -> str:
     def content_blocks(
         container: ElementTree.Element, table_number_id: int | None = None
     ) -> list[str]:
+        def cell_merge_state(cell: ElementTree.Element, element_name: str) -> str | None:
+            properties = [item for item in cell if item.tag == namespace + "tcPr"]
+            if len(properties) > 1:
+                raise ValueError("DOCX table cell contains duplicate property groups.")
+            if not properties:
+                return None
+            merges = [item for item in properties[0] if item.tag == namespace + element_name]
+            if len(merges) > 1:
+                raise ValueError(f"DOCX table cell contains duplicate {element_name} markers.")
+            if not merges:
+                return None
+            state = merges[0].attrib.get(namespace + "val", "continue")
+            if state not in {"restart", "continue"}:
+                raise ValueError(f"DOCX table cell contains an invalid {element_name} state.")
+            return state
+
         def table_cell_text(cell: ElementTree.Element, inherited_number_id: int | None) -> str:
             value = " / ".join(content_blocks(cell, inherited_number_id))
             properties = [item for item in cell if item.tag == namespace + "tcPr"]
@@ -451,15 +467,8 @@ def _extract_docx_text(content: bytes) -> str:
                     raise ValueError("DOCX table cell contains an invalid grid span.")
                 metadata.append(f"grid span: {grid_span}")
             for element_name, label in (("hMerge", "horizontal"), ("vMerge", "vertical")):
-                merges = [item for item in property_group if item.tag == namespace + element_name]
-                if len(merges) > 1:
-                    raise ValueError(f"DOCX table cell contains duplicate {element_name} markers.")
-                if merges:
-                    state = merges[0].attrib.get(namespace + "val", "continue")
-                    if state not in {"restart", "continue"}:
-                        raise ValueError(
-                            f"DOCX table cell contains an invalid {element_name} state."
-                        )
+                state = cell_merge_state(cell, element_name)
+                if state is not None:
                     metadata.append(f"{label} merge: {state}")
             marker = f" [{'; '.join(metadata)}]" if metadata else ""
             return f"{value}{marker}" if value else marker.strip()
@@ -750,6 +759,44 @@ def _extract_docx_text(content: bytes) -> str:
                     for row in rows
                 ]
                 column_count = max([grid_column_count, *logical_row_widths], default=0)
+                active_vertical_merges: set[tuple[int, int]] = set()
+                for row in rows:
+                    column_index = grid_offset(row, "gridBefore")
+                    next_vertical_merges: set[tuple[int, int]] = set()
+                    horizontal_end: int | None = None
+                    for cell in (child for child in row if child.tag == namespace + "tc"):
+                        span = cell_span(cell)
+                        final_column = column_index + span
+                        horizontal_state = cell_merge_state(cell, "hMerge")
+                        if horizontal_state == "restart":
+                            horizontal_end = final_column
+                        elif horizontal_state == "continue":
+                            if horizontal_end != column_index:
+                                raise ValueError(
+                                    "DOCX horizontal merge continuation is not adjacent to its group."
+                                )
+                            horizontal_end = final_column
+                        else:
+                            horizontal_end = None
+
+                        vertical_state = cell_merge_state(cell, "vMerge")
+                        column_range = (column_index, final_column)
+                        if vertical_state == "restart":
+                            next_vertical_merges.add(column_range)
+                        elif vertical_state == "continue":
+                            if column_range in active_vertical_merges:
+                                next_vertical_merges.add(column_range)
+                            elif any(
+                                column_index < active_end and final_column > active_start
+                                for active_start, active_end in active_vertical_merges
+                            ):
+                                raise ValueError(
+                                    "DOCX vertical merge continuation does not align with its group."
+                                )
+                            # Word attempts to recover orphan continuation markers. Preserve
+                            # those markers without inventing a restart or merged geometry.
+                        column_index = final_column
+                    active_vertical_merges = next_vertical_merges
                 active_table_number_id = table_number_id
                 active_table_number_id = table_rules.get("wholeTable", active_table_number_id)
                 for row_index, row in enumerate(rows):

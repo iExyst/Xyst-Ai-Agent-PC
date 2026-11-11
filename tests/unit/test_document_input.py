@@ -1098,6 +1098,33 @@ def test_extracts_docx_grid_spans_and_legacy_horizontal_and_vertical_merges():
     assert "Vertical continuation [vertical merge: continue]" in result
 
 
+def test_rejects_docx_horizontal_merge_continuation_without_adjacent_group():
+    with pytest.raises(ValueError, match="horizontal merge continuation is not adjacent"):
+        extract_document_text(
+            make_docx(
+                [],
+                [["Not merged", "Orphan continuation"]],
+                table_cell_properties={(0, 1): {"hMerge": None}},
+            ),
+            DOCX_TYPE,
+        )
+
+
+def test_rejects_misaligned_docx_vertical_merge_grid_columns():
+    with pytest.raises(ValueError, match="vertical merge continuation does not align"):
+        extract_document_text(
+            make_docx(
+                [],
+                [["Merged start", "Tail"], ["Narrow continuation", "Tail 2"]],
+                table_cell_properties={
+                    (0, 0): {"gridSpan": "2", "vMerge": "restart"},
+                    (1, 0): {"vMerge": None},
+                },
+            ),
+            DOCX_TYPE,
+        )
+
+
 @pytest.mark.parametrize(
     ("property_name", "value", "error"),
     [("gridSpan", "0", "invalid grid span"), ("vMerge", "unknown", "invalid vMerge")],
