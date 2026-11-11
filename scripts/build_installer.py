@@ -20,6 +20,12 @@ def _installer_install_mode(config_path: Path) -> str:
     return install_mode
 
 
+def _installer_target_dir() -> Path:
+    """Keep release outputs isolated from open development or installed app processes."""
+    configured = os.environ.get("CARGO_TARGET_DIR", "build/installer-target")
+    return Path(configured).resolve()
+
+
 def _run_tauri_build(npm: str, *, signing: bool = False) -> None:
     command = [
         npm,
@@ -137,6 +143,8 @@ def main() -> None:
         raise SystemExit("npm.cmd is required for building the installer.")
     signing = _signing_configured()
     started_ns = time.time_ns()
+    target_dir = _installer_target_dir()
+    os.environ["CARGO_TARGET_DIR"] = str(target_dir)
     subprocess.run([npm, "run", "build:desktop"], check=True)
     subprocess.run([sys.executable, "scripts/build_engine.py"], check=True)
     _run_tauri_build(npm, signing=signing)
@@ -146,7 +154,7 @@ def main() -> None:
     filename = f"{product_name}_{version}_x64-setup.exe"
     if Path(filename).name != filename:
         raise RuntimeError("Installer filename must remain within the bundle directory.")
-    source = Path("apps/desktop/src-tauri/target/release/bundle/nsis") / filename
+    source = target_dir / "release/bundle/nsis" / filename
     if not source.is_file() or source.stat().st_mtime_ns < started_ns:
         raise RuntimeError("The current-version NSIS installer was not produced by this build.")
     destination = Path("build/installer")
@@ -155,7 +163,7 @@ def main() -> None:
     shutil.copy2(source, target)
     binaries = {
         "installer": target,
-        "desktop": Path("apps/desktop/src-tauri/target/release/xaa-desktop.exe"),
+        "desktop": target_dir / "release/xaa-desktop.exe",
         "engine": Path("apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe"),
     }
     notices = {

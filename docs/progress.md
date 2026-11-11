@@ -1,5 +1,9 @@
 # Progress
 
+## Build the current Windows program package (2026-11-11)
+
+Built a fresh unsigned 0.1.1 per-user NSIS installer from the current source in `build/installer/Xyst AI Agent_0.1.1_x64-setup.exe` (73.42 MiB). The installer, desktop executable, and frozen engine SHA-256 values match the generated manifest; the installer Authenticode status is `NotSigned`. The first build collided with a still-running release app in Cargo's shared target. `scripts/build_installer.py` now defaults to a dedicated `build/installer-target` directory, so packaging can finish without replacing files used by running app instances. Its focused script tests pass (9); TypeScript production build, PyInstaller, isolated Cargo release build, and NSIS packaging pass. Full installed acceptance remains a hosted-runner gate; the installer workflow only permits its install/uninstall smoke on a disposable GitHub Actions runner. No live inference was used.
+
 ## Rename shared desktop and CLI conversations (2026-11-11)
 
 Saved shared conversations now have an editable 80-character display title independent of the stable session ID. The authenticated API validates titles, limits updates to local CLI-backed sessions, and preserves the model/workspace/mode binding and saved message history; renaming does not alter the last-used ordering. The desktop lists and edits those titles, while CLI commands continue using the unchanged session ID. The focused storage/API suite passes (11 tests), the shared-session desktop browser acceptance passes, the generated OpenAPI/TypeScript contract is current, and TypeScript, Ruff, Pyright and `git diff --check` pass. The browser fixture now follows the redesigned app navigation back to the session panel after a run. No live model inference was used.

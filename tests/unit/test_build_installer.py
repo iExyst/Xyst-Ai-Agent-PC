@@ -218,3 +218,11 @@ def test_release_installer_requires_current_user_install_mode(tmp_path):
     )
     with pytest.raises(RuntimeError, match="currentUser"):
         build_installer._installer_install_mode(machine_config)
+
+
+def test_installer_cargo_target_isolated_from_running_desktop(monkeypatch, tmp_path):
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+    assert build_installer._installer_target_dir() == Path("build/installer-target").resolve()
+    configured = tmp_path / "private target"
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(configured))
+    assert build_installer._installer_target_dir() == configured.resolve()
