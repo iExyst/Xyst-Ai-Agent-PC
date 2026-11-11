@@ -794,6 +794,21 @@ def create_app(
 
     app = FastAPI(title="X.A.A. Local API", version=APP_VERSION, lifespan=lifespan)
 
+    def managed_plugin_is_referenced(
+        connection: sqlite3.Connection, managed_root: Path, package_name: str
+    ) -> bool:
+        expected = managed_root.resolve()
+        for row in connection.execute(
+            "SELECT plugin_root FROM mcp_servers WHERE plugin_root IS NOT NULL"
+        ):
+            try:
+                referenced = Path(row["plugin_root"]).resolve(strict=False)
+            except (OSError, RuntimeError):
+                continue
+            if referenced.parent == expected and referenced.name == package_name:
+                return True
+        return False
+
     @app.post("/extensions/packages/discover", response_model=PluginDiscovery)
     def discover_extension_packages(
         payload: PluginDiscoveryRequest, _: None = Depends(authenticate)
@@ -822,25 +837,19 @@ def create_app(
         payload: PluginRemovalRequest, _: None = Depends(authenticate)
     ) -> PluginDataRemovalResult:
         managed_root = run_store.path.parent / "agent-plugins"
-        expected = managed_root.resolve()
-        for server in MCPRegistry(run_store).list_servers():
-            if server.plugin_root is None:
-                continue
-            try:
-                referenced = Path(server.plugin_root).resolve(strict=False)
-            except (OSError, RuntimeError):
-                continue
-            if referenced.parent == expected and referenced.name == payload.package_name:
+        with run_store.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if managed_plugin_is_referenced(connection, managed_root, payload.package_name):
                 raise HTTPException(
                     status_code=409,
                     detail="Remove this package's MCP integrations before deleting its data.",
                 )
-        try:
-            return remove_managed_plugin_data(
-                run_store.path.parent / "plugin-data", payload.package_name
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            try:
+                return remove_managed_plugin_data(
+                    run_store.path.parent / "plugin-data", payload.package_name
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/extensions/packages/install", status_code=201, response_model=PluginInstallResult)
     def install_extension_package(
@@ -861,23 +870,17 @@ def create_app(
         payload: PluginRemovalRequest, _: None = Depends(authenticate)
     ) -> PluginRemovalResult:
         managed_root = run_store.path.parent / "agent-plugins"
-        expected = managed_root.resolve()
-        for server in MCPRegistry(run_store).list_servers():
-            if server.plugin_root is None:
-                continue
-            try:
-                referenced = Path(server.plugin_root).resolve(strict=False)
-            except (OSError, RuntimeError):
-                continue
-            if referenced.parent == expected and referenced.name == payload.package_name:
+        with run_store.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if managed_plugin_is_referenced(connection, managed_root, payload.package_name):
                 raise HTTPException(
                     status_code=409,
                     detail="Remove this package's MCP integrations before uninstalling it.",
                 )
-        try:
-            return remove_installed_agent_plugin(managed_root, payload.package_name)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            try:
+                return remove_installed_agent_plugin(managed_root, payload.package_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/extensions/packages/import-skill", status_code=201, response_model=SkillSummary)
     def import_extension_skill(

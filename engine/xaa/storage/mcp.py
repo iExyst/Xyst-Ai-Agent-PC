@@ -191,6 +191,18 @@ class MCPRegistry:
         identity = uuid4().hex
         now = utc_now()
         with self.store.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if spec.plugin_root is not None and spec.plugin_sha256 is not None:
+                # Serialize plugin registration with package/data removal and recheck
+                # the package after obtaining SQLite's cross-process write lock.
+                from xaa.extensions.agent_plugins import plugin_source_sha256
+
+                try:
+                    current_sha256 = plugin_source_sha256(Path(spec.plugin_root))
+                except (OSError, RuntimeError, ValueError) as exc:
+                    raise ValueError("The selected MCP package is no longer available.") from exc
+                if current_sha256 != spec.plugin_sha256:
+                    raise ValueError("The selected MCP package changed before it was registered.")
             connection.execute(
                 "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (

@@ -3,12 +3,16 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import shutil
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from xaa.api import app as api_module
 from xaa.api.app import create_app
 from xaa.extensions import agent_plugins
 from xaa.extensions.agent_plugins import (
@@ -589,6 +593,71 @@ def test_plugin_archive_install_is_authenticated_bounded_and_inactive(tmp_path: 
     assert removed_data.json() == {"removed": True, "package_name": "sample-package"}
     assert not data_file.parent.parent.exists()
     assert retained_after_removal.json()["package_names"] == []
+
+
+def test_package_removal_serializes_with_mcp_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_package(tmp_path / "source")
+    store = RunStore(tmp_path / "state" / "api.sqlite3")
+    managed_root = store.path.parent / "agent-plugins"
+    installed = managed_root / "sample-package"
+    installed.parent.mkdir(parents=True)
+    shutil.copytree(source, installed)
+    manifest_path = installed / "mcp.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["mcpServers"]["local-helper"]["env"] = {}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    remove_entered = Event()
+    release_remove = Event()
+    register_entered = Event()
+    original_remove = agent_plugins.remove_installed_agent_plugin
+    original_create = MCPRegistry.create_server
+
+    def pause_remove(root: Path, package_name: str):
+        remove_entered.set()
+        assert release_remove.wait(timeout=10)
+        return original_remove(root, package_name)
+
+    def observe_registration(registry: MCPRegistry, spec: MCPServerSpec):
+        register_entered.set()
+        return original_create(registry, spec)
+
+    monkeypatch.setattr(api_module, "remove_installed_agent_plugin", pause_remove)
+    monkeypatch.setattr(MCPRegistry, "create_server", observe_registration)
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=store)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=2) as pool:
+        removing = pool.submit(
+            client.post,
+            "/extensions/packages/remove",
+            headers=headers,
+            json={"package_name": "sample-package"},
+        )
+        assert remove_entered.wait(timeout=5)
+        registering = pool.submit(
+            client.post,
+            "/extensions/packages/import-mcp-server",
+            headers=headers,
+            json={
+                "root": str(managed_root),
+                "package_name": "sample-package",
+                "server_name": "local-helper",
+            },
+        )
+        try:
+            assert register_entered.wait(timeout=5)
+        finally:
+            release_remove.set()
+        removed = removing.result(timeout=10)
+        imported = registering.result(timeout=10)
+
+    assert removed.status_code == 200
+    assert imported.status_code == 400
+    assert "no longer available" in imported.json()["detail"]
+    assert not installed.exists()
+    assert MCPRegistry(store).list_servers() == []
 
 
 def test_plugin_archive_install_rejects_traversal_and_existing_package(tmp_path: Path) -> None:

@@ -1,5 +1,9 @@
 # Progress
 
+## Serialize managed plugin removal with MCP registration (2026-11-10)
+
+Package and retained-data removal now hold SQLite's cross-process `BEGIN IMMEDIATE` write lock from reference inspection through filesystem deletion. MCP server registration takes the same lock and rechecks the package source digest before recording its reference. A controlled concurrent API regression pauses removal while a registration races; removal completes, registration then rejects the missing package, and no dangling MCP server is stored. The focused plugin/MCP suites pass (49 passed, 1 skipped); Ruff, formatting, Pyright and `git diff --check` pass. This serializes these managed API operations across processes sharing the database; manual out-of-band filesystem changes still rely on the existing per-call source-digest checks. No model inference was used.
+
 ## Make competing procedure edits race deterministically (2026-11-10)
 
 Strengthened the immutable-procedure concurrent-edit regression with a two-writer barrier so both revision requests begin from expected version 1 at the same time. Exactly one transaction creates version 2; the losing stale writer receives a conflict, version 1 remains immutable, and no duplicate revision is created. The focused backup/edit/delete test passes; Ruff, formatting and `git diff --check` pass. Hosted Windows run [42945715044](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42945715044) passed the full source workflow with 1,023 Python tests and process-recovery diagnostics; installer validation was skipped because the change did not affect packaging inputs. This verifies the optimistic version guard under concurrent edits for this storage path; it does not settle broader package mutation locks, background-review policy or read-before-write protections. No model inference was used.
