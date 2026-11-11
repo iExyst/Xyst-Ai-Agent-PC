@@ -9,6 +9,7 @@ from posixpath import join as join_posix
 from posixpath import normpath
 from struct import pack
 from typing import Any, cast
+from urllib.parse import unquote
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile, ZipInfo
 from zlib import compress
@@ -28,6 +29,8 @@ MAX_PDF_OCR_PIXELS = 2_500_000
 PDF_OCR_RENDER_SCALE = 2
 MAX_OOXML_ENTRIES = 1024
 MAX_OOXML_PART_BYTES = 4 * 1024 * 1024
+MAX_DOCX_RELATED_PARTS = 50
+MAX_DOCX_XML_BYTES = 8 * 1024 * 1024
 MAX_XLSX_SHEETS = 50
 MAX_XLSX_CELLS = 10_000
 MAX_XLSX_SHARED_STRINGS = 50_000
@@ -203,7 +206,7 @@ def _bitmap_png(bitmap: pdfium.PdfBitmap) -> bytes:
 
 
 def _extract_docx_text(content: bytes) -> str:
-    """Read only bounded WordprocessingML text; never extract ZIP members to disk."""
+    """Read bounded WordprocessingML body/header/footer text without disk extraction."""
     try:
         with ZipFile(BytesIO(content)) as archive:
             entries = archive.infolist()
@@ -211,20 +214,35 @@ def _extract_docx_text(content: bytes) -> str:
                 raise ValueError("DOCX contains too many ZIP entries.")
             content_types = [item for item in entries if item.filename == "[Content_Types].xml"]
             documents = [item for item in entries if item.filename == "word/document.xml"]
+            relationship_parts = [
+                item for item in entries if item.filename == "word/_rels/document.xml.rels"
+            ]
             if len(content_types) != 1 or len(documents) != 1:
                 raise ValueError(
                     "DOCX package is missing its unique content types or document part."
                 )
+            if len(relationship_parts) > 1:
+                raise ValueError("DOCX package contains duplicate document relationships.")
             content_type_info, document_info = content_types[0], documents[0]
-            if content_type_info.flag_bits & 1 or document_info.flag_bits & 1:
+            relationship_info = relationship_parts[0] if relationship_parts else None
+            if any(
+                info.flag_bits & 1
+                for info in (content_type_info, document_info, relationship_info)
+                if info is not None
+            ):
                 raise ValueError("Encrypted DOCX files are not supported.")
             if (
                 content_type_info.file_size > 256 * 1024
                 or document_info.file_size > MAX_OOXML_PART_BYTES
+                or (
+                    relationship_info is not None
+                    and relationship_info.file_size > MAX_OOXML_PART_BYTES
+                )
             ):
                 raise ValueError("DOCX document XML exceeds its extraction limit.")
             declared = archive.read(content_type_info)
             xml = archive.read(document_info)
+            relationship_xml = archive.read(relationship_info) if relationship_info else None
     except ValueError:
         raise
     except (BadZipFile, RuntimeError, OSError, EOFError):
@@ -233,9 +251,16 @@ def _extract_docx_text(content: bytes) -> str:
         raise ValueError("DOCX XML declarations are not supported.")
     if b"<!DOCTYPE" in xml.upper() or b"<!ENTITY" in xml.upper():
         raise ValueError("DOCX XML declarations are not supported.")
+    if relationship_xml is not None and (
+        b"<!DOCTYPE" in relationship_xml.upper() or b"<!ENTITY" in relationship_xml.upper()
+    ):
+        raise ValueError("DOCX relationship XML declarations are not supported.")
     try:
         types_root = ElementTree.fromstring(declared)
         root = ElementTree.fromstring(xml)
+        relationships_root = (
+            ElementTree.fromstring(relationship_xml) if relationship_xml is not None else None
+        )
     except ElementTree.ParseError:
         raise ValueError("DOCX could not be safely parsed for text extraction.") from None
     content_namespace = "{http://schemas.openxmlformats.org/package/2006/content-types}"
@@ -283,10 +308,130 @@ def _extract_docx_text(content: bytes) -> str:
                 blocks.extend(content_blocks(item))
         return blocks
 
-    text = "\n".join(content_blocks(root))
+    related_parts = _docx_related_parts(
+        content,
+        root,
+        relationships_root,
+        namespace,
+        len(declared) + len(xml) + (len(relationship_xml) if relationship_xml else 0),
+    )
+
+    pieces = [
+        f"{label}\n{block}"
+        for label, related_root in related_parts
+        for block in content_blocks(related_root)
+    ]
+    pieces.extend(content_blocks(root))
+    text = "\n".join(pieces)
     if not text:
         raise ValueError("DOCX contains no extractable text.")
     return _bound(text)
+
+
+def _docx_related_parts(
+    content: bytes,
+    root: ElementTree.Element,
+    relationships_root: ElementTree.Element | None,
+    namespace: str,
+    initial_xml_bytes: int,
+) -> list[tuple[str, ElementTree.Element]]:
+    """Read only referenced, bounded header/footer parts from a DOCX package."""
+    references = [
+        item
+        for item in root.iter()
+        if item.tag in {namespace + "headerReference", namespace + "footerReference"}
+    ]
+    if not references:
+        return []
+    if relationships_root is None:
+        raise ValueError("DOCX header/footer relationship is missing.")
+    package_namespace = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+    if relationships_root.tag != package_namespace + "Relationships":
+        raise ValueError("DOCX document relationships have an invalid root element.")
+    relations: dict[str, dict[str, str]] = {}
+    for relation in relationships_root:
+        if relation.tag != package_namespace + "Relationship":
+            continue
+        identity = relation.attrib.get("Id")
+        if not identity or identity in relations:
+            raise ValueError("DOCX document relationships contain a missing or duplicate ID.")
+        relations[identity] = relation.attrib
+
+    office_relationship_namespace = (
+        "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    )
+    visited_parts: dict[str, str] = {}
+    total_xml_bytes = initial_xml_bytes
+    related_parts: list[tuple[str, ElementTree.Element]] = []
+    with ZipFile(BytesIO(content)) as archive:
+        entries = archive.infolist()
+        for reference in references:
+            identity = reference.attrib.get(office_relationship_namespace + "id")
+            relation = relations.get(identity or "")
+            if relation is None:
+                raise ValueError("DOCX header/footer relationship is missing.")
+            is_header = reference.tag == namespace + "headerReference"
+            relation_suffix = "/header" if is_header else "/footer"
+            if not relation.get("Type", "").endswith(relation_suffix):
+                raise ValueError("DOCX header/footer relationship has the wrong type.")
+            if relation.get("TargetMode", "Internal") != "Internal":
+                raise ValueError("External DOCX headers and footers are not supported.")
+            target = relation.get("Target", "")
+            if (
+                not target
+                or target.startswith("/")
+                or "\\" in target
+                or ":" in target
+                or "?" in target
+                or "#" in target
+            ):
+                raise ValueError("DOCX header/footer relationship has an invalid package path.")
+            try:
+                target = unquote(target, errors="strict")
+            except UnicodeDecodeError:
+                raise ValueError(
+                    "DOCX header/footer relationship has an invalid package path."
+                ) from None
+            if "\\" in target or ":" in target or "?" in target or "#" in target:
+                raise ValueError("DOCX header/footer relationship has an invalid package path.")
+            part = normpath(join_posix("word", target))
+            if not part.startswith("word/") or ".." in part.split("/"):
+                raise ValueError("DOCX header/footer relationship escapes the package.")
+            kind = "Header" if is_header else "Footer"
+            if part in visited_parts:
+                if visited_parts[part] != kind:
+                    raise ValueError("DOCX header and footer references cannot share one part.")
+                continue
+            visited_parts[part] = kind
+            if len(visited_parts) > MAX_DOCX_RELATED_PARTS:
+                raise ValueError("DOCX contains too many referenced headers and footers.")
+            matches = [item for item in entries if item.filename == part]
+            if len(matches) != 1:
+                raise ValueError("DOCX referenced header/footer part is missing or duplicated.")
+            info = matches[0]
+            if info.flag_bits & 1 or info.file_size > MAX_OOXML_PART_BYTES:
+                raise ValueError("DOCX header/footer XML exceeds its extraction limit.")
+            total_xml_bytes += info.file_size
+            if total_xml_bytes > MAX_DOCX_XML_BYTES:
+                raise ValueError("DOCX XML exceeds its total extraction limit.")
+            try:
+                part_xml = archive.read(info)
+            except (BadZipFile, RuntimeError, OSError, EOFError):
+                raise ValueError("DOCX header/footer could not be safely read.") from None
+            if b"<!DOCTYPE" in part_xml.upper() or b"<!ENTITY" in part_xml.upper():
+                raise ValueError("DOCX header/footer XML declarations are not supported.")
+            try:
+                part_root = ElementTree.fromstring(part_xml)
+            except ElementTree.ParseError:
+                raise ValueError("DOCX header/footer could not be safely parsed.") from None
+            expected_root = namespace + ("hdr" if is_header else "ftr")
+            if part_root.tag != expected_root:
+                raise ValueError("DOCX header/footer part has an invalid root element.")
+            section_type = reference.attrib.get(namespace + "type", "default")
+            if section_type not in {"default", "first", "even"}:
+                raise ValueError("DOCX header/footer reference has an invalid section type.")
+            related_parts.append((f"[Document {kind}: {section_type}]", part_root))
+    return related_parts
 
 
 def _extract_xlsx_text(content: bytes) -> str:

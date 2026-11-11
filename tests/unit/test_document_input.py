@@ -38,7 +38,17 @@ def make_text_pdf(text: str) -> bytes:
     return output.getvalue()
 
 
-def make_docx(paragraphs: list[str], table: list[list[str]] | None = None) -> bytes:
+def make_docx(
+    paragraphs: list[str],
+    table: list[list[str]] | None = None,
+    *,
+    header: str | None = None,
+    footer: str | None = None,
+    header_target: str = "header1.xml",
+    header_mode: str = "Internal",
+    header_type: str = "default",
+    footer_type: str = "default",
+) -> bytes:
     body = "".join(f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs)
     if table is not None:
         body += (
@@ -51,8 +61,37 @@ def make_docx(paragraphs: list[str], table: list[list[str]] | None = None) -> by
             )
             + "</w:tbl>"
         )
+    header_reference = ""
+    footer_reference = ""
+    relationships = []
+    content_type_overrides = []
+    if header is not None:
+        header_reference = f'<w:headerReference w:type="{header_type}" r:id="rIdHeader"/>'
+        relationships.append(
+            '<Relationship Id="rIdHeader" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
+            f'Target="{header_target}" TargetMode="{header_mode}"/>'
+        )
+        content_type_overrides.append(
+            '<Override PartName="/word/header1.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+        )
+    if footer is not None:
+        footer_reference = f'<w:footerReference w:type="{footer_type}" r:id="rIdFooter"/>'
+        relationships.append(
+            '<Relationship Id="rIdFooter" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" '
+            'Target="footer1.xml"/>'
+        )
+        content_type_overrides.append(
+            '<Override PartName="/word/footer1.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+        )
+    if header_reference or footer_reference:
+        body += f"<w:sectPr>{header_reference}{footer_reference}</w:sectPr>"
     document = (
-        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
         f"<w:body>{body}</w:body></w:document>"
     )
     output = BytesIO()
@@ -62,9 +101,29 @@ def make_docx(paragraphs: list[str], table: list[list[str]] | None = None) -> by
             '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
             '<Override PartName="/word/document.xml" '
             'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-            "</Types>",
+            + "".join(content_type_overrides)
+            + "</Types>",
         )
         archive.writestr("word/document.xml", document)
+        if relationships:
+            archive.writestr(
+                "word/_rels/document.xml.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + "".join(relationships)
+                + "</Relationships>",
+            )
+        if header is not None:
+            archive.writestr(
+                "word/header1.xml",
+                '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                f"<w:p><w:r><w:t>{header}</w:t></w:r></w:p></w:hdr>",
+            )
+        if footer is not None:
+            archive.writestr(
+                "word/footer1.xml",
+                '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                f"<w:p><w:r><w:t>{footer}</w:t></w:r></w:p></w:ftr>",
+            )
     return output.getvalue()
 
 
@@ -146,6 +205,51 @@ def test_extracts_docx_table_rows_and_preserves_empty_cell_positions():
         DOCX_TYPE,
     )
     assert result == "Inventory\nItem | Count\napples | 3\n | 4"
+
+
+def test_extracts_docx_linked_headers_and_footers():
+    result = extract_document_text(
+        make_docx(["Body text"], header="Confidential", footer="Page 1"), DOCX_TYPE
+    )
+    assert "[Document Header: default]\nConfidential" in result
+    assert "[Document Footer: default]\nPage 1" in result
+    assert "Body text" in result
+
+
+def test_labels_first_and_even_docx_header_footer_variants():
+    result = extract_document_text(
+        make_docx(
+            ["Body text"],
+            header="First page",
+            footer="Even page",
+            header_type="first",
+            footer_type="even",
+        ),
+        DOCX_TYPE,
+    )
+    assert "[Document Header: first]\nFirst page" in result
+    assert "[Document Footer: even]\nEven page" in result
+
+
+@pytest.mark.parametrize(
+    ("header_target", "header_mode", "error"),
+    [
+        ("../../outside.xml", "Internal", "escapes the package"),
+        ("%2e%2e/%2e%2e/outside.xml", "Internal", "escapes the package"),
+        ("https://example.com/header.xml", "External", "External DOCX headers"),
+    ],
+)
+def test_rejects_unsafe_docx_header_targets(header_target, header_mode, error):
+    with pytest.raises(ValueError, match=error):
+        extract_document_text(
+            make_docx(
+                ["Body text"],
+                header="untrusted",
+                header_target=header_target,
+                header_mode=header_mode,
+            ),
+            DOCX_TYPE,
+        )
 
 
 def test_rejects_malformed_and_textless_docx():
