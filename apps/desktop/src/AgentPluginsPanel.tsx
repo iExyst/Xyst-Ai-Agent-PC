@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { EngineRequestError } from './api/client.ts';
 import type { EngineClient, PluginDiscovery } from './api/client.ts';
 
 function declaredRequirementsSummary(value: Record<string, unknown> | undefined): string {
@@ -94,7 +95,7 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
       const installed=await client.listInstalledAgentPlugins();
       setRoot(installed.root);setManagedRoot(installed.root);setResult(installed);
       setNotice(`${packageName} was removed. Imported skill versions and package data were kept.`);
-    } catch (failure) {setError(failure instanceof Error?failure.message:String(failure));}
+    } catch (failure) {setError(failure instanceof EngineRequestError&&failure.status===409?"Remove this package's MCP integrations before uninstalling it.":failure instanceof Error?failure.message:String(failure));}
     finally {setBusy(false);}
   }
   async function discoverPackageData() {

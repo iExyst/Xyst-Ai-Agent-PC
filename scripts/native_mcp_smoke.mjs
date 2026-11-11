@@ -214,6 +214,55 @@ try {
     throw new Error('The native MCP fixture configuration was not removed.');
   }
 
+  // Exercise the installed-package UI in the actual native WebView. The ZIP
+  // arrives through the authenticated local API here; browser acceptance
+  // separately covers the native file-picker button and archive selection.
+  const packageName = 'native-fixture-package';
+  const packageArchive = path.join(root, `${packageName}.zip`);
+  execFileSync(command, ['-c', [
+    'import json, pathlib, sys, zipfile',
+    'archive, fixture, python = map(pathlib.Path, sys.argv[1:])',
+    'with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as z:',
+    ' z.writestr("plugin.json", json.dumps({"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"native-fixture-package","version":"1.0.0","description":"Native installed-package acceptance"}))',
+    ' z.writestr("mcp.json", json.dumps({"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"local-helper":{"type":"stdio","command":"cmd.exe","args":["/d","/c","${PLUGIN_ROOT}/run.cmd"],"cwd":"${PLUGIN_ROOT}"}}}))',
+    ' z.writestr("run.cmd", "@echo off\\r\\n" + chr(34) + str(python) + chr(34) + " " + chr(34) + "%~dp0server.py" + chr(34) + "\\r\\n")',
+    ' z.write(fixture, "server.py")',
+  ].join('\n'), packageArchive, fixture, command], { windowsHide: true, stdio: 'pipe' });
+  const packageInstall = await fetch(`${connection.base_url}/extensions/packages/install`, {
+    method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archive_path: packageArchive }),
+  });
+  if (packageInstall.status !== 201) throw new Error(`Native package installation failed (${packageInstall.status}): ${await packageInstall.text()}`);
+  const packageInstalled = await packageInstall.json();
+  if (packageInstalled.package.name !== packageName) throw new Error('Native package install returned the wrong package identity.');
+  await page.locator('summary').filter({ hasText: 'Agent plugin discovery' }).click();
+  const plugins = page.getByRole('region', { name: 'Agent plugin package discovery' });
+  await plugins.getByRole('button', { name: 'Show installed packages' }).click();
+  const packageCard = plugins.locator('article').filter({ hasText: packageName });
+  await expect(packageCard.getByRole('heading', { name: `${packageName} · 1.0.0` })).toBeVisible({ timeout: 10_000 });
+  await expect(packageCard.getByText('local-helper', { exact: false })).toBeVisible();
+  await packageCard.getByRole('button', { name: 'Add disconnected server' }).click();
+  await expect(plugins.getByRole('status')).toContainText(`${packageName}:local-helper`);
+  const packageServer = page.getByRole('region', { name: 'MCP integrations' })
+    .locator('.mcp-server').filter({ hasText: `${packageName}:local-helper` });
+  await expect(packageServer.getByRole('heading', { name: new RegExp(`${packageName}:local-helper.*disconnected`) })).toBeVisible();
+  const installedServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  const packageServerState = installedServers.find((server) => server.name === `${packageName}:local-helper`);
+  if (packageServerState?.state !== 'disconnected' || packageServerState.tools.length !== 0) {
+    throw new Error('The native installed-package UI connected a server before explicit owner action.');
+  }
+  page.once('dialog', (dialog) => void dialog.accept());
+  await packageCard.getByRole('button', { name: `Remove ${packageName}` }).click();
+  await expect(plugins.getByRole('alert')).toContainText('Remove this package\'s MCP integrations before uninstalling it.');
+  const retainedPackage = await (await fetch(`${connection.base_url}/extensions/packages/installed`, { headers })).json();
+  if (!retainedPackage.packages.some((item) => item.name === packageName)) throw new Error('The native UI removed a referenced package.');
+  await packageServer.getByRole('button', { name: 'Remove server' }).click();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await packageCard.getByRole('button', { name: `Remove ${packageName}` }).click();
+  await expect(plugins.getByRole('status')).toContainText('Imported skill versions and package data were kept');
+  const removedPackages = await (await fetch(`${connection.base_url}/extensions/packages/installed`, { headers })).json();
+  if (removedPackages.packages.some((item) => item.name === packageName)) throw new Error('The native UI did not remove its installed package.');
+
   const oauthPort = await new Promise((resolve, reject) => {
     const listener = net.createServer();
     listener.once('error', reject);
@@ -320,6 +369,10 @@ try {
     native_oauth_vault_persistence: true,
     native_oauth_reconnect: true,
     native_oauth_clear_sign_in: true,
+    native_package_install_and_listing: true,
+    native_package_mcp_import_stays_disconnected: packageServerState?.state === 'disconnected',
+    native_package_removal_blocked_while_referenced: true,
+    native_package_removed_after_integration_removal: true,
     real_fixture_process: true,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
