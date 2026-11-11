@@ -1,5 +1,13 @@
 # Specialist filesystem authority
 
+## Plan dependency depth
+
+Specialist plans are flat graphs of at most 64 tasks. Dependency edges are validated as a DAG,
+and each task's longest prerequisite chain is limited to 16 task levels. The bound keeps deeply
+serial plans from exhausting coordinator recursion or producing impractically long review chains;
+it does not add recursive specialist delegation. Shared iteration and time reservations still
+apply to the whole plan, and dependency cycles are rejected separately.
+
 Specialist workers carry the saved task ID and opaque worker token in the private worker protocol. Model tool arguments cannot select that scope, a root directory, parent ownership or an operating mode. Both scope fields must be present together. Ordinary scoped filesystem requests permit only internal read/list operations; dedicated private workspace operations additionally require the task's saved workspace.write permission.
 
 A scoped RunStore validates the current parent lease and exact running task/token/expiry, workspace.read permission and saved task-to-parent workspace binding. The same validation applies at filesystem intent and result transactions, not just in the coordinator before launching a child. Its get_run view uses Observe mode and omits any parent command grant. Parent operations without task scope retain their normal run permissions.

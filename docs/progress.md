@@ -1,5 +1,15 @@
 # Progress
 
+## Bound specialist plan dependency depth (2026-11-11)
+
+Task graphs already rejected dependency cycles and over-budget reservations, but allowed a flat
+plan to chain all 64 tasks serially. Added a 16-level maximum prerequisite chain while retaining
+the 64-task graph limit, with a regression covering the allowed boundary and the first rejected
+level. This bounds dependency/review depth; it does not add recursive specialist delegation.
+Focused graph, planning, and plan-API suites pass (14 tests), as do Ruff formatting/lint, Pyright
+for the changed runtime module, and `git diff --check`. Hosted CI and broader live-model
+acceptance are not yet run for this slice.
+
 ## Explain how to get the desktop app from GitHub Actions (2026-11-11)
 
 The README and user guide now explain that GitHub Actions displays build logs, link directly to the latest successful 0.1.1 Windows installer run [43108277137](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43108277137), and give the exact steps to download the ZIP artifact, extract it, and run the per-user setup program. The README also correctly says closing the main window hides the app to the tray by default, while **Quit and stop the agent** stops the engine. Corrected the artifact retention period to 90 days based on the workflow configuration. This addresses the workflow-versus-product confusion without presenting the unsigned development build as a general release.

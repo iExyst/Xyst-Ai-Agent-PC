@@ -6,6 +6,9 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+MAX_TASKS = 64
+MAX_TASK_DEPENDENCY_DEPTH = 16
+
 
 class TaskDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
@@ -69,8 +72,8 @@ class TaskGraph:
         token_budget: int | None = None,
         output_limit: int | None = None,
     ) -> None:
-        if not tasks or len(tasks) > 64:
-            raise ValueError("A plan must contain between 1 and 64 tasks.")
+        if not tasks or len(tasks) > MAX_TASKS:
+            raise ValueError(f"A plan must contain between 1 and {MAX_TASKS} tasks.")
         self._tasks = MappingProxyType({task.id: task for task in tasks})
         if len(self.tasks) != len(tasks):
             raise ValueError("Task IDs must be unique.")
@@ -103,6 +106,7 @@ class TaskGraph:
             if any(identity not in self.tasks for identity in task.dependencies):
                 raise ValueError("Dependency refers to an unknown task.")
         visited: set[str] = set()
+        postorder: list[str] = []
         active: set[str] = set()
 
         def visit(identity: str) -> None:
@@ -115,9 +119,21 @@ class TaskGraph:
                 visit(dependency)
             active.remove(identity)
             visited.add(identity)
+            postorder.append(identity)
 
         for identity in self.tasks:
             visit(identity)
+
+        depths: dict[str, int] = {}
+        for identity in postorder:
+            depth = 1 + max(
+                (depths[dependency] for dependency in self.tasks[identity].dependencies), default=0
+            )
+            if depth > MAX_TASK_DEPENDENCY_DEPTH:
+                raise ValueError(
+                    f"Task dependency depth exceeds the limit of {MAX_TASK_DEPENDENCY_DEPTH}."
+                )
+            depths[identity] = depth
 
     @property
     def tasks(self) -> Mapping[str, TaskDefinition]:
