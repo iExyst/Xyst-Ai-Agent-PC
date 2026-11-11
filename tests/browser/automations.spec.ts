@@ -14,6 +14,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:'fixture/model'},headers});
     if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/memory'||path==='/memory/export')return route.fulfill({json:[],headers});
     if(path.startsWith('/execution/'))return route.fulfill({json:[],headers});

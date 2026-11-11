@@ -708,6 +708,53 @@ def test_schedule_uses_separate_failure_notification_destination(workspace_tmp_p
     assert schedule["failure_notification_destination"] == "telegram:42:456"
 
 
+def test_schedule_keeps_result_on_result_destination_when_failure_is_separate(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-result-and-failure-destinations.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store, 123)
+    second_code = PAIR_CODE + "_result"
+    store.create_pairing(second_code)
+    assert (
+        store.process_update(
+            IDENTITY, private_update(2, 456, f"/pair {second_code}"), model="fixture/model"
+        )["state"]
+        == "paired"
+    )
+    from xaa.scheduler.service import ScheduleService
+    from xaa.storage.schedules import ScheduleStore
+
+    now = datetime.now(UTC)
+    ScheduleStore(runs).create(
+        objective="Result destination test",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=now.replace(second=0, microsecond=0, tzinfo=None),
+        frequency="once",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+        delivery_destination="telegram:42:123",
+        failure_notification_destination="telegram:42:456",
+    )
+    run_id = ScheduleService(runs, lambda _run_id: None).tick(now)[0]
+    with runs.connection() as connection:
+        connection.execute("UPDATE runs SET state='completed' WHERE id=?", (run_id,))
+        RunStore.record_event(
+            connection,
+            run_id,
+            "model.message",
+            {"message": {"role": "assistant", "content": "Scheduled result."}},
+        )
+    delivery = store.claim_schedule_delivery(IDENTITY.account_id)
+    assert delivery is not None
+    assert delivery["chat_id"] == "123"
+    assert delivery["text"] == "Scheduled result."
+
+
 def test_failure_only_schedule_skips_success_delivery(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "scheduled-failure-only.sqlite3")
     store = TelegramStore(runs)
