@@ -24,12 +24,10 @@ class MemoryStore:
             raise ValueError("Recall budget must be positive.")
         expression = self._query_expression(query) if query is not None else None
         with self.runs.connection() as connection:
-            if query is not None and expression is None:
-                rows = []
-            elif expression is not None:
+            if expression is not None:
                 rows = connection.execute(
-                    "SELECT memories.id,memories.content FROM memories JOIN memory_search ON memory_search.id=memories.id WHERE memories.scope=? AND memories.kind='preference' AND memories.provenance='user' AND memory_search MATCH ? ORDER BY bm25(memory_search),memories.updated_at DESC,memories.id",
-                    (scope, expression),
+                    "SELECT memories.id,memories.content FROM memories LEFT JOIN (SELECT id,bm25(memory_search) AS score FROM memory_search WHERE memory_search MATCH ?) AS ranked ON ranked.id=memories.id WHERE memories.scope=? AND memories.kind='preference' AND memories.provenance='user' ORDER BY CASE WHEN ranked.id IS NULL THEN 1 ELSE 0 END,ranked.score,memories.updated_at DESC,memories.id",
+                    (expression, scope),
                 ).fetchall()
             else:
                 rows = connection.execute(
@@ -53,12 +51,10 @@ class MemoryStore:
             raise ValueError("Recall budget must be positive.")
         expression = self._query_expression(query) if query is not None else None
         with self.runs.connection() as connection:
-            if query is not None and expression is None:
-                rows = []
-            elif expression is not None:
+            if expression is not None:
                 rows = connection.execute(
-                    "SELECT memories.id,memories.content,memories.source_uri FROM memories JOIN memory_search ON memory_search.id=memories.id WHERE memories.scope=? AND memories.kind='knowledge' AND memories.provenance='user_source' AND memory_search MATCH ? ORDER BY bm25(memory_search),memories.updated_at DESC,memories.id",
-                    (scope, expression),
+                    "SELECT memories.id,memories.content,memories.source_uri FROM memories LEFT JOIN (SELECT id,bm25(memory_search) AS score FROM memory_search WHERE memory_search MATCH ?) AS ranked ON ranked.id=memories.id WHERE memories.scope=? AND memories.kind='knowledge' AND memories.provenance='user_source' ORDER BY CASE WHEN ranked.id IS NULL THEN 1 ELSE 0 END,ranked.score,memories.updated_at DESC,memories.id",
+                    (expression, scope),
                 ).fetchall()
             else:
                 rows = connection.execute(

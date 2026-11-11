@@ -69,21 +69,31 @@ def test_run_recall_ranks_by_objective_terms_and_keeps_record_types_separate(
 ):
     memories = MemoryStore(RunStore(workspace_tmp_path / "query-recall.sqlite3"))
     python_preference = memories.save_preference("local-user", "Use Python for automation examples")
-    memories.save_preference("local-user", "Prefer Rust for systems examples")
+    rust_preference = memories.save_preference("local-user", "Prefer Rust for systems examples")
     sqlite_knowledge = memories.save_sourced_knowledge(
         "local-user", "SQLite WAL supports concurrent readers", "https://example.test/wal"
     )
-    memories.save_sourced_knowledge(
+    python_knowledge = memories.save_sourced_knowledge(
         "local-user", "Python packaging uses project metadata", "https://example.test/python"
     )
 
     preference_result = memories.recall_preferences("local-user", query="Python automation")
     knowledge_result = memories.recall_sourced_knowledge("local-user", query="SQLite WAL")
 
-    assert [item["id"] for item in preference_result["items"]] == [python_preference["id"]]
-    assert [item["id"] for item in knowledge_result["items"]] == [sqlite_knowledge["id"]]
+    assert [item["id"] for item in preference_result["items"]] == [
+        python_preference["id"],
+        rust_preference["id"],
+    ]
+    assert [item["id"] for item in knowledge_result["items"]] == [
+        sqlite_knowledge["id"],
+        python_knowledge["id"],
+    ]
     assert knowledge_result["items"][0]["source_uri"] == "https://example.test/wal"
-    assert memories.recall_preferences("local-user", query="---")["items"] == []
+    unranked = memories.recall_preferences("local-user", query="---")
+    assert {item["id"] for item in unranked["items"]} == {
+        python_preference["id"],
+        rust_preference["id"],
+    }
 
 
 def test_schema_18_memory_rows_migrate_without_losing_data(workspace_tmp_path):
