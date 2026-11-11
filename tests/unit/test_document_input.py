@@ -240,6 +240,8 @@ def make_xlsx(
     formula: str = "B1*2",
     date_1904: bool = False,
     date_serial: str = "45292",
+    sheet_state: str = "visible",
+    hidden_row: str = "0",
 ) -> bytes:
     output = BytesIO()
     workbook_properties = '<workbookPr date1904="1"/>' if date_1904 else ""
@@ -263,7 +265,7 @@ def make_xlsx(
             '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
             + workbook_properties
-            + '<sheets><sheet name="Fixture" sheetId="1" r:id="rId1"/></sheets></workbook>',
+            + f'<sheets><sheet name="Fixture" sheetId="1" state="{sheet_state}" r:id="rId1"/></sheets></workbook>',
         )
         archive.writestr(
             "xl/_rels/workbook.xml.rels",
@@ -303,7 +305,7 @@ def make_xlsx(
         archive.writestr(
             "xl/worksheets/sheet1.xml",
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c>'
+            f'<sheetData><row r="1" hidden="{hidden_row}"><c r="A1" t="s"><v>0</v></c>'
             '<c r="B1"><v>42</v></c><c r="C1" t="inlineStr"><is><t>inline-value</t>'
             f'</is></c><c r="D1"><f>{formula}</f><v>84</v></c>'
             '<c r="E1"><f>NOW()</f></c><c r="F1" s="1"><v>'
@@ -1325,6 +1327,28 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "P1=45292.75 [display: 1/1/24 6:00 PM] [number format: m/d/yy h:mm AM/PM]" in result
     assert "Q1=45292.524259259259259 [display: 2024-01-01 12:34:56]" in result
     assert "R1=45292.99999999 [display: 1/2/24 12:00 AM]" in result
+
+
+@pytest.mark.parametrize("sheet_state", ["hidden", "veryHidden"])
+def test_xlsx_labels_hidden_worksheet_visibility(sheet_state: str):
+    result = extract_document_text(make_xlsx(sheet_state=sheet_state), XLSX_TYPE)
+
+    assert f"[Sheet: Fixture; visibility: {sheet_state}]" in result
+    assert "A1=XLSX-MARKER-42" in result
+
+
+def test_xlsx_labels_hidden_rows_without_dropping_their_values():
+    result = extract_document_text(make_xlsx(hidden_row="1"), XLSX_TYPE)
+
+    assert "[Sheet: Fixture]" in result
+    assert "[hidden row]\tA1=XLSX-MARKER-42" in result
+
+
+def test_xlsx_rejects_invalid_sheet_or_row_visibility_metadata():
+    with pytest.raises(ValueError, match="invalid visibility state"):
+        extract_document_text(make_xlsx(sheet_state="hidden-ish"), XLSX_TYPE)
+    with pytest.raises(ValueError, match="invalid row visibility flag"):
+        extract_document_text(make_xlsx(hidden_row="yes"), XLSX_TYPE)
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():

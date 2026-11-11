@@ -1782,10 +1782,18 @@ def _extract_xlsx_text(content: bytes) -> str:
             workbook_rel_namespace = (
                 "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
             )
-            sheet_specs = [
-                (item.attrib.get("name", "Sheet"), item.attrib.get(workbook_rel_namespace + "id"))
-                for item in workbook_root.iter(spreadsheet_namespace + "sheet")
-            ]
+            sheet_specs: list[tuple[str, str | None, str]] = []
+            for item in workbook_root.iter(spreadsheet_namespace + "sheet"):
+                visibility = item.attrib.get("state", "visible")
+                if visibility not in {"visible", "hidden", "veryHidden"}:
+                    raise ValueError("XLSX worksheet has an invalid visibility state.")
+                sheet_specs.append(
+                    (
+                        item.attrib.get("name", "Sheet"),
+                        item.attrib.get(workbook_rel_namespace + "id"),
+                        visibility,
+                    )
+                )
             if not sheet_specs:
                 raise ValueError("XLSX workbook contains no worksheets.")
             if len(sheet_specs) > MAX_XLSX_SHEETS:
@@ -1795,7 +1803,7 @@ def _extract_xlsx_text(content: bytes) -> str:
             extracted: list[str] = []
             cell_count = 0
             visited: set[str] = set()
-            for name, relationship_id in sheet_specs:
+            for name, relationship_id, visibility in sheet_specs:
                 relation = relation_targets.get(relationship_id or "")
                 if relation is None or not relation.get("Type", "").endswith("/worksheet"):
                     raise ValueError("XLSX worksheet relationship is missing or unsupported.")
@@ -1819,9 +1827,14 @@ def _extract_xlsx_text(content: bytes) -> str:
                 if total_xml_bytes > MAX_XLSX_XML_BYTES:
                     raise ValueError("XLSX XML exceeds its extraction limit.")
                 sheet_root = _parse_office_xml(archive.read(info), "XLSX worksheet")
-                extracted.append(f"[Sheet: {name}]")
+                visibility_text = f"; visibility: {visibility}" if visibility != "visible" else ""
+                extracted.append(f"[Sheet: {name}{visibility_text}]")
                 for row in sheet_root.iter(spreadsheet_namespace + "row"):
                     values: list[str] = []
+                    hidden_value = row.attrib.get("hidden", "0")
+                    if hidden_value not in {"0", "1", "false", "true"}:
+                        raise ValueError("XLSX worksheet contains an invalid row visibility flag.")
+                    row_hidden = hidden_value in {"1", "true"}
                     for cell in row:
                         if cell.tag != spreadsheet_namespace + "c":
                             continue
@@ -1883,6 +1896,8 @@ def _extract_xlsx_text(content: bytes) -> str:
                         if value:
                             reference = cell.attrib.get("r")
                             values.append(f"{reference}={value}" if reference else value)
+                    if values and row_hidden:
+                        values.insert(0, "[hidden row]")
                     if values:
                         extracted.append("\t".join(values))
     except ValueError:
