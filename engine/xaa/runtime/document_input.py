@@ -45,6 +45,8 @@ MAX_DOCX_RELATED_PARTS = 50
 MAX_DOCX_XML_BYTES = 8 * 1024 * 1024
 MAX_XLSX_SHEETS = 50
 MAX_XLSX_CELLS = 10_000
+MAX_XLSX_COLUMN_RANGES = 1_024
+MAX_XLSX_COLUMNS = 16_384
 MAX_XLSX_SHARED_STRINGS = 50_000
 MAX_XLSX_XML_BYTES = 8 * 1024 * 1024
 MAX_XLSX_FORMULA_CHARS = 2048
@@ -1829,6 +1831,15 @@ def _extract_xlsx_text(content: bytes) -> str:
                 sheet_root = _parse_office_xml(archive.read(info), "XLSX worksheet")
                 visibility_text = f"; visibility: {visibility}" if visibility != "visible" else ""
                 extracted.append(f"[Sheet: {name}{visibility_text}]")
+                column_sections = [
+                    item for item in sheet_root if item.tag == spreadsheet_namespace + "cols"
+                ]
+                if len(column_sections) > 1:
+                    raise ValueError("XLSX worksheet contains duplicate column definitions.")
+                hidden_columns = _xlsx_hidden_column_ranges(
+                    column_sections[0] if column_sections else None,
+                    spreadsheet_namespace,
+                )
                 for row in sheet_root.iter(spreadsheet_namespace + "row"):
                     values: list[str] = []
                     hidden_value = row.attrib.get("hidden", "0")
@@ -1845,6 +1856,15 @@ def _extract_xlsx_text(content: bytes) -> str:
                             )
                         value = _xlsx_cell_value(cell, shared_strings, spreadsheet_namespace)
                         raw_value = value
+                        reference = cell.attrib.get("r")
+                        if hidden_columns:
+                            column_index = _xlsx_cell_column_index(reference)
+                            if column_index is None:
+                                value = f"{value} [column visibility unknown]" if value else value
+                            elif any(
+                                first <= column_index <= last for first, last in hidden_columns
+                            ):
+                                value = f"{value} [hidden column]" if value else value
                         formula = next(
                             (node for node in cell if node.tag == spreadsheet_namespace + "f"),
                             None,
@@ -1894,7 +1914,6 @@ def _extract_xlsx_text(content: bytes) -> str:
                                 suffix = f" [number format: {format_text}]"
                                 value = f"{value}{suffix}" if value else suffix.strip()
                         if value:
-                            reference = cell.attrib.get("r")
                             values.append(f"{reference}={value}" if reference else value)
                     if values and row_hidden:
                         values.insert(0, "[hidden row]")
@@ -2267,6 +2286,47 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     currency = match.group("currency") or ""
     percent = "%" if match.group("percent") else ""
     return f"{sign}{currency}{rendered}{percent}"
+
+
+def _xlsx_hidden_column_ranges(
+    columns: ElementTree.Element | None, namespace: str
+) -> list[tuple[int, int]]:
+    if columns is None:
+        return []
+    definitions = [item for item in columns if item.tag == namespace + "col"]
+    if len(definitions) > MAX_XLSX_COLUMN_RANGES:
+        raise ValueError(f"XLSX exceeds the {MAX_XLSX_COLUMN_RANGES}-range column metadata limit.")
+    ranges: list[tuple[int, int, bool]] = []
+    for definition in definitions:
+        try:
+            first = int(definition.attrib["min"])
+            last = int(definition.attrib["max"])
+        except (KeyError, ValueError):
+            raise ValueError("XLSX worksheet contains an invalid column range.") from None
+        if first < 1 or last < first or last > MAX_XLSX_COLUMNS:
+            raise ValueError("XLSX worksheet contains an invalid column range.")
+        hidden_value = definition.attrib.get("hidden", "0")
+        if hidden_value not in {"0", "1", "false", "true"}:
+            raise ValueError("XLSX worksheet contains an invalid column visibility flag.")
+        hidden = hidden_value in {"1", "true"}
+        for other_first, other_last, other_hidden in ranges:
+            overlaps = first <= other_last and last >= other_first
+            if overlaps and hidden != other_hidden:
+                raise ValueError("XLSX worksheet contains conflicting column visibility ranges.")
+        ranges.append((first, last, hidden))
+    return [(first, last) for first, last, hidden in ranges if hidden]
+
+
+def _xlsx_cell_column_index(reference: str | None) -> int | None:
+    if reference is None:
+        return None
+    match = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?[1-9][0-9]{0,6}", reference)
+    if match is None:
+        return None
+    column = 0
+    for character in match.group(1).upper():
+        column = column * 26 + ord(character) - ord("A") + 1
+    return column if column <= MAX_XLSX_COLUMNS else None
 
 
 def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str], namespace: str) -> str:

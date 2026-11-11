@@ -2,7 +2,7 @@
 
 ## Preserve hidden worksheet state in XLSX extraction (2026-11-11)
 
-XLSX extraction now labels worksheets declared `hidden` or `veryHidden`, and labels rows whose values are hidden, while retaining their cell contents for review. Invalid worksheet visibility and row hidden flags fail closed. The focused document extraction suite passes (77 tests); Ruff, formatting, strict Pyright for the parser, and `git diff --check` pass. This preserves visibility metadata only: hidden columns, filtering, merged-cell layout and other workbook display behavior remain open. No live model inference was used.
+XLSX extraction now labels worksheets declared `hidden` or `veryHidden`, hidden rows, and cells in hidden column ranges while retaining the underlying values for review. Column ranges are bounded to 1,024 definitions and the Excel worksheet limit of 16,384 columns; invalid or conflicting range metadata and malformed visibility flags fail closed. The focused document extraction suite passes (83 tests); Ruff, formatting, strict Pyright for the parser, and `git diff --check` pass. Filtering, merged-cell layout and other workbook display behavior remain open. The range handling follows Microsoft's [Open XML hidden-row/column guidance](https://learn.microsoft.com/en-us/office/open-xml/spreadsheet/how-to-retrieve-a-list-of-the-hidden-rows-or-columns-in-a-spreadsheet); the 16,384-column ceiling follows [Excel's worksheet limits](https://support.microsoft.com/en-us/excel/excel-specifications-and-limits). No live model inference was used.
 
 ## Add run-bound legacy MCP sampling
 

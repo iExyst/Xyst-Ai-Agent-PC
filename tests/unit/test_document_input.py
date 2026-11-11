@@ -242,9 +242,17 @@ def make_xlsx(
     date_serial: str = "45292",
     sheet_state: str = "visible",
     hidden_row: str = "0",
+    column_ranges: tuple[tuple[str, str, str], ...] = (),
 ) -> bytes:
     output = BytesIO()
     workbook_properties = '<workbookPr date1904="1"/>' if date_1904 else ""
+    columns_xml = ""
+    if column_ranges:
+        definitions = "".join(
+            f'<col min="{minimum}" max="{maximum}" hidden="{hidden}"/>'
+            for minimum, maximum, hidden in column_ranges
+        )
+        columns_xml = f"<cols>{definitions}</cols>"
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
             "[Content_Types].xml",
@@ -305,7 +313,8 @@ def make_xlsx(
         archive.writestr(
             "xl/worksheets/sheet1.xml",
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            f'<sheetData><row r="1" hidden="{hidden_row}"><c r="A1" t="s"><v>0</v></c>'
+            + columns_xml
+            + f'<sheetData><row r="1" hidden="{hidden_row}"><c r="A1" t="s"><v>0</v></c>'
             '<c r="B1"><v>42</v></c><c r="C1" t="inlineStr"><is><t>inline-value</t>'
             f'</is></c><c r="D1"><f>{formula}</f><v>84</v></c>'
             '<c r="E1"><f>NOW()</f></c><c r="F1" s="1"><v>'
@@ -1349,6 +1358,32 @@ def test_xlsx_rejects_invalid_sheet_or_row_visibility_metadata():
         extract_document_text(make_xlsx(sheet_state="hidden-ish"), XLSX_TYPE)
     with pytest.raises(ValueError, match="invalid row visibility flag"):
         extract_document_text(make_xlsx(hidden_row="yes"), XLSX_TYPE)
+
+
+def test_xlsx_labels_hidden_column_values_and_keeps_visible_neighbor_values():
+    result = extract_document_text(make_xlsx(column_ranges=(("2", "3", "1"),)), XLSX_TYPE)
+
+    assert "B1=42 [hidden column]" in result
+    assert "C1=inline-value [hidden column]" in result
+    assert "A1=XLSX-MARKER-42" in result
+    assert "D1=84 [formula: =B1*2]" in result
+
+
+@pytest.mark.parametrize(
+    "column_ranges",
+    [
+        (("0", "1", "1"),),
+        (("3", "2", "1"),),
+        (("1", "16385", "1"),),
+        (("1", "2", "yes"),),
+        (("1", "2", "1"), ("2", "3", "0")),
+    ],
+)
+def test_xlsx_rejects_invalid_or_conflicting_column_visibility_ranges(
+    column_ranges: tuple[tuple[str, str, str], ...],
+):
+    with pytest.raises(ValueError, match="column (range|visibility flag|visibility ranges)"):
+        extract_document_text(make_xlsx(column_ranges=column_ranges), XLSX_TYPE)
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
