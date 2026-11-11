@@ -29,9 +29,9 @@ class RecallProvider(LMStudioProvider):
 async def test_deleted_preference_is_absent_from_next_run_context(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "recall.sqlite3")
     memories = MemoryStore(store)
-    item = memories.save_preference("local-user", "USER_PREFERENCE_MARKER")
+    item = memories.save_preference("local-user", "USER_PREFERENCE_MARKER Python preference")
     knowledge = memories.save_sourced_knowledge(
-        "local-user", "USER_SOURCED_KNOWLEDGE", "https://example.test/source"
+        "local-user", "USER_SOURCED_KNOWLEDGE source knowledge", "https://example.test/source"
     )
     memories.save_preference("other-account", "OTHER_ACCOUNT_MARKER")
     with store.connection() as connection:
@@ -45,7 +45,7 @@ async def test_deleted_preference_is_absent_from_next_run_context(workspace_tmp_
                 memories.delete("local-user", item["id"])
                 memories.delete("local-user", knowledge["id"])
             run_id = store.create_run(
-                objective="Explain",
+                objective="Explain Python preference and source knowledge",
                 acceptance_criteria=[],
                 workspace=None,
                 mode="observe",

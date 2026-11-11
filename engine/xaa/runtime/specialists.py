@@ -903,7 +903,9 @@ class SpecialistRunner:
                         recovered_messages.append(cast(dict[str, Any], message))
             messages.extend(recovered_messages)
         recalled = self.memory.recall_preferences(
-            f"specialist:{task['assigned_role']}", max_bytes=4096
+            f"specialist:{task['assigned_role']}",
+            max_bytes=4096,
+            query=task["objective"],
         )
         if recalled["items"]:
             messages.insert(
@@ -915,7 +917,9 @@ class SpecialistRunner:
                 },
             )
         sourced = self.memory.recall_sourced_knowledge(
-            f"specialist:{task['assigned_role']}", max_bytes=4096
+            f"specialist:{task['assigned_role']}",
+            max_bytes=4096,
+            query=task["objective"],
         )
         if sourced["items"]:
             messages.insert(

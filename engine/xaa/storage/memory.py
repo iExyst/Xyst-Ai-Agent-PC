@@ -9,14 +9,33 @@ from xaa.storage.runs import RunStore, utc_now
 
 
 class MemoryStore:
-    def recall_preferences(self, scope: str, *, max_bytes: int = 4096) -> dict[str, Any]:
+    @staticmethod
+    def _query_expression(query: str) -> str | None:
+        # FTS5's default unicode61 tokenizer treats underscores as separators.
+        words = re.findall(r"[^\W_]+", query, flags=re.UNICODE)[:32]
+        if not words:
+            return None
+        return " OR ".join('"' + word.replace('"', '""') + '"' for word in words)
+
+    def recall_preferences(
+        self, scope: str, *, max_bytes: int = 4096, query: str | None = None
+    ) -> dict[str, Any]:
         if max_bytes < 1:
             raise ValueError("Recall budget must be positive.")
+        expression = self._query_expression(query) if query is not None else None
         with self.runs.connection() as connection:
-            rows = connection.execute(
-                "SELECT id,content FROM memories WHERE scope=? AND kind='preference' AND provenance='user' ORDER BY updated_at DESC,id",
-                (scope,),
-            ).fetchall()
+            if query is not None and expression is None:
+                rows = []
+            elif expression is not None:
+                rows = connection.execute(
+                    "SELECT memories.id,memories.content FROM memories JOIN memory_search ON memory_search.id=memories.id WHERE memories.scope=? AND memories.kind='preference' AND memories.provenance='user' AND memory_search MATCH ? ORDER BY bm25(memory_search),memories.updated_at DESC,memories.id",
+                    (scope, expression),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT id,content FROM memories WHERE scope=? AND kind='preference' AND provenance='user' ORDER BY updated_at DESC,id",
+                    (scope,),
+                ).fetchall()
         selected: list[dict[str, str]] = []
         used = 0
         for row in rows:
@@ -27,14 +46,25 @@ class MemoryStore:
                 used += size
         return {"items": selected, "omitted": len(rows) - len(selected), "bytes": used}
 
-    def recall_sourced_knowledge(self, scope: str, *, max_bytes: int = 4096) -> dict[str, Any]:
+    def recall_sourced_knowledge(
+        self, scope: str, *, max_bytes: int = 4096, query: str | None = None
+    ) -> dict[str, Any]:
         if max_bytes < 1:
             raise ValueError("Recall budget must be positive.")
+        expression = self._query_expression(query) if query is not None else None
         with self.runs.connection() as connection:
-            rows = connection.execute(
-                "SELECT id,content,source_uri FROM memories WHERE scope=? AND kind='knowledge' AND provenance='user_source' ORDER BY updated_at DESC,id",
-                (scope,),
-            ).fetchall()
+            if query is not None and expression is None:
+                rows = []
+            elif expression is not None:
+                rows = connection.execute(
+                    "SELECT memories.id,memories.content,memories.source_uri FROM memories JOIN memory_search ON memory_search.id=memories.id WHERE memories.scope=? AND memories.kind='knowledge' AND memories.provenance='user_source' AND memory_search MATCH ? ORDER BY bm25(memory_search),memories.updated_at DESC,memories.id",
+                    (scope, expression),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT id,content,source_uri FROM memories WHERE scope=? AND kind='knowledge' AND provenance='user_source' ORDER BY updated_at DESC,id",
+                    (scope,),
+                ).fetchall()
         selected: list[dict[str, str]] = []
         used = 0
         for row in rows:

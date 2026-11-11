@@ -1566,7 +1566,7 @@ class Coordinator:
             {"role": "user", "content": user_content},
         ]
         self._load_procedure_trial(run_id, token, messages)
-        recalled = self.memory.recall_preferences("local-user")
+        recalled = self.memory.recall_preferences("local-user", query=run["objective"])
         if recalled["items"]:
             messages.insert(
                 1,
@@ -1576,7 +1576,7 @@ class Coordinator:
                     + json.dumps(recalled["items"], ensure_ascii=False),
                 },
             )
-        sourced = self.memory.recall_sourced_knowledge("local-user")
+        sourced = self.memory.recall_sourced_knowledge("local-user", query=run["objective"])
         if sourced["items"]:
             messages.insert(
                 1,

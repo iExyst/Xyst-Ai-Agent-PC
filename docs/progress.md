@@ -2093,3 +2093,7 @@ Completed a source-level audit of the pinned Hermes memory manager, provider con
 ## Audit pinned Hermes skill lifecycle source (2026-11-11)
 
 Reviewed the pinned core skill lookup and management paths and recorded SHA-256-bound findings in [`parity/skill-source-audit.md`](parity/skill-source-audit.md). The Hermes matrix now links the source audit while retaining the limits: bundled/optional skills, the catalog, representative package runtime behavior and broad platform readiness remain unaudited. This was source review only; no external package was installed or run. No runtime code changed.
+
+## Rank explicit memory recall against each run objective (2026-11-11)
+
+Parent and specialist run setup now queries scoped FTS5 indexes using up to 32 Unicode word terms from the current objective, ranks matching explicit preferences and user-sourced knowledge by FTS relevance, and keeps the existing byte caps and separate trust labels. A query with no indexable words returns no implicit recent-memory fallback. The search remains local and does not create or promote memory. Added deterministic relevance, type separation, provenance and objective-context regressions. Focused Python tests pass (7); Ruff passes and Pyright passes for the three changed engine modules. This improves task-relevant recall but does not implement Hermes-style pluggable provider hooks or prove broad retrieval quality. Live inference remains deferred. Updated the memory matrix and source audit accordingly.
