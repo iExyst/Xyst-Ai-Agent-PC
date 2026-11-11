@@ -42,6 +42,7 @@ def make_docx(
     paragraphs: list[str],
     table: list[list[str]] | None = None,
     *,
+    paragraph_xml: list[str] | None = None,
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     header: str | None = None,
     footer: str | None = None,
@@ -50,7 +51,11 @@ def make_docx(
     header_type: str = "default",
     footer_type: str = "default",
 ) -> bytes:
-    body = "".join(f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs)
+    body = (
+        "".join(paragraph_xml)
+        if paragraph_xml is not None
+        else "".join(f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs)
+    )
     if table is not None:
         rows = []
         for row_index, row in enumerate(table):
@@ -206,6 +211,50 @@ def test_extracts_pdf_text_with_page_marker():
 def test_extracts_docx_paragraphs_without_unzipping_to_disk():
     result = extract_document_text(make_docx(["First line", "Second line"]), DOCX_TYPE)
     assert result == "First line\nSecond line"
+
+
+def test_extracts_docx_heading_style_and_list_level_markers():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr>'
+                    "<w:r><w:t>Project plan</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/>'
+                    '<w:numId w:val="4"/></w:numPr></w:pPr>'
+                    "<w:r><w:t>First action</w:t></w:r></w:p>"
+                ),
+            ],
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[Heading: Heading2] Project plan" in result
+    assert "[List item, level 2] First action" in result
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        '<w:numPr><w:ilvl w:val="9"/><w:numId w:val="1"/></w:numPr>',
+        '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="x"/></w:numPr>',
+        '<w:numPr><w:numId w:val="1"/><w:numId w:val="2"/></w:numPr>',
+    ],
+)
+def test_rejects_malformed_docx_paragraph_list_metadata(properties):
+    with pytest.raises(ValueError, match="list metadata"):
+        extract_document_text(
+            make_docx(
+                [],
+                paragraph_xml=[
+                    f"<w:p><w:pPr>{properties}</w:pPr><w:r><w:t>List entry</w:t></w:r></w:p>"
+                ],
+            ),
+            DOCX_TYPE,
+        )
 
 
 def test_extracts_docx_table_rows_and_preserves_empty_cell_positions():

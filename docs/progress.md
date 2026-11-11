@@ -1,5 +1,9 @@
 # Progress
 
+## Preserve DOCX headings and list levels (2026-11-11)
+
+DOCX paragraph extraction now retains common `Heading…` style identifiers as explicit heading markers and preserves list nesting levels from `w:numPr`. Malformed or duplicate paragraph/list metadata is rejected. This gives the model document structure that plain paragraph text discarded; list numbering and bullet glyphs are not reconstructed because numbering definitions are not yet resolved. Focused document tests pass (26), Ruff and formatting pass, and strict Pyright reports no issues for the parser. No live model inference was used.
+
 ## Preserve DOCX table merge metadata (2026-11-11)
 
 DOCX table extraction now records `w:gridSpan` column spans and legacy `w:hMerge` / `w:vMerge` restart/continue states next to each cell. An omitted merge value on a present marker is represented as `continue`, matching the Open XML definitions for [grid spans](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.gridspan?view=openxml-3.0.1), [vertical merges](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.verticalmerge.val?view=openxml-3.0.1), and [horizontal merges](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.horizontalmerge.val?view=openxml-2.10.0). Invalid/duplicate property markers and malformed spans or merge values fail closed. The focused document suite passes (22 tests), Ruff and formatting pass, and Pyright reports zero issues. Hosted Windows source run [43024839713](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43024839713) passed commit `c40db49` with 1,045 Python tests and browser/desktop plus specialist, Telegram, scheduled-outbox and due-schedule recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. Merge group geometry and visual rendering are not reconstructed; no live model inference was used.

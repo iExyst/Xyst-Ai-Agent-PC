@@ -284,7 +284,50 @@ def _extract_docx_text(content: bytes) -> str:
                 fragments.append("\t")
             elif node.tag in {namespace + "br", namespace + "cr"}:
                 fragments.append("\n")
-        return "".join(fragments).strip()
+        value = "".join(fragments).strip()
+        properties = [item for item in paragraph if item.tag == namespace + "pPr"]
+        if len(properties) > 1:
+            raise ValueError("DOCX paragraph contains duplicate property groups.")
+        if not properties:
+            return value
+        property_group = properties[0]
+        style_properties = [item for item in property_group if item.tag == namespace + "pStyle"]
+        if len(style_properties) > 1:
+            raise ValueError("DOCX paragraph contains duplicate style markers.")
+        prefix: list[str] = []
+        if style_properties:
+            style_id = style_properties[0].attrib.get(namespace + "val", "")
+            if not style_id or len(style_id) > 128 or not style_id.isprintable():
+                raise ValueError("DOCX paragraph contains an invalid style identifier.")
+            normalized_style = style_id.replace(" ", "").casefold()
+            if normalized_style.startswith("heading"):
+                prefix.append(f"Heading: {style_id}")
+        numbering_properties = [item for item in property_group if item.tag == namespace + "numPr"]
+        if len(numbering_properties) > 1:
+            raise ValueError("DOCX paragraph contains duplicate numbering markers.")
+        if numbering_properties:
+            numbering = numbering_properties[0]
+            ids = [item for item in numbering if item.tag == namespace + "numId"]
+            levels = [item for item in numbering if item.tag == namespace + "ilvl"]
+            if len(ids) > 1 or len(levels) > 1:
+                raise ValueError("DOCX paragraph contains duplicate list metadata.")
+            if ids:
+                raw_id = ids[0].attrib.get(namespace + "val", "")
+                raw_level = levels[0].attrib.get(namespace + "val", "0") if levels else "0"
+                if (
+                    not raw_id.isascii()
+                    or not raw_id.isdecimal()
+                    or len(raw_id) > 10
+                    or not raw_level.isascii()
+                    or not raw_level.isdecimal()
+                    or len(raw_level) > 2
+                    or int(raw_level) > 8
+                ):
+                    raise ValueError("DOCX paragraph contains invalid list metadata.")
+                prefix.append(f"List item, level {int(raw_level) + 1}")
+        if prefix and value:
+            value = f"[{'; '.join(prefix)}] {value}"
+        return value
 
     def content_blocks(container: ElementTree.Element) -> list[str]:
         def table_cell_text(cell: ElementTree.Element) -> str:
