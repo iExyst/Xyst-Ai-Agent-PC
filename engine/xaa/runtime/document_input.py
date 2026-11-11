@@ -47,6 +47,8 @@ MAX_XLSX_SHEETS = 50
 MAX_XLSX_CELLS = 10_000
 MAX_XLSX_COLUMN_RANGES = 1_024
 MAX_XLSX_COLUMNS = 16_384
+MAX_XLSX_ROWS = 1_048_576
+MAX_XLSX_MERGED_RANGES = 1_024
 MAX_XLSX_SHARED_STRINGS = 50_000
 MAX_XLSX_XML_BYTES = 8 * 1024 * 1024
 MAX_XLSX_FORMULA_CHARS = 2048
@@ -1840,6 +1842,13 @@ def _extract_xlsx_text(content: bytes) -> str:
                     column_sections[0] if column_sections else None,
                     spreadsheet_namespace,
                 )
+                merge_sections = [
+                    item for item in sheet_root if item.tag == spreadsheet_namespace + "mergeCells"
+                ]
+                merged_anchors = _xlsx_merged_cell_anchors(
+                    merge_sections,
+                    spreadsheet_namespace,
+                )
                 for row in sheet_root.iter(spreadsheet_namespace + "row"):
                     values: list[str] = []
                     hidden_value = row.attrib.get("hidden", "0")
@@ -1857,8 +1866,16 @@ def _extract_xlsx_text(content: bytes) -> str:
                         value = _xlsx_cell_value(cell, shared_strings, spreadsheet_namespace)
                         raw_value = value
                         reference = cell.attrib.get("r")
+                        coordinates = _xlsx_cell_coordinates(reference)
+                        merged_range = merged_anchors.get(coordinates) if coordinates else None
+                        if merged_range:
+                            value = (
+                                f"{value} [merged range: {merged_range}]"
+                                if value
+                                else (f"[merged range: {merged_range}]")
+                            )
                         if hidden_columns:
-                            column_index = _xlsx_cell_column_index(reference)
+                            column_index = coordinates[0] if coordinates else None
                             if column_index is None:
                                 value = f"{value} [column visibility unknown]" if value else value
                             elif any(
@@ -2317,16 +2334,61 @@ def _xlsx_hidden_column_ranges(
     return [(first, last) for first, last, hidden in ranges if hidden]
 
 
-def _xlsx_cell_column_index(reference: str | None) -> int | None:
+def _xlsx_merged_cell_anchors(
+    sections: list[ElementTree.Element], namespace: str
+) -> dict[tuple[int, int], str]:
+    if len(sections) > 1:
+        raise ValueError("XLSX worksheet contains duplicate merged-cell definitions.")
+    if not sections:
+        return {}
+    definitions = [item for item in sections[0] if item.tag == namespace + "mergeCell"]
+    if len(definitions) > MAX_XLSX_MERGED_RANGES:
+        raise ValueError(
+            f"XLSX exceeds the {MAX_XLSX_MERGED_RANGES}-range merged-cell metadata limit."
+        )
+    ranges: list[tuple[int, int, int, int, str]] = []
+    anchors: dict[tuple[int, int], str] = {}
+    range_pattern = re.compile(
+        r"(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}):(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})"
+    )
+    for definition in definitions:
+        reference = definition.attrib.get("ref", "")
+        if len(reference) > 32:
+            raise ValueError("XLSX worksheet contains an invalid merged-cell range.")
+        match = range_pattern.fullmatch(reference)
+        if match is None:
+            raise ValueError("XLSX worksheet contains an invalid merged-cell range.")
+        first = _xlsx_cell_coordinates(match.group(1))
+        last = _xlsx_cell_coordinates(match.group(2))
+        if first is None or last is None or first[0] > last[0] or first[1] > last[1]:
+            raise ValueError("XLSX worksheet contains an invalid merged-cell range.")
+        first_column, first_row = first
+        last_column, last_row = last
+        for other_first_column, other_first_row, other_last_column, other_last_row, _ in ranges:
+            overlaps = (
+                first_column <= other_last_column
+                and last_column >= other_first_column
+                and first_row <= other_last_row
+                and last_row >= other_first_row
+            )
+            if overlaps:
+                raise ValueError("XLSX worksheet contains overlapping merged-cell ranges.")
+        ranges.append((first_column, first_row, last_column, last_row, reference))
+        anchors[first] = reference
+    return anchors
+
+
+def _xlsx_cell_coordinates(reference: str | None) -> tuple[int, int] | None:
     if reference is None:
         return None
-    match = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?[1-9][0-9]{0,6}", reference)
+    match = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?([1-9][0-9]{0,6})", reference)
     if match is None:
         return None
     column = 0
     for character in match.group(1).upper():
         column = column * 26 + ord(character) - ord("A") + 1
-    return column if column <= MAX_XLSX_COLUMNS else None
+    row = int(match.group(2))
+    return (column, row) if column <= MAX_XLSX_COLUMNS and row <= MAX_XLSX_ROWS else None
 
 
 def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str], namespace: str) -> str:

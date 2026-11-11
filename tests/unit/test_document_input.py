@@ -243,6 +243,7 @@ def make_xlsx(
     sheet_state: str = "visible",
     hidden_row: str = "0",
     column_ranges: tuple[tuple[str, str, str], ...] = (),
+    merged_ranges: tuple[str, ...] = (),
 ) -> bytes:
     output = BytesIO()
     workbook_properties = '<workbookPr date1904="1"/>' if date_1904 else ""
@@ -253,6 +254,10 @@ def make_xlsx(
             for minimum, maximum, hidden in column_ranges
         )
         columns_xml = f"<cols>{definitions}</cols>"
+    merged_cells_xml = ""
+    if merged_ranges:
+        definitions = "".join(f'<mergeCell ref="{reference}"/>' for reference in merged_ranges)
+        merged_cells_xml = f'<mergeCells count="{len(merged_ranges)}">{definitions}</mergeCells>'
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
             "[Content_Types].xml",
@@ -332,7 +337,7 @@ def make_xlsx(
             '<c r="P1" s="11"><v>45292.75</v></c>'
             '<c r="Q1" s="12"><v>45292.524259259259259</v></c>'
             '<c r="R1" s="11"><v>45292.99999999</v></c>'
-            "</row></sheetData></worksheet>",
+            "</row></sheetData>" + merged_cells_xml + "</worksheet>",
         )
     return output.getvalue()
 
@@ -1384,6 +1389,30 @@ def test_xlsx_rejects_invalid_or_conflicting_column_visibility_ranges(
 ):
     with pytest.raises(ValueError, match="column (range|visibility flag|visibility ranges)"):
         extract_document_text(make_xlsx(column_ranges=column_ranges), XLSX_TYPE)
+
+
+def test_xlsx_preserves_merged_range_on_its_anchor_cell():
+    result = extract_document_text(make_xlsx(merged_ranges=("$R$1:$S$1",)), XLSX_TYPE)
+
+    assert "R1=45292.99999999 [merged range: $R$1:$S$1]" in result
+
+
+@pytest.mark.parametrize(
+    ("merged_ranges", "error"),
+    [
+        (("A1:B0",), "invalid merged-cell range"),
+        (("A1:XFE2",), "invalid merged-cell range"),
+        ((f"A1:{'A' * 33}",), "invalid merged-cell range"),
+        (("B1:A1",), "invalid merged-cell range"),
+        (("A1:C1", "C1:D1"), "overlapping merged-cell ranges"),
+        (("A1:B1", "A1:B1"), "overlapping merged-cell ranges"),
+    ],
+)
+def test_xlsx_rejects_invalid_or_overlapping_merged_ranges(
+    merged_ranges: tuple[str, ...], error: str
+):
+    with pytest.raises(ValueError, match=error):
+        extract_document_text(make_xlsx(merged_ranges=merged_ranges), XLSX_TYPE)
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
