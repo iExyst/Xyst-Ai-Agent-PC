@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from binascii import crc32
 from io import BytesIO
 from math import ceil, isfinite
 from posixpath import join as join_posix
 from posixpath import normpath
 from struct import pack
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 from urllib.parse import unquote
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile, ZipInfo
@@ -27,6 +28,15 @@ MAX_PDF_OCR_TOTAL_BYTES = 6 * 1024 * 1024
 MAX_PDF_OCR_DIMENSION = 1600
 MAX_PDF_OCR_PIXELS = 2_500_000
 PDF_OCR_RENDER_SCALE = 2
+
+
+class _DocxListLevel(NamedTuple):
+    number_format: str
+    marker_text: str
+    start: int
+    restart_level: int | None
+
+
 MAX_OOXML_ENTRIES = 1024
 MAX_OOXML_PART_BYTES = 4 * 1024 * 1024
 MAX_DOCX_RELATED_PARTS = 50
@@ -296,6 +306,7 @@ def _extract_docx_text(content: bytes) -> str:
         raise ValueError("ZIP document is not a supported DOCX file.")
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     list_markers = _parse_docx_numbering(numbering_xml, namespace)
+    list_counters: dict[int, dict[int, int]] = {}
 
     def paragraph_text(paragraph: ElementTree.Element) -> str:
         fragments: list[str] = []
@@ -347,14 +358,29 @@ def _extract_docx_text(content: bytes) -> str:
                 ):
                     raise ValueError("DOCX paragraph contains invalid list metadata.")
                 if raw_id != "0":
-                    marker = list_markers.get((int(raw_id), int(raw_level)))
+                    number_id = int(raw_id)
+                    level_id = int(raw_level)
+                    marker = list_markers.get((number_id, level_id))
                     if marker is None:
-                        prefix.append(f"List item, level {int(raw_level) + 1}")
+                        prefix.append(f"List item, level {level_id + 1}")
                     else:
-                        number_format, marker_text = marker
+                        number_format, marker_text, start, restart_level = marker
                         prefix.append(
-                            f"List {number_format}, level {int(raw_level) + 1}, marker {marker_text}"
+                            f"List {number_format}, level {level_id + 1}, marker {marker_text}"
                         )
+                        _next_docx_list_number(
+                            list_counters.setdefault(number_id, {}),
+                            list_markers,
+                            number_id,
+                            level_id,
+                            start,
+                            restart_level,
+                        )
+                        rendered_marker = _render_docx_list_marker(
+                            marker_text, list_counters[number_id], list_markers, number_id
+                        )
+                        if rendered_marker is not None:
+                            prefix.append(f"numbered marker {rendered_marker}")
         if prefix and value:
             value = f"[{'; '.join(prefix)}] {value}"
         return value
@@ -436,8 +462,8 @@ def _extract_docx_text(content: bytes) -> str:
 
 def _parse_docx_numbering(
     xml: bytes | None, namespace: str
-) -> dict[tuple[int, int], tuple[str, str]]:
-    """Read bounded list marker formats/templates without calculating sequence values."""
+) -> dict[tuple[int, int], _DocxListLevel]:
+    """Read bounded list marker definitions and per-level sequence behavior."""
     if xml is None:
         return {}
     try:
@@ -452,7 +478,30 @@ def _parse_docx_numbering(
             raise ValueError(f"DOCX numbering definitions contain an invalid {label}.")
         return int(value)
 
-    abstract_definitions: dict[int, dict[int, tuple[str, str]]] = {}
+    def child_value(element: ElementTree.Element, name: str) -> str | None:
+        children = [item for item in element if item.tag == namespace + name]
+        if len(children) > 1:
+            raise ValueError(f"DOCX numbering level contains duplicate {name} metadata.")
+        return children[0].attrib.get(namespace + "val", "") if children else None
+
+    def number_value(value: str, label: str) -> int:
+        result = decimal_attribute(value, label)
+        if result > 2_147_483_647:
+            raise ValueError(f"DOCX numbering definitions contain an invalid {label}.")
+        return result
+
+    def restart_value(element: ElementTree.Element, level_id: int) -> int | None:
+        raw = child_value(element, "lvlRestart")
+        if raw is None:
+            return level_id - 1 if level_id > 0 else None
+        value = number_value(raw, "restart level")
+        if value == 0:
+            return None
+        if value > level_id:
+            return level_id - 1 if level_id > 0 else None
+        return value - 1
+
+    abstract_definitions: dict[int, dict[int, _DocxListLevel]] = {}
     for abstract in root:
         if abstract.tag != namespace + "abstractNum":
             continue
@@ -461,19 +510,16 @@ def _parse_docx_numbering(
         )
         if abstract_id in abstract_definitions:
             raise ValueError("DOCX numbering definitions contain duplicate abstract IDs.")
-        levels: dict[int, tuple[str, str]] = {}
+        levels: dict[int, _DocxListLevel] = {}
         for level in abstract:
             if level.tag != namespace + "lvl":
                 continue
             level_id = decimal_attribute(level.attrib.get(namespace + "ilvl", ""), "level", 2)
             if level_id > 8 or level_id in levels:
                 raise ValueError("DOCX numbering definitions contain a duplicate or invalid level.")
-            formats = [item for item in level if item.tag == namespace + "numFmt"]
-            texts = [item for item in level if item.tag == namespace + "lvlText"]
-            if len(formats) > 1 or len(texts) > 1:
-                raise ValueError("DOCX numbering level contains duplicate marker metadata.")
-            number_format = formats[0].attrib.get(namespace + "val", "") if formats else ""
-            marker_text = texts[0].attrib.get(namespace + "val", "") if texts else ""
+            number_format = child_value(level, "numFmt") or ""
+            marker_text = child_value(level, "lvlText") or ""
+            raw_start = child_value(level, "start")
             if (
                 not number_format
                 or len(number_format) > 64
@@ -483,10 +529,15 @@ def _parse_docx_numbering(
                 or not marker_text.isprintable()
             ):
                 raise ValueError("DOCX numbering level contains invalid marker metadata.")
-            levels[level_id] = (number_format, marker_text)
+            levels[level_id] = _DocxListLevel(
+                number_format,
+                marker_text,
+                number_value(raw_start, "starting number") if raw_start is not None else 1,
+                restart_value(level, level_id),
+            )
         abstract_definitions[abstract_id] = levels
 
-    instances: dict[tuple[int, int], tuple[str, str]] = {}
+    instances: dict[tuple[int, int], _DocxListLevel] = {}
     seen_instances: set[int] = set()
     for instance in root:
         if instance.tag != namespace + "num":
@@ -502,7 +553,7 @@ def _parse_docx_numbering(
         base_levels = abstract_definitions.get(abstract_id)
         if base_levels is None:
             raise ValueError("DOCX numbering instance references a missing abstract definition.")
-        effective_levels: dict[int, tuple[str, str]] = base_levels.copy()
+        effective_levels: dict[int, _DocxListLevel] = base_levels.copy()
         overridden_levels: set[int] = set()
         for override in (item for item in instance if item.tag == namespace + "lvlOverride"):
             level_id = decimal_attribute(
@@ -516,23 +567,28 @@ def _parse_docx_numbering(
                 raise ValueError("DOCX numbering override contains duplicate levels.")
             if replacements:
                 replacement_level = replacements[0]
-                formats = [item for item in replacement_level if item.tag == namespace + "numFmt"]
-                texts = [item for item in replacement_level if item.tag == namespace + "lvlText"]
-                if len(formats) > 1 or len(texts) > 1:
-                    raise ValueError("DOCX numbering override contains duplicate marker metadata.")
-                if formats or texts:
-                    inherited = effective_levels.get(level_id)
+                inherited = effective_levels.get(level_id)
+                number_format = child_value(replacement_level, "numFmt")
+                marker_text = child_value(replacement_level, "lvlText")
+                raw_start = child_value(replacement_level, "start")
+                raw_restart = child_value(replacement_level, "lvlRestart")
+                if (
+                    number_format is not None
+                    or marker_text is not None
+                    or raw_start is not None
+                    or raw_restart is not None
+                ):
                     number_format = (
-                        formats[0].attrib.get(namespace + "val", "")
-                        if formats
-                        else inherited[0]
+                        number_format
+                        if number_format is not None
+                        else inherited.number_format
                         if inherited
                         else ""
                     )
                     marker_text = (
-                        texts[0].attrib.get(namespace + "val", "")
-                        if texts
-                        else inherited[1]
+                        marker_text
+                        if marker_text is not None
+                        else inherited.marker_text
                         if inherited
                         else ""
                     )
@@ -547,10 +603,113 @@ def _parse_docx_numbering(
                         raise ValueError(
                             "DOCX numbering override contains invalid marker metadata."
                         )
-                    effective_levels[level_id] = (number_format, marker_text)
+                    effective_levels[level_id] = _DocxListLevel(
+                        number_format,
+                        marker_text,
+                        number_value(raw_start, "starting number")
+                        if raw_start is not None
+                        else inherited.start
+                        if inherited
+                        else 1,
+                        restart_value(replacement_level, level_id)
+                        if raw_restart is not None
+                        else inherited.restart_level
+                        if inherited
+                        else (level_id - 1 if level_id > 0 else None),
+                    )
+            raw_start_override = child_value(override, "startOverride")
+            if raw_start_override is not None:
+                inherited = effective_levels.get(level_id)
+                if inherited is not None:
+                    effective_levels[level_id] = inherited._replace(
+                        start=number_value(raw_start_override, "starting number override")
+                    )
         for level_id, marker in effective_levels.items():
             instances[number_id, level_id] = marker
     return instances
+
+
+def _next_docx_list_number(
+    counters: dict[int, int],
+    definitions: dict[tuple[int, int], _DocxListLevel],
+    number_id: int,
+    level_id: int,
+    start: int,
+    restart_level: int | None,
+) -> int:
+    for child_level in range(level_id + 1, 9):
+        child = definitions.get((number_id, child_level))
+        if child is not None and child.restart_level == level_id:
+            counters.pop(child_level, None)
+    current = counters.get(level_id)
+    value = start if current is None else current + 1
+    counters[level_id] = value
+    return value
+
+
+def _render_docx_list_marker(
+    marker_text: str,
+    counters: dict[int, int],
+    definitions: dict[tuple[int, int], _DocxListLevel],
+    number_id: int,
+) -> str | None:
+    references = list(re.finditer(r"%([1-9])", marker_text))
+    if not references:
+        return None
+    pieces: list[str] = []
+    offset = 0
+    for reference in references:
+        level_id = int(reference.group(1)) - 1
+        number = counters.get(level_id)
+        definition = definitions.get((number_id, level_id))
+        if number is None or definition is None:
+            return None
+        rendered_number = _format_docx_list_number(number, definition.number_format)
+        if rendered_number is None:
+            return None
+        pieces.extend((marker_text[offset : reference.start()], rendered_number))
+        offset = reference.end()
+    pieces.append(marker_text[offset:])
+    return "".join(pieces)
+
+
+def _format_docx_list_number(value: int, number_format: str) -> str | None:
+    if number_format == "decimal":
+        return str(value)
+    if number_format in {"lowerLetter", "upperLetter"}:
+        if value < 1:
+            return None
+        letters: list[str] = []
+        remaining = value
+        while remaining:
+            remaining, digit = divmod(remaining - 1, 26)
+            letters.append(chr((ord("a") if number_format == "lowerLetter" else ord("A")) + digit))
+        return "".join(reversed(letters))
+    if number_format in {"lowerRoman", "upperRoman"}:
+        if not 1 <= value <= 3_999:
+            return None
+        roman: list[str] = []
+        for amount, numeral in (
+            (1_000, "M"),
+            (900, "CM"),
+            (500, "D"),
+            (400, "CD"),
+            (100, "C"),
+            (90, "XC"),
+            (50, "L"),
+            (40, "XL"),
+            (10, "X"),
+            (9, "IX"),
+            (5, "V"),
+            (4, "IV"),
+            (1, "I"),
+        ):
+            while value >= amount:
+                value -= amount
+                roman.append(numeral)
+        result = "".join(roman)
+        return result.lower() if number_format == "lowerRoman" else result
+    return None
 
 
 def _docx_related_parts(

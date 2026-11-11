@@ -244,7 +244,7 @@ def test_extracts_docx_heading_style_and_list_level_markers():
     )
 
     assert "[Heading: Heading2] Project plan" in result
-    assert "[List decimal, level 2, marker %2.] First action" in result
+    assert "[List decimal, level 2, marker %2.; numbered marker 1.] First action" in result
 
 
 def test_extracts_docx_numbering_override_marker_template():
@@ -300,7 +300,122 @@ def test_inherits_unmodified_marker_field_from_partial_numbering_override():
         DOCX_TYPE,
     )
 
-    assert "[List decimal, level 1, marker %1)] Item" in result
+    assert "[List decimal, level 1, marker %1); numbered marker 1)] Item" in result
+
+
+def test_computes_docx_list_numbers_with_start_override_and_level_restart():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Parent one</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Child one</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Child two</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Parent two</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Child restarted</w:t></w:r></w:p>"
+                ),
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0">'
+                '<w:lvl w:ilvl="0"><w:start w:val="4"/><w:numFmt w:val="decimal"/>'
+                '<w:lvlText w:val="%1."/></w:lvl>'
+                '<w:lvl w:ilvl="1"><w:start w:val="2"/><w:numFmt w:val="lowerLetter"/>'
+                '<w:lvlText w:val="%1.%2)"/></w:lvl></w:abstractNum>'
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/>'
+                '<w:lvlOverride w:ilvl="1"><w:startOverride w:val="5"/>'
+                "</w:lvlOverride></w:num></w:numbering>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "numbered marker 4." in result
+    assert "numbered marker 4.e)" in result
+    assert "numbered marker 4.f)" in result
+    assert "numbered marker 5." in result
+    assert "numbered marker 5.e)" in result
+
+
+@pytest.mark.parametrize(
+    ("number_format", "start", "expected"),
+    [
+        ("lowerLetter", 27, "aa."),
+        ("upperLetter", 28, "AB."),
+        ("lowerRoman", 9, "ix."),
+        ("upperRoman", 4, "IV."),
+    ],
+)
+def test_renders_supported_docx_list_number_formats(number_format, start, expected):
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Item</w:t></w:r></w:p>"
+                )
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                f'<w:start w:val="{start}"/><w:numFmt w:val="{number_format}"/>'
+                '<w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert f"numbered marker {expected}" in result
+
+
+def test_docx_level_with_never_restart_keeps_child_sequence_after_parent():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Child one</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Parent</w:t></w:r></w:p>"
+                ),
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/>'
+                    "</w:numPr></w:pPr><w:r><w:t>Child two</w:t></w:r></w:p>"
+                ),
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0">'
+                '<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+                '<w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/><w:lvlText w:val="%2."/>'
+                '<w:lvlRestart w:val="0"/></w:lvl></w:abstractNum>'
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "numbered marker 1.] Child one" in result
+    assert "numbered marker 2.] Child two" in result
 
 
 @pytest.mark.parametrize(
