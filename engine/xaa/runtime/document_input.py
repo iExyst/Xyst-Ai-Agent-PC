@@ -474,11 +474,13 @@ def _extract_docx_text(content: bytes) -> str:
                 table_properties = [child for child in item if child.tag == namespace + "tblPr"]
                 if len(table_properties) > 1:
                     raise ValueError("DOCX table contains duplicate property groups.")
+                table_property_group = table_properties[0] if table_properties else None
                 table_style_id: str | None = None
-                if table_properties:
+                table_rules: dict[str, int] = {}
+                if table_property_group is not None:
                     style_markers = [
                         child
-                        for child in table_properties[0]
+                        for child in table_property_group
                         if child.tag == namespace + "tblStyle"
                     ]
                     if len(style_markers) > 1:
@@ -491,21 +493,255 @@ def _extract_docx_text(content: bytes) -> str:
                             or not table_style_id.isprintable()
                         ):
                             raise ValueError("DOCX table contains an invalid style identifier.")
-                active_table_number_id = table_number_id
-                if table_style_id is not None:
-                    if table_style_id not in table_style_numbering:
-                        raise ValueError("DOCX table references a missing table style.")
-                    active_table_number_id = table_style_numbering.get(table_style_id, {}).get(
-                        "wholeTable", active_table_number_id
+                        if table_style_id not in table_style_numbering:
+                            raise ValueError("DOCX table references a missing table style.")
+                        table_rules = table_style_numbering.get(table_style_id, {})
+
+                rows = [child for child in item if child.tag == namespace + "tr"]
+                if table_rules.keys() & {
+                    "firstRow",
+                    "lastRow",
+                    "firstCol",
+                    "lastCol",
+                    "band1Horz",
+                    "band2Horz",
+                    "band1Vert",
+                    "band2Vert",
+                    "nwCell",
+                    "neCell",
+                    "swCell",
+                    "seCell",
+                } and any(
+                    node.tag in {namespace + "cnfStyle", namespace + "tblPrEx"}
+                    for row in rows
+                    for node in row.iter()
+                ):
+                    raise ValueError(
+                        "DOCX table conditional numbering with row/cell exceptions is unsupported."
                     )
-                for row in item:
-                    if row.tag != namespace + "tr":
-                        continue
-                    cells = [
-                        table_cell_text(cell, active_table_number_id)
-                        for cell in row
-                        if cell.tag == namespace + "tc"
+
+                look_elements = (
+                    [child for child in table_property_group if child.tag == namespace + "tblLook"]
+                    if table_property_group is not None
+                    else []
+                )
+                if len(look_elements) > 1:
+                    raise ValueError("DOCX table contains duplicate conditional style settings.")
+                look_attributes = {
+                    "firstRow": "firstRow",
+                    "lastRow": "lastRow",
+                    "firstColumn": "firstCol",
+                    "lastColumn": "lastCol",
+                    "noHBand": "noHBand",
+                    "noVBand": "noVBand",
+                }
+
+                def on_off(value: str, label: str) -> bool:
+                    normalized = value.casefold()
+                    if normalized in {"1", "true", "on", ""}:
+                        return True
+                    if normalized in {"0", "false", "off"}:
+                        return False
+                    raise ValueError(f"DOCX table contains an invalid {label} setting.")
+
+                if look_elements:
+                    look = look_elements[0]
+                    specified = [
+                        name for name in look_attributes if namespace + name in look.attrib
                     ]
+                    if specified:
+                        enabled = {
+                            target: on_off(look.attrib[namespace + source], source)
+                            for source, target in look_attributes.items()
+                            if namespace + source in look.attrib
+                        }
+                    else:
+                        raw_mask = look.attrib.get(namespace + "val", "0000")
+                        if (
+                            not raw_mask
+                            or len(raw_mask) > 4
+                            or not all(char in "0123456789abcdefABCDEF" for char in raw_mask)
+                        ):
+                            raise ValueError("DOCX table contains an invalid style bitmask.")
+                        mask = int(raw_mask, 16)
+                        enabled = {
+                            "firstRow": bool(mask & 0x0020),
+                            "lastRow": bool(mask & 0x0040),
+                            "firstCol": bool(mask & 0x0080),
+                            "lastCol": bool(mask & 0x0100),
+                            "noHBand": bool(mask & 0x0200),
+                            "noVBand": bool(mask & 0x0400),
+                        }
+                else:
+                    # Word's default look mask enables first row/column and row banding.
+                    mask = 0x04A0
+                    enabled = {
+                        "firstRow": bool(mask & 0x0020),
+                        "lastRow": bool(mask & 0x0040),
+                        "firstCol": bool(mask & 0x0080),
+                        "lastCol": bool(mask & 0x0100),
+                        "noHBand": bool(mask & 0x0200),
+                        "noVBand": bool(mask & 0x0400),
+                    }
+
+                row_band_size = table_rules.get("__rowBandSize", 1)
+                column_band_size = table_rules.get("__columnBandSize", 1)
+                if table_property_group is not None:
+                    for element_name, target in (
+                        ("tblStyleRowBandSize", "row_band_size"),
+                        ("tblStyleColBandSize", "column_band_size"),
+                    ):
+                        values = [
+                            child
+                            for child in table_property_group
+                            if child.tag == namespace + element_name
+                        ]
+                        if len(values) > 1:
+                            raise ValueError(
+                                f"DOCX table contains duplicate {element_name} values."
+                            )
+                        if values:
+                            raw_size = values[0].attrib.get(namespace + "val", "")
+                            if (
+                                not raw_size.isascii()
+                                or not raw_size.isdecimal()
+                                or len(raw_size) > 1
+                            ):
+                                raise ValueError(
+                                    f"DOCX table contains an invalid {element_name} value."
+                                )
+                            size = int(raw_size)
+                            if size > 3:
+                                raise ValueError(
+                                    f"DOCX table contains an invalid {element_name} value."
+                                )
+                            if target == "row_band_size":
+                                row_band_size = size
+                            else:
+                                column_band_size = size
+
+                grid_properties = [child for child in item if child.tag == namespace + "tblGrid"]
+                if len(grid_properties) > 1:
+                    raise ValueError("DOCX table contains duplicate grid definitions.")
+                grid_column_count = (
+                    sum(child.tag == namespace + "gridCol" for child in grid_properties[0])
+                    if grid_properties
+                    else 0
+                )
+
+                def cell_span(cell: ElementTree.Element) -> int:
+                    property_groups = [child for child in cell if child.tag == namespace + "tcPr"]
+                    if len(property_groups) > 1:
+                        raise ValueError("DOCX table cell contains duplicate property groups.")
+                    values = (
+                        [
+                            child
+                            for child in property_groups[0]
+                            if child.tag == namespace + "gridSpan"
+                        ]
+                        if property_groups
+                        else []
+                    )
+                    if len(values) > 1:
+                        raise ValueError("DOCX table cell contains duplicate grid spans.")
+                    if not values:
+                        return 1
+                    raw_span = values[0].attrib.get(namespace + "val", "")
+                    if not raw_span.isascii() or not raw_span.isdecimal() or len(raw_span) > 10:
+                        raise ValueError("DOCX table cell contains an invalid grid span.")
+                    span = int(raw_span)
+                    if not 1 <= span <= 2_147_483_647:
+                        raise ValueError("DOCX table cell contains an invalid grid span.")
+                    return span
+
+                def grid_offset(row: ElementTree.Element, name: str) -> int:
+                    row_properties = [child for child in row if child.tag == namespace + "trPr"]
+                    if len(row_properties) > 1:
+                        raise ValueError("DOCX table row contains duplicate property groups.")
+                    values = (
+                        [child for child in row_properties[0] if child.tag == namespace + name]
+                        if row_properties
+                        else []
+                    )
+                    if len(values) > 1:
+                        raise ValueError(f"DOCX table row contains duplicate {name} values.")
+                    if not values:
+                        return 0
+                    raw_offset = values[0].attrib.get(namespace + "val", "")
+                    if (
+                        not raw_offset.isascii()
+                        or not raw_offset.isdecimal()
+                        or len(raw_offset) > 10
+                    ):
+                        raise ValueError(f"DOCX table row contains an invalid {name} value.")
+                    offset = int(raw_offset)
+                    if offset > 2_147_483_647:
+                        raise ValueError(f"DOCX table row contains an invalid {name} value.")
+                    return offset
+
+                logical_row_widths = [
+                    grid_offset(row, "gridBefore")
+                    + sum(cell_span(cell) for cell in row if cell.tag == namespace + "tc")
+                    + grid_offset(row, "gridAfter")
+                    for row in rows
+                ]
+                column_count = max([grid_column_count, *logical_row_widths], default=0)
+                active_table_number_id = table_number_id
+                active_table_number_id = table_rules.get("wholeTable", active_table_number_id)
+                for row_index, row in enumerate(rows):
+                    cells: list[str] = []
+                    column_index = grid_offset(row, "gridBefore")
+                    for cell in (child for child in row if child.tag == namespace + "tc"):
+                        span = cell_span(cell)
+                        final_column = column_index + span - 1
+                        cell_number_id = active_table_number_id
+                        conditions: list[str] = []
+                        first_row = enabled.get("firstRow", False) and row_index == 0
+                        last_row = enabled.get("lastRow", False) and row_index == len(rows) - 1
+                        first_column = enabled.get("firstCol", False) and column_index == 0
+                        last_column = (
+                            enabled.get("lastCol", False)
+                            and column_count > 0
+                            and final_column == column_count - 1
+                        )
+                        if (
+                            not enabled.get("noHBand", False)
+                            and row_band_size > 0
+                            and not first_row
+                            and not last_row
+                        ):
+                            band_index = row_index - int(enabled.get("firstRow", False))
+                            band = (band_index // row_band_size) % 2
+                            conditions.append("band1Horz" if band == 0 else "band2Horz")
+                        if (
+                            not enabled.get("noVBand", False)
+                            and column_band_size > 0
+                            and not first_column
+                            and not last_column
+                        ):
+                            band_index = column_index - int(enabled.get("firstCol", False))
+                            band = (band_index // column_band_size) % 2
+                            conditions.append("band1Vert" if band == 0 else "band2Vert")
+                        if first_column:
+                            conditions.append("firstCol")
+                        if last_column:
+                            conditions.append("lastCol")
+                        if first_row:
+                            conditions.append("firstRow")
+                        if last_row:
+                            conditions.append("lastRow")
+                        if first_row and first_column:
+                            conditions.append("nwCell")
+                        if first_row and last_column:
+                            conditions.append("neCell")
+                        if last_row and first_column:
+                            conditions.append("swCell")
+                        if last_row and last_column:
+                            conditions.append("seCell")
+                        for condition in conditions:
+                            cell_number_id = table_rules.get(condition, cell_number_id)
+                        cells.append(table_cell_text(cell, cell_number_id))
+                        column_index += span
                     if any(cells):
                         blocks.append(" | ".join(cells))
             else:
@@ -542,7 +778,7 @@ def _parse_docx_style_numbering(
     dict[str, int],
     dict[str, dict[str, int]],
 ]:
-    """Resolve paragraph-style numbering, including bounded basedOn chains."""
+    """Resolve bounded paragraph, numbering, and table style numbering."""
     if xml is None:
         return {}, {}, {}
     try:
@@ -619,6 +855,31 @@ def _parse_docx_style_numbering(
                 numbering_style_ids[style_id] = number_id
         elif style_type == "table":
             table_numbering: dict[str, int] = {}
+            style_table_properties = [item for item in style if item.tag == namespace + "tblPr"]
+            if len(style_table_properties) > 1:
+                raise ValueError("DOCX table style contains duplicate table properties.")
+            if style_table_properties:
+                for element_name, target in (
+                    ("tblStyleRowBandSize", "__rowBandSize"),
+                    ("tblStyleColBandSize", "__columnBandSize"),
+                ):
+                    values = [
+                        item
+                        for item in style_table_properties[0]
+                        if item.tag == namespace + element_name
+                    ]
+                    if len(values) > 1:
+                        raise ValueError(
+                            f"DOCX table style contains duplicate {element_name} values."
+                        )
+                    if values:
+                        raw_size = values[0].attrib.get(namespace + "val", "")
+                        size = decimal_attribute(raw_size, element_name, 1)
+                        if size > 3:
+                            raise ValueError(
+                                f"DOCX table style contains an invalid {element_name} value."
+                            )
+                        table_numbering[target] = size
             conditional_groups = [item for item in style if item.tag == namespace + "tblStylePr"]
             for conditional in conditional_groups:
                 condition = conditional.attrib.get(namespace + "type", "")
@@ -654,10 +915,6 @@ def _parse_docx_style_numbering(
                     raise ValueError("DOCX table style contains duplicate numbering markers.")
                 if not conditional_numberings:
                     continue
-                if condition != "wholeTable":
-                    raise ValueError(
-                        "DOCX conditional table-style numbering cannot be resolved safely."
-                    )
                 ids = [
                     item for item in conditional_numberings[0] if item.tag == namespace + "numId"
                 ]
@@ -672,7 +929,7 @@ def _parse_docx_style_numbering(
                     )
                 else:
                     raise ValueError(
-                        "DOCX whole-table numbering requires an explicit list identifier."
+                        "DOCX conditional table-style numbering requires an explicit list identifier."
                     )
             raw_table_styles[style_id] = parent_id, table_numbering
         else:

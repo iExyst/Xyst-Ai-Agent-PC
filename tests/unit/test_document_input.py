@@ -46,6 +46,7 @@ def make_docx(
     numbering_xml: str | None = None,
     styles_xml: str | None = None,
     table_style: str | None = None,
+    table_look: str | None = None,
     table_paragraph_xml: dict[tuple[int, int], str] | None = None,
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     header: str | None = None,
@@ -81,9 +82,14 @@ def make_docx(
                 )
                 cells.append(f"<w:tc>{property_xml}{paragraph}</w:tc>")
             rows.append("<w:tr>" + "".join(cells) + "</w:tr>")
+        table_property_parts = []
+        if table_style is not None:
+            table_property_parts.append(f'<w:tblStyle w:val="{table_style}"/>')
+        if table_look is not None:
+            table_property_parts.append(f"<w:tblLook {table_look}/>")
         table_properties = (
-            f'<w:tblPr><w:tblStyle w:val="{table_style}"/></w:tblPr>'
-            if table_style is not None
+            "<w:tblPr>" + "".join(table_property_parts) + "</w:tblPr>"
+            if table_property_parts
             else ""
         )
         body += "<w:tbl>" + table_properties + "".join(rows) + "</w:tbl>"
@@ -160,6 +166,24 @@ def make_docx(
                 f"<w:p><w:r><w:t>{footer}</w:t></w:r></w:p></w:ftr>",
             )
     return output.getvalue()
+
+
+def make_numbering_xml(formats_by_id: dict[int, str]) -> str:
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    definitions = []
+    instances = []
+    for abstract_id, (number_id, number_format) in enumerate(formats_by_id.items()):
+        definitions.append(
+            f'<w:abstractNum w:abstractNumId="{abstract_id}"><w:lvl w:ilvl="0">'
+            f'<w:numFmt w:val="{number_format}"/><w:lvlText w:val="%1."/>'
+            "</w:lvl></w:abstractNum>"
+        )
+        instances.append(
+            f'<w:num w:numId="{number_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num>'
+        )
+    return (
+        f'<w:numbering xmlns:w="{namespace}">' + "".join(definitions + instances) + "</w:numbering>"
+    )
 
 
 def make_xlsx(
@@ -343,23 +367,141 @@ def test_inherits_docx_numbering_from_whole_table_style_chain():
     assert "[List upperRoman, level 1, marker %1); numbered marker I)] Direct action" in result
 
 
-def test_rejects_docx_table_style_numbering_with_unsupported_conditions():
-    with pytest.raises(ValueError, match="conditional table-style numbering"):
-        extract_document_text(
-            make_docx(
-                [],
-                table=[["Header action"]],
-                table_style="ActionTable",
-                styles_xml=(
-                    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-                    '<w:style w:type="table" w:styleId="ActionTable">'
-                    '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
-                    '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
-                    "</w:style></w:styles>"
-                ),
+def test_applies_docx_first_row_table_style_numbering_only_to_enabled_row():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Header action"], ["Body action"]],
+            table_style="ActionTable",
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
             ),
-            DOCX_TYPE,
-        )
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" in result
+    assert "Body action" in result
+    assert "[List decimal, level 1, marker %1.; numbered marker 2.] Body action" not in result
+
+
+def test_reads_docx_table_look_legacy_bitmask():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Header"], ["Body"]],
+            table_style="ActionTable",
+            table_look='w:val="0020"',
+            numbering_xml=make_numbering_xml({4: "decimal"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header" in result
+    assert "[List decimal, level 1, marker %1.; numbered marker 2.] Body" not in result
+
+
+def test_applies_docx_first_column_table_style_numbering_by_cell_position():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["First column", "Other column"]],
+            table_style="ActionTable",
+            table_look=(
+                'w:firstRow="0" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" '
+                'w:noHBand="1" w:noVBand="1"'
+            ),
+            numbering_xml=make_numbering_xml({4: "decimal"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstCol"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] First column" in result
+    assert "Other column" in result
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Other column" not in result
+
+
+def test_docx_first_row_rule_overrides_first_column_rule_by_precedence():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Corner"]],
+            table_style="ActionTable",
+            table_look=(
+                'w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" '
+                'w:noHBand="1" w:noVBand="1"'
+            ),
+            numbering_xml=make_numbering_xml({4: "decimal", 5: "upperRoman"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstCol"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="5"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List upperRoman, level 1, marker %1.; numbered marker I.] Corner" in result
+
+
+def test_applies_docx_row_banding_with_configured_band_size():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Row 1"], ["Row 2"], ["Row 3"], ["Row 4"]],
+            table_style="ActionTable",
+            table_look=(
+                'w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" '
+                'w:noHBand="0" w:noVBand="1"'
+            ),
+            numbering_xml=make_numbering_xml({4: "decimal", 5: "upperRoman"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr>'
+                '<w:tblStylePr w:type="band1Horz"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                '<w:tblStylePr w:type="band2Horz"><w:pPr><w:numPr>'
+                '<w:numId w:val="5"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Row 1" in result
+    assert "[List decimal, level 1, marker %1.; numbered marker 2.] Row 2" in result
+    assert "[List upperRoman, level 1, marker %1.; numbered marker I.] Row 3" in result
+    assert "[List upperRoman, level 1, marker %1.; numbered marker II.] Row 4" in result
 
 
 def test_rejects_docx_table_style_based_on_cycles():
