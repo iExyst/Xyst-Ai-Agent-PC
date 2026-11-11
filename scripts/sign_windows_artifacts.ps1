@@ -4,6 +4,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$env:PSModulePath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+Import-Module PKI -ErrorAction Stop
+Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
 
 if ([string]::IsNullOrWhiteSpace($env:XAA_SIGNING_CERTIFICATE) -or -not (Test-Path -LiteralPath $env:XAA_SIGNING_CERTIFICATE -PathType Leaf)) {
     throw 'The signing certificate file is unavailable.'
@@ -40,7 +43,7 @@ if (Test-Path -LiteralPath $storePath) {
     throw 'The signing certificate already exists in the current-user store; refusing to remove an existing certificate.'
 }
 try {
-    $eku = @($certificate.EnhancedKeyUsageList | ForEach-Object { $_.ObjectId.Value })
+    $eku = @($certificate.EnhancedKeyUsageList | ForEach-Object { [string]$_.ObjectId })
     if ($eku -notcontains '1.3.6.1.5.5.7.3.3') {
         throw 'The certificate is not valid for code signing.'
     }

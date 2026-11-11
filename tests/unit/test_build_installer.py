@@ -1,6 +1,7 @@
 import io
 import json
 import subprocess
+import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -139,6 +140,72 @@ def test_signing_powershell_script_parses_without_errors():
         capture_output=True,
         text=True,
     )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows certificate-store integration fixture")
+def test_powershell_signer_imports_cleans_and_invokes_sign_tool(tmp_path):
+    signer = Path("scripts/sign_windows_artifacts.ps1").resolve()
+    sample = tmp_path / "fixture.exe"
+    sample.write_bytes(b"disposable fixture bytes")
+    fake_sign_tool = tmp_path / "fake signtool.cmd"
+    call_log = tmp_path / "signtool-calls.txt"
+    fake_sign_tool.write_text(
+        '@echo off\r\necho %*>>"%XAA_SIGNTOOL_LOG%"\r\nexit /b 0\r\n',
+        encoding="ascii",
+    )
+    harness = tmp_path / "signer-fixture.ps1"
+    harness.write_text(
+        """$ErrorActionPreference = 'Stop'
+$env:PSModulePath = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\Modules'
+Import-Module PKI -ErrorAction Stop
+Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
+$password = ConvertTo-SecureString 'fixture-only-password' -AsPlainText -Force
+$cert = New-SelfSignedCertificate -Subject 'CN=XAA Disposable Signing Fixture' -Type CodeSigningCert -CertStoreLocation 'Cert:\\CurrentUser\\My' -NotAfter (Get-Date).AddDays(2)
+try {
+    Export-PfxCertificate -Cert $cert -FilePath $env:XAA_TEST_PFX -Password $password | Out-Null
+    Remove-Item -LiteralPath \"Cert:\\CurrentUser\\My\\$($cert.Thumbprint)\" -Force
+    & $env:XAA_TEST_SIGNER -Files $env:XAA_TEST_SAMPLE
+    if ($LASTEXITCODE -ne 0) { throw 'The signer script returned a failure.' }
+    $calls = @(Get-Content -LiteralPath $env:XAA_SIGNTOOL_LOG)
+    if ($calls.Count -ne 2 -or $calls[0] -notmatch '^sign ' -or $calls[1] -notmatch '^verify ') { throw 'SignTool sign/verify calls were not recorded.' }
+    if ($calls -match 'fixture-only-password') { throw 'The PFX password was passed to SignTool.' }
+    if (Test-Path -LiteralPath \"Cert:\\CurrentUser\\My\\$($cert.Thumbprint)\") { throw 'The temporary signer certificate remained installed.' }
+} finally {
+    Remove-Item -LiteralPath \"Cert:\\CurrentUser\\My\\$($cert.Thumbprint)\" -Force -ErrorAction SilentlyContinue
+    Remove-Variable password -ErrorAction SilentlyContinue
+}
+""",
+        encoding="utf-8",
+    )
+    environment = dict(build_installer.os.environ)
+    environment.update(
+        {
+            "XAA_SIGNING_CERTIFICATE": str(tmp_path / "fixture.pfx"),
+            "XAA_SIGNING_PASSWORD": "fixture-only-password",
+            "XAA_SIGNTOOL": str(fake_sign_tool),
+            "XAA_SIGNTOOL_LOG": str(call_log),
+            "XAA_TEST_PFX": str(tmp_path / "fixture.pfx"),
+            "XAA_TEST_SAMPLE": str(sample),
+            "XAA_TEST_SIGNER": str(signer),
+        }
+    )
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+        ],
+        check=False,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
 
 
 def test_release_installer_requires_current_user_install_mode(tmp_path):
