@@ -171,6 +171,7 @@ jobs:
     timeout-minutes: 30
     env:
       UV_CACHE_DIR: .uv-cache
+      CARGO_TARGET_DIR: build/installer-target
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -204,7 +205,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            apps/desktop/src-tauri/target
+            build/installer-target
           key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - uses: actions/cache/restore@v6
         id: nsis-cache
@@ -483,7 +484,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            apps/desktop/src-tauri/target
+            build/installer-target
           key: ${{ runner.os }}-xaa-rust-1.99.1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
       - uses: actions/upload-artifact@v4
         if: always()
