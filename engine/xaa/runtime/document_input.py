@@ -217,17 +217,21 @@ def _extract_docx_text(content: bytes) -> str:
             relationship_parts = [
                 item for item in entries if item.filename == "word/_rels/document.xml.rels"
             ]
+            numbering_parts = [item for item in entries if item.filename == "word/numbering.xml"]
             if len(content_types) != 1 or len(documents) != 1:
                 raise ValueError(
                     "DOCX package is missing its unique content types or document part."
                 )
             if len(relationship_parts) > 1:
                 raise ValueError("DOCX package contains duplicate document relationships.")
+            if len(numbering_parts) > 1:
+                raise ValueError("DOCX package contains duplicate numbering definitions.")
             content_type_info, document_info = content_types[0], documents[0]
             relationship_info = relationship_parts[0] if relationship_parts else None
+            numbering_info = numbering_parts[0] if numbering_parts else None
             if any(
                 info.flag_bits & 1
-                for info in (content_type_info, document_info, relationship_info)
+                for info in (content_type_info, document_info, relationship_info, numbering_info)
                 if info is not None
             ):
                 raise ValueError("Encrypted DOCX files are not supported.")
@@ -238,11 +242,24 @@ def _extract_docx_text(content: bytes) -> str:
                     relationship_info is not None
                     and relationship_info.file_size > MAX_OOXML_PART_BYTES
                 )
+                or (numbering_info is not None and numbering_info.file_size > MAX_OOXML_PART_BYTES)
+                or sum(
+                    info.file_size
+                    for info in (
+                        content_type_info,
+                        document_info,
+                        relationship_info,
+                        numbering_info,
+                    )
+                    if info is not None
+                )
+                > MAX_DOCX_XML_BYTES
             ):
                 raise ValueError("DOCX document XML exceeds its extraction limit.")
             declared = archive.read(content_type_info)
             xml = archive.read(document_info)
             relationship_xml = archive.read(relationship_info) if relationship_info else None
+            numbering_xml = archive.read(numbering_info) if numbering_info else None
     except ValueError:
         raise
     except (BadZipFile, RuntimeError, OSError, EOFError):
@@ -255,6 +272,10 @@ def _extract_docx_text(content: bytes) -> str:
         b"<!DOCTYPE" in relationship_xml.upper() or b"<!ENTITY" in relationship_xml.upper()
     ):
         raise ValueError("DOCX relationship XML declarations are not supported.")
+    if numbering_xml is not None and (
+        b"<!DOCTYPE" in numbering_xml.upper() or b"<!ENTITY" in numbering_xml.upper()
+    ):
+        raise ValueError("DOCX numbering XML declarations are not supported.")
     try:
         types_root = ElementTree.fromstring(declared)
         root = ElementTree.fromstring(xml)
@@ -274,6 +295,7 @@ def _extract_docx_text(content: bytes) -> str:
     if types_root.tag != content_namespace + "Types" or not has_word_document_type:
         raise ValueError("ZIP document is not a supported DOCX file.")
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    list_markers = _parse_docx_numbering(numbering_xml, namespace)
 
     def paragraph_text(paragraph: ElementTree.Element) -> str:
         fragments: list[str] = []
@@ -324,7 +346,15 @@ def _extract_docx_text(content: bytes) -> str:
                     or int(raw_level) > 8
                 ):
                     raise ValueError("DOCX paragraph contains invalid list metadata.")
-                prefix.append(f"List item, level {int(raw_level) + 1}")
+                if raw_id != "0":
+                    marker = list_markers.get((int(raw_id), int(raw_level)))
+                    if marker is None:
+                        prefix.append(f"List item, level {int(raw_level) + 1}")
+                    else:
+                        number_format, marker_text = marker
+                        prefix.append(
+                            f"List {number_format}, level {int(raw_level) + 1}, marker {marker_text}"
+                        )
         if prefix and value:
             value = f"[{'; '.join(prefix)}] {value}"
         return value
@@ -386,7 +416,10 @@ def _extract_docx_text(content: bytes) -> str:
         root,
         relationships_root,
         namespace,
-        len(declared) + len(xml) + (len(relationship_xml) if relationship_xml else 0),
+        len(declared)
+        + len(xml)
+        + (len(relationship_xml) if relationship_xml else 0)
+        + (len(numbering_xml) if numbering_xml else 0),
     )
 
     pieces = [
@@ -399,6 +432,110 @@ def _extract_docx_text(content: bytes) -> str:
     if not text:
         raise ValueError("DOCX contains no extractable text.")
     return _bound(text)
+
+
+def _parse_docx_numbering(
+    xml: bytes | None, namespace: str
+) -> dict[tuple[int, int], tuple[str, str]]:
+    """Read bounded list marker formats/templates without calculating sequence values."""
+    if xml is None:
+        return {}
+    try:
+        root = ElementTree.fromstring(xml)
+    except ElementTree.ParseError:
+        raise ValueError("DOCX numbering definitions could not be safely parsed.") from None
+    if root.tag != namespace + "numbering":
+        raise ValueError("DOCX numbering definitions have an invalid root element.")
+
+    def decimal_attribute(value: str, label: str, maximum: int = 10) -> int:
+        if not value.isascii() or not value.isdecimal() or len(value) > maximum:
+            raise ValueError(f"DOCX numbering definitions contain an invalid {label}.")
+        return int(value)
+
+    abstract_definitions: dict[int, dict[int, tuple[str, str]]] = {}
+    for abstract in root:
+        if abstract.tag != namespace + "abstractNum":
+            continue
+        abstract_id = decimal_attribute(
+            abstract.attrib.get(namespace + "abstractNumId", ""), "abstract ID"
+        )
+        if abstract_id in abstract_definitions:
+            raise ValueError("DOCX numbering definitions contain duplicate abstract IDs.")
+        levels: dict[int, tuple[str, str]] = {}
+        for level in abstract:
+            if level.tag != namespace + "lvl":
+                continue
+            level_id = decimal_attribute(level.attrib.get(namespace + "ilvl", ""), "level", 2)
+            if level_id > 8 or level_id in levels:
+                raise ValueError("DOCX numbering definitions contain a duplicate or invalid level.")
+            formats = [item for item in level if item.tag == namespace + "numFmt"]
+            texts = [item for item in level if item.tag == namespace + "lvlText"]
+            if len(formats) > 1 or len(texts) > 1:
+                raise ValueError("DOCX numbering level contains duplicate marker metadata.")
+            number_format = formats[0].attrib.get(namespace + "val", "") if formats else ""
+            marker_text = texts[0].attrib.get(namespace + "val", "") if texts else ""
+            if (
+                not number_format
+                or len(number_format) > 64
+                or not number_format.isascii()
+                or not marker_text
+                or len(marker_text) > 128
+                or not marker_text.isprintable()
+            ):
+                raise ValueError("DOCX numbering level contains invalid marker metadata.")
+            levels[level_id] = (number_format, marker_text)
+        abstract_definitions[abstract_id] = levels
+
+    instances: dict[tuple[int, int], tuple[str, str]] = {}
+    seen_instances: set[int] = set()
+    for instance in root:
+        if instance.tag != namespace + "num":
+            continue
+        number_id = decimal_attribute(instance.attrib.get(namespace + "numId", ""), "list ID")
+        abstract_ids = [item for item in instance if item.tag == namespace + "abstractNumId"]
+        if len(abstract_ids) != 1 or number_id in seen_instances:
+            raise ValueError("DOCX numbering instances contain missing or duplicate IDs.")
+        seen_instances.add(number_id)
+        abstract_id = decimal_attribute(
+            abstract_ids[0].attrib.get(namespace + "val", ""), "abstract reference"
+        )
+        base_levels = abstract_definitions.get(abstract_id)
+        if base_levels is None:
+            raise ValueError("DOCX numbering instance references a missing abstract definition.")
+        effective_levels: dict[int, tuple[str, str]] = base_levels.copy()
+        for override in (item for item in instance if item.tag == namespace + "lvlOverride"):
+            level_id = decimal_attribute(
+                override.attrib.get(namespace + "ilvl", ""), "override level", 2
+            )
+            if level_id > 8:
+                raise ValueError("DOCX numbering override has an invalid level.")
+            replacements = [item for item in override if item.tag == namespace + "lvl"]
+            if len(replacements) > 1:
+                raise ValueError("DOCX numbering override contains duplicate levels.")
+            if replacements:
+                replacement_level = replacements[0]
+                formats = [item for item in replacement_level if item.tag == namespace + "numFmt"]
+                texts = [item for item in replacement_level if item.tag == namespace + "lvlText"]
+                if len(formats) > 1 or len(texts) > 1:
+                    raise ValueError("DOCX numbering override contains duplicate marker metadata.")
+                if formats and texts:
+                    number_format = formats[0].attrib.get(namespace + "val", "")
+                    marker_text = texts[0].attrib.get(namespace + "val", "")
+                    if (
+                        not number_format
+                        or len(number_format) > 64
+                        or not number_format.isascii()
+                        or not marker_text
+                        or len(marker_text) > 128
+                        or not marker_text.isprintable()
+                    ):
+                        raise ValueError(
+                            "DOCX numbering override contains invalid marker metadata."
+                        )
+                    effective_levels[level_id] = (number_format, marker_text)
+        for level_id, marker in effective_levels.items():
+            instances[number_id, level_id] = marker
+    return instances
 
 
 def _docx_related_parts(

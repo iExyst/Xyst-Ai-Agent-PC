@@ -43,6 +43,7 @@ def make_docx(
     table: list[list[str]] | None = None,
     *,
     paragraph_xml: list[str] | None = None,
+    numbering_xml: str | None = None,
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     header: str | None = None,
     footer: str | None = None,
@@ -119,6 +120,8 @@ def make_docx(
             + "</Types>",
         )
         archive.writestr("word/document.xml", document)
+        if numbering_xml is not None:
+            archive.writestr("word/numbering.xml", numbering_xml)
         if relationships:
             archive.writestr(
                 "word/_rels/document.xml.rels",
@@ -228,12 +231,74 @@ def test_extracts_docx_heading_style_and_list_level_markers():
                     "<w:r><w:t>First action</w:t></w:r></w:p>"
                 ),
             ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0">'
+                '<w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/>'
+                '<w:lvlText w:val="%2."/></w:lvl></w:abstractNum>'
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
+                "</w:numbering>"
+            ),
         ),
         DOCX_TYPE,
     )
 
     assert "[Heading: Heading2] Project plan" in result
-    assert "[List item, level 2] First action" in result
+    assert "[List decimal, level 2, marker %2.] First action" in result
+
+
+def test_extracts_docx_numbering_override_marker_template():
+    result = extract_document_text(
+        make_docx(
+            [],
+            paragraph_xml=[
+                (
+                    '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/>'
+                    '<w:numId w:val="4"/></w:numPr></w:pPr>'
+                    "<w:r><w:t>Bullet action</w:t></w:r></w:p>"
+                )
+            ],
+            numbering_xml=(
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+                "</w:lvl></w:abstractNum>"
+                '<w:num w:numId="4"><w:abstractNumId w:val="0"/>'
+                '<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0">'
+                '<w:numFmt w:val="bullet"/><w:lvlText w:val="•"/>'
+                "</w:lvl></w:lvlOverride></w:num></w:numbering>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List bullet, level 1, marker •] Bullet action" in result
+
+
+@pytest.mark.parametrize(
+    ("numbering_xml", "error"),
+    [
+        ("<wrong/>", "invalid root"),
+        (
+            (
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:abstractNum w:abstractNumId="0"/><w:abstractNum w:abstractNumId="0"/>'
+                "</w:numbering>"
+            ),
+            "duplicate abstract IDs",
+        ),
+        (
+            (
+                '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:num w:numId="4"><w:abstractNumId w:val="8"/></w:num></w:numbering>'
+            ),
+            "missing abstract definition",
+        ),
+    ],
+)
+def test_rejects_invalid_docx_numbering_definitions(numbering_xml, error):
+    with pytest.raises(ValueError, match=error):
+        extract_document_text(make_docx(["Text"], numbering_xml=numbering_xml), DOCX_TYPE)
 
 
 @pytest.mark.parametrize(
