@@ -122,6 +122,8 @@ def test_discovery_summarizes_package_without_returning_secrets_or_skill_text(
     assert requirements["prerequisite_fields"] == ["commands"]
     assert requirements["dependencies_declared"] is True
     assert requirements["dependency_names"] == ["requests"]
+    assert requirements["python_dependency_specs"] == ["requests>=2.0"]
+    assert requirements["dependency_count"] == 2
     assert requirements["dependency_managers"] == ["python"]
     assert requirements["unparsed_dependency_count"] == 1
     assert summary.servers[0].command_name == "python.exe"
@@ -358,6 +360,54 @@ def test_requirement_readiness_checks_names_without_exposing_values(
     assert "hermes_tools" in result["not_assessed"]
     assert "hermes_fallback_conditions" in result["not_assessed"]
     assert "must-not-appear" not in json.dumps(result)
+
+
+def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_unverified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requirements = agent_plugins._declared_requirements(
+        {
+            "dependencies": {
+                "python": ["requests>=2.0", "urllib3<2", "missing-lib==1.0"],
+                "npm": ["left-pad>=1.0"],
+            }
+        }
+    )
+    installed = {"requests": "2.32.0", "urllib3": "2.2.0"}
+
+    def version(name: str) -> str:
+        try:
+            return installed[name]
+        except KeyError as exc:
+            raise agent_plugins.importlib_metadata.PackageNotFoundError(name) from exc
+
+    monkeypatch.setattr(agent_plugins.importlib_metadata, "version", version)
+    result = agent_plugins._assess_requirement_readiness(requirements)
+
+    assert result["available_python_dependency_specs"] == ["requests>=2.0"]
+    assert result["incompatible_python_dependency_specs"] == ["urllib3<2"]
+    assert result["missing_python_dependency_specs"] == ["missing-lib==1.0"]
+    assert result["unverified_dependency_count"] == 1
+    assert result["dependencies_unresolved"] is True
+    assert result["dependency_count_unresolved"] == 3
+    assert "dependency_installation" in result["not_assessed"]
+    assert "unsupported_dependency_managers" in result["not_assessed"]
+
+
+def test_requirement_readiness_skips_inapplicable_python_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requirements = agent_plugins._declared_requirements(
+        {"dependencies": {"python": ['future-only-package; python_version < "1"']}}
+    )
+    monkeypatch.setattr(
+        agent_plugins.importlib_metadata,
+        "version",
+        lambda _name: pytest.fail("inapplicable dependency should not be queried"),
+    )
+    result = agent_plugins._assess_requirement_readiness(requirements)
+    assert result["dependencies_unresolved"] is False
+    assert result["dependency_count_unresolved"] == 0
 
 
 def test_requirement_readiness_marks_platform_mismatch_and_unknown_platforms(
@@ -851,7 +901,7 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
     assert declared["hermes_fallback_toolsets"] == ["browser"]
     assert declared["required_environment_names"] == ["API_TOKEN"]
     assert declared["dependency_names"] == ["requests"]
-    assert "2.0" not in json.dumps(declared)
+    assert declared["python_dependency_specs"] == ["requests>=2.0"]
     assert "example.test" not in json.dumps(declared)
     assert "tags: [writing, utility]" in version.json()["content"]
     resource = version.json()["assets"][0]

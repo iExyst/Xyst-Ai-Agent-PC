@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.metadata as importlib_metadata
 import io
 import ipaddress
 import json
@@ -21,6 +22,9 @@ from typing import Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
 import yaml
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.storage.skills import MAX_PROCEDURE_TEXT_BYTES
@@ -40,6 +44,8 @@ MAX_PLUGIN_FINGERPRINT_ENTRIES = 1024
 MAX_PLUGIN_FINGERPRINT_FILE_BYTES = 2 * 1024 * 1024
 MAX_PLUGIN_FINGERPRINT_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_READINESS_COMMAND_CHECKS = 256
+MAX_READINESS_DEPENDENCY_CHECKS = 128
+_PYTHON_DEPENDENCY_MANAGERS = {"python", "python3", "pip", "pip3"}
 _SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 PLUGIN_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -199,14 +205,6 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         cast(dict[str, Any], raw_prerequisites) if isinstance(raw_prerequisites, dict) else {}
     )
     dependencies = values.get("dependencies")
-    if isinstance(dependencies, dict):
-        dependency_count = len(cast(dict[str, Any], dependencies))
-    elif isinstance(dependencies, list):
-        dependency_count = len(cast(list[Any], dependencies))
-    elif isinstance(dependencies, tuple):
-        dependency_count = len(cast(tuple[Any, ...], dependencies))
-    else:
-        dependency_count = int(dependencies is not None)
     raw_metadata = values.get("metadata")
     metadata = cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
     raw_hermes = metadata.get("hermes")
@@ -214,33 +212,49 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
     dependency_names: set[str] = set()
     dependency_managers: set[str] = set()
     unparsed_dependency_count = 0
-    dependency_items: list[Any] = []
+    dependency_items: list[tuple[str | None, Any]] = []
     dependency_items_truncated = False
     if isinstance(dependencies, (list, tuple)):
         all_dependency_items = list(cast(Iterable[Any], dependencies))
-        dependency_items = all_dependency_items[:128]
+        dependency_items = [(None, item) for item in all_dependency_items[:128]]
         dependency_items_truncated = len(all_dependency_items) > 128
     elif isinstance(dependencies, dict):
-        for manager, package_items in list(cast(dict[Any, Any], dependencies).items())[:64]:
-            if isinstance(manager, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,31}", manager):
-                dependency_managers.add(manager.lower())
+        raw_managers = list(cast(dict[Any, Any], dependencies).items())
+        dependency_items_truncated = len(raw_managers) > 64
+        for manager, package_items in raw_managers[:64]:
+            normalized_manager = (
+                manager.lower()
+                if isinstance(manager, str)
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,31}", manager)
+                else None
+            )
+            if normalized_manager is not None:
+                dependency_managers.add(normalized_manager)
             remaining = 128 - len(dependency_items)
             if isinstance(package_items, str):
-                dependency_items.extend([package_items] if remaining else [])
+                all_package_items = [package_items]
             elif isinstance(package_items, (list, tuple)):
                 all_package_items = list(cast(Iterable[Any], package_items))
-                dependency_items.extend(all_package_items[:remaining])
-                dependency_items_truncated = (
-                    dependency_items_truncated or len(all_package_items) > remaining
-                )
             else:
-                unparsed_dependency_count += 1
+                all_package_items = [package_items]
+            dependency_items.extend(
+                (normalized_manager, item) for item in all_package_items[:remaining]
+            )
+            dependency_items_truncated = (
+                dependency_items_truncated or len(all_package_items) > remaining
+            )
             if len(dependency_items) >= 128:
                 dependency_items_truncated = True
                 break
     elif isinstance(dependencies, str):
-        dependency_items = [dependencies]
-    for item in dependency_items:
+        dependency_items = [(None, dependencies)]
+    dependency_count = min(
+        128,
+        len(dependency_items) + int(dependency_items_truncated and len(dependency_items) < 128),
+    )
+    python_dependency_specs: list[str] = []
+    unsupported_dependency_count = 0
+    for manager, item in dependency_items:
         if not isinstance(item, str) or len(item) > 256:
             unparsed_dependency_count += 1
             continue
@@ -249,6 +263,10 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
             unparsed_dependency_count += 1
             continue
         dependency_names.add(match.group(1))
+        if manager in _PYTHON_DEPENDENCY_MANAGERS:
+            python_dependency_specs.append(item.strip())
+        else:
+            unsupported_dependency_count += 1
     toolsets = _bounded_names(hermes.get("requires_toolsets"))
     tools = _bounded_names(hermes.get("requires_tools"))
     fallback_toolsets = _bounded_names(hermes.get("fallback_for_toolsets"))
@@ -272,9 +290,11 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         "dependencies_declared": dependencies is not None,
         "dependency_count": min(dependency_count, 128),
         "dependency_names": sorted(dependency_names)[:128],
+        "python_dependency_specs": python_dependency_specs[:128],
         "dependency_names_truncated": dependency_count > 128 or dependency_items_truncated,
         "dependency_managers": sorted(dependency_managers)[:64],
         "unparsed_dependency_count": min(unparsed_dependency_count, 128),
+        "unsupported_dependency_count": min(unsupported_dependency_count, 128),
         "declared_fields": sorted(
             key
             for key in (
@@ -289,9 +309,11 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def _assess_requirement_readiness(
-    requirements: dict[str, Any], command_cache: dict[str, bool] | None = None
+    requirements: dict[str, Any],
+    command_cache: dict[str, bool] | None = None,
+    dependency_cache: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
-    """Compare safe declaration names with this process environment; never execute them."""
+    """Assess declarations using process metadata only; never run or install package code."""
     current_platform = (
         "windows"
         if sys.platform == "win32"
@@ -330,7 +352,62 @@ def _assess_requirement_readiness(
     present_environment = sorted(name for name in environment_names if os.environ.get(name))
     present_environment_set = set(present_environment)
     dependencies_declared = requirements.get("dependencies_declared") is True
-    dependency_count = requirements.get("dependency_count", 0)
+    specs = cast(list[str], requirements.get("python_dependency_specs", []))
+    checked_versions = dependency_cache if dependency_cache is not None else {}
+    available_specs: list[str] = []
+    missing_specs: list[str] = []
+    incompatible_specs: list[str] = []
+    unchecked_specs: list[str] = []
+    for spec in specs:
+        try:
+            requirement = Requirement(spec)
+        except InvalidRequirement:
+            unchecked_specs.append(spec)
+            continue
+        if requirement.marker is not None and not requirement.marker.evaluate():
+            continue
+        distribution_name = canonicalize_name(requirement.name)
+        if distribution_name not in checked_versions:
+            if len(checked_versions) >= MAX_READINESS_DEPENDENCY_CHECKS:
+                unchecked_specs.append(spec)
+                continue
+            try:
+                checked_versions[distribution_name] = importlib_metadata.version(requirement.name)
+            except importlib_metadata.PackageNotFoundError:
+                checked_versions[distribution_name] = None
+        installed_version = checked_versions[distribution_name]
+        if installed_version is None:
+            missing_specs.append(spec)
+            continue
+        try:
+            parsed_version = Version(installed_version)
+        except InvalidVersion:
+            unchecked_specs.append(spec)
+            continue
+        if requirement.specifier and parsed_version not in requirement.specifier:
+            incompatible_specs.append(spec)
+        else:
+            available_specs.append(spec)
+    dependency_count = int(requirements.get("dependency_count", 0))
+    unverified_dependency_count = int(requirements.get("unsupported_dependency_count", 0))
+    unverified_dependency_count += int(requirements.get("unparsed_dependency_count", 0))
+    if requirements.get("dependency_names_truncated") is True:
+        unverified_dependency_count += 1
+    if (
+        dependencies_declared
+        and dependency_count > 0
+        and not specs
+        and not unverified_dependency_count
+    ):
+        # Older callers may supply only aggregate counts; do not infer readiness.
+        unverified_dependency_count = dependency_count
+    unresolved_dependency_count = (
+        len(missing_specs)
+        + len(incompatible_specs)
+        + len(unchecked_specs)
+        + unverified_dependency_count
+    )
+    dependencies_unresolved = dependencies_declared and unresolved_dependency_count > 0
     toolsets = cast(list[str], requirements.get("hermes_toolsets", []))
     hermes_tools = cast(list[str], requirements.get("hermes_required_tools", []))
     fallback_toolsets = cast(list[str], requirements.get("hermes_fallback_toolsets", []))
@@ -344,8 +421,14 @@ def _assess_requirement_readiness(
         "unchecked_command_names": sorted(set(unchecked_commands)),
         "present_environment_names": present_environment,
         "missing_environment_names": sorted(set(environment_names) - present_environment_set),
-        "dependencies_unresolved": dependencies_declared,
-        "dependency_count_unresolved": dependency_count if dependencies_declared else 0,
+        "dependencies_unresolved": dependencies_unresolved,
+        "dependency_count_unresolved": unresolved_dependency_count,
+        "available_python_dependency_specs": available_specs,
+        "missing_python_dependency_specs": missing_specs,
+        "incompatible_python_dependency_specs": incompatible_specs,
+        "unchecked_python_dependency_specs": unchecked_specs,
+        "unverified_dependency_count": unverified_dependency_count,
+        "dependency_count": dependency_count,
         "hermes_toolsets_unresolved": toolsets,
         "hermes_tools_unresolved": hermes_tools,
         "hermes_fallback_toolsets_unresolved": fallback_toolsets,
@@ -353,7 +436,9 @@ def _assess_requirement_readiness(
         "not_assessed": [
             field
             for field, present in (
-                ("dependency_installation", dependencies_declared),
+                ("dependency_installation", dependencies_unresolved),
+                ("unsupported_dependency_managers", unverified_dependency_count > 0),
+                ("dependency_check_budget", len(unchecked_specs) > 0),
                 ("hermes_toolsets", bool(toolsets)),
                 ("hermes_tools", bool(hermes_tools)),
                 ("hermes_fallback_conditions", bool(fallback_toolsets or fallback_tools)),
@@ -503,6 +588,7 @@ def _skill_summary(
     directory: Path,
     skill_file: Path,
     command_cache: dict[str, bool],
+    dependency_cache: dict[str, str | None],
 ) -> tuple[PluginSkill, str | None]:
     resolved = skill_file.resolve(strict=True)
     if not _inside(resolved, package_root) or not resolved.is_file():
@@ -523,7 +609,7 @@ def _skill_summary(
             allowed_tools=allowed_tools,
             declared_requirements=declared_requirements,
             requirement_readiness=_assess_requirement_readiness(
-                declared_requirements, command_cache
+                declared_requirements, command_cache, dependency_cache
             ),
         ),
         version,
@@ -531,7 +617,9 @@ def _skill_summary(
 
 
 def _skill_summaries(
-    package_root: Path, command_cache: dict[str, bool]
+    package_root: Path,
+    command_cache: dict[str, bool],
+    dependency_cache: dict[str, str | None],
 ) -> tuple[list[PluginSkill], list[str]]:
     skills_root = package_root / "skills"
     if not skills_root.exists() and not skills_root.is_symlink():
@@ -558,7 +646,11 @@ def _skill_summaries(
             continue
         try:
             summary, _ = _skill_summary(
-                package_root.resolve(strict=True), directory, skill_file, command_cache
+                package_root.resolve(strict=True),
+                directory,
+                skill_file,
+                command_cache,
+                dependency_cache,
             )
             summaries.append(summary)
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
@@ -566,12 +658,19 @@ def _skill_summaries(
     return summaries, diagnostics
 
 
-def _hermes_skill_package(path: Path, root: Path, command_cache: dict[str, bool]) -> PluginSummary:
+def _hermes_skill_package(
+    path: Path,
+    root: Path,
+    command_cache: dict[str, bool],
+    dependency_cache: dict[str, str | None],
+) -> PluginSummary:
     package_root = path.resolve(strict=True)
     if not _inside(package_root, root) or not package_root.is_dir():
         raise ValueError("skill directory escapes selected root")
     skill_file = package_root / "SKILL.md"
-    skill, version = _skill_summary(package_root, package_root, skill_file, command_cache)
+    skill, version = _skill_summary(
+        package_root, package_root, skill_file, command_cache, dependency_cache
+    )
     return PluginSummary(
         name=package_root.name,
         version=version,
@@ -870,7 +969,10 @@ def read_plugin_mcp_server(directory: str, package_name: str, server_name: str) 
 
 
 def _package(
-    path: Path, root: Path, command_cache: dict[str, bool]
+    path: Path,
+    root: Path,
+    command_cache: dict[str, bool],
+    dependency_cache: dict[str, str | None],
 ) -> tuple[PluginSummary, list[str]]:
     package_root = path.resolve(strict=True)
     if not _inside(package_root, root) or not package_root.is_dir():
@@ -909,7 +1011,7 @@ def _package(
         raise ValueError("plugin.json keywords must be an array of strings")
     # No extension namespace is implemented by X.A.A.; ignore unimplemented data.
     servers, server_diagnostics = _servers(package_root)
-    skills, skill_diagnostics = _skill_summaries(package_root, command_cache)
+    skills, skill_diagnostics = _skill_summaries(package_root, command_cache, dependency_cache)
     summary = PluginSummary(
         name=name,
         version=version,
@@ -940,6 +1042,7 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
     packages: list[PluginSummary] = []
     diagnostics: list[PluginDiagnostic] = []
     command_cache: dict[str, bool] = {}
+    dependency_cache: dict[str, str | None] = {}
     for candidate in candidates[:MAX_PACKAGES]:
         if candidate.name.startswith("."):
             continue
@@ -950,7 +1053,9 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
             if not resolved.is_dir():
                 continue
             if (resolved / "plugin.json").exists():
-                summary, server_diagnostics = _package(resolved, root, command_cache)
+                summary, server_diagnostics = _package(
+                    resolved, root, command_cache, dependency_cache
+                )
                 packages.append(summary)
                 diagnostics.extend(
                     PluginDiagnostic(path=candidate.name[:256], message=message)
@@ -984,7 +1089,9 @@ def discover_agent_plugins(directory: str) -> PluginDiscovery:
                         )
                     )
             elif (resolved / "SKILL.md").exists():
-                packages.append(_hermes_skill_package(resolved, root, command_cache))
+                packages.append(
+                    _hermes_skill_package(resolved, root, command_cache, dependency_cache)
+                )
         except (OSError, RuntimeError, ValueError) as exc:
             diagnostics.append(PluginDiagnostic(path=candidate.name[:256], message=str(exc)[:300]))
     return PluginDiscovery(root=str(root), packages=packages, diagnostics=diagnostics)

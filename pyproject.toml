@@ -20,6 +20,7 @@ dependencies = [
     "pypdfium2>=4,<6",
     "discord-py>=2.6,<3",
     "uritemplate>=4.2,<5",
+    "packaging>=26.3,<27",
 ]
 
 [project.scripts]

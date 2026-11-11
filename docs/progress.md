@@ -1,5 +1,18 @@
 # Progress
 
+## Check declared Python skill dependency versions (2026-11-11)
+
+Agent Plugins discovery now evaluates bounded Python requirements declared under `python`,
+`python3`, `pip`, or `pip3` against installed distribution metadata. It applies PEP 508 version
+specifiers and environment markers, and reports satisfied, missing, incompatible, or unchecked
+constraints in the desktop. Other managers remain explicitly unverified; the check neither runs
+package code nor installs dependencies or exposes credential values. The Windows frozen-engine
+builder now copies metadata for every locked runtime distribution, so the same check can see the
+packaged engine's actual runtime. The package/importer and frozen-metadata tests pass (37 passed,
+1 skipped); the desktop production build and 15 client tests pass. Ruff, formatting, Pyright,
+desktop TypeScript, lock consistency and diff checks pass.
+Hosted CI and installed-package acceptance remain pending for this packaging change.
+
 ## Bound specialist plan dependency depth (2026-11-11)
 
 Task graphs already rejected dependency cycles and over-budget reservations, but allowed a flat

@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 from xaa.runtime.wsl_transport import RESOURCE_NAMES, profile_fingerprint
 
 
@@ -30,11 +32,42 @@ def verify_execution_resources(executable: Path) -> dict[str, str]:
     return fingerprints
 
 
+def metadata_copy_arguments(exported_requirements: str) -> list[str]:
+    """Copy locked runtime dist-info so read-only metadata checks work in the frozen app."""
+    names = {"xaa-engine"}
+    for line in exported_requirements.splitlines():
+        requirement_text = line.strip()
+        if not requirement_text or requirement_text.startswith(("#", "-")):
+            continue
+        requirement = Requirement(requirement_text)
+        if requirement.marker is not None and not requirement.marker.evaluate():
+            continue
+        names.add(canonicalize_name(requirement.name))
+    return [argument for name in sorted(names) for argument in ("--copy-metadata", name)]
+
+
 def main() -> None:
     if sys.platform != "win32":
         raise SystemExit("Build the Windows engine on Windows.")
     destination = Path("apps/desktop/src-tauri/binaries")
     destination.mkdir(parents=True, exist_ok=True)
+    runtime_requirements = subprocess.run(
+        [
+            "uv",
+            "export",
+            "--locked",
+            "--no-dev",
+            "--format",
+            "requirements-txt",
+            "--no-emit-project",
+            "--no-annotate",
+            "--no-hashes",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    metadata_arguments = metadata_copy_arguments(runtime_requirements)
     subprocess.run(
         [
             sys.executable,
@@ -62,8 +95,7 @@ def main() -> None:
             "playwright",
             "--collect-all",
             "acp",
-            "--copy-metadata",
-            "xaa-engine",
+            *metadata_arguments,
             "--hidden-import",
             "xaa.cli",
             "--hidden-import",

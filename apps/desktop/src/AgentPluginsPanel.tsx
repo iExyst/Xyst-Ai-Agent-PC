@@ -23,6 +23,7 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
     `Environment variable names: ${names('required_environment_names') || 'none'}`,
     `Dependencies: ${dependencies}`,
     `Package names: ${names('dependency_names') || 'none parsed'} · manager keys: ${names('dependency_managers') || 'not declared'} · unparsed entries: ${typeof value.unparsed_dependency_count === 'number' ? value.unparsed_dependency_count : 'unknown'}`,
+    `Python version constraints: ${names('python_dependency_specs') || 'none parsed'}`,
   ].join(' · ');
 }
 
@@ -34,16 +35,19 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
   };
   const platform = typeof value.platform_status === 'string' ? value.platform_status : 'unknown';
   const current = typeof value.current_platform === 'string' ? value.current_platform : 'unknown';
-  const dependencies = value.dependencies_unresolved === true
-    ? `${typeof value.dependency_count_unresolved === 'number' ? value.dependency_count_unresolved : 'some'} unresolved`
-    : 'none declared';
+  const dependencies = value.dependencies_declared !== true
+    ? 'none declared'
+    : value.dependencies_unresolved === true
+      ? `${typeof value.dependency_count_unresolved === 'number' ? value.dependency_count_unresolved : 'some'} unresolved`
+      : 'declared Python checks passed';
   const fallbackConditions = [names('hermes_fallback_toolsets_unresolved'), names('hermes_fallback_tools_unresolved')]
     .filter(Boolean).join(', ') || 'none';
   return [
     `Current machine (${current}): platform ${platform}`,
     `Commands available: ${names('available_command_names') || 'none'}; missing: ${names('missing_command_names') || 'none'}; not checked: ${names('unchecked_command_names') || 'none'}`,
     `Required environment names present: ${names('present_environment_names') || 'none'}; missing: ${names('missing_environment_names') || 'none'}`,
-    `Package dependencies: ${dependencies}`,
+    `Python package constraints: ${dependencies}; satisfied: ${names('available_python_dependency_specs') || 'none'}; missing: ${names('missing_python_dependency_specs') || 'none'}; version mismatch: ${names('incompatible_python_dependency_specs') || 'none'}; unchecked: ${names('unchecked_python_dependency_specs') || 'none'}`,
+    `Other or unverified dependencies: ${typeof value.unverified_dependency_count === 'number' ? value.unverified_dependency_count : 'unknown'}`,
     `Unresolved Hermes toolsets: ${names('hermes_toolsets_unresolved') || 'none'}`,
     `Unresolved Hermes tools: ${names('hermes_tools_unresolved') || 'none'}`,
     `Unresolved fallback conditions: ${fallbackConditions}`,
