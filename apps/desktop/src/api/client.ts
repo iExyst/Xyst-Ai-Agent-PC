@@ -318,6 +318,10 @@ export class EngineClient {
     return this.#request(`/channels/identity-links/${encodeURIComponent(linkId)}/members`,{method:'POST',body:JSON.stringify({binding_id:bindingId,confirmed:true})});
   }
 
+  mergeChannelIdentityLinks(targetLinkId: string, sourceLinkId: string): Promise<components['schemas']['MergeChannelIdentityLinksResponse']> {
+    return this.#request(`/channels/identity-links/${encodeURIComponent(targetLinkId)}/merge`,{method:'POST',body:JSON.stringify({source_link_id:sourceLinkId,confirmed:true})});
+  }
+
   revokeChannelIdentityLink(linkId: string): Promise<components['schemas']['RevokeChannelIdentityLinkResponse']> {
     return this.#request(`/channels/identity-links/${encodeURIComponent(linkId)}`,{method:'DELETE',body:JSON.stringify({confirmed:true})});
   }

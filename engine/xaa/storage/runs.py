@@ -510,7 +510,7 @@ class RunStore:
                 CREATE TABLE IF NOT EXISTS channel_identity_link_events (
                     id TEXT PRIMARY KEY,
                     link_id TEXT NOT NULL,
-                    action TEXT NOT NULL CHECK(action IN ('created','member_added','revoked')),
+                    action TEXT NOT NULL CHECK(action IN ('created','member_added','members_merged','merged_into','revoked')),
                     details TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -773,8 +773,10 @@ class RunStore:
             identity_event_schema = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='channel_identity_link_events'"
             ).fetchone()
-            if identity_event_schema is not None and "member_added" not in str(
-                identity_event_schema["sql"]
+            if identity_event_schema is not None and (
+                "member_added" not in str(identity_event_schema["sql"])
+                or "members_merged" not in str(identity_event_schema["sql"])
+                or "merged_into" not in str(identity_event_schema["sql"])
             ):
                 connection.execute(
                     "ALTER TABLE channel_identity_link_events RENAME TO channel_identity_link_events_v21"
@@ -783,7 +785,7 @@ class RunStore:
                     """CREATE TABLE channel_identity_link_events (
                            id TEXT PRIMARY KEY,
                            link_id TEXT NOT NULL,
-                           action TEXT NOT NULL CHECK(action IN ('created','member_added','revoked')),
+                           action TEXT NOT NULL CHECK(action IN ('created','member_added','members_merged','merged_into','revoked')),
                            details TEXT NOT NULL,
                            created_at TEXT NOT NULL
                        )"""

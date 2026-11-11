@@ -10,8 +10,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
     {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
     {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
     {id:'discord-binding',channel:'discord',account_id:'bot-2',external_identity:'3001',session_id:'discord-session',session_channel:'discord',identity_link_id:null,authorized:true,title:'Discord history',link_created_at:null},
+    {id:'webhook-binding',channel:'webhook',account_id:'endpoint-1',external_identity:'sender-1',session_id:'webhook-session',session_channel:'webhook',identity_link_id:null,authorized:true,title:'Webhook history',link_created_at:null},
   ];
   let identityLinkId='';
+  let sourceIdentityLinkId='';
   await page.on('pageerror',error=>errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
@@ -22,23 +24,31 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
     if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/channels/identity-bindings'&&request.method()==='GET')return route.fulfill({json:identityBindings,headers});
     if(path==='/channels/identity-links'&&request.method()==='POST'){
-      const body=request.postDataJSON();expect(body.binding_ids).toEqual(['telegram-binding','email-binding']);expect(body.shared_history_binding_id).toBe('telegram-binding');
-      identityLinkId='shared-identity-link';const selected=identityBindings.find(binding=>binding.id==='telegram-binding');
-      identityBindings=identityBindings.map(binding=>binding.id==='telegram-binding'||binding.id==='email-binding'?{...binding,identity_link_id:identityLinkId,session_id:selected.session_id,session_channel:selected.session_channel}:binding);
-      return route.fulfill({status:201,json:{id:identityLinkId,shared_history_binding_id:'telegram-binding'},headers});
+      const body=request.postDataJSON(),source=body.binding_ids.includes('discord-binding');
+      if(!source){expect(body.binding_ids).toEqual(['telegram-binding','email-binding']);expect(body.shared_history_binding_id).toBe('telegram-binding');}
+      identityLinkId=identityLinkId||'shared-identity-link';sourceIdentityLinkId=source?'source-identity-link':sourceIdentityLinkId;
+      const selected=identityBindings.find(binding=>binding.id===body.shared_history_binding_id),linkId=source?sourceIdentityLinkId:identityLinkId;
+      identityBindings=identityBindings.map(binding=>body.binding_ids.includes(binding.id)?{...binding,identity_link_id:linkId,session_id:selected.session_id,session_channel:selected.session_channel}:binding);
+      return route.fulfill({status:201,json:{id:linkId,shared_history_binding_id:body.shared_history_binding_id},headers});
     }
     if(path==='/channels/identity-links/shared-identity-link/members'&&request.method()==='POST'){
       expect(request.postDataJSON()).toEqual({binding_id:'discord-binding',confirmed:true});
       identityBindings=identityBindings.map(binding=>binding.id==='discord-binding'?{...binding,identity_link_id:identityLinkId,session_id:'telegram-session',session_channel:'telegram'}:binding);
       return route.fulfill({status:201,json:{link_id:identityLinkId,binding_id:'discord-binding',shared_session_id:'telegram-session'},headers});
     }
+    if(path==='/channels/identity-links/shared-identity-link/merge'&&request.method()==='POST'){
+      expect(request.postDataJSON()).toEqual({source_link_id:'source-identity-link',confirmed:true});
+      identityBindings=identityBindings.map(binding=>binding.identity_link_id===sourceIdentityLinkId?{...binding,identity_link_id:identityLinkId,session_id:'telegram-session',session_channel:'telegram'}:binding);
+      return route.fulfill({json:{target_link_id:identityLinkId,source_link_id:sourceIdentityLinkId,merged_bindings:2,shared_session_id:'telegram-session',retained_source_session_id:'discord-session'},headers});
+    }
     if(path==='/channels/identity-links/shared-identity-link'&&request.method()==='DELETE'){
       expect(request.postDataJSON()).toEqual({confirmed:true});
       identityBindings=identityBindings.map((binding,index)=>({...binding,identity_link_id:null,session_id:`unlinked-session-${index}`,session_channel:binding.channel}));
-      return route.fulfill({json:{unlinked_bindings:3},headers});
+      return route.fulfill({json:{unlinked_bindings:4},headers});
     }
     if(path==='/memory'||path==='/memory/export')return route.fulfill({json:[],headers});
     if(path.startsWith('/execution/'))return route.fulfill({json:[],headers});
@@ -123,9 +133,19 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('radio',{name:/telegram · 456/}).check();
   await panel.getByRole('button',{name:'Link accounts and share selected history'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('telegram: 456 ↔ email: owner@example.test');
-  await panel.getByLabel('Account to add to 456 and owner@example.test').selectOption('discord-binding');
-  await panel.getByRole('button',{name:'Add account to linked conversation'}).click();
+  await panel.getByLabel('First authorized account').selectOption('discord-binding');
+  await panel.getByLabel('Second account from another channel').selectOption('webhook-binding');
+  await panel.getByRole('radio',{name:/discord · 3001/}).check();
+  await panel.getByRole('button',{name:'Link accounts and share selected history'}).click();
+  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('webhook: sender-1');
+  await panel.locator('#identity-merge-shared-identity-link').selectOption('source-identity-link');
+  await panel.getByRole('button',{name:'Merge into this group\'s history'}).first().click();
+  const mergeDialog=panel.getByRole('alertdialog',{name:'Confirm identity group merge'});
+  await expect(mergeDialog).toContainText('earlier session will remain in local session history without being combined');
+  await mergeDialog.getByRole('button',{name:'Confirm merge into this history'}).click();
+  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'}).getByRole('listitem')).toHaveCount(1);
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('discord: 3001');
+  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('shared history from telegram');
   await panel.getByRole('button',{name:'Unlink these accounts'}).click();
   await panel.getByRole('button',{name:'Confirm unlink'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toHaveCount(0);

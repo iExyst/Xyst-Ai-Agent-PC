@@ -125,6 +125,80 @@ class ChannelIdentityLinks:
             )
         return session_id
 
+    def merge_links(self, target_link_id: str, source_link_id: str) -> dict[str, Any]:
+        """Move a source group's authorized identities into the target group's history."""
+        if target_link_id == source_link_id:
+            raise ValueError("Choose two different active identity groups to merge.")
+        now = utc_now()
+        with self.store.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            links = connection.execute(
+                """SELECT id,shared_session_id FROM channel_identity_links
+                   WHERE id IN (?,?) AND revoked_at IS NULL""",
+                (target_link_id, source_link_id),
+            ).fetchall()
+            by_id = {row["id"]: row for row in links}
+            if target_link_id not in by_id or source_link_id not in by_id:
+                raise ValueError("Both identity groups must be active before merging.")
+            target_session_id = str(by_id[target_link_id]["shared_session_id"])
+            source_session_id = str(by_id[source_link_id]["shared_session_id"])
+            if target_session_id == source_session_id:
+                raise ValueError("These identity groups already share the same history.")
+
+            members = connection.execute(
+                """SELECT id,channel,authorized,identity_link_id FROM channel_bindings
+                   WHERE identity_link_id IN (?,?) ORDER BY id""",
+                (target_link_id, source_link_id),
+            ).fetchall()
+            if not members or any(member["authorized"] != 1 for member in members):
+                raise ValueError("Every identity in both groups must be currently authorized.")
+            channels = [member["channel"] for member in members]
+            if len(channels) != len(set(channels)):
+                raise ValueError("Merged groups can contain only one identity from each channel.")
+            source_members = [
+                member for member in members if member["identity_link_id"] == source_link_id
+            ]
+            if not source_members:
+                raise ValueError("The source identity group has no active members.")
+            binding_ids = sorted(member["id"] for member in source_members)
+            changed = connection.execute(
+                """UPDATE channel_bindings SET identity_link_id=?,session_id=?
+                   WHERE identity_link_id=? AND authorized=1""",
+                (target_link_id, target_session_id, source_link_id),
+            ).rowcount
+            if changed != len(binding_ids):
+                raise ValueError("The source group changed while the merge was being applied.")
+            connection.execute(
+                "UPDATE channel_identity_links SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
+                (now, source_link_id),
+            )
+            details = json.dumps(
+                {
+                    "target_link_id": target_link_id,
+                    "source_link_id": source_link_id,
+                    "binding_ids": binding_ids,
+                    "target_session_id": target_session_id,
+                    "retained_source_session_id": source_session_id,
+                },
+                separators=(",", ":"),
+            )
+            for event_link_id, action in (
+                (target_link_id, "members_merged"),
+                (source_link_id, "merged_into"),
+            ):
+                connection.execute(
+                    """INSERT INTO channel_identity_link_events
+                       (id,link_id,action,details,created_at) VALUES(?,?,?,?,?)""",
+                    (uuid4().hex, event_link_id, action, details, now),
+                )
+        return {
+            "target_link_id": target_link_id,
+            "source_link_id": source_link_id,
+            "merged_bindings": len(binding_ids),
+            "shared_session_id": target_session_id,
+            "retained_source_session_id": source_session_id,
+        }
+
     def revoke_link(self, link_id: str) -> int:
         now = utc_now()
         with self.store.connection() as connection:

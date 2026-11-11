@@ -187,6 +187,102 @@ def test_link_can_add_more_channels_and_unlink_all_members(workspace_tmp_path):
     assert len(events) == 3
 
 
+def test_merge_keeps_target_history_and_retains_source_history(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "identity-link-merge.sqlite3")
+    telegram, target_session = _binding(store, "telegram", "bot-1", "1001")
+    email, _ = _binding(store, "email", "mailbox-1", "owner@example.test")
+    discord, source_session = _binding(store, "discord", "bot-2", "3001")
+    webhook, _ = _binding(store, "webhook", "endpoint-1", "sender-1")
+    with store.connection() as connection:
+        for session_id, content in (
+            (target_session, "target history"),
+            (source_session, "source history"),
+        ):
+            connection.execute(
+                "INSERT INTO messages(id,session_id,run_id,sequence,role,content,created_at) VALUES(?,?,NULL,1,'user',?,?)",
+                (uuid4().hex, session_id, content, utc_now()),
+            )
+    links = ChannelIdentityLinks(store)
+    target_link = links.create_link((telegram, email), telegram)
+    source_link = links.create_link((discord, webhook), discord)
+
+    result = links.merge_links(target_link, source_link)
+
+    assert result == {
+        "target_link_id": target_link,
+        "source_link_id": source_link,
+        "merged_bindings": 2,
+        "shared_session_id": target_session,
+        "retained_source_session_id": source_session,
+    }
+    bindings = {item["id"]: item for item in links.list_bindings()}
+    assert {
+        bindings[binding_id]["identity_link_id"]
+        for binding_id in (telegram, email, discord, webhook)
+    } == {target_link}
+    assert {
+        bindings[binding_id]["session_id"] for binding_id in (telegram, email, discord, webhook)
+    } == {target_session}
+    with store.connection() as connection:
+        source_messages = connection.execute(
+            "SELECT content FROM messages WHERE session_id=?", (source_session,)
+        ).fetchall()
+        target_messages = connection.execute(
+            "SELECT content FROM messages WHERE session_id=?", (target_session,)
+        ).fetchall()
+        source_link_row = connection.execute(
+            "SELECT revoked_at FROM channel_identity_links WHERE id=?", (source_link,)
+        ).fetchone()
+        events = connection.execute(
+            "SELECT link_id,action FROM channel_identity_link_events WHERE link_id IN (?,?)",
+            (target_link, source_link),
+        ).fetchall()
+    assert [row["content"] for row in source_messages] == ["source history"]
+    assert [row["content"] for row in target_messages] == ["target history"]
+    assert source_link_row["revoked_at"] is not None
+    assert {(row["link_id"], row["action"]) for row in events} >= {
+        (target_link, "members_merged"),
+        (source_link, "merged_into"),
+    }
+
+
+def test_merge_rejects_same_group_unauthorized_members_and_channel_collisions(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "identity-link-merge-rejected.sqlite3")
+    target_telegram, _ = _binding(store, "telegram", "bot-1", "1001")
+    target_email, _ = _binding(store, "email", "mailbox-1", "owner@example.test")
+    source_discord, _ = _binding(store, "discord", "bot-2", "3001")
+    source_webhook, _ = _binding(store, "webhook", "endpoint-1", "sender-1")
+    source_telegram, _ = _binding(store, "telegram", "bot-3", "1002")
+    links = ChannelIdentityLinks(store)
+    target = links.create_link((target_telegram, target_email), target_telegram)
+    source = links.create_link((source_discord, source_webhook), source_discord)
+
+    with pytest.raises(ValueError, match="different active"):
+        links.merge_links(target, target)
+    with store.connection() as connection:
+        connection.execute("UPDATE channel_bindings SET authorized=0 WHERE id=?", (source_webhook,))
+    with pytest.raises(ValueError, match="currently authorized"):
+        links.merge_links(target, source)
+    with store.connection() as connection:
+        connection.execute("UPDATE channel_bindings SET authorized=1 WHERE id=?", (source_webhook,))
+        connection.execute(
+            "UPDATE channel_bindings SET identity_link_id=?,session_id=(SELECT shared_session_id FROM channel_identity_links WHERE id=?) WHERE id=?",
+            (source, source, source_telegram),
+        )
+    with pytest.raises(ValueError, match="only one identity from each channel"):
+        links.merge_links(target, source)
+    with store.connection() as connection:
+        assignments = connection.execute(
+            "SELECT id,identity_link_id FROM channel_bindings WHERE id IN (?,?,?)",
+            (source_discord, source_webhook, source_telegram),
+        ).fetchall()
+        source_link = connection.execute(
+            "SELECT revoked_at FROM channel_identity_links WHERE id=?", (source,)
+        ).fetchone()
+    assert {row["identity_link_id"] for row in assignments} == {source}
+    assert source_link["revoked_at"] is None
+
+
 @pytest.mark.parametrize(
     "channels,authorized,linked,same_channel",
     [
@@ -263,7 +359,9 @@ def test_schema_20_database_migrates_identity_link_tables_without_losing_binding
     assert "channel_bindings_identity_link_idx" in indexes
 
 
-def test_schema_21_identity_link_audit_table_migrates_for_member_additions(workspace_tmp_path):
+def test_schema_21_identity_link_audit_table_migrates_for_member_additions_and_merges(
+    workspace_tmp_path,
+):
     database = workspace_tmp_path / "identity-link-events-upgrade.sqlite3"
     store = RunStore(database)
     first, session_id = _binding(store, "telegram", "bot", "1001")
@@ -300,5 +398,5 @@ def test_schema_21_identity_link_audit_table_migrates_for_member_additions(works
             "SELECT shared_session_id FROM channel_identity_links WHERE id=?", (link_id,)
         ).fetchone()
     assert [row["action"] for row in events] == ["created"]
-    assert "member_added" in table_sql
+    assert all(action in table_sql for action in ("member_added", "members_merged", "merged_into"))
     assert saved_link["shared_session_id"] == session_id

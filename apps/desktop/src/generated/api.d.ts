@@ -239,6 +239,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/identity-links/{link_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge Channel Identity Links */
+        post: operations["merge_channel_identity_links_channels_identity_links__link_id__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/telegram": {
         parameters: {
             query?: never;
@@ -2883,6 +2900,29 @@ export interface components {
              */
             updated_at: string;
         };
+        /** MergeChannelIdentityLinksRequest */
+        MergeChannelIdentityLinksRequest: {
+            /**
+             * Confirmed
+             * @constant
+             */
+            confirmed: true;
+            /** Source Link Id */
+            source_link_id: string;
+        };
+        /** MergeChannelIdentityLinksResponse */
+        MergeChannelIdentityLinksResponse: {
+            /** Merged Bindings */
+            merged_bindings: number;
+            /** Retained Source Session Id */
+            retained_source_session_id: string;
+            /** Shared Session Id */
+            shared_session_id: string;
+            /** Source Link Id */
+            source_link_id: string;
+            /** Target Link Id */
+            target_link_id: string;
+        };
         /** ModelCapabilities */
         ModelCapabilities: {
             /**
@@ -4547,6 +4587,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelIdentityLinkMemberResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_channel_identity_links_channels_identity_links__link_id__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeChannelIdentityLinksRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeChannelIdentityLinksResponse"];
                 };
             };
             /** @description Validation Error */

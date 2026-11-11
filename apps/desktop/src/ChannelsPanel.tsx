@@ -22,6 +22,8 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [identityTarget,setIdentityTarget]=useState('');
   const [sharedHistoryBinding,setSharedHistoryBinding]=useState('');
   const [identityAddSelections,setIdentityAddSelections]=useState<Record<string,string>>({});
+  const [identityMergeSelections,setIdentityMergeSelections]=useState<Record<string,string>>({});
+  const [confirmIdentityMerge,setConfirmIdentityMerge]=useState<{targetLinkId:string;sourceLinkId:string}>();
   const [confirmIdentityRevoke,setConfirmIdentityRevoke]=useState('');
   const [webhookSecret,setWebhookSecret]=useState('');
   const [emailAddress,setEmailAddress]=useState('');
@@ -139,6 +141,14 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function mergeChannelIdentities() {
+    if(!confirmIdentityMerge)return;
+    setBusy(true);setError('');
+    try {await client.mergeChannelIdentityLinks(confirmIdentityMerge.targetLinkId,confirmIdentityMerge.sourceLinkId);setConfirmIdentityMerge(undefined);setIdentityMergeSelections(current=>({...current,[confirmIdentityMerge.targetLinkId]:''}));await refresh();}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not merge these channel identity groups.');}
+    finally {setBusy(false);}
+  }
+
   async function saveEmail() {
     setBusy(true);setError('');
     try {setEmail(await client.setEmailAccount({address:emailAddress,password:emailPassword,imap_host:imapHost,smtp_host:smtpHost,allowed_senders:allowedSenders.split(',').map(value=>value.trim()).filter(Boolean),imap_port:993,smtp_port:587,smtp_security:'starttls',authserv_id:authservId}));setEmailPassword('');}
@@ -195,10 +205,13 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
         {groups.size>0&&<ul aria-label="Active cross-channel identity links">{[...groups].map(([linkId,members])=>{
           const memberChannels=new Set(members.map(binding=>binding.channel));
           const additions=available.filter(binding=>!memberChannels.has(binding.channel));
+          const mergeSources=members.every(binding=>binding.authorized)?[...groups].filter(([sourceId,sourceMembers])=>sourceId!==linkId&&sourceMembers.every(binding=>binding.authorized)&&sourceMembers.every(binding=>!memberChannels.has(binding.channel))):[];
           const addLabel=`Account to add to ${members.map(binding=>binding.external_identity).join(' and ')}`;
           return <li key={linkId}>
             <span>{members.map(binding=>`${binding.channel}: ${binding.external_identity}${binding.authorized?'':' (not currently authorized)'}`).join(' ↔ ')} · shared history from {members[0]?.session_channel}</span>
             {additions.length>0&&<div><label htmlFor={`identity-add-${linkId}`}>{addLabel}</label><select id={`identity-add-${linkId}`} value={identityAddSelections[linkId]??''} onChange={event=>setIdentityAddSelections(current=>({...current,[linkId]:event.target.value}))} disabled={busy}><option value="">Choose another channel account</option>{additions.map(binding=><option key={binding.id} value={binding.id}>{binding.channel} · {binding.external_identity} · account {binding.account_id}</option>)}</select><button type="button" onClick={()=>void addChannelIdentity(linkId)} disabled={busy||!identityAddSelections[linkId]}>Add account to linked conversation</button></div>}
+            {mergeSources.length>0&&<div><label htmlFor={`identity-merge-${linkId}`}>Other identity group to add to this group's history</label><select id={`identity-merge-${linkId}`} value={identityMergeSelections[linkId]??''} onChange={event=>setIdentityMergeSelections(current=>({...current,[linkId]:event.target.value}))} disabled={busy}><option value="">Choose another identity group</option>{mergeSources.map(([sourceId,sourceMembers])=><option key={sourceId} value={sourceId}>{sourceMembers.map(binding=>`${binding.channel}: ${binding.external_identity}`).join(' ↔ ')}</option>)}</select><button type="button" onClick={()=>setConfirmIdentityMerge({targetLinkId:linkId,sourceLinkId:identityMergeSelections[linkId]??''})} disabled={busy||!identityMergeSelections[linkId]}>Merge into this group's history</button></div>}
+            {confirmIdentityMerge?.targetLinkId===linkId&&<div role="alertdialog" aria-label="Confirm identity group merge"><p>This group’s selected history will stay active. The other group’s members will continue in it, and that group’s earlier session will remain in local session history without being combined. Both groups must still be authorized.</p><button type="button" onClick={()=>void mergeChannelIdentities()} disabled={busy}>Confirm merge into this history</button><button type="button" onClick={()=>setConfirmIdentityMerge(undefined)} disabled={busy}>Cancel</button></div>}
             {confirmIdentityRevoke===linkId?<div role="alertdialog" aria-label="Confirm unlink accounts"><p>All linked accounts will get separate new conversations. The shared session remains in local history.</p><button type="button" onClick={()=>void unlinkChannelIdentities(linkId)} disabled={busy}>Confirm unlink</button><button type="button" onClick={()=>setConfirmIdentityRevoke('')} disabled={busy}>Cancel</button></div>:<button type="button" onClick={()=>setConfirmIdentityRevoke(linkId)} disabled={busy}>Unlink these accounts</button>}
           </li>;
         })}</ul>}

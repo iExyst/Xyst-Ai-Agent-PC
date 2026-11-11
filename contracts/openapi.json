@@ -2321,6 +2321,62 @@
         "title": "MemoryRecord",
         "type": "object"
       },
+      "MergeChannelIdentityLinksRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "source_link_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Link Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_link_id",
+          "confirmed"
+        ],
+        "title": "MergeChannelIdentityLinksRequest",
+        "type": "object"
+      },
+      "MergeChannelIdentityLinksResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "merged_bindings": {
+            "title": "Merged Bindings",
+            "type": "integer"
+          },
+          "retained_source_session_id": {
+            "title": "Retained Source Session Id",
+            "type": "string"
+          },
+          "shared_session_id": {
+            "title": "Shared Session Id",
+            "type": "string"
+          },
+          "source_link_id": {
+            "title": "Source Link Id",
+            "type": "string"
+          },
+          "target_link_id": {
+            "title": "Target Link Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_link_id",
+          "source_link_id",
+          "merged_bindings",
+          "shared_session_id",
+          "retained_source_session_id"
+        ],
+        "title": "MergeChannelIdentityLinksResponse",
+        "type": "object"
+      },
       "ModelCapabilities": {
         "properties": {
           "trained_for_tool_use": {
@@ -6473,6 +6529,60 @@
           }
         ],
         "summary": "Add Channel Identity Link Member"
+      }
+    },
+    "/channels/identity-links/{link_id}/merge": {
+      "post": {
+        "operationId": "merge_channel_identity_links_channels_identity_links__link_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeChannelIdentityLinksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeChannelIdentityLinksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Merge Channel Identity Links"
       }
     },
     "/channels/telegram": {

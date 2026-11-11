@@ -211,6 +211,77 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
         )
 
 
+def test_channel_identity_group_merge_requires_confirmation_and_preserves_target_session(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "identity-links-merge-api.sqlite3")
+    now = "2026-11-08T00:00:00+00:00"
+    with store.connection() as connection:
+        for binding_id, session_id, channel, account, identity in (
+            ("binding-telegram", "session-telegram", "telegram", "bot-1", "1001"),
+            ("binding-email", "session-email", "email", "mailbox-1", "person@example.test"),
+            ("binding-discord", "session-discord", "discord", "bot-2", "3001"),
+            ("binding-webhook", "session-webhook", "webhook", "endpoint-1", "sender-1"),
+        ):
+            connection.execute(
+                "INSERT INTO sessions(id,channel,account_id,title,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (session_id, channel, account, f"{channel} history", now, now),
+            )
+            connection.execute(
+                "INSERT INTO channel_bindings(id,channel,account_id,external_identity,session_id,authorized,created_at) VALUES(?,?,?,?,?,1,?)",
+                (binding_id, channel, account, identity, session_id, now),
+            )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        target = client.post(
+            "/channels/identity-links",
+            headers=headers,
+            json={
+                "binding_ids": ["binding-telegram", "binding-email"],
+                "shared_history_binding_id": "binding-telegram",
+            },
+        ).json()["id"]
+        source = client.post(
+            "/channels/identity-links",
+            headers=headers,
+            json={
+                "binding_ids": ["binding-discord", "binding-webhook"],
+                "shared_history_binding_id": "binding-discord",
+            },
+        ).json()["id"]
+        assert (
+            client.post(
+                f"/channels/identity-links/{target}/merge",
+                headers=headers,
+                json={"source_link_id": source, "confirmed": False},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                f"/channels/identity-links/{target}/merge",
+                json={"source_link_id": source, "confirmed": True},
+            ).status_code
+            == 401
+        )
+        merged = client.post(
+            f"/channels/identity-links/{target}/merge",
+            headers=headers,
+            json={"source_link_id": source, "confirmed": True},
+        )
+        assert merged.status_code == 200, merged.text
+        assert merged.json() == {
+            "target_link_id": target,
+            "source_link_id": source,
+            "merged_bindings": 2,
+            "shared_session_id": "session-telegram",
+            "retained_source_session_id": "session-discord",
+        }
+        bindings = client.get("/channels/identity-bindings", headers=headers).json()
+        assert {item["identity_link_id"] for item in bindings} == {target}
+        assert {item["session_id"] for item in bindings} == {"session-telegram"}
+
+
 def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_path, monkeypatch):
     class Credentials:
         def __init__(self):

@@ -594,6 +594,21 @@ class RevokeChannelIdentityLinkResponse(BaseModel):
     unlinked_bindings: int
 
 
+class MergeChannelIdentityLinksRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_link_id: str = Field(min_length=1, max_length=64)
+    confirmed: Literal[True]
+
+
+class MergeChannelIdentityLinksResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_link_id: str
+    source_link_id: str
+    merged_bindings: int
+    shared_session_id: str
+    retained_source_session_id: str
+
+
 class EmailCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     address: str = Field(min_length=3, max_length=320)
@@ -1883,6 +1898,20 @@ def create_app(
             "binding_id": payload.binding_id,
             "shared_session_id": session_id,
         }
+
+    @app.post(
+        "/channels/identity-links/{link_id}/merge",
+        response_model=MergeChannelIdentityLinksResponse,
+    )
+    def merge_channel_identity_links(
+        link_id: str,
+        payload: MergeChannelIdentityLinksRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return channel_identity_links.merge_links(link_id, payload.source_link_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.delete(
         "/channels/identity-links/{link_id}",
