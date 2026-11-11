@@ -2,7 +2,7 @@
 
 ## Preserve DOCX numbering marker formats and templates (2026-11-11)
 
-DOCX list extraction now follows `numId` references into bounded `word/numbering.xml`, reads the effective `numFmt` and `lvlText` for each used nesting level, and honors explicit per-instance level overrides. The numbering part is included in the 4 MiB per-part and 8 MiB total XML limits. Duplicate, malformed, or dangling definitions fail closed. Extracted text records the marker format and template (for example, `decimal` with `%1.` or an explicit bullet glyph), while actual sequence values and restart behavior are not calculated. Focused document tests pass (30), Ruff, formatting and strict parser Pyright pass. No live model inference was used.
+DOCX list extraction now follows `numId` references into bounded `word/numbering.xml`, reads the effective `numFmt` and `lvlText` for each used nesting level, and honors explicit per-instance level overrides. The numbering part is included in the 4 MiB per-part and 8 MiB total XML limits. Duplicate, malformed, or dangling definitions fail closed. Extracted text records the marker format and template (for example, `decimal` with `%1.` or an explicit bullet glyph), while actual sequence values and restart behavior are not calculated. Focused document tests pass (30), Ruff, formatting and strict parser Pyright pass. Hosted Windows run [43028875391](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43028875391) passed the full source workflow, including 1,053 Python tests, desktop acceptances and recovery diagnostics; installer validation was skipped because packaging inputs were unchanged. No live model inference was used.
 
 ## Preserve DOCX headings and list levels (2026-11-11)
 
