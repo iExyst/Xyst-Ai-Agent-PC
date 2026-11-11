@@ -1318,7 +1318,8 @@ def test_run_xlsx_extracts_cells_and_retains_original_artifact(workspace_tmp_pat
             "xl/worksheets/sheet1.xml",
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>XLSX-API-MARKER-361A</t>'
-            "</is></c></row></sheetData></worksheet>",
+            '</is></c><c r="B1"><f>1+1</f><v>2</v></c>'
+            "</row></sheetData></worksheet>",
         )
     source = output.getvalue()
     encoded = f"data:{media_type};base64," + base64.b64encode(source).decode("ascii")
@@ -1333,6 +1334,7 @@ def test_run_xlsx_extracts_cells_and_retains_original_artifact(workspace_tmp_pat
         assert response.status_code == 201
         run_id = response.json()["id"]
         assert "XLSX-API-MARKER-361A" in store.document_text(run_id)
+        assert "B1=2 [formula: =1+1]" in store.document_text(run_id)
         artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
         original = next(item for item in artifacts if item["provenance"] == "user.input_document")
         downloaded = client.get(f"/artifacts/{original['id']}", headers=headers)

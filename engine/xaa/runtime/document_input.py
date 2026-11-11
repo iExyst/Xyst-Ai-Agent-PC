@@ -32,6 +32,7 @@ MAX_XLSX_SHEETS = 50
 MAX_XLSX_CELLS = 10_000
 MAX_XLSX_SHARED_STRINGS = 50_000
 MAX_XLSX_XML_BYTES = 8 * 1024 * 1024
+MAX_XLSX_FORMULA_CHARS = 2048
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -402,6 +403,24 @@ def _extract_xlsx_text(content: bytes) -> str:
                                 f"XLSX exceeds the {MAX_XLSX_CELLS}-cell extraction limit."
                             )
                         value = _xlsx_cell_value(cell, shared_strings, spreadsheet_namespace)
+                        formula = next(
+                            (node for node in cell if node.tag == spreadsheet_namespace + "f"),
+                            None,
+                        )
+                        if formula is not None:
+                            expression = (formula.text or "").strip()
+                            if expression:
+                                if len(expression) > MAX_XLSX_FORMULA_CHARS:
+                                    expression = (
+                                        expression[:MAX_XLSX_FORMULA_CHARS] + "…[formula truncated]"
+                                    )
+                                formula_text = f"[formula: ={expression}]"
+                            else:
+                                formula_kind = formula.attrib.get("t", "shared")
+                                shared_index = formula.attrib.get("si")
+                                group = f" group {shared_index}" if shared_index is not None else ""
+                                formula_text = f"[formula: {formula_kind}{group}; expression not present in cell]"
+                            value = f"{value} {formula_text}" if value else formula_text
                         if value:
                             reference = cell.attrib.get("r")
                             values.append(f"{reference}={value}" if reference else value)
