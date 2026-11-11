@@ -7,6 +7,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.runtime.document_input import (
     MAX_DOCUMENT_BYTES,
     MAX_XLSX_FORMULA_CHARS,
+    _xlsx_time_display,
     extract_document_text,
     render_pdf_scanned_pages,
 )
@@ -276,13 +277,20 @@ def make_xlsx(
         archive.writestr(
             "xl/styles.xml",
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<numFmts count="4"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
+            '<numFmts count="9"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
             '<numFmt numFmtId="165" formatCode="d-mmm-yy"/>'
             '<numFmt numFmtId="166" formatCode="0.00%"/>'
-            '<numFmt numFmtId="167" formatCode="#,##0.00"/></numFmts>'
-            '<cellXfs count="6"><xf numFmtId="0"/><xf numFmtId="14"/>'
+            '<numFmt numFmtId="167" formatCode="#,##0.00"/>'
+            '<numFmt numFmtId="168" formatCode="h:mm"/>'
+            '<numFmt numFmtId="169" formatCode="h:mm:ss"/>'
+            '<numFmt numFmtId="170" formatCode="h:mm AM/PM"/>'
+            '<numFmt numFmtId="171" formatCode="[h]:mm:ss"/>'
+            '<numFmt numFmtId="172" formatCode="mm:ss"/></numFmts>'
+            '<cellXfs count="11"><xf numFmtId="0"/><xf numFmtId="14"/>'
             '<xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="165"/>'
-            '<xf numFmtId="166"/><xf numFmtId="167"/></cellXfs></styleSheet>',
+            '<xf numFmtId="166"/><xf numFmtId="167"/><xf numFmtId="168"/>'
+            '<xf numFmtId="169"/><xf numFmtId="170"/><xf numFmtId="171"/>'
+            '<xf numFmtId="172"/></cellXfs></styleSheet>',
         )
         archive.writestr(
             "xl/sharedStrings.xml",
@@ -300,7 +308,13 @@ def make_xlsx(
             '<c r="G1" s="2"><v>12.5</v></c><c r="H1" s="3"><v>'
             f"{date_serial}"
             '</v></c><c r="I1" s="4"><v>0.125</v></c>'
-            '<c r="J1" s="5"><v>1234.5</v></c></row></sheetData></worksheet>',
+            '<c r="J1" s="5"><v>1234.5</v></c>'
+            '<c r="K1" s="6"><v>0.5</v></c>'
+            '<c r="L1" s="7"><v>0.524259259259259259</v></c>'
+            '<c r="M1" s="8"><v>0.75</v></c>'
+            '<c r="N1" s="9"><v>1.25</v></c>'
+            '<c r="O1" s="10"><v>0.000752314814814815</v></c>'
+            "</row></sheetData></worksheet>",
         )
     return output.getvalue()
 
@@ -1296,6 +1310,11 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "H1=45292 [display: 1-Jan-24] [number format: d-mmm-yy]" in result
     assert "I1=0.125 [display: 12.50%] [number format: 0.00%]" in result
     assert "J1=1234.5 [display: 1,234.50] [number format: #,##0.00]" in result
+    assert "K1=0.5 [display: 12:00] [number format: h:mm]" in result
+    assert "L1=0.524259259259259259 [display: 12:34:56] [number format: h:mm:ss]" in result
+    assert "M1=0.75 [display: 6:00 PM] [number format: h:mm AM/PM]" in result
+    assert "N1=1.25 [display: 30:00:00] [number format: [h]:mm:ss]" in result
+    assert "O1=0.000752314814814815 [display: 01:05] [number format: mm:ss]" in result
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
@@ -1304,6 +1323,38 @@ def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
 
     assert "F1=60 [display: 2/29/00] [number format: m/d/yy]" in leap_compatibility
     assert "F1=0 [display: 1/1/04] [number format: m/d/yy]" in date_1904
+
+
+@pytest.mark.parametrize(
+    ("value", "format_code"),
+    [
+        ("-0.5", "h:mm"),
+        ("NaN", "h:mm"),
+        ("1.0", "m/d/yy h:mm"),
+        ("0.5", "h::mm"),
+        ("1000000001", "[h]:mm:ss"),
+    ],
+)
+def test_xlsx_time_display_rejects_values_and_formats_outside_supported_subset(
+    value: str, format_code: str
+):
+    assert _xlsx_time_display(value, format_code) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "format_code", "expected"),
+    [
+        ("1.25", "[m]:ss", "1800:00"),
+        ("1.25", "[s]", "108000"),
+        ("0", "h:mm AM/PM", "12:00 AM"),
+        ("0.5", "hh:mm A/P", "12:00 P"),
+        ("0.99999999", "h:mm", "0:00"),
+    ],
+)
+def test_xlsx_time_display_renders_elapsed_units_clock_markers_and_rollover(
+    value: str, format_code: str, expected: str
+):
+    assert _xlsx_time_display(value, format_code) == expected
 
 
 def test_xlsx_formula_text_is_capped_per_cell():

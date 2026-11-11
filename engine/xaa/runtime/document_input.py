@@ -1864,6 +1864,8 @@ def _extract_xlsx_text(content: bytes) -> str:
                                     raw_value, number_format, date_1904=date_1904
                                 )
                                 if display_value is None:
+                                    display_value = _xlsx_time_display(raw_value, number_format)
+                                if display_value is None:
                                     display_value = _xlsx_numeric_display(raw_value, number_format)
                                 if display_value is not None:
                                     value = f"{value} [display: {display_value}]"
@@ -2071,6 +2073,109 @@ def _xlsx_date_display(value: str, format_code: str, *, date_1904: bool) -> str 
         position = token.end()
     output.append(format_code[position:])
     return "".join(output)
+
+
+def _xlsx_time_display(value: str, format_code: str) -> str | None:
+    """Render simple clock and elapsed-time formats beside the original serial value."""
+    if not value or len(value) > 128 or len(format_code) > MAX_XLSX_FORMAT_CHARS:
+        return None
+    match = re.fullmatch(
+        r"(?P<first>\[h\]|\[m\]|\[s\]|hh?|mm?|ss?)"
+        r"(?::(?P<second>mm?|ss?))?(?::(?P<third>ss?))?"
+        r"(?P<ampm_space> ?)(?P<ampm>AM/PM|A/P)?",
+        format_code,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+
+    first = match.group("first")
+    second = match.group("second")
+    third = match.group("third")
+    ampm = match.group("ampm")
+    elapsed = first.startswith("[")
+    if elapsed:
+        elapsed_unit = first[1:-1].lower()
+        if ampm:
+            return None
+        if elapsed_unit == "h":
+            if second and second[0].lower() != "m":
+                return None
+            if third and not second:
+                return None
+        elif elapsed_unit == "m":
+            if (second and second[0].lower() != "s") or third:
+                return None
+        elif second or third:
+            return None
+    else:
+        first_unit = first[0].lower()
+        if first_unit == "h":
+            if second and second[0].lower() != "m":
+                return None
+            if third and (not second or second[0].lower() != "m"):
+                return None
+        elif first_unit == "m":
+            if not second or second[0].lower() != "s" or third:
+                return None
+        elif second or third or ampm:
+            return None
+        if ampm and first_unit != "h":
+            return None
+
+    try:
+        serial = Decimal(value)
+        if not serial.is_finite() or serial < 0 or serial > Decimal(1_000_000_000):
+            return None
+        total_seconds = serial * 86_400
+        has_seconds = third is not None or (second is not None and second[0].lower() == "s")
+        has_minutes = second is not None and second[0].lower() == "m"
+        resolution = 1 if has_seconds else 60 if has_minutes else 3_600
+        rounded_units = (total_seconds / resolution).to_integral_value(rounding=ROUND_HALF_UP)
+        rounded_seconds = int(rounded_units) * resolution
+    except (InvalidOperation, ValueError, OverflowError):
+        return None
+
+    hours, remainder = divmod(rounded_seconds, 3_600)
+    minutes, seconds = divmod(remainder, 60)
+    if elapsed:
+        elapsed_unit = first[1:-1].lower()
+        if elapsed_unit == "h":
+            first_value = hours
+            second_value = minutes
+        elif elapsed_unit == "m":
+            first_value = rounded_seconds // 60
+            second_value = seconds
+        else:
+            first_value = rounded_seconds
+            second_value = 0
+        third_value = seconds
+    else:
+        clock_seconds = rounded_seconds % 86_400
+        hours, remainder = divmod(clock_seconds, 3_600)
+        minutes, seconds = divmod(remainder, 60)
+        first_unit = first[0].lower()
+        first_value = hours if first_unit == "h" else minutes if first_unit == "m" else seconds
+        if ampm and first_unit == "h":
+            first_value = hours % 12 or 12
+        second_value = minutes if second and second[0].lower() == "m" else seconds
+        third_value = seconds
+
+    def render_unit(token: str, number: int) -> str:
+        return f"{number:02d}" if len(token) == 2 else str(number)
+
+    output = render_unit(first, first_value)
+    if second:
+        output += ":" + render_unit(second, second_value)
+    if third:
+        output += ":" + render_unit(third, third_value)
+    if ampm:
+        afternoon = hours % 24 >= 12
+        marker = (
+            ("p" if afternoon else "a") if ampm.lower() == "a/p" else ("pm" if afternoon else "am")
+        )
+        output += match.group("ampm_space") + (marker.upper() if ampm[0].isupper() else marker)
+    return output
 
 
 def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
