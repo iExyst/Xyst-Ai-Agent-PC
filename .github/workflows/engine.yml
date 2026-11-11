@@ -455,9 +455,19 @@ jobs:
         run: uv run python scripts/task_command_snapshot_diagnostic.py --engine apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe
         timeout-minutes: 2
       - name: Download previous 0.1.0 installer for upgrade acceptance
-        run: gh run download 42181905058 --repo $env:GITHUB_REPOSITORY --name xaa-windows-installer-unsigned --dir build/prior-installer
+        shell: pwsh
+        run: |
+          if ($env:XAA_UPGRADE_BASELINE_TAG) {
+            if ($env:XAA_UPGRADE_BASELINE_TAG -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') { throw 'XAA_UPGRADE_BASELINE_TAG is not a valid release tag.' }
+            gh release download $env:XAA_UPGRADE_BASELINE_TAG --repo $env:GITHUB_REPOSITORY --pattern manifest.json --pattern '*.exe' --dir build/prior-installer
+            if ($LASTEXITCODE -ne 0) { throw "Could not download the published upgrade baseline release '$env:XAA_UPGRADE_BASELINE_TAG'." }
+          } else {
+            gh run download 42181905058 --repo $env:GITHUB_REPOSITORY --name xaa-windows-installer-unsigned --dir build/prior-installer
+            if ($LASTEXITCODE -ne 0) { throw 'Could not download the temporary 0.1.0 Actions upgrade baseline.' }
+          }
         env:
           GH_TOKEN: ${{ github.token }}
+          XAA_UPGRADE_BASELINE_TAG: ${{ vars.XAA_UPGRADE_BASELINE_TAG }}
       - name: Install, boot and uninstall unsigned package
         run: ./scripts/installer_ci_smoke.ps1
         timeout-minutes: 5
