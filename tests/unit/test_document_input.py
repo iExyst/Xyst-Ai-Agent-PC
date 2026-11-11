@@ -7,6 +7,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.runtime.document_input import (
     MAX_DOCUMENT_BYTES,
     MAX_XLSX_FORMULA_CHARS,
+    _xlsx_datetime_display,
     _xlsx_time_display,
     extract_document_text,
     render_pdf_scanned_pages,
@@ -277,7 +278,7 @@ def make_xlsx(
         archive.writestr(
             "xl/styles.xml",
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<numFmts count="9"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
+            '<numFmts count="11"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
             '<numFmt numFmtId="165" formatCode="d-mmm-yy"/>'
             '<numFmt numFmtId="166" formatCode="0.00%"/>'
             '<numFmt numFmtId="167" formatCode="#,##0.00"/>'
@@ -285,12 +286,15 @@ def make_xlsx(
             '<numFmt numFmtId="169" formatCode="h:mm:ss"/>'
             '<numFmt numFmtId="170" formatCode="h:mm AM/PM"/>'
             '<numFmt numFmtId="171" formatCode="[h]:mm:ss"/>'
-            '<numFmt numFmtId="172" formatCode="mm:ss"/></numFmts>'
-            '<cellXfs count="11"><xf numFmtId="0"/><xf numFmtId="14"/>'
+            '<numFmt numFmtId="172" formatCode="mm:ss"/>'
+            '<numFmt numFmtId="173" formatCode="m/d/yy h:mm AM/PM"/>'
+            '<numFmt numFmtId="174" formatCode="yyyy-mm-dd hh:mm:ss"/></numFmts>'
+            '<cellXfs count="13"><xf numFmtId="0"/><xf numFmtId="14"/>'
             '<xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="165"/>'
             '<xf numFmtId="166"/><xf numFmtId="167"/><xf numFmtId="168"/>'
             '<xf numFmtId="169"/><xf numFmtId="170"/><xf numFmtId="171"/>'
-            '<xf numFmtId="172"/></cellXfs></styleSheet>',
+            '<xf numFmtId="172"/><xf numFmtId="173"/><xf numFmtId="174"/>'
+            "</cellXfs></styleSheet>",
         )
         archive.writestr(
             "xl/sharedStrings.xml",
@@ -314,6 +318,9 @@ def make_xlsx(
             '<c r="M1" s="8"><v>0.75</v></c>'
             '<c r="N1" s="9"><v>1.25</v></c>'
             '<c r="O1" s="10"><v>0.000752314814814815</v></c>'
+            '<c r="P1" s="11"><v>45292.75</v></c>'
+            '<c r="Q1" s="12"><v>45292.524259259259259</v></c>'
+            '<c r="R1" s="11"><v>45292.99999999</v></c>'
             "</row></sheetData></worksheet>",
         )
     return output.getvalue()
@@ -1315,6 +1322,9 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "M1=0.75 [display: 6:00 PM] [number format: h:mm AM/PM]" in result
     assert "N1=1.25 [display: 30:00:00] [number format: [h]:mm:ss]" in result
     assert "O1=0.000752314814814815 [display: 01:05] [number format: mm:ss]" in result
+    assert "P1=45292.75 [display: 1/1/24 6:00 PM] [number format: m/d/yy h:mm AM/PM]" in result
+    assert "Q1=45292.524259259259259 [display: 2024-01-01 12:34:56]" in result
+    assert "R1=45292.99999999 [display: 1/2/24 12:00 AM]" in result
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
@@ -1355,6 +1365,10 @@ def test_xlsx_time_display_renders_elapsed_units_clock_markers_and_rollover(
     value: str, format_code: str, expected: str
 ):
     assert _xlsx_time_display(value, format_code) == expected
+
+
+def test_xlsx_datetime_display_does_not_mix_dates_with_elapsed_totals():
+    assert _xlsx_datetime_display("45292.5", "m/d/yy [h]:mm", date_1904=False) is None
 
 
 def test_xlsx_formula_text_is_capped_per_cell():

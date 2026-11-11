@@ -1860,9 +1860,13 @@ def _extract_xlsx_text(content: bytes) -> str:
                             except (ValueError, IndexError):
                                 raise ValueError("XLSX cell references an invalid style.") from None
                             if number_format:
-                                display_value = _xlsx_date_display(
+                                display_value = _xlsx_datetime_display(
                                     raw_value, number_format, date_1904=date_1904
                                 )
+                                if display_value is None:
+                                    display_value = _xlsx_date_display(
+                                        raw_value, number_format, date_1904=date_1904
+                                    )
                                 if display_value is None:
                                     display_value = _xlsx_time_display(raw_value, number_format)
                                 if display_value is None:
@@ -2176,6 +2180,44 @@ def _xlsx_time_display(value: str, format_code: str) -> str | None:
         )
         output += match.group("ampm_space") + (marker.upper() if ampm[0].isupper() else marker)
     return output
+
+
+def _xlsx_datetime_display(value: str, format_code: str, *, date_1904: bool) -> str | None:
+    """Render a simple date and time format, including a rounded midnight rollover."""
+    if not value or len(format_code) > MAX_XLSX_FORMAT_CHARS:
+        return None
+    for separator in re.finditer(r" +", format_code):
+        date_format = format_code[: separator.start()]
+        time_format = format_code[separator.end() :]
+        if "[" in time_format:
+            continue
+        date_display = _xlsx_date_display(value, date_format, date_1904=date_1904)
+        time_display = _xlsx_time_display(value, time_format)
+        if date_display is None or time_display is None:
+            continue
+
+        try:
+            serial = Decimal(value)
+            if not serial.is_finite() or serial < 0:
+                return None
+            resolution = (
+                1
+                if re.search(r"(?i)(?:\[s\]|(?<![a-z])s{1,2}(?![a-z]))", time_format)
+                else 60
+                if re.search(r"(?i)(?:\[m\]|(?<![a-z])m{1,2}(?![a-z]))", time_format)
+                else 3_600
+            )
+            fraction = serial - int(serial)
+            if fraction * 86_400 + Decimal(resolution) / 2 >= 86_400:
+                date_display = _xlsx_date_display(
+                    str(int(serial) + 1), date_format, date_1904=date_1904
+                )
+                if date_display is None:
+                    return None
+        except (InvalidOperation, ValueError, OverflowError):
+            return None
+        return f"{date_display}{format_code[separator.start() : separator.end()]}{time_display}"
+    return None
 
 
 def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
