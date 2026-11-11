@@ -10,8 +10,14 @@ package code nor installs dependencies or exposes credential values. The Windows
 builder now copies metadata for every locked runtime distribution, so the same check can see the
 packaged engine's actual runtime. The package/importer and frozen-metadata tests pass (37 passed,
 1 skipped); the desktop production build and 15 client tests pass. Ruff, formatting, Pyright,
-desktop TypeScript, lock consistency and diff checks pass.
-Hosted CI and installed-package acceptance remain pending for this packaging change.
+desktop TypeScript, lock consistency and diff checks pass. Hosted Windows source workflow
+[43114500366](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43114500366) passed the
+full source suite and process-recovery acceptances. Installer-only workflow
+[43115455977](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43115455977) built the
+frozen engine and NSIS package, then passed native recovery, OAuth, install/upgrade/boot,
+standard-user, uninstall, and data-removal acceptance. These package checks prove the revised
+engine builds and the existing installed workflows still pass; a dedicated installed-app query
+of Python skill dependency readiness remains untested. No live model inference was used.
 
 ## Bound specialist plan dependency depth (2026-11-11)
 
