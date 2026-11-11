@@ -2,7 +2,7 @@
 
 ## Follow DOCX numbering-style links (2026-11-11)
 
-DOCX list extraction now resolves `w:numStyleLink` from an abstract numbering definition through numbering-style `w:pPr/w:numPr` to the referenced concrete list. Resolution tracks both abstract numbering and concrete numbering instances, detects cycles, and applies per-instance level overrides after resolving the linked definition. A bounded cycle and valid linked-style fixture are covered. The focused document suite passes (45 tests); Ruff, formatting, parser Pyright, and `git diff --check` pass. Hosted Windows verification is pending. Numbering-style `w:styleLink` metadata is validated, while table-style numbering and full visual Word layout remain open. No live model inference was used.
+DOCX list extraction now resolves `w:numStyleLink` from an abstract numbering definition through numbering-style `w:pPr/w:numPr` to the referenced concrete list. Resolution tracks both abstract numbering and concrete numbering instances, detects cycles, and applies per-instance level overrides after resolving the linked definition. A bounded cycle and valid linked-style fixture are covered. The focused document suite passes (45 tests); Ruff, formatting, parser Pyright, and `git diff --check` pass. Hosted Windows source run [43045333987](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43045333987) passed with 1,068 Python tests and the full desktop/recovery workflow; installer validation was skipped because packaging inputs were unchanged. Numbering-style `w:styleLink` metadata is validated, while table-style numbering and full visual Word layout remain open. No live model inference was used.
 
 ## Rework the desktop workspace layout (2026-11-11)
 
