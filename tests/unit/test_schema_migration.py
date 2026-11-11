@@ -133,6 +133,44 @@ def test_schema_twenty_six_adds_owner_pinned_procedure_guard(workspace_tmp_path)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_schema_twenty_seven_preserves_existing_schedule_delivery_target(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-twenty-seven-schedule-target.sqlite3"
+    store = RunStore(database)
+    now = utc_now()
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,enabled,created_at,updated_at) VALUES ('schedule-1','Legacy schedule','{}','UTC','skip','skip',1,?,?)",
+            (now, now),
+        )
+        connection.execute(
+            "INSERT INTO schedule_executions (id,schedule_id,occurrence_id,state,created_at) VALUES ('execution-1','schedule-1','occurrence-1','completed',?)",
+            (now,),
+        )
+        connection.execute(
+            "INSERT INTO schedule_deliveries (execution_id,account_id,external_identity,chat_id,state,created_at,updated_at) VALUES ('execution-1','42','123','123','pending',?,?)",
+            (now, now),
+        )
+        connection.execute("ALTER TABLE schedules DROP COLUMN failure_notification_destination")
+        connection.execute("ALTER TABLE schedule_deliveries DROP COLUMN result_external_identity")
+        connection.execute("ALTER TABLE schedule_deliveries DROP COLUMN result_chat_id")
+        connection.execute("ALTER TABLE schedule_deliveries DROP COLUMN failure_external_identity")
+        connection.execute("ALTER TABLE schedule_deliveries DROP COLUMN failure_chat_id")
+        connection.execute("PRAGMA user_version=27")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        schedule = connection.execute(
+            "SELECT failure_notification_destination FROM schedules WHERE id='schedule-1'"
+        ).fetchone()
+        delivery = connection.execute(
+            "SELECT result_external_identity,result_chat_id,failure_external_identity,failure_chat_id FROM schedule_deliveries WHERE execution_id='execution-1'"
+        ).fetchone()
+        assert schedule["failure_notification_destination"] is None
+        assert tuple(delivery) == ("123", "123", None, None)
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_schema_thirteen_adds_durable_cli_chat_session_configuration(workspace_tmp_path):
     database = workspace_tmp_path / "schema-thirteen.sqlite3"
     store = RunStore(database)
@@ -203,7 +241,7 @@ def test_schema_eight_adds_schedule_delivery_outbox_without_losing_history(works
     now = utc_now()
     with store.connection() as connection:
         connection.execute(
-            "INSERT INTO schedules VALUES ('schedule-1','Preserve schedule','{}','UTC','skip','skip',NULL,NULL,0,?,?)",
+            "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,enabled,created_at,updated_at) VALUES ('schedule-1','Preserve schedule','{}','UTC','skip','skip',NULL,NULL,0,?,?)",
             (now, now),
         )
         connection.execute(
@@ -237,7 +275,7 @@ def test_schema_nine_adds_bounded_delivery_retry_fields_without_losing_outbox(
     now = utc_now()
     with store.connection() as connection:
         connection.execute(
-            "INSERT INTO schedules VALUES ('schedule-1','Preserve schedule','{}','UTC','skip','skip',NULL,'telegram:42:123',0,?,?)",
+            "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,enabled,created_at,updated_at) VALUES ('schedule-1','Preserve schedule','{}','UTC','skip','skip',NULL,'telegram:42:123',0,?,?)",
             (now, now),
         )
         connection.execute(

@@ -2382,6 +2382,8 @@ export interface components {
             quiet_hours?: string | null;
             /** Start At */
             start_at: string;
+            /** Telegram Failure User Id */
+            telegram_failure_user_id?: string | null;
             /** Telegram User Id */
             telegram_user_id?: string | null;
             /** Timezone */
@@ -3513,6 +3515,8 @@ export interface components {
             enabled: boolean;
             /** Executions */
             executions: components["schemas"]["ScheduleExecutionRecord"][];
+            /** Failure Notification Destination */
+            failure_notification_destination: string | null;
             /** Id */
             id: string;
             /** Missed Run Policy */

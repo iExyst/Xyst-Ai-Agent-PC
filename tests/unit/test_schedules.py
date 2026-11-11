@@ -417,6 +417,14 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
         )
         assert delivery.status_code == 201, delivery.text
         assert delivery.json()["delivery_destination"] == "telegram:42:123"
+        failure_delivery = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "telegram_failure_user_id": "123"},
+        )
+        assert failure_delivery.status_code == 201, failure_delivery.text
+        assert failure_delivery.json()["delivery_destination"] is None
+        assert failure_delivery.json()["failure_notification_destination"] == "telegram:42:123"
         assert client.get("/channels/telegram/linked-users", headers=HEADERS).json() == [
             {"user_id": "123"}
         ]
@@ -426,6 +434,12 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
             json={**payload, "telegram_user_id": "999"},
         )
         assert unauthorized_destination.status_code == 409
+        unauthorized_failure_destination = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "telegram_failure_user_id": "999"},
+        )
+        assert unauthorized_failure_destination.status_code == 409
         paused = client.put(
             f"/schedules/{record['id']}/enabled", headers=HEADERS, json={"enabled": False}
         )

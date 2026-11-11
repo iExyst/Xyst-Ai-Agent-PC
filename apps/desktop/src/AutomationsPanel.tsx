@@ -17,6 +17,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [quietEnd,setQuietEnd]=useState('');
   const [telegramUsers,setTelegramUsers]=useState<string[]>([]);
   const [telegramDeliveryUser,setTelegramDeliveryUser]=useState('');
+  const [telegramFailureUser,setTelegramFailureUser]=useState('');
   const [scheduleReconcileChoice,setScheduleReconcileChoice]=useState<{scheduleId:string;executionId:string;resolution:'delivered'|'retry'}>();
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -27,6 +28,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       const [schedules,users]=await Promise.all([client.schedules(),client.telegramLinkedUsers()]);
       setItems(schedules);setTelegramUsers(users.map(user=>user.user_id));
       if(!users.some(user=>user.user_id===telegramDeliveryUser))setTelegramDeliveryUser('');
+      if(!users.some(user=>user.user_id===telegramFailureUser))setTelegramFailureUser('');
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not refresh schedules or Telegram destinations.');}
   }
   useEffect(()=>{let live=true;void Promise.all([client.schedules(),client.telegramLinkedUsers()]).then(([schedules,users])=>{if(live){setItems(schedules);setTelegramUsers(users.map(user=>user.user_id));}}).catch(failure=>{if(live)setError(String(failure));});return()=>{live=false;};},[client]);
@@ -37,7 +39,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       if(Boolean(quietStart)!==Boolean(quietEnd))throw new Error('Set both quiet-hours times or leave both empty.');
       if(quietStart&&quietStart===quietEnd)throw new Error('Quiet hours must have different start and end times.');
       const quietHours=quietStart&&quietEnd?`${quietStart}-${quietEnd}`:undefined;
-      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{})});
+      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{}),...(telegramFailureUser?{telegram_failure_user_id:telegramFailureUser}:{})});
       setItems(current=>[schedule,...current]);setObjective('');
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the schedule.');}
     finally {setBusy(false);}
@@ -63,7 +65,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
 
   return <section aria-labelledby="automations-title">
     <h2 id="automations-title">Automations</h2>
-    <p>Scheduled objectives run in Observe mode through the same coordinator and appear in run history. They do not make workspace changes. Telegram delivery is optional and authorizes one result message per occurrence to the linked private account you select.</p>
+    <p>Scheduled objectives run in Observe mode through the same coordinator and appear in run history. They do not make workspace changes. Telegram delivery is optional and authorizes a result message and, separately, a failure notice to the linked private accounts you select.</p>
     <label htmlFor="schedule-objective">Scheduled objective</label>
     <textarea id="schedule-objective" value={objective} onChange={event=>setObjective(event.target.value)} maxLength={10000} disabled={busy}/>
     <label htmlFor="schedule-start">First occurrence (local time)</label>
@@ -85,6 +87,11 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <label htmlFor="schedule-telegram-destination">Telegram result destination (optional)</label>
     <select id="schedule-telegram-destination" value={telegramDeliveryUser} onChange={event=>setTelegramDeliveryUser(event.target.value)} disabled={busy}>
       <option value="">Do not send Telegram messages</option>
+      {telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
+    </select>
+    <label htmlFor="schedule-telegram-failure-destination">Telegram failure notification destination (optional)</label>
+    <select id="schedule-telegram-failure-destination" value={telegramFailureUser} onChange={event=>setTelegramFailureUser(event.target.value)} disabled={busy}>
+      <option value="">Use result destination for failures, if selected</option>
       {telegramUsers.map(userId=><option key={userId} value={userId}>Linked Telegram account {userId}</option>)}
     </select>
     <p>Quiet hours defer authorized Telegram result messages; they do not delay the scheduled run. Set a start and end to cover a local daily window, including overnight windows. Daylight-saving gaps are skipped; repeated wall-clock times run once at the earlier offset. Overlapping runs are skipped. Choose a local model above before scheduling.</p>

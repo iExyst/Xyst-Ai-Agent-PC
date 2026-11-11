@@ -917,6 +917,18 @@
             "title": "Start At",
             "type": "string"
           },
+          "telegram_failure_user_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,20}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Failure User Id"
+          },
           "telegram_user_id": {
             "anyOf": [
               {
@@ -4062,6 +4074,17 @@
             "title": "Executions",
             "type": "array"
           },
+          "failure_notification_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Notification Destination"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4112,6 +4135,7 @@
           "overlap_policy",
           "quiet_hours",
           "delivery_destination",
+          "failure_notification_destination",
           "enabled",
           "created_at",
           "updated_at",

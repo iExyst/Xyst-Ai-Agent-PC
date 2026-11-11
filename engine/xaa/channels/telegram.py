@@ -556,6 +556,43 @@ class TelegramStore:
         current = current.astimezone(UTC)
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            terminal = connection.execute(
+                "SELECT d.execution_id,d.result_external_identity,d.result_chat_id,d.failure_external_identity,d.failure_chat_id,d.external_identity,d.chat_id,r.state FROM schedule_deliveries d JOIN schedule_executions e ON e.id=d.execution_id JOIN runs r ON r.id=e.run_id WHERE d.account_id=? AND d.state='pending' AND r.state IN (?,?,?,?)",
+                (
+                    account_id,
+                    RunState.COMPLETED.value,
+                    RunState.FAILED.value,
+                    RunState.BLOCKED.value,
+                    RunState.CANCELLED.value,
+                ),
+            ).fetchall()
+            for candidate in terminal:
+                completed = str(candidate["state"]) == RunState.COMPLETED.value
+                if completed and candidate["result_external_identity"] is None:
+                    connection.execute(
+                        "UPDATE schedule_deliveries SET state='sent',updated_at=? WHERE execution_id=? AND state='pending'",
+                        (utc_now(), candidate["execution_id"]),
+                    )
+                    connection.execute(
+                        "UPDATE schedule_executions SET delivery_evidence='not_required' WHERE id=?",
+                        (candidate["execution_id"],),
+                    )
+                    continue
+                target_identity = (
+                    candidate["result_external_identity"]
+                    if completed or candidate["failure_external_identity"] is None
+                    else candidate["failure_external_identity"]
+                )
+                target_chat = (
+                    candidate["result_chat_id"]
+                    if completed or candidate["failure_chat_id"] is None
+                    else candidate["failure_chat_id"]
+                )
+                if target_identity is not None and target_chat is not None:
+                    connection.execute(
+                        "UPDATE schedule_deliveries SET external_identity=?,chat_id=? WHERE execution_id=? AND state='pending'",
+                        (target_identity, target_chat, candidate["execution_id"]),
+                    )
             revoked = connection.execute(
                 "SELECT execution_id FROM schedule_deliveries d WHERE account_id=? AND state='pending' AND NOT EXISTS (SELECT 1 FROM channel_bindings b WHERE b.channel='telegram' AND b.account_id=d.account_id AND b.external_identity=d.external_identity AND b.authorized=1)",
                 (account_id,),

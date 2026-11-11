@@ -667,6 +667,94 @@ def test_failed_scheduled_run_sends_generic_notice(workspace_tmp_path: Path) -> 
     store.finish_schedule_delivery(delivery["execution_id"], state="sent", message_id=73)
 
 
+def test_schedule_uses_separate_failure_notification_destination(workspace_tmp_path: Path) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-distinct-destinations.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store, 123)
+    second_code = PAIR_CODE + "_second"
+    store.create_pairing(second_code)
+    assert (
+        store.process_update(
+            IDENTITY, private_update(2, 456, f"/pair {second_code}"), model="fixture/model"
+        )["state"]
+        == "paired"
+    )
+    from xaa.scheduler.service import ScheduleService
+    from xaa.storage.schedules import ScheduleStore
+
+    now = datetime.now(UTC)
+    schedule = ScheduleStore(runs).create(
+        objective="Distinct notification test",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=now.replace(second=0, microsecond=0, tzinfo=None),
+        frequency="once",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+        delivery_destination="telegram:42:123",
+        failure_notification_destination="telegram:42:456",
+    )
+    run_id = ScheduleService(runs, lambda _run_id: None).tick(now)[0]
+    with runs.connection() as connection:
+        connection.execute("UPDATE runs SET state='failed' WHERE id=?", (run_id,))
+    assert store.linked_users(IDENTITY.account_id) == ["123", "456"]
+    delivery = store.claim_schedule_delivery(IDENTITY.account_id)
+    assert delivery is not None
+    assert delivery["chat_id"] == "456"
+    assert "could not complete" in delivery["text"]
+    assert schedule["failure_notification_destination"] == "telegram:42:456"
+
+
+def test_failure_only_schedule_skips_success_delivery(workspace_tmp_path: Path) -> None:
+    runs = RunStore(workspace_tmp_path / "scheduled-failure-only.sqlite3")
+    store = TelegramStore(runs)
+    second_code = PAIR_CODE + "_only"
+    store.create_pairing(second_code)
+    assert (
+        store.process_update(
+            IDENTITY, private_update(2, 456, f"/pair {second_code}"), model="fixture/model"
+        )["state"]
+        == "paired"
+    )
+    from xaa.scheduler.service import ScheduleService
+    from xaa.storage.schedules import ScheduleStore
+
+    now = datetime.now(UTC)
+    ScheduleStore(runs).create(
+        objective="Failure-only notification test",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=now.replace(second=0, microsecond=0, tzinfo=None),
+        frequency="once",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+        failure_notification_destination="telegram:42:456",
+    )
+    run_id = ScheduleService(runs, lambda _run_id: None).tick(now)[0]
+    with runs.connection() as connection:
+        connection.execute("UPDATE runs SET state='completed' WHERE id=?", (run_id,))
+        RunStore.record_event(
+            connection,
+            run_id,
+            "model.message",
+            {"message": {"role": "assistant", "content": "All done."}},
+        )
+    assert store.claim_schedule_delivery(IDENTITY.account_id) is None
+    with runs.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT delivery_evidence FROM schedule_executions WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            == "not_required"
+        )
+
+
 def test_old_poll_cursor_resets_before_telegram_randomizes_update_ids(
     workspace_tmp_path: Path,
 ) -> None:

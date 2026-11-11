@@ -97,6 +97,7 @@ class ScheduleStore:
         max_iterations: int,
         max_seconds: int,
         delivery_destination: str | None = None,
+        failure_notification_destination: str | None = None,
         quiet_hours: str | None = None,
     ) -> dict[str, Any]:
         ZoneInfo(timezone)
@@ -116,7 +117,7 @@ class ScheduleStore:
         }
         with self.runs.connection() as connection:
             connection.execute(
-                "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,'skip',?,?,1,?,?)",
+                "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,failure_notification_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,'skip',?,?,?,1,?,?)",
                 (
                     identity,
                     objective,
@@ -125,6 +126,7 @@ class ScheduleStore:
                     missed_run_policy,
                     quiet_hours,
                     delivery_destination,
+                    failure_notification_destination,
                     now,
                     now,
                 ),
@@ -308,21 +310,36 @@ class ScheduleStore:
             ),
         )
         destination = schedule["delivery_destination"]
-        if outcome == "run" and destination is not None:
-            parts = str(destination).split(":")
-            if (
-                len(parts) != 3
-                or parts[0] != "telegram"
-                or not all(part.isdecimal() for part in parts[1:])
-            ):
-                raise ValueError("Saved schedule delivery destination is malformed.")
+        failure_destination = schedule["failure_notification_destination"]
+        if outcome == "run" and (destination is not None or failure_destination is not None):
+
+            def parse_destination(value: str | None) -> tuple[str, str] | None:
+                if value is None:
+                    return None
+                parts = str(value).split(":")
+                if (
+                    len(parts) != 3
+                    or parts[0] != "telegram"
+                    or not all(part.isdecimal() for part in parts[1:])
+                ):
+                    raise ValueError("Saved schedule delivery destination is malformed.")
+                return parts[1], parts[2]
+
+            result_target = parse_destination(destination)
+            failure_target = parse_destination(failure_destination)
+            initial_target = result_target or failure_target
+            assert initial_target is not None
             connection.execute(
-                "INSERT INTO schedule_deliveries (execution_id,account_id,external_identity,chat_id,state,message_id,created_at,updated_at) VALUES (?,?,?,?, 'pending',NULL,?,?)",
+                "INSERT INTO schedule_deliveries (execution_id,account_id,external_identity,chat_id,result_external_identity,result_chat_id,failure_external_identity,failure_chat_id,state,message_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?, 'pending',NULL,?,?)",
                 (
                     execution_id,
-                    parts[1],
-                    parts[2],
-                    parts[2],
+                    initial_target[0],
+                    initial_target[1],
+                    initial_target[1],
+                    result_target[1] if result_target else None,
+                    result_target[1] if result_target else None,
+                    failure_target[1] if failure_target else None,
+                    failure_target[1] if failure_target else None,
                     utc_now(),
                     utc_now(),
                 ),

@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 27
+DATABASE_SCHEMA_VERSION = 28
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -490,6 +490,7 @@ class RunStore:
                     overlap_policy TEXT NOT NULL,
                     quiet_hours TEXT,
                     delivery_destination TEXT,
+                    failure_notification_destination TEXT,
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -509,6 +510,10 @@ class RunStore:
                     account_id TEXT NOT NULL,
                     external_identity TEXT NOT NULL,
                     chat_id TEXT NOT NULL,
+                    result_external_identity TEXT,
+                    result_chat_id TEXT,
+                    failure_external_identity TEXT,
+                    failure_chat_id TEXT,
                     state TEXT NOT NULL,
                     message_id INTEGER,
                     attempt_count INTEGER NOT NULL DEFAULT 0,
@@ -767,6 +772,31 @@ class RunStore:
             delivery_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(schedule_deliveries)")
             }
+            schedule_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(schedules)")
+            }
+            if "failure_notification_destination" not in schedule_columns:
+                connection.execute(
+                    "ALTER TABLE schedules ADD COLUMN failure_notification_destination TEXT"
+                )
+            if "failure_external_identity" not in delivery_columns:
+                connection.execute(
+                    "ALTER TABLE schedule_deliveries ADD COLUMN failure_external_identity TEXT"
+                )
+            if "failure_chat_id" not in delivery_columns:
+                connection.execute(
+                    "ALTER TABLE schedule_deliveries ADD COLUMN failure_chat_id TEXT"
+                )
+            if "result_external_identity" not in delivery_columns:
+                connection.execute(
+                    "ALTER TABLE schedule_deliveries ADD COLUMN result_external_identity TEXT"
+                )
+                connection.execute(
+                    "UPDATE schedule_deliveries SET result_external_identity=external_identity"
+                )
+            if "result_chat_id" not in delivery_columns:
+                connection.execute("ALTER TABLE schedule_deliveries ADD COLUMN result_chat_id TEXT")
+                connection.execute("UPDATE schedule_deliveries SET result_chat_id=chat_id")
             if "attempt_count" not in delivery_columns:
                 connection.execute(
                     "ALTER TABLE schedule_deliveries ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"

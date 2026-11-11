@@ -416,6 +416,7 @@ class CreateScheduleRequest(BaseModel):
     max_iterations: int = Field(default=8, ge=1, le=100)
     max_seconds: int = Field(default=900, ge=1, le=86400)
     telegram_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
+    telegram_failure_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
 
 
 class ScheduleExecutionRecord(BaseModel):
@@ -441,6 +442,7 @@ class ScheduleRecord(BaseModel):
     overlap_policy: str
     quiet_hours: str | None
     delivery_destination: str | None
+    failure_notification_destination: str | None
     enabled: bool
     created_at: str
     updated_at: str
@@ -2431,7 +2433,8 @@ def create_app(
                 detail="Select this model in provider setup before scheduling work.",
             )
         delivery_destination: str | None = None
-        if payload.telegram_user_id is not None:
+        failure_notification_destination: str | None = None
+        if payload.telegram_user_id is not None or payload.telegram_failure_user_id is not None:
             if credential_store is None or credential_store.get("telegram-bot") is None:
                 raise HTTPException(
                     status_code=409,
@@ -2440,14 +2443,26 @@ def create_app(
             account_id = (
                 credential_store.get("telegram-bot-account") or telegram_store.latest_account_id()
             )
-            if account_id is None or payload.telegram_user_id not in telegram_store.linked_users(
-                account_id
+            linked_users = telegram_store.linked_users(account_id) if account_id is not None else []
+            if account_id is None or any(
+                selected is not None and selected not in linked_users
+                for selected in (payload.telegram_user_id, payload.telegram_failure_user_id)
             ):
                 raise HTTPException(
                     status_code=409,
                     detail="Choose a user currently linked to the configured Telegram bot.",
                 )
-            delivery_destination = f"telegram:{account_id}:{payload.telegram_user_id}"
+            if payload.telegram_user_id is not None:
+                delivery_destination = f"telegram:{account_id}:{payload.telegram_user_id}"
+            if payload.telegram_failure_user_id is not None:
+                if payload.telegram_failure_user_id not in telegram_store.linked_users(account_id):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Choose a failure notification user currently linked to the configured Telegram bot.",
+                    )
+                failure_notification_destination = (
+                    f"telegram:{account_id}:{payload.telegram_failure_user_id}"
+                )
         try:
             return schedule_store.create(
                 objective=payload.objective,
@@ -2461,6 +2476,7 @@ def create_app(
                 max_iterations=payload.max_iterations,
                 max_seconds=payload.max_seconds,
                 delivery_destination=delivery_destination,
+                failure_notification_destination=failure_notification_destination,
                 quiet_hours=validate_quiet_hours(payload.quiet_hours),
             )
         except ValueError as exc:
