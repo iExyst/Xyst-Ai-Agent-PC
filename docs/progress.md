@@ -1,5 +1,9 @@
 # Progress
 
+## Keep MCP sampling inside coordinator controls (2026-11-10)
+
+Reviewed the installed MCP SDK 2.3.0 callback surface and X.A.A.'s connection/coordinator boundary. Directly connecting `sampling_callback` to the provider would allow an MCP server to initiate inference without a durable run/task event, shared token reservation, or the saved provider/model route. Sampling therefore remains unavailable until it can be authorized for a specific run, journaled with bounded request content and recovery behavior, admitted through the existing inference budget, and constrained to text-only responses without tool grants. This is a dependency finding for Phase 9, not an implementation claim; no model inference or test run was performed.
+
 ## Extend the hosted installer upgrade baseline (2026-11-11)
 
 The public repository permits up to 90 days of GitHub Actions artifact retention. The unsigned Windows installer artifact now uses that maximum instead of 14 days, reducing the chance that the current upgrade fixture expires before follow-up release checks. Hosted installer run [42960402173](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42960402173) passed the full package build, frozen recovery and workspace create/edit/delete checks, schema-18 upgrade, install/boot/uninstall, standard-user install and explicit data removal. GitHub reports the artifact expires 2027-02-09; the installer and reports are preserved in `.acceptance/hosted-installer-42960402173/`. This extends the temporary CI baseline only; a durable published predecessor is still needed. No live inference was used.
