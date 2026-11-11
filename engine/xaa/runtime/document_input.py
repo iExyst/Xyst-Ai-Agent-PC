@@ -287,6 +287,40 @@ def _extract_docx_text(content: bytes) -> str:
         return "".join(fragments).strip()
 
     def content_blocks(container: ElementTree.Element) -> list[str]:
+        def table_cell_text(cell: ElementTree.Element) -> str:
+            value = " / ".join(content_blocks(cell))
+            properties = [item for item in cell if item.tag == namespace + "tcPr"]
+            if len(properties) > 1:
+                raise ValueError("DOCX table cell contains duplicate property groups.")
+            if not properties:
+                return value
+            property_group = properties[0]
+            metadata: list[str] = []
+            spans = [item for item in property_group if item.tag == namespace + "gridSpan"]
+            if len(spans) > 1:
+                raise ValueError("DOCX table cell contains duplicate grid spans.")
+            if spans:
+                raw_span = spans[0].attrib.get(namespace + "val", "")
+                if not raw_span.isascii() or not raw_span.isdecimal() or len(raw_span) > 10:
+                    raise ValueError("DOCX table cell contains an invalid grid span.")
+                grid_span = int(raw_span)
+                if not 1 <= grid_span <= 2_147_483_647:
+                    raise ValueError("DOCX table cell contains an invalid grid span.")
+                metadata.append(f"grid span: {grid_span}")
+            for element_name, label in (("hMerge", "horizontal"), ("vMerge", "vertical")):
+                merges = [item for item in property_group if item.tag == namespace + element_name]
+                if len(merges) > 1:
+                    raise ValueError(f"DOCX table cell contains duplicate {element_name} markers.")
+                if merges:
+                    state = merges[0].attrib.get(namespace + "val", "continue")
+                    if state not in {"restart", "continue"}:
+                        raise ValueError(
+                            f"DOCX table cell contains an invalid {element_name} state."
+                        )
+                    metadata.append(f"{label} merge: {state}")
+            marker = f" [{'; '.join(metadata)}]" if metadata else ""
+            return f"{value}{marker}" if value else marker.strip()
+
         blocks: list[str] = []
         for item in container:
             if item.tag == namespace + "p":
@@ -297,11 +331,7 @@ def _extract_docx_text(content: bytes) -> str:
                 for row in item:
                     if row.tag != namespace + "tr":
                         continue
-                    cells = [
-                        " / ".join(content_blocks(cell))
-                        for cell in row
-                        if cell.tag == namespace + "tc"
-                    ]
+                    cells = [table_cell_text(cell) for cell in row if cell.tag == namespace + "tc"]
                     if any(cells):
                         blocks.append(" | ".join(cells))
             else:

@@ -42,6 +42,7 @@ def make_docx(
     paragraphs: list[str],
     table: list[list[str]] | None = None,
     *,
+    table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     header: str | None = None,
     footer: str | None = None,
     header_target: str = "header1.xml",
@@ -51,16 +52,24 @@ def make_docx(
 ) -> bytes:
     body = "".join(f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs)
     if table is not None:
-        body += (
-            "<w:tbl>"
-            + "".join(
-                "<w:tr>"
-                + "".join(f"<w:tc><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>" for text in row)
-                + "</w:tr>"
-                for row in table
-            )
-            + "</w:tbl>"
-        )
+        rows = []
+        for row_index, row in enumerate(table):
+            cells = []
+            for cell_index, text in enumerate(row):
+                properties = (table_cell_properties or {}).get((row_index, cell_index), {})
+                property_xml = ""
+                if properties:
+                    property_xml = (
+                        "<w:tcPr>"
+                        + "".join(
+                            f"<w:{name}" + (f' w:val="{value}"' if value is not None else "") + "/>"
+                            for name, value in properties.items()
+                        )
+                        + "</w:tcPr>"
+                    )
+                cells.append(f"<w:tc>{property_xml}<w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>")
+            rows.append("<w:tr>" + "".join(cells) + "</w:tr>")
+        body += "<w:tbl>" + "".join(rows) + "</w:tbl>"
     header_reference = ""
     footer_reference = ""
     relationships = []
@@ -205,6 +214,47 @@ def test_extracts_docx_table_rows_and_preserves_empty_cell_positions():
         DOCX_TYPE,
     )
     assert result == "Inventory\nItem | Count\napples | 3\n | 4"
+
+
+def test_extracts_docx_grid_spans_and_legacy_horizontal_and_vertical_merges():
+    result = extract_document_text(
+        make_docx(
+            [],
+            [
+                ["Wide", "Legacy start", "Legacy continuation", "Vertical start"],
+                ["Next", "", "", "Vertical continuation"],
+            ],
+            table_cell_properties={
+                (0, 0): {"gridSpan": "2"},
+                (0, 1): {"hMerge": "restart"},
+                (0, 2): {"hMerge": None},
+                (0, 3): {"vMerge": "restart"},
+                (1, 3): {"vMerge": None},
+            },
+        ),
+        DOCX_TYPE,
+    )
+    assert "Wide [grid span: 2]" in result
+    assert "Legacy start [horizontal merge: restart]" in result
+    assert "Legacy continuation [horizontal merge: continue]" in result
+    assert "Vertical start [vertical merge: restart]" in result
+    assert "Vertical continuation [vertical merge: continue]" in result
+
+
+@pytest.mark.parametrize(
+    ("property_name", "value", "error"),
+    [("gridSpan", "0", "invalid grid span"), ("vMerge", "unknown", "invalid vMerge")],
+)
+def test_rejects_malformed_docx_table_merge_metadata(property_name, value, error):
+    with pytest.raises(ValueError, match=error):
+        extract_document_text(
+            make_docx(
+                [],
+                [["cell"]],
+                table_cell_properties={(0, 0): {property_name: value}},
+            ),
+            DOCX_TYPE,
+        )
 
 
 def test_extracts_docx_linked_headers_and_footers():
