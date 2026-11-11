@@ -173,6 +173,7 @@ def test_chat_sessions_can_be_opened_for_desktop_and_listed_across_clients(works
     )
     assert opened == {
         "session_id": "desktop-thread",
+        "title": "desktop-thread",
         "model": "local/model",
         "workspace": None,
         "mode": "observe",
@@ -181,6 +182,7 @@ def test_chat_sessions_can_be_opened_for_desktop_and_listed_across_clients(works
     listed = chat.list_sessions()
     assert len(listed) == 1
     assert listed[0]["session_id"] == "desktop-thread"
+    assert listed[0]["title"] == "desktop-thread"
     assert listed[0]["model"] == "local/model"
     assert listed[0]["workspace"] is None
     assert listed[0]["mode"] == "observe"
@@ -198,6 +200,48 @@ def test_chat_sessions_can_be_opened_for_desktop_and_listed_across_clients(works
         raise AssertionError("Shared session accepted incompatible runtime settings")
 
 
+def test_chat_session_title_can_be_renamed_without_changing_its_id_or_history(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "shared-chat-rename.sqlite3")
+    chat = CLIChatStore(store)
+    run_id = store.create_run(
+        objective="Keep this chat",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="local/model",
+    )["id"]
+    chat.append_turn(
+        "desktop-thread",
+        run_id=run_id,
+        model="local/model",
+        workspace=None,
+        mode="observe",
+        user_message="Remember this question",
+        assistant_message="Remembered.",
+    )
+    before = chat.get("desktop-thread")
+    assert before is not None
+    assert chat.rename("desktop-thread", "  Project notes  ")
+    after = chat.get("desktop-thread")
+    assert after == {**before, "title": "Project notes"}
+    listed = chat.list_sessions()
+    assert listed[0]["session_id"] == "desktop-thread"
+    assert listed[0]["title"] == "Project notes"
+    assert not chat.rename("missing-session", "Project notes")
+
+
+def test_chat_session_title_rejects_blank_long_and_control_values(workspace_tmp_path):
+    chat = CLIChatStore(RunStore(workspace_tmp_path / "shared-chat-rename-invalid.sqlite3"))
+    chat.ensure_session("desktop-thread", model="local/model", workspace=None, mode="observe")
+    for title in ("   ", "x" * 81, "line\nbreak", "invalid-" + chr(0xD800)):
+        try:
+            chat.rename("desktop-thread", title)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Invalid conversation title was accepted")
+
+
 def test_chat_session_listing_api_is_authenticated_and_returns_shared_sessions(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "shared-chat-session-api.sqlite3")
     with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
@@ -209,17 +253,46 @@ def test_chat_session_listing_api_is_authenticated_and_returns_shared_sessions(w
             json={"model": "local/model", "workspace": None, "mode": "observe"},
         )
         assert opened.status_code == 200
+        assert opened.json()["title"] == "desktop-thread"
         assert opened.json()["messages"] == []
         listed = client.get("/chat/sessions", headers=HEADERS)
         assert listed.status_code == 200
         assert len(listed.json()) == 1
         assert listed.json()[0]["session_id"] == "desktop-thread"
+        assert listed.json()[0]["title"] == "desktop-thread"
         conflict = client.post(
             "/chat/sessions/desktop-thread",
             headers=HEADERS,
             json={"model": "other/model", "workspace": None, "mode": "observe"},
         )
         assert conflict.status_code == 409
+
+
+def test_chat_session_rename_api_is_authenticated_and_preserves_session(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "shared-chat-rename-api.sqlite3")
+    with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
+        path = "/chat/sessions/desktop-thread"
+        assert client.patch(path, json={"title": "Project notes"}).status_code == 401
+        assert (
+            client.post(
+                path,
+                headers=HEADERS,
+                json={"model": "local/model", "workspace": None, "mode": "observe"},
+            ).status_code
+            == 200
+        )
+        renamed = client.patch(path, headers=HEADERS, json={"title": "  Project notes  "})
+        assert renamed.status_code == 200
+        assert renamed.json()["session_id"] == "desktop-thread"
+        assert renamed.json()["title"] == "Project notes"
+        assert client.get("/chat/sessions", headers=HEADERS).json()[0]["title"] == "Project notes"
+        assert client.patch(path, headers=HEADERS, json={"title": "bad\ntitle"}).status_code == 422
+        assert (
+            client.patch(
+                "/chat/sessions/missing", headers=HEADERS, json={"title": "Missing"}
+            ).status_code
+            == 404
+        )
 
 
 def test_desktop_api_continues_terminal_session_in_the_same_sqlite_history(workspace_tmp_path):

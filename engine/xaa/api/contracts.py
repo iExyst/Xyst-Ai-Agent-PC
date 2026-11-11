@@ -120,6 +120,7 @@ class CLIChatMessageRecord(BaseModel):
 
 class CLIChatSessionRecord(BaseModel):
     session_id: str
+    title: str
     model: str
     workspace: str | None
     mode: Literal["observe", "workspace"]
@@ -128,6 +129,7 @@ class CLIChatSessionRecord(BaseModel):
 
 class CLIChatSessionSummary(BaseModel):
     session_id: str
+    title: str
     model: str
     workspace: str | None
     mode: Literal["observe", "workspace"]
@@ -140,6 +142,12 @@ class CLIChatSessionSettings(BaseModel):
     model: str = Field(min_length=1, max_length=256)
     workspace: str | None = Field(default=None, max_length=4096)
     mode: Literal["observe", "workspace"]
+
+
+class CLIChatSessionTitle(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    title: str = Field(min_length=1, max_length=80)
 
 
 class UsageReport(BaseModel):

@@ -31,6 +31,7 @@ from xaa.api.contracts import (
     CLIChatSessionRecord,
     CLIChatSessionSettings,
     CLIChatSessionSummary,
+    CLIChatSessionTitle,
     MCPReconciliationDecision,
     MCPReconciliationItem,
     MemoryRecord,
@@ -2778,6 +2779,22 @@ def create_app(
     @app.get("/chat/sessions", response_model=list[CLIChatSessionSummary])
     def list_cli_chat_sessions(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
         return cli_chat_store.list_sessions()
+
+    @app.patch("/chat/sessions/{session_id}", response_model=CLIChatSessionRecord)
+    def rename_cli_chat_session(
+        session_id: str,
+        payload: CLIChatSessionTitle,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            if not cli_chat_store.rename(session_id, payload.title):
+                raise HTTPException(status_code=404, detail="Chat session not found.")
+            record = cli_chat_store.get(session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Chat session not found.")
+        return record
 
     @app.post(
         "/chat/sessions/{session_id}",

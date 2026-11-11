@@ -16,6 +16,7 @@ export function ConversationSessionsPanel({
   const [items,setItems]=useState<ChatSessionSummary[]>([]);
   const [sessionId,setSessionId]=useState('');
   const [session,setSession]=useState<ChatSession>();
+  const [titleDraft,setTitleDraft]=useState('');
   const [newName,setNewName]=useState('');
   const [busy,setBusy]=useState(false);
   const [loaded,setLoaded]=useState(false);
@@ -30,7 +31,7 @@ export function ConversationSessionsPanel({
       client.chatSessions(),
       sessionId?client.chatSession(sessionId):Promise.resolve(undefined),
     ]).then(([rows,record])=>{
-      if(!cancelled){setItems(rows);if(record){setSession(record);selection.current(sessionId,record);}}
+      if(!cancelled){setItems(rows);if(record){setSession(record);setTitleDraft(record.title);selection.current(sessionId,record);}}
     }).catch(failure=>{if(!cancelled)setError(String(failure));});
     return()=>{cancelled=true;};
   },[client,refreshKey,sessionId,loaded]);
@@ -41,8 +42,18 @@ export function ConversationSessionsPanel({
     setBusy(true);
     try {
       const record=await client.chatSession(id);
-      setSession(record);selection.current(id,record);
+      setSession(record);setTitleDraft(record.title);selection.current(id,record);
     } catch(failure){setSession(undefined);setError(String(failure));}
+    finally{setBusy(false);}
+  }
+
+  async function renameCurrent() {
+    if(!sessionId||!session)return;
+    setBusy(true);setError('');
+    try {
+      const updated=await client.renameChatSession(sessionId,titleDraft);
+      setSession(updated);setTitleDraft(updated.title);setItems(await client.chatSessions());
+    } catch(failure){setError(String(failure));}
     finally{setBusy(false);}
   }
 
@@ -79,12 +90,14 @@ export function ConversationSessionsPanel({
     <label htmlFor="shared-chat-session">Saved terminal and desktop sessions</label>
     <select id="shared-chat-session" value={sessionId} disabled={busy} onChange={event=>void select(event.target.value)}>
       <option value="">No shared conversation</option>
-      {items.map(item=><option key={item.session_id} value={item.session_id}>{item.session_id} · {item.model}</option>)}
+      {items.map(item=><option key={item.session_id} value={item.session_id}>{item.title} · {item.session_id}</option>)}
     </select>
     <label htmlFor="new-shared-chat-name">New session name (optional)<input id="new-shared-chat-name" value={newName} maxLength={64} onChange={event=>setNewName(event.target.value)} placeholder="desktop-project-chat" disabled={busy}/></label>
     <button type="button" disabled={busy||!model||!workspace.trim()} onClick={()=>void create()}>Start or open shared conversation</button>
     {session&&<>
-      <p>Session <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
+      <label htmlFor="shared-chat-title">Conversation title<input id="shared-chat-title" value={titleDraft} maxLength={80} onChange={event=>setTitleDraft(event.target.value)} disabled={busy}/></label>
+      <button type="button" disabled={busy||!titleDraft.trim()||titleDraft.trim()===session.title} onClick={()=>void renameCurrent()}>Save title</button>
+      <p><strong>{session.title}</strong> · Session ID <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
       <p>Continue this same history in a terminal with <code>xaa chat --model "{session.model}"{session.workspace?` --workspace "${session.workspace}"`:''} --mode "{session.mode}" --session "{session.session_id}"</code>.</p>
       <button type="button" disabled={busy} onClick={()=>void deleteCurrent()}>Delete shared conversation</button>
       <ol aria-label="Saved conversation turns">{session.messages.map((message,index)=><li key={`${message.run_id}:${index}`}><strong>{message.role==='user'?'You':'X.A.A.'}</strong><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{message.content}</pre></li>)}</ol>

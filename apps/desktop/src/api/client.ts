@@ -88,6 +88,9 @@ export class EngineClient {
 
   chatSessions(): Promise<ChatSessionSummary[]> { return this.#request('/chat/sessions'); }
   chatSession(sessionId: string): Promise<ChatSession> { return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}`); }
+  renameChatSession(sessionId: string, title: string): Promise<ChatSession> {
+    return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}`, {method:'PATCH',body:JSON.stringify({title})});
+  }
   openChatSession(sessionId: string, settings: ChatSessionSettings): Promise<ChatSession> {
     return this.#request(`/chat/sessions/${encodeURIComponent(sessionId)}`, {method:'POST',body:JSON.stringify(settings)});
   }

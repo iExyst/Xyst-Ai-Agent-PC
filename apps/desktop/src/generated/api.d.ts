@@ -461,7 +461,8 @@ export interface paths {
         delete: operations["delete_cli_chat_session_chat_sessions__session_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename Cli Chat Session */
+        patch: operations["rename_cli_chat_session_chat_sessions__session_id__patch"];
         trace?: never;
     };
     "/chat/sessions/{session_id}/turn": {
@@ -2114,6 +2115,8 @@ export interface components {
             model: string;
             /** Session Id */
             session_id: string;
+            /** Title */
+            title: string;
             /** Workspace */
             workspace: string | null;
         };
@@ -2140,6 +2143,8 @@ export interface components {
             model: string;
             /** Session Id */
             session_id: string;
+            /** Title */
+            title: string;
             /**
              * Updated At
              * Format: date-time
@@ -2147,6 +2152,11 @@ export interface components {
             updated_at: string;
             /** Workspace */
             workspace: string | null;
+        };
+        /** CLIChatSessionTitle */
+        CLIChatSessionTitle: {
+            /** Title */
+            title: string;
         };
         /** CLIChatTurnRequest */
         CLIChatTurnRequest: {
@@ -5112,6 +5122,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_cli_chat_session_chat_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIChatSessionTitle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIChatSessionRecord"];
+                };
             };
             /** @description Validation Error */
             422: {

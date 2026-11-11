@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any, Literal
 
 from xaa.storage.runs import RunStore, utc_now
@@ -40,7 +41,7 @@ class CLIChatStore:
         self.validate_id(session_id)
         with self.runs.connection() as connection:
             row = connection.execute(
-                "SELECT s.id,s.channel,s.account_id,c.model,c.workspace,c.mode "
+                "SELECT s.id,s.title,s.channel,s.account_id,c.model,c.workspace,c.mode "
                 "FROM sessions AS s JOIN cli_chat_config AS c ON c.session_id=s.id "
                 "WHERE s.id=? AND s.channel='cli' AND s.account_id='local-user'",
                 (session_id,),
@@ -54,6 +55,7 @@ class CLIChatStore:
             ).fetchall()
         return {
             "session_id": session_id,
+            "title": row["title"],
             "model": row["model"],
             "workspace": row["workspace"],
             "mode": row["mode"],
@@ -66,7 +68,7 @@ class CLIChatStore:
             raise ValueError("Chat session page size must be 1–100.")
         with self.runs.connection() as connection:
             rows = connection.execute(
-                "SELECT s.id AS session_id,c.model,c.workspace,c.mode,s.updated_at "
+                "SELECT s.id AS session_id,s.title,c.model,c.workspace,c.mode,s.updated_at "
                 "FROM sessions AS s JOIN cli_chat_config AS c ON c.session_id=s.id "
                 "WHERE s.channel='cli' AND s.account_id='local-user' "
                 "ORDER BY s.updated_at DESC,s.id LIMIT ?",
@@ -109,7 +111,7 @@ class CLIChatStore:
                 connection.execute(
                     "INSERT INTO sessions(id,channel,account_id,title,created_at,updated_at) "
                     "VALUES(?,'cli','local-user',?,?,?)",
-                    (session_id, f"Chat {session_id}", now, now),
+                    (session_id, session_id, now, now),
                 )
                 connection.execute(
                     "INSERT INTO cli_chat_config(session_id,model,workspace,mode) VALUES(?,?,?,?)",
@@ -119,6 +121,25 @@ class CLIChatStore:
         if result is None:
             raise RuntimeError("Chat session disappeared after it was opened.")
         return result
+
+    def rename(self, session_id: str, title: str) -> bool:
+        """Change only the display title of an owned local chat session."""
+        self.validate_id(session_id)
+        normalized = title.strip()
+        if (
+            not normalized
+            or len(normalized) > 80
+            or any(unicodedata.category(character) in {"Cc", "Cs"} for character in normalized)
+        ):
+            raise ValueError("Chat title must contain 1–80 characters and no control characters.")
+        with self.runs.connection() as connection:
+            result = connection.execute(
+                "UPDATE sessions SET title=? WHERE id=? AND channel='cli' "
+                "AND account_id='local-user' AND EXISTS ("
+                "SELECT 1 FROM cli_chat_config AS c WHERE c.session_id=sessions.id)",
+                (normalized, session_id),
+            )
+            return result.rowcount == 1
 
     def list_acp(
         self, *, model: str, workspace: str, mode: ChatMode, after: str = "", limit: int = 50

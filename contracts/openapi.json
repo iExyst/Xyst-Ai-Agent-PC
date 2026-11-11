@@ -98,6 +98,10 @@
             "title": "Session Id",
             "type": "string"
           },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
           "workspace": {
             "anyOf": [
               {
@@ -112,6 +116,7 @@
         },
         "required": [
           "session_id",
+          "title",
           "model",
           "workspace",
           "mode",
@@ -175,6 +180,10 @@
             "title": "Session Id",
             "type": "string"
           },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -194,12 +203,29 @@
         },
         "required": [
           "session_id",
+          "title",
           "model",
           "workspace",
           "mode",
           "updated_at"
         ],
         "title": "CLIChatSessionSummary",
+        "type": "object"
+      },
+      "CLIChatSessionTitle": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "CLIChatSessionTitle",
         "type": "object"
       },
       "CLIChatTurnRequest": {
@@ -7277,6 +7303,58 @@
           }
         ],
         "summary": "Get Cli Chat Session"
+      },
+      "patch": {
+        "operationId": "rename_cli_chat_session_chat_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIChatSessionTitle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIChatSessionRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Cli Chat Session"
       },
       "post": {
         "operationId": "ensure_cli_chat_session_chat_sessions__session_id__post",
