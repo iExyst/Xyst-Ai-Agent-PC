@@ -61,6 +61,7 @@ async def diagnose(engine: Path) -> None:
         scopes.append(scope)
         for operation, arguments in [
             ("branch_init", {}),
+            ("branch_read", {"path": name}),
             (
                 "branch_write",
                 {
