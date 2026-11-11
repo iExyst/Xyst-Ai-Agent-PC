@@ -53,6 +53,8 @@ class InterruptedStore(RunStore):
         *,
         internal: bool = False,
     ) -> None:
+        if call_id != "edit-1":
+            return super().record_tool_result(run_id, token, call_id, result, internal=internal)
         (self.path.parent / "flushed.marker").write_text(
             "effect flushed; result not committed", encoding="utf-8"
         )
@@ -62,7 +64,7 @@ class InterruptedStore(RunStore):
 
 def child(root: Path, run_id: str) -> None:
     store = InterruptedStore(root / "runs.sqlite3")
-    token = store.acquire_lease(run_id, "crash-probe", seconds=1)
+    token = store.acquire_lease(run_id, "crash-probe", seconds=5)
     if token is None:
         raise RuntimeError("Could not acquire probe lease.")
     store.transition(run_id, RunState.PLANNING, owner=token)
@@ -119,6 +121,14 @@ def child(root: Path, run_id: str) -> None:
                 idempotency_key="edit-1",
             )
     else:
+        if operation_name != "delete":
+            executor.read_file(
+                run_id,
+                token,
+                "edit-read",
+                {"path": "fixture.txt"},
+                idempotency_key="edit-read",
+            )
         executor.write_file(
             run_id,
             token,
@@ -141,7 +151,7 @@ def recover(root: Path, run_id: str) -> None:
         datetime.fromisoformat(saved["lease_expires_at"]) - datetime.now(UTC)
     ).total_seconds()
     if remaining > 0:
-        time.sleep(min(remaining + 0.05, 2))
+        time.sleep(min(remaining + 0.05, 6))
     recovered = store.recover_abandoned_runs()
     saved = store.get_run(run_id)
     if os.environ.get("XAA_OWNER_RECONCILIATION") == "1":
