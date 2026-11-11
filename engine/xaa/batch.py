@@ -484,6 +484,13 @@ def execute_batch(
         content = response.content
         if not content or len(content) > MAX_TRAJECTORY_BYTES:
             raise ValueError(f"Trajectory for batch case {case.id} is empty or exceeds 10 MiB.")
+        try:
+            exported = _TrajectoryDocument.model_validate_json(content)
+        except ValidationError as exc:
+            raise ValueError(f"Trajectory for batch case {case.id} is invalid.") from exc
+        if exported.run.id != case.run_id:
+            raise ValueError(f"Trajectory for batch case {case.id} belongs to a different run.")
+        case.state = exported.run.state
         trajectory = trajectory_directory / f"{case.id}.json"
         temporary = trajectory.with_name(f".{trajectory.name}.{uuid4().hex}.tmp")
         try:

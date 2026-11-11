@@ -1,5 +1,9 @@
 # Progress
 
+## Bind batch trajectories to their requested run (2026-11-11)
+
+Batch execution now validates each downloaded trajectory envelope before persistence or scoring and rejects it unless its embedded run ID matches the durable run ID saved for that case. This prevents scoring or retaining a different run’s data as the requested case. Batch resume also adopts the exported state so a concurrent owner review between status polling and trajectory download is reflected in the checkpoint. The new mismatched-run regression and the complete batch suite pass (11 tests); Ruff, formatting, strict Pyright and `git diff --check` pass. No live model inference was used. This closes one provenance check only; broader trajectory redaction review and replay remain open.
+
 ## Keep manual acceptance runs from being cancelled (2026-11-11)
 
 Hosted source acceptance takes about 7–9 minutes and installer acceptance about 9 minutes. The prior workflow used one ref-only concurrency group with `cancel-in-progress: true`, allowing a newer push to cancel a user-dispatched installer acceptance. CI concurrency is now event-aware: normal push/pull-request runs still replace older runs of the same event/ref, while manually dispatched validation has a separate group and is allowed to finish. Workflow YAML and assertions for the concurrency expressions pass, as does `git diff --check`. A hosted follow-up will verify the configuration on GitHub Actions. No application behavior or live model testing changed.

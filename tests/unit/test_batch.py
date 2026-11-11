@@ -1,5 +1,6 @@
 import hashlib
 import json
+import json as json_module
 import sys
 from pathlib import Path
 from typing import Any, Self
@@ -29,6 +30,7 @@ class BatchClient:
         self.exports: dict[str, bytes] = {}
         self.initial_state = "completed"
         self.export_content: bytes | None = None
+        self.foreign_trajectory = False
 
     def __enter__(self) -> Self:
         return self
@@ -48,9 +50,20 @@ class BatchClient:
             }
             self.requests[request_id] = record
             self.run_states[record["id"]] = self.initial_state
-            self.exports[record["id"]] = self.export_content or json_bytes(
-                {"format": "xaa-trajectory", "objective": json["objective"]}
-            )
+            if self.export_content is None:
+                exported = {
+                    "format": "xaa-trajectory",
+                    "run": {
+                        "id": record["id"],
+                        "objective": json["objective"],
+                        "state": self.initial_state,
+                    },
+                    "events": [],
+                }
+            else:
+                exported = json_module.loads(self.export_content)
+                exported["run"]["id"] = record["id"]
+            self.exports[record["id"]] = json_bytes(exported)
         return response(record)
 
     def get(self, path: str) -> httpx.Response:
@@ -58,7 +71,12 @@ class BatchClient:
         parts = path.split("/")
         run_id = parts[2]
         if len(parts) == 4 and parts[3] == "export":
-            return response(self.exports[run_id], content=self.exports[run_id])
+            content = self.exports[run_id]
+            if self.foreign_trajectory:
+                exported = json.loads(content)
+                exported["run"]["id"] = "another-run"
+                content = json_bytes(exported)
+            return response(content, content=content)
         return response({"id": run_id, "state": self.run_states[run_id]})
 
 
@@ -162,6 +180,30 @@ def test_batch_returns_review_pending_candidate_without_timing_out(
     report = execute_batch(client, **options, resume=False)
     assert report["timed_out"] is False
     assert report["summary"] == {"verifying": 2}
+
+
+def test_batch_rejects_trajectory_for_a_different_run(workspace_tmp_path: Path) -> None:
+    input_path = workspace_tmp_path / "batch.json"
+    output_dir = workspace_tmp_path / "batch-output"
+    write_batch(input_path)
+    client = BatchClient()
+    client.foreign_trajectory = True
+
+    with pytest.raises(ValueError, match="belongs to a different run"):
+        execute_batch(
+            client,
+            input_path=input_path,
+            output_dir=output_dir,
+            model="fixture-model",
+            workspace=None,
+            mode="observe",
+            max_iterations=4,
+            max_seconds=60,
+            max_output_tokens=128,
+            timeout_seconds=1,
+            poll_interval=0.001,
+            resume=False,
+        )
 
 
 def test_batch_scores_structured_checks_against_exported_trajectory(
