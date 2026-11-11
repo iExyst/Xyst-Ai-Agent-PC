@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from binascii import crc32
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from io import BytesIO
 from math import ceil, isfinite
 from posixpath import join as join_posix
@@ -1862,6 +1863,8 @@ def _extract_xlsx_text(content: bytes) -> str:
                                 display_value = _xlsx_date_display(
                                     raw_value, number_format, date_1904=date_1904
                                 )
+                                if display_value is None:
+                                    display_value = _xlsx_numeric_display(raw_value, number_format)
                                 if display_value is not None:
                                     value = f"{value} [display: {display_value}]"
                                 format_text = number_format
@@ -2068,6 +2071,40 @@ def _xlsx_date_display(value: str, format_code: str, *, date_1904: bool) -> str 
         position = token.end()
     output.append(format_code[position:])
     return "".join(output)
+
+
+def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
+    """Render common fixed-point, grouped, currency and percentage formats."""
+    if not value or len(value) > 128:
+        return None
+    match = re.fullmatch(
+        r"(?P<currency>[$€£¥])?(?P<group>#,##0|0)(?:\.(?P<decimals>0{1,8}))?(?P<percent>%)?",
+        format_code,
+    )
+    if match is None:
+        return None
+    try:
+        number = Decimal(value)
+        if not number.is_finite():
+            return None
+        if match.group("percent"):
+            number *= 100
+        decimal_places = len(match.group("decimals") or "")
+        quantum = Decimal(1).scaleb(-decimal_places)
+        rounded = number.quantize(quantum, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return None
+
+    sign = "-" if rounded < 0 else ""
+    magnitude = abs(rounded)
+    if match.group("group") == "#,##0":
+        pattern = f",.{decimal_places}f" if decimal_places else ",.0f"
+    else:
+        pattern = f".{decimal_places}f" if decimal_places else ".0f"
+    rendered = format(magnitude, pattern)
+    currency = match.group("currency") or ""
+    percent = "%" if match.group("percent") else ""
+    return f"{sign}{currency}{rendered}{percent}"
 
 
 def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str], namespace: str) -> str:

@@ -276,10 +276,13 @@ def make_xlsx(
         archive.writestr(
             "xl/styles.xml",
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<numFmts count="2"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
-            '<numFmt numFmtId="165" formatCode="d-mmm-yy"/></numFmts>'
-            '<cellXfs count="4"><xf numFmtId="0"/><xf numFmtId="14"/>'
-            '<xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="165"/></cellXfs></styleSheet>',
+            '<numFmts count="4"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
+            '<numFmt numFmtId="165" formatCode="d-mmm-yy"/>'
+            '<numFmt numFmtId="166" formatCode="0.00%"/>'
+            '<numFmt numFmtId="167" formatCode="#,##0.00"/></numFmts>'
+            '<cellXfs count="6"><xf numFmtId="0"/><xf numFmtId="14"/>'
+            '<xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="165"/>'
+            '<xf numFmtId="166"/><xf numFmtId="167"/></cellXfs></styleSheet>',
         )
         archive.writestr(
             "xl/sharedStrings.xml",
@@ -296,7 +299,8 @@ def make_xlsx(
             "</v></c>"
             '<c r="G1" s="2"><v>12.5</v></c><c r="H1" s="3"><v>'
             f"{date_serial}"
-            "</v></c></row></sheetData></worksheet>",
+            '</v></c><c r="I1" s="4"><v>0.125</v></c>'
+            '<c r="J1" s="5"><v>1234.5</v></c></row></sheetData></worksheet>',
         )
     return output.getvalue()
 
@@ -1288,8 +1292,10 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "D1=84 [formula: =B1*2]" in result
     assert "E1=[formula: =NOW()]" in result
     assert "F1=45292 [display: 1/1/24] [number format: m/d/yy]" in result
-    assert "G1=12.5 [number format: $#,##0.00]" in result
+    assert "G1=12.5 [display: $12.50] [number format: $#,##0.00]" in result
     assert "H1=45292 [display: 1-Jan-24] [number format: d-mmm-yy]" in result
+    assert "I1=0.125 [display: 12.50%] [number format: 0.00%]" in result
+    assert "J1=1234.5 [display: 1,234.50] [number format: #,##0.00]" in result
 
 
 def test_xlsx_renders_1900_compatibility_day_and_1904_date_system():
