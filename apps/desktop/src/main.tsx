@@ -161,6 +161,7 @@ function App() {
         const saved=await client.getRun(candidate.id,controller.signal);
         if(controller.signal.aborted||selectionRevision!==runSelectionRevision.current)return;
         setRun(saved);
+        if(saved.state==='blocked')setPage('runs');
         void watch(saved);
       } catch(failure) {
         if(!controller.signal.aborted)setError(`Could not restore the latest unfinished run: ${String(failure)}`);
