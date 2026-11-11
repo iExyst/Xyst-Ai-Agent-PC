@@ -33,6 +33,7 @@ MAX_XLSX_CELLS = 10_000
 MAX_XLSX_SHARED_STRINGS = 50_000
 MAX_XLSX_XML_BYTES = 8 * 1024 * 1024
 MAX_XLSX_FORMULA_CHARS = 2048
+MAX_XLSX_FORMAT_CHARS = 128
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -350,6 +351,36 @@ def _extract_xlsx_text(content: bytes) -> str:
                 for item in relationships_root
                 if item.tag == package_namespace + "Relationship" and "Id" in item.attrib
             }
+            style_relations = [
+                relation
+                for relation in relation_targets.values()
+                if relation.get("Type", "").endswith("/styles")
+            ]
+            if len(style_relations) > 1:
+                raise ValueError("XLSX contains multiple styles relationships.")
+            number_formats: list[str | None] = [None]
+            if style_relations:
+                style_relation = style_relations[0]
+                if style_relation.get("TargetMode", "Internal") == "External":
+                    raise ValueError("External XLSX styles are not supported.")
+                style_target = style_relation.get("Target", "")
+                style_part = (
+                    style_target.lstrip("/")
+                    if style_target.startswith("/")
+                    else normpath(join_posix("xl", style_target))
+                )
+                if not style_part.startswith("xl/") or ".." in style_part.split("/"):
+                    raise ValueError("XLSX styles path escapes the workbook package.")
+                style_matches = [item for item in entries if item.filename == style_part]
+                if len(style_matches) != 1:
+                    raise ValueError("XLSX styles package part is missing or duplicated.")
+                style_info = style_matches[0]
+                if style_info.flag_bits & 1 or style_info.file_size > MAX_OOXML_PART_BYTES:
+                    raise ValueError("XLSX styles XML exceeds its extraction limit.")
+                total_xml_bytes += style_info.file_size
+                if total_xml_bytes > MAX_XLSX_XML_BYTES:
+                    raise ValueError("XLSX XML exceeds its extraction limit.")
+                number_formats = _parse_xlsx_number_formats(archive.read(style_info))
             spreadsheet_namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
             workbook_rel_namespace = (
                 "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -421,6 +452,23 @@ def _extract_xlsx_text(content: bytes) -> str:
                                 group = f" group {shared_index}" if shared_index is not None else ""
                                 formula_text = f"[formula: {formula_kind}{group}; expression not present in cell]"
                             value = f"{value} {formula_text}" if value else formula_text
+                        style_value = cell.attrib.get("s")
+                        if style_value is not None:
+                            try:
+                                style_index = int(style_value)
+                                if style_index < 0:
+                                    raise ValueError
+                                number_format = number_formats[style_index]
+                            except (ValueError, IndexError):
+                                raise ValueError("XLSX cell references an invalid style.") from None
+                            if number_format:
+                                format_text = number_format
+                                if len(format_text) > MAX_XLSX_FORMAT_CHARS:
+                                    format_text = (
+                                        format_text[:MAX_XLSX_FORMAT_CHARS] + "…[format truncated]"
+                                    )
+                                suffix = f" [number format: {format_text}]"
+                                value = f"{value}{suffix}" if value else suffix.strip()
                         if value:
                             reference = cell.attrib.get("r")
                             values.append(f"{reference}={value}" if reference else value)
@@ -461,6 +509,73 @@ def _parse_shared_strings(content: bytes) -> list[str]:
     if len(items) > MAX_XLSX_SHARED_STRINGS:
         raise ValueError(f"XLSX exceeds the {MAX_XLSX_SHARED_STRINGS}-string extraction limit.")
     return ["".join(node.text or "" for node in item.iter(namespace + "t")) for item in items]
+
+
+def _parse_xlsx_number_formats(content: bytes) -> list[str | None]:
+    root = _parse_office_xml(content, "XLSX styles")
+    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    if root.tag != namespace + "styleSheet":
+        raise ValueError("XLSX styles part has an invalid root element.")
+    format_sections = [item for item in root if item.tag == namespace + "numFmts"]
+    xfs_sections = [item for item in root if item.tag == namespace + "cellXfs"]
+    if len(format_sections) > 1 or len(xfs_sections) != 1:
+        raise ValueError("XLSX styles part has an invalid number-format table.")
+    custom_formats: dict[int, str] = {}
+    if format_sections:
+        for item in format_sections[0]:
+            if item.tag != namespace + "numFmt":
+                continue
+            try:
+                identity = int(item.attrib["numFmtId"])
+            except (KeyError, ValueError):
+                raise ValueError("XLSX styles contain an invalid custom number format.") from None
+            code = item.attrib.get("formatCode")
+            if not code or identity in custom_formats:
+                raise ValueError("XLSX styles contain a missing or duplicate number format.")
+            custom_formats[identity] = code
+    if len(xfs_sections[0]) > MAX_XLSX_CELLS:
+        raise ValueError("XLSX styles contain too many cell formats.")
+    built_in_formats = {
+        0: None,
+        1: "0",
+        2: "0.00",
+        3: "#,##0",
+        4: "#,##0.00",
+        9: "0%",
+        10: "0.00%",
+        11: "0.00E+00",
+        12: "# ?/?",
+        13: "# ??/??",
+        14: "m/d/yy",
+        15: "d-mmm-yy",
+        16: "d-mmm",
+        17: "mmm-yy",
+        18: "h:mm AM/PM",
+        19: "h:mm:ss AM/PM",
+        20: "h:mm",
+        21: "h:mm:ss",
+        22: "m/d/yy h:mm",
+        37: "#,##0 ;(#,##0)",
+        38: "#,##0 ;[Red](#,##0)",
+        39: "#,##0.00;(#,##0.00)",
+        40: "#,##0.00;[Red](#,##0.00)",
+        49: "@",
+    }
+    result: list[str | None] = []
+    for item in xfs_sections[0]:
+        if item.tag != namespace + "xf":
+            continue
+        try:
+            format_id = int(item.attrib.get("numFmtId", "0"))
+        except ValueError:
+            raise ValueError("XLSX styles contain an invalid number-format ID.") from None
+        if format_id in custom_formats:
+            result.append(custom_formats[format_id])
+        else:
+            result.append(built_in_formats.get(format_id, f"built-in format #{format_id}"))
+    if not result:
+        raise ValueError("XLSX styles contain no cell formats.")
+    return result
 
 
 def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str], namespace: str) -> str:
