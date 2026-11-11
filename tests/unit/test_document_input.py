@@ -51,6 +51,7 @@ def make_docx(
     table_cell_properties: dict[tuple[int, int], dict[str, str | None]] | None = None,
     table_row_properties: dict[int, dict[str, str | None]] | None = None,
     table_cell_properties_xml: dict[tuple[int, int], str] | None = None,
+    table_row_exceptions: dict[int, str] | None = None,
     header: str | None = None,
     footer: str | None = None,
     header_target: str = "header1.xml",
@@ -104,7 +105,8 @@ def make_docx(
                     )
                     + "</w:trPr>"
                 )
-            rows.append("<w:tr>" + row_property_xml + "".join(cells) + "</w:tr>")
+            exception_xml = (table_row_exceptions or {}).get(row_index, "")
+            rows.append("<w:tr>" + exception_xml + row_property_xml + "".join(cells) + "</w:tr>")
         table_property_parts = []
         if table_style is not None:
             table_property_parts.append(f'<w:tblStyle w:val="{table_style}"/>')
@@ -465,6 +467,81 @@ def test_docx_explicit_conditional_style_flags_take_precedence_over_mask():
     )
 
     assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" not in result
+
+
+@pytest.mark.parametrize(
+    ("table_look", "row_look", "expected"),
+    [
+        (
+            (
+                'w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" '
+                'w:noHBand="1" w:noVBand="1"'
+            ),
+            'w:firstRow="0"',
+            False,
+        ),
+        (
+            (
+                'w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" '
+                'w:noHBand="1" w:noVBand="1"'
+            ),
+            'w:firstRow="1"',
+            True,
+        ),
+    ],
+)
+def test_docx_row_table_look_exception_overrides_conditional_numbering(
+    table_look: str, row_look: str, expected: bool
+):
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Header action"], ["Body action"]],
+            table_style="ActionTable",
+            table_look=table_look,
+            table_row_exceptions={0: f"<w:tblPrEx><w:tblLook {row_look}/></w:tblPrEx>"},
+            numbering_xml=make_numbering_xml({4: "decimal"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    header_has_number = (
+        "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" in result
+    )
+    assert header_has_number is expected
+
+
+def test_docx_nonconditional_row_property_exception_keeps_table_look():
+    result = extract_document_text(
+        make_docx(
+            [],
+            table=[["Header action"]],
+            table_style="ActionTable",
+            table_look=(
+                'w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" '
+                'w:noHBand="1" w:noVBand="1"'
+            ),
+            table_row_exceptions={0: "<w:tblPrEx><w:tblBorders/></w:tblPrEx>"},
+            numbering_xml=make_numbering_xml({4: "decimal"}),
+            styles_xml=(
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:style w:type="table" w:styleId="ActionTable">'
+                '<w:tblStylePr w:type="firstRow"><w:pPr><w:numPr>'
+                '<w:numId w:val="4"/></w:numPr></w:pPr></w:tblStylePr>'
+                "</w:style></w:styles>"
+            ),
+        ),
+        DOCX_TYPE,
+    )
+
+    assert "[List decimal, level 1, marker %1.; numbered marker 1.] Header action" in result
 
 
 def test_reads_docx_table_look_legacy_bitmask():

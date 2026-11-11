@@ -498,24 +498,6 @@ def _extract_docx_text(content: bytes) -> str:
                         table_rules = table_style_numbering.get(table_style_id, {})
 
                 rows = [child for child in item if child.tag == namespace + "tr"]
-                if table_rules.keys() & {
-                    "firstRow",
-                    "lastRow",
-                    "firstCol",
-                    "lastCol",
-                    "band1Horz",
-                    "band2Horz",
-                    "band1Vert",
-                    "band2Vert",
-                    "nwCell",
-                    "neCell",
-                    "swCell",
-                    "seCell",
-                } and any(node.tag == namespace + "tblPrEx" for row in rows for node in row.iter()):
-                    raise ValueError(
-                        "DOCX table conditional numbering with row property exceptions is unsupported."
-                    )
-
                 cnf_attribute_flags = {
                     "firstRow": "firstRow",
                     "lastRow": "lastRow",
@@ -621,19 +603,23 @@ def _extract_docx_text(content: bytes) -> str:
                         return False
                     raise ValueError(f"DOCX table contains an invalid {label} setting.")
 
-                if look_elements:
-                    look = look_elements[0]
-                    specified = [
-                        name for name in look_attributes if namespace + name in look.attrib
-                    ]
-                    if specified:
-                        enabled = {
-                            target: on_off(look.attrib[namespace + source], source)
-                            for source, target in look_attributes.items()
-                            if namespace + source in look.attrib
-                        }
-                    else:
-                        raw_mask = look.attrib.get(namespace + "val", "0000")
+                def parse_table_look(
+                    look: ElementTree.Element | None,
+                    *,
+                    attributes: dict[str, str] = look_attributes,
+                    xml_namespace: str = namespace,
+                ) -> dict[str, bool]:
+                    if look is not None:
+                        specified = [
+                            name for name in attributes if xml_namespace + name in look.attrib
+                        ]
+                        if specified:
+                            return {
+                                target: on_off(look.attrib[xml_namespace + source], source)
+                                for source, target in attributes.items()
+                                if xml_namespace + source in look.attrib
+                            }
+                        raw_mask = look.attrib.get(xml_namespace + "val", "0000")
                         if (
                             not raw_mask
                             or len(raw_mask) > 4
@@ -641,7 +627,7 @@ def _extract_docx_text(content: bytes) -> str:
                         ):
                             raise ValueError("DOCX table contains an invalid style bitmask.")
                         mask = int(raw_mask, 16)
-                        enabled = {
+                        return {
                             "firstRow": bool(mask & 0x0020),
                             "lastRow": bool(mask & 0x0040),
                             "firstCol": bool(mask & 0x0080),
@@ -649,10 +635,9 @@ def _extract_docx_text(content: bytes) -> str:
                             "noHBand": bool(mask & 0x0200),
                             "noVBand": bool(mask & 0x0400),
                         }
-                else:
                     # Word's default look mask enables first row/column and row banding.
                     mask = 0x04A0
-                    enabled = {
+                    return {
                         "firstRow": bool(mask & 0x0020),
                         "lastRow": bool(mask & 0x0040),
                         "firstCol": bool(mask & 0x0080),
@@ -660,6 +645,8 @@ def _extract_docx_text(content: bytes) -> str:
                         "noHBand": bool(mask & 0x0200),
                         "noVBand": bool(mask & 0x0400),
                     }
+
+                enabled = parse_table_look(look_elements[0] if look_elements else None)
 
                 row_band_size = table_rules.get("__rowBandSize", 1)
                 column_band_size = table_rules.get("__columnBandSize", 1)
@@ -769,35 +756,50 @@ def _extract_docx_text(content: bytes) -> str:
                     cells: list[str] = []
                     column_index = grid_offset(row, "gridBefore")
                     row_flags = property_conditional_flags(row, "trPr")
+                    row_exceptions = [child for child in row if child.tag == namespace + "tblPrEx"]
+                    if len(row_exceptions) > 1:
+                        raise ValueError("DOCX table row contains duplicate property exceptions.")
+                    row_look_elements = (
+                        [child for child in row_exceptions[0] if child.tag == namespace + "tblLook"]
+                        if row_exceptions
+                        else []
+                    )
+                    if len(row_look_elements) > 1:
+                        raise ValueError(
+                            "DOCX table row exception contains duplicate conditional style settings."
+                        )
+                    row_enabled = (
+                        parse_table_look(row_look_elements[0]) if row_look_elements else enabled
+                    )
                     for cell in (child for child in row if child.tag == namespace + "tc"):
                         span = cell_span(cell)
                         final_column = column_index + span - 1
                         cell_number_id = active_table_number_id
                         conditions: list[str] = []
-                        first_row = enabled.get("firstRow", False) and row_index == 0
-                        last_row = enabled.get("lastRow", False) and row_index == len(rows) - 1
-                        first_column = enabled.get("firstCol", False) and column_index == 0
+                        first_row = row_enabled.get("firstRow", False) and row_index == 0
+                        last_row = row_enabled.get("lastRow", False) and row_index == len(rows) - 1
+                        first_column = row_enabled.get("firstCol", False) and column_index == 0
                         last_column = (
-                            enabled.get("lastCol", False)
+                            row_enabled.get("lastCol", False)
                             and column_count > 0
                             and final_column == column_count - 1
                         )
                         if (
-                            not enabled.get("noHBand", False)
+                            not row_enabled.get("noHBand", False)
                             and row_band_size > 0
                             and not first_row
                             and not last_row
                         ):
-                            band_index = row_index - int(enabled.get("firstRow", False))
+                            band_index = row_index - int(row_enabled.get("firstRow", False))
                             band = (band_index // row_band_size) % 2
                             conditions.append("band1Horz" if band == 0 else "band2Horz")
                         if (
-                            not enabled.get("noVBand", False)
+                            not row_enabled.get("noVBand", False)
                             and column_band_size > 0
                             and not first_column
                             and not last_column
                         ):
-                            band_index = column_index - int(enabled.get("firstCol", False))
+                            band_index = column_index - int(row_enabled.get("firstCol", False))
                             band = (band_index // column_band_size) % 2
                             conditions.append("band1Vert" if band == 0 else "band2Vert")
                         if first_column:
