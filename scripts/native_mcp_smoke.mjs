@@ -8,6 +8,18 @@ import path from 'node:path';
 const root = path.resolve('.acceptance', randomUUID());
 await mkdir(root, { recursive: true });
 await writeFile(path.join(root, 'desktop-settings.json'), JSON.stringify({ close_behavior: 'exit_on_close' }));
+
+async function removeMcpServer(page, button) {
+  const deletion = page.waitForResponse((response) => {
+    const pathname = new URL(response.url()).pathname;
+    return pathname.startsWith('/mcp/servers/') && response.request().method() === 'DELETE';
+  });
+  await button.click();
+  const response = await deletion;
+  if (response.status() !== 204) {
+    throw new Error(`MCP server removal returned HTTP ${response.status()}.`);
+  }
+}
 const stage = process.env.XAA_NATIVE_STAGE || 'native-dev';
 if (!['native-dev', 'native-release'].includes(stage)) throw new Error(`Unsupported native stage: ${stage}`);
 const stageRoot = path.resolve('build', stage);
@@ -209,7 +221,7 @@ try {
   const disconnected = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
   if (disconnected[0].state !== 'disconnected') throw new Error('The native MCP server did not disconnect.');
   await page.screenshot({ path: path.join(root, 'native-mcp.png'), fullPage: true });
-  await panel.getByRole('button', { name: 'Remove server', exact: true }).click();
+  await removeMcpServer(page, panel.getByRole('button', { name: 'Remove server', exact: true }));
   if ((await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json()).length !== 0) {
     throw new Error('The native MCP fixture configuration was not removed.');
   }
@@ -256,7 +268,7 @@ try {
   await expect(plugins.getByRole('alert')).toContainText('Remove this package\'s MCP integrations before uninstalling it.');
   const retainedPackage = await (await fetch(`${connection.base_url}/extensions/packages/installed`, { headers })).json();
   if (!retainedPackage.packages.some((item) => item.name === packageName)) throw new Error('The native UI removed a referenced package.');
-  await packageServer.getByRole('button', { name: 'Remove server' }).click();
+  await removeMcpServer(page, packageServer.getByRole('button', { name: 'Remove server' }));
   page.once('dialog', (dialog) => void dialog.accept());
   await packageCard.getByRole('button', { name: `Remove ${packageName}` }).click();
   await expect(plugins.getByRole('status')).toContainText('Imported skill versions and package data were kept');
@@ -335,7 +347,7 @@ try {
   if (oauthServer?.oauth_configured || oauthServer.state !== 'disconnected') {
     throw new Error(`Native OAuth clear-sign-in left unexpected state: ${JSON.stringify(oauthServer)}`);
   }
-  await oauthArticle.getByRole('button', { name: 'Remove server', exact: true }).click();
+  await removeMcpServer(page, oauthArticle.getByRole('button', { name: 'Remove server', exact: true }));
   await writeFile(path.join(root, 'oauth-fixture.log'), fixtureOutput);
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' })).catch(() => {});
   for (let attempt = 0; attempt < 60 && proc.exitCode === null; attempt += 1) {
