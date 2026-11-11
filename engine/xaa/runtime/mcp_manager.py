@@ -228,15 +228,13 @@ class MCPManager:
         source_error = self._plugin_source_error(server)
         if source_error is not None:
             async with self._lock:
-                previous = self._connected.pop(server_id, None)
-                if previous is not None:
-                    await previous.close()
+                if not await self._close_connection_locked(server_id):
+                    raise MCPConnectionError(self._errors[server_id])
                 self._errors[server_id] = source_error
             raise MCPConnectionError(source_error)
         async with self._lock:
-            previous = self._connected.pop(server_id, None)
-            if previous is not None:
-                await previous.close()
+            if not await self._close_connection_locked(server_id):
+                raise MCPConnectionError(self._errors[server_id])
             self._errors.pop(server_id, None)
             ready: asyncio.Future[tuple[_ConnectedServer, list[MCPToolRecord]]] = (
                 asyncio.get_running_loop().create_future()
@@ -402,23 +400,34 @@ class MCPManager:
 
     async def disconnect_server(self, server_id: str) -> bool:
         async with self._lock:
-            connection = self._connected.pop(server_id, None)
-            if connection is None:
-                return False
-            try:
-                await connection.close()
-            except BaseException as error:
-                if isinstance(error, asyncio.CancelledError):
-                    raise
-                self._errors[server_id] = "The MCP server did not shut down cleanly."
-                return False
-            self._errors.pop(server_id, None)
+            return await self._close_connection_locked(server_id)
+
+    async def _close_connection_locked(self, server_id: str) -> bool:
+        """Close an owned transport before removing its live connection record.
+
+        The caller holds ``_lock``. On failure, retain the record so tools remain
+        unavailable and later disconnect/delete attempts can retry cleanup.
+        """
+        connection = self._connected.get(server_id)
+        if connection is None:
             return True
+        try:
+            await connection.close()
+        except BaseException as error:
+            if isinstance(error, asyncio.CancelledError):
+                raise
+            self._errors[server_id] = "The MCP server did not shut down cleanly."
+            return False
+        if self._connected.get(server_id) is connection:
+            self._connected.pop(server_id, None)
+        self._errors.pop(server_id, None)
+        return True
 
     async def delete_server(self, server_id: str) -> bool:
-        await self.disconnect_server(server_id)
         server = self.registry.get_server(server_id)
         if server is None:
+            return False
+        if not await self.disconnect_server(server_id):
             return False
         if self.credential_store is not None:
             for name in server.secret_env:
@@ -443,11 +452,15 @@ class MCPManager:
     def server_status(
         self, server_id: str
     ) -> tuple[Literal["connected", "disconnected", "error"], str | None]:
-        if server_id in self._connected:
-            return "connected", None
         if server_id in self._errors:
             return "error", self._errors[server_id]
+        if server_id in self._connected:
+            return "connected", None
         return "disconnected", None
+
+    def connection_present(self, server_id: str) -> bool:
+        """Report whether a transport still needs confirmed shutdown."""
+        return server_id in self._connected
 
     async def list_prompts(self, server_id: str) -> list[dict[str, Any]]:
         connection = self._connected.get(server_id)
@@ -1005,6 +1018,8 @@ class MCPManager:
     def tools_for_run(self, approved_write_tools: set[str]) -> list[dict[str, Any]]:
         available: list[dict[str, Any]] = []
         for tool_record in self.registry.list_tools():
+            if tool_record.server_id in self._errors:
+                continue
             connection = self._connected.get(tool_record.server_id)
             server_tool = connection.tools.get(tool_record.name) if connection else None
             if server_tool is None or server_tool.schema_sha256 != tool_record.schema_sha256:

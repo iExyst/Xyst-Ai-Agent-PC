@@ -216,6 +216,54 @@ async def test_owner_reconnects_after_live_stdio_transport_loss(
         await manager.close()
 
 
+@pytest.mark.asyncio
+async def test_failed_disconnect_retains_integration_and_vault_credentials(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(workspace_tmp_path / "mcp-shutdown-failure.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Shutdown failure fixture",
+            command=sys.executable,
+            args=[str(FIXTURE)],
+            secret_env=["API_TOKEN"],
+        )
+    )
+    credentials = MemoryCredentials()
+    credentials.set("fixture-secret", f"mcp:{server.id}:API_TOKEN")
+    manager = MCPManager(store, credentials)  # type: ignore[arg-type]
+    try:
+        tools = await manager.connect_server(server.id)
+        add = next(tool for tool in tools if tool.name == "add")
+        registry.set_permission(server.id, add.name, "read", add.schema_sha256)
+        connection = manager._connected[server.id]
+
+        async def fail_close() -> None:
+            raise OSError("fixture shutdown failure")
+
+        monkeypatch.setattr(connection, "close", fail_close)
+        assert not await manager.disconnect_server(server.id)
+        assert manager.connection_present(server.id)
+        assert manager.server_status(server.id) == (
+            "error",
+            "The MCP server did not shut down cleanly.",
+        )
+        assert manager.tools_for_run(set()) == []
+        assert not await manager.delete_server(server.id)
+        assert registry.get_server(server.id) is not None
+        assert credentials.get(f"mcp:{server.id}:API_TOKEN") == "fixture-secret"
+
+        monkeypatch.undo()
+        assert await manager.disconnect_server(server.id)
+        assert not manager.connection_present(server.id)
+        assert await manager.delete_server(server.id)
+        assert registry.get_server(server.id) is None
+        assert credentials.get(f"mcp:{server.id}:API_TOKEN") is None
+    finally:
+        await manager.close()
+
+
 class MemoryCredentials:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
@@ -262,6 +310,39 @@ def test_mcp_structured_output_is_checked_against_declared_schema():
 
     with pytest.raises(MCPConnectionError, match="output schema exceeded"):
         _validate_output_schema({"type": "object", "description": "x" * MCP_RESULT_BYTES})
+
+
+def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(workspace_tmp_path / "mcp-api-shutdown-failure.sqlite3")
+    credentials = MemoryCredentials()
+
+    async def fail_disconnect(_manager: MCPManager, _server_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(MCPManager, "disconnect_server", fail_disconnect)
+    monkeypatch.setattr(MCPManager, "connection_present", lambda _manager, _server_id: True)
+    app = create_app(
+        LMStudioProvider(), SecretStr(TOKEN), store=store, credential_store=credentials
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={"name": "Shutdown failure", "command": sys.executable, "secret_env": ["TOKEN"]},
+        )
+        assert created.status_code == 201
+        server_id = created.json()["id"]
+        credentials.set("preserve-me", f"mcp:{server_id}:TOKEN")
+
+        disconnected = client.post(f"/mcp/servers/{server_id}/disconnect", headers=headers)
+        assert disconnected.status_code == 503
+        deleted = client.delete(f"/mcp/servers/{server_id}", headers=headers)
+        assert deleted.status_code == 503
+        assert MCPRegistry(store).get_server(server_id) is not None
+        assert credentials.get(f"mcp:{server_id}:TOKEN") == "preserve-me"
 
 
 @pytest.mark.asyncio

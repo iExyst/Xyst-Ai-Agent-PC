@@ -1103,8 +1103,13 @@ def create_app(
 
     @app.delete("/mcp/servers/{server_id}", status_code=204)
     async def delete_mcp_server(server_id: str, _: None = Depends(authenticate)) -> Response:
-        if not await mcp_manager.delete_server(server_id):
+        if MCPRegistry(run_store).get_server(server_id) is None:
             raise HTTPException(status_code=404, detail="MCP server not found.")
+        if not await mcp_manager.delete_server(server_id):
+            raise HTTPException(
+                status_code=503,
+                detail="Could not confirm MCP server shutdown; its integration and credentials were retained.",
+            )
         return Response(status_code=204)
 
     @app.delete("/mcp/servers/{server_id}/oauth")
@@ -1113,8 +1118,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="MCP server not found.")
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
-        state, _error = mcp_manager.server_status(server_id)
-        if state == "connected" and not await mcp_manager.disconnect_server(server_id):
+        if mcp_manager.connection_present(server_id) and not await mcp_manager.disconnect_server(
+            server_id
+        ):
             raise HTTPException(status_code=503, detail="Could not disconnect the MCP server.")
         credential_store.delete(f"mcp:{server_id}:oauth-tokens")
         credential_store.delete(f"mcp:{server_id}:oauth-client")
@@ -1136,7 +1142,11 @@ def create_app(
     ) -> dict[str, str]:
         if MCPRegistry(run_store).get_server(server_id) is None:
             raise HTTPException(status_code=404, detail="MCP server not found.")
-        await mcp_manager.disconnect_server(server_id)
+        if not await mcp_manager.disconnect_server(server_id):
+            raise HTTPException(
+                status_code=503,
+                detail="Could not confirm MCP server shutdown; the connection remains blocked from tools.",
+            )
         return {"state": "disconnected"}
 
     @app.post("/mcp/servers/{server_id}/resources")
