@@ -5,7 +5,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   let summary:any;const versions:any[]=[];const runSubmissions:any[]=[];let runAttempts=0;
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
-    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,DELETE,OPTIONS'};
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     expect(request.headers()['authorization']).toBe('Bearer '+'x'.repeat(32));
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -21,6 +21,10 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
     if(path.endsWith('/export'))return route.fulfill({status:200,body:Buffer.from('mock zip'),contentType:'application/zip',headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path.startsWith('/skills')){
+      if(path.endsWith('/pin')&&request.method()==='PUT'){
+        summary.pinned=request.postDataJSON().pinned;
+        return route.fulfill({json:summary,headers});
+      }
       if(path.endsWith('/lifecycle'))return route.fulfill({json:[],headers});
       if(path.endsWith('/trials'))return route.fulfill({json:[{id:'trial-a',objective:'ASCII case',created_at:'2026-11-04T00:00:00Z'},{id:'trial-b',objective:'Unicode case',created_at:'2026-11-04T00:00:00Z'}],headers});
       if(path.endsWith('/evaluations')){
@@ -35,7 +39,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
         const body=request.postDataJSON();
         if(summary)expect(body.expected_version).toBe(versions.length);
         versions.push({skill_id:'procedure-1',version:versions.length+1,content:body.content,description:body.description,category:body.category,required_tools:body.required_tools,required_permissions:body.required_permissions,evaluation_evidence:{state:'candidate',provenance:'user',evaluations:[]},created_at:'2026-11-04T00:00:00Z'});
-        summary={id:'procedure-1',name:body.name,lifecycle_state:'candidate',active_version:null,lifecycle_revision:0,latest_version:versions.length,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
+        summary={id:'procedure-1',name:body.name,lifecycle_state:'candidate',pinned:false,active_version:null,lifecycle_revision:0,latest_version:versions.length,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
         return route.fulfill({status:201,json:summary,headers});
       }
       if(path.includes('/versions/'))return route.fulfill({json:versions[Number(path.split('/').at(-1))-1],headers});
@@ -58,6 +62,11 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   expect(versions[0].category).toBe('engineering');
   await expect(panel.getByRole('button',{name:'Inspect Inspect safely',exact:true})).toBeVisible();
   await expect(panel.getByText('Draft reusable procedures here.',{exact:false})).toContainText('evaluation trial');
+  await panel.getByRole('button',{name:'Pin procedure',exact:true}).click();
+  await expect(panel.getByRole('button',{name:'Unpin procedure',exact:true})).toBeVisible();
+  await expect(panel.getByRole('button',{name:'Delete procedure and all versions',exact:true})).toBeDisabled();
+  await panel.getByRole('button',{name:'Unpin procedure',exact:true}).click();
+  await expect(panel.getByRole('button',{name:'Delete procedure and all versions',exact:true})).toBeEnabled();
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeEnabled();
   await panel.getByRole('textbox',{name:'Procedure text',exact:true}).fill('Revised procedure.');
   await panel.getByRole('button',{name:'Save new procedure version',exact:true}).click();

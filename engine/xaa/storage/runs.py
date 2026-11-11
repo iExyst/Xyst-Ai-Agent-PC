@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 26
+DATABASE_SCHEMA_VERSION = 27
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -446,6 +446,11 @@ class RunStore:
                     payload TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(skill_id, sequence)
+                );
+                CREATE TABLE IF NOT EXISTS skill_pins (
+                    skill_id TEXT PRIMARY KEY REFERENCES skills(id) ON DELETE CASCADE,
+                    actor TEXT NOT NULL CHECK(actor='local-user'),
+                    created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS schedules (
                     id TEXT PRIMARY KEY,

@@ -413,6 +413,7 @@ export class EngineClient {
   evaluateSkill(id:string,version:number,review:components['schemas']['SkillEvaluation']): Promise<components['schemas']['SkillVersion']> { return this.#request(`/skills/${encodeURIComponent(id)}/versions/${version}/evaluations`,{method:'POST',body:JSON.stringify(review)}); }
   skillLifecycle(id:string): Promise<components['schemas']['SkillLifecycleEvent'][]> { return this.#request(`/skills/${encodeURIComponent(id)}/lifecycle`); }
   decideSkillLifecycle(id:string,decision:components['schemas']['SkillLifecycleDecision']): Promise<components['schemas']['SkillSummary']> { return this.#request(`/skills/${encodeURIComponent(id)}/lifecycle`,{method:'POST',body:JSON.stringify(decision)}); }
+  setSkillPinned(id:string,pinned:boolean):Promise<components['schemas']['SkillSummary']>{return this.#request(`/skills/${encodeURIComponent(id)}/pin`,{method:'PUT',body:JSON.stringify({pinned})});}
   deleteSkill(id:string): Promise<void> { return this.#request(`/skills/${encodeURIComponent(id)}`,{method:'DELETE'}); }
 
   memories(query = ''): Promise<Memory[]> { return this.#request(`/memory?q=${encodeURIComponent(query)}`); }

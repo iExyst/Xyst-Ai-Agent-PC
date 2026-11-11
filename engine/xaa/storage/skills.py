@@ -421,6 +421,7 @@ class SkillSummary(BaseModel):
     description: str = Field(default="", max_length=1024)
     category: str = Field(default="", max_length=64)
     lifecycle_state: Literal["candidate", "evaluated", "active", "deprecated"]
+    pinned: bool
     active_version: int | None
     lifecycle_revision: int
     latest_version: int
@@ -520,6 +521,11 @@ class SkillLifecycleDecision(BaseModel):
         if (self.action == "deprecate") != (self.target_version is None):
             raise ValueError("Activation/rollback need a target; deprecation does not.")
         return self
+
+
+class SkillPinDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    pinned: bool
 
 
 class SkillLifecycleEvent(BaseModel):
@@ -1388,12 +1394,15 @@ class SkillStore:
 
     def list(self) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:
-            return [
+            rows = [
                 dict(row)
                 for row in connection.execute(
-                    "SELECT skills.*,MAX(skill_versions.version) AS latest_version,(SELECT COALESCE(MAX(sequence),0) FROM skill_lifecycle_events WHERE skill_id=skills.id) AS lifecycle_revision,(SELECT COALESCE(json_extract(v.evaluation_evidence,'$.description'),'') FROM skill_versions v WHERE v.skill_id=skills.id AND v.version=COALESCE(skills.active_version,(SELECT MAX(active.version) FROM skill_versions active WHERE active.skill_id=skills.id))) AS description,(SELECT COALESCE(json_extract(v.evaluation_evidence,'$.category'),'') FROM skill_versions v WHERE v.skill_id=skills.id AND v.version=COALESCE(skills.active_version,(SELECT MAX(active.version) FROM skill_versions active WHERE active.skill_id=skills.id))) AS category FROM skills JOIN skill_versions ON skills.id=skill_versions.skill_id GROUP BY skills.id ORDER BY skills.updated_at DESC,skills.id LIMIT 100"
+                    "SELECT skills.*,EXISTS(SELECT 1 FROM skill_pins p WHERE p.skill_id=skills.id) AS pinned,MAX(skill_versions.version) AS latest_version,(SELECT COALESCE(MAX(sequence),0) FROM skill_lifecycle_events WHERE skill_id=skills.id) AS lifecycle_revision,(SELECT COALESCE(json_extract(v.evaluation_evidence,'$.description'),'') FROM skill_versions v WHERE v.skill_id=skills.id AND v.version=COALESCE(skills.active_version,(SELECT MAX(active.version) FROM skill_versions active WHERE active.skill_id=skills.id))) AS description,(SELECT COALESCE(json_extract(v.evaluation_evidence,'$.category'),'') FROM skill_versions v WHERE v.skill_id=skills.id AND v.version=COALESCE(skills.active_version,(SELECT MAX(active.version) FROM skill_versions active WHERE active.skill_id=skills.id))) AS category FROM skills JOIN skill_versions ON skills.id=skill_versions.skill_id GROUP BY skills.id ORDER BY skills.updated_at DESC,skills.id LIMIT 100"
                 )
             ]
+        for row in rows:
+            row["pinned"] = bool(row["pinned"])
+        return rows
 
     def catalog(
         self,
@@ -1474,6 +1483,23 @@ class SkillStore:
         if row is None:
             raise KeyError(identity)
         return row
+
+    def set_pinned(self, identity: str, decision: SkillPinDecision) -> dict[str, Any]:
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if (
+                connection.execute("SELECT 1 FROM skills WHERE id=?", (identity,)).fetchone()
+                is None
+            ):
+                raise KeyError(identity)
+            if decision.pinned:
+                connection.execute(
+                    "INSERT OR IGNORE INTO skill_pins(skill_id,actor,created_at) VALUES(?,?,?)",
+                    (identity, "local-user", utc_now()),
+                )
+            else:
+                connection.execute("DELETE FROM skill_pins WHERE skill_id=?", (identity,))
+        return self.get(identity)
 
     def version(self, identity: str, version: int) -> dict[str, Any]:
         if not 1 <= version <= 128:
@@ -1769,6 +1795,13 @@ class SkillStore:
             active = connection.execute(
                 "SELECT active_version FROM skills WHERE id=?", (identity,)
             ).fetchone()
+            if (
+                connection.execute(
+                    "SELECT 1 FROM skill_pins WHERE skill_id=?", (identity,)
+                ).fetchone()
+                is not None
+            ):
+                raise SkillConflict("Unpin the procedure before deleting it.")
             if active is not None and active[0] is not None:
                 raise SkillConflict("Deprecate the procedure before deleting its active version.")
             if (

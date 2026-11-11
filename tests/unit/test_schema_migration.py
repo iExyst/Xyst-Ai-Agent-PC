@@ -114,6 +114,25 @@ def test_schema_twenty_five_adds_specialist_input_and_output_contracts(workspace
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
+def test_schema_twenty_six_adds_owner_pinned_procedure_guard(workspace_tmp_path):
+    from test_skill_evaluations import draft
+    from xaa.storage.skills import SkillStore
+
+    database = workspace_tmp_path / "schema-twenty-six.sqlite3"
+    store = RunStore(database)
+    skill = SkillStore(store).create(draft())
+    with store.connection() as connection:
+        connection.execute("DROP TABLE skill_pins")
+        connection.execute("PRAGMA user_version=26")
+
+    migrated = RunStore(database)
+    skills = SkillStore(migrated)
+    assert skills.get(skill["id"])["pinned"] is False
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_schema_thirteen_adds_durable_cli_chat_session_configuration(workspace_tmp_path):
     database = workspace_tmp_path / "schema-thirteen.sqlite3"
     store = RunStore(database)

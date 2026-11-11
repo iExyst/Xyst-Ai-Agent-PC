@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 test('suggests an active procedure but waits for explicit selection',async({page})=>{
-  const active={id:'active-procedure',name:'Summarize Test Reports',description:'Summarize engineering test evidence',category:'testing',lifecycle_state:'active',active_version:2,lifecycle_revision:1,latest_version:3,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
+  const active={id:'active-procedure',name:'Summarize Test Reports',description:'Summarize engineering test evidence',category:'testing',lifecycle_state:'active',pinned:false,active_version:2,lifecycle_revision:1,latest_version:3,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
   const candidate={...active,id:'candidate-procedure',lifecycle_state:'candidate',active_version:null};
   const versions=[{skill_id:active.id,version:2,content:'Read tests and summarize evidence.',description:active.description,category:active.category,required_tools:[],required_permissions:['workspace.read'],evaluation_evidence:{state:'evaluated',provenance:'user',evaluations:[]},created_at:active.created_at}];
   let runSubmissions=0;

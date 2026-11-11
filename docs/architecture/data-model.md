@@ -27,3 +27,5 @@ Large artifact bodies are held in managed storage; SQLite stores metadata. Secre
 Schema version 3 adds `conversation_fts`, a derived FTS5 index synchronized with run objectives and public assistant text in run events. See `../releases/database-migrations.md` for backfill, deletion, privacy boundaries and downgrade behavior.
 
 Schema version 4 adds skill_lifecycle_events for explicit activation/upgrade/rollback/deprecation decisions. Monotonic revisions prevent stale decisions after an active pointer returns to an earlier version. The active pointer remains on the skills entry; immutable run snapshots remain independent of future library actions.
+
+SQLite schema version 27 adds `skill_pins`, a local-user pin record for each protected procedure. Pin state is independent of content versions and lifecycle decisions. Deletion checks the pin in its write transaction; explicit unpinning is required before deletion.

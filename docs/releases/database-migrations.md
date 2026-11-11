@@ -1,6 +1,6 @@
 # Database migration procedure
 
-The current engine uses SQLite `user_version=22` (`DATABASE_SCHEMA_VERSION` in `engine/xaa/storage/runs.py`). On startup it refuses databases with a newer version. Older executable builds refuse a migrated database beyond their supported version; downgrading an executable does not downgrade user data.
+The current engine uses SQLite `user_version=27` (`DATABASE_SCHEMA_VERSION` in `engine/xaa/storage/runs.py`). On startup it refuses databases with a newer version. Older executable builds refuse a migrated database beyond their supported version; downgrading an executable does not downgrade user data.
 
 Before upgrading an existing installation, create and verify a portable `.xaa-backup` bundle so the SQLite snapshot and referenced managed artifact bytes stay together. The legacy database-only restore is metadata-only and still requires its matching artifact directory. Do not copy a live WAL database's main file alone; close the engine or use SQLite's backup API to capture committed WAL contents.
 
@@ -9,6 +9,8 @@ Version 1 to 2 separates internal tool journal keys from provider call IDs. Exis
 The portable `.xaa-backup` restore accepts schema version 1 or the current schema version and publishes into a new destination, refusing to overwrite an existing directory. Opening an older supported snapshot with the current engine applies the documented additive migrations. Preserve the original snapshot if rollback to an older executable is required.
 
 Automated tests cover legacy event replay, approval foreign-key preservation, migration of a restored backup, repeated provider IDs across runs, within-run ID rejection and refusal to reset a future database version. Focused migration coverage includes schema 14's MCP transport columns, schema 16's specialist identity snapshot, schema 17's email tables/cursor columns, and schemas 20 and 21's channel identity-link structures. The installer upgrade fixture is structurally downgraded to schema 18 before the current package opens it; the migrated database is checked for run/event/artifact preservation, integrity and foreign keys. These tests do not prove migration of every historical user database or a clean-machine recovery guarantee.
+
+Schema 26 to 27 creates `skill_pins`, keyed to a procedure and owned by the local user. Existing procedures migrate as unpinned. The foreign key removes pin state only when the procedure itself is deliberately deleted after passing the owner pin guard. Migration tests verify legacy schema upgrade and foreign-key integrity.
 
 Version 2 to 3 adds the FTS5 `conversation_fts` derived index and synchronization triggers. It backfills run objectives and the first 65536 characters of public parent/specialist assistant text. It excludes reasoning fields, tool arguments/results and other event payloads. Original journal rows remain byte-for-byte unchanged. The backfill and version advance commit together; an interrupted migration can safely rebuild the derived index on retry. Insert/update/delete triggers maintain the index, and run deletion clears all its entries. Version-2 executables refuse version-3 data. The current SQLite runtime must include FTS5; failures surface at startup rather than silently disabling search.
 

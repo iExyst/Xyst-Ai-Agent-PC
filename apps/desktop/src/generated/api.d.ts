@@ -1826,6 +1826,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Skill Pin */
+        put: operations["set_skill_pin_skills__skill_id__pin_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions": {
         parameters: {
             query?: never;
@@ -3627,6 +3644,11 @@ export interface components {
             /** To Version */
             to_version: number | null;
         };
+        /** SkillPinDecision */
+        SkillPinDecision: {
+            /** Pinned */
+            pinned: boolean;
+        };
         /** SkillRevision */
         SkillRevision: {
             /** Assets */
@@ -3684,6 +3706,8 @@ export interface components {
             lifecycle_state: "candidate" | "evaluated" | "active" | "deprecated";
             /** Name */
             name: string;
+            /** Pinned */
+            pinned: boolean;
             /**
              * Updated At
              * Format: date-time
@@ -8023,6 +8047,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SkillLifecycleDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_skill_pin_skills__skill_id__pin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPinDecision"];
             };
         };
         responses: {

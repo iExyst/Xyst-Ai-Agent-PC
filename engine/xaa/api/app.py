@@ -123,6 +123,7 @@ from xaa.storage.skills import (
     SkillEvaluation,
     SkillLifecycleDecision,
     SkillLifecycleEvent,
+    SkillPinDecision,
     SkillRevision,
     SkillStore,
     SkillSummary,
@@ -1428,6 +1429,15 @@ def create_app(
             raise HTTPException(status_code=404, detail="Procedure not found.") from None
         except SkillConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.put("/skills/{skill_id}/pin", response_model=SkillSummary)
+    def set_skill_pin(
+        skill_id: str, payload: SkillPinDecision, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        try:
+            return skill_store.set_pinned(skill_id, payload)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure not found.") from None
 
     @app.delete("/skills/{skill_id}", status_code=204)
     def delete_skill(skill_id: str, _: None = Depends(authenticate)) -> Response:

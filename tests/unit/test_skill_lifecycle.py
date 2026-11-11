@@ -7,7 +7,13 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
-from xaa.storage.skills import SkillConflict, SkillLifecycleDecision, SkillRevision, SkillStore
+from xaa.storage.skills import (
+    SkillConflict,
+    SkillLifecycleDecision,
+    SkillPinDecision,
+    SkillRevision,
+    SkillStore,
+)
 
 
 def decision(summary, action, target=None):
@@ -155,6 +161,42 @@ async def test_lifecycle_api_is_authenticated_and_active_delete_is_conflict(work
         )
         assert selected.status_code == 201
         assert selected.json()["procedure_trial"]["purpose"] == "active_use"
+
+        pin_url = f"/skills/{skill['id']}/pin"
+        assert client.put(pin_url, json={"pinned": True}).status_code == 401
+        pinned = client.put(pin_url, headers=headers, json={"pinned": True})
+        assert pinned.status_code == 200 and pinned.json()["pinned"] is True
+        assert client.delete(f"/skills/{skill['id']}", headers=headers).status_code == 409
+        unpinned = client.put(pin_url, headers=headers, json={"pinned": False})
+        assert unpinned.status_code == 200 and unpinned.json()["pinned"] is False
+
+
+def test_pinned_procedure_cannot_be_deleted_until_explicitly_unpinned(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "pin.sqlite3")
+    skills = SkillStore(store)
+    skill = skills.create(draft())
+    pinned = skills.set_pinned(skill["id"], SkillPinDecision(pinned=True))
+    assert pinned["pinned"] is True
+    with pytest.raises(SkillConflict, match="Unpin"):
+        skills.delete(skill["id"])
+    unpinned = skills.set_pinned(skill["id"], SkillPinDecision(pinned=False))
+    assert unpinned["pinned"] is False
+    skills.delete(skill["id"])
+    assert skill["id"] not in {row["id"] for row in skills.list()}
+
+
+def test_pin_api_is_authenticated_and_reports_pin_in_skill_summary(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "pin-api.sqlite3")
+    skill = SkillStore(store).create(draft())
+    headers = {"Authorization": "Bearer " + "x" * 32}
+    url = f"/skills/{skill['id']}/pin"
+    with TestClient(create_app(LMStudioProvider(), SecretStr("x" * 32), store=store)) as client:
+        assert client.put(url, json={"pinned": True}).status_code == 401
+        response = client.put(url, headers=headers, json={"pinned": True})
+        assert response.status_code == 200 and response.json()["pinned"] is True
+        assert client.delete(f"/skills/{skill['id']}", headers=headers).status_code == 409
+        response = client.put(url, headers=headers, json={"pinned": False})
+        assert response.status_code == 200 and response.json()["pinned"] is False
 
 
 def test_schema_three_migrates_additive_lifecycle_history(workspace_tmp_path):

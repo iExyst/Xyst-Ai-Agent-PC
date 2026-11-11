@@ -4468,6 +4468,20 @@
         "title": "SkillLifecycleEvent",
         "type": "object"
       },
+      "SkillPinDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pinned"
+        ],
+        "title": "SkillPinDecision",
+        "type": "object"
+      },
       "SkillRevision": {
         "additionalProperties": false,
         "properties": {
@@ -4597,6 +4611,10 @@
             "title": "Name",
             "type": "string"
           },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -4607,6 +4625,7 @@
           "id",
           "name",
           "lifecycle_state",
+          "pinned",
           "active_version",
           "lifecycle_revision",
           "latest_version",
@@ -11543,6 +11562,60 @@
           }
         ],
         "summary": "Decide Skill Lifecycle"
+      }
+    },
+    "/skills/{skill_id}/pin": {
+      "put": {
+        "operationId": "set_skill_pin_skills__skill_id__pin_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPinDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Skill Pin"
       }
     },
     "/skills/{skill_id}/versions": {
