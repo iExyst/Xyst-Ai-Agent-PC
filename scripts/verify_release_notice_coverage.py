@@ -10,12 +10,40 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
-
+from typing import Any, NotRequired, TypedDict, cast
 
 TARGET = "x86_64-pc-windows-msvc"
 PYTHON_PROJECTS = {"xaa-engine"}
 RUST_PROJECTS = {"xaa-desktop"}
+
+
+class NpmPackage(TypedDict):
+    version: NotRequired[str]
+    dependencies: NotRequired[dict[str, NpmPackage]]
+
+
+class NpmTree(TypedDict):
+    dependencies: NotRequired[dict[str, NpmPackage]]
+
+
+class CargoPackage(TypedDict):
+    id: str
+    name: str
+    version: str
+    source: NotRequired[str | None]
+
+
+class CargoNode(TypedDict):
+    id: str
+
+
+class CargoResolve(TypedDict):
+    nodes: NotRequired[list[CargoNode]]
+
+
+class CargoMetadata(TypedDict):
+    packages: list[CargoPackage]
+    resolve: NotRequired[CargoResolve | None]
 
 
 def python_key(name: str) -> str:
@@ -34,7 +62,7 @@ KEYS = {"Python": python_key, "npm": npm_key, "Rust/Cargo": cargo_key}
 
 
 def read_inventory(path: Path) -> dict[str, set[tuple[str, str]]]:
-    result = {ecosystem: set() for ecosystem in KEYS}
+    result: dict[str, set[tuple[str, str]]] = {ecosystem: set() for ecosystem in KEYS}
     row = re.compile(r"^\| (Python|npm|Rust/Cargo) \| (.+?) \| ([^|]+) \|")
     for line in path.read_text(encoding="utf-8").splitlines():
         match = row.match(line)
@@ -46,7 +74,7 @@ def read_inventory(path: Path) -> dict[str, set[tuple[str, str]]]:
 
 def read_notice_references(path: Path) -> dict[str, set[tuple[str, str]]]:
     """Read explicit name@version and name==version references from the bundle."""
-    result = {ecosystem: set() for ecosystem in KEYS}
+    result: dict[str, set[tuple[str, str]]] = {ecosystem: set() for ecosystem in KEYS}
     text = path.read_text(encoding="utf-8")
     references = re.compile(r"(?<![\w./-])([@\w./+-]+?)(?:@|==)([0-9][\w.+!-]*)")
     for match in references.finditer(text):
@@ -71,8 +99,7 @@ def run_json(command: list[str], *, cwd: Path) -> Any:
     if completed.returncode:
         stderr = completed.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(
-            f"Command failed ({completed.returncode}): {' '.join(command)}\n"
-            f"{stderr}"
+            f"Command failed ({completed.returncode}): {' '.join(command)}\n{stderr}"
         )
     try:
         return json.loads(completed.stdout.decode("utf-8"))
@@ -90,14 +117,15 @@ def expected_python(root: Path) -> set[tuple[str, str]]:
 
 
 def expected_npm(root: Path) -> set[tuple[str, str]]:
-    tree = run_json(["npm", "ls", "--omit=dev", "--all", "--json"], cwd=root)
+    tree = cast(NpmTree, run_json(["npm", "ls", "--omit=dev", "--all", "--json"], cwd=root))
     packages: set[tuple[str, str]] = set()
 
-    def visit(dependencies: dict[str, Any]) -> None:
+    def visit(dependencies: dict[str, NpmPackage]) -> None:
         for name, data in dependencies.items():
-            if not isinstance(data, dict) or not data.get("version"):
+            version = data.get("version")
+            if not version:
                 raise RuntimeError(f"npm dependency has no resolved version: {name}")
-            packages.add((npm_key(name), str(data["version"])))
+            packages.add((npm_key(name), version))
             visit(data.get("dependencies", {}))
 
     visit(tree.get("dependencies", {}))
@@ -105,17 +133,20 @@ def expected_npm(root: Path) -> set[tuple[str, str]]:
 
 
 def expected_cargo(root: Path) -> set[tuple[str, str]]:
-    metadata = run_json(
-        [
-            "cargo",
-            "metadata",
-            "--format-version",
-            "1",
-            "--locked",
-            "--filter-platform",
-            TARGET,
-        ],
-        cwd=root / "apps" / "desktop" / "src-tauri",
+    metadata = cast(
+        CargoMetadata,
+        run_json(
+            [
+                "cargo",
+                "metadata",
+                "--format-version",
+                "1",
+                "--locked",
+                "--filter-platform",
+                TARGET,
+            ],
+            cwd=root / "apps" / "desktop" / "src-tauri",
+        ),
     )
     packages_by_id = {package["id"]: package for package in metadata["packages"]}
     active_ids = {
@@ -175,7 +206,9 @@ def main() -> int:
         "Release notice coverage references all scoped locked packages: "
         + ", ".join(f"{ecosystem}={len(packages)}" for ecosystem, packages in expected.items())
     )
-    print("This check validates package references only; it does not verify license text or legal completeness.")
+    print(
+        "This check validates package references only; it does not verify license text or legal completeness."
+    )
     return 0
 
 
