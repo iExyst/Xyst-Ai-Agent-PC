@@ -350,11 +350,14 @@ try {
   }
   await removeMcpServer(page, oauthArticle.getByRole('button', { name: 'Remove server', exact: true }));
   await writeFile(path.join(root, 'oauth-fixture.log'), fixtureOutput);
-  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' })).catch(() => {});
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  const emergencyStop = page.getByRole('button', { name: 'Quit and stop the agent', exact: true });
+  await emergencyStop.waitFor({ timeout: 10_000 });
+  await emergencyStop.click().catch(() => {});
   for (let attempt = 0; attempt < 60 && proc.exitCode === null; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  if (proc.exitCode === null) throw new Error('Native MCP acceptance window did not close.');
+  if (proc.exitCode === null) throw new Error('The native emergency-stop control did not stop the desktop.');
   let engineStopped = false;
   try {
     await fetch(`${connection.base_url}/runs`, { headers, signal: AbortSignal.timeout(1_000) });
@@ -405,6 +408,7 @@ try {
     removed_server: true,
     model_inference_requested: false,
     desktop_exit: true,
+    emergency_stop_control_verified: true,
     engine_stopped: engineStopped,
     graceful_shutdown: true,
   };
