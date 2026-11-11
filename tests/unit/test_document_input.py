@@ -38,8 +38,19 @@ def make_text_pdf(text: str) -> bytes:
     return output.getvalue()
 
 
-def make_docx(paragraphs: list[str]) -> bytes:
+def make_docx(paragraphs: list[str], table: list[list[str]] | None = None) -> bytes:
     body = "".join(f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs)
+    if table is not None:
+        body += (
+            "<w:tbl>"
+            + "".join(
+                "<w:tr>"
+                + "".join(f"<w:tc><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>" for text in row)
+                + "</w:tr>"
+                for row in table
+            )
+            + "</w:tbl>"
+        )
     document = (
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         f"<w:body>{body}</w:body></w:document>"
@@ -127,6 +138,14 @@ def test_extracts_pdf_text_with_page_marker():
 def test_extracts_docx_paragraphs_without_unzipping_to_disk():
     result = extract_document_text(make_docx(["First line", "Second line"]), DOCX_TYPE)
     assert result == "First line\nSecond line"
+
+
+def test_extracts_docx_table_rows_and_preserves_empty_cell_positions():
+    result = extract_document_text(
+        make_docx(["Inventory"], [["Item", "Count"], ["apples", "3"], ["", "4"]]),
+        DOCX_TYPE,
+    )
+    assert result == "Inventory\nItem | Count\napples | 3\n | 4"
 
 
 def test_rejects_malformed_and_textless_docx():

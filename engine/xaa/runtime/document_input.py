@@ -249,8 +249,8 @@ def _extract_docx_text(content: bytes) -> str:
     if types_root.tag != content_namespace + "Types" or not has_word_document_type:
         raise ValueError("ZIP document is not a supported DOCX file.")
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    paragraphs: list[str] = []
-    for paragraph in root.iter(namespace + "p"):
+
+    def paragraph_text(paragraph: ElementTree.Element) -> str:
         fragments: list[str] = []
         for node in paragraph.iter():
             if node.tag == namespace + "t":
@@ -259,10 +259,31 @@ def _extract_docx_text(content: bytes) -> str:
                 fragments.append("\t")
             elif node.tag in {namespace + "br", namespace + "cr"}:
                 fragments.append("\n")
-        value = "".join(fragments).strip()
-        if value:
-            paragraphs.append(value)
-    text = "\n".join(paragraphs)
+        return "".join(fragments).strip()
+
+    def content_blocks(container: ElementTree.Element) -> list[str]:
+        blocks: list[str] = []
+        for item in container:
+            if item.tag == namespace + "p":
+                value = paragraph_text(item)
+                if value:
+                    blocks.append(value)
+            elif item.tag == namespace + "tbl":
+                for row in item:
+                    if row.tag != namespace + "tr":
+                        continue
+                    cells = [
+                        " / ".join(content_blocks(cell))
+                        for cell in row
+                        if cell.tag == namespace + "tc"
+                    ]
+                    if any(cells):
+                        blocks.append(" | ".join(cells))
+            else:
+                blocks.extend(content_blocks(item))
+        return blocks
+
+    text = "\n".join(content_blocks(root))
     if not text:
         raise ValueError("DOCX contains no extractable text.")
     return _bound(text)
