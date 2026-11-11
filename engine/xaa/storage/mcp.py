@@ -20,6 +20,7 @@ class MCPServerSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     name: str = Field(min_length=1, max_length=80)
     transport: Literal["stdio", "streamable_http"] = "stdio"
+    protocol_mode: Literal["auto", "legacy"] = "auto"
     endpoint: str | None = Field(default=None, max_length=2048)
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
@@ -204,7 +205,7 @@ class MCPRegistry:
                 if current_sha256 != spec.plugin_sha256:
                     raise ValueError("The selected MCP package changed before it was registered.")
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -215,6 +216,7 @@ class MCPRegistry:
                     now,
                     now,
                     spec.transport,
+                    spec.protocol_mode,
                     spec.endpoint,
                     spec.plugin_root,
                     spec.plugin_data,
@@ -340,6 +342,7 @@ class MCPRegistry:
             cwd=row["cwd"],
             secret_env=json.loads(row["secret_env"]),
             transport=row.get("transport", "stdio"),
+            protocol_mode=row.get("protocol_mode", "auto"),
             endpoint=row.get("endpoint"),
             plugin_root=row.get("plugin_root"),
             plugin_data=row.get("plugin_data"),

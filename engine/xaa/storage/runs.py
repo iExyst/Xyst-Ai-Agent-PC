@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 28
+DATABASE_SCHEMA_VERSION = 29
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -651,6 +651,7 @@ class RunStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     transport TEXT NOT NULL DEFAULT 'stdio' CHECK(transport IN ('stdio','streamable_http')),
+                    protocol_mode TEXT NOT NULL DEFAULT 'auto' CHECK(protocol_mode IN ('auto','legacy')),
                     endpoint TEXT,
                     plugin_root TEXT,
                     plugin_data TEXT,
@@ -815,6 +816,10 @@ class RunStore:
                 connection.execute(
                     "ALTER TABLE mcp_servers ADD COLUMN transport TEXT NOT NULL DEFAULT 'stdio'"
                 )
+            if "protocol_mode" not in mcp_columns:
+                connection.execute(
+                    "ALTER TABLE mcp_servers ADD COLUMN protocol_mode TEXT NOT NULL DEFAULT 'auto'"
+                )
             if "endpoint" not in mcp_columns:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN endpoint TEXT")
             if "plugin_root" not in mcp_columns:
@@ -936,6 +941,7 @@ class RunStore:
         approved_web_search: bool = False,
         approved_browser: bool = False,
         approved_mcp_tools: list[str] | None = None,
+        approved_mcp_sampling_servers: list[str] | None = None,
         allow_procedure_drafting: bool = False,
         allow_procedure_revision: bool = False,
         allow_procedure_resource_revision: bool = False,
@@ -1069,6 +1075,12 @@ class RunStore:
             for name in approved_mcp_tools
         ):
             raise ValueError("Approve up to 50 valid MCP tool names per run.")
+        approved_mcp_sampling_servers = sorted(set(approved_mcp_sampling_servers or []))
+        if len(approved_mcp_sampling_servers) > 50 or any(
+            re.fullmatch(r"[a-f0-9]{32}", server_id) is None
+            for server_id in approved_mcp_sampling_servers
+        ):
+            raise ValueError("Approve up to 50 valid MCP server IDs for sampling per run.")
         granted_command = None
         if command_grant is not None:
             from xaa.runtime.command_contracts import CommandGrant, command_workspace
@@ -1262,12 +1274,16 @@ class RunStore:
                         "actor": "local_user",
                     },
                 )
-            if approved_mcp_tools:
+            if approved_mcp_tools or approved_mcp_sampling_servers:
                 self.record_event(
                     connection,
                     run_id,
                     "mcp.access_granted",
-                    {"tools": approved_mcp_tools, "actor": "local_user"},
+                    {
+                        "tools": approved_mcp_tools,
+                        "sampling_servers": approved_mcp_sampling_servers,
+                        "actor": "local_user",
+                    },
                 )
             if allow_procedure_drafting:
                 self.record_event(
@@ -1507,6 +1523,9 @@ class RunStore:
             ).fetchall()
         record["approved_mcp_tools"] = (
             json.loads(mcp_grants[0][0]).get("tools", []) if len(mcp_grants) == 1 else []
+        )
+        record["approved_mcp_sampling_servers"] = (
+            json.loads(mcp_grants[0][0]).get("sampling_servers", []) if len(mcp_grants) == 1 else []
         )
         with self._connection() as connection:
             drafting_grants = connection.execute(
@@ -2451,7 +2470,13 @@ class RunStore:
         parent_answers = {
             event["payload"].get("inference_id")
             for event in events
-            if event["event_type"] in {"model.message", "model.incomplete"}
+            if event["event_type"]
+            in {
+                "model.message",
+                "model.incomplete",
+                "mcp.sampling.completed",
+                "mcp.sampling.failed",
+            }
         }
         diagnostic_attempts = {
             event["payload"]["inference_id"]
@@ -2480,6 +2505,8 @@ class RunStore:
                 "task.model.message",
                 "task.model.incomplete",
                 "diagnostic.inference.completed",
+                "mcp.sampling.completed",
+                "mcp.sampling.failed",
             }:
                 continue
             usage = event["payload"].get("usage")
@@ -2504,6 +2531,8 @@ class RunStore:
                 "task.model.message",
                 "task.model.incomplete",
                 "diagnostic.inference.completed",
+                "mcp.sampling.completed",
+                "mcp.sampling.failed",
             }
             and event["payload"].get("usage") is not None
         }
@@ -2578,6 +2607,8 @@ class RunStore:
                     "task.model.message",
                     "task.model.incomplete",
                     "diagnostic.inference.completed",
+                    "mcp.sampling.completed",
+                    "mcp.sampling.failed",
                 }
                 and e["payload"].get("usage") is not None
             }
@@ -2652,7 +2683,11 @@ class RunStore:
         if run["limits"].get("pre_inference_token_reservations") is True:
             usage = self.usage_report(run_id)
             accounted = usage["total_tokens"] + usage["outstanding_reserved_tokens"]
-            if accounted > limit or (before_inference and accounted == limit):
+            if (
+                usage["unmeasured_calls"]
+                or accounted > limit
+                or (before_inference and accounted == limit)
+            ):
                 raise TokenBudgetExceeded(
                     "Token threshold reached or reserved allowance exhausted."
                 )

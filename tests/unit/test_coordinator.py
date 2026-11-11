@@ -124,6 +124,9 @@ class UnknownMCPWriteManager:
     def tool_permission_for_run(self, name, approved):
         return "write" if name in approved else None
 
+    def server_id_for_tool(self, _name):
+        return None
+
     async def call_tool(self, name, arguments, *, require_read=False):
         assert require_read is False
         self.calls.append(name)

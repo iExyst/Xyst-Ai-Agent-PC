@@ -580,6 +580,15 @@
             "title": "Name",
             "type": "string"
           },
+          "protocol_mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "legacy"
+            ],
+            "title": "Protocol Mode",
+            "type": "string"
+          },
           "secret_env": {
             "items": {
               "type": "string"
@@ -639,6 +648,14 @@
             "default": false,
             "title": "Approved Browser",
             "type": "boolean"
+          },
+          "approved_mcp_sampling_servers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Approved Mcp Sampling Servers",
+            "type": "array"
           },
           "approved_mcp_tools": {
             "items": {
@@ -2085,6 +2102,14 @@
             "title": "Plugin Backed",
             "type": "boolean"
           },
+          "protocol_mode": {
+            "enum": [
+              "auto",
+              "legacy"
+            ],
+            "title": "Protocol Mode",
+            "type": "string"
+          },
           "secret_env": {
             "items": {
               "type": "string"
@@ -2132,6 +2157,7 @@
           "id",
           "name",
           "transport",
+          "protocol_mode",
           "endpoint",
           "command",
           "args",
@@ -3667,6 +3693,13 @@
             "default": false,
             "title": "Approved Browser",
             "type": "boolean"
+          },
+          "approved_mcp_sampling_servers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved Mcp Sampling Servers",
+            "type": "array"
           },
           "approved_mcp_tools": {
             "items": {

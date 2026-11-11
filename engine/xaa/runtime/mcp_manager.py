@@ -12,7 +12,7 @@ import re
 import socket
 import time
 import webbrowser
-from collections.abc import Generator, Iterator
+from collections.abc import Awaitable, Callable, Generator, Iterator
 from contextlib import AsyncExitStack, contextmanager
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, TextIO, cast
@@ -25,6 +25,7 @@ from mcp import Client, ClientSession
 from mcp.client.auth.exceptions import OAuthFlowError
 from mcp.client.auth.oauth2 import OAuthClientProvider, TokenStorage
 from mcp.client.extension import ClientExtension, NotificationBinding
+from mcp.client.session import ClientRequestContext
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.client.subscriptions import ResourceUpdated
@@ -37,7 +38,10 @@ from mcp.shared.auth import (
 from mcp.types import (
     AudioContent,
     CallToolResult,
+    CreateMessageRequestParams,
+    CreateMessageResult,
     EmbeddedResource,
+    ErrorData,
     ImageContent,
     PaginatedRequestParams,
     Prompt,
@@ -176,6 +180,13 @@ class _ConnectedServer:
         self.notifications = notifications
         self.subscribed_resources: set[str] = set()
         self.subscription_task: asyncio.Task[None] | None = None
+        self.sampling_handler: (
+            Callable[
+                [ClientRequestContext, CreateMessageRequestParams],
+                Awaitable[CreateMessageResult | ErrorData],
+            ]
+            | None
+        ) = None
         self.lock = asyncio.Lock()
 
     async def close(self) -> None:
@@ -333,6 +344,16 @@ class MCPManager:
                     if connection is not None:
                         connection.enqueue_resource_update(str(params.uri))
 
+                async def on_sampling_request(
+                    context: ClientRequestContext, params: CreateMessageRequestParams
+                ) -> CreateMessageResult | ErrorData:
+                    if connection is None or connection.sampling_handler is None:
+                        return ErrorData(
+                            code=-32000,
+                            message="MCP sampling requires explicit approval in an active run.",
+                        )
+                    return await connection.sampling_handler(context, params)
+
                 class ResourceNotificationExtension(ClientExtension):
                     identifier = "dev.xyst.xaa/resource-notifications"
 
@@ -349,6 +370,8 @@ class MCPManager:
 
                 client = Client(
                     transport,
+                    mode=server.protocol_mode,
+                    sampling_callback=on_sampling_request,
                     read_timeout_seconds=float(
                         initialization_timeout
                         if server.transport == "streamable_http"
@@ -1077,6 +1100,13 @@ class MCPManager:
     ) -> bool:
         return self.tool_permission_for_run(qualified_name, approved_write_tools) is not None
 
+    def server_id_for_tool(self, qualified_name: str) -> str | None:
+        record = next(
+            (tool for tool in self.registry.list_tools() if tool.qualified_name == qualified_name),
+            None,
+        )
+        return record.server_id if record is not None else None
+
     def tool_permission_for_run(
         self, qualified_name: str, approved_write_tools: set[str]
     ) -> Literal["read", "write"] | None:
@@ -1093,7 +1123,16 @@ class MCPManager:
         return None
 
     async def call_tool(
-        self, qualified_name: str, arguments: dict[str, Any], *, require_read: bool = False
+        self,
+        qualified_name: str,
+        arguments: dict[str, Any],
+        *,
+        require_read: bool = False,
+        sampling_handler: Callable[
+            [ClientRequestContext, CreateMessageRequestParams],
+            Awaitable[CreateMessageResult | ErrorData],
+        ]
+        | None = None,
     ) -> dict[str, Any]:
         record = next(
             (tool for tool in self.registry.list_tools() if tool.qualified_name == qualified_name),
@@ -1152,7 +1191,11 @@ class MCPManager:
                             status="not_connected",
                         )
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
-                    result = await connection.session.call_tool(record.name, arguments)
+                    connection.sampling_handler = sampling_handler
+                    try:
+                        result = await connection.session.call_tool(record.name, arguments)
+                    finally:
+                        connection.sampling_handler = None
         except asyncio.CancelledError:
             await self._drop_failed_connection(record.server_id, connection)
             raise
@@ -1167,7 +1210,7 @@ class MCPManager:
         except Exception as error:
             await self._drop_failed_connection(record.server_id, connection)
             raise MCPInvocationError(
-                "The MCP server disconnected during the call; its external effect is unknown.",
+                f"The MCP server call failed ({type(error).__name__}); its external effect is unknown.",
                 status="unknown_outcome",
             ) from error
         return _result_payload(

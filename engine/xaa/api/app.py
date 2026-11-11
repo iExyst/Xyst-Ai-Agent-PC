@@ -171,6 +171,7 @@ class CreateRunRequest(BaseModel):
     allow_procedure_resource_revision: bool = False
     allow_procedure_resource_removal: bool = False
     approved_mcp_tools: list[str] = Field(default_factory=list, max_length=50)
+    approved_mcp_sampling_servers: list[str] = Field(default_factory=list, max_length=50)
     file_checks: list[FileContentCheck] = Field(
         default_factory=lambda: list[FileContentCheck](), max_length=20
     )
@@ -342,6 +343,7 @@ class MCPServerResponse(BaseModel):
     id: str
     name: str
     transport: Literal["stdio", "streamable_http"]
+    protocol_mode: Literal["auto", "legacy"]
     endpoint: str | None
     command: str
     args: list[str]
@@ -395,6 +397,7 @@ class CreateMCPServerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=80)
     transport: Literal["stdio", "streamable_http"] = "stdio"
+    protocol_mode: Literal["auto", "legacy"] = "auto"
     endpoint: str | None = Field(default=None, max_length=2048)
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
@@ -2997,6 +3000,7 @@ def create_app(
                 allow_procedure_resource_revision=payload.allow_procedure_resource_revision,
                 allow_procedure_resource_removal=payload.allow_procedure_resource_removal,
                 approved_mcp_tools=payload.approved_mcp_tools,
+                approved_mcp_sampling_servers=payload.approved_mcp_sampling_servers,
                 image_bytes=image_bytes,
                 image_media_type=image_type,
                 document_bytes=document_bytes,

@@ -2272,6 +2272,12 @@ export interface components {
             endpoint?: string | null;
             /** Name */
             name: string;
+            /**
+             * Protocol Mode
+             * @default auto
+             * @enum {string}
+             */
+            protocol_mode: "auto" | "legacy";
             /** Secret Env */
             secret_env?: string[];
             /**
@@ -2310,6 +2316,8 @@ export interface components {
              * @default false
              */
             approved_browser: boolean;
+            /** Approved Mcp Sampling Servers */
+            approved_mcp_sampling_servers?: string[];
             /** Approved Mcp Tools */
             approved_mcp_tools?: string[];
             /** Approved Web Hosts */
@@ -2846,6 +2854,11 @@ export interface components {
             oauth_configured: boolean;
             /** Plugin Backed */
             plugin_backed: boolean;
+            /**
+             * Protocol Mode
+             * @enum {string}
+             */
+            protocol_mode: "auto" | "legacy";
             /** Secret Env */
             secret_env: string[];
             /** Secret Env Configured */
@@ -3394,6 +3407,8 @@ export interface components {
              * @default false
              */
             approved_browser: boolean;
+            /** Approved Mcp Sampling Servers */
+            approved_mcp_sampling_servers?: string[];
             /** Approved Mcp Tools */
             approved_mcp_tools?: string[];
             /** Approved Web Hosts */

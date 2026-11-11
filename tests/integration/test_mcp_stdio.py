@@ -25,12 +25,14 @@ from xaa.runtime.mcp_manager import (
     _result_payload,
     _validate_output_schema,
 )
+from xaa.runtime.states import RunState
 from xaa.storage.mcp import MCPRegistry, MCPServerRecord, MCPServerSpec, MCPToolRecord
 from xaa.storage.runs import RunStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py"
 DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_server.py"
+SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server.py"
 
 
 @pytest.mark.asyncio
@@ -72,6 +74,234 @@ async def test_connection_that_dies_immediately_after_discovery_is_not_registere
     assert manager.server_status(server.id)[0] == "error"
     assert server.id not in manager._connected
     await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_mcp_sampling_is_run_bound_text_only_and_included_in_shared_budget(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-sampling.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Sampling fixture",
+            command=sys.executable,
+            args=[str(SAMPLING_FIXTURE)],
+            protocol_mode="legacy",
+        )
+    )
+    manager = MCPManager(store, None)
+    tools = await manager.connect_server(server.id)
+    tool = next(item for item in tools if item.name == "sample_text")
+    registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+    qualified = next(
+        item.qualified_name for item in registry.list_tools(server.id) if item.name == "sample_text"
+    )
+
+    class SamplingProvider(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.sampling_messages = None
+            self.sampling_tools = "unset"
+
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None, max_output_tokens=None, **kwargs):
+            if tools is None:
+                self.sampling_messages = messages
+                self.sampling_tools = tools
+                assert max_output_tokens == 8
+                content = "fixture sampling phrase"
+                return {
+                    "choices": [{"message": {"role": "assistant", "content": content}}],
+                    "usage": {"prompt_tokens": 7, "completion_tokens": 4, "total_tokens": 11},
+                }
+            if not any(item["role"] == "tool" for item in messages):
+                assert any(item["function"]["name"] == qualified for item in tools)
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "sample-call",
+                                        "type": "function",
+                                        "function": {"name": qualified, "arguments": "{}"},
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11},
+                }
+            assert "fixture sampling phrase" in messages[-1]["content"]
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Sampling completed."}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+            }
+
+    provider = SamplingProvider()
+    run = store.create_run(
+        objective="Run-only objective that must not enter the sampling prompt",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture/sampling-model",
+        max_iterations=5,
+        max_total_tokens=60,
+        max_output_tokens=8,
+        approved_mcp_sampling_servers=[server.id],
+    )
+    try:
+        await Coordinator(store, provider, mcp_manager=manager).execute(run["id"])
+        saved = store.get_run(run["id"])
+        with store.connection() as connection:
+            call_rows = connection.execute(
+                "SELECT tool_name,state,result,error FROM tool_calls WHERE run_id=?",
+                (run["id"],),
+            ).fetchall()
+        assert saved is not None and saved["state"] == RunState.VERIFYING, {
+            "events": [event["event_type"] for event in store.list_events(run["id"])[-15:]],
+            "unresolved": store.unresolved_tool_calls(run["id"]),
+            "calls": [
+                {
+                    "tool": row["tool_name"],
+                    "state": row["state"],
+                    "result": json.loads(row["result"]),
+                }
+                for row in call_rows
+            ],
+        }
+        assert saved["approved_mcp_sampling_servers"] == [server.id]
+        assert provider.sampling_tools is None
+        assert provider.sampling_messages is not None
+        serialized_prompt = json.dumps(provider.sampling_messages)
+        assert "Run-only objective" not in serialized_prompt
+        events = store.list_events(run["id"])
+        requested = next(
+            event for event in events if event["event_type"] == "mcp.sampling.requested"
+        )
+        completed = next(
+            event for event in events if event["event_type"] == "mcp.sampling.completed"
+        )
+        assert requested["payload"]["server_id"] == server.id
+        assert requested["payload"]["max_output_tokens"] == 8
+        assert requested["payload"]["trust"] == "untrusted_mcp_output"
+        assert requested["payload"]["tool_call_id"] == "sample-call"
+        assert completed["payload"]["content"] == "fixture sampling phrase"
+        assert completed["payload"]["tool_call_id"] == "sample-call"
+        assert store.inference_attempts(run["id"]) == 3
+        assert store.token_usage(run["id"])["total_tokens"] == 29
+        assert store.usage_report(run["id"])["outstanding_reservations"] == 0
+        assert not any(
+            message.get("content") == "fixture sampling phrase"
+            for message in store.conversation_messages(run["id"])
+        )
+    finally:
+        await provider.close()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_mcp_sampling_is_measured_and_never_retried(
+    workspace_tmp_path: Path,
+):
+    store = RunStore(workspace_tmp_path / "mcp-sampling-failure.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Sampling failure fixture",
+            command=sys.executable,
+            args=[str(SAMPLING_FIXTURE)],
+            protocol_mode="legacy",
+        )
+    )
+    manager = MCPManager(store, None)
+    tools = await manager.connect_server(server.id)
+    tool = next(item for item in tools if item.name == "sample_text")
+    registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+    qualified = next(
+        item.qualified_name for item in registry.list_tools(server.id) if item.name == "sample_text"
+    )
+
+    class OversizedSamplingProvider(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, messages, tools=None, **kwargs):
+            self.calls += 1
+            if tools is None:
+                assert kwargs["max_output_tokens"] == 100
+                return {
+                    "choices": [{"message": {"role": "assistant", "content": "x" * 16_001}}],
+                    "usage": {"prompt_tokens": 7, "completion_tokens": 4, "total_tokens": 11},
+                }
+            assert self.calls == 1
+            assert any(item["function"]["name"] == qualified for item in tools)
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "sample-failure-call",
+                                    "type": "function",
+                                    "function": {
+                                        "name": qualified,
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11},
+            }
+
+    provider = OversizedSamplingProvider()
+    run = store.create_run(
+        objective="Do not repeat an MCP tool after its sampling response fails",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture/sampling-model",
+        max_iterations=5,
+        max_total_tokens=60,
+        approved_mcp_sampling_servers=[server.id],
+    )
+    try:
+        await Coordinator(store, provider, mcp_manager=manager).execute(run["id"])
+        saved = store.get_run(run["id"])
+        assert saved is not None and saved["state"] == RunState.BLOCKED
+        assert provider.calls == 2
+        assert store.inference_attempts(run["id"]) == 2
+        assert store.token_usage(run["id"]) == {
+            "prompt_tokens": 16,
+            "completion_tokens": 6,
+            "total_tokens": 22,
+            "unmeasured_calls": 0,
+        }
+        events = store.list_events(run["id"])
+        failed = next(event for event in events if event["event_type"] == "mcp.sampling.failed")
+        assert failed["payload"]["tool_call_id"] == "sample-failure-call"
+        assert failed["payload"]["usage"]["total_tokens"] == 11
+        assert not any(event["event_type"] == "mcp.sampling.completed" for event in events)
+        with store.connection() as connection:
+            call = connection.execute(
+                "SELECT result FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run["id"], "sample-failure-call"),
+            ).fetchone()
+        assert call is not None and json.loads(call["result"])["status"] == "unknown_outcome"
+    finally:
+        await provider.close()
+        await manager.close()
 
 
 def test_plugin_parameters_expand_paths_and_reject_package_escape(workspace_tmp_path: Path) -> None:
@@ -970,3 +1200,47 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
         )
         assert client.delete(f"/mcp/servers/{server_id}", headers=headers).status_code == 204
         assert credentials.get(f"mcp:{server_id}:API_TOKEN") is None
+
+
+def test_mcp_legacy_protocol_mode_is_authenticated_and_persisted(workspace_tmp_path: Path):
+    store = RunStore(workspace_tmp_path / "mcp-legacy-mode.sqlite3")
+    with TestClient(create_app(LMStudioProvider(), SecretStr(TOKEN), store=store)) as client:
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        created = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "Legacy sampling fixture",
+                "command": sys.executable,
+                "args": [str(SAMPLING_FIXTURE)],
+                "protocol_mode": "legacy",
+            },
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["protocol_mode"] == "legacy"
+        servers = client.get("/mcp/servers", headers=headers)
+        assert servers.status_code == 200
+        assert servers.json()[0]["protocol_mode"] == "legacy"
+        run = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Use an explicitly approved legacy sampling server",
+                "approved_mcp_sampling_servers": [created.json()["id"]],
+            },
+        )
+        assert run.status_code == 201, run.text
+        assert client.get(f"/runs/{run.json()['id']}", headers=headers).json()[
+            "approved_mcp_sampling_servers"
+        ] == [created.json()["id"]]
+        bad_mode = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "Invalid mode fixture",
+                "command": sys.executable,
+                "args": [str(SAMPLING_FIXTURE)],
+                "protocol_mode": "future",
+            },
+        )
+        assert bad_mode.status_code == 422

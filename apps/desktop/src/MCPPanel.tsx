@@ -5,14 +5,17 @@ type Props = {
   client: EngineClient;
   selectedRunWriteTools: string[];
   onRunWriteToolsChange: (names: string[]) => void;
+  selectedSamplingServers: string[];
+  onSamplingServersChange: (serverIds: string[]) => void;
   onUsePromptText: (context: string) => void;
   refreshKey?: number;
 };
 
-export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange, onUsePromptText, refreshKey=0 }: Props) {
+export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange, selectedSamplingServers, onSamplingServersChange, onUsePromptText, refreshKey=0 }: Props) {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [name, setName] = useState('');
   const [transport, setTransport] = useState<'stdio'|'streamable_http'>('stdio');
+  const [protocolMode, setProtocolMode] = useState<'auto'|'legacy'>('auto');
   const [endpoint, setEndpoint] = useState('');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('[]');
@@ -49,11 +52,17 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
       : selectedRunWriteTools.filter(item=>item!==tool);
     onRunWriteToolsChange(next);
   };
+  const updateSamplingServer = (serverId:string, checked:boolean) => {
+    const next = checked
+      ? [...new Set([...selectedSamplingServers, serverId])]
+      : selectedSamplingServers.filter(item=>item!==serverId);
+    onSamplingServersChange(next);
+  };
   const create = () => act(async()=>{
     const parsed:unknown = transport==='stdio'?JSON.parse(args):[];
     if (!Array.isArray(parsed) || parsed.some(item=>typeof item!=='string')) throw new Error('Arguments must be a JSON array of strings.');
-    await client.createMCPServer({name,transport,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
-    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');
+    await client.createMCPServer({name,transport,protocol_mode:protocolMode,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
+    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');setProtocolMode('auto');
   });
   const changePermission = (server:MCPServer,tool:MCPTool,permission:MCPTool['permission']) => act(async()=>{
     await client.setMCPToolPermission(server.id,tool,permission);
@@ -67,6 +76,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     <div className="mcp-config">
       <label>Server name<input value={name} onChange={e=>setName(e.target.value)} /></label>
       <label>Transport<select value={transport} onChange={e=>setTransport(e.target.value as 'stdio'|'streamable_http')}><option value="stdio">Local process (stdio)</option><option value="streamable_http">Streamable HTTP</option></select></label>
+      <label>MCP protocol<select value={protocolMode} onChange={e=>setProtocolMode(e.target.value as 'auto'|'legacy')}><option value="auto">Automatic (recommended)</option><option value="legacy">Legacy compatibility (sampling)</option></select></label>
+      {protocolMode==='legacy'&&<p>Legacy mode is required for MCP sampling/createMessage. Only choose it when this server requires the older protocol; modern MCP features may be unavailable.</p>}
       {transport==='stdio'?<>
         <label>Command<input value={command} onChange={e=>setCommand(e.target.value)} placeholder="python" /></label>
         <label>Arguments (JSON string array)<input value={args} onChange={e=>setArgs(e.target.value)} /></label>
@@ -80,6 +91,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     </div>
     {servers.map(server=><article key={server.id} className="mcp-server">
       <h4>{server.name} <small>({server.state})</small></h4>
+      <label><input type="checkbox" disabled={server.protocol_mode!=='legacy'} checked={selectedSamplingServers.includes(server.id)} onChange={event=>updateSamplingServer(server.id,event.target.checked)}/>Allow this server to request text-only model sampling during this run</label>
+      <p>Sampling uses the selected run model, shares its iteration and token limits, and receives no tools, workspace, or conversation history. Server prompts remain untrusted. Set this server to Legacy compatibility when adding it; automatic negotiation cannot receive sampling/createMessage requests.</p>
       {server.error&&<p role="alert">{server.error}</p>}
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
       <div>
@@ -89,7 +102,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const notifications=await client.mcpResourceNotifications(server.id);setResourceNotifications(prev=>({...prev,[server.id]:[...(prev[server.id]??[]),...notifications].slice(-128)}));})}>Check for server updates</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const templates=await client.listMCPResourceTemplates(server.id);setResourceTemplateCatalogs(prev=>({...prev,[server.id]:templates}));})}>List resource templates</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const prompts=await client.listMCPPrompts(server.id);setPromptCatalogs(prev=>({...prev,[server.id]:prompts}));})}>List prompts</button>
-        <button type="button" disabled={busy} onClick={()=>void act(async()=>{await client.deleteMCPServer(server.id);onRunWriteToolsChange(selectedRunWriteTools.filter(tool=>!tool.startsWith(`mcp_${server.id}_`)));})}>Remove server</button>
+        <button type="button" disabled={busy} onClick={()=>void act(async()=>{await client.deleteMCPServer(server.id);onRunWriteToolsChange(selectedRunWriteTools.filter(tool=>!tool.startsWith(`mcp_${server.id}_`)));onSamplingServersChange(selectedSamplingServers.filter(id=>id!==server.id));})}>Remove server</button>
       </div>
       {(resourceCatalogs[server.id]??[]).map(resource=><div key={resource.uri} className="mcp-resource">
         <strong>{resource.title||resource.name}</strong> <code>{resource.uri}</code>
