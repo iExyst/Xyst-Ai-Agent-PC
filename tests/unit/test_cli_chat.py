@@ -353,6 +353,19 @@ def test_desktop_api_continues_terminal_session_in_the_same_sqlite_history(works
             first_run,
             second_run,
         }
+        renamed = client.patch(
+            "/chat/sessions/terminal-thread",
+            headers=HEADERS,
+            json={"title": "Project notes"},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["title"] == "Project notes"
+        renamed_by_cli = chat.get("terminal-thread")
+        assert renamed_by_cli is not None
+        assert renamed_by_cli["title"] == "Project notes"
+        deleted = client.delete("/chat/sessions/terminal-thread", headers=HEADERS)
+        assert deleted.status_code == 204
+        assert chat.get("terminal-thread") is None
 
 
 def test_cli_chat_api_authenticates_and_keeps_messages_in_session_scope(workspace_tmp_path):

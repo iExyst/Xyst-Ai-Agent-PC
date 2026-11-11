@@ -1,5 +1,14 @@
 # Progress
 
+## Verify shared chat rename and deletion across desktop API and terminal storage (2026-11-11)
+
+Extended the real SQLite/API cross-client acceptance: the terminal creates and appends a saved
+conversation, the authenticated desktop API loads and continues it, then renames it; the terminal
+store observes that same title and confirms deletion through the API removes the shared session.
+The focused test passes (1 passed), and `git diff --check` is clean. This verifies the shared
+storage/API boundary without model inference; native WebView against the installed engine remains
+open.
+
 ## Query skill readiness through the installed engine (2026-11-11)
 
 Added `scripts/installed_skill_readiness_diagnostic.py` to launch the installed frozen engine,
