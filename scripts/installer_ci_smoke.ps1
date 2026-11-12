@@ -24,6 +24,9 @@ $xaaPriorNativeStage = $env:XAA_NATIVE_STAGE
 $xaaPriorNativeDebugPort = $env:XAA_NATIVE_DEBUG_PORT
 $xaaPriorFrozenApiExecutable = $env:XAA_FROZEN_API_EXECUTABLE
 $xaaPriorFrozenScheduleWriteRoot = $env:XAA_FROZEN_SCHEDULE_WRITE_ROOT
+$xaaPriorMcpFixturePython = $env:XAA_NATIVE_MCP_PYTHON
+$xaaPriorUvProjectEnvironment = $env:UV_PROJECT_ENVIRONMENT
+$xaaPriorUvLinkMode = $env:UV_LINK_MODE
 $env:LOCALAPPDATA = $xaaLocalAppData
 $env:APPDATA = $xaaRoamingAppData
 $xaaProductName = (Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).productName
@@ -227,6 +230,26 @@ try {
         $env:XAA_NATIVE_DESKTOP_PATH = $xaaDesktop
         $env:XAA_NATIVE_ENGINE_PATH = $xaaEngine
         $env:XAA_NATIVE_MANIFEST_PATH = (Resolve-Path -LiteralPath 'build/installer/manifest.json').Path
+        $xaaMcpFixtureRuntime = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'xaa-mcp-fixture-runtime'))
+        $xaaRunnerTempRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
+        if (-not $xaaMcpFixtureRuntime.StartsWith($xaaRunnerTempRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $xaaMcpFixtureRuntime)) {
+            throw 'MCP fixture runtime must be a new directory under RUNNER_TEMP.'
+        }
+        try {
+            # The AppContainer fixture needs a runtime whose files the runner identity owns.
+            # Copy mode avoids retaining protected ACLs from the global uv package cache.
+            $env:UV_PROJECT_ENVIRONMENT = $xaaMcpFixtureRuntime
+            $env:UV_LINK_MODE = 'copy'
+            uv sync --locked --no-dev --no-install-project
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated MCP fixture runtime.' }
+        } finally {
+            if ($null -eq $xaaPriorUvProjectEnvironment) { Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue } else { $env:UV_PROJECT_ENVIRONMENT = $xaaPriorUvProjectEnvironment }
+            if ($null -eq $xaaPriorUvLinkMode) { Remove-Item Env:UV_LINK_MODE -ErrorAction SilentlyContinue } else { $env:UV_LINK_MODE = $xaaPriorUvLinkMode }
+        }
+        $env:XAA_NATIVE_MCP_PYTHON = Join-Path $xaaMcpFixtureRuntime 'Scripts\python.exe'
+        if (-not (Test-Path -LiteralPath $env:XAA_NATIVE_MCP_PYTHON)) { throw 'MCP fixture runtime did not contain its Python executable.' }
+        & $env:XAA_NATIVE_MCP_PYTHON -c 'from mcp.server.mcpserver import MCPServer'
+        if ($LASTEXITCODE -ne 0) { throw 'MCP fixture runtime could not import the pinned SDK.' }
         if ($xaaElevated) {
             Set-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe' -Value "--remote-debugging-port=$xaaMcpDebugPort"
         }
@@ -285,6 +308,9 @@ try {
     Remove-Item Env:XAA_NATIVE_SCHEDULE_RESTART_ROOT -ErrorAction SilentlyContinue
     if ($null -eq $xaaPriorFrozenApiExecutable) { Remove-Item Env:XAA_FROZEN_API_EXECUTABLE -ErrorAction SilentlyContinue } else { $env:XAA_FROZEN_API_EXECUTABLE = $xaaPriorFrozenApiExecutable }
     if ($null -eq $xaaPriorFrozenScheduleWriteRoot) { Remove-Item Env:XAA_FROZEN_SCHEDULE_WRITE_ROOT -ErrorAction SilentlyContinue } else { $env:XAA_FROZEN_SCHEDULE_WRITE_ROOT = $xaaPriorFrozenScheduleWriteRoot }
+    if ($null -eq $xaaPriorMcpFixturePython) { Remove-Item Env:XAA_NATIVE_MCP_PYTHON -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_MCP_PYTHON = $xaaPriorMcpFixturePython }
+    if ($null -eq $xaaPriorUvProjectEnvironment) { Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue } else { $env:UV_PROJECT_ENVIRONMENT = $xaaPriorUvProjectEnvironment }
+    if ($null -eq $xaaPriorUvLinkMode) { Remove-Item Env:UV_LINK_MODE -ErrorAction SilentlyContinue } else { $env:UV_LINK_MODE = $xaaPriorUvLinkMode }
     Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
     if ($null -eq $xaaPriorNativeDesktopPath) { Remove-Item Env:XAA_NATIVE_DESKTOP_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_DESKTOP_PATH = $xaaPriorNativeDesktopPath }
     if ($null -eq $xaaPriorNativeEnginePath) { Remove-Item Env:XAA_NATIVE_ENGINE_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_ENGINE_PATH = $xaaPriorNativeEnginePath }
