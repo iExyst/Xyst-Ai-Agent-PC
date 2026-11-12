@@ -115,8 +115,14 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
     assert after == before
 
 
+@pytest.mark.parametrize(
+    "scenario",
+    ["exited-owner", "reused-pid", "legacy-journal", "crash-before-acl"],
+)
 def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
     workspace_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
 ) -> None:
     if sys.platform != "win32":
         pytest.skip("Windows AppContainer crash-recovery acceptance")
@@ -136,13 +142,11 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
         return dacl.GetAceCount()
 
     before = ace_count()
+    command = [sys.executable, str(APPCONTAINER_CRASH_FIXTURE), str(journal), str(access_root)]
+    if scenario == "crash-before-acl":
+        command.append("before-acl")
     crashed_engine = subprocess.run(
-        [
-            sys.executable,
-            str(APPCONTAINER_CRASH_FIXTURE),
-            str(journal),
-            str(access_root),
-        ],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -153,7 +157,21 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
     assert len(records) == 1
     record_path = records[0]
     assert record_path.is_file()
-    assert ace_count() > before
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["version"] == 2
+    owner_creation_time = record["owner_creation_time"]
+    if scenario == "legacy-journal":
+        record["version"] = 1
+        del record["owner_creation_time"]
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+    assert (ace_count() > before) is (scenario != "crash-before-acl")
+
+    if scenario == "reused-pid":
+        # Model the same numeric PID now belonging to a different process.
+        monkeypatch.setattr(
+            "xaa.runtime.mcp_appcontainer._process_identity",
+            lambda _process_id: (True, owner_creation_time + 1),
+        )
 
     AppContainerAccess._recover_stale_grants(journal)
 

@@ -169,22 +169,55 @@ def _appcontainer_sid(profile_name: str) -> tuple[Any, bytes, Any]:
     return kernel32, sid_bytes, sid_object
 
 
-def _process_is_running(process_id: int) -> bool:
+class _FILETIME(ctypes.Structure):
+    _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
+
+
+def _process_identity(process_id: int) -> tuple[bool | None, int | None]:
+    """Return whether a PID is live and, when available, its creation FILETIME."""
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     open_process = kernel32.OpenProcess
     open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     open_process.restype = wintypes.HANDLE
     process = open_process(0x1000, False, process_id)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not process:
-        # Access denied is treated as live so another running engine's grants
-        # are never revoked; ERROR_INVALID_PARAMETER means the PID is gone.
-        return ctypes.get_last_error() != 87
+        error = ctypes.get_last_error()
+        # Access denied and other inspection failures are treated as live so
+        # another running engine's grants are never revoked.
+        return (False, None) if error == 87 else (None, None)
     try:
         exit_code = wintypes.DWORD()
         get_exit_code = kernel32.GetExitCodeProcess
         get_exit_code.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
         get_exit_code.restype = wintypes.BOOL
-        return not get_exit_code(process, ctypes.byref(exit_code)) or exit_code.value == 259
+        if not get_exit_code(process, ctypes.byref(exit_code)):
+            return None, None
+        if exit_code.value != 259:
+            return False, None
+
+        creation = _FILETIME()
+        exited = _FILETIME()
+        kernel = _FILETIME()
+        user = _FILETIME()
+        get_times = kernel32.GetProcessTimes
+        get_times.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(_FILETIME),
+            ctypes.POINTER(_FILETIME),
+            ctypes.POINTER(_FILETIME),
+            ctypes.POINTER(_FILETIME),
+        ]
+        get_times.restype = wintypes.BOOL
+        if not get_times(
+            process,
+            ctypes.byref(creation),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        ):
+            return None, None
+        creation_time = (creation.high << 32) | creation.low
+        return True, creation_time
     finally:
         kernel32.CloseHandle(process)
 
@@ -211,6 +244,12 @@ class AppContainerAccess:
         self._journal_directory = Path(journal_directory)
         self._journal_directory.mkdir(parents=True, exist_ok=True)
         self._recover_stale_grants(self._journal_directory)
+        owner_running, owner_creation_time = _process_identity(os.getpid())
+        if not owner_running or owner_creation_time is None:
+            raise MCPAppContainerError(
+                "Windows could not identify the MCP isolation owner process."
+            )
+        self._owner_creation_time = owner_creation_time
         self.profile_name = f"XAA-MCP-{uuid4().hex}"
         self._grants: list[tuple[str, int, int]] = []
         self._journal_path = self._journal_directory / f"{self.profile_name}.json"
@@ -363,9 +402,10 @@ class AppContainerAccess:
 
     def _write_journal(self) -> None:
         payload = {
-            "version": 1,
+            "version": 2,
             "profile_name": self.profile_name,
             "owner_pid": os.getpid(),
+            "owner_creation_time": self._owner_creation_time,
             "grants": [
                 {"path": path, "mask": mask, "flags": flags} for path, mask, flags in self._grants
             ],
@@ -402,15 +442,25 @@ class AppContainerAccess:
                     record = json.loads(journal_path.read_text(encoding="utf-8"))
                     profile_name = record["profile_name"]
                     owner_pid = record["owner_pid"]
+                    version = record.get("version")
+                    owner_creation_time = record.get("owner_creation_time")
                     raw_grants = record["grants"]
                     if (
-                        record.get("version") != 1
+                        version not in {1, 2}
                         or not isinstance(profile_name, str)
                         or re.fullmatch(r"XAA-MCP-[0-9a-f]{32}", profile_name) is None
                         or not isinstance(owner_pid, int)
                         or owner_pid <= 0
                         or not isinstance(raw_grants, list)
                         or len(raw_grants) > 16
+                        or (
+                            version == 2
+                            and (
+                                not isinstance(owner_creation_time, int)
+                                or isinstance(owner_creation_time, bool)
+                                or owner_creation_time <= 0
+                            )
+                        )
                     ):
                         raise ValueError("invalid journal shape")
                     grants: list[tuple[str, int, int]] = []
@@ -438,7 +488,15 @@ class AppContainerAccess:
                     raise MCPAppContainerError(
                         "An MCP isolation recovery record could not be validated."
                     ) from error
-                if _process_is_running(owner_pid):
+                owner_running, current_creation_time = _process_identity(owner_pid)
+                if owner_running is None or (
+                    owner_running
+                    and (
+                        owner_creation_time is None
+                        or current_creation_time is None
+                        or owner_creation_time == current_creation_time
+                    )
+                ):
                     continue
                 _kernel32, _sid_bytes, sid = _appcontainer_sid(profile_name)
                 sid_string = win32security.ConvertSidToStringSid(sid)
