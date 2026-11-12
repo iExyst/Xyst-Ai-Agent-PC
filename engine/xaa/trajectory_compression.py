@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -276,6 +278,183 @@ async def compress_jsonl(
     return report
 
 
+def native_trajectory_turns(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project a public X.A.A. export into a clearly derived, non-replay transcript."""
+    if entry.get("format") != "xaa-trajectory" or entry.get("format_version") != 1:
+        raise ValueError("Unsupported X.A.A. trajectory format or version.")
+    run_value = entry.get("run")
+    events_value = entry.get("events")
+    if not isinstance(run_value, dict) or not isinstance(events_value, list):
+        raise TypeError("X.A.A. trajectory needs run metadata and an events array.")
+    run = cast(dict[str, Any], run_value)
+    events = cast(list[object], events_value)
+    if len(events) > MAX_ENTRIES:
+        raise ValueError(f"X.A.A. trajectory exceeds the {MAX_ENTRIES}-event limit.")
+
+    turns: list[dict[str, Any]] = [
+        {
+            "from": "system",
+            "value": (
+                "Derived analysis transcript from a redacted X.A.A. public event export. "
+                "This is not replayable; public exports do not include tool result text."
+            ),
+        }
+    ]
+    objective = run.get("objective")
+    if isinstance(objective, str) and objective:
+        turns.append({"from": "human", "value": objective})
+
+    public_calls: dict[str, str] = {}
+    for raw in events:
+        if not isinstance(raw, dict):
+            raise TypeError("X.A.A. trajectory contains an invalid event.")
+        event = cast(dict[str, Any], raw)
+        payload_value = event.get("payload")
+        if not isinstance(payload_value, dict):
+            raise TypeError("X.A.A. trajectory contains an invalid event.")
+        payload = cast(dict[str, Any], payload_value)
+        event_type = event.get("event_type")
+        if event_type in {"model.message", "task.model.message"}:
+            message = payload.get("message")
+            if not isinstance(message, dict):
+                continue
+            message = cast(dict[str, Any], message)
+            if message.get("role") != "assistant":
+                continue
+            content = message.get("content")
+            if content is not None and not isinstance(content, str):
+                raise TypeError("Multimodal X.A.A. messages cannot be flattened safely.")
+            parts = [content or ""]
+            calls_value = message.get("tool_calls", [])
+            if not isinstance(calls_value, list):
+                raise TypeError("X.A.A. assistant tool calls must be an array.")
+            calls = cast(list[object], calls_value)
+            for call in calls:
+                if not isinstance(call, dict):
+                    raise TypeError("X.A.A. trajectory contains an invalid tool call.")
+                call = cast(dict[str, Any], call)
+                call_id = call.get("id")
+                function = call.get("function")
+                if isinstance(function, dict):
+                    function = cast(dict[str, Any], function)
+                    name = function.get("name")
+                else:
+                    name = None
+                if isinstance(call_id, str) and call_id and isinstance(name, str):
+                    public_calls[call_id] = name
+            if calls:
+                parts.append("Proposed tool calls: " + json.dumps(calls, ensure_ascii=False))
+            turns.append({"from": "assistant", "value": "\n".join(p for p in parts if p)})
+        elif event_type in {"verification.feedback", "execution.resume_feedback"}:
+            message = payload.get("message")
+            if isinstance(message, dict):
+                message = cast(dict[str, Any], message)
+                content = message.get("content")
+                if isinstance(content, str):
+                    turns.append({"from": "human", "value": content})
+        elif event_type in {"tool.completed", "tool.failed"}:
+            call_id = payload.get("call_id")
+            if payload.get("internal") is True or not isinstance(call_id, str):
+                continue
+            name = public_calls.get(call_id)
+            if name is None:
+                continue
+            status = "failed" if event_type == "tool.failed" else "completed"
+            turns.append(
+                {
+                    "from": "tool",
+                    "tool_call_id": call_id,
+                    "value": (
+                        f"Tool {name} {status}. Result text is unavailable in the "
+                        "redacted public export."
+                    ),
+                }
+            )
+    return _validate_conversations(turns)
+
+
+async def compress_native_trajectory(
+    input_path: Path,
+    output_path: Path,
+    *,
+    settings: CompressionSettings,
+    count_tokens: TokenCounter,
+    summarize: Summarizer,
+) -> dict[str, Any]:
+    """Compress an X.A.A. JSON trajectory into a derived transcript, never in place."""
+    source = input_path.resolve(strict=True)
+    destination = output_path.resolve()
+    if not source.is_file():
+        raise ValueError("Trajectory input must be a regular file.")
+    if source == destination:
+        raise ValueError("Input and output must be different files.")
+    if destination.exists():
+        raise FileExistsError("Refusing to overwrite an existing trajectory output.")
+    if not destination.parent.is_dir():
+        raise ValueError("Output directory does not exist.")
+    size = source.stat().st_size
+    if size > MAX_ENTRY_BYTES:
+        raise ValueError("X.A.A. trajectory exceeds the 10 MiB input limit.")
+    raw = source.read_bytes()
+    try:
+        value: object = json.loads(raw, parse_constant=_reject_json_constant)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ValueError("Invalid X.A.A. trajectory JSON.") from exc
+    if not isinstance(value, dict):
+        raise TypeError("X.A.A. trajectory must be a JSON object.")
+    entry = cast(dict[str, Any], value)
+    turns = native_trajectory_turns(entry)
+    compressed, metrics = await compress_conversations(
+        turns, settings=settings, count_tokens=count_tokens, summarize=summarize
+    )
+    run = cast(dict[str, Any], entry["run"])
+    output = {
+        "format": "xaa-compressed-trajectory",
+        "format_version": 1,
+        "source": {
+            "format": "xaa-trajectory",
+            "format_version": entry["format_version"],
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "run_id": run.get("id"),
+        },
+        "run": {
+            key: run[key]
+            for key in ("id", "objective", "mode", "model", "state", "created_at", "updated_at")
+            if key in run
+        },
+        "conversations": compressed,
+        "compression_metrics": asdict(metrics),
+        "limitations": [
+            "Derived analysis transcript; not a replayable native trajectory.",
+            "Redacted public exports do not contain tool result text.",
+            "Original events and artifacts remain only in the source export.",
+        ],
+    }
+    encoded = json.dumps(output, ensure_ascii=False, allow_nan=False, indent=2).encode("utf-8")
+    if len(encoded) > MAX_OUTPUT_BYTES:
+        raise ValueError("Compressed output exceeds the 100 MiB limit.")
+    temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("xb") as output_file:
+            output_file.write(encoded)
+            output_file.flush()
+            os.fsync(output_file.fileno())
+        os.link(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {
+        "entries": 1,
+        "compressed": int(metrics.was_compressed),
+        "skipped": int(not metrics.was_compressed),
+        "original_tokens": metrics.original_tokens,
+        "compressed_tokens": metrics.compressed_tokens,
+        "tokens_saved": metrics.tokens_saved,
+        "bytes_written": len(encoded),
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+        "derived_format": "xaa-compressed-trajectory",
+    }
+
+
 async def compress_jsonl_with_lm_studio(
     input_path: Path,
     output_path: Path,
@@ -353,6 +532,16 @@ async def compress_jsonl_with_lm_studio(
         return choice.message.content or ""
 
     try:
+        with input_path.open("rb") as input_file:
+            prefix = input_file.read(4096)
+        if re.search(rb'"format"\s*:\s*"xaa-trajectory"', prefix):
+            return await compress_native_trajectory(
+                input_path,
+                output_path,
+                settings=settings,
+                count_tokens=count_tokens,
+                summarize=summarize,
+            )
         return await compress_jsonl(
             input_path,
             output_path,

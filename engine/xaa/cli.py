@@ -135,10 +135,17 @@ def main() -> None:
     training.add_argument("--output", type=Path, required=True, help="New JSONL file path")
     compression = commands.add_parser(
         "compress-trajectories",
-        help="Compress conversational JSONL with an explicitly selected local LM Studio model",
+        help="Compress JSONL or a native X.A.A. export with an explicitly selected local model",
     )
-    compression.add_argument("input", type=Path, help="JSONL file with conversations or messages")
-    compression.add_argument("--output", type=Path, required=True, help="New JSONL output path")
+    compression.add_argument(
+        "input", type=Path, help="Conversation JSONL or one native X.A.A. trajectory JSON export"
+    )
+    compression.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="New compressed JSONL or derived JSON output path",
+    )
     compression.add_argument("--model", required=True, help="Exact loaded LM Studio model ID")
     compression.add_argument(
         "--provider-url",

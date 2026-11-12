@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -7,6 +8,8 @@ from xaa.trajectory_compression import (
     CompressionSettings,
     compress_conversations,
     compress_jsonl,
+    compress_native_trajectory,
+    native_trajectory_turns,
 )
 
 
@@ -160,3 +163,99 @@ async def test_invalid_jsonl_does_not_publish_partial_output(tmp_path: Path) -> 
 def test_settings_bound_token_limits() -> None:
     with pytest.raises(ValueError, match="smaller than the token budget"):
         CompressionSettings(target_max_tokens=256, summary_target_tokens=256)
+
+
+@pytest.mark.asyncio
+async def test_native_export_becomes_derived_transcript_and_keeps_tool_group(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "run.json"
+    output = tmp_path / "derived.json"
+    trajectory = {
+        "format": "xaa-trajectory",
+        "format_version": 1,
+        "run": {"id": "run-42", "objective": "Inspect the fixture"},
+        "events": [
+            {
+                "event_type": "model.message",
+                "payload": {
+                    "message": {
+                        "role": "assistant",
+                        "content": "I will inspect it.",
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "function": {"name": "workspace_read_file", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                },
+            },
+            {
+                "event_type": "tool.completed",
+                "payload": {"call_id": "call-1", "internal": False},
+            },
+            *[
+                {
+                    "event_type": "model.message",
+                    "payload": {
+                        "message": {
+                            "role": "assistant",
+                            "content": f"middle evidence {i} " + "x" * 80,
+                        }
+                    },
+                }
+                for i in range(5)
+            ],
+            {
+                "event_type": "model.message",
+                "payload": {"message": {"role": "assistant", "content": "Final answer."}},
+            },
+        ],
+    }
+    source_bytes = json.dumps(trajectory).encode()
+    source.write_bytes(source_bytes)
+    turns = native_trajectory_turns(trajectory)
+    assert turns[1]["from"] == "human"
+    assert turns[2]["from"] == "assistant"
+    assert turns[3]["from"] == "tool"
+    assert turns[3]["tool_call_id"] == "call-1"
+    assert "unavailable in the redacted public export" in turns[3]["value"]
+
+    report = await compress_native_trajectory(
+        source,
+        output,
+        settings=CompressionSettings(
+            target_max_tokens=500, summary_target_tokens=32, protect_last_turns=1
+        ),
+        count_tokens=count_tokens,
+        summarize=fixed_summary,
+    )
+    derived = json.loads(output.read_text(encoding="utf-8"))
+    assert derived["format"] == "xaa-compressed-trajectory"
+    assert derived["source"]["run_id"] == "run-42"
+    assert derived["source"]["sha256"] == hashlib.sha256(source_bytes).hexdigest()
+    assert derived["conversations"][2:4] == turns[2:4]
+    assert derived["compression_metrics"]["was_compressed"] is True
+    assert report["derived_format"] == "xaa-compressed-trajectory"
+    assert source.read_bytes() == source_bytes
+    assert "not a replayable" in derived["limitations"][0]
+
+
+def test_native_export_rejects_multimodal_flattening() -> None:
+    with pytest.raises(TypeError, match="Multimodal"):
+        native_trajectory_turns(
+            {
+                "format": "xaa-trajectory",
+                "format_version": 1,
+                "run": {},
+                "events": [
+                    {
+                        "event_type": "model.message",
+                        "payload": {
+                            "message": {"role": "assistant", "content": [{"type": "image"}]}
+                        },
+                    }
+                ],
+            }
+        )

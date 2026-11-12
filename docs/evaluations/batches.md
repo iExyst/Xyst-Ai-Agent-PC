@@ -56,7 +56,7 @@ Only cases whose refreshed manifest says `completed`, whose configured determini
 
 ## Compress conversational trajectories
 
-Use `xaa compress-trajectories` for JSONL entries with a `conversations` or `messages` array of `{ "from": "human|gpt|tool|system", "value": "..." }` turns:
+Use `xaa compress-trajectories` for JSONL entries with a `conversations` or `messages` array of `{ "from": "human|gpt|tool|system", "value": "..." }` turns, or pass one native X.A.A. `xaa-trajectory` JSON export:
 
 ```powershell
 uv run xaa compress-trajectories input.jsonl --output compressed.jsonl --model MODEL_ID --max-tokens 8192 --summary-tokens 256 --keep-last 4
@@ -64,4 +64,6 @@ uv run xaa compress-trajectories input.jsonl --output compressed.jsonl --model M
 
 The model identifier must match an already-loaded LM Studio model. Compression uses the configured loopback LM Studio address (default `http://127.0.0.1:1234`) and the optional LM Studio credential in Windows Credential Manager. It does not use cloud providers, download a tokenizer/model, or load a model. Token counting uses LM Studio's installed model tokenizer. The first system, human, assistant, and tool turns and the requested recent tail are preserved verbatim. Assistant turns and their immediately following tool results stay together. The intervening middle becomes one `[CONTEXT SUMMARY]:` human turn; summary input is explicitly treated as untrusted, and every output record includes bounded compression metrics.
 
-The command accepts at most 10,000 JSONL entries, 10 MiB per input line, 256 turns per conversation, 100 MiB total output, and a 256 KiB summary region per entry. Output is published only after the full input succeeds and is never overwritten. If the protected context plus summary cannot fit the requested token budget, or the local model truncates the summary, the command fails without publishing partial output. This supports conversational JSONL datasets; X.A.A.'s native event-export JSON is a different schema and is not converted by this command. No live-model acceptance has been run for this capability yet.
+The command accepts at most 10,000 JSONL entries, 10 MiB per input line, 256 turns per conversation, 100 MiB total output, and a 256 KiB summary region per entry. Output is published only after the full input succeeds and is never overwritten. If the protected context plus summary cannot fit the requested token budget, or the local model truncates the summary, the command fails without publishing partial output. No live-model acceptance has been run for this capability yet.
+
+For a native JSON export, the command writes `xaa-compressed-trajectory` JSON with the source run metadata, source-file SHA-256, and a derived conversation view. It includes public assistant messages, the run objective, review feedback, and public tool-call completion markers. Redacted exports do not include tool result text, so the derived transcript says when a result is unavailable; it never invents one. Multimodal messages are rejected instead of flattened. This output is for analysis and context compression, not replay or restoration; keep the original export as the authoritative event history. Both formats are processed locally through the explicitly loaded loopback model, and no live summarizer acceptance has been run yet.
