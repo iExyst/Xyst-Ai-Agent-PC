@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 import uvicorn
+import xaa.runtime.mcp_manager as mcp_manager_module
 from mcp.server.mcpserver import Context, MCPServer
 from pydantic import ValidationError
 from xaa.extensions.agent_plugins import plugin_source_sha256
@@ -35,7 +36,23 @@ class MemoryCredentials:
 
 
 @pytest.mark.asyncio
-async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_path: Path):
+async def test_streamable_http_discovery_auth_call_and_disconnect(
+    workspace_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+    observed_proxy_settings: list[bool] = []
+    original_http_client = mcp_manager_module.httpx.AsyncClient
+
+    class ObservedHttpClient(original_http_client):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            trust_env = kwargs.get("trust_env")
+            assert isinstance(trust_env, bool)
+            observed_proxy_settings.append(trust_env)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(mcp_manager_module.httpx, "AsyncClient", ObservedHttpClient)
     mcp = MCPServer("HTTP fixture")
 
     @mcp.tool()
@@ -96,6 +113,7 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
                 name="HTTP fixture",
                 transport="streamable_http",
                 endpoint=f"http://127.0.0.1:{port}/mcp",
+                trust_environment=True,
                 secret_env=["MCP_TOKEN", "CUSTOM_TOKEN"],
                 plugin_root=str(plugin_root),
                 plugin_data=str(workspace_tmp_path / "plugin-data"),
@@ -109,6 +127,7 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(workspace_tmp_
         credentials.set("fixture-bearer-token", f"mcp:{record.id}:MCP_TOKEN")
         credentials.set("fixture-custom-header", f"mcp:{record.id}:CUSTOM_TOKEN")
         tools = await manager.connect_server(record.id)
+        assert observed_proxy_settings == [True]
         assert [tool.name for tool in tools] == ["add"]
         assert manager._http_headers(record) == {
             "Authorization": "Bearer fixture-bearer-token",
@@ -447,3 +466,6 @@ def test_mcp_http_endpoint_policy_and_legacy_defaults():
             endpoint="https://example.com/mcp?access_token=secret",
         )
     assert MCPServerSpec(name="legacy", command="python").transport == "stdio"
+    assert MCPServerSpec(name="legacy", command="python").trust_environment is False
+    with pytest.raises(ValidationError, match="only to Streamable HTTP"):
+        MCPServerSpec(name="invalid proxy", command="python", trust_environment=True)

@@ -21,6 +21,7 @@ class MCPServerSpec(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     transport: Literal["stdio", "streamable_http"] = "stdio"
     protocol_mode: Literal["auto", "legacy"] = "auto"
+    trust_environment: bool = False
     endpoint: str | None = Field(default=None, max_length=2048)
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
@@ -73,6 +74,10 @@ class MCPServerSpec(BaseModel):
         if self.transport == "stdio":
             if not self.command.strip() or self.endpoint is not None:
                 raise ValueError("stdio MCP servers need a command and cannot set an endpoint.")
+            if self.trust_environment:
+                raise ValueError(
+                    "HTTP environment settings apply only to Streamable HTTP MCP servers."
+                )
             if (self.plugin_root is None) != (self.plugin_data is None):
                 raise ValueError("Plugin stdio servers require both package and data paths.")
             for path in (self.plugin_root, self.plugin_data):
@@ -205,7 +210,7 @@ class MCPRegistry:
                 if current_sha256 != spec.plugin_sha256:
                     raise ValueError("The selected MCP package changed before it was registered.")
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256,trust_environment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -222,6 +227,7 @@ class MCPRegistry:
                     spec.plugin_data,
                     json.dumps(spec.plugin_headers),
                     spec.plugin_sha256,
+                    int(spec.trust_environment),
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -343,6 +349,7 @@ class MCPRegistry:
             secret_env=json.loads(row["secret_env"]),
             transport=row.get("transport", "stdio"),
             protocol_mode=row.get("protocol_mode", "auto"),
+            trust_environment=bool(row.get("trust_environment", 1)),
             endpoint=row.get("endpoint"),
             plugin_root=row.get("plugin_root"),
             plugin_data=row.get("plugin_data"),

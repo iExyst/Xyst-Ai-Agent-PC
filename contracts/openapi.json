@@ -631,6 +631,11 @@
             ],
             "title": "Transport",
             "type": "string"
+          },
+          "trust_environment": {
+            "default": false,
+            "title": "Trust Environment",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2174,6 +2179,10 @@
             "title": "Transport",
             "type": "string"
           },
+          "trust_environment": {
+            "title": "Trust Environment",
+            "type": "boolean"
+          },
           "updated_at": {
             "title": "Updated At",
             "type": "string"
@@ -2184,6 +2193,7 @@
           "name",
           "transport",
           "protocol_mode",
+          "trust_environment",
           "endpoint",
           "command",
           "args",

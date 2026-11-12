@@ -617,8 +617,21 @@ def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
             json={"name": "Shutdown failure", "command": sys.executable, "secret_env": ["TOKEN"]},
         )
         assert created.status_code == 201
+        assert created.json()["trust_environment"] is False
         server_id = created.json()["id"]
         credentials.set("preserve-me", f"mcp:{server_id}:TOKEN")
+        created_http = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "HTTP proxy setting",
+                "transport": "streamable_http",
+                "endpoint": "https://example.test/mcp",
+                "trust_environment": True,
+            },
+        )
+        assert created_http.status_code == 201
+        assert created_http.json()["trust_environment"] is True
 
         disconnected = client.post(f"/mcp/servers/{server_id}/disconnect", headers=headers)
         assert disconnected.status_code == 503

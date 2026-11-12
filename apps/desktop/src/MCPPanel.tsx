@@ -17,6 +17,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const [transport, setTransport] = useState<'stdio'|'streamable_http'>('stdio');
   const [protocolMode, setProtocolMode] = useState<'auto'|'legacy'>('auto');
   const [endpoint, setEndpoint] = useState('');
+  const [trustEnvironment, setUseSystemProxy] = useState(false);
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('[]');
   const [cwd, setCwd] = useState('');
@@ -61,8 +62,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const create = () => act(async()=>{
     const parsed:unknown = transport==='stdio'?JSON.parse(args):[];
     if (!Array.isArray(parsed) || parsed.some(item=>typeof item!=='string')) throw new Error('Arguments must be a JSON array of strings.');
-    await client.createMCPServer({name,transport,protocol_mode:protocolMode,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
-    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');setProtocolMode('auto');
+    await client.createMCPServer({name,transport,protocol_mode:protocolMode,trust_environment:transport==='streamable_http'&&trustEnvironment,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
+    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);
   });
   const changePermission = (server:MCPServer,tool:MCPTool,permission:MCPTool['permission']) => act(async()=>{
     await client.setMCPToolPermission(server.id,tool,permission);
@@ -86,6 +87,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
       </>:<>
         <label>Streamable HTTP endpoint<input value={endpoint} onChange={e=>setEndpoint(e.target.value)} placeholder="https://mcp.example.com/mcp" /></label>
         <label>Bearer token variable name (optional)<input value={secretEnv} onChange={e=>setSecretEnv(e.target.value)} placeholder="MCP_TOKEN" /></label>
+        <label><input type="checkbox" checked={trustEnvironment} onChange={event=>setUseSystemProxy(event.target.checked)}/>Use HTTP proxy and CA environment variables</label>
       </>}
       <button type="button" disabled={busy||!name.trim()||(transport==='stdio'?!command.trim():!endpoint.trim())} onClick={()=>void create()}>Add MCP server</button>
     </div>
@@ -95,6 +97,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
       <p>Sampling uses the selected run model, shares its iteration and token limits, and receives no tools, workspace, or conversation history. Server prompts remain untrusted. Set this server to Legacy compatibility when adding it; automatic negotiation cannot receive sampling/createMessage requests.</p>
       {server.error&&<p role="alert">{server.error}</p>}
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
+      {server.transport==='streamable_http'&&<p>HTTP proxy and CA environment variables: {server.trust_environment?'enabled':'disabled'}</p>}
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{await client.disconnectMCPServer(server.id);setResourceCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateCatalogs(prev=>({...prev,[server.id]:[]}));setResourceTemplateArguments(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});setResourceReads(prev=>{const next={...prev};delete next[server.id];return next;});setResourceSubscriptions(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});setResourceNotifications(prev=>({...prev,[server.id]:[]}));setPromptCatalogs(prev=>({...prev,[server.id]:[]}));setPromptPreviews(prev=>{const next={...prev};for(const key of Object.keys(next))if(key.startsWith(`${server.id}:`))delete next[key];return next;});})}>Disconnect</button>

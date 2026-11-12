@@ -175,9 +175,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByLabel('Transport').selectOption('streamable_http');
   await panel.getByLabel('Streamable HTTP endpoint').fill('https://mcp.example.com/mcp');
   await panel.getByLabel('Bearer token variable name (optional)').fill('MCP_TOKEN');
+  await panel.getByLabel('Use HTTP proxy and CA environment variables').check();
   await panel.getByRole('button',{name:'Add MCP server'}).click();
   await expect(panel.getByText('https://mcp.example.com/mcp')).toBeVisible();
-  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.transport==='streamable_http'&&item.body.endpoint==='https://mcp.example.com/mcp'&&item.body.secret_env[0]==='MCP_TOKEN')).toBe(true);
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.transport==='streamable_http'&&item.body.endpoint==='https://mcp.example.com/mcp'&&item.body.secret_env[0]==='MCP_TOKEN'&&item.body.trust_environment===true)).toBe(true);
   await page.locator('summary').filter({hasText:'Agent plugin discovery'}).click();
   const plugins=page.getByRole('region',{name:'Agent plugin package discovery'});
   await page.evaluate(()=>{

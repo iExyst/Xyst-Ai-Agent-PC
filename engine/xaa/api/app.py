@@ -345,6 +345,7 @@ class MCPServerResponse(BaseModel):
     name: str
     transport: Literal["stdio", "streamable_http"]
     protocol_mode: Literal["auto", "legacy"]
+    trust_environment: bool
     endpoint: str | None
     command: str
     args: list[str]
@@ -399,6 +400,7 @@ class CreateMCPServerRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     transport: Literal["stdio", "streamable_http"] = "stdio"
     protocol_mode: Literal["auto", "legacy"] = "auto"
+    trust_environment: bool = False
     endpoint: str | None = Field(default=None, max_length=2048)
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)

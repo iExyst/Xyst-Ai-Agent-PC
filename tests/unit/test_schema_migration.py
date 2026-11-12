@@ -484,6 +484,42 @@ def test_schema_twenty_four_adds_agent_plugin_http_header_mapping(workspace_tmp_
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
+def test_schema_twenty_nine_adds_http_system_proxy_choice_with_legacy_default(
+    workspace_tmp_path,
+):
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    database = workspace_tmp_path / "schema-twenty-nine-mcp-proxy.sqlite3"
+    store = RunStore(database)
+    registry = MCPRegistry(store)
+    legacy = registry.create_server(
+        MCPServerSpec(
+            name="Legacy proxy",
+            transport="streamable_http",
+            endpoint="https://example.test/mcp",
+        )
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN trust_environment")
+        connection.execute("PRAGMA user_version=29")
+
+    migrated = RunStore(database)
+    migrated_registry = MCPRegistry(migrated)
+    restored = migrated_registry.get_server(legacy.id)
+    assert restored is not None
+    assert restored.trust_environment is True
+    new = migrated_registry.create_server(
+        MCPServerSpec(
+            name="New proxy",
+            transport="streamable_http",
+            endpoint="https://example.test/new",
+        )
+    )
+    assert new.trust_environment is False
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
 def test_schema_twenty_five_adds_agent_plugin_source_fingerprint(workspace_tmp_path):
     from xaa.extensions.agent_plugins import plugin_source_sha256
     from xaa.storage.mcp import MCPRegistry, MCPServerSpec

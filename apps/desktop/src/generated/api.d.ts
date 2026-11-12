@@ -2296,6 +2296,11 @@ export interface components {
              * @enum {string}
              */
             transport: "stdio" | "streamable_http";
+            /**
+             * Trust Environment
+             * @default false
+             */
+            trust_environment: boolean;
         };
         /** CreateRunRequest */
         CreateRunRequest: {
@@ -2887,6 +2892,8 @@ export interface components {
              * @enum {string}
              */
             transport: "stdio" | "streamable_http";
+            /** Trust Environment */
+            trust_environment: boolean;
             /** Updated At */
             updated_at: string;
         };

@@ -331,6 +331,7 @@ class MCPManager:
                         headers=self._http_headers(server),
                         timeout=httpx.Timeout(MCP_CALL_TIMEOUT, connect=MCP_CONNECT_TIMEOUT),
                         follow_redirects=False,
+                        trust_env=server.trust_environment,
                         auth=auth,
                     )
                     await stack.enter_async_context(http_client)

@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 29
+DATABASE_SCHEMA_VERSION = 30
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -656,7 +656,8 @@ class RunStore:
                     plugin_root TEXT,
                     plugin_data TEXT,
                     plugin_headers TEXT,
-                    plugin_sha256 TEXT
+                    plugin_sha256 TEXT,
+                    trust_environment INTEGER NOT NULL DEFAULT 1 CHECK(trust_environment IN (0,1))
                 );
                 CREATE TABLE IF NOT EXISTS mcp_server_tools (
                     server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
@@ -832,6 +833,11 @@ class RunStore:
                 )
             if "plugin_sha256" not in mcp_columns:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN plugin_sha256 TEXT")
+            if "trust_environment" not in mcp_columns:
+                # Preserve the historical httpx trust_env behavior for existing servers.
+                connection.execute(
+                    "ALTER TABLE mcp_servers ADD COLUMN trust_environment INTEGER NOT NULL DEFAULT 1 CHECK(trust_environment IN (0,1))"
+                )
             if connection.execute("PRAGMA user_version").fetchone()[0] < 3:
                 install_index(connection)
             memory_columns = {
