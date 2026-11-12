@@ -117,7 +117,13 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
 
 @pytest.mark.parametrize(
     "scenario",
-    ["exited-owner", "reused-pid", "legacy-journal", "crash-before-acl"],
+    [
+        "exited-owner",
+        "reused-pid",
+        "legacy-journal",
+        "crash-before-acl",
+        "exit-code-259",
+    ],
 )
 def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
     workspace_tmp_path: Path,
@@ -143,8 +149,8 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
 
     before = ace_count()
     command = [sys.executable, str(APPCONTAINER_CRASH_FIXTURE), str(journal), str(access_root)]
-    if scenario == "crash-before-acl":
-        command.append("before-acl")
+    if scenario in {"crash-before-acl", "exit-code-259"}:
+        command.append("before-acl" if scenario == "crash-before-acl" else "exit-259")
     crashed_engine = subprocess.run(
         command,
         check=False,
@@ -152,7 +158,8 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
         text=True,
         timeout=30,
     )
-    assert crashed_engine.returncode == 0, crashed_engine.stderr
+    expected_exit_code = 259 if scenario == "exit-code-259" else 0
+    assert crashed_engine.returncode == expected_exit_code, crashed_engine.stderr
     records = list(journal.glob("XAA-MCP-*.json"))
     assert len(records) == 1
     record_path = records[0]

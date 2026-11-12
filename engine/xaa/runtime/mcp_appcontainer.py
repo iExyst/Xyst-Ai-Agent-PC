@@ -179,21 +179,21 @@ def _process_identity(process_id: int) -> tuple[bool | None, int | None]:
     open_process = kernel32.OpenProcess
     open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     open_process.restype = wintypes.HANDLE
-    process = open_process(0x1000, False, process_id)  # PROCESS_QUERY_LIMITED_INFORMATION
+    process = open_process(0x1000 | 0x00100000, False, process_id)  # Query + SYNCHRONIZE
     if not process:
         error = ctypes.get_last_error()
         # Access denied and other inspection failures are treated as live so
         # another running engine's grants are never revoked.
         return (False, None) if error == 87 else (None, None)
     try:
-        exit_code = wintypes.DWORD()
-        get_exit_code = kernel32.GetExitCodeProcess
-        get_exit_code.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
-        get_exit_code.restype = wintypes.BOOL
-        if not get_exit_code(process, ctypes.byref(exit_code)):
-            return None, None
-        if exit_code.value != 259:
+        wait_for_single_object = kernel32.WaitForSingleObject
+        wait_for_single_object.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        wait_for_single_object.restype = wintypes.DWORD
+        wait_result = wait_for_single_object(process, 0)
+        if wait_result == 0:  # WAIT_OBJECT_0
             return False, None
+        if wait_result != 258:  # WAIT_TIMEOUT; any other value is an inspection failure.
+            return None, None
 
         creation = _FILETIME()
         exited = _FILETIME()

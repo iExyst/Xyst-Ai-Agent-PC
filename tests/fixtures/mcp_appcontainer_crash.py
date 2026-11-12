@@ -26,4 +26,4 @@ AppContainerAccess(
     journal_directory,
 )
 # Simulate an engine crash after ACL application and skip Python cleanup hooks.
-os._exit(0)
+os._exit(259 if len(sys.argv) > 3 and sys.argv[3] == "exit-259" else 0)
