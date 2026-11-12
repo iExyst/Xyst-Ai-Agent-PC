@@ -72,6 +72,8 @@ let isolationListener;
 let fixtureOutput = '';
 let passed = false;
 let typescriptSdkModernStdio = false;
+let ownerPromptCompletion = false;
+let ownerResourceTemplateCompletion = false;
 
 try {
   const debugDeadline = Date.now() + 60_000;
@@ -256,29 +258,49 @@ try {
   }
   const nativeTemplate = panel.locator('.mcp-resource-template').filter({ hasText: 'xaa://fixture/items/{item_id}' });
   await nativeTemplate.getByLabel('Arguments JSON for resource template item').fill('{"item_id":"native-acceptance"}');
+  await nativeTemplate.getByLabel('Completion prefix for resource template item_id').fill('native-template');
+  await nativeTemplate.getByRole('button', { name: 'Suggest resource variable item_id' }).click();
+  const nativeTemplateSuggestions = nativeTemplate.getByRole('complementary', {
+    name: 'Untrusted MCP completion suggestions for resource template item item_id',
+  });
+  await expect(nativeTemplateSuggestions).toContainText('native-template-item');
+  await nativeTemplateSuggestions.getByRole('button', { name: 'Use suggestion' }).click();
+  await expect(nativeTemplate.getByLabel('Arguments JSON for resource template item'))
+    .toHaveValue('{"item_id":"native-template-item"}');
+  ownerResourceTemplateCompletion = true;
   await nativeTemplate.getByRole('button', { name: 'Read template resource', exact: true }).click();
   await expect(panel.getByRole('complementary', { name: 'Untrusted MCP resource data' }))
-    .toContainText('Fixture item: native-acceptance', { timeout: 20_000 });
+    .toContainText('Fixture item: native-template-item', { timeout: 20_000 });
   const templateRead = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/resource-templates/read`, {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'item', arguments: { item_id: 'native-api' } }),
+    body: JSON.stringify({ name: 'item', arguments: { item_id: 'native-template-api' } }),
   })).json();
-  if (templateRead.trust !== 'untrusted_mcp_output' || templateRead.contents[0].text !== 'Fixture item: native-api') {
+  if (templateRead.trust !== 'untrusted_mcp_output' || templateRead.contents[0].text !== 'Fixture item: native-template-api') {
     throw new Error('The native MCP resource template read did not return untrusted fixture data.');
   }
   await panel.getByRole('button', { name: 'List prompts', exact: true }).click();
   const nativePrompt = panel.locator('.mcp-prompt').filter({ hasText: 'summarize_topic' });
   await expect(nativePrompt).toBeVisible({ timeout: 20_000 });
   await nativePrompt.getByLabel('Arguments JSON for summarize_topic').fill('{"topic":"native acceptance"}');
+  await nativePrompt.getByLabel('Completion prefix for topic').fill('native-prompt');
+  await nativePrompt.getByRole('button', { name: 'Suggest topic' }).click();
+  const nativePromptSuggestions = nativePrompt.getByRole('complementary', {
+    name: 'Untrusted MCP completion suggestions for topic',
+  });
+  await expect(nativePromptSuggestions).toContainText('native-prompt-suggested');
+  await nativePromptSuggestions.getByRole('button', { name: 'Use suggestion' }).first().click();
+  await expect(nativePrompt.getByLabel('Arguments JSON for summarize_topic'))
+    .toHaveValue('{"topic":"native-prompt-suggested"}');
+  ownerPromptCompletion = true;
   await nativePrompt.getByRole('button', { name: 'Preview prompt', exact: true }).click();
   await expect(panel.getByRole('complementary', { name: 'Untrusted MCP prompt preview' }))
-    .toContainText('Summarize the supplied topic: native acceptance');
+    .toContainText('Summarize the supplied topic: native-prompt-suggested');
   const promptList = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/prompts`, {
     method: 'POST', headers,
   })).json();
   const promptPreview = await (await fetch(`${connection.base_url}/mcp/servers/${serverId}/prompts/preview`, {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'summarize_topic', arguments: { topic: 'native acceptance' } }),
+    body: JSON.stringify({ name: 'summarize_topic', arguments: { topic: 'native-prompt-suggested' } }),
   })).json();
   if (promptList.prompts.length !== 1 || promptPreview.trust !== 'untrusted_mcp_output') {
     throw new Error('The native MCP prompt catalog/preview API did not return bounded untrusted data.');
@@ -594,9 +616,11 @@ try {
     owner_resource_notification_check: nativeNotifications.trust === 'untrusted_mcp_output',
     owner_resource_read: true,
     owner_resource_template_catalog: true,
+    owner_resource_template_completion: ownerResourceTemplateCompletion,
     owner_resource_template_read: templateRead.trust === 'untrusted_mcp_output',
     resource_output_labeled_untrusted: resourceRead.trust === 'untrusted_mcp_output',
     owner_prompt_catalog: true,
+    owner_prompt_completion: ownerPromptCompletion,
     owner_prompt_preview: true,
     prompt_output_labeled_untrusted: promptPreview.trust === 'untrusted_mcp_output',
     new_tool_permissions: 'none',
@@ -626,7 +650,13 @@ try {
   await writeFile(path.join(root, 'desktop-stderr.log'), stderr);
   await writeFile(path.join(root, 'engine.log'), engineLog.slice(previousEngineLog.length));
   if (oauthFixture) await writeFile(path.join(root, 'oauth-fixture.log'), fixtureOutput ?? '');
-  await writeFile(path.join(root, 'report.json'), JSON.stringify({ passed, error: String(error) }, null, 2));
+  await writeFile(path.join(root, 'report.json'), JSON.stringify({
+    passed,
+    owner_prompt_completion: ownerPromptCompletion,
+    owner_resource_template_completion: ownerResourceTemplateCompletion,
+    typescript_sdk_modern_stdio: typescriptSdkModernStdio,
+    error: String(error),
+  }, null, 2));
   throw error;
 } finally {
   if (isolationListener?.listening) {
