@@ -102,6 +102,33 @@ try {
     }
     [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
     $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
+    # A silent in-place update cannot replace an executable still mapped by a
+    # process. Stop only X.A.A. processes whose image path is inside this
+    # disposable install directory, then verify the install tree is unlocked.
+    $xaaInstallRoot = [IO.Path]::GetFullPath($xaaInstallDir).TrimEnd('\') + '\'
+    $xaaUpgradeProcesses = @(
+        Get-CimInstance -ClassName Win32_Process -Filter "Name = 'xaa-desktop.exe' OR Name = 'xaa-engine.exe'" |
+            Where-Object {
+                $_.ExecutablePath -and
+                [IO.Path]::GetFullPath($_.ExecutablePath).StartsWith($xaaInstallRoot, [StringComparison]::OrdinalIgnoreCase)
+            }
+    )
+    $xaaReport.upgrade_processes_before_update = @(
+        $xaaUpgradeProcesses | ForEach-Object { @{ name = $_.Name; process_id = $_.ProcessId } }
+    )
+    foreach ($xaaUpgradeProcess in $xaaUpgradeProcesses) {
+        Stop-Process -Id $xaaUpgradeProcess.ProcessId -Force
+        Wait-Process -Id $xaaUpgradeProcess.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
+    }
+    $xaaRemainingUpgradeProcesses = @(
+        Get-CimInstance -ClassName Win32_Process -Filter "Name = 'xaa-desktop.exe' OR Name = 'xaa-engine.exe'" |
+            Where-Object {
+                $_.ExecutablePath -and
+                [IO.Path]::GetFullPath($_.ExecutablePath).StartsWith($xaaInstallRoot, [StringComparison]::OrdinalIgnoreCase)
+            }
+    )
+    if ($xaaRemainingUpgradeProcesses.Count -gt 0) { throw 'An X.A.A. process from the disposable install directory remained active before upgrade.' }
+    $xaaReport.upgrade_processes_stopped_before_update = $true
     $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', '/UPDATE') -WindowStyle Hidden -Wait -PassThru
     if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
