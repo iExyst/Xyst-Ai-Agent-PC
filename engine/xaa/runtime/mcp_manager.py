@@ -28,7 +28,7 @@ from mcp.client.extension import ClientExtension, NotificationBinding
 from mcp.client.session import ClientRequestContext
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
-from mcp.client.subscriptions import ResourceUpdated
+from mcp.client.subscriptions import ResourceUpdated, ToolsListChanged
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -184,6 +184,7 @@ class _ConnectedServer:
         self.owner_task = owner_task
         self.notifications = notifications
         self.subscribed_resources: set[str] = set()
+        self.tool_list_changed = False
         self.subscription_task: asyncio.Task[None] | None = None
         self.sampling_handler: (
             Callable[
@@ -211,6 +212,16 @@ class _ConnectedServer:
             "uri": uri,
             "trust": "untrusted_mcp_output",
         }
+        if self.notifications.full():
+            while not self.notifications.empty():
+                self.notifications.get_nowait()
+            payload = {"kind": "resync_required", "trust": "untrusted_mcp_output"}
+        self.notifications.put_nowait(payload)
+
+    def enqueue_tools_list_changed(self) -> None:
+        self._enqueue_notification({"kind": "tools_list_changed", "trust": "untrusted_mcp_output"})
+
+    def _enqueue_notification(self, payload: dict[str, Any]) -> None:
         if self.notifications.full():
             while not self.notifications.empty():
                 self.notifications.get_nowait()
@@ -283,6 +294,15 @@ class MCPManager:
                 self._errors[server_id] = safe_error
                 raise MCPConnectionError(safe_error)
             self._connected[server_id] = connection
+            if connection.tool_list_changed:
+                try:
+                    await self._restart_resource_listener(connection)
+                except Exception as error:
+                    self._connected.pop(server_id, None)
+                    await connection.close()
+                    raise MCPConnectionError(
+                        "The MCP server advertised tool-list updates but its update stream could not be opened."
+                    ) from error
             return discovered
 
     @staticmethod
@@ -427,6 +447,12 @@ class MCPManager:
                     notifications,
                 )
                 connection.subscribed_resources = connection_subscriptions
+                capabilities = client.server_capabilities
+                connection.tool_list_changed = (
+                    client.protocol_version in MODERN_PROTOCOL_VERSIONS
+                    and capabilities.tools is not None
+                    and capabilities.tools.list_changed is True
+                )
                 if not ready.done():
                     ready.set_result((connection, records))
                 await connection.shutdown.wait()
@@ -961,20 +987,26 @@ class MCPManager:
             previous.cancel()
             await asyncio.gather(previous, return_exceptions=True)
         connection.subscription_task = None
-        if not connection.subscribed_resources:
+        if not connection.subscribed_resources and not connection.tool_list_changed:
             return
         ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
         async def listen() -> None:
             try:
                 async with connection.client.listen(
-                    resource_subscriptions=sorted(connection.subscribed_resources)
+                    tools_list_changed=connection.tool_list_changed,
+                    resource_subscriptions=sorted(connection.subscribed_resources),
                 ) as subscription:
                     if not ready.done():
                         ready.set_result(None)
                     async for event in subscription:
                         if isinstance(event, ResourceUpdated):
                             connection.enqueue_resource_update(event.uri)
+                        elif isinstance(event, ToolsListChanged):
+                            try:
+                                await self._refresh_tool_catalog(connection)
+                            except Exception:  # noqa: BLE001 - preserve the connection and require owner resync.
+                                connection.enqueue_resync_required()
                     connection.enqueue_resync_required()
             except asyncio.CancelledError:
                 if not ready.done():
@@ -1007,6 +1039,15 @@ class MCPManager:
         while len(updates) < MCP_NOTIFICATION_LIMIT and not connection.notifications.empty():
             updates.append(connection.notifications.get_nowait())
         return {"notifications": updates, "trust": "untrusted_mcp_output"}
+
+    async def _refresh_tool_catalog(self, connection: _ConnectedServer) -> None:
+        async with connection.lock:
+            if self._connected.get(connection.server.id) is not connection:
+                return
+            tools = await self._list_tools(connection.session, connection.server.id)
+            self.registry.synchronize_tools(connection.server.id, tools)
+            connection.tools = {tool.name: tool for tool in tools}
+            connection.enqueue_tools_list_changed()
 
     async def read_resource(self, server_id: str, uri: str) -> dict[str, Any]:
         connection = self._connected.get(server_id)

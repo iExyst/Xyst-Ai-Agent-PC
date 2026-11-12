@@ -93,12 +93,13 @@ async def main() -> None:
         allowed = await run_case(
             root / "allowed.sqlite3",
             name="approved_redirect",
-            destination="https://httpbin.org/html",
-            approved_hosts=["postman-echo.com", "httpbin.org"],
+            destination="https://en.wikipedia.org/wiki/HTTPS",
+            approved_hosts=["postman-echo.com", "en.wikipedia.org"],
+            expected_marker="Hypertext Transfer Protocol Secure",
         )
         if (
             allowed["status"] != "ok"
-            or allowed["final_url"] != "https://httpbin.org/html"
+            or allowed["final_url"] != "https://en.wikipedia.org/wiki/HTTPS"
             or allowed["content_has_expected_marker"] is not True
         ):
             raise AssertionError(f"Approved redirect did not reach the approved content: {allowed}")
@@ -137,17 +138,17 @@ async def main() -> None:
             )
 
         approved_chain_destination = "https://example.com/"
-        approved_chain_second_hop = "https://httpbin.org/redirect-to?" + urlencode(
+        approved_chain_second_hop = "https://postman-echo.com/redirect-to?" + urlencode(
             {"url": approved_chain_destination}
         )
-        approved_chain_start = "https://httpbin.org/redirect-to?" + urlencode(
+        approved_chain_start = "https://postman-echo.com/redirect-to?" + urlencode(
             {"url": approved_chain_second_hop}
         )
         approved_chain = await run_case(
             root / "approved-chain.sqlite3",
             name="approved_multi_hop_redirect",
             destination=approved_chain_destination,
-            approved_hosts=["httpbin.org", "example.com"],
+            approved_hosts=["postman-echo.com", "example.com"],
             start_url=approved_chain_start,
         )
         if (
@@ -160,7 +161,7 @@ async def main() -> None:
             )
 
         blocked_chain_destination = "https://example.org/"
-        blocked_chain_second_hop = "https://httpbin.org/redirect-to?" + urlencode(
+        blocked_chain_second_hop = "https://postman-echo.com/redirect-to?" + urlencode(
             {"url": blocked_chain_destination}
         )
         blocked_chain_start = "https://postman-echo.com/redirect-to?" + urlencode(
@@ -170,7 +171,7 @@ async def main() -> None:
             root / "blocked-chain.sqlite3",
             name="blocked_multi_hop_redirect",
             destination=blocked_chain_destination,
-            approved_hosts=["postman-echo.com", "httpbin.org"],
+            approved_hosts=["postman-echo.com"],
             start_url=blocked_chain_start,
         )
         if (
@@ -185,7 +186,7 @@ async def main() -> None:
     report = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
         "browser": "Microsoft Edge via managed Playwright worker",
-        "fixture_service": "Postman Echo/httpbin redirects and Wikipedia HTTPS page",
+        "fixture_service": "Postman Echo redirects, Wikipedia HTTPS page, and Example Domain",
         "cases": [allowed, blocked, subresources, approved_chain, blocked_chain],
         "source_sha256": {
             "browser_redirect_smoke.py": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

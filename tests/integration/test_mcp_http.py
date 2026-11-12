@@ -135,6 +135,34 @@ async def test_streamable_http_typescript_sdk_modern_interoperability(
             ],
         }
         await manager.set_resource_subscription(server.id, update_uri, subscribe=False)
+        catalog_change_tool = next(
+            item for item in tools if item.name == "publish_tool_list_change"
+        )
+        registry.set_permission(
+            server.id, catalog_change_tool.name, "read", catalog_change_tool.schema_sha256
+        )
+        change_result = await manager.call_tool(
+            catalog_change_tool.qualified_name, {}, require_read=True
+        )
+        assert change_result["status"] == "ok"
+        deadline = time.monotonic() + 3
+        while not any(item.name == "late_fixture_tool" for item in registry.list_tools(server.id)):
+            if time.monotonic() >= deadline:
+                pytest.fail("MCP manager did not refresh tools after tools/list_changed")
+            await asyncio.sleep(0.02)
+        late_tool = next(
+            item for item in registry.list_tools(server.id) if item.name == "late_fixture_tool"
+        )
+        assert late_tool.permission == "none"
+        notices = await manager.drain_resource_notifications(server.id)
+        assert notices["notifications"]
+        assert all(
+            notice["kind"] == "tools_list_changed" and notice["trust"] == "untrusted_mcp_output"
+            for notice in notices["notifications"]
+        )
+        registry.set_permission(server.id, late_tool.name, "read", late_tool.schema_sha256)
+        late_result = await manager.call_tool(late_tool.qualified_name, {}, require_read=True)
+        assert late_result["content"][0]["text"] == "typescript-http-late-tool"
         prompts = await manager.list_prompts(server.id)
         assert [item["name"] for item in prompts] == ["summarize_topic"]
         prompt = await manager.preview_prompt(server.id, "summarize_topic", {"topic": "fixture"})

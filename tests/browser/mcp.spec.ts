@@ -21,6 +21,18 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     qualified_name: `mcp_${serverId}_change_value`,
     updated_at: '2026-11-05T00:00:00Z',
   };
+  const lateTool = {
+    server_id: serverId,
+    name: 'late_fixture_tool',
+    title: 'Late fixture tool',
+    description: 'Added after connection; owner approval is required.',
+    input_schema: {type:'object',properties:{}},
+    output_schema: null,
+    schema_sha256: 'b'.repeat(64),
+    permission: 'none',
+    qualified_name: `mcp_${serverId}_late_fixture_tool`,
+    updated_at: '2026-11-12T00:00:00Z',
+  };
   let server: any;
   page.on('pageerror', error => errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**', async route => {
@@ -94,7 +106,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     }
     if (path === `/mcp/servers/${serverId}/resources`) return route.fulfill({json:{resources:[{uri:'xaa://fixture/readme',name:'readme',title:'Fixture readme',description:'Owner inspection fixture.',mime_type:'text/plain',size:20}]},headers});
     if (path === `/mcp/servers/${serverId}/resources/subscription`) return route.fulfill({json:{uri:body.uri,subscribed:body.subscribe,trust:'untrusted_mcp_output'},headers});
-    if (path === `/mcp/servers/${serverId}/resources/notifications`) return route.fulfill({json:{trust:'untrusted_mcp_output',notifications:[{kind:'resource_updated',uri:'xaa://fixture/readme',trust:'untrusted_mcp_output'}]},headers});
+    if (path === `/mcp/servers/${serverId}/resources/notifications`) {
+      server={...server,tools:[tool,lateTool]};
+      return route.fulfill({json:{trust:'untrusted_mcp_output',notifications:[{kind:'resource_updated',uri:'xaa://fixture/readme',trust:'untrusted_mcp_output'},{kind:'tools_list_changed',trust:'untrusted_mcp_output'}]},headers});
+    }
     if (path === `/mcp/servers/${serverId}/resource-templates`) return route.fulfill({json:{resource_templates:[{name:'item',title:'Fixture item',uri_template:'xaa://fixture/items/{item_id}',variables:['item_id'],description:'Owner template catalog fixture.',mime_type:'text/plain'}]},headers});
     if (path === `/mcp/servers/${serverId}/resource-templates/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:'xaa://fixture/items/sample-42',mime_type:'text/plain',kind:'text',text:'Fixture item: sample-42'}]},headers});
     if (path === `/mcp/servers/${serverId}/resources/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:body.uri,mime_type:'text/plain',kind:'text',text:'Fixture resource data.'}]},headers});
@@ -139,6 +154,9 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await expect(panel.getByRole('button',{name:'Unsubscribe from updates'})).toBeVisible();
   await panel.getByRole('button',{name:'Check for server updates'}).click();
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP server update notices'})).toContainText('Read it explicitly');
+  await expect(panel.getByRole('complementary',{name:'Untrusted MCP server update notices'})).toContainText('tool catalog changed');
+  await expect(panel.getByText('Late fixture tool')).toBeVisible();
+  await expect(panel.getByLabel('Permission').last()).toHaveValue('none');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/subscription')&&item.body.subscribe===true)).toBe(true);
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/notifications'))).toBe(true);
   await panel.getByRole('button',{name:'Read resource'}).click();
@@ -171,7 +189,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await page.getByRole('link',{name:/New objective/}).click();
   await expect(page.locator('#run-objective')).toHaveValue(oversizedObjective);
   await page.getByRole('link',{name:/Tools & integrations/}).click();
-  await panel.getByLabel('Permission').selectOption('write');
+  await panel.getByLabel('Permission').first().selectOption('write');
   const grant = panel.getByLabel('Allow this write tool for the next run');
   await expect(grant).toBeVisible();
   await expect(grant).not.toBeChecked();

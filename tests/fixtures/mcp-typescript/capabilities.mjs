@@ -3,8 +3,9 @@ import * as z from 'zod/v4';
 
 export function registerFixtureCapabilities(
   server,
-  { transport, protocolVersion, publishResourceUpdate },
+  { transport, protocolVersion, publishResourceUpdate, publishToolListChange, lateToolEnabled = false },
 ) {
+  let lateToolRegistered = lateToolEnabled;
   server.registerTool(
     'echo_value',
     {
@@ -64,6 +65,22 @@ export function registerFixtureCapabilities(
       return { content: [{ type: 'text', text: `typescript-${transport}-update-published` }] };
     },
   );
+  if (lateToolEnabled) registerLateTool(server, transport);
+  server.registerTool(
+    'publish_tool_list_change',
+    {
+      description: 'Add a read-only tool and publish a TypeScript fixture tool-list change.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      if (!lateToolRegistered) {
+        lateToolRegistered = true;
+        registerLateTool(server, transport);
+      }
+      await publishToolListChange();
+      return { content: [{ type: 'text', text: `typescript-${transport}-tool-list-change-published` }] };
+    },
+  );
   server.registerPrompt(
     'summarize_topic',
     {
@@ -82,5 +99,16 @@ export function registerFixtureCapabilities(
         },
       ],
     }),
+  );
+}
+
+function registerLateTool(server, transport) {
+  server.registerTool(
+    'late_fixture_tool',
+    {
+      description: 'A tool added after connection; it must remain disabled until approved.',
+      inputSchema: z.object({}),
+    },
+    async () => ({ content: [{ type: 'text', text: `typescript-${transport}-late-tool` }] }),
   );
 }

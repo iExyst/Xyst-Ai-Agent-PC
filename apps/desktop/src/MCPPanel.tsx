@@ -153,7 +153,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
         <strong>Untrusted MCP resource data</strong>
         <pre>{JSON.stringify(resourceReads[server.id],null,2)}</pre>
       </aside>}
-      {(resourceNotifications[server.id]??[]).length>0&&<aside aria-label="Untrusted MCP server update notices"><strong>Untrusted MCP server update notices</strong><ul>{resourceNotifications[server.id]!.map((notice,index)=><li key={`${index}:${notice.kind}`}>{notice.kind==='resync_required'?'Update queue overflowed. Refresh the resource catalog and inspect resources manually.':`Server reports a possible change to ${notice.uri}. Read it explicitly to inspect the new content.`}</li>)}</ul></aside>}
+      {(resourceNotifications[server.id]??[]).length>0&&<aside aria-label="Untrusted MCP server update notices"><strong>Untrusted MCP server update notices</strong><ul>{resourceNotifications[server.id]!.map((notice,index)=><li key={`${index}:${notice.kind}`}>{notice.kind==='resync_required'?'Update queue overflowed. Refresh the server catalog and inspect its tools and resources manually.':notice.kind==='tools_list_changed'?'The server tool catalog changed. Review newly discovered tools; each remains disabled until you grant permission.':`Server reports a possible change to ${notice.uri}. Read it explicitly to inspect the new content.`}</li>)}</ul></aside>}
       {(promptCatalogs[server.id]??[]).map(prompt=>{
         const key=`${server.id}:${prompt.name}`;
         return <div key={prompt.name} className="mcp-prompt">
