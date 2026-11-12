@@ -18,12 +18,13 @@ await Promise.all([localAppData,appData,configDirectory,logDirectory,webViewProf
 const database=path.join(localAppData,'XAA','xaa.sqlite3');
 const fixturePath=path.join(root,'seed.json');
 const fixture=JSON.parse(execFileSync('uv',['run','python','scripts/native_schedule_restart_fixture.py','--database',database,'--report',fixturePath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
-const debugPort=Number(process.env.XAA_NATIVE_SCHEDULE_RESTART_DEBUG_PORT||19222);
-const environment={...process.env,LOCALAPPDATA:localAppData,APPDATA:appData,XAA_TEST_ACCEPTANCE:'1',XAA_TEST_HIDDEN:'0',XAA_TEST_CONFIG_DIR:configDirectory,XAA_TEST_LOG_DIR:logDirectory,WEBVIEW2_USER_DATA_FOLDER:webViewProfile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debugPort}`};
+const debugPortBase=Number(process.env.XAA_NATIVE_SCHEDULE_RESTART_DEBUG_PORT||19222);
+if(!Number.isInteger(debugPortBase)||debugPortBase<1024||debugPortBase>65534)throw new Error('The schedule restart debug-port base must be an integer from 1024 through 65534.');
+const environment={...process.env,LOCALAPPDATA:localAppData,APPDATA:appData,XAA_TEST_ACCEPTANCE:'1',XAA_TEST_HIDDEN:'0',XAA_TEST_CONFIG_DIR:configDirectory,XAA_TEST_LOG_DIR:logDirectory,WEBVIEW2_USER_DATA_FOLDER:webViewProfile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debugPortBase}`};
 delete environment.XAA_DATA_DIR;delete environment.XAA_API_TOKEN;delete environment.XAA_API_PORT;delete environment.VIRTUAL_ENV;delete environment.PYTHONPATH;
 
-const launch=()=>spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:environment});
-async function attach(proc,stage){
+const launch=debugPort=>spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...environment,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debugPort}`}});
+async function attach(proc,stage,debugPort){
   let browser,lastError='Debugging endpoint unavailable';
   const deadline=Date.now()+60000;
   while(Date.now()<deadline){
@@ -44,14 +45,15 @@ async function attach(proc,stage){
   if(!page){await browser.close();throw new Error(`Desktop WebView did not open during ${stage}`);}
   await expect(page.getByRole('navigation',{name:'Main sections'})).toBeVisible({timeout:20000});
   const connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
+  const apiStarted=Date.now();
   let ready=false;
-  for(let attempt=0;attempt<120;attempt++){
+  for(let attempt=0;attempt<240;attempt++){
     try{const response=await fetch(`${connection.base_url}/schedules`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(500)});if(response.ok){ready=true;break;}}catch{}
     if(proc.exitCode!==null)throw new Error(`Desktop exited before its engine became ready during ${stage}`);
     await new Promise(resolve=>setTimeout(resolve,250));
   }
-  if(!ready){await browser.close();throw new Error(`Bundled engine API was not ready during ${stage}`);}
-  return {browser,page,connection};
+  if(!ready){await browser.close();throw new Error(`Bundled engine API was not ready during ${stage} on debug port ${debugPort}`);}
+  return {browser,page,connection,api_ready_milliseconds:Date.now()-apiStarted};
 }
 
 async function getState(connection){
@@ -90,16 +92,20 @@ async function stop(session,proc){
 }
 
 let firstProcess,secondProcess,firstSession,secondSession;
+const apiReadyMilliseconds=[];
 try{
-  firstProcess=launch();
-  firstSession=await attach(firstProcess,'first cold start');
+  firstProcess=launch(debugPortBase);
+  firstSession=await attach(firstProcess,'first cold start',debugPortBase);
+  apiReadyMilliseconds.push(firstSession.api_ready_milliseconds);
   const first=await waitForMissed(firstSession.connection,'first cold start');
   const firstExecution=first.schedule.executions[0];
   if(first.runs.length!==0||firstExecution.run_id!==null)throw new Error('Skip-missed policy unexpectedly dispatched a run');
   await stop(firstSession,firstProcess);firstSession=null;
 
-  secondProcess=launch();
-  secondSession=await attach(secondProcess,'second cold start');
+  const secondDebugPort=debugPortBase+1;
+  secondProcess=launch(secondDebugPort);
+  secondSession=await attach(secondProcess,'second cold start',secondDebugPort);
+  apiReadyMilliseconds.push(secondSession.api_ready_milliseconds);
   const second=await waitForMissed(secondSession.connection,'second cold start');
   const secondExecution=second.schedule.executions[0];
   if(second.runs.length!==0||secondExecution.id!==firstExecution.id||secondExecution.occurrence_id!==firstExecution.occurrence_id)throw new Error('Cold restart duplicated or changed the missed occurrence');
@@ -107,7 +113,7 @@ try{
   if(denied.status!==401)throw new Error('Packaged schedule API did not require authentication');
   await stop(secondSession,secondProcess);secondSession=null;
 
-  const report={passed:true,executable,full_desktop_process_restarts:2,schedule_id:fixture.schedule_id,execution_id:firstExecution.id,occurrence_id:firstExecution.occurrence_id,state_after_both_starts:secondExecution.state,execution_count_after_both_starts:second.schedule.executions.length,run_count:second.runs.length,missed_policy:'skip',authenticated_api:true,model_inference_requested:false,telegram_delivery_requested:false,evidence:root};
+  const report={passed:true,executable,full_desktop_process_restarts:2,debug_ports:[debugPortBase,secondDebugPort],api_ready_milliseconds:apiReadyMilliseconds,schedule_id:fixture.schedule_id,execution_id:firstExecution.id,occurrence_id:firstExecution.occurrence_id,state_after_both_starts:secondExecution.state,execution_count_after_both_starts:second.schedule.executions.length,run_count:second.runs.length,missed_policy:'skip',authenticated_api:true,model_inference_requested:false,telegram_delivery_requested:false,evidence:root};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   console.log(JSON.stringify(report));
 }catch(error){
