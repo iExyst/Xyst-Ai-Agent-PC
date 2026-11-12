@@ -58,7 +58,11 @@ from uritemplate import URITemplate
 
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import plugin_source_sha256
-from xaa.runtime.mcp_stdio import bounded_stdio_client
+from xaa.runtime.mcp_stdio import (
+    MCP_MAX_STDIO_FRAME_BYTES,
+    MCPStdioFrameLimitError,
+    bounded_stdio_client,
+)
 from xaa.storage.mcp import (
     MCPDiscoveredTool,
     MCPRegistry,
@@ -1539,6 +1543,11 @@ class MCPManager:
     def _safe_error(self, error: BaseException, server: MCPServerRecord) -> str:
         if isinstance(error, MCPConnectionError):
             message = str(error)
+        elif _contains_mcp_stdio_frame_limit_error(error):
+            message = (
+                "The MCP server sent a stdio frame larger than the "
+                f"{MCP_MAX_STDIO_FRAME_BYTES}-byte limit."
+            )
         elif isinstance(error, OSError):
             message = "Could not start the MCP server. Check its command, arguments, and working directory."
         elif isinstance(error, TimeoutError):
@@ -1564,6 +1573,15 @@ def _contains_oauth_flow_error(error: BaseException) -> bool:
         return False
     group = cast(BaseExceptionGroup[BaseException], error)
     return any(_contains_oauth_flow_error(nested) for nested in group.exceptions)
+
+
+def _contains_mcp_stdio_frame_limit_error(error: BaseException) -> bool:
+    if isinstance(error, MCPStdioFrameLimitError):
+        return True
+    if not isinstance(error, BaseExceptionGroup):
+        return False
+    group = cast(BaseExceptionGroup[BaseException], error)
+    return any(_contains_mcp_stdio_frame_limit_error(nested) for nested in group.exceptions)
 
 
 def _validator(schema: dict[str, Any], *, object_only: bool = True) -> Any:

@@ -40,6 +40,10 @@ logger = logging.getLogger(__name__)
 MCP_MAX_STDIO_FRAME_BYTES = 1024 * 1024
 
 
+class MCPStdioFrameLimitError(ValueError):
+    """An MCP server emitted a stdio frame larger than the configured cap."""
+
+
 @asynccontextmanager
 async def bounded_stdio_client(
     server: StdioServerParameters,
@@ -95,13 +99,10 @@ async def bounded_stdio_client(
                             )
                             frame_bytes = buffer_bytes + prefix_bytes
                             if frame_bytes > max_frame_bytes:
-                                await read_stream_writer.send(
-                                    ValueError(
-                                        "MCP server stdout frame exceeded the "
-                                        f"{max_frame_bytes}-byte limit."
-                                    )
+                                raise MCPStdioFrameLimitError(
+                                    "MCP server stdout frame exceeded the "
+                                    f"{max_frame_bytes}-byte limit."
                                 )
-                                return
                             if separator:
                                 await read_stream_writer.send(_parse_line(buffer + prefix))
                                 buffer = ""

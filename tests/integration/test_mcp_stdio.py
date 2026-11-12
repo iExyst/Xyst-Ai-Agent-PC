@@ -27,7 +27,11 @@ from xaa.runtime.mcp_manager import (
     _result_payload,
     _validate_output_schema,
 )
-from xaa.runtime.mcp_stdio import MCP_MAX_STDIO_FRAME_BYTES, bounded_stdio_client
+from xaa.runtime.mcp_stdio import (
+    MCP_MAX_STDIO_FRAME_BYTES,
+    MCPStdioFrameLimitError,
+    bounded_stdio_client,
+)
 from xaa.runtime.states import RunState
 from xaa.storage.mcp import MCPRegistry, MCPServerRecord, MCPServerSpec, MCPToolRecord
 from xaa.storage.runs import RunStore
@@ -50,10 +54,22 @@ async def test_stdio_transport_rejects_oversized_frame_before_json_parse(
         args=[str(OVERSIZED_FIXTURE)],
         env={"MCP_OVERSIZED_CLEANUP_MARKER": str(cleanup_marker)},
     )
-    async with bounded_stdio_client(params) as (read_stream, _write_stream), read_stream:
-        message = await read_stream.receive()
-    assert isinstance(message, ValueError)
-    assert str(MCP_MAX_STDIO_FRAME_BYTES) in str(message)
+    with pytest.raises(ExceptionGroup) as error_info:
+        async with bounded_stdio_client(params):
+            await asyncio.sleep(5)
+    assert error_info.group_contains(
+        MCPStdioFrameLimitError,
+        match=str(MCP_MAX_STDIO_FRAME_BYTES),
+    )
+    server = MCPServerRecord(
+        id="a" * 32,
+        name="Oversized fixture",
+        command=sys.executable,
+        created_at="2026-11-12T00:00:00Z",
+        updated_at="2026-11-12T00:00:00Z",
+    )
+    safe_message = object.__new__(MCPManager)._safe_error(error_info.value, server)
+    assert f"{MCP_MAX_STDIO_FRAME_BYTES}-byte limit" in safe_message
     assert cleanup_marker.read_text(encoding="utf-8") == "stdin closed"
 
 
