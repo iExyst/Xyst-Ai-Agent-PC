@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {navigateMainSection} from './navigation';
 
 test('sandbox selection checks controls without granting a run, including unavailable models',async({page})=>{
   let checks=0;let runCreates=0;let modelsAvailable=false;
@@ -6,6 +7,7 @@ test('sandbox selection checks controls without granting a run, including unavai
     const req=route.request();const path=new URL(req.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/models')return modelsAvailable?route.fulfill({json:[{id:'fixture/model'}],headers}):route.fulfill({status:503,headers});
     if(path==='/runs'&&req.method()==='POST')runCreates++;
@@ -21,7 +23,8 @@ test('sandbox selection checks controls without granting a run, including unavai
   await page.clock.install();
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByText('Command sandbox setup',{exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('details').filter({has:page.locator('summary').filter({hasText:'Command sandbox setup'})}).evaluate(element=>{(element as HTMLDetailsElement).open=true;});
   await expect(page.getByRole('button',{name:'Check sandbox',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'Find installed distributions'}).click();
   await page.getByLabel('Execution distribution').selectOption('Ubuntu-24.04');
@@ -30,22 +33,28 @@ test('sandbox selection checks controls without granting a run, including unavai
   await expect(page.getByText(/Network denied/)).toBeVisible();
   await expect(page.getByRole('option',{name:/Custom Linux/})).toHaveJSProperty('disabled',true);
   expect(checks).toBe(1);expect(runCreates).toBe(0);
-  modelsAvailable=true;await page.getByRole('button',{name:'Refresh models',exact:true}).click();
+  modelsAvailable=true;await navigateMainSection(page,'Model setup');await page.getByRole('button',{name:'Refresh models',exact:true}).click();
   await expect(page.getByRole('option',{name:'fixture/model',exact:true})).toHaveCount(1);
   await expect(page.getByLabel('Local model or compatible provider model')).toHaveValue('');
+  await navigateMainSection(page,'Settings');
   const permission=page.getByLabel('Allow isolated commands for this next run');
   await expect(permission).toBeDisabled();
   await page.getByLabel('Workspace permissions').selectOption('workspace');
+  await navigateMainSection(page,'New objective');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await permission.check();await expect(permission).toBeChecked();
   await page.getByLabel('Workspace path').fill('C:\\other');
   await expect(permission).not.toBeChecked();
   await permission.check();
-  await page.getByLabel('Workspace permissions').selectOption('observe');
+  await navigateMainSection(page,'Settings');await page.getByLabel('Workspace permissions').selectOption('observe');await navigateMainSection(page,'New objective');
   await expect(permission).not.toBeChecked();await expect(permission).toBeDisabled();
-  await page.getByLabel('Workspace permissions').selectOption('workspace');await permission.check();
+  await navigateMainSection(page,'Settings');await page.getByLabel('Workspace permissions').selectOption('workspace');await navigateMainSection(page,'New objective');
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });await permission.check();
   await page.clock.fastForward(61000);
   await expect(permission).not.toBeChecked();await expect(permission).toBeDisabled();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('details').filter({has:page.locator('summary').filter({hasText:'Command sandbox setup'})}).evaluate(element=>{(element as HTMLDetailsElement).open=true;});
   await expect(page.getByText('Check expired. Check again to refresh status.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Find installed distributions'}).click();
   await expect(page.getByText('Sandbox check passed.',{exact:true})).toHaveCount(0);

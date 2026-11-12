@@ -1,4 +1,5 @@
 import {expect,test} from '@playwright/test';
+import {navigateMainSection,selectLocalModel} from './navigation';
 
 test('create, inspect, pause and resume a durable local schedule',async({page})=>{
   const errors:string[]=[];
@@ -47,9 +48,8 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  const model=page.getByLabel('Local model or compatible provider model',{exact:true});
-  await expect(model.locator('option[value="fixture/model"]')).toHaveCount(1);
-  await model.selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
+  await navigateMainSection(page,'Tools & integrations');
   await page.locator('summary').filter({hasText:'Automations'}).click();
   const panel=page.getByRole('region',{name:'Automations',exact:true});
   await panel.getByLabel('Scheduled objective',{exact:true}).fill('Review repository health');

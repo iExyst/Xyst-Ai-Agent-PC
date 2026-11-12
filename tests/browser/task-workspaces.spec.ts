@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {selectLocalModel} from './navigation';
 
 for(const scenario of ['edit','delete'] as const)for(const validationRequired of [false,true])test(`private ${scenario} proposals require preview, conflict choice, authorization and validation=${validationRequired}`,async({page})=>{
   const run={id:'branch-run',objective:'Review private edits',state:'verifying',acceptance_criteria:[],revision:3};
@@ -10,6 +11,7 @@ for(const scenario of ['edit','delete'] as const)for(const validationRequired of
     const request=route.request();const pathname=new URL(request.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(pathname==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(pathname==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(pathname==='/memory'||pathname==='/skills')return route.fulfill({json:[],headers});
     if(pathname==='/runs')return route.fulfill({json:request.method()==='POST'?run:{items:[],next_cursor:null},headers});
@@ -26,7 +28,7 @@ for(const scenario of ['edit','delete'] as const)for(const validationRequired of
     return route.fulfill({json:run,headers});
   });
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
+  await selectLocalModel(page,'fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
   await page.getByRole('button',{name:'Review candidate',exact:true}).click();
   if(scenario==='delete')await expect(page.getByText('shared.txt — proposed deletion',{exact:true})).toBeVisible();
   const accept=page.getByRole('button',{name:'Integrate changes and accept task',exact:true});

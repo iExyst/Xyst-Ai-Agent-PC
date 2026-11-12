@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {selectLocalModel} from './navigation';
 
 test('desktop resumes a terminal chat session through coordinator runs and saves the next turn',async({page})=>{
   const stamp='2026-11-08T12:00:00Z';
@@ -20,6 +21,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
     const url=new URL(request.url());
     const path=url.pathname;
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:'fixture/model'},headers});
@@ -53,6 +55,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByRole('button',{name:'Load shared conversations'}).click();
   await page.getByLabel('Saved terminal and desktop sessions').selectOption('terminal-chat');

@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {selectLocalModel} from './navigation';
 
 test('explain a fenced specialist after its worker is lost',async({page})=>{
   const run={id:'recovery-run',objective:'Inspect the fixture',state:'blocked',acceptance_criteria:[],revision:1};
@@ -11,6 +12,7 @@ test('explain a fenced specialist after its worker is lost',async({page})=>{
     const path=new URL(request.url()).pathname;
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
     if(path.endsWith('/recovery')&&request.method()==='GET')return route.fulfill({json:{task_id:'inspect',status:'blocked',candidate:null,candidate_reviewable:false,saved_tool_results:0,pending_model_tool_calls:[{call_id:'call-1',name:'workspace_read_file'}],unresolved_tool_calls:0,recoverable_commands:[],recoverable_task_actions:[],safe_to_resume:false,consumed_iterations:1,run_measured_tokens:15,reserved_tokens:0},headers});
@@ -22,7 +24,7 @@ test('explain a fenced specialist after its worker is lost',async({page})=>{
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
@@ -46,6 +48,7 @@ test('offer a clean restart when the specialist died before saving a reply',asyn
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     const path=new URL(request.url()).pathname;
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -59,7 +62,7 @@ test('offer a clean restart when the specialist died before saving a reply',asyn
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
@@ -83,6 +86,7 @@ test('attach a command result that was saved before the specialist stopped',asyn
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     const path=new URL(request.url()).pathname;
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -110,7 +114,7 @@ test('attach a command result that was saved before the specialist stopped',asyn
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();

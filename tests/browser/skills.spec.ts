@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {navigateMainSection,selectLocalModel} from './navigation';
 
 test('create, revise, inspect, export and delete an unverified procedure',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
@@ -8,6 +9,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     expect(request.headers()['authorization']).toBe('Bearer '+'x'.repeat(32));
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/runs'&&request.method()==='POST'){
@@ -49,7 +51,8 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   });
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByText('Reusable procedures',{exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
   const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
   await panel.getByLabel('Procedure name',{exact:true}).fill('Inspect safely');
   await panel.getByLabel('Procedure description',{exact:true}).fill('Read-only project inspection');
@@ -75,12 +78,15 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(panel.getByLabel('Procedure text',{exact:true})).toHaveValue('Read files and preserve evidence.');
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeDisabled();
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await navigateMainSection(page,'New objective');
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toContainText('Inspect safely \u00b7 version 1');
   await expect(page.getByLabel('Allow this run to draft a new version of this procedure')).toBeDisabled();
   await page.getByRole('button',{name:'Remove selected procedure',exact:true}).click();
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toHaveCount(0);
+  await navigateMainSection(page,'Tools & integrations');
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('2');
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await navigateMainSection(page,'New objective');
   const revisionGrant=page.getByLabel('Allow this run to draft a new version of this procedure');
   const resourceRevisionGrant=page.getByLabel('Allow this run to create or replace linked UTF-8 resources (up to 8 operations)');
   const resourceRemovalGrant=page.getByLabel('Allow this run to remove one linked resource');
@@ -90,13 +96,15 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await revisionGrant.check();
   await expect(resourceRevisionGrant).toBeDisabled();
   await expect(resourceRemovalGrant).toBeDisabled();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill('Improve the selected procedure');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await navigateMainSection(page,'New objective');
   await expect(revisionGrant).not.toBeChecked();
   await revisionGrant.check();
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
   expect(runSubmissions[0].allow_procedure_revision).toBe(true);
   expect(runSubmissions[1].allow_procedure_revision).toBe(true);
   expect(runSubmissions[0].allow_procedure_resource_revision).toBe(false);
@@ -105,25 +113,31 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   expect(runSubmissions[1].procedure_trial).toEqual({skill_id:'procedure-1',version:2,purpose:'evaluation_trial'});
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('2');
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await navigateMainSection(page,'New objective');
   await resourceRevisionGrant.check();
   await expect(revisionGrant).toBeDisabled();
   await page.getByLabel('Objective',{exact:true}).fill('Update one linked procedure resource');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
   expect(runSubmissions[2].allow_procedure_revision).toBe(false);
   expect(runSubmissions[2].allow_procedure_resource_revision).toBe(true);
   expect(runSubmissions[2].allow_procedure_resource_removal).toBe(false);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await navigateMainSection(page,'New objective');
   await resourceRemovalGrant.check();
   await page.getByLabel('Objective',{exact:true}).fill('Remove one obsolete linked procedure resource');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
   expect(runSubmissions[3].allow_procedure_resource_removal).toBe(true);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await navigateMainSection(page,'New objective');
   await expect(resourceRevisionGrant).not.toBeChecked();
   await resourceRevisionGrant.check();
   await expect(resourceRemovalGrant).toBeEnabled();
   await resourceRemovalGrant.check();
   await page.getByLabel('Objective',{exact:true}).fill('Replace one resource and remove one obsolete resource atomically');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
   expect(runSubmissions[4].allow_procedure_resource_revision).toBe(true);
   expect(runSubmissions[4].allow_procedure_resource_removal).toBe(true);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();

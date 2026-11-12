@@ -2339,3 +2339,7 @@ Manually dispatched installer workflow [43139931905](https://github.com/iExyst/X
 ## Keep task checks with the new objective (2026-11-11)
 
 Moved the optional file-content check and selected-procedure permissions into the Home objective workflow. They had been rendered inside the Settings page container, so users could not see or change them while preparing a run. TypeScript checking and the Vite production desktop build pass. No browser acceptance is claimed for this presentation correction; the broader browser suite still needs to be reconciled with the page navigation redesign. This does not change capability parity or the accepted 0.1.1 installer.
+
+## Reconcile browser fixtures with the desktop page flow (2026-11-11)
+
+Updated the deterministic browser acceptances to choose models on Model setup, visit Tools & integrations for their panels, and use Home/Active run for objective and run controls. Startup mocks now explicitly answer `GET /runs/latest-unfinished` with `null`; their catch-all responses had returned a fabricated run, causing PlanPanel to receive an invalid shape and the app navigation to disappear. The full browser suite passes: 36 passed, with only the two live LM Studio/sandbox tests skipped by design. TypeScript checking passes. No live model inference was used; this is UI acceptance coverage and does not change Hermes capability claims or parity statuses.

@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {navigateMainSection} from './navigation';
 
 test('LM Studio address, discovered model and tool diagnostic are configured before use',async({page})=>{
   let endpoint='http://127.0.0.1:1234';
@@ -12,6 +13,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
     const req=route.request();const path=new URL(req.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model',context_length:8192,size_bytes:2500000000,loaded:false,capabilities:{vision:false,trained_for_tool_use:true}},...(compatibleEndpoint?[{id:'openai-compatible::remote-model',capabilities:{vision:false,trained_for_tool_use:false}}]:[])],headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'},{id:'openai-compatible',status:compatibleEndpoint?'connected':'not_configured'}],headers});
@@ -59,6 +61,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   });
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await navigateMainSection(page,'Model setup');
   await expect(page.getByRole('status').filter({hasText:'LM Studio is connected'})).toBeVisible();
   await expect(page.getByRole('option',{name:'fixture/model',exact:true})).toHaveCount(1);
   await page.getByLabel('Optional LM Studio API token').fill('test-api-token');

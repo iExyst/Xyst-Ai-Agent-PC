@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {selectLocalModel} from './navigation';
 
 test('owner confirms an interrupted workspace write only after reviewing the destination',async({page})=>{
   const requests:{method:string;path:string;body?:unknown}[]=[];
@@ -13,6 +14,7 @@ test('owner confirms an interrupted workspace write only after reviewing the des
     const request=route.request();const path=new URL(request.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     const body=request.method()==='POST'?request.postDataJSON():undefined;
     requests.push({method:request.method(),path,...(body?{body}:{})});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -36,7 +38,7 @@ test('owner confirms an interrupted workspace write only after reviewing the des
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();

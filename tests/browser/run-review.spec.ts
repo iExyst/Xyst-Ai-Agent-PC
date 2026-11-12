@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {selectLocalModel} from './navigation';
 
 test('explicit final review completes a run after objective and criterion confirmation',async({page})=>{
   const run={id:'final-run',objective:'Produce the checked result',state:'verifying',revision:3,acceptance_criteria:['The result matches the evidence']};
@@ -10,6 +11,7 @@ test('explicit final review completes a run after objective and criterion confir
     const path=new URL(request.url()).pathname;
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if(path.endsWith('/review')){
@@ -23,7 +25,7 @@ test('explicit final review completes a run after objective and criterion confir
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
@@ -51,6 +53,7 @@ test('final review requires selected validation for the current integrated proje
     const request=route.request();const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     const path=new URL(request.url()).pathname;
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -60,7 +63,7 @@ test('final review requires selected validation for the current integrated proje
     if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'The integrated project passed.'}},created_at:'2026-11-03T00:00:00Z'})}\n\nevent: done\ndata: {}\n\n`});
     return route.fulfill({json:run,headers});
   });
-  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByLabel('Local model').selectOption('fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await selectLocalModel(page,'fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
   const panel=page.getByRole('region',{name:'Final run review'});await page.getByText('The integrated project passed.',{exact:true}).waitFor();await panel.getByRole('button',{name:/Python tests \(pytest\):/}).click();await expect(panel.getByLabel('Command arguments as a JSON string array')).toHaveValue('["/usr/bin/python3","-I","-m","pytest","-q"]');await panel.getByLabel('I reviewed the objective, result, and available evidence',{exact:true}).check();await panel.getByLabel('Confirm criterion: The project check passes',{exact:true}).check();await panel.getByLabel('Final review rationale').fill('The integrated check passed on the current project.');
   const accept=panel.getByRole('button',{name:'Accept and complete run',exact:true});await expect(accept).toBeDisabled();await panel.getByLabel('Reviewed successful current validation check-1').check();await expect(accept).toBeEnabled();await accept.click();await expect(page.getByRole('heading',{name:'Active run completed'})).toBeVisible();expect(accepted).toBe(true);
 });
@@ -74,6 +77,7 @@ test('automatically runs one unambiguous Swift package check under the existing 
     const request=route.request();const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     const path=new URL(request.url()).pathname;
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -86,7 +90,7 @@ test('automatically runs one unambiguous Swift package check under the existing 
     if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'The integrated project is ready for review.'}},created_at:'2026-11-08T00:00:00Z'})}\n\nevent: done\ndata: {}\n\n`});
     return route.fulfill({json:run,headers});
   });
-  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByLabel('Local model').selectOption('fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await selectLocalModel(page,'fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
   const panel=page.getByRole('region',{name:'Final run review'});await page.getByText('The integrated project is ready for review.',{exact:true}).waitFor();await expect(panel.getByRole('status')).toContainText('only suggested check');await expect(panel.getByLabel('Reviewed successful current validation automatic-check')).toBeVisible();await expect(panel.getByLabel('Reviewed successful current validation automatic-check')).not.toBeChecked();expect(dispatches).toBe(1);
 });
 
@@ -101,6 +105,7 @@ test('leaves check selection to the user when multiple suggestions are available
     const request=route.request();const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     const path=new URL(request.url()).pathname;
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
@@ -110,6 +115,6 @@ test('leaves check selection to the user when multiple suggestions are available
     if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'Choose a relevant project check.'}},created_at:'2026-11-08T00:00:00Z'})}\n\nevent: done\ndata: {}\n\n`});
     return route.fulfill({json:run,headers});
   });
-  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByLabel('Local model').selectOption('fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();await selectLocalModel(page,'fixture/model');await page.getByLabel('Workspace path').fill('C:\\fixture');await page.getByLabel('Objective',{exact:true}).fill(run.objective);await page.getByRole('button',{name:'Start objective'}).click();
   const panel=page.getByRole('region',{name:'Final run review'});await page.getByText('Choose a relevant project check.',{exact:true}).waitFor();await expect(panel.getByRole('button',{name:/Python tests \(pytest\):/})).toBeEnabled();await expect(panel.getByRole('button',{name:/JavaScript tests \(npm\):/})).toBeEnabled();await expect(panel.getByRole('button',{name:/Run check \(15 second limit\)/})).toBeEnabled();await expect(panel.getByRole('status')).toHaveCount(0);expect(dispatches).toBe(0);
 });

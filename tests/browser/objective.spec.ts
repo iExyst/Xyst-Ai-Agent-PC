@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import {navigateMainSection,selectLocalModel} from './navigation';
 
 test('connect, submit an objective and render its saved events', async ({ page }) => {
   const errors: string[] = [];
@@ -29,6 +30,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     }
     if(path.endsWith('/usage')&&usageUnavailable)return route.fulfill({status:503,headers});
     if(path.endsWith('/usage'))return route.fulfill({json:{prompt_tokens:40,completion_tokens:10,total_tokens:50,unmeasured_calls:1,outstanding_reserved_tokens:300,outstanding_reservations:1},headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
     if (path.endsWith('/plan') && ++planReads === 1) return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if (path.endsWith('/plan')) return route.fulfill({json: {tasks: [
@@ -71,8 +73,10 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await navigateMainSection(page,'Model setup');
   await expect(page.getByLabel('Local model')).toHaveValue('');
-  await page.getByText('Web search integration',{exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('summary').filter({hasText:'Web search'}).click();
   await page.getByLabel('Brave Search API key').fill('brave-key-test-secret');
   await page.getByRole('button',{name:'Save search key'}).click();
   await expect(page.getByText('Brave Search is configured',{exact:true})).toBeVisible();
@@ -80,9 +84,10 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByRole('button',{name:'Clear saved key'}).click();
   await expect(page.getByText('Brave Search is not configured',{exact:true})).toBeVisible();
   expect(braveSearchSecret).toBe('');
-  await page.getByText('Web search integration',{exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
-  await page.getByText('Memory preferences', {exact:true}).click();
+  await page.locator('summary').filter({hasText:'Web search'}).click();
+  await selectLocalModel(page,'fixture/model');
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('summary').filter({hasText:'Memory preferences'}).click();
   await page.getByLabel('Preference', {exact:true}).fill('Use concise examples');
   await page.getByRole('button',{name:'Save preference',exact:true}).click();
   await expect(page.getByText('Use concise examples',{exact:true})).toBeVisible();
@@ -95,8 +100,10 @@ test('connect, submit an objective and render its saved events', async ({ page }
   expect((await downloaded).suggestedFilename()).toBe('xaa-memory.json');
   await page.getByRole('button',{name:'Delete memory',exact:true}).click();
   await expect(page.getByText('Use detailed examples',{exact:true})).toHaveCount(0);
-  await page.getByText('Memory preferences', {exact:true}).click();
+  await page.locator('summary').filter({hasText:'Memory preferences'}).click();
+  await navigateMainSection(page,'New objective');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('Allow Brave web search for this next run').check();
   await page.getByLabel('Allow managed browser reads for this next run').check();
@@ -106,7 +113,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');
   await page.getByLabel(/Text document/).setInputFiles({name:'notes.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('XLSX fixture bytes')});
   await expect(page.getByText('Attached: notes.xlsx.',{exact:false})).toBeVisible();
-  await page.getByText('Run limits',{exact:true}).click();
+  await page.locator('details.advanced-options details').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await page.getByLabel('Iteration limit',{exact:true}).fill('0');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
   await page.getByLabel('Iteration limit',{exact:true}).fill('3');
@@ -120,7 +127,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByRole('button', { name: 'Start objective' }).click();
+  await navigateMainSection(page,'New objective');
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
+  await navigateMainSection(page,'Active run');
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('3 iterations · 60 seconds');
   await expect(resources).toContainText('Reported token threshold: 5000 · Output tokens per request: 256');
@@ -153,13 +162,16 @@ test('connect, submit an objective and render its saved events', async ({ page }
   expect((await xlsxDownload).suggestedFilename()).toBe('xaa-input-document.xlsx');
   await page.getByRole('button', { name: 'View browser.screenshot:untrusted_web_content' }).click();
   await expect(page.getByRole('img', { name: 'Untrusted image content' })).toBeVisible();
+  await navigateMainSection(page,'New objective');
   await page.getByLabel('Objective', {exact:true}).fill('Read another file', {timeout:2000});
   await expect(page.getByLabel('Objective', {exact:true})).toHaveValue('Read another file');
   await page.getByLabel('Expected file contents', {exact:true}).fill('second fixture\n', {timeout:2000});
   await expect(page.getByLabel('Expected file contents', {exact:true})).toHaveValue('second fixture\n');
+  await navigateMainSection(page,'Model setup');
   await page.getByLabel('Local model').selectOption('');
+  await navigateMainSection(page,'New objective');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectLocalModel(page,'fixture/model');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeEnabled();
   await page.screenshot({ path: 'test-results/objective.png', fullPage: true });
 });

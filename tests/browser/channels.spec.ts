@@ -1,4 +1,5 @@
 import {expect,test} from '@playwright/test';
+import {navigateMainSection} from './navigation';
 
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
@@ -20,11 +21,11 @@ test('save Telegram token securely, pair an account and clear the credential',as
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     expect(request.headers()['authorization']).toBe(`Bearer ${'x'.repeat(32)}`);
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
     if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
-    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/channels/identity-bindings'&&request.method()==='GET')return route.fulfill({json:identityBindings,headers});
     if(path==='/channels/identity-links'&&request.method()==='POST'){
@@ -126,6 +127,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
   await page.locator('summary').filter({hasText:'Messaging channels'}).click();
   const panel=page.getByRole('region',{name:'Messaging channels',exact:true});
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import {navigateMainSection} from './navigation';
 
 test('configure persistent specialist model routes from discovered local models', async ({ page }) => {
   const roles = ['planner','researcher','developer','reviewer','tester','executor'];
@@ -24,6 +25,7 @@ test('configure persistent specialist model routes from discovered local models'
       'access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS',
     };
     if (request.method() === 'OPTIONS') return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     expect(request.headers()['authorization']).toBe(`Bearer ${'x'.repeat(32)}`);
     if (path === '/runs') return route.fulfill({json:{items:[],next_cursor:null},headers});
     if (path === '/models') return route.fulfill({json:[{id:'parent/model'},{id:'research/model'}],headers});
@@ -72,6 +74,7 @@ test('configure persistent specialist model routes from discovered local models'
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
   await page.locator('summary').filter({hasText:'Specialist identities and model routes'}).click();
   const panel = page.getByRole('region',{name:'Specialist profiles'});
   const researcher = panel.getByLabel('Researcher model');
