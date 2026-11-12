@@ -19,6 +19,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const [endpoint, setEndpoint] = useState('');
   const [trustEnvironment, setUseSystemProxy] = useState(false);
   const [memoryLimitMb, setMemoryLimitMb] = useState('2048');
+  const [cpuLimitPercent, setCpuLimitPercent] = useState('80');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('[]');
   const [cwd, setCwd] = useState('');
@@ -64,9 +65,11 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     const parsed:unknown = transport==='stdio'?JSON.parse(args):[];
     if (!Array.isArray(parsed) || parsed.some(item=>typeof item!=='string')) throw new Error('Arguments must be a JSON array of strings.');
     const memoryLimit = memoryLimitMb.trim()===''?null:Number(memoryLimitMb);
+    const cpuLimit = cpuLimitPercent.trim()===''?null:Number(cpuLimitPercent);
     if (transport==='stdio'&&memoryLimit!==null&&(!Number.isInteger(memoryLimit)||memoryLimit<128||memoryLimit>65536)) throw new Error('Memory limit must be between 128 and 65,536 MiB.');
-    await client.createMCPServer({name,transport,protocol_mode:protocolMode,trust_environment:transport==='streamable_http'&&trustEnvironment,memory_limit_mb:transport==='stdio'?memoryLimit:null,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
-    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);setMemoryLimitMb('2048');
+    if (transport==='stdio'&&cpuLimit!==null&&(!Number.isInteger(cpuLimit)||cpuLimit<1||cpuLimit>100)) throw new Error('CPU limit must be between 1 and 100 percent.');
+    await client.createMCPServer({name,transport,protocol_mode:protocolMode,trust_environment:transport==='streamable_http'&&trustEnvironment,memory_limit_mb:transport==='stdio'?memoryLimit:null,cpu_limit_percent:transport==='stdio'?cpuLimit:null,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
+    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);setMemoryLimitMb('2048');setCpuLimitPercent('80');
   });
   const changePermission = (server:MCPServer,tool:MCPTool,permission:MCPTool['permission']) => act(async()=>{
     await client.setMCPToolPermission(server.id,tool,permission);
@@ -87,6 +90,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
         <label>Arguments (JSON string array)<input value={args} onChange={e=>setArgs(e.target.value)} /></label>
         <label>Working directory (optional)<input value={cwd} onChange={e=>setCwd(e.target.value)} /></label>
         <label>Process memory limit (MiB, 128–65,536; blank for unlimited)<input type="number" min={128} max={65536} step={128} value={memoryLimitMb} onChange={e=>setMemoryLimitMb(e.target.value)} /></label>
+        <label>Process CPU limit (percent, 1–100; blank for unlimited)<input type="number" min={1} max={100} value={cpuLimitPercent} onChange={e=>setCpuLimitPercent(e.target.value)} /></label>
         <label>Secret environment variable names<input value={secretEnv} onChange={e=>setSecretEnv(e.target.value)} placeholder="API_TOKEN" /></label>
       </>:<>
         <label>Streamable HTTP endpoint<input value={endpoint} onChange={e=>setEndpoint(e.target.value)} placeholder="https://mcp.example.com/mcp" /></label>
@@ -101,7 +105,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
       <p>Sampling uses the selected run model, shares its iteration and token limits, and receives no tools, workspace, or conversation history. Server prompts remain untrusted. Set this server to Legacy compatibility when adding it; automatic negotiation cannot receive sampling/createMessage requests.</p>
       {server.error&&<p role="alert">{server.error}</p>}
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
-      {server.transport==='stdio'&&<p>Process memory limit: {server.memory_limit_mb===null?'unlimited':`${server.memory_limit_mb} MiB`}</p>}
+      {server.transport==='stdio'&&<p>Process limits: memory {server.memory_limit_mb===null?'unlimited':`${server.memory_limit_mb} MiB`}, CPU {server.cpu_limit_percent===null?'unlimited':`${server.cpu_limit_percent}%`}</p>}
       {server.transport==='streamable_http'&&<p>HTTP proxy and CA environment variables: {server.trust_environment?'enabled':'disabled'}</p>}
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>

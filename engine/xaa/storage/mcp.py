@@ -25,6 +25,7 @@ class MCPServerSpec(BaseModel):
     # Windows stdio process caps. Existing servers migrate with no cap to preserve
     # their current behavior; the desktop supplies bounded defaults for new servers.
     memory_limit_mb: int | None = Field(default=None, ge=128, le=65536)
+    cpu_limit_percent: int | None = Field(default=None, ge=1, le=100)
     endpoint: str | None = Field(default=None, max_length=2048)
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
@@ -89,8 +90,8 @@ class MCPServerSpec(BaseModel):
                 ):
                     raise ValueError("Plugin package and data paths must be absolute plain paths.")
         else:
-            if self.memory_limit_mb is not None:
-                raise ValueError("MCP process memory limits apply only to stdio servers.")
+            if self.memory_limit_mb is not None or self.cpu_limit_percent is not None:
+                raise ValueError("MCP process resource limits apply only to stdio servers.")
             plugin_backed = self.plugin_root is not None and self.plugin_data is not None
             if (
                 self.command
@@ -215,7 +216,7 @@ class MCPRegistry:
                 if current_sha256 != spec.plugin_sha256:
                     raise ValueError("The selected MCP package changed before it was registered.")
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256,trust_environment,memory_limit_mb) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256,trust_environment,memory_limit_mb,cpu_limit_percent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -234,6 +235,7 @@ class MCPRegistry:
                     spec.plugin_sha256,
                     int(spec.trust_environment),
                     spec.memory_limit_mb,
+                    spec.cpu_limit_percent,
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -357,6 +359,7 @@ class MCPRegistry:
             protocol_mode=row.get("protocol_mode", "auto"),
             trust_environment=bool(row.get("trust_environment", 1)),
             memory_limit_mb=row.get("memory_limit_mb"),
+            cpu_limit_percent=row.get("cpu_limit_percent"),
             endpoint=row.get("endpoint"),
             plugin_root=row.get("plugin_root"),
             plugin_data=row.get("plugin_data"),

@@ -320,6 +320,7 @@ class MCPManager:
                         params,
                         errlog=errlog,
                         memory_limit_mb=server.memory_limit_mb,
+                        cpu_limit_percent=server.cpu_limit_percent,
                     )
                 else:
                     if server.endpoint is None:

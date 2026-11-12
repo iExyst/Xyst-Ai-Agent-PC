@@ -2276,6 +2276,8 @@ export interface components {
              * @default
              */
             command: string;
+            /** Cpu Limit Percent */
+            cpu_limit_percent?: number | null;
             /** Cwd */
             cwd?: string | null;
             /** Endpoint */
@@ -2855,6 +2857,8 @@ export interface components {
             args: string[];
             /** Command */
             command: string;
+            /** Cpu Limit Percent */
+            cpu_limit_percent: number | null;
             /** Created At */
             created_at: string;
             /** Cwd */

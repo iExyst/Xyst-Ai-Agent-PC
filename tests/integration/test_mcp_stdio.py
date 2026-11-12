@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
 import shutil
 import sys
@@ -85,13 +86,37 @@ async def test_stdio_process_receives_configured_windows_job_memory_limit():
         command=sys.executable,
         args=["-c", "import time; time.sleep(30)"],
     )
-    async with bounded_stdio_client(params, memory_limit_mb=384):
+    async with bounded_stdio_client(params, memory_limit_mb=384, cpu_limit_percent=40):
         process = next(process for process in _process_jobs if process.pid not in existing_pids)
         job = _process_jobs[process]
         info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
         flags = info["BasicLimitInformation"]["LimitFlags"]
         assert flags & win32job.JOB_OBJECT_LIMIT_JOB_MEMORY
         assert info["JobMemoryLimit"] == 384 * 1024 * 1024
+
+        class CpuRateControlInformation(ctypes.Structure):
+            _fields_ = [("ControlFlags", ctypes.c_uint32), ("CpuRate", ctypes.c_uint32)]
+
+        cpu_info = CpuRateControlInformation()
+        returned = ctypes.c_uint32()
+        query = ctypes.WinDLL("kernel32", use_last_error=True).QueryInformationJobObject
+        query.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
+        query.restype = ctypes.c_int
+        assert query(
+            ctypes.c_void_p(int(job)),
+            15,
+            ctypes.byref(cpu_info),
+            ctypes.sizeof(cpu_info),
+            ctypes.byref(returned),
+        )
+        assert cpu_info.ControlFlags == 0x1 | 0x4
+        assert cpu_info.CpuRate == 4000
 
 
 @pytest.mark.asyncio
@@ -640,11 +665,13 @@ def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
                 "command": sys.executable,
                 "secret_env": ["TOKEN"],
                 "memory_limit_mb": 512,
+                "cpu_limit_percent": 60,
             },
         )
         assert created.status_code == 201
         assert created.json()["trust_environment"] is False
         assert created.json()["memory_limit_mb"] == 512
+        assert created.json()["cpu_limit_percent"] == 60
         server_id = created.json()["id"]
         credentials.set("preserve-me", f"mcp:{server_id}:TOKEN")
         created_http = client.post(

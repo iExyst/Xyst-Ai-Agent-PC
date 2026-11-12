@@ -576,6 +576,19 @@
             "title": "Command",
             "type": "string"
           },
+          "cpu_limit_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Limit Percent"
+          },
           "cwd": {
             "anyOf": [
               {
@@ -2093,6 +2106,17 @@
             "title": "Command",
             "type": "string"
           },
+          "cpu_limit_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Limit Percent"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -2219,6 +2243,7 @@
           "protocol_mode",
           "trust_environment",
           "memory_limit_mb",
+          "cpu_limit_percent",
           "endpoint",
           "command",
           "args",

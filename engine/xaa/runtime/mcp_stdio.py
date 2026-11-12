@@ -49,11 +49,17 @@ class MCPStdioResourceLimitError(RuntimeError):
     """A configured stdio process limit could not be enforced."""
 
 
-async def _apply_windows_memory_limit(process: ServerProcess, memory_limit_mb: int | None) -> None:
-    if memory_limit_mb is None:
+async def _apply_windows_process_limits(
+    process: ServerProcess,
+    memory_limit_mb: int | None,
+    cpu_limit_percent: int | None,
+) -> None:
+    if memory_limit_mb is None and cpu_limit_percent is None:
         return
-    if not 128 <= memory_limit_mb <= 65536:
+    if memory_limit_mb is not None and not 128 <= memory_limit_mb <= 65536:
         raise ValueError("MCP stdio memory limits must be between 128 and 65,536 MiB.")
+    if cpu_limit_percent is not None and not 1 <= cpu_limit_percent <= 100:
+        raise ValueError("MCP stdio CPU limits must be between 1 and 100 percent.")
     if sys.platform != "win32":
         raise MCPStdioResourceLimitError(
             "Configured MCP process memory limits are currently supported on Windows only."
@@ -71,17 +77,47 @@ async def _apply_windows_memory_limit(process: ServerProcess, memory_limit_mb: i
             "Windows could not assign this MCP server to a resource-control Job Object."
         )
     try:
-        extended_info: Any = job_api.QueryInformationJobObject(
-            job, job_api.JobObjectExtendedLimitInformation
-        )
-        extended_info["BasicLimitInformation"]["LimitFlags"] |= job_api.JOB_OBJECT_LIMIT_JOB_MEMORY
-        extended_info["JobMemoryLimit"] = memory_limit_mb * 1024 * 1024
-        job_api.SetInformationJobObject(
-            job, job_api.JobObjectExtendedLimitInformation, extended_info
-        )
+        if memory_limit_mb is not None:
+            extended_info: Any = job_api.QueryInformationJobObject(
+                job, job_api.JobObjectExtendedLimitInformation
+            )
+            extended_info["BasicLimitInformation"]["LimitFlags"] |= (
+                job_api.JOB_OBJECT_LIMIT_JOB_MEMORY
+            )
+            extended_info["JobMemoryLimit"] = memory_limit_mb * 1024 * 1024
+            job_api.SetInformationJobObject(
+                job, job_api.JobObjectExtendedLimitInformation, extended_info
+            )
+        if cpu_limit_percent is not None:
+            import ctypes
+
+            class CpuRateControlInformation(ctypes.Structure):
+                _fields_ = [("ControlFlags", ctypes.c_uint32), ("CpuRate", ctypes.c_uint32)]
+
+            # JobObjectCpuRateControlInformation = 15,
+            # ENABLE | HARD_CAP = 0x1 | 0x4; rate units are 1/100 of one percent.
+            cpu_info = CpuRateControlInformation(0x1 | 0x4, cpu_limit_percent * 100)
+            set_information: Any = ctypes.WinDLL(
+                "kernel32", use_last_error=True
+            ).SetInformationJobObject
+            set_information.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_uint32,
+            ]
+            set_information.restype = ctypes.c_int
+            succeeded = set_information(
+                ctypes.c_void_p(int(job)),
+                15,
+                ctypes.byref(cpu_info),
+                ctypes.sizeof(cpu_info),
+            )
+            if not succeeded:
+                raise ctypes.WinError(ctypes.get_last_error())
     except Exception as error:
         raise MCPStdioResourceLimitError(
-            "Windows could not enforce the configured MCP server memory limit."
+            "Windows could not enforce the configured MCP server resource limits."
         ) from error
 
 
@@ -91,6 +127,7 @@ async def bounded_stdio_client(
     *,
     max_frame_bytes: int = MCP_MAX_STDIO_FRAME_BYTES,
     memory_limit_mb: int | None = None,
+    cpu_limit_percent: int | None = None,
     errlog: TextIO = sys.stderr,
 ) -> AsyncGenerator[TransportStreams]:
     """Spawn an MCP stdio server and reject any inbound frame over the limit.
@@ -102,6 +139,8 @@ async def bounded_stdio_client(
         raise ValueError("max_frame_bytes must be positive")
     if memory_limit_mb is not None and not 128 <= memory_limit_mb <= 65536:
         raise ValueError("MCP stdio memory limits must be between 128 and 65,536 MiB.")
+    if cpu_limit_percent is not None and not 1 <= cpu_limit_percent <= 100:
+        raise ValueError("MCP stdio CPU limits must be between 1 and 100 percent.")
 
     command = await _get_executable_command(server.command)
     process = await _create_platform_compatible_process(
@@ -112,7 +151,7 @@ async def bounded_stdio_client(
         cwd=server.cwd,
     )
     try:
-        await _apply_windows_memory_limit(process, memory_limit_mb)
+        await _apply_windows_process_limits(process, memory_limit_mb, cpu_limit_percent)
     except MCPStdioResourceLimitError:
         await _stop_server_process(process)
         raise

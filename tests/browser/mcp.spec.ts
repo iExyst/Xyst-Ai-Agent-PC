@@ -117,8 +117,8 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByLabel('MCP protocol').selectOption('legacy');
   await panel.getByRole('button',{name:'Add MCP server'}).click();
   await expect(panel.getByText('Fixture MCP')).toBeVisible();
-  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.memory_limit_mb===2048)).toBe(true);
-  await expect(panel.getByText('Process memory limit: 2048 MiB')).toBeVisible();
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.memory_limit_mb===2048&&item.body.cpu_limit_percent===80)).toBe(true);
+  await expect(panel.getByText('Process limits: memory 2048 MiB, CPU 80%')).toBeVisible();
   await panel.getByRole('button',{name:'Connect and discover'}).click();
   await expect(panel.getByText('Change value')).toBeVisible();
   const samplingGrant=panel.getByLabel('Allow this server to request text-only model sampling during this run');

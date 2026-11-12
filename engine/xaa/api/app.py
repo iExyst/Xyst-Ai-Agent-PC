@@ -347,6 +347,7 @@ class MCPServerResponse(BaseModel):
     protocol_mode: Literal["auto", "legacy"]
     trust_environment: bool
     memory_limit_mb: int | None
+    cpu_limit_percent: int | None
     endpoint: str | None
     command: str
     args: list[str]
@@ -403,6 +404,7 @@ class CreateMCPServerRequest(BaseModel):
     protocol_mode: Literal["auto", "legacy"] = "auto"
     trust_environment: bool = False
     memory_limit_mb: int | None = Field(default=None, ge=128, le=65536)
+    cpu_limit_percent: int | None = Field(default=None, ge=1, le=100)
     endpoint: str | None = Field(default=None, max_length=2048)
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
@@ -982,6 +984,7 @@ def create_app(
                     cwd=cast(str | None, raw["cwd"]),
                     secret_env=sorted(inline_values),
                     memory_limit_mb=2048,
+                    cpu_limit_percent=80,
                     plugin_root=str(package_root),
                     plugin_sha256=source_sha256,
                     plugin_data=str(
