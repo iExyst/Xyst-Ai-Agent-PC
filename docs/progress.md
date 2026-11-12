@@ -1,5 +1,9 @@
 # Progress
 
+## Reconcile Phase 3 execution status across the docs (2026-11-12)
+
+The current source and acceptance evidence show that the restricted WSL command path is already integrated: the coordinator exposes it only after an explicit saved grant, and the native/installed fixture workflows have passed the five-case diagnose/edit/test/report scenario. The execution-requirements and WSL architecture docs still contained undated early-checkpoint claims that no app command tool existed and Phase 3 recovery/project validation remained open. Updated those docs to distinguish historical development notes from the current accepted slice, refreshed the execution row's current package evidence, and retained the correct limits: one synthetic project, automated fixture review, no broad project/runtime compatibility or human review, other backend families still open. Evidence is `docs/releases/evidence/native-project-fix.json` and `.acceptance/installed-command-16dc8efdd5b840699cdb7514220049a2/report.json`. No new live model tests were run.
+
 ## Exercise saved chat sessions in the native desktop window (2026-11-11)
 
 Extended the native Tauri WebView acceptance to load a conversation from the frozen engine API,
