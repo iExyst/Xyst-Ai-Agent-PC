@@ -40,46 +40,20 @@ def _stage_native_release(binaries: dict[str, Path], destination: Path) -> Path:
         native_manifest[name] = hashlib.sha256(staged_file.read_bytes()).hexdigest()
     (staging / "manifest.json").write_text(json.dumps(native_manifest, indent=2), encoding="utf-8")
 
-    if not destination.exists():
-        os.replace(staging, destination)
-        return destination
-
-    backup = destination.with_name(f"{destination.name}.previous-{nonce}")
-    try:
-        os.replace(destination, backup)
-    except PermissionError:
-        preview = destination.with_name(f"{destination.name}-preview-{nonce}")
-        os.replace(staging, preview)
+    output = destination
+    if destination.exists():
+        output = destination.with_name(f"{destination.name}-preview-{nonce}")
+        os.replace(staging, output)
         print(
-            "The existing native smoke stage is in use; it was left untouched. "
-            f"Fresh binaries are staged at {preview.resolve()}; set XAA_NATIVE_STAGE={preview.name} "
+            "The existing native smoke stage was left untouched. "
+            f"Fresh binaries are staged at {output.resolve()}; set XAA_NATIVE_STAGE={output.name} "
             "when running native smoke checks against them.",
             flush=True,
         )
-        return preview
+        return output
 
-    try:
-        os.replace(staging, destination)
-    except PermissionError:
-        try:
-            os.replace(backup, destination)
-        except OSError as restore_error:
-            raise RuntimeError(
-                f"Could not publish the fresh native stage or restore the previous stage at {destination}. "
-                f"The previous stage remains at {backup}."
-            ) from restore_error
-        preview = destination.with_name(f"{destination.name}-preview-{nonce}")
-        os.replace(staging, preview)
-        print(
-            "The previous native smoke stage was restored after an update collision. "
-            f"Fresh binaries are staged at {preview.resolve()}; set XAA_NATIVE_STAGE={preview.name} "
-            "when running native smoke checks against them.",
-            flush=True,
-        )
-        return preview
-
-    print(f"Previous native smoke stage preserved at {backup.resolve()}.", flush=True)
-    return destination
+    os.replace(staging, output)
+    return output
 
 
 def _run_tauri_build(npm: str, *, signing: bool = False) -> None:

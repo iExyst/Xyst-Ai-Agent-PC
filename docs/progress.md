@@ -2,7 +2,7 @@
 
 ## Keep local installer packaging successful with an open desktop (2026-11-12)
 
-Changed native smoke staging in `scripts/build_installer.py` to copy desktop and engine into a fresh sibling directory, write its hash manifest there, then atomically rotate it into `build/native-release`. If Windows refuses to rename the old stage because an app is using it, the stage stays untouched, the fresh binaries are retained in a unique `build/native-release-preview-*` directory, and the installer build continues successfully. The builder prints the `XAA_NATIVE_STAGE` value for smoke checks against that preview. Added regression coverage for normal rotation and a simulated Windows sharing violation. Focused builder tests pass (11), Ruff check/format and strict Pyright pass, and `git diff --check` passes. Hosted source and installer reacceptance are pending; no live model inference was used.
+Changed native smoke staging in `scripts/build_installer.py` to assemble desktop, engine and hash manifest in a fresh sibling directory. If `build/native-release` already exists, the builder now leaves it untouched and publishes the new stage at a unique `build/native-release-preview-*` path, printing the matching `XAA_NATIVE_STAGE` value. This avoids changing any directory an open desktop may still use and allows installer packaging to finish. Regression coverage checks both fresh and pre-existing stages. Focused builder tests pass (11), Ruff check/format and strict Pyright pass, and `git diff --check` passes. Hosted source and installer reacceptance are pending; no live model inference was used.
 
 ## Package the current desktop source locally (2026-11-12)
 
