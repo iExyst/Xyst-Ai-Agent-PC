@@ -16,6 +16,12 @@ if len(sys.argv) > 3 and sys.argv[3] == "before-acl":
         os._exit(0)
 
     AppContainerAccess._add_ace = crash_before_acl
+elif len(sys.argv) > 3 and sys.argv[3] == "after-profile":
+
+    def crash_after_profile(_access: AppContainerAccess, _path: str, _mask: int) -> None:
+        os._exit(0)
+
+    AppContainerAccess._grant_tree = crash_after_profile
 
 AppContainerAccess(
     sys.executable,

@@ -253,6 +253,10 @@ class AppContainerAccess:
         self.profile_name = f"XAA-MCP-{uuid4().hex}"
         self._grants: list[tuple[str, int, int]] = []
         self._journal_path = self._journal_directory / f"{self.profile_name}.json"
+        # Persist the profile intent before Windows creates the persistent profile.
+        # An empty grants list makes recovery safe if the engine dies before the
+        # first ACL mutation is journaled.
+        self._write_journal()
         _kernel32, _sid_bytes, self._sid = _appcontainer_sid(self.profile_name)
         try:
             executable = Path(command).resolve(strict=True)

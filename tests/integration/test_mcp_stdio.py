@@ -122,6 +122,7 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
         "reused-pid",
         "legacy-journal",
         "crash-before-acl",
+        "crash-after-profile",
         "exit-code-259",
     ],
 )
@@ -149,8 +150,14 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
 
     before = ace_count()
     command = [sys.executable, str(APPCONTAINER_CRASH_FIXTURE), str(journal), str(access_root)]
-    if scenario in {"crash-before-acl", "exit-code-259"}:
-        command.append("before-acl" if scenario == "crash-before-acl" else "exit-259")
+    if scenario in {"crash-before-acl", "crash-after-profile", "exit-code-259"}:
+        command.append(
+            {
+                "crash-before-acl": "before-acl",
+                "crash-after-profile": "after-profile",
+                "exit-code-259": "exit-259",
+            }[scenario]
+        )
     crashed_engine = subprocess.run(
         command,
         check=False,
@@ -167,11 +174,15 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
     record = json.loads(record_path.read_text(encoding="utf-8"))
     assert record["version"] == 2
     owner_creation_time = record["owner_creation_time"]
+    if scenario == "crash-after-profile":
+        assert record["grants"] == []
+    else:
+        assert record["grants"]
     if scenario == "legacy-journal":
         record["version"] = 1
         del record["owner_creation_time"]
         record_path.write_text(json.dumps(record), encoding="utf-8")
-    assert (ace_count() > before) is (scenario != "crash-before-acl")
+    assert (ace_count() > before) is (scenario not in {"crash-before-acl", "crash-after-profile"})
 
     if scenario == "reused-pid":
         # Model the same numeric PID now belonging to a different process.
