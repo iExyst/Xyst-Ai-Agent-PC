@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Installed MCP completion acceptance (2026-11-12)
+
+The installed native Tauri smoke now requests prompt-argument and resource-template-variable suggestions, labels them as untrusted, and uses only the owner's selected value in the following preview/read. Hosted installer run [43331512040](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43331512040) passed; the report confirms both completion paths, modern TypeScript SDK stdio interop, network isolation, and graceful shutdown (`../../.acceptance/hosted-installer-43331512040/.acceptance/207b24f9-abfb-4a95-bc44-d973a81343dd/report.json`). No model inference was requested. The broad MCP row remains partial; the added installed acceptance verifies two client operations, not broad third-party server compatibility.
+
 ## WSL command recovery after a profile update (2026-11-12)
 
 For an existing journaled WSL command, `stop`, `cleanup` and `status` remain bound to its immutable execution ID and original distribution even if packaged resource hashes change. Starting a new command still requires the current profile fingerprint. Transport tests cover mismatch and wrong-distribution denial. A real Ubuntu-24.04 controller-crash diagnostic launched with the prior transport and manager resources from `71c94760445d2ccab77ce8180835abcf46dfa34b` and recovered the saved identity using current manager resources, including correct treatment of damaged output ([report](../../.acceptance/a287a990-d9a9-4b84-8937-839042269c0f/report.json)). Hosted Windows source run [43322559957](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43322559957) passed the preceding source workflow. This does not prove installed prior-version upgrade recovery or compatibility with every historical receipt schema. The execution capability remains **partial**; this narrow recovery improvement does not change the audited backend parity status.
