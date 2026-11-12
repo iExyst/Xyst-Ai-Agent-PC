@@ -22,6 +22,10 @@ from xaa.credentials import (
 )
 from xaa.storage.backup_bundle import restore_backup_bundle
 from xaa.storage.restore import restore_database
+from xaa.trajectory_compression import (
+    CompressionSettings,
+    compress_jsonl_with_lm_studio,
+)
 from xaa.version import APP_VERSION
 
 
@@ -129,6 +133,27 @@ def main() -> None:
     )
     training.add_argument("batch_dir", type=Path, help="Batch directory containing batch.json")
     training.add_argument("--output", type=Path, required=True, help="New JSONL file path")
+    compression = commands.add_parser(
+        "compress-trajectories",
+        help="Compress conversational JSONL with an explicitly selected local LM Studio model",
+    )
+    compression.add_argument("input", type=Path, help="JSONL file with conversations or messages")
+    compression.add_argument("--output", type=Path, required=True, help="New JSONL output path")
+    compression.add_argument("--model", required=True, help="Exact loaded LM Studio model ID")
+    compression.add_argument(
+        "--provider-url",
+        default=os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234"),
+        help="Local LM Studio HTTP loopback address (default: http://127.0.0.1:1234)",
+    )
+    compression.add_argument(
+        "--max-tokens", type=int, default=8192, help="Maximum compressed conversation tokens"
+    )
+    compression.add_argument(
+        "--summary-tokens", type=int, default=256, help="Output allowance per summary"
+    )
+    compression.add_argument(
+        "--keep-last", type=int, default=4, help="Number of recent turns protected verbatim"
+    )
     chat = commands.add_parser("chat", help="Start an interactive terminal conversation")
     chat.add_argument("--model", required=True)
     chat.add_argument("--workspace")
@@ -161,6 +186,28 @@ def main() -> None:
             report = export_training_jsonl(args.batch_dir, args.output)
         except (OSError, TypeError, ValueError) as exc:
             parser.exit(1, f"Training export failed: {exc}\n")
+        print(json.dumps(report, indent=2))
+        return
+    if args.command == "compress-trajectories":
+        try:
+            settings = CompressionSettings(
+                target_max_tokens=args.max_tokens,
+                summary_target_tokens=args.summary_tokens,
+                protect_last_turns=args.keep_last,
+            )
+            token = CredentialStore().get() if os.name == "nt" else None
+            report = asyncio.run(
+                compress_jsonl_with_lm_studio(
+                    args.input,
+                    args.output,
+                    model=args.model,
+                    base_url=args.provider_url,
+                    token=token,
+                    settings=settings,
+                )
+            )
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            parser.exit(1, f"Trajectory compression failed: {exc}\n")
         print(json.dumps(report, indent=2))
         return
     if args.command == "batch" and not 0 < args.poll_interval <= 60:
