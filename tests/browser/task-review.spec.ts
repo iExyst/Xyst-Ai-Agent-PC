@@ -33,7 +33,9 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Model setup'}).click();
   await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
@@ -99,7 +101,9 @@ for(const choice of ['current','proposed'] as const){
     await page.goto('/');
     await page.getByLabel('Engine token').fill('x'.repeat(32));
     await page.getByRole('button',{name:'Connect',exact:true}).click();
+    await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Model setup'}).click();
     await page.getByLabel('Local model').selectOption('fixture/model');
+    await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
     await page.getByLabel('Workspace path').fill('C:\\fixture');
     await page.getByLabel('Objective',{exact:true}).fill(run.objective);
     await page.getByRole('button',{name:'Start objective'}).click();

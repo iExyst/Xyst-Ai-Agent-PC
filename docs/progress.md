@@ -2319,3 +2319,7 @@ The desktop chat acceptance now opens a saved conversation in the Windows Tauri 
 ## Give model setup its own desktop page (2026-11-11)
 
 Moved the LM Studio and compatible-provider form out of the Home workspace into its own Model setup page. Home now presents the task entry point, workspace selector, a short setup checklist and the optional read-only demonstration; Tools & integrations no longer duplicates model onboarding. Updated the browser onboarding flow and native restart smoke to navigate through the new page. The three focused browser checks pass, including first-run diagnostic/demo and startup recovery; TypeScript, Vite production build, bundled engine build, native Cargo build and the native restart/chat continuation smoke pass. The last local native report is [`.acceptance/native-restart-9a23bcbb-3953-489c-b2ac-94aad4349948/report.json`](../.acceptance/native-restart-9a23bc-3953-489c-b2ac-94aad4349948/report.json), with the visible Home layout preserved in `before-restart.png`. This is a presentation/onboarding improvement; it does not change capability claims or establish a new release build.
+
+## Update model setup acceptance coverage (2026-11-11)
+
+Hosted source run [43136927641](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43136927641) caught two existing browser acceptances that still selected the model from Home. Moved their setup actions through the dedicated Model setup page. The six relevant task-review, voice-input and onboarding browser checks now pass locally; hosted CI revalidation is pending.
