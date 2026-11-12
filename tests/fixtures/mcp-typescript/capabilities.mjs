@@ -1,3 +1,4 @@
+import { ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 export function registerFixtureCapabilities(server, { transport, protocolVersion }) {
@@ -27,6 +28,24 @@ export function registerFixtureCapabilities(server, { transport, protocolVersion
           uri: uri.href,
           mimeType: 'text/plain',
           text: `typescript-${transport}-resource:untrusted`,
+        },
+      ],
+    }),
+  );
+  server.registerResource(
+    'fixture_item',
+    new ResourceTemplate('xaa://typescript/items/{item_id}', { list: undefined }),
+    {
+      title: 'TypeScript fixture item',
+      description: 'A dynamic text resource from the TypeScript SDK fixture.',
+      mimeType: 'text/plain',
+    },
+    async (uri, { item_id }) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'text/plain',
+          text: `typescript-${transport}-template:${item_id}`,
         },
       ],
     }),

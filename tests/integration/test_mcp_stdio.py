@@ -87,6 +87,23 @@ async def test_mcp_typescript_sdk_modern_stdio_interoperability(workspace_tmp_pa
         resource = await manager.read_resource(server.id, "xaa://typescript/readme")
         assert resource["trust"] == "untrusted_mcp_output"
         assert resource["contents"][0]["text"] == "typescript-stdio-resource:untrusted"
+        templates = await manager.list_resource_templates(server.id)
+        assert templates == [
+            {
+                "name": "fixture_item",
+                "title": "TypeScript fixture item",
+                "uri_template": "xaa://typescript/items/{item_id}",
+                "variables": ["item_id"],
+                "description": "A dynamic text resource from the TypeScript SDK fixture.",
+                "mime_type": "text/plain",
+            }
+        ]
+        template_read = await manager.read_resource_template(
+            server.id, "fixture_item", {"item_id": "two words"}
+        )
+        assert template_read["trust"] == "untrusted_mcp_output"
+        assert template_read["contents"][0]["uri"] == "xaa://typescript/items/two%20words"
+        assert template_read["contents"][0]["text"] == "typescript-stdio-template:two%20words"
         prompts = await manager.list_prompts(server.id)
         assert [item["name"] for item in prompts] == ["summarize_topic"]
         prompt = await manager.preview_prompt(server.id, "summarize_topic", {"topic": "fixture"})

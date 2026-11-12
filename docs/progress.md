@@ -2465,3 +2465,7 @@ The official TypeScript fixture now shares one capability registration module ac
 ## Hosted verification of TypeScript MCP HTTP interop (2026-11-12)
 
 Hosted Windows source run [43231924477](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43231924477) passed on commit `e36bea9`, including the locked Node adapter fixture install, Ruff, formatting, strict engine/scripts Pyright, desktop/browser checks, the full Python suite and Windows recovery acceptances. The installer job was skipped because the change adds only a test fixture and integration coverage. This verifies the TypeScript tool-only HTTP slice from `e36bea9`; the newer resource/prompt extension in `10794b0` still needs hosted verification. No live inference was used.
+
+## Verify TypeScript MCP resource templates (2026-11-12)
+
+Extended the shared TypeScript MCP fixture with a dynamic URI resource template on both stdio and Streamable HTTP. X.A.A.'s client discovers the template, reads an encoded path value, and preserves the returned URI and text under the untrusted MCP output label. The current TypeScript SDK supplies the matched value as percent-encoded (`two%20words`), and the fixture response records that observed representation. Both focused cross-language cases pass; hosted verification is pending.
