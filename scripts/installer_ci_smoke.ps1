@@ -22,6 +22,8 @@ $xaaPriorNativeEnginePath = $env:XAA_NATIVE_ENGINE_PATH
 $xaaPriorNativeManifestPath = $env:XAA_NATIVE_MANIFEST_PATH
 $xaaPriorNativeStage = $env:XAA_NATIVE_STAGE
 $xaaPriorNativeDebugPort = $env:XAA_NATIVE_DEBUG_PORT
+$xaaPriorFrozenApiExecutable = $env:XAA_FROZEN_API_EXECUTABLE
+$xaaPriorFrozenScheduleWriteRoot = $env:XAA_FROZEN_SCHEDULE_WRITE_ROOT
 $env:LOCALAPPDATA = $xaaLocalAppData
 $env:APPDATA = $xaaRoamingAppData
 $xaaProductName = (Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).productName
@@ -194,6 +196,15 @@ try {
             throw 'Installed scheduled cold-restart evidence was incomplete.'
         }
         $xaaReport.native_schedule_restart = $xaaScheduleRestartAcceptance
+        $env:XAA_FROZEN_API_EXECUTABLE = $xaaEngine
+        $env:XAA_FROZEN_SCHEDULE_WRITE_ROOT = Join-Path $xaaAcceptanceRoot 'frozen-scheduled-write'
+        $xaaScheduledWriteOutput = & uv run python scripts/frozen_scheduled_write_diagnostic.py
+        if ($LASTEXITCODE -ne 0) { throw 'Installed scheduled workspace-write acceptance failed.' }
+        $xaaScheduledWriteAcceptance = ($xaaScheduledWriteOutput | Out-String | ConvertFrom-Json)
+        if (-not $xaaScheduledWriteAcceptance.passed -or $xaaScheduledWriteAcceptance.engine_sha256 -ne $xaaEngineHash -or $xaaScheduledWriteAcceptance.schedule_mode -ne 'authorized_automation' -or $xaaScheduledWriteAcceptance.run_state -ne 'completed' -or $xaaScheduledWriteAcceptance.execution_state -ne 'completed' -or $xaaScheduledWriteAcceptance.workspace_create_proposals -ne 1 -or -not $xaaScheduledWriteAcceptance.workspace_file_created -or $xaaScheduledWriteAcceptance.command_grant -or -not $xaaScheduledWriteAcceptance.durable_tool_completion -or -not $xaaScheduledWriteAcceptance.owner_review_submitted -or -not $xaaScheduledWriteAcceptance.graceful_shutdown -or $xaaScheduledWriteAcceptance.live_model_inference_requested) {
+            throw 'Installed scheduled workspace-write evidence was incomplete or did not use the installed engine.'
+        }
+        $xaaReport.installed_scheduled_write_acceptance = $xaaScheduledWriteAcceptance
         $xaaRestartDebugPort = 19227
         $env:XAA_NATIVE_DEBUG_PORT = [string]$xaaRestartDebugPort
         if ($xaaElevated) {
@@ -261,7 +272,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_mcp_process_limits.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_scheduled_write_acceptance.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_mcp_process_limits.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
@@ -272,6 +283,8 @@ try {
     Remove-Item Env:XAA_NATIVE_ACCEPTANCE_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_SCHEDULE_RESTART_ROOT -ErrorAction SilentlyContinue
+    if ($null -eq $xaaPriorFrozenApiExecutable) { Remove-Item Env:XAA_FROZEN_API_EXECUTABLE -ErrorAction SilentlyContinue } else { $env:XAA_FROZEN_API_EXECUTABLE = $xaaPriorFrozenApiExecutable }
+    if ($null -eq $xaaPriorFrozenScheduleWriteRoot) { Remove-Item Env:XAA_FROZEN_SCHEDULE_WRITE_ROOT -ErrorAction SilentlyContinue } else { $env:XAA_FROZEN_SCHEDULE_WRITE_ROOT = $xaaPriorFrozenScheduleWriteRoot }
     Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
     if ($null -eq $xaaPriorNativeDesktopPath) { Remove-Item Env:XAA_NATIVE_DESKTOP_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_DESKTOP_PATH = $xaaPriorNativeDesktopPath }
     if ($null -eq $xaaPriorNativeEnginePath) { Remove-Item Env:XAA_NATIVE_ENGINE_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_ENGINE_PATH = $xaaPriorNativeEnginePath }
