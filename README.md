@@ -36,7 +36,7 @@ For bounded evaluation batches, prepare a version 1 JSON file with a `cases` arr
 
 After explicitly accepting reviewed candidates, refresh the same batch with `--resume` and use `uv run xaa export-training .xaa-batch-results --output reviewed-training.jsonl` to write a local, reviewed text-only JSONL. Tool-using trajectories are excluded; see the [training export limits](docs/evaluations/batches.md#reviewed-text-only-training-export).
 
-To compress Hermes-style conversation JSONL locally, use `uv run xaa compress-trajectories conversations.jsonl --output compressed.jsonl --model MODEL_ID`. It requires an already-loaded LM Studio model and writes a new file without overwriting existing data; it does not accept X.A.A.'s native event-export format. See [trajectory compression limits](docs/evaluations/batches.md#compress-conversational-trajectories).
+To compress Hermes-style conversation JSONL locally, use `uv run xaa compress-trajectories conversations.jsonl --output compressed.jsonl --model MODEL_ID`. The same command accepts one native X.A.A. JSON trajectory export and writes a derived, non-replayable analysis transcript with a source checksum. It requires an already-loaded LM Studio model and never overwrites existing data. See [trajectory compression limits](docs/evaluations/batches.md#compress-conversational-trajectories).
 
 Optional reported-token stop threshold: pass `--max-total-tokens 20000` to `xaa run`. This blocks further work based on saved provider usage; it is not a hard inference ceiling and includes run-triggered capability diagnostics. See [token threshold behavior](docs/architecture/token-thresholds.md).
 

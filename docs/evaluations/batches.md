@@ -62,6 +62,12 @@ Use `xaa compress-trajectories` for JSONL entries with a `conversations` or `mes
 uv run xaa compress-trajectories input.jsonl --output compressed.jsonl --model MODEL_ID --max-tokens 8192 --summary-tokens 256 --keep-last 4
 ```
 
+For a single native X.A.A. export, pass its JSON file instead; the output is a derived JSON transcript:
+
+```powershell
+uv run xaa compress-trajectories run-export.json --output run-context.json --model MODEL_ID --max-tokens 8192
+```
+
 The model identifier must match an already-loaded LM Studio model. Compression uses the configured loopback LM Studio address (default `http://127.0.0.1:1234`) and the optional LM Studio credential in Windows Credential Manager. It does not use cloud providers, download a tokenizer/model, or load a model. Token counting uses LM Studio's installed model tokenizer. The first system, human, assistant, and tool turns and the requested recent tail are preserved verbatim. Assistant turns and their immediately following tool results stay together. The intervening middle becomes one `[CONTEXT SUMMARY]:` human turn; summary input is explicitly treated as untrusted, and every output record includes bounded compression metrics.
 
 The command accepts at most 10,000 JSONL entries, 10 MiB per input line, 256 turns per conversation, 100 MiB total output, and a 256 KiB summary region per entry. Output is published only after the full input succeeds and is never overwritten. If the protected context plus summary cannot fit the requested token budget, or the local model truncates the summary, the command fails without publishing partial output. No live-model acceptance has been run for this capability yet.
