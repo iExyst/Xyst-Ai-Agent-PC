@@ -73,7 +73,7 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
         accepted, _address = listener.accept()
         accepted.close()
         assert control.fileno() >= 0
-    server_python = Path(sys.base_prefix) / "python.exe"
+    server_python = Path(sys.executable)
     nested_directory = workspace_tmp_path / "existing-child"
     nested_directory.mkdir()
     nested_file = nested_directory / "existing.txt"

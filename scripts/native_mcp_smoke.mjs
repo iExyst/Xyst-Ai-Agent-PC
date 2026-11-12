@@ -65,6 +65,7 @@ proc.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-
 let browser;
 let connection;
 let oauthFixture;
+let isolationListener;
 let fixtureOutput = '';
 let passed = false;
 
@@ -298,6 +299,76 @@ try {
     throw new Error('The native MCP fixture configuration was not removed.');
   }
 
+  isolationListener = net.createServer((socket) => socket.destroy());
+  await new Promise((resolve, reject) => {
+    isolationListener.once('error', reject);
+    isolationListener.listen(0, '127.0.0.1', resolve);
+  });
+  const isolationAddress = isolationListener.address();
+  if (!isolationAddress || typeof isolationAddress === 'string') {
+    throw new Error('Could not allocate an AppContainer loopback fixture port.');
+  }
+  const parentCanReachLoopback = await new Promise((resolve) => {
+    const socket = net.connect(isolationAddress.port, '127.0.0.1');
+    socket.once('connect', () => { socket.destroy(); resolve(true); });
+    socket.once('error', () => resolve(false));
+  });
+  if (!parentCanReachLoopback) throw new Error('The loopback fixture listener was unreachable from the desktop process.');
+
+  const isolationFixture = path.resolve('tests/fixtures/mcp_appcontainer_list_probe.py');
+  await panel.getByLabel('Server name').fill('Native isolation fixture');
+  await panel.getByLabel('Command').fill(command);
+  await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([isolationFixture, String(isolationAddress.port)]));
+  await panel.getByLabel('Working directory (optional)').fill(root);
+  await panel.getByLabel('Block network access for this MCP process (Windows)').check();
+  const isolationCreatedResponse = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Add MCP server', exact: true }),
+    (response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST',
+  );
+  if (isolationCreatedResponse.status() !== 201) {
+    throw new Error(`Native AppContainer MCP configuration failed (${isolationCreatedResponse.status()}).`);
+  }
+  const isolationCreated = await isolationCreatedResponse.json();
+  const isolationServerId = isolationCreated.id;
+  const isolationSaved = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  const savedIsolationServer = isolationSaved.find((server) => server.id === isolationServerId);
+  if (!savedIsolationServer || !savedIsolationServer.network_isolation || savedIsolationServer.state !== 'disconnected') {
+    throw new Error('The installed desktop did not persist the AppContainer network-isolation choice.');
+  }
+  await panel.getByRole('button', { name: 'Connect and discover', exact: true }).click();
+  let isolationServers;
+  let isolatedConnection;
+  const isolationDeadline = Date.now() + 30_000;
+  while (Date.now() < isolationDeadline) {
+    isolationServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    isolatedConnection = isolationServers.find((server) => server.id === isolationServerId);
+    if (isolatedConnection?.state === 'connected') break;
+    if (isolatedConnection?.state === 'error') {
+      throw new Error(`Installed AppContainer MCP connection failed: ${isolatedConnection.error}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (isolatedConnection?.state !== 'connected') {
+    throw new Error(`Installed AppContainer MCP connection timed out: ${JSON.stringify(isolatedConnection)}`);
+  }
+  isolationServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  isolatedConnection = isolationServers.find((server) => server.id === isolationServerId);
+  const isolationTool = isolatedConnection?.tools.find((tool) => tool.name === 'loopback_status');
+  if (isolatedConnection?.state !== 'connected' || !isolationTool?.description.includes('blocked:')) {
+    throw new Error(`The installed AppContainer MCP process reached the local listener: ${JSON.stringify(isolationTool)}`);
+  }
+  await panel.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect.poll(async () => {
+    const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    return servers.find((server) => server.id === isolationServerId)?.state;
+  }).toBe('disconnected');
+  await removeMcpServer(page, panel.getByRole('button', { name: 'Remove server', exact: true }));
+  await new Promise((resolve, reject) => {
+    isolationListener.close((error) => error ? reject(error) : resolve());
+  });
+  isolationListener = undefined;
+
   // Exercise the installed-package UI in the actual native WebView. The ZIP
   // arrives through the authenticated local API here; browser acceptance
   // separately covers the native file-picker button and archive selection.
@@ -473,6 +544,12 @@ try {
       retained_after_connection: connected[0].memory_limit_mb === updatedLimits.memory_limit_mb
         && connected[0].cpu_limit_percent === updatedLimits.cpu_limit_percent,
     },
+    network_isolation: {
+      persisted: savedIsolationServer.network_isolation,
+      parent_loopback_reachable: parentCanReachLoopback,
+      isolated_server_blocked: isolationTool.description.includes('blocked:'),
+      disconnected_cleanly: true,
+    },
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
     owner_resource_subscription: true,
@@ -514,6 +591,9 @@ try {
   await writeFile(path.join(root, 'report.json'), JSON.stringify({ passed, error: String(error) }, null, 2));
   throw error;
 } finally {
+  if (isolationListener?.listening) {
+    await new Promise((resolve) => isolationListener.close(resolve));
+  }
   if (oauthFixture && oauthFixture.exitCode === null) {
     execFileSync(path.join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(oauthFixture.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
   }

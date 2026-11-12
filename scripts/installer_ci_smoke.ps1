@@ -208,7 +208,7 @@ try {
         }
         $xaaReport.installed_streamed_output_restart = $xaaStreamRestartAcceptance
 
-        # Exercise MCP configuration and process-limit application using the
+        # Exercise MCP configuration, process limits and AppContainer isolation using the
         # actual binaries installed by the unsigned package, not the build stage.
         $xaaMcpDebugPort = 19228
         $env:XAA_NATIVE_STAGE = 'native-release'
@@ -223,10 +223,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Installed desktop MCP process-limit acceptance failed.' }
         $xaaMcpAcceptance = ($xaaMcpOutput | Out-String | ConvertFrom-Json)
         $xaaMcpLimits = $xaaMcpAcceptance.native_process_limits
-        if (-not $xaaMcpAcceptance.passed -or -not $xaaMcpAcceptance.real_fixture_process -or $xaaMcpAcceptance.desktop_sha256 -ne $xaaDesktopHash -or $xaaMcpAcceptance.engine_sha256 -ne $xaaEngineHash -or $xaaMcpLimits.default_memory_limit_mb -ne 2048 -or $xaaMcpLimits.default_cpu_limit_percent -ne 80 -or $xaaMcpLimits.edited_memory_limit_mb -ne 1536 -or $xaaMcpLimits.edited_cpu_limit_percent -ne 70 -or -not $xaaMcpLimits.retained_after_connection -or $xaaMcpAcceptance.model_inference_requested) {
-            throw 'Installed MCP process-limit evidence was incomplete or did not use the installed binaries.'
+        $xaaMcpIsolation = $xaaMcpAcceptance.network_isolation
+        if (-not $xaaMcpAcceptance.passed -or -not $xaaMcpAcceptance.real_fixture_process -or $xaaMcpAcceptance.desktop_sha256 -ne $xaaDesktopHash -or $xaaMcpAcceptance.engine_sha256 -ne $xaaEngineHash -or $xaaMcpLimits.default_memory_limit_mb -ne 2048 -or $xaaMcpLimits.default_cpu_limit_percent -ne 80 -or $xaaMcpLimits.edited_memory_limit_mb -ne 1536 -or $xaaMcpLimits.edited_cpu_limit_percent -ne 70 -or -not $xaaMcpLimits.retained_after_connection -or -not $xaaMcpIsolation.persisted -or -not $xaaMcpIsolation.parent_loopback_reachable -or -not $xaaMcpIsolation.isolated_server_blocked -or -not $xaaMcpIsolation.disconnected_cleanly -or $xaaMcpAcceptance.model_inference_requested) {
+            throw 'Installed MCP process-limit or AppContainer network-isolation evidence was incomplete or did not use the installed binaries.'
         }
         $xaaReport.installed_mcp_process_limits = $xaaMcpAcceptance
+        $xaaReport.installed_mcp_network_isolation = $xaaMcpIsolation
     } finally {
         if ($xaaDebugPolicyOwned) {
             Remove-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe'

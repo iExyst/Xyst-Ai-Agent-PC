@@ -214,6 +214,22 @@ class AppContainerAccess:
                 and executable.parent.name.lower() == "scripts"
             ):
                 read_roots.append(str(executable.parent.parent))
+                venv_configuration = executable.parent.parent / "pyvenv.cfg"
+                if venv_configuration.is_file():
+                    for line in venv_configuration.read_text(encoding="utf-8").splitlines():
+                        key, separator, value = line.partition("=")
+                        if separator and key.strip().lower() == "home":
+                            base_runtime = Path(value.strip()).resolve(strict=True)
+                            if (
+                                not base_runtime.is_dir()
+                                or not (base_runtime / "python.exe").is_file()
+                                or not any(base_runtime.glob("python*.dll"))
+                            ):
+                                raise MCPAppContainerError(
+                                    "Windows could not identify the base runtime for this MCP Python environment."
+                                )
+                            read_roots.append(str(base_runtime))
+                            break
             for argument in args:
                 candidate = Path(argument)
                 if candidate.is_absolute() and candidate.exists():
