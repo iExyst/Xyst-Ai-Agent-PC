@@ -139,6 +139,7 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      - run: npm ci --prefix tests/fixtures/mcp-typescript --ignore-scripts --no-audit --no-fund
       - run: npm run contracts:check
       - run: npm run typecheck
       - run: npm run test:client
@@ -197,6 +198,7 @@ jobs:
           path: .uv-cache
           key: ${{ runner.os }}-windows-installer-xaa-uv-${{ hashFiles('uv.lock') }}
       - run: npm ci
+      - run: npm ci --prefix tests/fixtures/mcp-typescript --ignore-scripts --no-audit --no-fund
       - run: rustup toolchain install 1.99.1 --profile minimal
       - run: rustup override set 1.99.1
       - uses: actions/cache/restore@v6

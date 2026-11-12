@@ -50,6 +50,40 @@ MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling
 OVERSIZED_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_oversized_stdio_server.py"
 APPCONTAINER_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_probe.py"
 APPCONTAINER_CRASH_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_crash.py"
+TYPESCRIPT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp-typescript" / "server.mjs"
+
+
+@pytest.mark.asyncio
+async def test_mcp_typescript_sdk_modern_stdio_interoperability(workspace_tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the TypeScript MCP SDK interoperability fixture")
+    store = RunStore(workspace_tmp_path / "mcp-typescript-sdk.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="TypeScript SDK fixture",
+            command=str(Path(node).resolve(strict=True)),
+            args=[str(TYPESCRIPT_FIXTURE.resolve(strict=True))],
+            cwd=str(TYPESCRIPT_FIXTURE.parent.resolve(strict=True)),
+        )
+    )
+    manager = MCPManager(store, None)
+    try:
+        tools = await manager.connect_server(server.id)
+        assert manager._connected[server.id].client.protocol_version == "2026-07-28"
+        tool = next(item for item in tools if item.name == "echo_value")
+        assert tool.permission == "none"
+        registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+        result = await manager.call_tool(
+            tool.qualified_name, {"value": "round-trip"}, require_read=True
+        )
+        assert result["status"] == "ok"
+        assert result["trust"] == "untrusted_mcp_output"
+        assert result["content"][0]["text"] == "typescript-sdk:round-trip"
+        assert manager.server_status(server.id)[0] == "connected"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

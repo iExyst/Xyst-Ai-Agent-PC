@@ -71,6 +71,7 @@ let oauthFixture;
 let isolationListener;
 let fixtureOutput = '';
 let passed = false;
+let typescriptSdkModernStdio = false;
 
 try {
   const debugDeadline = Date.now() + 60_000;
@@ -302,6 +303,38 @@ try {
   if ((await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json()).length !== 0) {
     throw new Error('The native MCP fixture configuration was not removed.');
   }
+
+  const typescriptFixture = path.resolve('tests/fixtures/mcp-typescript/server.mjs');
+  await panel.getByLabel('Server name').fill('TypeScript SDK fixture');
+  await panel.getByLabel('Command').fill(path.resolve(process.execPath));
+  await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([typescriptFixture]));
+  await panel.getByLabel('Working directory (optional)').fill(path.dirname(typescriptFixture));
+  const typescriptCreatedResponse = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Add MCP server', exact: true }),
+    (response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST',
+  );
+  if (typescriptCreatedResponse.status() !== 201) {
+    throw new Error(`Native TypeScript SDK MCP configuration failed (${typescriptCreatedResponse.status()}).`);
+  }
+  const typescriptServerId = (await typescriptCreatedResponse.json()).id;
+  await panel.getByRole('button', { name: 'Connect and discover', exact: true }).click();
+  const typescriptServerCard = panel.locator('.mcp-server').filter({ hasText: 'TypeScript SDK fixture' });
+  await expect(typescriptServerCard.getByRole('heading', { name: /TypeScript SDK fixture.*connected/ }))
+    .toBeVisible({ timeout: 20_000 });
+  await expect(typescriptServerCard).toContainText('echo_value');
+  const typescriptServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  const typescriptServer = typescriptServers.find((server) => server.id === typescriptServerId);
+  if (typescriptServer?.state !== 'connected' || !typescriptServer.tools.some((tool) => tool.name === 'echo_value')) {
+    throw new Error('The installed engine did not discover the TypeScript SDK stdio tool.');
+  }
+  await panel.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect.poll(async () => {
+    const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    return servers.find((server) => server.id === typescriptServerId)?.state;
+  }).toBe('disconnected');
+  await removeMcpServer(page, panel.getByRole('button', { name: 'Remove server', exact: true }));
+  typescriptSdkModernStdio = true;
 
   isolationListener = net.createServer((socket) => socket.destroy());
   await new Promise((resolve, reject) => {
@@ -554,6 +587,7 @@ try {
       isolated_server_blocked: isolationTool.description.includes('blocked:'),
       disconnected_cleanly: true,
     },
+    typescript_sdk_modern_stdio: typescriptSdkModernStdio,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
     owner_resource_subscription: true,
