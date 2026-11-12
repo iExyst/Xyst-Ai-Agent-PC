@@ -7,6 +7,8 @@ import path from 'node:path';
 
 const root = path.resolve('.acceptance', randomUUID());
 await mkdir(root, { recursive: true });
+const acceptanceLogDirectory = path.join(root, 'logs');
+await mkdir(acceptanceLogDirectory, { recursive: true });
 await writeFile(path.join(root, 'desktop-settings.json'), JSON.stringify({ close_behavior: 'exit_on_close' }));
 
 async function clickForResponse(page, locator, predicate) {
@@ -37,7 +39,7 @@ const engineSha256 = createHash('sha256').update(await readFile(engine)).digest(
 if (expectedDesktopHash !== desktopSha256 || expectedEngineHash !== engineSha256) {
   throw new Error('The native desktop and engine do not match the build manifest.');
 }
-const engineLogPath = path.join(process.env.LOCALAPPDATA, 'dev.xyst.xaa', 'logs', 'engine.log');
+const engineLogPath = path.join(acceptanceLogDirectory, 'engine.log');
 const previousEngineLog = await readFile(engineLogPath, 'utf8').catch(() => '');
 const runtimeEnv = Object.fromEntries(
   Object.entries(process.env).filter(([key]) => ![
@@ -53,6 +55,7 @@ const proc = spawn(desktop, [], {
   env: {
     ...runtimeEnv,
     XAA_TEST_HIDDEN: '1',
+    XAA_TEST_LOG_DIR: acceptanceLogDirectory,
     XAA_DATA_DIR: root,
     WEBVIEW2_USER_DATA_FOLDER: webviewProfile,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${process.env.XAA_NATIVE_DEBUG_PORT || 19223}`,
