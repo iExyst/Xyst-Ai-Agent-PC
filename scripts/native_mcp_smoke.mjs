@@ -9,27 +9,41 @@ const root = path.resolve('.acceptance', randomUUID());
 await mkdir(root, { recursive: true });
 await writeFile(path.join(root, 'desktop-settings.json'), JSON.stringify({ close_behavior: 'exit_on_close' }));
 
+async function clickForResponse(page, locator, predicate) {
+  const [response] = await Promise.all([page.waitForResponse(predicate), locator.click()]);
+  return response;
+}
+
 async function removeMcpServer(page, button) {
-  const deletion = page.waitForResponse((response) => {
+  const deletion = await clickForResponse(page, button, (response) => {
     const pathname = new URL(response.url()).pathname;
     return pathname.startsWith('/mcp/servers/') && response.request().method() === 'DELETE';
   });
-  await button.click();
-  const response = await deletion;
-  if (response.status() !== 204) {
-    throw new Error(`MCP server removal returned HTTP ${response.status()}.`);
+  if (deletion.status() !== 204) {
+    throw new Error(`MCP server removal returned HTTP ${deletion.status()}.`);
   }
 }
 const stage = process.env.XAA_NATIVE_STAGE || 'native-dev';
 if (!['native-dev', 'native-release'].includes(stage)) throw new Error(`Unsupported native stage: ${stage}`);
 const stageRoot = path.resolve(process.env.XAA_NATIVE_STAGE_ROOT || path.join('build', stage));
-const desktop = path.join(stageRoot, 'xaa-desktop.exe');
-const engine = path.join(stageRoot, 'xaa-engine.exe');
-const manifest = JSON.parse(await readFile(path.join(stageRoot, 'manifest.json'), 'utf8'));
+const desktop = path.resolve(process.env.XAA_NATIVE_DESKTOP_PATH || path.join(stageRoot, 'xaa-desktop.exe'));
+const engine = path.resolve(process.env.XAA_NATIVE_ENGINE_PATH || path.join(stageRoot, 'xaa-engine.exe'));
+const manifestPath = path.resolve(process.env.XAA_NATIVE_MANIFEST_PATH || path.join(stageRoot, 'manifest.json'));
+const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+const expectedDesktopHash = manifest.artifacts?.desktop?.sha256 ?? manifest['xaa-desktop.exe'];
+const expectedEngineHash = manifest.artifacts?.engine?.sha256 ?? manifest['xaa-engine.exe'];
+const desktopSha256 = createHash('sha256').update(await readFile(desktop)).digest('hex');
+const engineSha256 = createHash('sha256').update(await readFile(engine)).digest('hex');
+if (expectedDesktopHash !== desktopSha256 || expectedEngineHash !== engineSha256) {
+  throw new Error('The native desktop and engine do not match the build manifest.');
+}
 const engineLogPath = path.join(process.env.LOCALAPPDATA, 'dev.xyst.xaa', 'logs', 'engine.log');
 const previousEngineLog = await readFile(engineLogPath, 'utf8').catch(() => '');
 const runtimeEnv = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => !['PATH', 'PYTHONPATH', 'VIRTUAL_ENV'].includes(key.toUpperCase())),
+  Object.entries(process.env).filter(([key]) => ![
+    'PATH', 'PYTHONPATH', 'VIRTUAL_ENV',
+    'XAA_NATIVE_DESKTOP_PATH', 'XAA_NATIVE_ENGINE_PATH', 'XAA_NATIVE_MANIFEST_PATH', 'XAA_NATIVE_STAGE_ROOT',
+  ].includes(key.toUpperCase())),
 );
 runtimeEnv.PATH = path.join(process.env.SystemRoot, 'System32');
 const webviewProfile = path.join(root, 'webview-profile');
@@ -87,12 +101,6 @@ try {
   await expect(page.getByRole('navigation', { name: 'Main sections' })).toBeVisible({ timeout: 20_000 });
   await page.getByRole('link', { name: /Tools & integrations/ }).click();
 
-  const desktopSha256 = createHash('sha256').update(await readFile(desktop)).digest('hex');
-  const engineSha256 = createHash('sha256').update(await readFile(engine)).digest('hex');
-  if (manifest['xaa-desktop.exe'] !== desktopSha256 || manifest['xaa-engine.exe'] !== engineSha256) {
-    throw new Error('The staged native binaries do not match the build manifest.');
-  }
-
   connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
   const headers = { Authorization: `Bearer ${connection.token}` };
   let ready = false;
@@ -128,24 +136,22 @@ try {
   await conversations.getByLabel('Saved terminal and desktop sessions').selectOption(sharedChatSessionId);
   await expect(conversations.getByLabel('Conversation title')).toHaveValue(sharedChatSessionId);
   await conversations.getByLabel('Conversation title').fill('Native chat acceptance');
-  const titleUpdate = page.waitForResponse((response) =>
+  const titleUpdate = await clickForResponse(page, conversations.getByRole('button', { name: 'Save title' }), (response) =>
     new URL(response.url()).pathname === `/chat/sessions/${sharedChatSessionId}`
       && response.request().method() === 'PATCH',
   );
-  await conversations.getByRole('button', { name: 'Save title' }).click();
-  if (!(await titleUpdate).ok()) throw new Error('The native desktop title update request failed.');
+  if (!titleUpdate.ok()) throw new Error('The native desktop title update request failed.');
   await expect(conversations.getByRole('button', { name: 'Save title' })).toBeDisabled();
   await expect(conversations.getByText('Native chat acceptance', { exact: true })).toBeVisible();
   await expect(conversations.getByRole('alert')).toHaveCount(0);
   const renamedChat = await (await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers })).json();
   if (renamedChat.title !== 'Native chat acceptance') throw new Error('The native desktop did not persist the conversation title.');
   page.once('dialog', (dialog) => void dialog.accept());
-  const chatDeletion = page.waitForResponse((response) =>
+  const chatDeletion = await clickForResponse(page, conversations.getByRole('button', { name: 'Delete shared conversation' }), (response) =>
     new URL(response.url()).pathname === `/chat/sessions/${sharedChatSessionId}`
       && response.request().method() === 'DELETE',
   );
-  await conversations.getByRole('button', { name: 'Delete shared conversation' }).click();
-  if ((await chatDeletion).status() !== 204) throw new Error('The native desktop conversation delete request failed.');
+  if (chatDeletion.status() !== 204) throw new Error('The native desktop conversation delete request failed.');
   await expect(conversations.getByLabel('Saved terminal and desktop sessions')).not.toContainText(sharedChatSessionId);
   const deletedChat = await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers });
   if (deletedChat.status !== 404) throw new Error('The native desktop did not remove the shared conversation.');
@@ -163,9 +169,11 @@ try {
   await panel.getByLabel('Command').fill(command);
   await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([fixture]));
   await panel.getByLabel('Working directory (optional)').fill(path.resolve('.'));
-  const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST');
-  await panel.getByRole('button', { name: 'Add MCP server', exact: true }).click();
-  const createdResponse = await created;
+  const createdResponse = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Add MCP server', exact: true }),
+    (response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST',
+  );
   if (createdResponse.status() !== 201) throw new Error(`Native MCP configuration failed (${createdResponse.status()}).`);
   const saved = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
   if (saved.length !== 1 || saved[0].transport !== 'stdio' || saved[0].state !== 'disconnected') {
@@ -178,12 +186,12 @@ try {
 
   await panel.getByLabel('Memory limit for Native fixture (MiB; blank is unlimited)').fill('1536');
   await panel.getByLabel('CPU limit for Native fixture (percent; blank is unlimited)').fill('70');
-  const resourceLimitsSaved = page.waitForResponse((response) =>
-    new URL(response.url()).pathname === `/mcp/servers/${serverId}/resource-limits`
+  const resourceLimitsResponse = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Save process limits for Native fixture' }),
+    (response) => new URL(response.url()).pathname === `/mcp/servers/${serverId}/resource-limits`
       && response.request().method() === 'PUT',
   );
-  await panel.getByRole('button', { name: 'Save process limits for Native fixture' }).click();
-  const resourceLimitsResponse = await resourceLimitsSaved;
   if (!resourceLimitsResponse.ok()) {
     throw new Error(`The native desktop could not save MCP process limits (${resourceLimitsResponse.status()}).`);
   }
@@ -370,9 +378,12 @@ try {
   await panel.getByLabel('Transport').selectOption('streamable_http');
   await panel.getByLabel('Server name').fill('Native OAuth fixture');
   await panel.getByLabel('Streamable HTTP endpoint').fill(`http://127.0.0.1:${oauthPort}/mcp`);
-  const oauthCreated = page.waitForResponse((response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST');
-  await panel.getByRole('button', { name: 'Add MCP server', exact: true }).click();
-  if ((await oauthCreated).status() !== 201) throw new Error('Native OAuth MCP configuration failed.');
+  const oauthCreated = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Add MCP server', exact: true }),
+    (response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST',
+  );
+  if (oauthCreated.status() !== 201) throw new Error('Native OAuth MCP configuration failed.');
   const oauthConnect = panel.getByRole('button', { name: 'Connect and discover', exact: true });
   await oauthConnect.click();
   const oauthDeadline = Date.now() + 120_000;
@@ -442,7 +453,8 @@ try {
     authenticated_api: true,
     transport: 'stdio',
     oauth_transport: 'streamable_http',
-    packaged_stage: stage,
+    packaged_stage: process.env.XAA_NATIVE_DESKTOP_PATH ? 'explicit-binary-paths' : stage,
+    manifest_hashes_verified: true,
     native_http_oauth: true,
     native_oauth_pkce_fixture: true,
     native_oauth_vault_persistence: true,

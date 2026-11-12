@@ -1,5 +1,9 @@
 # Progress
 
+## Add installed-app MCP process-limit acceptance (2026-11-12)
+
+Extended installer acceptance to run the MCP process-limit UI flow against the exact installed desktop and engine executables, checked against the package manifest hashes. It verifies the 2,048 MiB/80% defaults, edits to 1,536 MiB/70%, and confirms the live stdio fixture connects with those persisted values. The smoke script now accepts explicit executable and manifest paths while retaining its build-stage defaults. An initial override-path run timed out around saved-chat rename; the UI smoke now pairs each click with its awaited response, and a rerun using explicit paths and a manifest-shaped fixture passed on the rebuilt Windows stage. Node syntax and PowerShell parsing pass. The installer acceptance is intentionally restricted to a disposable hosted Windows runner, so this new installed-binary path still awaits hosted execution.
+
 ## Exercise MCP process limits through the native desktop (2026-11-12)
 
 Extended the native Windows desktop acceptance to check the default 2,048 MiB/80% MCP stdio limits, edit them to 1,536 MiB/70% through the owner UI, and confirm the saved values remain on the server after a real fixture process connects. The frozen engine and native UI acceptance pass on a freshly rebuilt Windows stage; its report is `.acceptance/1d6adf02-5a61-4e75-b5b0-8cd7950f2e37/report.json`. The direct Windows subprocess test also passes and queries the assigned Job Object for the exact configured memory and CPU settings. `npm run build:desktop`, native Tauri compilation, Node syntax validation, and the focused Job Object test pass. This closes the packaged native UI-to-engine configuration path, but the cap behavior has not yet been separately exercised from an installed app. MCP server network egress isolation and third-party interoperability remain open; no model inference was used.

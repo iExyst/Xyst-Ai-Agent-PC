@@ -17,6 +17,11 @@ $xaaPriorLocalAppData = $env:LOCALAPPDATA
 $xaaPriorAppData = $env:APPDATA
 $xaaPriorTestConfigDirectory = $env:XAA_TEST_CONFIG_DIR
 $xaaPriorExpectedCloseBehavior = $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR
+$xaaPriorNativeDesktopPath = $env:XAA_NATIVE_DESKTOP_PATH
+$xaaPriorNativeEnginePath = $env:XAA_NATIVE_ENGINE_PATH
+$xaaPriorNativeManifestPath = $env:XAA_NATIVE_MANIFEST_PATH
+$xaaPriorNativeStage = $env:XAA_NATIVE_STAGE
+$xaaPriorNativeDebugPort = $env:XAA_NATIVE_DEBUG_PORT
 $env:LOCALAPPDATA = $xaaLocalAppData
 $env:APPDATA = $xaaRoamingAppData
 $xaaProductName = (Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).productName
@@ -202,6 +207,26 @@ try {
             throw 'Installed desktop streamed-output restart evidence was incomplete or did not use the installed binaries.'
         }
         $xaaReport.installed_streamed_output_restart = $xaaStreamRestartAcceptance
+
+        # Exercise MCP configuration and process-limit application using the
+        # actual binaries installed by the unsigned package, not the build stage.
+        $xaaMcpDebugPort = 19228
+        $env:XAA_NATIVE_STAGE = 'native-release'
+        $env:XAA_NATIVE_DEBUG_PORT = [string]$xaaMcpDebugPort
+        $env:XAA_NATIVE_DESKTOP_PATH = $xaaDesktop
+        $env:XAA_NATIVE_ENGINE_PATH = $xaaEngine
+        $env:XAA_NATIVE_MANIFEST_PATH = (Resolve-Path -LiteralPath 'build/installer/manifest.json').Path
+        if ($xaaElevated) {
+            Set-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe' -Value "--remote-debugging-port=$xaaMcpDebugPort"
+        }
+        $xaaMcpOutput = & node scripts/native_mcp_smoke.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Installed desktop MCP process-limit acceptance failed.' }
+        $xaaMcpAcceptance = ($xaaMcpOutput | Out-String | ConvertFrom-Json)
+        $xaaMcpLimits = $xaaMcpAcceptance.native_process_limits
+        if (-not $xaaMcpAcceptance.passed -or -not $xaaMcpAcceptance.real_fixture_process -or $xaaMcpAcceptance.desktop_sha256 -ne $xaaDesktopHash -or $xaaMcpAcceptance.engine_sha256 -ne $xaaEngineHash -or $xaaMcpLimits.default_memory_limit_mb -ne 2048 -or $xaaMcpLimits.default_cpu_limit_percent -ne 80 -or $xaaMcpLimits.edited_memory_limit_mb -ne 1536 -or $xaaMcpLimits.edited_cpu_limit_percent -ne 70 -or -not $xaaMcpLimits.retained_after_connection -or $xaaMcpAcceptance.model_inference_requested) {
+            throw 'Installed MCP process-limit evidence was incomplete or did not use the installed binaries.'
+        }
+        $xaaReport.installed_mcp_process_limits = $xaaMcpAcceptance
     } finally {
         if ($xaaDebugPolicyOwned) {
             Remove-ItemProperty -LiteralPath $xaaDebugPolicy -Name 'xaa-desktop.exe'
@@ -234,7 +259,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_mcp_process_limits.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue
@@ -246,6 +271,11 @@ try {
     Remove-Item Env:XAA_NATIVE_BACKUP_FIXTURE -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_SCHEDULE_RESTART_ROOT -ErrorAction SilentlyContinue
     Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
+    if ($null -eq $xaaPriorNativeDesktopPath) { Remove-Item Env:XAA_NATIVE_DESKTOP_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_DESKTOP_PATH = $xaaPriorNativeDesktopPath }
+    if ($null -eq $xaaPriorNativeEnginePath) { Remove-Item Env:XAA_NATIVE_ENGINE_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_ENGINE_PATH = $xaaPriorNativeEnginePath }
+    if ($null -eq $xaaPriorNativeManifestPath) { Remove-Item Env:XAA_NATIVE_MANIFEST_PATH -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_MANIFEST_PATH = $xaaPriorNativeManifestPath }
+    if ($null -eq $xaaPriorNativeStage) { Remove-Item Env:XAA_NATIVE_STAGE -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_STAGE = $xaaPriorNativeStage }
+    if ($null -eq $xaaPriorNativeDebugPort) { Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_DEBUG_PORT = $xaaPriorNativeDebugPort }
     if ($null -eq $xaaPriorTestConfigDirectory) { Remove-Item Env:XAA_TEST_CONFIG_DIR -ErrorAction SilentlyContinue } else { $env:XAA_TEST_CONFIG_DIR = $xaaPriorTestConfigDirectory }
     if ($null -eq $xaaPriorExpectedCloseBehavior) { Remove-Item Env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR -ErrorAction SilentlyContinue } else { $env:XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR = $xaaPriorExpectedCloseBehavior }
     $env:LOCALAPPDATA = $xaaPriorLocalAppData
