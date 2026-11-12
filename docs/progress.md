@@ -2323,3 +2323,11 @@ Moved the LM Studio and compatible-provider form out of the Home workspace into 
 ## Update model setup acceptance coverage (2026-11-11)
 
 Hosted source run [43136927641](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43136927641) caught two existing browser acceptances that still selected the model from Home. Moved their setup actions through the dedicated Model setup page. The six relevant task-review, voice-input and onboarding browser checks now pass locally; hosted CI revalidation is pending.
+
+## Build the current Windows desktop program (2026-11-11)
+
+The current desktop source was packaged into the per-user Windows NSIS installer at `build/installer/Xyst AI Agent_0.1.1_x64-setup.exe` (73.8 MiB). TypeScript checking, Vite production build, frozen engine build, optimized Tauri build, and NSIS bundling completed successfully. The installer manifest records the desktop, engine, notices, and SHA-256 hashes; installer SHA-256 is `5f861c34a2bf4b6d48482cf32b255a629ceab1b87ad91213b0864b1d7d2dcb06`. This local installer is unsigned and has not been run through hosted installed-package acceptance, so it is a build artifact rather than a new verified release. Existing development app windows held files in the shared staging folder; the isolated installer build avoided interrupting them.
+
+## Fix streaming acceptance after model setup navigation change (2026-11-11)
+
+Hosted source run [43138078912](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43138078912) failed its four streamed-model/command-output browser scenarios because they still selected the model from Home after the setup form moved to its own page. Updated the shared setup in those scenarios to visit Model setup and return to New objective. All four streaming browser scenarios pass locally. Updated the parity matrix to distinguish this navigation coverage from Hermes capability status. Hosted revalidation is pending; no runtime behavior changed and no live model inference was used.

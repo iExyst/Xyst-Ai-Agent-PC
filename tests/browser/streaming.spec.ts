@@ -1,5 +1,11 @@
 import {test,expect} from '@playwright/test';
 
+async function selectFixtureModel(page: import('@playwright/test').Page){
+  await page.getByRole('link',{name:'Model setup'}).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByRole('link',{name:'New objective'}).click();
+}
+
 for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes into a saved candidate without repeating partial text':'partial streamed text is displayed without becoming a final candidate',async({page})=>{
   const run={id:'stream-run',objective:'Stream a response',state:'running',revision:2,acceptance_criteria:[]};
   const cursors:string[]=[];
@@ -25,7 +31,7 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectFixtureModel(page);
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
@@ -66,7 +72,7 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectFixtureModel(page);
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
@@ -100,7 +106,7 @@ test('replays durable command output deltas with UTF-8 boundaries and separate s
   await page.goto('/');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await page.getByLabel('Local model').selectOption('fixture/model');
+  await selectFixtureModel(page);
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
