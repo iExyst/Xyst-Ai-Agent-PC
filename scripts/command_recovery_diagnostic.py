@@ -35,7 +35,7 @@ asyncio.run(main())
 """
 
 
-async def diagnose(distribution: str) -> None:
+async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
     root = Path(".acceptance") / str(uuid4())
     project = root / "project"
     project.mkdir(parents=True)
@@ -96,7 +96,13 @@ async def diagnose(distribution: str) -> None:
         replacement = reopened.acquire_lease(run_id, "fresh-controller", seconds=120)
         if replacement is None:
             raise RuntimeError("Cannot acquire recovery lease")
-        recovered = await CommandController(reopened, transport).recover(
+        recovery_transport = transport
+        if profile_drift:
+            # Simulate a newly packaged profile while preserving the live manager
+            # invocation; the saved command identity must still be reconciled.
+            new_fingerprint = "0" * 64 if transport.profile_sha256 != "0" * 64 else "1" * 64
+            recovery_transport = WSLTransport(distribution, new_fingerprint, transport.invocation)
+        recovered = await CommandController(reopened, recovery_transport).recover(
             run_id, replacement, "command"
         )
         assert not reopened.unresolved_tool_calls(run_id)
@@ -124,10 +130,12 @@ async def diagnose(distribution: str) -> None:
         "distribution": distribution,
         "profile_sha256": transport.profile_sha256,
         "cases": cases,
+        "profile_fingerprint_changed_before_recovery": profile_drift,
+        "same_distribution_and_execution_identity_retained": True,
         "original_project_unchanged": True,
         "model_or_ui_tool_enabled": False,
         "fault_actor": "automated_diagnostic_not_model",
-        "scope": "Controller subprocess crash; not full API/desktop restart or reboot",
+        "scope": "Controller subprocess crash and saved-identity recovery; not full API/desktop restart or installed package upgrade",
     }
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Command recovery acceptance passed: {root}")
@@ -136,4 +144,10 @@ async def diagnose(distribution: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--distribution", required=True)
-    asyncio.run(diagnose(parser.parse_args().distribution))
+    parser.add_argument(
+        "--profile-drift",
+        action="store_true",
+        help="Change the transport fingerprint before reconciling saved WSL identities.",
+    )
+    args = parser.parse_args()
+    asyncio.run(diagnose(args.distribution, profile_drift=args.profile_drift))
