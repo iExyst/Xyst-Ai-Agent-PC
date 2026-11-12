@@ -1,4 +1,5 @@
 from io import BytesIO
+from xml.sax.saxutils import quoteattr
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -247,8 +248,21 @@ def make_xlsx(
     merged_ranges: tuple[str, ...] = (),
     hyperlinks: tuple[str, ...] = (),
     worksheet_relationships: tuple[str, ...] = (),
+    formatted_numeric_cells: tuple[tuple[str, str, str], ...] = (),
 ) -> bytes:
     output = BytesIO()
+    custom_formats = list(dict.fromkeys(item[2] for item in formatted_numeric_cells))
+    custom_numfmts = "".join(
+        f'<numFmt numFmtId="{175 + index}" formatCode={quoteattr(code)}/>'
+        for index, code in enumerate(custom_formats)
+    )
+    custom_cell_xfs = "".join(
+        f'<xf numFmtId="{175 + index}"/>' for index in range(len(custom_formats))
+    )
+    custom_cells = "".join(
+        f'<c r="{reference}" s="{13 + custom_formats.index(code)}"><v>{value}</v></c>'
+        for reference, value, code in formatted_numeric_cells
+    )
     workbook_properties = '<workbookPr date1904="1"/>' if date_1904 else ""
     columns_xml = ""
     if column_ranges:
@@ -297,7 +311,7 @@ def make_xlsx(
         archive.writestr(
             "xl/styles.xml",
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<numFmts count="11"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
+            f'<numFmts count="{11 + len(custom_formats)}"><numFmt numFmtId="164" formatCode="$#,##0.00"/>'
             '<numFmt numFmtId="165" formatCode="d-mmm-yy"/>'
             '<numFmt numFmtId="166" formatCode="0.00%"/>'
             '<numFmt numFmtId="167" formatCode="#,##0.00"/>'
@@ -307,12 +321,14 @@ def make_xlsx(
             '<numFmt numFmtId="171" formatCode="[h]:mm:ss"/>'
             '<numFmt numFmtId="172" formatCode="mm:ss"/>'
             '<numFmt numFmtId="173" formatCode="m/d/yy h:mm AM/PM"/>'
-            '<numFmt numFmtId="174" formatCode="yyyy-mm-dd hh:mm:ss"/></numFmts>'
-            '<cellXfs count="13"><xf numFmtId="0"/><xf numFmtId="14"/>'
+            '<numFmt numFmtId="174" formatCode="yyyy-mm-dd hh:mm:ss"/>'
+            f'{custom_numfmts}</numFmts><cellXfs count="{13 + len(custom_formats)}">'
+            '<xf numFmtId="0"/><xf numFmtId="14"/>'
             '<xf numFmtId="164" applyNumberFormat="1"/><xf numFmtId="165"/>'
             '<xf numFmtId="166"/><xf numFmtId="167"/><xf numFmtId="168"/>'
             '<xf numFmtId="169"/><xf numFmtId="170"/><xf numFmtId="171"/>'
             '<xf numFmtId="172"/><xf numFmtId="173"/><xf numFmtId="174"/>'
+            f"{custom_cell_xfs}"
             "</cellXfs></styleSheet>",
         )
         archive.writestr(
@@ -342,6 +358,7 @@ def make_xlsx(
             '<c r="P1" s="11"><v>45292.75</v></c>'
             '<c r="Q1" s="12"><v>45292.524259259259259</v></c>'
             '<c r="R1" s="11"><v>45292.99999999</v></c>'
+            f"{custom_cells}"
             "</row></sheetData>" + merged_cells_xml + hyperlinks_xml + "</worksheet>",
         )
         if worksheet_relationships:
@@ -1374,6 +1391,23 @@ def test_xlsx_numeric_display_supports_optional_decimal_places(
 
 def test_xlsx_numeric_display_rejects_interleaved_decimal_placeholders():
     assert _xlsx_numeric_display("1.2", "0.#0") is None
+
+
+def test_extracts_xlsx_values_with_optional_decimal_display_formats():
+    result = extract_document_text(
+        make_xlsx(
+            formatted_numeric_cells=(
+                ("S1", "1.2", "0.##"),
+                ("T1", "1", "0.0#"),
+                ("U1", "1234.5", "#,##0.##"),
+            )
+        ),
+        XLSX_TYPE,
+    )
+
+    assert "S1=1.2 [display: 1.2] [number format: 0.##]" in result
+    assert "T1=1 [display: 1.0] [number format: 0.0#]" in result
+    assert "U1=1234.5 [display: 1,234.5] [number format: #,##0.##]" in result
 
 
 @pytest.mark.parametrize("sheet_state", ["hidden", "veryHidden"])
