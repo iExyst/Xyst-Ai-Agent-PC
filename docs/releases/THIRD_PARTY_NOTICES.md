@@ -2,6 +2,8 @@
 
 Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies and 2026-11-09 with 23 source-hash-grouped texts covering the five omitted locked Python packages and their vendored dependencies plus the `uritemplate` direct dependency. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
 
+On 2026-11-12, removed 60 scanner-generated `Additional notice: UNKNOWN` placeholders because they contained no source notice text, and removed two obsolete Python package sections for `httpx-sse` and `pydantic-settings` after the pinned MCP SDK migration. The coverage check rejects a reintroduced placeholder. This cleanup does not complete license or copyright review.
+
 **This is a provisional third-party notice file, not release approval.** X.A.A. source is licensed under MIT in the root LICENSE; this third-party notice draft remains provisional. Six Windows-target Cargo crate archives omit license files; their declared license texts are represented from exact upstream revisions or Mozilla’s official MPL text in the source-archive notes below. The unsigned installer stages this file with the dependency inventory and release notes; install acceptance checks each document against its manifest hash. Review package-specific exceptions and copyright notices before distribution.
 
 Python development tools are included because they are present in the locked development environment; this may overinclude tools absent from the installed product. The npm list is runtime-only. Rust entries are filtered for `x86_64-pc-windows-msvc`. The comprehensive lockfile inventory is in [`dependency-inventory.md`](dependency-inventory.md).
@@ -830,8 +832,7 @@ Apache License
    limitations under the License.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 6. Python (locked development environment) — Apache-2.0
@@ -1259,8 +1260,7 @@ Apache License
    limitations under the License.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 8. Python (locked development environment) — Apache-2.0
@@ -1286,8 +1286,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 9. Python (locked development environment) — Apache-2.0 OR BSD-2-Clause
@@ -1300,8 +1299,7 @@ found in LICENSE.APACHE or LICENSE.BSD. Contributions to this software is made
 under the terms of *both* these licenses.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 10. Python (locked development environment) — Apache-2.0 OR BSD-3-Clause
@@ -1314,8 +1312,7 @@ found in LICENSE.APACHE or LICENSE.BSD. Contributions to cryptography are made
 under the terms of *both* these licenses.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 11. Python (locked development environment) — BSD License
@@ -1352,8 +1349,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 12. Python (locked development environment) — BSD License
@@ -1375,8 +1371,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 13. Python (locked development environment) — BSD License
@@ -1418,8 +1413,7 @@ SOFTWARE AND DOCUMENTATION, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 14. Python (locked development environment) — BSD-2-Clause
@@ -1454,8 +1448,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 15. Python (locked development environment) — BSD-3-Clause
@@ -1493,8 +1486,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 16. Python (locked development environment) — BSD-3-Clause
@@ -1531,8 +1523,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 17. Python (locked development environment) — BSD-3-Clause
@@ -1573,8 +1564,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 18. Python (locked development environment) — BSD-3-Clause
@@ -1611,8 +1601,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 19. Python (locked development environment) — BSD-3-Clause
@@ -1649,8 +1638,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 20. Python (locked development environment) — BSD-3-Clause
@@ -1689,8 +1677,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 21. Python (locked development environment) — BSD-3-Clause
@@ -1727,8 +1714,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 22. Python (locked development environment) — BSD-3-Clause
@@ -1766,8 +1752,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 23. Python (locked development environment) — BSD-3-Clause
@@ -1804,8 +1789,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 24. Python (locked development environment) — BSD-3-Clause
@@ -1842,8 +1826,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 25. Python (locked development environment) — BSD-3-Clause
@@ -1880,8 +1863,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 26. Python (locked development environment) — BSD-3-Clause
@@ -1915,8 +1897,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 27. Python (locked development environment) — GNU General Public License v2 (GPLv2)
@@ -2602,8 +2583,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 29. Python (locked development environment) — MIT
@@ -2634,8 +2614,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 30. Python (locked development environment) — MIT
@@ -2665,8 +2644,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 31. Python (locked development environment) — MIT
@@ -2697,8 +2675,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 32. Python (locked development environment) — MIT
@@ -2729,8 +2706,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 33. Python (locked development environment) — MIT
@@ -2761,43 +2737,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
 ### 34. Python (locked development environment) — MIT
-
-**Packages:** `httpx-sse@0.4.3`
-
-```text
-MIT License
-
-Copyright (c) 2022 Florimond Manca
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-Additional notice:
-UNKNOWN
-```
-
-### 35. Python (locked development environment) — MIT
 
 **Packages:** `iniconfig@2.3.1`
 
@@ -2825,11 +2768,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 36. Python (locked development environment) — MIT
+### 35. Python (locked development environment) — MIT
 
 **Packages:** `jaraco.context@6.1.2`, `jaraco.functools@4.6.0`
 
@@ -2854,11 +2796,10 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTI
 USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 37. Python (locked development environment) — MIT
+### 36. Python (locked development environment) — MIT
 
 **Packages:** `jsonschema-specifications@2025.9.1`, `referencing@0.37.0`
 
@@ -2884,11 +2825,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 38. Python (locked development environment) — MIT
+### 37. Python (locked development environment) — MIT
 
 **Packages:** `jsonschema@4.26.0`
 
@@ -2914,11 +2854,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 39. Python (locked development environment) — MIT
+### 38. Python (locked development environment) — MIT
 
 **Packages:** `keyring@25.7.0`
 
@@ -2943,11 +2882,10 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTI
 USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 40. Python (locked development environment) — MIT
+### 39. Python (locked development environment) — MIT
 
 **Packages:** `lmstudio@1.6.0b1`
 
@@ -2975,11 +2913,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 41. Python (locked development environment) — MIT
+### 40. Python (locked development environment) — MIT
 
 **Packages:** `more-itertools@11.2.1`
 
@@ -3005,11 +2942,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 42. Python (locked development environment) — MIT
+### 41. Python (locked development environment) — MIT
 
 **Packages:** `pefile@2024.8.26`
 
@@ -3037,43 +2973,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 43. Python (locked development environment) — MIT
-
-**Packages:** `pydantic-settings@2.16.2`
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2022 Samuel Colvin and other contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-Additional notice:
-UNKNOWN
-```
-
-### 44. Python (locked development environment) — MIT
+### 42. Python (locked development environment) — MIT
 
 **Packages:** `pydantic@2.14.2`
 
@@ -3101,11 +3004,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 45. Python (locked development environment) — MIT
+### 43. Python (locked development environment) — MIT
 
 **Packages:** `pydantic_core@2.50.2`
 
@@ -3133,11 +3035,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 46. Python (locked development environment) — MIT
+### 44. Python (locked development environment) — MIT
 
 **Packages:** `PyJWT@2.15.1`
 
@@ -3165,11 +3066,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 47. Python (locked development environment) — MIT
+### 45. Python (locked development environment) — MIT
 
 **Packages:** `pyright@1.1.414`
 
@@ -3197,11 +3097,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 48. Python (locked development environment) — MIT
+### 46. Python (locked development environment) — MIT
 
 **Packages:** `rpds-py@2026.9.1`
 
@@ -3227,11 +3126,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 49. Python (locked development environment) — MIT
+### 47. Python (locked development environment) — MIT
 
 **Packages:** `ruff@0.17.3`
 
@@ -3668,11 +3566,10 @@ are:
   """
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 50. Python (locked development environment) — MIT
+### 48. Python (locked development environment) — MIT
 
 **Packages:** `typing-inspection@0.4.4`
 
@@ -3700,11 +3597,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 51. Python (locked development environment) — MIT
+### 49. Python (locked development environment) — MIT
 
 **Packages:** `wsproto@1.3.2`
 
@@ -3731,11 +3627,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 52. Python (locked development environment) — MIT AND PSF-2.0
+### 50. Python (locked development environment) — MIT AND PSF-2.0
 
 **Packages:** `greenlet@3.5.6`
 
@@ -3772,11 +3667,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 53. Python (locked development environment) — MIT License
+### 51. Python (locked development environment) — MIT License
 
 **Packages:** `altgraph@0.17.5`
 
@@ -3801,11 +3695,10 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 54. Python (locked development environment) — MIT License
+### 52. Python (locked development environment) — MIT License
 
 **Packages:** `h11@0.16.0`
 
@@ -3834,11 +3727,10 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 55. Python (locked development environment) — MIT License
+### 53. Python (locked development environment) — MIT License
 
 **Packages:** `httpx-ws@0.9.0`
 
@@ -3866,11 +3758,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 56. Python (locked development environment) — MIT License
+### 54. Python (locked development environment) — MIT License
 
 **Packages:** `jaraco.classes@3.4.0`
 
@@ -3894,11 +3785,10 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 57. Python (locked development environment) — MIT License
+### 55. Python (locked development environment) — MIT License
 
 **Packages:** `mcp@2.3.0`, `mcp-types@2.3.0`
 
@@ -3926,11 +3816,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 58. Python (locked development environment) — MIT License
+### 56. Python (locked development environment) — MIT License
 
 **Packages:** `pluggy@1.7.0`
 
@@ -3958,11 +3847,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 59. Python (locked development environment) — MIT License
+### 57. Python (locked development environment) — MIT License
 
 **Packages:** `pyee@14.0.0`
 
@@ -3990,11 +3878,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 60. Python (locked development environment) — MIT License
+### 58. Python (locked development environment) — MIT License
 
 **Packages:** `pytest@8.4.2`
 
@@ -4022,11 +3909,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 61. Python (locked development environment) — MIT License
+### 59. Python (locked development environment) — MIT License
 
 **Packages:** `PyYAML@6.0.3`
 
@@ -4053,11 +3939,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 62. Python (locked development environment) — MIT License
+### 60. Python (locked development environment) — MIT License
 
 **Packages:** `watchfiles@1.3.0`
 
@@ -4085,11 +3970,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 63. Python (locked development environment) — MIT-0
+### 61. Python (locked development environment) — MIT-0
 
 **Packages:** `cffi@2.1.1`
 
@@ -4118,11 +4002,10 @@ documentation is licensed as follows:
 
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 64. Python (locked development environment) — Mozilla Public License 2.0 (MPL 2.0)
+### 62. Python (locked development environment) — Mozilla Public License 2.0 (MPL 2.0)
 
 **Packages:** `certifi@2026.10.23`
 
@@ -4149,11 +4032,10 @@ one at http://mozilla.org/MPL/2.0/.
 @(#) $RCSfile: certdata.txt,v $ $Revision: 1.80 $ $Date: 2011/11/03 15:11:58 $
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 65. Python (locked development environment) — PSF-2.0
+### 63. Python (locked development environment) — PSF-2.0
 
 **Packages:** `typing_extensions@4.16.0`
 
@@ -4439,11 +4321,10 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 66. Python (locked development environment) — Python Software Foundation License
+### 64. Python (locked development environment) — Python Software Foundation License
 
 **Packages:** `pywin32@312`
 
@@ -4964,7 +4845,7 @@ This distributed package contains components under multiple licenses:
 - For all other distributed files in this package, see the included [License.txt](../../License.txt) and Project License from Metadatas
 ```
 
-### 67. Python (locked development environment) — Apache-2.0
+### 65. Python (locked development environment) — Apache-2.0
 
 **Packages:** `agent-client-protocol@0.9.0`
 
@@ -5172,11 +5053,10 @@ Apache License
    limitations under the License.
 
 
-Additional notice:
-UNKNOWN
+
 ```
 
-### 68. Rust/Cargo (Windows target) — (MIT OR Apache-2.0) AND Unicode-3.0
+### 66. Rust/Cargo (Windows target) — (MIT OR Apache-2.0) AND Unicode-3.0
 
 **Packages:** `unicode-ident@1.0.27`
 
@@ -5359,7 +5239,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 ```
 
-### 69. Rust/Cargo (Windows target) — (MIT OR Apache-2.0) AND Unicode-3.0
+### 67. Rust/Cargo (Windows target) — (MIT OR Apache-2.0) AND Unicode-3.0
 
 **Packages:** `unicode-ident@1.0.27`
 
@@ -5389,7 +5269,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 70. Rust/Cargo (Windows target) — (MIT OR Apache-2.0) AND Unicode-3.0
+### 68. Rust/Cargo (Windows target) — (MIT OR Apache-2.0) AND Unicode-3.0
 
 **Packages:** `unicode-ident@1.0.27`
 
@@ -5435,7 +5315,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 ```
 
-### 71. Rust/Cargo (Windows target) — 0BSD OR MIT OR Apache-2.0
+### 69. Rust/Cargo (Windows target) — 0BSD OR MIT OR Apache-2.0
 
 **Packages:** `adler2@2.0.1`
 
@@ -5454,7 +5334,7 @@ AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### 72. Rust/Cargo (Windows target) — 0BSD OR MIT OR Apache-2.0
+### 70. Rust/Cargo (Windows target) — 0BSD OR MIT OR Apache-2.0
 
 **Packages:** `adler2@2.0.1`
 
@@ -5662,7 +5542,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 73. Rust/Cargo (Windows target) — 0BSD OR MIT OR Apache-2.0
+### 71. Rust/Cargo (Windows target) — 0BSD OR MIT OR Apache-2.0
 
 **Packages:** `adler2@2.0.1`
 
@@ -5692,7 +5572,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 74. Rust/Cargo (Windows target) — Apache-2.0
+### 72. Rust/Cargo (Windows target) — Apache-2.0
 
 **Packages:** `tao@0.37.2`
 
@@ -5900,7 +5780,7 @@ Apache License
    limitations under the License.
 ```
 
-### 75. Rust/Cargo (Windows target) — Apache-2.0
+### 73. Rust/Cargo (Windows target) — Apache-2.0
 
 **Packages:** `tao@0.37.2`
 
@@ -5925,7 +5805,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tao.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-### 76. Rust/Cargo (Windows target) — Apache-2.0 / MIT
+### 74. Rust/Cargo (Windows target) — Apache-2.0 / MIT
 
 **Packages:** `fnv@1.0.7`
 
@@ -6133,7 +6013,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 77. Rust/Cargo (Windows target) — Apache-2.0 / MIT
+### 75. Rust/Cargo (Windows target) — Apache-2.0 / MIT
 
 **Packages:** `fnv@1.0.7`
 
@@ -6165,7 +6045,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 78. Rust/Cargo (Windows target) — Apache-2.0 AND MIT
+### 76. Rust/Cargo (Windows target) — Apache-2.0 AND MIT
 
 **Packages:** `dpi@0.1.2`
 
@@ -6373,7 +6253,7 @@ Apache License
    limitations under the License.
 ```
 
-### 79. Rust/Cargo (Windows target) — Apache-2.0 AND MIT
+### 77. Rust/Cargo (Windows target) — Apache-2.0 AND MIT
 
 **Packages:** `dpi@0.1.2`
 
@@ -6431,7 +6311,7 @@ have been licensed under extremely permissive terms.
 ------------------------------------------------------------------------------
 ```
 
-### 80. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 78. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `autocfg@1.5.1`, `equivalent@1.0.3`, `fastrand@2.5.0`, `idna_adapter@1.2.2`, `indexmap@1.9.3`, `indexmap@2.14.2`, `muda@0.20.0`, `uuid@1.29.0`, `window-vibrancy@0.8.1`, `wry@0.57.1`
 
@@ -6639,7 +6519,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 81. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 79. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `autocfg@1.5.1`
 
@@ -6671,7 +6551,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 82. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 80. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `bit-set@0.8.0`, `bit-vec@0.8.0`
 
@@ -6879,7 +6759,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 83. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 81. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `bit-set@0.8.0`, `bit-vec@0.8.0`
 
@@ -6911,7 +6791,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 84. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 82. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `cargo_toml@1.0.1`
 
@@ -7120,7 +7000,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 85. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 83. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `ctor@1.0.13`
 
@@ -7328,7 +7208,7 @@ Apache License
    limitations under the License.
 ```
 
-### 86. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 84. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `ctor@1.0.13`
 
@@ -7340,7 +7220,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 87. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 85. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `equivalent@1.0.3`
 
@@ -7372,7 +7252,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 88. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 86. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `fastrand@2.5.0`, `pin-project-lite@0.2.17`, `rustc-hash@2.1.3`
 
@@ -7402,7 +7282,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 89. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 87. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `idna_adapter@1.2.2`
 
@@ -7434,7 +7314,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 90. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 88. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `indexmap@1.9.3`, `indexmap@2.14.2`
 
@@ -7466,7 +7346,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 91. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 89. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `muda@0.20.0`
 
@@ -7494,7 +7374,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 92. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 90. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `muda@0.20.0`
 
@@ -7520,7 +7400,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/muda.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-### 93. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 91. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `pin-project-lite@0.2.17`, `tauri-build@2.7.4`, `tauri-codegen@2.7.4`, `tauri-macros@2.7.4`, `tauri-plugin-dialog@2.8.4`, `tauri-plugin-fs@2.7.1`, `tauri-runtime-wry@2.12.3`, `tauri-runtime@2.12.2`, `tauri-utils@2.10.2`, `tauri@2.12.5`
 
@@ -7703,7 +7583,7 @@ Apache License
    END OF TERMS AND CONDITIONS
 ```
 
-### 94. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 92. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `rustc-hash@2.1.3`
 
@@ -7886,7 +7766,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 ```
 
-### 95. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 93. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `tauri-build@2.7.4`, `tauri-codegen@2.7.4`, `tauri-macros@2.7.4`, `tauri-plugin-dialog@2.8.4`, `tauri-plugin-fs@2.7.1`, `tauri-runtime-wry@2.12.3`, `tauri-runtime@2.12.2`, `tauri-utils@2.10.2`, `tauri@2.12.5`, `tauri-plugin@2.7.2`
 
@@ -7914,7 +7794,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 96. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 94. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `tauri-plugin-dialog@2.8.4`, `tauri-plugin-fs@2.7.1`
 
@@ -7941,7 +7821,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-### 97. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 95. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `utf8_iter@1.1.0`
 
@@ -7990,7 +7870,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 ```
 
-### 98. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 96. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `utf8_iter@1.1.0`, `utf_types@1.0.0`
 
@@ -8198,7 +8078,7 @@ Apache License
    limitations under the License.
 ```
 
-### 99. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 97. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `utf8_iter@1.1.0`, `utf_types@1.0.0`
 
@@ -8230,7 +8110,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 100. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 98. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `utf_types@1.0.0`
 
@@ -8257,7 +8137,7 @@ Test code is dedicated to the Public Domain when so designated (see
 the individual files for PD/CC0-dedicated sections).
 ```
 
-### 101. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 99. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `uuid@1.29.0`
 
@@ -8290,7 +8170,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 102. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 100. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `window-vibrancy@0.8.1`
 
@@ -8318,7 +8198,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 103. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 101. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `window-vibrancy@0.8.1`
 
@@ -8344,7 +8224,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/window-vibrancy.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-### 104. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 102. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `wry@0.57.1`
 
@@ -8372,7 +8252,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 105. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
+### 103. Rust/Cargo (Windows target) — Apache-2.0 OR MIT
 
 **Packages:** `wry@0.57.1`
 
@@ -8399,7 +8279,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/wry.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-### 106. Rust/Cargo (Windows target) — BSD-3-Clause
+### 104. Rust/Cargo (Windows target) — BSD-3-Clause
 
 **Packages:** `alloc-no-stdlib@3.0.0`
 
@@ -8418,7 +8298,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 107. Rust/Cargo (Windows target) — BSD-3-Clause AND MIT
+### 105. Rust/Cargo (Windows target) — BSD-3-Clause AND MIT
 
 **Packages:** `brotli@9.1.1`
 
@@ -8437,7 +8317,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 108. Rust/Cargo (Windows target) — BSD-3-Clause AND MIT
+### 106. Rust/Cargo (Windows target) — BSD-3-Clause AND MIT
 
 **Packages:** `brotli@9.1.1`
 
@@ -8463,7 +8343,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 109. Rust/Cargo (Windows target) — BSD-3-Clause/MIT
+### 107. Rust/Cargo (Windows target) — BSD-3-Clause/MIT
 
 **Packages:** `brotli-decompressor@6.2.0`, `alloc-stdlib@0.3.0`
 
@@ -8482,7 +8362,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 110. Rust/Cargo (Windows target) — CC0-1.0 OR MIT-0 OR Apache-2.0
+### 108. Rust/Cargo (Windows target) — CC0-1.0 OR MIT-0 OR Apache-2.0
 
 **Packages:** `dunce@1.0.5`
 
@@ -8610,7 +8490,7 @@ express Statement of Purpose.
     this CC0 or use of the Work.
 ```
 
-### 111. Rust/Cargo (Windows target) — MIT
+### 109. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `bytes@1.12.1`
 
@@ -8642,7 +8522,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 112. Rust/Cargo (Windows target) — MIT
+### 110. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `cargo_metadata@0.19.2`, `zmij@1.0.23`
 
@@ -8672,7 +8552,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 113. Rust/Cargo (Windows target) — MIT
+### 111. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `cfb@0.14.0`
 
@@ -8700,7 +8580,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 114. Rust/Cargo (Windows target) — MIT
+### 112. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `darling@0.24.1`, `darling_core@0.24.1`, `darling_macro@0.24.1`
 
@@ -8728,7 +8608,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 115. Rust/Cargo (Windows target) — MIT
+### 113. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `derive_more-impl@2.1.1`, `derive_more@2.1.1`
 
@@ -8756,7 +8636,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 116. Rust/Cargo (Windows target) — MIT
+### 114. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `dom_query@0.28.0`
 
@@ -8790,7 +8670,7 @@ derived from the "nipper" project (https://github.com/importcjj/nipper),
 developed by Chen Jiaju, licensed under the MIT License and the Apache License 2.0 (dual licensed).
 ```
 
-### 117. Rust/Cargo (Windows target) — MIT
+### 115. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `embed-resource@3.0.12`
 
@@ -8818,7 +8698,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 118. Rust/Cargo (Windows target) — MIT
+### 116. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `generic-array@0.14.7`
 
@@ -8846,7 +8726,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 119. Rust/Cargo (Windows target) — MIT
+### 117. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `ico@0.6.0`
 
@@ -8874,7 +8754,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 120. Rust/Cargo (Windows target) — MIT
+### 118. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `infer@0.22.0`
 
@@ -8902,7 +8782,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 121. Rust/Cargo (Windows target) — MIT
+### 119. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `mio@1.2.4`
 
@@ -8928,7 +8808,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 122. Rust/Cargo (Windows target) — MIT
+### 120. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `new_debug_unreachable@1.0.6`
 
@@ -8960,7 +8840,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 123. Rust/Cargo (Windows target) — MIT
+### 121. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `phf@0.13.1`, `phf_codegen@0.13.1`, `phf_generator@0.13.1`, `phf_macros@0.13.1`, `phf_shared@0.13.1`
 
@@ -8987,7 +8867,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 124. Rust/Cargo (Windows target) — MIT
+### 122. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `plist@1.10.3`
 
@@ -9013,7 +8893,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 125. Rust/Cargo (Windows target) — MIT
+### 123. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `precomputed-hash@0.1.1`
 
@@ -9041,7 +8921,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 126. Rust/Cargo (Windows target) — MIT
+### 124. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `quick-xml@0.42.0`
 
@@ -9071,7 +8951,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 127. Rust/Cargo (Windows target) — MIT
+### 125. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `rfd@0.17.2`
 
@@ -9099,7 +8979,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 128. Rust/Cargo (Windows target) — MIT
+### 126. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `schemars@0.8.22`, `schemars@0.9.0`, `schemars@1.2.3`, `schemars_derive@0.8.22`
 
@@ -9127,7 +9007,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 129. Rust/Cargo (Windows target) — MIT
+### 127. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `simd-adler32@0.3.10`
 
@@ -9155,7 +9035,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 130. Rust/Cargo (Windows target) — MIT
+### 128. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `strsim@0.11.1`
 
@@ -9185,7 +9065,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 131. Rust/Cargo (Windows target) — MIT
+### 129. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `synstructure@0.14.0`
 
@@ -9199,7 +9079,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 132. Rust/Cargo (Windows target) — MIT
+### 130. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `tauri-winres@0.3.7`
 
@@ -9234,7 +9114,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 133. Rust/Cargo (Windows target) — MIT
+### 131. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `tokio@1.54.1`
 
@@ -9262,7 +9142,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 134. Rust/Cargo (Windows target) — MIT
+### 132. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `tracing-core@0.1.36`, `tracing@0.1.44`
 
@@ -9294,7 +9174,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 135. Rust/Cargo (Windows target) — MIT
+### 133. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `urlpattern@0.6.0`
 
@@ -9322,7 +9202,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 136. Rust/Cargo (Windows target) — MIT
+### 134. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `vswhom-sys@0.1.3`, `vswhom@0.1.0`
 
@@ -9350,7 +9230,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 137. Rust/Cargo (Windows target) — MIT
+### 135. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `winnow@1.0.4`
 
@@ -9375,7 +9255,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 138. Rust/Cargo (Windows target) — MIT
+### 136. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `winreg@0.56.0`
 
@@ -9401,7 +9281,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 139. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 137. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `anyhow@1.0.104`, `dtoa@1.0.11`, `dyn-clone@1.0.20`, `erased-serde@0.4.11`, `itoa@1.0.18`, `libc@0.2.191`, `proc-macro2@1.0.107`, `quote@1.0.47`, `ref-cast-impl@1.0.27`, `ref-cast@1.0.27`, `semver@1.0.28`, `serde-untagged@0.1.9`, `serde@1.0.229`, `serde_core@1.0.229`, `serde_derive@1.0.229`, `serde_derive_internals@0.29.1`, `serde_json@1.0.154`, `serde_repr@0.1.21`, `syn@2.0.119`, `syn@3.0.9`, `thiserror-impl@2.0.21`, `thiserror@2.0.21`, `typeid@1.0.3`
 
@@ -9584,7 +9464,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 ```
 
-### 140. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 138. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `anyhow@1.0.104`, `camino@1.2.6`, `cargo-platform@0.1.9`, `displaydoc@0.2.7`, `dtoa@1.0.11`, `dyn-clone@1.0.20`, `erased-serde@0.4.11`, `itoa@1.0.18`, `once_cell@1.21.4`, `proc-macro2@1.0.107`, `quote@1.0.47`, `ref-cast-impl@1.0.27`, `ref-cast@1.0.27`, `semver@1.0.28`, `serde-untagged@0.1.9`, `serde@1.0.229`, `serde_core@1.0.229`, `serde_derive@1.0.229`, `serde_derive_internals@0.29.1`, `serde_json@1.0.154`, `serde_repr@0.1.21`, `servo_arc@0.4.3`, `syn@2.0.119`, `syn@3.0.9`, `thiserror-impl@2.0.21`, `thiserror@2.0.21`, `typeid@1.0.3`
 
@@ -9614,7 +9494,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 141. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 139. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `base64@0.23.1`, `bitflags@2.13.2`, `camino@1.2.6`, `cc@1.11.0`, `cfg-if@1.0.5`, `crossbeam-channel@0.5.17`, `crossbeam-utils@0.8.23`, `displaydoc@0.2.7`, `find-msvc-tools@0.1.15`, `flate2@1.1.10`, `form_urlencoded@1.2.2`, `glob@0.3.4`, `hashbrown@0.12.3`, `hashbrown@0.17.1`, `heck@0.5.0`, `html5ever@0.39.0`, `idna@1.1.0`, `keyboard-types@0.8.3`, `lock_api@0.4.14`, `log@0.4.35`, `markup5ever@0.39.0`, `mime@0.3.17`, `num-traits@0.2.19`, `once_cell@1.21.4`, `parking_lot@0.12.5`, `parking_lot_core@0.9.12`, `percent-encoding@2.3.2`, `png@0.18.1`, `regex-automata@0.4.18`, `regex-syntax@0.8.11`, `regex@1.13.1`, `rustc_version@0.4.1`, `scopeguard@1.2.0`, `serde_with@3.24.0`, `serde_with_macros@3.24.0`, `servo_arc@0.4.3`, `smallvec@1.16.4`, `socket2@0.6.5`, `stable_deref_trait@1.2.1`, `string_cache@0.9.0`, `string_cache_codegen@0.6.1`, `tendril@0.5.1`, `tray-icon@0.25.1`, `unicode-segmentation@1.13.3`, `url@2.5.8`, `web_atoms@0.2.6`
 
@@ -9822,7 +9702,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 142. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 140. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `base64@0.23.1`
 
@@ -9850,7 +9730,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 143. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 141. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `bitflags@2.13.2`, `glob@0.3.4`, `log@0.4.35`, `num-traits@0.2.19`, `regex-automata@0.4.18`, `regex-syntax@0.8.11`, `regex@1.13.1`
 
@@ -9882,7 +9762,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 144. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 142. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `block-buffer@0.10.4`, `cpufeatures@0.2.17`, `crypto-common@0.1.7`, `digest@0.10.7`, `sha2@0.10.9`
 
@@ -10090,7 +9970,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 145. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 143. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `block-buffer@0.10.4`
 
@@ -10122,7 +10002,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 146. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 144. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `cargo-platform@0.1.9`
 
@@ -10330,7 +10210,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 147. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 145. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `cc@1.11.0`, `cfg-if@1.0.5`, `find-msvc-tools@0.1.15`, `socket2@0.6.5`
 
@@ -10362,7 +10242,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 148. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 146. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `chrono@0.4.45`
 
@@ -10608,7 +10488,7 @@ limitations under the License.
 ~~~~
 ```
 
-### 149. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 147. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `cookie@0.18.2`
 
@@ -10817,7 +10697,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 150. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 148. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `cookie@0.18.2`
 
@@ -10850,7 +10730,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 151. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 149. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `cpufeatures@0.2.17`
 
@@ -10882,7 +10762,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 152. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 150. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `crc32fast@1.5.4`, `hex@0.4.3`
 
@@ -11090,7 +10970,7 @@ Apache License
    limitations under the License.
 ```
 
-### 153. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 151. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `crc32fast@1.5.4`
 
@@ -11118,7 +10998,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 154. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 152. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `crossbeam-channel@0.5.17`, `crossbeam-utils@0.8.23`
 
@@ -11152,7 +11032,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 155. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 153. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `crossbeam-channel@0.5.17`
 
@@ -11752,7 +11632,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 156. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 154. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `crypto-common@0.1.7`
 
@@ -11784,7 +11664,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 157. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 155. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `defmt-macros@1.2.0`, `defmt-parser@1.1.0`, `defmt@1.2.0`
 
@@ -11992,7 +11872,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 158. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 156. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `defmt-macros@1.2.0`, `defmt-parser@1.1.0`, `defmt@1.2.0`
 
@@ -12024,7 +11904,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 159. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 157. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `deranged@0.5.9`
 
@@ -12232,7 +12112,7 @@ Apache License
    limitations under the License.
 ```
 
-### 160. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 158. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `deranged@0.5.9`
 
@@ -12258,7 +12138,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 161. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 159. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `digest@0.10.7`
 
@@ -12290,7 +12170,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 162. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 160. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `dirs-sys@0.5.0`, `dirs@7.0.0`
 
@@ -12471,7 +12351,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
    of your accepting any such warranty or additional liability.
 ```
 
-### 163. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 161. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `dirs-sys@0.5.0`, `dirs@7.0.0`
 
@@ -12497,7 +12377,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 164. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 162. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `fdeflate@0.3.7`, `num-conv@0.2.2`, `time-core@0.1.9`, `time-macros@0.2.32`, `time@0.3.55`
 
@@ -12680,7 +12560,7 @@ Apache License
    END OF TERMS AND CONDITIONS
 ```
 
-### 165. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 163. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `fdeflate@0.3.7`
 
@@ -12712,7 +12592,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 166. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 164. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `flate2@1.1.10`
 
@@ -12744,7 +12624,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 167. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 165. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `form_urlencoded@1.2.2`
 
@@ -12776,7 +12656,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 168. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 166. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `getrandom@0.3.4`, `getrandom@0.4.3`
 
@@ -12984,7 +12864,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 169. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 167. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `getrandom@0.3.4`
 
@@ -13017,7 +12897,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 170. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 168. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `getrandom@0.4.3`
 
@@ -13050,7 +12930,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 171. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 169. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `hashbrown@0.12.3`, `hashbrown@0.17.1`
 
@@ -13082,7 +12962,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 172. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 170. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `heck@0.5.0`, `unicode-segmentation@1.13.3`
 
@@ -13114,7 +12994,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 173. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 171. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `hex@0.4.3`
 
@@ -13141,7 +13021,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 174. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 172. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `html5ever@0.39.0`, `markup5ever@0.39.0`, `web_atoms@0.2.6`
 
@@ -13173,7 +13053,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 175. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 173. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `http@1.5.0`
 
@@ -13381,7 +13261,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 176. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 174. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `http@1.5.0`
 
@@ -13413,7 +13293,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 177. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 175. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `idna@1.1.0`, `percent-encoding@2.3.2`, `url@2.5.8`
 
@@ -13445,7 +13325,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 178. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 176. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `jsonptr@0.7.1`
 
@@ -13653,7 +13533,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 179. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 177. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `jsonptr@0.7.1`
 
@@ -13681,7 +13561,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 180. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 178. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `keyboard-types@0.8.3`
 
@@ -13707,7 +13587,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 181. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 179. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `libc@0.2.191`
 
@@ -13739,7 +13619,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 182. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 180. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `lock_api@0.4.14`, `parking_lot@0.12.5`, `parking_lot_core@0.9.12`, `rustc_version@0.4.1`
 
@@ -13771,7 +13651,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 183. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 181. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `mime@0.3.17`
 
@@ -13797,7 +13677,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 184. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 182. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `num-conv@0.2.2`
 
@@ -13823,7 +13703,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 185. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 183. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `png@0.18.1`
 
@@ -13855,7 +13735,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 186. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 184. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `powerfmt@0.2.1`
 
@@ -14063,7 +13943,7 @@ Apache License
    limitations under the License.
 ```
 
-### 187. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 185. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `powerfmt@0.2.1`
 
@@ -14089,7 +13969,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 188. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 186. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `scopeguard@1.2.0`
 
@@ -14121,7 +14001,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 189. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 187. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `serde_spanned@1.1.2`, `toml@1.1.8+spec-1.1.0`, `toml_datetime@1.1.2+spec-1.1.0`, `toml_parser@1.1.5+spec-1.1.0`, `toml_writer@1.1.3+spec-1.1.0`
 
@@ -14329,7 +14209,7 @@ Apache License
    limitations under the License.
 ```
 
-### 190. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 188. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `serde_spanned@1.1.2`, `toml@1.1.8+spec-1.1.0`, `toml_datetime@1.1.2+spec-1.1.0`, `toml_parser@1.1.5+spec-1.1.0`, `toml_writer@1.1.3+spec-1.1.0`
 
@@ -14355,7 +14235,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 191. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 189. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `serde_with@3.24.0`, `serde_with_macros@3.24.0`
 
@@ -14387,7 +14267,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 192. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 190. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `serialize-to-javascript-impl@0.1.2`, `serialize-to-javascript@0.1.2`, `siphasher@1.0.4`
 
@@ -14595,7 +14475,7 @@ Apache License
    limitations under the License.
 ```
 
-### 193. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 191. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `serialize-to-javascript-impl@0.1.2`, `serialize-to-javascript@0.1.2`
 
@@ -14623,7 +14503,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 194. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 192. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `sha2@0.10.9`
 
@@ -14657,7 +14537,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 195. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 193. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `shlex@2.0.1`
 
@@ -14677,7 +14557,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 196. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 194. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `shlex@2.0.1`
 
@@ -14705,7 +14585,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 197. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 195. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `siphasher@1.0.4`
 
@@ -14719,7 +14599,7 @@ http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 option.
 ```
 
-### 198. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 196. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `siphasher@1.0.4`
 
@@ -14743,7 +14623,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 199. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 197. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `smallvec@1.16.4`
 
@@ -14775,7 +14655,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 200. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 198. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `softbuffer@0.4.8`
 
@@ -14983,7 +14863,7 @@ Apache License
    limitations under the License.
 ```
 
-### 201. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 199. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `softbuffer@0.4.8`
 
@@ -15009,7 +14889,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 202. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 200. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `stable_deref_trait@1.2.1`
 
@@ -15041,7 +14921,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 203. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 201. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `string_cache@0.9.0`, `string_cache_codegen@0.6.1`
 
@@ -15073,7 +14953,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 204. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 202. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `tendril@0.5.1`
 
@@ -15105,7 +14985,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 205. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 203. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `time-core@0.1.9`, `time-macros@0.2.32`, `time@0.3.55`
 
@@ -15131,7 +15011,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 206. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 204. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `tray-icon@0.25.1`
 
@@ -15159,7 +15039,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 207. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 205. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `tray-icon@0.25.1`
 
@@ -15185,7 +15065,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tray-icon.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-### 208. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 206. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `typenum@1.20.1`
 
@@ -15193,7 +15073,7 @@ Creator: Person: Daniel Thompson-Yvetot
 MIT OR Apache-2.0
 ```
 
-### 209. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 207. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `typenum@1.20.1`
 
@@ -15401,7 +15281,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 210. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 208. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `typenum@1.20.1`
 
@@ -15429,7 +15309,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 211. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 209. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `unicode-segmentation@1.13.3`
 
@@ -15443,7 +15323,7 @@ notice may not be copied, modified, or distributed except
 according to those terms.
 ```
 
-### 212. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 210. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `web-time@1.1.0`
 
@@ -15651,7 +15531,7 @@ Apache License
    limitations under the License.
 ```
 
-### 213. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 211. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `web-time@1.1.0`
 
@@ -15679,7 +15559,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 214. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 212. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `windows-collections@0.3.2`, `windows-core@0.62.2`, `windows-future@0.3.2`, `windows-implement@0.60.2`, `windows-interface@0.59.3`, `windows-link@0.2.1`, `windows-numerics@0.3.1`, `windows-result@0.4.1`, `windows-strings@0.5.1`, `windows-sys@0.61.2`, `windows-threading@0.2.1`, `windows-version@0.1.7`, `windows@0.62.2`
 
@@ -15887,7 +15767,7 @@ Apache License
    limitations under the License.
 ```
 
-### 215. Rust/Cargo (Windows target) — MIT OR Apache-2.0
+### 213. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
 **Packages:** `windows-collections@0.3.2`, `windows-core@0.62.2`, `windows-future@0.3.2`, `windows-implement@0.60.2`, `windows-interface@0.59.3`, `windows-link@0.2.1`, `windows-numerics@0.3.1`, `windows-result@0.4.1`, `windows-strings@0.5.1`, `windows-sys@0.61.2`, `windows-threading@0.2.1`, `windows-version@0.1.7`, `windows@0.62.2`
 
@@ -15915,7 +15795,7 @@ MIT License
     SOFTWARE
 ```
 
-### 216. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 214. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `raw-window-handle@0.6.2`
 
@@ -16098,7 +15978,7 @@ Apache License
    END OF TERMS AND CONDITIONS
 ```
 
-### 217. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 215. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `raw-window-handle@0.6.2`
 
@@ -16126,7 +16006,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 218. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 216. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `raw-window-handle@0.6.2`
 
@@ -16144,7 +16024,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 219. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 217. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `static_vcruntime@3.0.0`
 
@@ -16152,7 +16032,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 MIT OR Apache-2.0 OR Zlib
 ```
 
-### 220. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 218. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `static_vcruntime@3.0.0`
 
@@ -16220,7 +16100,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 221. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 219. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `static_vcruntime@3.0.0`
 
@@ -16236,7 +16116,7 @@ The above copyright notice and this permission notice (including the next paragr
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 222. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
+### 220. Rust/Cargo (Windows target) — MIT OR Apache-2.0 OR Zlib
 
 **Packages:** `static_vcruntime@3.0.0`
 
@@ -16254,7 +16134,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 223. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
+### 221. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
 
 **Packages:** `miniz_oxide@0.8.9`, `miniz_oxide@0.9.1`
 
@@ -16286,7 +16166,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 224. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
+### 222. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
 
 **Packages:** `miniz_oxide@0.8.9`, `miniz_oxide@0.9.1`, `tauri-plugin@2.7.2`
 
@@ -16469,7 +16349,7 @@ Apache License
    END OF TERMS AND CONDITIONS
 ```
 
-### 225. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
+### 223. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
 
 **Packages:** `miniz_oxide@0.8.9`, `miniz_oxide@0.9.1`
 
@@ -16500,7 +16380,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 226. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
+### 224. Rust/Cargo (Windows target) — MIT OR Zlib OR Apache-2.0
 
 **Packages:** `miniz_oxide@0.8.9`, `miniz_oxide@0.9.1`
 
@@ -16521,7 +16401,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 227. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 225. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `bitflags@1.3.2`, `bs58@0.5.1`, `version_check@0.9.5`
 
@@ -16729,7 +16609,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 228. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 226. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `bitflags@1.3.2`
 
@@ -16761,7 +16641,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 229. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 227. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `bs58@0.5.1`
 
@@ -16788,7 +16668,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 230. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 228. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `ident_case@1.0.1`
 
@@ -16814,7 +16694,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 231. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 229. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `json-patch@4.2.0`
 
@@ -17022,7 +16902,7 @@ Apache License
    limitations under the License.
 ```
 
-### 232. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 230. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `json-patch@4.2.0`
 
@@ -17050,7 +16930,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 233. Rust/Cargo (Windows target) — MIT/Apache-2.0
+### 231. Rust/Cargo (Windows target) — MIT/Apache-2.0
 
 **Packages:** `version_check@0.9.5`
 
@@ -17076,7 +16956,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 234. Rust/Cargo (Windows target) — MPL-2.0
+### 232. Rust/Cargo (Windows target) — MPL-2.0
 
 **Packages:** `cssparser-macros@0.7.1`, `cssparser@0.37.0`, `selectors@0.38.0`
 
@@ -17456,7 +17336,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-### 235. Rust/Cargo (Windows target) — MPL-2.0
+### 233. Rust/Cargo (Windows target) — MPL-2.0
 
 **Packages:** `dtoa-short@0.3.5`
 
@@ -17836,7 +17716,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-### 236. Rust/Cargo (Windows target) — MPL-2.0
+### 234. Rust/Cargo (Windows target) — MPL-2.0
 
 **Packages:** `option-ext@0.2.0`
 
@@ -18216,7 +18096,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-### 237. Rust/Cargo (Windows target) — Unicode-3.0
+### 235. Rust/Cargo (Windows target) — Unicode-3.0
 
 **Packages:** `icu_collections@2.4.0`, `icu_locale_core@2.4.0`, `icu_normalizer@2.4.0`, `icu_normalizer_data@2.4.0`, `icu_properties@2.4.0`, `icu_properties_data@2.4.0`, `icu_provider@2.4.0`, `litemap@0.8.3`, `potential_utf@0.1.6`, `tinystr@0.8.5`, `writeable@0.6.4`, `yoke-derive@0.8.4`, `yoke@0.8.4`, `zerofrom-derive@0.1.8`, `zerofrom@0.1.8`, `zerotrie@0.2.5`, `zerovec-derive@0.11.7`, `zerovec@0.11.9`
 
@@ -18269,7 +18149,7 @@ Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
 ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
 ```
 
-### 238. Rust/Cargo (Windows target) — Unlicense OR MIT
+### 236. Rust/Cargo (Windows target) — Unlicense OR MIT
 
 **Packages:** `aho-corasick@1.1.5`, `byteorder@1.5.0`, `jiff-core@0.1.2`, `jiff-tzdb-platform@0.1.3`, `jiff-tzdb@0.1.9`, `jiff@0.2.39`, `memchr@2.8.3`, `winapi-util@0.1.11`
 
@@ -18279,7 +18159,7 @@ This project is dual-licensed under the Unlicense and MIT licenses.
 You may use this code under the terms of either license.
 ```
 
-### 239. Rust/Cargo (Windows target) — Unlicense OR MIT
+### 237. Rust/Cargo (Windows target) — Unlicense OR MIT
 
 **Packages:** `aho-corasick@1.1.5`, `byteorder@1.5.0`, `jiff-core@0.1.2`, `jiff-tzdb-platform@0.1.3`, `jiff-tzdb@0.1.9`, `jiff@0.2.39`, `memchr@2.8.3`
 
@@ -18307,7 +18187,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 240. Rust/Cargo (Windows target) — Unlicense OR MIT
+### 238. Rust/Cargo (Windows target) — Unlicense OR MIT
 
 **Packages:** `winapi-util@0.1.11`
 
@@ -18335,7 +18215,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 241. Rust/Cargo (Windows target) — Unlicense/MIT
+### 239. Rust/Cargo (Windows target) — Unlicense/MIT
 
 **Packages:** `same-file@1.0.6`, `walkdir@2.5.0`
 
@@ -18345,7 +18225,7 @@ This project is dual-licensed under the Unlicense and MIT licenses.
 You may use this code under the terms of either license.
 ```
 
-### 242. Rust/Cargo (Windows target) — Unlicense/MIT
+### 240. Rust/Cargo (Windows target) — Unlicense/MIT
 
 **Packages:** `same-file@1.0.6`
 
@@ -18373,7 +18253,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 243. Rust/Cargo (Windows target) — Unlicense/MIT
+### 241. Rust/Cargo (Windows target) — Unlicense/MIT
 
 **Packages:** `walkdir@2.5.0`
 
@@ -18401,7 +18281,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 244. Rust/Cargo (Windows target) — Zlib
+### 242. Rust/Cargo (Windows target) — Zlib
 
 **Packages:** `foldhash@0.2.0`
 
@@ -18427,7 +18307,7 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 245. Rust/Cargo (Windows target) — Zlib
+### 243. Rust/Cargo (Windows target) — Zlib
 
 **Packages:** `zlib-rs@0.6.8`
 
@@ -18453,7 +18333,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 246. Rust/Cargo (Windows target) — Zlib OR Apache-2.0 OR MIT
+### 244. Rust/Cargo (Windows target) — Zlib OR Apache-2.0 OR MIT
 
 **Packages:** `tinyvec@1.13.3`
 
@@ -18661,7 +18541,7 @@ Apache License
    limitations under the License.
 ```
 
-### 247. Rust/Cargo (Windows target) — Zlib OR Apache-2.0 OR MIT
+### 245. Rust/Cargo (Windows target) — Zlib OR Apache-2.0 OR MIT
 
 **Packages:** `tinyvec@1.13.3`
 
@@ -18673,7 +18553,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 248. Rust/Cargo (Windows target) — Zlib OR Apache-2.0 OR MIT
+### 246. Rust/Cargo (Windows target) — Zlib OR Apache-2.0 OR MIT
 
 **Packages:** `tinyvec@1.13.3`
 
@@ -18691,7 +18571,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 249. Rust/Cargo (Windows target) — MIT
+### 247. Rust/Cargo (Windows target) — MIT
 
 **Packages:** `webview2-com@0.39.1`, `webview2-com-macros@0.8.1`, `webview2-com-sys@0.39.1`
 
@@ -27351,7 +27231,7 @@ Apache License
 
 Supplemented 2026-11-09 with 22 source-byte-distinct license/NOTICE text groups from the five additional pinned PyPI archives recorded in `dependency-inventory.md`. The archive SHA-256 values match `uv.lock`; duplicate source files are grouped and all package paths are listed. This includes four platform-conditional packages and the `setuptools` build dependency with its vendored licenses and notices. The exact source archives, extracted files, and verification report are preserved in `.acceptance/conditional-lock-license-audit-20261109/`. To keep reStructuredText separator lines from looking like merge markers in Git, text is HTML-escaped inside `<pre>` blocks; rendered text is unchanged. Trailing horizontal whitespace is omitted. This reproduction does not resolve license compatibility or replace legal review.
 
-### 250. Python locked-source supplement — 1b22b049b526
+### 248. Python locked-source supplement — 1b22b049b526
 
 **Verified source files:**
 - `jeepney@0.9.0` — `jeepney-0.9.0/LICENSE` (archive SHA-256 `cf0e9e845622b81e4a28df94c40345400256ec608d0e55bb8a3feaa9163f5732`; text SHA-256 `1b22b049b5267d6dfc23a67bf4a84d8ec04b9fdfb1a51d360e42b4342c8b4154`)
@@ -27380,7 +27260,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### 251. Python locked-source supplement — 47082ab2bc01
+### 249. Python locked-source supplement — 47082ab2bc01
 
 **Verified source files:**
 - `macholib@1.16.4` — `macholib-1.16.4/LICENSE` (archive SHA-256 `f408c93ab2e995cd2c46e34fe328b130404be143469e41bc366c807448979362`; text SHA-256 `47082ab2bc0184123ec9f10fdf80c70723ee68f07d44382e17615c2a6ba70b09`)
@@ -27409,7 +27289,7 @@ Copyright 2010-2020 - Ronald Oussoren
  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### 252. Python locked-source supplement — e700357592bb
+### 250. Python locked-source supplement — e700357592bb
 
 **Verified source files:**
 - `secretstorage@3.5.0` — `secretstorage-3.5.0/LICENSE` (archive SHA-256 `f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be`; text SHA-256 `e700357592bb93704cb040ce4a6663a85292716a4041b6a267f598f21658466f`)
@@ -27442,7 +27322,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
-### 253. Python locked-source supplement — 86da0f01aeae
+### 251. Python locked-source supplement — 86da0f01aeae
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741`)
@@ -27469,7 +27349,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 </pre>
 
-### 254. Python locked-source supplement — ade78d04982d
+### 252. Python locked-source supplement — ade78d04982d
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/autocommand-2.2.2.dist-info/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `ade78d04982d69972d444a8e14a94f87a2334dd3855cc80348ea8e240aa0df2d`)
@@ -27643,7 +27523,7 @@ Library.
 
 </pre>
 
-### 255. Python locked-source supplement — 458502e12d97
+### 253. Python locked-source supplement — 458502e12d97
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/importlib_metadata-8.7.1.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `458502e12d97bbf64438606a20044aa85eb05fb0a8a807bb35dbec253fd1fc04`)
@@ -27724,7 +27604,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### 256. Python locked-source supplement — 9755a1851966
+### 254. Python locked-source supplement — 9755a1851966
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/jaraco_context-6.1.0.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `9755a18519666e5f0f4cae3daad3d7012bcae48a600b31237d75e9fe134e6683`)
@@ -27750,7 +27630,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTI
 USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### 257. Python locked-source supplement — 5a57cb4db85e
+### 255. Python locked-source supplement — 5a57cb4db85e
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/jaraco_functools-4.4.0.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d`)
@@ -27777,7 +27657,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTI
 USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### 258. Python locked-source supplement — 09f1c8c9e941
+### 256. Python locked-source supplement — 09f1c8c9e941
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/more_itertools-10.8.0.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `09f1c8c9e941af3e584d59641ea9b87d83c0cb0fd007eb5ef391a7e2643c1a46`)
@@ -27804,7 +27684,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### 259. Python locked-source supplement — cad1ef5bd340
+### 257. Python locked-source supplement — cad1ef5bd340
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/packaging-26.3.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48`)
@@ -27815,7 +27695,7 @@ found in LICENSE.APACHE or LICENSE.BSD. Contributions to this software is made
 under the terms of *both* these licenses.
 </pre>
 
-### 260. Python locked-source supplement — 0d542e0c8804
+### 258. Python locked-source supplement — 0d542e0c8804
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/packaging-26.3.dist-info/licenses/LICENSE.APACHE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`)
@@ -28000,7 +27880,7 @@ under the terms of *both* these licenses.
    END OF TERMS AND CONDITIONS
 </pre>
 
-### 261. Python locked-source supplement — b70e7e9b742f
+### 259. Python locked-source supplement — b70e7e9b742f
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/packaging-26.3.dist-info/licenses/LICENSE.BSD` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5`)
@@ -28031,7 +27911,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
-### 262. Python locked-source supplement — 29e0fd62e929
+### 260. Python locked-source supplement — 29e0fd62e929
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/platformdirs-4.4.0.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `29e0fd62e929850e86eb28c3fdccf0cefdf4fa94879011cffb3d0d4bed6d4db6`)
@@ -28060,7 +27940,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### 263. Python locked-source supplement — b80816b0d530
+### 261. Python locked-source supplement — b80816b0d530
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/tomli-2.4.0.dist-info/licenses/LICENSE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe`)
@@ -28089,7 +27969,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### 264. Python locked-source supplement — 30c236186791
+### 262. Python locked-source supplement — 30c236186791
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/_vendor/wheel-0.46.3.dist-info/licenses/LICENSE.txt` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `30c23618679108f3e8ea1d2a658c7ca417bdfc891c98ef1a89fa4ff0c9828654`)
@@ -28118,7 +27998,7 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### 265. Python locked-source supplement — 2dddf0881829
+### 263. Python locked-source supplement — 2dddf0881829
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/config/NOTICE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `2dddf08818297a3b89d43d95ff659d8da85741108c9136dfa3a4d856c0623bd8`)
@@ -28136,7 +28016,7 @@ The following files include code from opensource projects
       You can obtain one at https://mozilla.org/MPL/2.0/.
 </pre>
 
-### 266. Python locked-source supplement — 09c9bcea95ca
+### 264. Python locked-source supplement — 09c9bcea95ca
 
 **Verified source files:**
 - `setuptools@84.2.1` — `setuptools-84.2.1/setuptools/config/_validate_pyproject/NOTICE` (archive SHA-256 `3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc`; text SHA-256 `09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7`)
@@ -28582,7 +28462,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
       the Mozilla Public License, v. 2.0.
 </pre>
 
-### 267. Python locked-source supplement — 377025287798
+### 265. Python locked-source supplement — 377025287798
 
 **Verified source files:**
 - `uvloop@0.23.0` — `uvloop-0.23.0/LICENSE-APACHE` (archive SHA-256 `28d160f51ab4da3b187063652e643dea6831072add4adc1e6d62afbe73b6be27`; text SHA-256 `377025287798f9dcd819e1f826fa5fc5e2f382528691ab0528c5cf8c8c282c27`)
@@ -28793,7 +28673,7 @@ Copyright (C) 2016-present the uvloop authors and contributors.
    limitations under the License.
 </pre>
 
-### 268. Python locked-source supplement — 6dd4c399f26d
+### 266. Python locked-source supplement — 6dd4c399f26d
 
 **Verified source files:**
 - `uvloop@0.23.0` — `uvloop-0.23.0/LICENSE-MIT` (archive SHA-256 `28d160f51ab4da3b187063652e643dea6831072add4adc1e6d62afbe73b6be27`; text SHA-256 `6dd4c399f26de043d77a2ad7e31db4cb5bf08ea8368b0a42d6e158635cc8ab62`)
@@ -28822,7 +28702,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### 269. Python locked-source supplement — 16de0c32b265
+### 267. Python locked-source supplement — 16de0c32b265
 
 **Verified source files:**
 - `uvloop@0.23.0` — `uvloop-0.23.0/vendor/libuv/LICENSE` (archive SHA-256 `28d160f51ab4da3b187063652e643dea6831072add4adc1e6d62afbe73b6be27`; text SHA-256 `16de0c32b265cb7d46a6d3bd614f259dd4d693a5e26b3407b04aae8d73041f0c`)
@@ -28849,7 +28729,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 </pre>
 
-### 270. Python locked-source supplement — cce5d01fa4a8
+### 268. Python locked-source supplement — cce5d01fa4a8
 
 **Verified source files:**
 - `uvloop@0.23.0` — `uvloop-0.23.0/vendor/libuv/LICENSE-docs` (archive SHA-256 `28d160f51ab4da3b187063652e643dea6831072add4adc1e6d62afbe73b6be27`; text SHA-256 `cce5d01fa4a83b794271bd2c28cffdf99afd43c803e6ddefddae39b591ea7448`)
@@ -29253,7 +29133,7 @@ Creative Commons may be contacted at creativecommons.org.
 
 </pre>
 
-### 271. Python locked-source supplement — 262c44bd2cdb
+### 269. Python locked-source supplement — 262c44bd2cdb
 
 **Verified source files:**
 - `uvloop@0.23.0` — `uvloop-0.23.0/vendor/libuv/LICENSE-extra` (archive SHA-256 `28d160f51ab4da3b187063652e643dea6831072add4adc1e6d62afbe73b6be27`; text SHA-256 `262c44bd2cdba037e6d2a82fba15f5800d292bc993a6f5d6b6ea487744d02836`)
@@ -29297,7 +29177,7 @@ The externally maintained libraries used by libuv are:
     license.
 </pre>
 
-### 272. Python direct dependency — uritemplate BSD-3-Clause alternative
+### 270. Python direct dependency — uritemplate BSD-3-Clause alternative
 
 **Verified source file:** `uritemplate==4.2.0` — `uritemplate-4.2.0/LICENSE.BSD` (source archive SHA-256 `480c2ed180878955863323eea31b0ede668795de182617fef9c6ca09e6ec9d0e`; license text SHA-256 `c03c6bc1445ed4283d9334d648cb8de3baa3c66da1aeb786a33fbe9ef5cda235`). The package also offers Apache-2.0; its exact full text is already included in section 4 above.
 

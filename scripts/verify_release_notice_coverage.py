@@ -104,6 +104,12 @@ def read_notice_references(path: Path) -> dict[str, set[tuple[str, str]]]:
     return result
 
 
+def count_unknown_additional_notice_placeholders(path: Path) -> int:
+    """Count scanner placeholders that are not verbatim third-party notices."""
+    text = path.read_text(encoding="utf-8")
+    return len(re.findall(r"(?m)^Additional notice:\r?\nUNKNOWN\r?$", text))
+
+
 def run_json(command: list[str], *, cwd: Path) -> Any:
     executable = shutil.which(command[0])
     if executable is None:
@@ -196,7 +202,8 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     inventory = read_inventory(root / "docs/releases/dependency-inventory.md")
-    notices = read_notice_references(root / "docs/releases/THIRD_PARTY_NOTICES.md")
+    notice_path = root / "docs/releases/THIRD_PARTY_NOTICES.md"
+    notices = read_notice_references(notice_path)
     expected = {
         "Python": expected_python(root),
         "npm": expected_npm(root),
@@ -204,6 +211,12 @@ def main() -> int:
     }
 
     errors: list[str] = []
+    unknown_notice_placeholders = count_unknown_additional_notice_placeholders(notice_path)
+    if unknown_notice_placeholders:
+        errors.append(
+            f"Third-party notices contain {unknown_notice_placeholders} scanner-generated "
+            "`Additional notice: UNKNOWN` placeholder(s); replace them with verified source text."
+        )
     for ecosystem, packages in expected.items():
         missing_rows = missing_inventory_rows(ecosystem, packages, inventory)
         missing_notices = packages - notices[ecosystem]
