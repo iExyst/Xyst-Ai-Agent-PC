@@ -49,8 +49,10 @@ from mcp.types import (
     ImageContent,
     PaginatedRequestParams,
     Prompt,
+    PromptReference,
     ResourceLink,
     ResourceTemplate,
+    ResourceTemplateReference,
     ResourceUpdatedNotificationParams,
     TextContent,
     TextResourceContents,
@@ -84,6 +86,8 @@ MCP_RESULT_BYTES = 256 * 1024
 MCP_RESOURCE_COUNT_LIMIT = 256
 MCP_RESOURCE_FIELD_LIMIT = 2048
 MCP_PROMPT_ARGUMENT_LIMIT = 32
+MCP_COMPLETION_VALUE_LIMIT = 128
+MCP_COMPLETION_BYTES = 32 * 1024
 MCP_NOTIFICATION_LIMIT = 128
 MCP_ENV_PROFILE = "mcp:{}:{}"
 MCP_OAUTH_TOKENS_PROFILE = "mcp:{}:oauth-tokens"
@@ -721,6 +725,104 @@ class MCPManager:
             raise MCPConnectionError("The MCP prompt preview timed out.") from error
         except Exception as error:
             raise MCPConnectionError("The MCP prompt preview failed.") from error
+
+    async def complete_argument(
+        self,
+        server_id: str,
+        *,
+        kind: Literal["prompt", "resource_template"],
+        name: str,
+        argument_name: str,
+        value: str,
+        context_arguments: dict[str, str],
+    ) -> dict[str, Any]:
+        connection = self._connected.get(server_id)
+        if connection is None:
+            raise MCPConnectionError("Connect the MCP server before requesting completions.")
+        if not connection.client.server_capabilities.completions:
+            raise MCPConnectionError("This MCP server does not advertise completions.")
+        if not name or len(name) > MCP_RESOURCE_FIELD_LIMIT:
+            raise MCPConnectionError("The MCP completion reference is invalid or too long.")
+        if not argument_name or len(argument_name) > 128:
+            raise MCPConnectionError("The MCP completion argument name is invalid or too long.")
+        if len(value) > 8192 or len(value.encode("utf-8")) > 8192:
+            raise MCPConnectionError("The MCP completion prefix exceeds the 8 KiB limit.")
+        if len(context_arguments) > MCP_PROMPT_ARGUMENT_LIMIT:
+            raise MCPConnectionError("MCP completion accepts at most 32 context arguments.")
+        if any(
+            not key or len(key) > 128 or len(item) > 8192 for key, item in context_arguments.items()
+        ):
+            raise MCPConnectionError("MCP completion context arguments exceeded their limits.")
+        if (
+            sum(len(item.encode("utf-8")) for item in context_arguments.values())
+            > MCP_COMPLETION_BYTES
+        ):
+            raise MCPConnectionError("MCP completion context exceeds the 32 KiB limit.")
+        if kind == "prompt":
+            item = connection.prompts.get(name)
+            if item is None:
+                raise MCPConnectionError(
+                    "Request completions only for a prompt in the current connected catalog."
+                )
+            declared = {argument.name for argument in item.arguments or []}
+            reference: PromptReference | ResourceTemplateReference = PromptReference(name=name)
+        else:
+            item = connection.resource_templates.get(name)
+            if item is None:
+                raise MCPConnectionError(
+                    "Request completions only for a resource template in the current connected catalog."
+                )
+            declared = set(URITemplate(item.uri_template).variable_names)
+            reference = ResourceTemplateReference(uri=item.uri_template)
+        if argument_name not in declared or set(context_arguments) - (declared - {argument_name}):
+            raise MCPConnectionError("MCP completion arguments must match the current reference.")
+        try:
+            async with connection.lock:
+                catalog_item = (
+                    connection.prompts.get(name)
+                    if kind == "prompt"
+                    else connection.resource_templates.get(name)
+                )
+                if catalog_item is not item:
+                    raise MCPConnectionError(
+                        "The MCP completion reference changed during the owner request."
+                    )
+                async with asyncio.timeout(MCP_CALL_TIMEOUT):
+                    result = await connection.client.complete(
+                        reference,
+                        {"name": argument_name, "value": value},
+                        context_arguments or None,
+                    )
+            completion = result.completion
+            if len(completion.values) > MCP_COMPLETION_VALUE_LIMIT:
+                raise MCPConnectionError("The MCP server returned too many completion values.")
+            values: list[str] = []
+            total = 0
+            for suggestion in completion.values:
+                if len(suggestion) > 8192:
+                    raise MCPConnectionError("The MCP server returned an invalid completion value.")
+                total += len(suggestion.encode("utf-8"))
+                if total > MCP_COMPLETION_BYTES:
+                    raise MCPConnectionError("The MCP completions exceeded the 32 KiB limit.")
+                values.append(suggestion)
+            payload = {
+                "trust": "untrusted_mcp_output",
+                "values": values,
+                "total": completion.total,
+                "has_more": completion.has_more,
+            }
+            if (
+                len(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+                > MCP_COMPLETION_BYTES
+            ):
+                raise MCPConnectionError("The MCP completions exceeded the 32 KiB limit.")
+            return payload
+        except MCPConnectionError:
+            raise
+        except TimeoutError as error:
+            raise MCPConnectionError("The MCP completion request timed out.") from error
+        except Exception as error:
+            raise MCPConnectionError("The MCP completion request failed.") from error
 
     async def list_resources(self, server_id: str) -> list[dict[str, Any]]:
         connection = self._connected.get(server_id)

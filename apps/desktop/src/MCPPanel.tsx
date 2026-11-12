@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { EngineClient, MCPPrompt, MCPPromptPreview, MCPResource, MCPResourceNotification, MCPResourceRead, MCPResourceTemplate, MCPServer, MCPTool } from './api/client.ts';
+import type { EngineClient, MCPArgumentCompletions, MCPPrompt, MCPPromptPreview, MCPResource, MCPResourceNotification, MCPResourceRead, MCPResourceTemplate, MCPServer, MCPTool } from './api/client.ts';
 
 type Props = {
   client: EngineClient;
@@ -38,6 +38,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const [promptCatalogs, setPromptCatalogs] = useState<Record<string,MCPPrompt[]>>({});
   const [promptArguments, setPromptArguments] = useState<Record<string,string>>({});
   const [promptPreviews, setPromptPreviews] = useState<Record<string,MCPPromptPreview>>({});
+  const [completionPrefixes, setCompletionPrefixes] = useState<Record<string,string>>({});
+  const [argumentCompletions, setArgumentCompletions] = useState<Record<string,MCPArgumentCompletions>>({});
   const [resourceSubscriptions, setResourceSubscriptions] = useState<Record<string,boolean>>({});
   const [resourceNotifications, setResourceNotifications] = useState<Record<string,MCPResourceNotification[]>>({});
 
@@ -147,6 +149,32 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
         {template.description&&<p>{template.description}</p>}
         <p>Variables: {template.variables.join(', ')||'none'}</p>
         <label>Arguments JSON<textarea rows={3} aria-label={`Arguments JSON for resource template ${template.name}`} value={resourceTemplateArguments[`${server.id}:${template.name}`]??'{}'} onChange={event=>setResourceTemplateArguments(prev=>({...prev,[`${server.id}:${template.name}`]:event.target.value}))}/></label>
+        {template.variables.map(variable=>{
+          const completionKey=`${server.id}:resource:${template.name}:${variable}`;
+          const completion=argumentCompletions[completionKey];
+          return <div key={variable}>
+            <label>Completion prefix for resource template {variable}<input value={completionPrefixes[completionKey]??''} onChange={event=>setCompletionPrefixes(prev=>({...prev,[completionKey]:event.target.value}))}/></label>
+            <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{
+              const parsed:unknown=JSON.parse(resourceTemplateArguments[`${server.id}:${template.name}`]??'{}');
+              if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Resource template arguments must be a JSON object with text values.');
+              const contextArguments=Object.fromEntries(Object.entries(parsed as Record<string,string>).filter(([name])=>name!==variable));
+              const result=await client.completeMCPArgument(server.id,'resource_template',template.name,variable,completionPrefixes[completionKey]??'',contextArguments);
+              setArgumentCompletions(prev=>({...prev,[completionKey]:result}));
+            })}>Suggest resource variable {variable}</button>
+            {completion&&<aside aria-label={`Untrusted MCP completion suggestions for resource template ${template.name} ${variable}`}>
+              <strong>Untrusted MCP completion suggestions</strong>
+              <ul>{completion.values.map((suggestion,index)=><li key={`${index}:${suggestion}`}>
+                <span>{suggestion}</span>{' '}
+                <button type="button" disabled={busy} onClick={()=>setResourceTemplateArguments(prev=>{
+                  let current:Record<string,string>={};
+                  try { const value:unknown=JSON.parse(prev[`${server.id}:${template.name}`]??'{}'); if(typeof value==='object'&&value!==null&&!Array.isArray(value)&&Object.values(value).every(item=>typeof item==='string'))current=value as Record<string,string>; } catch { /* Keep malformed text for the owner's review. */ }
+                  return {...prev,[`${server.id}:${template.name}`]:JSON.stringify({...current,[variable]:suggestion})};
+                })}>Use suggestion</button>
+              </li>)}</ul>
+              {completion.has_more&&<p>More suggestions are available from this server.</p>}
+            </aside>}
+          </div>;
+        })}
         <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const parsed:unknown=JSON.parse(resourceTemplateArguments[`${server.id}:${template.name}`]??'{}');if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Resource template arguments must be a JSON object with text values.');const result=await client.readMCPResourceTemplate(server.id,template.name,parsed as Record<string,string>);setResourceReads(prev=>({...prev,[server.id]:result}));})}>Read template resource</button>
       </div>)}
       {resourceReads[server.id]&&<aside aria-label="Untrusted MCP resource data">
@@ -161,6 +189,31 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
           {prompt.description&&<p>{prompt.description}</p>}
           {prompt.arguments.length>0&&<p>Arguments: {prompt.arguments.map(argument=>`${argument.name}${argument.required?' (required)':''}`).join(', ')}</p>}
           <label>Arguments JSON<textarea rows={3} aria-label={`Arguments JSON for ${prompt.name}`} value={promptArguments[key]??'{}'} onChange={event=>setPromptArguments(prev=>({...prev,[key]:event.target.value}))}/></label>
+          {prompt.arguments.map(argument=>{
+            const completionKey=`${key}:${argument.name}`;
+            return <div key={argument.name}>
+              <label>Completion prefix for {argument.name}<input value={completionPrefixes[completionKey]??''} onChange={event=>setCompletionPrefixes(prev=>({...prev,[completionKey]:event.target.value}))}/></label>
+              <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{
+                const parsed:unknown=JSON.parse(promptArguments[key]??'{}');
+                if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Prompt arguments must be a JSON object with text values.');
+                const contextArguments=Object.fromEntries(Object.entries(parsed as Record<string,string>).filter(([name])=>name!==argument.name));
+                const result=await client.completeMCPArgument(server.id,'prompt',prompt.name,argument.name,completionPrefixes[completionKey]??'',contextArguments);
+                setArgumentCompletions(prev=>({...prev,[completionKey]:result}));
+              })}>Suggest {argument.name}</button>
+              {argumentCompletions[completionKey]&&<aside aria-label={`Untrusted MCP completion suggestions for ${argument.name}`}>
+                <strong>Untrusted MCP completion suggestions</strong>
+                <ul>{argumentCompletions[completionKey]!.values.map((suggestion,index)=><li key={`${index}:${suggestion}`}>
+                  <span>{suggestion}</span>{' '}
+                  <button type="button" disabled={busy} onClick={()=>setPromptArguments(prev=>{
+                    let current:Record<string,string>={};
+                    try { const parsed:unknown=JSON.parse(prev[key]??'{}'); if(typeof parsed==='object'&&parsed!==null&&!Array.isArray(parsed)&&Object.values(parsed).every(value=>typeof value==='string'))current=parsed as Record<string,string>; } catch { /* Keep malformed text for the owner's review. */ }
+                    return {...prev,[key]:JSON.stringify({...current,[argument.name]:suggestion})};
+                  })}>Use suggestion</button>
+                </li>)}</ul>
+                {argumentCompletions[completionKey]!.has_more&&<p>More suggestions are available from this server.</p>}
+              </aside>}
+            </div>;
+          })}
           <button type="button" disabled={busy||server.state!=='connected'} onClick={()=>void act(async()=>{const parsed:unknown=JSON.parse(promptArguments[key]??'{}');if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)||Object.values(parsed).some(value=>typeof value!=='string'))throw new Error('Prompt arguments must be a JSON object with text values.');const preview=await client.previewMCPPrompt(server.id,prompt.name,parsed as Record<string,string>);setPromptPreviews(prev=>({...prev,[key]:preview}));})}>Preview prompt</button>
           {promptPreviews[key]&&<aside aria-label="Untrusted MCP prompt preview"><strong>Untrusted MCP prompt preview</strong><pre>{JSON.stringify(promptPreviews[key],null,2)}</pre>
             {promptPreviews[key]!.messages.length>0&&promptPreviews[key]!.messages.every(message=>message.content.kind==='text'&&typeof message.content.text==='string')

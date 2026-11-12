@@ -15,6 +15,13 @@ import pytest
 import uvicorn
 import xaa.runtime.mcp_manager as mcp_manager_module
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import (
+    Completion,
+    CompletionArgument,
+    CompletionContext,
+    PromptReference,
+    ResourceTemplateReference,
+)
 from pydantic import ValidationError
 from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
@@ -270,6 +277,22 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(
         """Return a deterministic Streamable HTTP prompt."""
         return f"HTTP prompt topic: {topic}"
 
+    @mcp.completion()
+    async def complete_argument(
+        ref: PromptReference | ResourceTemplateReference,
+        argument: CompletionArgument,
+        context: CompletionContext | None,
+    ) -> Completion:
+        """Return deterministic HTTP suggestions for advertised argument references."""
+        if isinstance(ref, PromptReference) and ref.name == "summarize_topic":
+            return Completion(values=[f"{argument.value}-http"], total=1, has_more=False)
+        if (
+            isinstance(ref, ResourceTemplateReference)
+            and ref.uri == "xaa://http-fixture/items/{item_id}"
+        ):
+            return Completion(values=[f"{argument.value}-http-item"], total=1, has_more=False)
+        return Completion(values=[], total=0, has_more=False)
+
     app = mcp.streamable_http_app()
     captured_auth: list[str | None] = []
     captured_custom: list[str | None] = []
@@ -381,6 +404,20 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(
                 }
             ],
         }
+        template_completion = await manager.complete_argument(
+            record.id,
+            kind="resource_template",
+            name="item",
+            argument_name="item_id",
+            value="sample",
+            context_arguments={},
+        )
+        assert template_completion == {
+            "trust": "untrusted_mcp_output",
+            "values": ["sample-http-item"],
+            "total": 1,
+            "has_more": False,
+        }
         encoded_template_read = await manager.read_resource_template(
             record.id, "item", {"item_id": "two words"}
         )
@@ -405,6 +442,20 @@ async def test_streamable_http_discovery_auth_call_and_disconnect(
         prompt_preview = await manager.preview_prompt(
             record.id, "summarize_topic", {"topic": "local fixture"}
         )
+        prompt_completion = await manager.complete_argument(
+            record.id,
+            kind="prompt",
+            name="summarize_topic",
+            argument_name="topic",
+            value="local",
+            context_arguments={},
+        )
+        assert prompt_completion == {
+            "trust": "untrusted_mcp_output",
+            "values": ["local-http"],
+            "total": 1,
+            "has_more": False,
+        }
         assert prompt_preview["trust"] == "untrusted_mcp_output"
         assert (
             prompt_preview["messages"][0]["content"]["text"] == "HTTP prompt topic: local fixture"

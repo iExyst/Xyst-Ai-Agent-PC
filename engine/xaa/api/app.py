@@ -326,6 +326,33 @@ class MCPPromptPreviewRequest(BaseModel):
         return arguments
 
 
+class MCPArgumentCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["prompt", "resource_template"]
+    name: str = Field(min_length=1, max_length=2048)
+    argument_name: str = Field(min_length=1, max_length=128)
+    value: str = Field(max_length=8192)
+    context_arguments: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("context_arguments")
+    @classmethod
+    def validate_context_arguments(cls, arguments: dict[str, str]) -> dict[str, str]:
+        if len(arguments) > 32:
+            raise ValueError("MCP completion accepts at most 32 context arguments.")
+        if any(not key or len(key) > 128 or len(value) > 8192 for key, value in arguments.items()):
+            raise ValueError("MCP completion context arguments exceeded their limits.")
+        if sum(len(value.encode("utf-8")) for value in arguments.values()) > 32 * 1024:
+            raise ValueError("MCP completion context exceeds the 32 KiB limit.")
+        return arguments
+
+    @field_validator("value")
+    @classmethod
+    def validate_value_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 8192:
+            raise ValueError("MCP completion prefix exceeds the 8 KiB limit.")
+        return value
+
+
 class MCPToolResponse(BaseModel):
     server_id: str
     name: str
@@ -1306,6 +1333,26 @@ def create_app(
             raise HTTPException(status_code=404, detail="MCP server not found.")
         try:
             return await mcp_manager.preview_prompt(server_id, payload.name, payload.arguments)
+        except MCPConnectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/servers/{server_id}/completions")
+    async def complete_mcp_argument(
+        server_id: str,
+        payload: MCPArgumentCompletionRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if MCPRegistry(run_store).get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+        try:
+            return await mcp_manager.complete_argument(
+                server_id,
+                kind=payload.kind,
+                name=payload.name,
+                argument_name=payload.argument_name,
+                value=payload.value,
+                context_arguments=payload.context_arguments,
+            )
         except MCPConnectionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

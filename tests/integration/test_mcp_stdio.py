@@ -209,6 +209,79 @@ async def test_mcp_typescript_sdk_modern_stdio_interoperability(workspace_tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_mcp_argument_completions_are_bounded_catalog_scoped_and_untrusted(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "mcp-completions.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(name="Completion fixture", command=sys.executable, args=[str(FIXTURE)])
+    )
+    manager = MCPManager(store, None)
+    try:
+        await manager.connect_server(server.id)
+        await manager.list_prompts(server.id)
+        prompt = await manager.complete_argument(
+            server.id,
+            kind="prompt",
+            name="summarize_topic",
+            argument_name="topic",
+            value="codex",
+            context_arguments={},
+        )
+        assert prompt == {
+            "trust": "untrusted_mcp_output",
+            "values": ["codex-suggested", "second suggestion"],
+            "total": 2,
+            "has_more": False,
+        }
+        await manager.list_resource_templates(server.id)
+        template = await manager.complete_argument(
+            server.id,
+            kind="resource_template",
+            name="item",
+            argument_name="item_id",
+            value="fixture",
+            context_arguments={},
+        )
+        assert template == {
+            "trust": "untrusted_mcp_output",
+            "values": ["fixture-item"],
+            "total": 1,
+            "has_more": False,
+        }
+        with pytest.raises(MCPConnectionError, match="current connected catalog"):
+            await manager.complete_argument(
+                server.id,
+                kind="prompt",
+                name="not_advertised",
+                argument_name="topic",
+                value="",
+                context_arguments={},
+            )
+        with pytest.raises(MCPConnectionError, match="current reference"):
+            await manager.complete_argument(
+                server.id,
+                kind="prompt",
+                name="summarize_topic",
+                argument_name="not_declared",
+                value="",
+                context_arguments={},
+            )
+        with pytest.raises(MCPConnectionError, match="8 KiB"):
+            await manager.complete_argument(
+                server.id,
+                kind="prompt",
+                name="summarize_topic",
+                argument_name="topic",
+                value="x" * 8193,
+                context_arguments={},
+            )
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
     workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1609,6 +1682,49 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
                 "arguments": [{"name": "topic", "description": None, "required": True}],
             }
         ]
+        assert client.post(f"/mcp/servers/{server_id}/completions").status_code == 401
+        completion = client.post(
+            f"/mcp/servers/{server_id}/completions",
+            headers=headers,
+            json={
+                "kind": "prompt",
+                "name": "summarize_topic",
+                "argument_name": "topic",
+                "value": "api",
+                "context_arguments": {},
+            },
+        )
+        assert completion.status_code == 200
+        assert completion.json() == {
+            "trust": "untrusted_mcp_output",
+            "values": ["api-suggested", "second suggestion"],
+            "total": 2,
+            "has_more": False,
+        }
+        invalid_completion = client.post(
+            f"/mcp/servers/{server_id}/completions",
+            headers=headers,
+            json={
+                "kind": "prompt",
+                "name": "summarize_topic",
+                "argument_name": "not_declared",
+                "value": "",
+                "context_arguments": {},
+            },
+        )
+        assert invalid_completion.status_code == 400
+        overlong_completion = client.post(
+            f"/mcp/servers/{server_id}/completions",
+            headers=headers,
+            json={
+                "kind": "prompt",
+                "name": "summarize_topic",
+                "argument_name": "topic",
+                "value": "x" * 8193,
+                "context_arguments": {},
+            },
+        )
+        assert overlong_completion.status_code == 422
         missing_argument = client.post(
             f"/mcp/servers/{server_id}/prompts/preview",
             headers=headers,
