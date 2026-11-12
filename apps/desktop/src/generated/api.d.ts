@@ -2398,7 +2398,7 @@ export interface components {
              * @default observe
              * @enum {string}
              */
-            mode: "observe" | "workspace" | "authorized_automation";
+            mode: "observe" | "workspace";
             /** Model */
             model?: string | null;
             /** Objective */
@@ -2440,6 +2440,12 @@ export interface components {
              * @enum {string}
              */
             missed_run_policy: "skip" | "run_once";
+            /**
+             * Mode
+             * @default observe
+             * @enum {string}
+             */
+            mode: "observe" | "authorized_automation";
             /** Model */
             model: string;
             /** Objective */
@@ -3618,6 +3624,11 @@ export interface components {
             id: string;
             /** Missed Run Policy */
             missed_run_policy: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "authorized_automation";
             /** Objective */
             objective: string;
             /** Overlap Policy */

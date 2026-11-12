@@ -5,6 +5,7 @@ from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore, utc_now
+from xaa.storage.schedules import ScheduleStore, parse_local_time
 from xaa.storage.tasks import TaskStore
 
 
@@ -713,5 +714,30 @@ def test_schema_thirty_two_adds_mcp_network_isolation_disabled_for_existing_serv
     saved = MCPRegistry(migrated).get_server(server.id)
     assert saved is not None
     assert saved.network_isolation is False
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_thirty_three_adds_schedule_mode_as_observe(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-thirty-three-schedule-mode.sqlite3"
+    store = RunStore(database)
+    schedule = ScheduleStore(store).create(
+        objective="Existing schedule",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2030-01-02T12:00"),
+        frequency="daily",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE schedules DROP COLUMN mode")
+        connection.execute("PRAGMA user_version=33")
+
+    migrated = RunStore(database)
+    assert ScheduleStore(migrated).get(schedule["id"])["mode"] == "observe"
     with migrated.connection() as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

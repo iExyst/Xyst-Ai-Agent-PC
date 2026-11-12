@@ -19,6 +19,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [frequency,setFrequency]=useState<'once'|'daily'|'weekly'>('once');
   const [timezone,setTimezone]=useState(()=>Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC');
   const [missedRunPolicy,setMissedRunPolicy]=useState<'skip'|'run_once'>('skip');
+  const [authorizedWorkspaceWrites,setAuthorizedWorkspaceWrites]=useState(false);
   const [quietStart,setQuietStart]=useState('');
   const [quietEnd,setQuietEnd]=useState('');
   const [telegramUsers,setTelegramUsers]=useState<string[]>([]);
@@ -53,8 +54,8 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       if(Boolean(quietStart)!==Boolean(quietEnd))throw new Error('Set both quiet-hours times or leave both empty.');
       if(quietStart&&quietStart===quietEnd)throw new Error('Quiet hours must have different start and end times.');
       const quietHours=quietStart&&quietEnd?`${quietStart}-${quietEnd}`:undefined;
-      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{}),...(telegramFailureUser?{telegram_failure_user_id:telegramFailureUser}:{})});
-      setItems(current=>[schedule,...current]);setObjective('');
+      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,mode:authorizedWorkspaceWrites?'authorized_automation':'observe',model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{}),...(telegramFailureUser?{telegram_failure_user_id:telegramFailureUser}:{})});
+      setItems(current=>[schedule,...current]);setObjective('');setAuthorizedWorkspaceWrites(false);
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the schedule.');}
     finally {setBusy(false);}
   }
@@ -90,9 +91,11 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
 
   return <section aria-labelledby="automations-title">
     <h2 id="automations-title">Automations</h2>
-    <p>Scheduled objectives run in Observe mode through the same coordinator and appear in run history. They do not make workspace changes. Telegram delivery is optional and authorizes a result message and, separately, a failure notice to the linked private accounts you select.</p>
+    <p>Scheduled objectives run through the same coordinator and appear in run history. They default to read-only Observe mode. You can separately authorize recurring file changes in the selected workspace; this does not grant shell commands, browser writes or MCP write tools. Telegram delivery is optional and authorizes a result message and, separately, a failure notice to the linked private accounts you select.</p>
     <label htmlFor="schedule-objective">Scheduled objective</label>
     <textarea id="schedule-objective" value={objective} onChange={event=>setObjective(event.target.value)} maxLength={10000} disabled={busy}/>
+    <label className="procedure-permission"><input type="checkbox" checked={authorizedWorkspaceWrites} disabled={busy||!workspace} onChange={event=>setAuthorizedWorkspaceWrites(event.target.checked)}/>Authorize recurring file changes in this workspace</label>
+    <p>This grants scheduled runs file creation, edits, and reviewed deletions within the selected workspace. It does not grant command execution or writes to web sites, channels, or MCP servers. Leave this off for read-only schedules.</p>
     <label htmlFor="schedule-start">First occurrence (local time)</label>
     <input id="schedule-start" type="datetime-local" value={startAt} onChange={event=>setStartAt(event.target.value)} disabled={busy}/>
     <label htmlFor="schedule-timezone">Timezone (IANA)</label>
@@ -123,6 +126,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <button type="button" onClick={()=>void create()} disabled={busy||!objective.trim()||!model||!startAt||!timezone.trim()}>Create schedule</button>
     {items.length>0&&<ul>{items.map(item=><li key={item.id}>
       <p>{item.objective}</p>
+      <p>Execution mode: {item.mode==='authorized_automation'?'Authorized automation (workspace file changes permitted)':'Observe (read-only)'}</p>
       <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''}{item.delivery_destination?` · Telegram result user ${item.delivery_destination.split(':')[2]}`:''}{item.failure_notification_destination?` · Telegram failure user ${item.failure_notification_destination.split(':')[2]}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
       {editingRecipients?.scheduleId===item.id?<div className="controls">

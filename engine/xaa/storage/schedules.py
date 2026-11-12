@@ -96,11 +96,14 @@ class ScheduleStore:
         missed_run_policy: Literal["skip", "run_once"],
         max_iterations: int,
         max_seconds: int,
+        mode: Literal["observe", "authorized_automation"] = "observe",
         delivery_destination: str | None = None,
         failure_notification_destination: str | None = None,
         quiet_hours: str | None = None,
     ) -> dict[str, Any]:
         ZoneInfo(timezone)
+        if mode == "authorized_automation" and not workspace:
+            raise ValueError("Authorized automation requires an explicitly selected workspace.")
         quiet_hours = validate_quiet_hours(quiet_hours)
         if local_instant(start_at, timezone) is None:
             raise ValueError("This local time does not exist because of a daylight-saving change.")
@@ -117,11 +120,12 @@ class ScheduleStore:
         }
         with self.runs.connection() as connection:
             connection.execute(
-                "INSERT INTO schedules (id,objective,recurrence,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,failure_notification_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,'skip',?,?,?,1,?,?)",
+                "INSERT INTO schedules (id,objective,recurrence,mode,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,failure_notification_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,'skip',?,?,?,1,?,?)",
                 (
                     identity,
                     objective,
                     json.dumps(recurrence),
+                    mode,
                     timezone,
                     missed_run_policy,
                     quiet_hours,
@@ -292,7 +296,7 @@ class ScheduleStore:
                     str(schedule["objective"]),
                     json.dumps(recurrence["acceptance_criteria"]),
                     recurrence.get("workspace"),
-                    "observe",
+                    str(schedule["mode"]),
                     recurrence["model"],
                     RunState.QUEUED.value,
                     now,

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from uuid import uuid4
 
+from xaa.runtime.permissions import workspace_write_authorized
 from xaa.runtime.task_graph import TaskDefinition, TaskGraph, TaskStatus
 from xaa.storage.mcp import MCPRegistry
 from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
@@ -436,7 +437,7 @@ class TaskStore:
             for tool in MCPRegistry(self.runs).list_tools()
             if tool.permission == "read"
         )
-        if run["mode"] == "workspace":
+        if workspace_write_authorized(run):
             permissions.add("workspace.write")
             if run.get("command_grant") is not None:
                 permissions.add("workspace.command")

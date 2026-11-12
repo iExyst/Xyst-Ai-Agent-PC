@@ -32,6 +32,45 @@ def test_workspace_read_is_bounded_journaled_and_not_replayed(workspace_tmp_path
         )
 
 
+def test_authorized_automation_can_write_only_to_its_selected_workspace(workspace_tmp_path):
+    root = workspace_tmp_path / "project"
+    root.mkdir()
+    store = RunStore(workspace_tmp_path / "runs.sqlite3")
+    observe_id = store.create_run(
+        objective="Observe", acceptance_criteria=[], workspace=str(root), mode="observe", model=None
+    )["id"]
+    observe_token = store.acquire_lease(observe_id, "observe-worker")
+    assert observe_token
+    with pytest.raises(PermissionError):
+        WorkspaceExecutor(store).create_file(
+            observe_id,
+            observe_token,
+            "observe-create",
+            {"path": "denied.txt", "content": "no"},
+            idempotency_key="observe-create",
+        )
+    assert not (root / "denied.txt").exists()
+
+    authorized_id = store.create_run(
+        objective="Automate",
+        acceptance_criteria=[],
+        workspace=str(root),
+        mode="authorized_automation",
+        model=None,
+    )["id"]
+    authorized_token = store.acquire_lease(authorized_id, "automation-worker")
+    assert authorized_token
+    result = WorkspaceExecutor(store).create_file(
+        authorized_id,
+        authorized_token,
+        "automation-create",
+        {"path": "notes.txt", "content": "scheduled update"},
+        idempotency_key="automation-create",
+    )
+    assert result["created"] is True
+    assert (root / "notes.txt").read_text(encoding="utf-8") == "scheduled update"
+
+
 def test_opened_destination_is_checked_before_reading(workspace_tmp_path, monkeypatch):
     root = workspace_tmp_path / "project"
     root.mkdir()

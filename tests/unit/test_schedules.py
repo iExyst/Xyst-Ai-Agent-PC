@@ -448,6 +448,7 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
         record = created.json()
         assert record["recurrence"]["frequency"] == "weekly"
         assert record["recurrence"]["workspace"] == str(workspace_tmp_path.resolve())
+        assert record["mode"] == "observe"
         assert record["missed_run_policy"] == "run_once"
         assert record["delivery_destination"] is None
         with_quiet_hours = client.post(
@@ -522,7 +523,59 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
         assert record["id"] in {
             item["id"] for item in client.get("/schedules", headers=HEADERS).json()
         }
+        authorized = client.post(
+            "/schedules",
+            headers=HEADERS,
+            json={**payload, "mode": "authorized_automation"},
+        )
+        assert authorized.status_code == 201, authorized.text
+        assert authorized.json()["mode"] == "authorized_automation"
+        assert (
+            client.post(
+                "/schedules",
+                headers=HEADERS,
+                json={**payload, "workspace": None, "mode": "authorized_automation"},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/runs",
+                headers=HEADERS,
+                json={"objective": "No schedule grant", "mode": "authorized_automation"},
+            ).status_code
+            == 422
+        )
         bad_workspace = {**payload, "workspace": str(workspace_tmp_path / "missing")}
         assert client.post("/schedules", headers=HEADERS, json=bad_workspace).status_code == 409
         bad_model = {**payload, "model": "other/model"}
         assert client.post("/schedules", headers=HEADERS, json=bad_model).status_code == 409
+
+
+def test_authorized_schedule_occurrence_preserves_file_only_grant(workspace_tmp_path: Path) -> None:
+    store = RunStore(workspace_tmp_path / "authorized-schedule.sqlite3")
+    workspace = workspace_tmp_path / "project"
+    workspace.mkdir()
+    schedule = ScheduleStore(store).create(
+        objective="Update the project notes",
+        acceptance_criteria=[],
+        workspace=str(workspace),
+        model="fixture/model",
+        start_at=parse_local_time("2030-01-02T12:00"),
+        frequency="once",
+        timezone="UTC",
+        missed_run_policy="run_once",
+        max_iterations=4,
+        max_seconds=60,
+        mode="authorized_automation",
+    )
+    submitted: list[str] = []
+    service = ScheduleService(store, submitted.append)
+    created_runs = service.tick(datetime(2030, 1, 2, 12, 0, tzinfo=UTC))
+    assert len(created_runs) == 1
+    run = store.get_run(created_runs[0])
+    assert run is not None
+    assert run["mode"] == "authorized_automation"
+    assert run["workspace"] == str(workspace)
+    assert submitted == created_runs
+    assert ScheduleStore(store).get(schedule["id"])["mode"] == "authorized_automation"

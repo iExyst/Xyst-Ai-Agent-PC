@@ -25,7 +25,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
     if(path==='/channels/telegram/linked-users')return route.fulfill({json:{bot_account_id:activeBotId,users:linkedUsers.map(user_id=>({user_id}))},headers});
     if(path==='/schedules'&&request.method()==='POST'){
       const body=request.postDataJSON();requests.push(body);
-      const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:body.quiet_hours??null,delivery_destination:body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null,failure_notification_destination:body.telegram_failure_user_id?'telegram:bot-42:'+body.telegram_failure_user_id:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[{id:'execution-1',occurrence_id:'schedule-1:2026-11-05T12:00',run_id:'run-1',state:'completed',delivery_evidence:'retrying',delivery_destination:'telegram:bot-42:'+body.telegram_user_id,delivery_attempt_count:2,delivery_next_attempt_at:'2026-11-05T12:00:10+00:00',created_at:'2026-11-05T12:00:00Z',completed_at:'2026-11-05T12:00:01Z'},{id:'execution-2',occurrence_id:'schedule-1:2026-11-06T12:00',run_id:'run-2',state:'completed',delivery_evidence:'unknown',delivery_destination:'telegram:bot-42:'+body.telegram_failure_user_id,delivery_attempt_count:2,delivery_next_attempt_at:null,created_at:'2026-11-06T12:00:00Z',completed_at:'2026-11-06T12:00:01Z'}]};
+      const saved={id:'schedule-1',objective:body.objective,recurrence:{frequency:body.frequency,next_at:body.start_at,workspace:body.workspace,model:body.model},mode:body.mode,timezone:body.timezone,missed_run_policy:body.missed_run_policy,overlap_policy:'skip',quiet_hours:body.quiet_hours??null,delivery_destination:body.telegram_user_id?'telegram:bot-42:'+body.telegram_user_id:null,failure_notification_destination:body.telegram_failure_user_id?'telegram:bot-42:'+body.telegram_failure_user_id:null,enabled:true,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',executions:[{id:'execution-1',occurrence_id:'schedule-1:2026-11-05T12:00',run_id:'run-1',state:'completed',delivery_evidence:'retrying',delivery_destination:'telegram:bot-42:'+body.telegram_user_id,delivery_attempt_count:2,delivery_next_attempt_at:'2026-11-05T12:00:10+00:00',created_at:'2026-11-05T12:00:00Z',completed_at:'2026-11-05T12:00:01Z'},{id:'execution-2',occurrence_id:'schedule-1:2026-11-06T12:00',run_id:'run-2',state:'completed',delivery_evidence:'unknown',delivery_destination:'telegram:bot-42:'+body.telegram_failure_user_id,delivery_attempt_count:2,delivery_next_attempt_at:null,created_at:'2026-11-06T12:00:00Z',completed_at:'2026-11-06T12:00:01Z'}]};
       schedules.unshift(saved);return route.fulfill({status:201,json:saved,headers});
     }
     if(path==='/schedules/schedule-1/executions/execution-2/delivery/reconcile'&&request.method()==='POST'){
@@ -49,10 +49,12 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await selectLocalModel(page,'fixture/model');
+  await page.getByLabel('Workspace path').fill('C:\\fixture-project');
   await navigateMainSection(page,'Tools & integrations');
   await page.locator('summary').filter({hasText:'Automations'}).click();
   const panel=page.getByRole('region',{name:'Automations',exact:true});
   await panel.getByLabel('Scheduled objective',{exact:true}).fill('Review repository health');
+  await panel.getByLabel('Authorize recurring file changes in this workspace',{exact:true}).check();
   await panel.getByLabel('Repeat',{exact:true}).selectOption('weekly');
   await panel.getByLabel('If the engine was closed at the scheduled time',{exact:true}).selectOption('run_once');
   await panel.getByLabel('Telegram quiet hours start (optional, local schedule time)',{exact:true}).fill('22:00');
@@ -61,6 +63,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByLabel('Telegram failure notification destination (optional)',{exact:true}).selectOption('654321');
   await panel.getByRole('button',{name:'Create schedule',exact:true}).click();
   await expect(panel.getByText('Review repository health',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Execution mode: Authorized automation (workspace file changes permitted)',{exact:true})).toBeVisible();
   await expect(panel.getByText(/Telegram result user 123456 · Telegram failure user 654321/)).toBeVisible();
   await panel.getByText('Execution history',{exact:true}).click();
   await expect(panel.getByText(/send attempts 2\/3 · retry after 2026-11-05T12:00:10\+00:00/)).toBeVisible();
@@ -77,7 +80,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
   expect(requests).toHaveLength(2);
   const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
-  expect(requests[0]).toMatchObject({objective:'Review repository health',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456',telegram_failure_user_id:'654321',quiet_hours:'22:00-07:00'});
+  expect(requests[0]).toMatchObject({objective:'Review repository health',workspace:'C:\\fixture-project',mode:'authorized_automation',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456',telegram_failure_user_id:'654321',quiet_hours:'22:00-07:00'});
   expect(requests[1]).toEqual({telegram_user_id:'654321',telegram_failure_user_id:'123456'});
   linkedUsers.splice(0,1);
   await panel.getByRole('button',{name:'Refresh schedules',exact:true}).click();

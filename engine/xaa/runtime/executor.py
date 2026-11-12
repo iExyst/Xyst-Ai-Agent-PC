@@ -21,6 +21,7 @@ from xaa.runtime.file_handles import (
     resolve_read_path,
     stat_read_path,
 )
+from xaa.runtime.permissions import workspace_write_authorized
 from xaa.runtime.unified_patch import apply_unified_patch
 from xaa.storage.runs import RunStore, has_completed_workspace_read
 
@@ -184,7 +185,7 @@ class WorkspaceExecutor:
         run = self.store.get_run(run_id)
         if run is None:
             raise KeyError(run_id)
-        if run["mode"] != "workspace" or not run["workspace"]:
+        if not workspace_write_authorized(run):
             return {}
         root = Path(run["workspace"]).resolve(strict=True)
         outcomes: dict[str, str] = {}
@@ -296,7 +297,7 @@ class WorkspaceExecutor:
         run = self.store.get_run(run_id)
         if run is None:
             raise KeyError(run_id)
-        if run["mode"] != "workspace" or not run["workspace"]:
+        if not workspace_write_authorized(run):
             raise PermissionError("Workspace-write reconciliation requires the selected workspace.")
         call = next(
             (item for item in self.store.unresolved_tool_calls(run_id) if item["id"] == call_id),
@@ -391,8 +392,8 @@ class WorkspaceExecutor:
     ) -> dict[str, Any]:
         parsed = DeleteFileArguments.model_validate(arguments)
         run = self.store.get_run(run_id)
-        if run is None or run["mode"] != "workspace" or not run["workspace"]:
-            raise PermissionError("Reviewed deletion requires a selected workspace-mode run.")
+        if run is None or not workspace_write_authorized(run):
+            raise PermissionError("Reviewed deletion requires an authorized workspace run.")
         root = Path(run["workspace"]).resolve(strict=True)
         requested = Path(parsed.path)
         if requested.is_absolute():
@@ -470,8 +471,8 @@ class WorkspaceExecutor:
             raise ValueError("File creation exceeds the 64 KiB byte limit.")
         parts = creation_parts(parsed.path)
         run = self.store.get_run(run_id)
-        if run is None or run["mode"] != "workspace" or not run["workspace"]:
-            raise PermissionError("File creation requires a selected workspace-mode run.")
+        if run is None or not workspace_write_authorized(run):
+            raise PermissionError("File creation requires an authorized workspace run.")
         root = Path(run["workspace"]).resolve(strict=True)
         if not self.store.record_tool_intent(
             run_id,
@@ -527,8 +528,8 @@ class WorkspaceExecutor:
     ) -> dict[str, Any]:
         parsed = ReplaceTextArguments.model_validate(arguments)
         run = self.store.get_run(run_id)
-        if run is None or run["mode"] != "workspace":
-            raise PermissionError("Text replacement requires workspace mode.")
+        if run is None or not workspace_write_authorized(run):
+            raise PermissionError("Text replacement requires an authorized workspace run.")
 
         def reject(code: str, message: str) -> ToolPreconditionError:
             if not self.store.record_tool_intent(
@@ -585,8 +586,8 @@ class WorkspaceExecutor:
     ) -> dict[str, Any]:
         parsed = ApplyPatchArguments.model_validate(arguments)
         run = self.store.get_run(run_id)
-        if run is None or run["mode"] != "workspace":
-            raise PermissionError("Patch application requires workspace mode.")
+        if run is None or not workspace_write_authorized(run):
+            raise PermissionError("Patch application requires an authorized workspace run.")
         source = self.read_file(
             run_id,
             token,
@@ -648,8 +649,8 @@ class WorkspaceExecutor:
         run = self.store.get_run(run_id)
         if run is None:
             raise KeyError(run_id)
-        if run["mode"] != "workspace" or not run["workspace"]:
-            raise PermissionError("File edits require an explicitly selected workspace-mode run.")
+        if not workspace_write_authorized(run):
+            raise PermissionError("File edits require an explicitly authorized workspace run.")
         root = Path(run["workspace"]).resolve(strict=True)
         requested = Path(parsed.path)
         if requested.is_absolute():

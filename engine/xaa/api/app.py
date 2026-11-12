@@ -23,7 +23,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, sta
 from fastapi import Path as PathParameter
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from starlette.middleware.cors import CORSMiddleware
 
 from xaa.api.contracts import (
@@ -151,7 +151,7 @@ class CreateRunRequest(BaseModel):
     transcription_url: str | None = Field(default=None, max_length=2_048)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
-    mode: Literal["observe", "workspace", "authorized_automation"] = "observe"
+    mode: Literal["observe", "workspace"] = "observe"
     model: str | None = Field(default=None, max_length=256)
     max_iterations: int = Field(default=8, ge=1, le=100)
     max_seconds: int = Field(default=900, ge=1, le=86400)
@@ -425,6 +425,7 @@ class CreateScheduleRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=10_000)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
+    mode: Literal["observe", "authorized_automation"] = "observe"
     model: str = Field(min_length=1, max_length=256)
     start_at: str = Field(min_length=16, max_length=16)
     frequency: Literal["once", "daily", "weekly"]
@@ -435,6 +436,12 @@ class CreateScheduleRequest(BaseModel):
     max_seconds: int = Field(default=900, ge=1, le=86400)
     telegram_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
     telegram_failure_user_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
+
+    @model_validator(mode="after")
+    def validate_authorized_automation(self) -> CreateScheduleRequest:
+        if self.mode == "authorized_automation" and not self.workspace:
+            raise ValueError("Authorized automation requires an explicitly selected workspace.")
+        return self
 
 
 class ScheduleExecutionRecord(BaseModel):
@@ -456,6 +463,7 @@ class ScheduleRecord(BaseModel):
     id: str
     objective: str
     recurrence: dict[str, Any]
+    mode: Literal["observe", "authorized_automation"]
     timezone: str
     missed_run_policy: str
     overlap_policy: str
@@ -2525,6 +2533,7 @@ def create_app(
                 objective=payload.objective,
                 acceptance_criteria=payload.acceptance_criteria,
                 workspace=str(selected_workspace) if selected_workspace is not None else None,
+                mode=payload.mode,
                 model=payload.model,
                 start_at=start_at,
                 frequency=payload.frequency,

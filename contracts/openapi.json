@@ -852,8 +852,7 @@
             "default": "observe",
             "enum": [
               "observe",
-              "workspace",
-              "authorized_automation"
+              "workspace"
             ],
             "title": "Mode",
             "type": "string"
@@ -964,6 +963,15 @@
               "run_once"
             ],
             "title": "Missed Run Policy",
+            "type": "string"
+          },
+          "mode": {
+            "default": "observe",
+            "enum": [
+              "observe",
+              "authorized_automation"
+            ],
+            "title": "Mode",
             "type": "string"
           },
           "model": {
@@ -4298,6 +4306,14 @@
             "title": "Missed Run Policy",
             "type": "string"
           },
+          "mode": {
+            "enum": [
+              "observe",
+              "authorized_automation"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "objective": {
             "title": "Objective",
             "type": "string"
@@ -4335,6 +4351,7 @@
           "id",
           "objective",
           "recurrence",
+          "mode",
           "timezone",
           "missed_run_policy",
           "overlap_policy",

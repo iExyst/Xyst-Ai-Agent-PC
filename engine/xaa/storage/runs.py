@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 33
+DATABASE_SCHEMA_VERSION = 34
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -485,6 +485,7 @@ class RunStore:
                     id TEXT PRIMARY KEY,
                     objective TEXT NOT NULL,
                     recurrence TEXT NOT NULL,
+                    mode TEXT NOT NULL DEFAULT 'observe',
                     timezone TEXT NOT NULL,
                     missed_run_policy TEXT NOT NULL,
                     overlap_policy TEXT NOT NULL,
@@ -783,6 +784,10 @@ class RunStore:
             if "failure_notification_destination" not in schedule_columns:
                 connection.execute(
                     "ALTER TABLE schedules ADD COLUMN failure_notification_destination TEXT"
+                )
+            if "mode" not in schedule_columns:
+                connection.execute(
+                    "ALTER TABLE schedules ADD COLUMN mode TEXT NOT NULL DEFAULT 'observe'"
                 )
             if "failure_external_identity" not in delivery_columns:
                 connection.execute(
@@ -2738,7 +2743,10 @@ class RunStore:
                     "WHERE run_id = ? AND state = 'intended'",
                     (run_id,),
                 ).fetchall()
-                workspace_writes_authorized = row["mode"] == "workspace" and bool(row["workspace"])
+                workspace_writes_authorized = row["mode"] in {
+                    "workspace",
+                    "authorized_automation",
+                } and bool(row["workspace"])
                 recoverable_intents = all(
                     _is_safe_read_intent(item["tool_name"], item["tool_version"], item["arguments"])
                     or (
