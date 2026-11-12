@@ -1,5 +1,9 @@
 # Progress
 
+## Rebuild while the native app is running (2026-11-12)
+
+Ran `npm run build:installer` after the staging change while `build/native-release/xaa-desktop.exe` and two bundled engine processes were still active. The build exited successfully, left that active directory in place, and staged fresh desktop/engine files under `build/native-release-preview-91980-1794516583036613800`; both preview hashes match the local installer manifest. The unsigned setup is 77,550,530 bytes with SHA-256 `acdfd41f6e7beaf0c08d7e35184e59eea198c10f719c6c022fd7062014f0e066`, matching the manifest. The source workflow [43303883865](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43303883865) and full installer reacceptance [43304157530](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43304157530) are queued on commit `09d2990`; hosted confirmation is pending. This build itself did not run install acceptance or model inference.
+
 ## Keep local installer packaging successful with an open desktop (2026-11-12)
 
 Changed native smoke staging in `scripts/build_installer.py` to assemble desktop, engine and hash manifest in a fresh sibling directory. If `build/native-release` already exists, the builder now leaves it untouched and publishes the new stage at a unique `build/native-release-preview-*` path, printing the matching `XAA_NATIVE_STAGE` value. This avoids changing any directory an open desktop may still use and allows installer packaging to finish. Regression coverage checks both fresh and pre-existing stages. Focused builder tests pass (11), Ruff check/format and strict Pyright pass, and `git diff --check` passes. Hosted source and installer reacceptance are pending; no live model inference was used.
