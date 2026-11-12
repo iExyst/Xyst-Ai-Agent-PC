@@ -26,6 +26,62 @@ def _installer_target_dir() -> Path:
     return Path(configured).resolve()
 
 
+def _stage_native_release(binaries: dict[str, Path], destination: Path) -> Path:
+    """Stage native smoke binaries without overwriting a directory an app may use."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    nonce = f"{os.getpid()}-{time.time_ns()}"
+    staging = destination.with_name(f".{destination.name}.staging-{nonce}")
+    staging.mkdir()
+    native_manifest: dict[str, str] = {}
+    for name, source_file in binaries.items():
+        staged_file = staging / name
+        shutil.copy2(source_file, staged_file)
+        native_manifest[name] = hashlib.sha256(staged_file.read_bytes()).hexdigest()
+    (staging / "manifest.json").write_text(json.dumps(native_manifest, indent=2), encoding="utf-8")
+
+    if not destination.exists():
+        os.replace(staging, destination)
+        return destination
+
+    backup = destination.with_name(f"{destination.name}.previous-{nonce}")
+    try:
+        os.replace(destination, backup)
+    except PermissionError:
+        preview = destination.with_name(f"{destination.name}-preview-{nonce}")
+        os.replace(staging, preview)
+        print(
+            "The existing native smoke stage is in use; it was left untouched. "
+            f"Fresh binaries are staged at {preview.resolve()}; set XAA_NATIVE_STAGE={preview.name} "
+            "when running native smoke checks against them.",
+            flush=True,
+        )
+        return preview
+
+    try:
+        os.replace(staging, destination)
+    except PermissionError:
+        try:
+            os.replace(backup, destination)
+        except OSError as restore_error:
+            raise RuntimeError(
+                f"Could not publish the fresh native stage or restore the previous stage at {destination}. "
+                f"The previous stage remains at {backup}."
+            ) from restore_error
+        preview = destination.with_name(f"{destination.name}-preview-{nonce}")
+        os.replace(staging, preview)
+        print(
+            "The previous native smoke stage was restored after an update collision. "
+            f"Fresh binaries are staged at {preview.resolve()}; set XAA_NATIVE_STAGE={preview.name} "
+            "when running native smoke checks against them.",
+            flush=True,
+        )
+        return preview
+
+    print(f"Previous native smoke stage preserved at {backup.resolve()}.", flush=True)
+    return destination
+
+
 def _run_tauri_build(npm: str, *, signing: bool = False) -> None:
     command = [
         npm,
@@ -201,16 +257,13 @@ def main() -> None:
             for name, path in notices.items()
         },
     }
-    native = Path("build/native-release")
-    native.mkdir(parents=True, exist_ok=True)
-    native_manifest: dict[str, str] = {}
-    for name, source_file in {
-        "xaa-desktop.exe": binaries["desktop"],
-        "xaa-engine.exe": binaries["engine"],
-    }.items():
-        shutil.copy2(source_file, native / name)
-        native_manifest[name] = hashlib.sha256((native / name).read_bytes()).hexdigest()
-    (native / "manifest.json").write_text(json.dumps(native_manifest, indent=2), encoding="utf-8")
+    _stage_native_release(
+        {
+            "xaa-desktop.exe": binaries["desktop"],
+            "xaa-engine.exe": binaries["engine"],
+        },
+        Path("build/native-release"),
+    )
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Installer staged: {target.resolve()}")
 

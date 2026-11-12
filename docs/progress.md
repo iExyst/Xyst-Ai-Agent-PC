@@ -1,5 +1,9 @@
 # Progress
 
+## Keep local installer packaging successful with an open desktop (2026-11-12)
+
+Changed native smoke staging in `scripts/build_installer.py` to copy desktop and engine into a fresh sibling directory, write its hash manifest there, then atomically rotate it into `build/native-release`. If Windows refuses to rename the old stage because an app is using it, the stage stays untouched, the fresh binaries are retained in a unique `build/native-release-preview-*` directory, and the installer build continues successfully. The builder prints the `XAA_NATIVE_STAGE` value for smoke checks against that preview. Added regression coverage for normal rotation and a simulated Windows sharing violation. Focused builder tests pass (11), Ruff check/format and strict Pyright pass, and `git diff --check` passes. Hosted source and installer reacceptance are pending; no live model inference was used.
+
 ## Package the current desktop source locally (2026-11-12)
 
 Built a new unsigned per-user Windows setup executable at `build/installer/Xyst AI Agent_0.1.1_x64-setup.exe`. The React/TypeScript production build, PyInstaller engine, optimized Tauri desktop and NSIS installer completed. The installer is 77,549,917 bytes with SHA-256 `df5004f395fb02ad222ae734dec7b8eb629d2507b19f1058b2b3340de36cf970`, matching the local installer manifest. The build command then exited with a Windows sharing violation while copying the already-built desktop into `build/native-release`, which is held by an open app; this did not invalidate the setup executable. This local artifact has not passed install/upgrade acceptance and is unsigned development software. No tracked source files changed during this package build.

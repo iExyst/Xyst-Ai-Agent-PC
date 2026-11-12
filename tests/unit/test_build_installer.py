@@ -226,3 +226,64 @@ def test_installer_cargo_target_isolated_from_running_desktop(monkeypatch, tmp_p
     configured = tmp_path / "private target"
     monkeypatch.setenv("CARGO_TARGET_DIR", str(configured))
     assert build_installer._installer_target_dir() == configured.resolve()
+
+
+def test_native_release_stage_preserves_previous_stage_and_publishes_new_binaries(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    desktop = source / "xaa-desktop.exe"
+    engine = source / "xaa-engine.exe"
+    desktop.write_bytes(b"new desktop")
+    engine.write_bytes(b"new engine")
+    destination = tmp_path / "native-release"
+    destination.mkdir()
+    (destination / "xaa-desktop.exe").write_bytes(b"old desktop")
+
+    result = build_installer._stage_native_release(
+        {"xaa-desktop.exe": desktop, "xaa-engine.exe": engine}, destination
+    )
+
+    assert result == destination
+    assert (result / "xaa-desktop.exe").read_bytes() == b"new desktop"
+    assert (result / "xaa-engine.exe").read_bytes() == b"new engine"
+    manifest = json.loads((result / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest == {
+        "xaa-desktop.exe": build_installer.hashlib.sha256(b"new desktop").hexdigest(),
+        "xaa-engine.exe": build_installer.hashlib.sha256(b"new engine").hexdigest(),
+    }
+    previous = list(tmp_path.glob("native-release.previous-*"))
+    assert len(previous) == 1
+    assert (previous[0] / "xaa-desktop.exe").read_bytes() == b"old desktop"
+
+
+def test_native_release_stage_falls_back_when_previous_stage_is_locked(
+    monkeypatch, tmp_path, capsys
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    desktop = source / "xaa-desktop.exe"
+    engine = source / "xaa-engine.exe"
+    desktop.write_bytes(b"fresh desktop")
+    engine.write_bytes(b"fresh engine")
+    destination = tmp_path / "native-release"
+    destination.mkdir()
+    (destination / "xaa-desktop.exe").write_bytes(b"locked desktop")
+    real_replace = build_installer.os.replace
+
+    def replace(source_path, destination_path):
+        if Path(source_path) == destination:
+            raise PermissionError("fixture: destination contains a running executable")
+        return real_replace(source_path, destination_path)
+
+    monkeypatch.setattr(build_installer.os, "replace", replace)
+
+    result = build_installer._stage_native_release(
+        {"xaa-desktop.exe": desktop, "xaa-engine.exe": engine}, destination
+    )
+
+    assert result != destination
+    assert result.name.startswith("native-release-preview-")
+    assert (destination / "xaa-desktop.exe").read_bytes() == b"locked desktop"
+    assert (result / "xaa-desktop.exe").read_bytes() == b"fresh desktop"
+    assert (result / "xaa-engine.exe").read_bytes() == b"fresh engine"
+    assert "left untouched" in capsys.readouterr().out
