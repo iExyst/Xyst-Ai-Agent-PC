@@ -5,6 +5,7 @@ import ctypes
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 import zipfile
@@ -21,6 +22,7 @@ from xaa.api.app import create_app
 from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.mcp_appcontainer import AppContainerAccess
 from xaa.runtime.mcp_manager import (
     MCP_RESULT_BYTES,
     MCPConnectionError,
@@ -46,6 +48,7 @@ SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server
 MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
 OVERSIZED_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_oversized_stdio_server.py"
 APPCONTAINER_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_probe.py"
+APPCONTAINER_CRASH_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_crash.py"
 
 
 @pytest.mark.asyncio
@@ -110,6 +113,52 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
         listener.close()
     after = ace_counts()
     assert after == before
+
+
+def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
+    workspace_tmp_path: Path,
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows AppContainer crash-recovery acceptance")
+    import win32security
+
+    journal = workspace_tmp_path / "isolation-journal"
+    access_root = workspace_tmp_path / "isolated-data"
+    access_root.mkdir()
+
+    def ace_count() -> int:
+        dacl = win32security.GetNamedSecurityInfo(
+            str(access_root),
+            win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION,
+        ).GetSecurityDescriptorDacl()
+        assert dacl is not None
+        return dacl.GetAceCount()
+
+    before = ace_count()
+    crashed_engine = subprocess.run(
+        [
+            sys.executable,
+            str(APPCONTAINER_CRASH_FIXTURE),
+            str(journal),
+            str(access_root),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert crashed_engine.returncode == 0, crashed_engine.stderr
+    records = list(journal.glob("XAA-MCP-*.json"))
+    assert len(records) == 1
+    record_path = records[0]
+    assert record_path.is_file()
+    assert ace_count() > before
+
+    AppContainerAccess._recover_stale_grants(journal)
+
+    assert ace_count() == before
+    assert not record_path.exists()
 
 
 @pytest.mark.asyncio

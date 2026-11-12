@@ -2,7 +2,7 @@
 
 ## Current MCP process isolation evidence (2026-11-12)
 
-The MCP capability remains partial. Windows stdio servers now have an owner opt-in for AppContainer network isolation; a local Windows subprocess acceptance verifies a blocked loopback connection, successful MCP handshake/tool call, and removal of temporary working-directory ACL grants. Existing integrations stay non-isolated by schema default, Streamable HTTP is unchanged, and non-Windows isolation is unsupported. Abrupt engine termination may leave stale ACL ACEs, so crash-time cleanup remains open. The full source workflow and the installed-app behavior still need hosted confirmation; do not generalize the fixture result to third-party MCP servers or hermes capability parity.
+The MCP capability remains partial. Windows stdio servers have an owner opt-in for AppContainer network isolation; local Windows acceptance verifies a blocked loopback connection, successful MCP handshake/tool call, orderly ACL cleanup, and journal recovery after a fixture engine subprocess exits abruptly. Selected roots and their ancestors reject reparse points, while descendant reparse targets are skipped without traversal. Existing integrations stay non-isolated by schema default, Streamable HTTP is unchanged, and non-Windows isolation is unsupported. Reboot/power-loss, hosted installer behavior, and third-party package compatibility remain unverified; do not generalize the fixture results to Hermes capability parity.
 
 ## Current local desktop build note (2026-11-11)
 

@@ -231,6 +231,7 @@ class MCPManager:
         authorization_redirect_handler: Any | None = None,
     ) -> None:
         self.registry = MCPRegistry(store)
+        self.store = store
         self.credential_store = credential_store
         self.authorization_redirect_handler = authorization_redirect_handler
         self._connected: dict[str, _ConnectedServer] = {}
@@ -327,6 +328,9 @@ class MCPManager:
                         ),
                         isolation_write_paths=tuple(
                             path for path in (server.plugin_data,) if path is not None
+                        ),
+                        isolation_journal_directory=str(
+                            self.store.path.parent / "mcp-appcontainer"
                         ),
                     )
                 else:

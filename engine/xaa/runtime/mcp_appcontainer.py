@@ -11,8 +11,11 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
+import threading
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any, cast
@@ -26,6 +29,8 @@ FILE_GENERIC_READ = 0x120089
 FILE_GENERIC_WRITE = 0x120116
 FILE_GENERIC_EXECUTE = 0x1200A0
 MAX_ACL_OBJECTS = 50_000
+_RECOVERY_LOCK = threading.Lock()
+_RECOVERED_JOURNAL_DIRS: set[str] = set()
 
 ERROR_ALREADY_EXISTS = 183
 CREATE_SUSPENDED = 0x00000004
@@ -151,6 +156,26 @@ def _appcontainer_sid(profile_name: str) -> tuple[Any, bytes, Any]:
     return kernel32, sid_bytes, sid_object
 
 
+def _process_is_running(process_id: int) -> bool:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    open_process.restype = wintypes.HANDLE
+    process = open_process(0x1000, False, process_id)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not process:
+        # Access denied is treated as live so another running engine's grants
+        # are never revoked; ERROR_INVALID_PARAMETER means the PID is gone.
+        return ctypes.get_last_error() != 87
+    try:
+        exit_code = wintypes.DWORD()
+        get_exit_code = kernel32.GetExitCodeProcess
+        get_exit_code.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        get_exit_code.restype = wintypes.BOOL
+        return not get_exit_code(process, ctypes.byref(exit_code)) or exit_code.value == 259
+    finally:
+        kernel32.CloseHandle(process)
+
+
 class AppContainerAccess:
     """Temporary AppContainer profile and narrowly granted filesystem paths."""
 
@@ -161,6 +186,7 @@ class AppContainerAccess:
         cwd: str | None,
         read_roots: list[str],
         write_roots: list[str],
+        journal_directory: str | Path,
     ) -> None:
         if sys.platform != "win32":
             raise MCPAppContainerError(
@@ -169,8 +195,12 @@ class AppContainerAccess:
         import win32security
 
         self._security = win32security
+        self._journal_directory = Path(journal_directory)
+        self._journal_directory.mkdir(parents=True, exist_ok=True)
+        self._recover_stale_grants(self._journal_directory)
         self.profile_name = f"XAA-MCP-{uuid4().hex}"
         self._grants: list[tuple[str, int, int]] = []
+        self._journal_path = self._journal_directory / f"{self.profile_name}.json"
         _kernel32, _sid_bytes, self._sid = _appcontainer_sid(self.profile_name)
         try:
             executable = Path(command).resolve(strict=True)
@@ -248,9 +278,10 @@ class AppContainerAccess:
                             )
                         attributes = child.stat(follow_symlinks=False).st_file_attributes
                         if attributes & FILE_ATTRIBUTE_REPARSE_POINT:
-                            raise MCPAppContainerError(
-                                "MCP isolation access paths cannot contain reparse points."
-                            )
+                            # Do not traverse reparse targets while bounding the
+                            # ACL walk. The access grant remains on the selected
+                            # root; the target keeps its own security descriptor.
+                            continue
                         if child.is_dir(follow_symlinks=False):
                             pending.append(Path(child.path))
             except OSError as error:
@@ -268,6 +299,10 @@ class AppContainerAccess:
         )
 
     def _add_ace(self, path: str, mask: int, flags: int) -> None:
+        grant = (path, mask, flags)
+        if grant not in self._grants:
+            self._grants.append(grant)
+            self._write_journal()
         security = self._security
         descriptor = security.GetNamedSecurityInfo(
             path, security.SE_FILE_OBJECT, security.DACL_SECURITY_INFORMATION
@@ -296,7 +331,140 @@ class AppContainerAccess:
             dacl,
             None,
         )
-        self._grants.append((path, mask, flags))
+
+    def _write_journal(self) -> None:
+        payload = {
+            "version": 1,
+            "profile_name": self.profile_name,
+            "owner_pid": os.getpid(),
+            "grants": [
+                {"path": path, "mask": mask, "flags": flags} for path, mask, flags in self._grants
+            ],
+        }
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{self.profile_name}-", suffix=".tmp", dir=self._journal_directory
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
+                json.dump(payload, destination, separators=(",", ":"))
+                destination.flush()
+                os.fsync(destination.fileno())
+            os.replace(temporary_name, self._journal_path)
+        except BaseException:
+            try:
+                os.unlink(temporary_name)
+            except OSError:
+                pass
+            raise
+
+    @classmethod
+    def _recover_stale_grants(cls, journal_directory: Path) -> None:
+        journal_root = journal_directory.resolve(strict=True)
+        key = os.path.normcase(str(journal_root))
+        with _RECOVERY_LOCK:
+            if key in _RECOVERED_JOURNAL_DIRS:
+                return
+            import win32security
+
+            for journal_path in journal_root.glob("XAA-MCP-*.json"):
+                if journal_path.is_symlink() or journal_path.stat().st_size > 1024 * 1024:
+                    raise MCPAppContainerError("An MCP isolation recovery record is unsafe.")
+                try:
+                    record = json.loads(journal_path.read_text(encoding="utf-8"))
+                    profile_name = record["profile_name"]
+                    owner_pid = record["owner_pid"]
+                    raw_grants = record["grants"]
+                    if (
+                        record.get("version") != 1
+                        or not isinstance(profile_name, str)
+                        or re.fullmatch(r"XAA-MCP-[0-9a-f]{32}", profile_name) is None
+                        or not isinstance(owner_pid, int)
+                        or owner_pid <= 0
+                        or not isinstance(raw_grants, list)
+                        or len(raw_grants) > 16
+                    ):
+                        raise ValueError("invalid journal shape")
+                    grants: list[tuple[str, int, int]] = []
+                    for grant in raw_grants:
+                        path = grant["path"]
+                        mask = grant["mask"]
+                        flags = grant["flags"]
+                        if (
+                            not isinstance(path, str)
+                            or not Path(path).is_absolute()
+                            or not isinstance(mask, int)
+                            or mask
+                            not in {
+                                FILE_GENERIC_READ | FILE_GENERIC_EXECUTE,
+                                FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE,
+                            }
+                            or not isinstance(flags, int)
+                            or flags
+                            != win32security.CONTAINER_INHERIT_ACE
+                            | win32security.OBJECT_INHERIT_ACE
+                        ):
+                            raise ValueError("invalid journal grant")
+                        grants.append((path, mask, flags))
+                except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+                    raise MCPAppContainerError(
+                        "An MCP isolation recovery record could not be validated."
+                    ) from error
+                if _process_is_running(owner_pid):
+                    continue
+                _kernel32, _sid_bytes, sid = _appcontainer_sid(profile_name)
+                sid_string = win32security.ConvertSidToStringSid(sid)
+                failures: list[Exception] = []
+                for path, mask, flags in reversed(grants):
+                    if not Path(path).exists():
+                        continue
+                    try:
+                        descriptor = win32security.GetNamedSecurityInfo(
+                            path,
+                            win32security.SE_FILE_OBJECT,
+                            win32security.DACL_SECURITY_INFORMATION,
+                        )
+                        dacl = cast(Any, descriptor.GetSecurityDescriptorDacl())
+                        if dacl is None:
+                            continue
+                        for index in reversed(range(dacl.GetAceCount())):
+                            ace_header, ace_mask, ace_sid = dacl.GetAce(index)
+                            ace_type, ace_flags = ace_header
+                            if (
+                                ace_type == win32security.ACCESS_ALLOWED_ACE_TYPE
+                                and ace_flags == flags
+                                and ace_mask == mask
+                                and win32security.ConvertSidToStringSid(ace_sid) == sid_string
+                            ):
+                                dacl.DeleteAce(index)
+                                break
+                        win32security.SetNamedSecurityInfo(
+                            path,
+                            win32security.SE_FILE_OBJECT,
+                            win32security.DACL_SECURITY_INFORMATION,
+                            None,
+                            None,
+                            dacl,
+                            None,
+                        )
+                    except OSError as error:
+                        failures.append(error)
+                if not failures:
+                    delete_profile = ctypes.WinDLL(
+                        "userenv", use_last_error=True
+                    ).DeleteAppContainerProfile
+                    delete_profile.argtypes = [wintypes.LPCWSTR]
+                    delete_profile.restype = ctypes.c_long
+                    result = delete_profile(profile_name)
+                    if result != 0:
+                        failures.append(
+                            MCPAppContainerError("Could not remove a stale isolation profile.")
+                        )
+                if failures:
+                    raise MCPAppContainerError(
+                        "Windows could not recover temporary MCP isolation permissions."
+                    ) from failures[0]
+                journal_path.unlink()
+            _RECOVERED_JOURNAL_DIRS.add(key)
 
     def close(self) -> None:
         security = getattr(self, "_security", None)
@@ -335,22 +503,25 @@ class AppContainerAccess:
                     # Keep profile identity until ACL revocation has been attempted;
                     # a stale ACE for a deleted profile does not grant another SID access.
                     failures.append(error)
-        try:
-            if hasattr(self, "profile_name"):
-                delete_profile = ctypes.WinDLL(
-                    "userenv", use_last_error=True
-                ).DeleteAppContainerProfile
-                delete_profile.argtypes = [wintypes.LPCWSTR]
-                delete_profile.restype = ctypes.c_long
-                result = delete_profile(self.profile_name)
-                if result != 0:
-                    failures.append(
-                        MCPAppContainerError(
-                            "Windows could not remove the temporary MCP isolation profile."
+        if not failures:
+            try:
+                if hasattr(self, "profile_name"):
+                    delete_profile = ctypes.WinDLL(
+                        "userenv", use_last_error=True
+                    ).DeleteAppContainerProfile
+                    delete_profile.argtypes = [wintypes.LPCWSTR]
+                    delete_profile.restype = ctypes.c_long
+                    result = delete_profile(self.profile_name)
+                    if result != 0:
+                        failures.append(
+                            MCPAppContainerError(
+                                "Windows could not remove the temporary MCP isolation profile."
+                            )
                         )
-                    )
-        except OSError as error:
-            failures.append(error)
+            except OSError as error:
+                failures.append(error)
+        if not failures and hasattr(self, "_journal_path"):
+            self._journal_path.unlink(missing_ok=True)
         self._grants = []
         if failures:
             raise MCPAppContainerError(

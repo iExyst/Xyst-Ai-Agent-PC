@@ -15,6 +15,7 @@ import logging
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, TextIO, cast
 
 import anyio
@@ -138,6 +139,7 @@ async def bounded_stdio_client(
     network_isolation: bool = False,
     isolation_read_paths: tuple[str, ...] = (),
     isolation_write_paths: tuple[str, ...] = (),
+    isolation_journal_directory: str | None = None,
     errlog: TextIO = sys.stderr,
 ) -> AsyncGenerator[TransportStreams]:
     """Spawn an MCP stdio server and reject any inbound frame over the limit.
@@ -170,6 +172,7 @@ async def bounded_stdio_client(
                 str(server.cwd) if server.cwd is not None else None,
                 list(isolation_read_paths),
                 list(isolation_write_paths),
+                isolation_journal_directory or str(Path.home() / ".xaa" / "mcp-appcontainer"),
             )
             launch_command = sys.executable
             launch_args = (
