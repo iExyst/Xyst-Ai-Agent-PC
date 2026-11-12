@@ -1,4 +1,8 @@
 # Progress
+## Flush the MCP isolation journal rename before ACL changes (2026-11-12)
+
+The isolation journal now writes its complete record, fsyncs the temporary file, then replaces the destination with same-directory `MoveFileExW(MOVEFILE_WRITE_THROUGH)` before applying any AppContainer ACL. This tightens crash ordering; actual power-loss behavior is still unverified. The full Windows MCP stdio suite passes locally (24 tests); Ruff, formatting and strict Pyright pass for the changed module. Rebuilt the frozen engine and ran the full native desktop smoke against it: report [`.acceptance/84e05f22-12e2-4275-aeb0-436cf286d4e5/report.json`](../.acceptance/84e05f22-12e2-4275-aeb0-436cf286d4e5/report.json), desktop SHA-256 `6830605a065607efe9e05f858a4b1d0042e0e5d42894a6036716c6f54452a426`, engine SHA-256 `edd735f0742ed95003c1fdad1321712c8dfb863bf266d0c5e7c6a9991316cc7f`. It proves the saved isolation option, parent loopback reachability, blocked loopback from the frozen MCP process, clean disconnect and shutdown; model inference was not requested. Hosted source run [43202366803](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43202366803) is queued for this code revision; the prior installed-package workflow [43201223913](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43201223913) remains queued on the preceding source revision.
+
 
 ## Recover temporary MCP isolation ACL grants after engine crashes (2026-11-12)
 
