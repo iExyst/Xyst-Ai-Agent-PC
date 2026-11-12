@@ -120,6 +120,16 @@ async def test_streamable_http_typescript_sdk_modern_interoperability(
         template_read = await manager.read_resource_template(
             server.id, "fixture_item", {"item_id": "two words"}
         )
+        template_completions = await manager.complete_argument(
+            server.id,
+            kind="resource_template",
+            name="fixture_item",
+            argument_name="item_id",
+            value="two",
+            context_arguments={},
+        )
+        assert template_completions["values"] == ["two words"]
+        assert template_completions["trust"] == "untrusted_mcp_output"
         assert template_read["trust"] == "untrusted_mcp_output"
         assert template_read["contents"][0]["uri"] == "xaa://typescript/items/two%20words"
         assert template_read["contents"][0]["text"] == "typescript-http-template:two%20words"
@@ -214,6 +224,16 @@ async def test_streamable_http_typescript_sdk_modern_interoperability(
         assert not manager._connected[server.id].prompts
         prompts = await manager.list_prompts(server.id)
         assert {item["name"] for item in prompts} == {"summarize_topic", "late_fixture_prompt"}
+        prompt_completions = await manager.complete_argument(
+            server.id,
+            kind="prompt",
+            name="summarize_topic",
+            argument_name="topic",
+            value="sum",
+            context_arguments={},
+        )
+        assert prompt_completions["values"] == ["summary", "summarize"]
+        assert prompt_completions["trust"] == "untrusted_mcp_output"
         late_prompt = await manager.preview_prompt(
             server.id, "late_fixture_prompt", {"topic": "fixture"}
         )

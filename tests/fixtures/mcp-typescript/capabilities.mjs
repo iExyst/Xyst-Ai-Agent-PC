@@ -1,4 +1,4 @@
-import { ResourceTemplate } from '@modelcontextprotocol/server';
+import { completable, ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 export function registerFixtureCapabilities(
@@ -51,7 +51,12 @@ export function registerFixtureCapabilities(
   if (lateResourceEnabled) registerLateResource(server, transport);
   server.registerResource(
     'fixture_item',
-    new ResourceTemplate('xaa://typescript/items/{item_id}', { list: undefined }),
+    new ResourceTemplate('xaa://typescript/items/{item_id}', {
+      list: undefined,
+      complete: {
+        item_id: (value) => ['two words', 'typescript-item'].filter((item) => item.startsWith(value)),
+      },
+    }),
     {
       title: 'TypeScript fixture item',
       description: 'A dynamic text resource from the TypeScript SDK fixture.',
@@ -114,7 +119,12 @@ export function registerFixtureCapabilities(
     {
       title: 'Summarize a topic',
       description: 'Return a deterministic text-only TypeScript fixture prompt.',
-      argsSchema: { topic: z.string().min(1).max(128) },
+      argsSchema: {
+        topic: completable(
+          z.string().min(1).max(128),
+          (value) => ['summary', 'summarize', 'topic'].filter((item) => item.startsWith(value)),
+        ),
+      },
     },
     async ({ topic }) => ({
       messages: [
