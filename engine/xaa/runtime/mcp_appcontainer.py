@@ -28,6 +28,8 @@ FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 FILE_GENERIC_READ = 0x120089
 FILE_GENERIC_WRITE = 0x120116
 FILE_GENERIC_EXECUTE = 0x1200A0
+MOVEFILE_REPLACE_EXISTING = 0x00000001
+MOVEFILE_WRITE_THROUGH = 0x00000008
 MAX_ACL_OBJECTS = 50_000
 _RECOVERY_LOCK = threading.Lock()
 _RECOVERED_JOURNAL_DIRS: set[str] = set()
@@ -44,6 +46,17 @@ PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 
 class MCPAppContainerError(RuntimeError):
     """Windows could not create an isolated MCP child process."""
+
+
+def _replace_journal_file(source: str, destination: Path) -> None:
+    """Atomically replace a same-directory journal and flush the rename."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    move_file = kernel32.MoveFileExW
+    move_file.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+    move_file.restype = wintypes.BOOL
+    flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    if not move_file(source, str(destination), flags):
+        raise ctypes.WinError(ctypes.get_last_error())
 
 
 class SECURITY_CAPABILITIES(ctypes.Structure):
@@ -365,7 +378,7 @@ class AppContainerAccess:
                 json.dump(payload, destination, separators=(",", ":"))
                 destination.flush()
                 os.fsync(destination.fileno())
-            os.replace(temporary_name, self._journal_path)
+            _replace_journal_file(temporary_name, self._journal_path)
         except BaseException:
             try:
                 os.unlink(temporary_name)
