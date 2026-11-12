@@ -31,6 +31,7 @@ FILE_GENERIC_EXECUTE = 0x1200A0
 MOVEFILE_REPLACE_EXISTING = 0x00000001
 MOVEFILE_WRITE_THROUGH = 0x00000008
 MAX_ACL_OBJECTS = 50_000
+_TEMP_JOURNAL_NAME = re.compile(r"\.(XAA-MCP-[0-9a-f]{32})-(\d+)-(\d+)-[A-Za-z0-9_-]+\.tmp")
 _RECOVERY_LOCK = threading.Lock()
 _RECOVERED_JOURNAL_DIRS: set[str] = set()
 
@@ -415,7 +416,9 @@ class AppContainerAccess:
             ],
         }
         descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{self.profile_name}-", suffix=".tmp", dir=self._journal_directory
+            prefix=(f".{self.profile_name}-{os.getpid()}-{self._owner_creation_time}-"),
+            suffix=".tmp",
+            dir=self._journal_directory,
         )
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
@@ -555,6 +558,31 @@ class AppContainerAccess:
                         "Windows could not recover temporary MCP isolation permissions."
                     ) from failures[0]
                 journal_path.unlink()
+            for temporary_path in journal_root.glob(".XAA-MCP-*.tmp"):
+                match = _TEMP_JOURNAL_NAME.fullmatch(temporary_path.name)
+                if match is None:
+                    continue
+                owner_pid = int(match.group(2))
+                owner_creation_time = int(match.group(3))
+                if (
+                    owner_pid <= 0
+                    or owner_pid > 0xFFFFFFFF
+                    or owner_creation_time <= 0
+                    or owner_creation_time > 0xFFFFFFFFFFFFFFFF
+                ):
+                    continue
+                owner_running, current_creation_time = _process_identity(owner_pid)
+                if owner_running is False or (
+                    owner_running is True
+                    and current_creation_time is not None
+                    and current_creation_time != owner_creation_time
+                ):
+                    try:
+                        temporary_path.unlink(missing_ok=True)
+                    except OSError as error:
+                        raise MCPAppContainerError(
+                            "Windows could not remove an abandoned MCP isolation journal file."
+                        ) from error
             _RECOVERED_JOURNAL_DIRS.add(key)
 
     def close(self) -> None:

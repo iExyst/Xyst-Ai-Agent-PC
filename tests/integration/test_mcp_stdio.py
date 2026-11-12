@@ -11,6 +11,7 @@ import time
 import zipfile
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,7 +23,7 @@ from xaa.api.app import create_app
 from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
-from xaa.runtime.mcp_appcontainer import AppContainerAccess
+from xaa.runtime.mcp_appcontainer import AppContainerAccess, _process_identity
 from xaa.runtime.mcp_manager import (
     MCP_RESULT_BYTES,
     MCPConnectionError,
@@ -195,6 +196,44 @@ def test_windows_appcontainer_recovers_acl_grants_after_engine_crash(
 
     assert ace_count() == before
     assert not record_path.exists()
+
+
+def test_windows_appcontainer_removes_dead_temporary_journal_only(
+    workspace_tmp_path: Path,
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows AppContainer temporary-journal recovery acceptance")
+
+    journal = workspace_tmp_path / "isolation-journal"
+    journal.mkdir()
+    owner_running, owner_creation_time = _process_identity(os.getpid())
+    assert owner_running is True and owner_creation_time is not None
+    live_journal = journal / (
+        f".XAA-MCP-{uuid4().hex}-{os.getpid()}-{owner_creation_time}-live.tmp"
+    )
+    live_journal.write_text("partial", encoding="utf-8")
+
+    crashed_engine = subprocess.run(
+        [
+            sys.executable,
+            str(APPCONTAINER_CRASH_FIXTURE),
+            str(journal),
+            str(workspace_tmp_path / "unused-data"),
+            "temp-journal",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert crashed_engine.returncode == 0, crashed_engine.stderr
+    orphaned = [path for path in journal.glob(".XAA-MCP-*.tmp") if path != live_journal]
+    assert len(orphaned) == 1
+
+    AppContainerAccess._recover_stale_grants(journal)
+
+    assert not orphaned[0].exists()
+    assert live_journal.is_file()
 
 
 @pytest.mark.asyncio

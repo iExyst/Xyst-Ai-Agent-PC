@@ -16,6 +16,16 @@ if len(sys.argv) > 3 and sys.argv[3] == "before-acl":
         os._exit(0)
 
     AppContainerAccess._add_ace = crash_before_acl
+elif len(sys.argv) > 3 and sys.argv[3] == "temp-journal":
+
+    def crash_during_initial_journal(access: AppContainerAccess) -> None:
+        temporary_path = access._journal_directory / (
+            f".{access.profile_name}-{os.getpid()}-{access._owner_creation_time}-orphaned.tmp"
+        )
+        temporary_path.write_text("{", encoding="utf-8")
+        os._exit(0)
+
+    AppContainerAccess._write_journal = crash_during_initial_journal
 elif len(sys.argv) > 3 and sys.argv[3] == "after-profile":
 
     def crash_after_profile(_access: AppContainerAccess, _path: str, _mask: int) -> None:
