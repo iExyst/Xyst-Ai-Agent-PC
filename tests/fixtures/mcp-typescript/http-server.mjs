@@ -14,10 +14,16 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 let handler;
 let lateToolEnabled = false;
+let lateResourceEnabled = false;
+let latePromptEnabled = false;
 handler = createMcpHandler(({ era, requestInfo }) => {
   const server = new McpServer(
     { name: 'XAA TypeScript HTTP fixture', version: '1.0.0' },
-    { capabilities: { tools: { listChanged: true }, resources: { subscribe: true } } },
+    { capabilities: {
+      tools: { listChanged: true },
+      resources: { listChanged: true, subscribe: true },
+      prompts: { listChanged: true },
+    } },
   );
   const protocolVersion = requestInfo.headers.get('mcp-protocol-version') ?? era;
   registerFixtureCapabilities(server, {
@@ -25,9 +31,19 @@ handler = createMcpHandler(({ era, requestInfo }) => {
     protocolVersion,
     publishResourceUpdate: (uri) => handler.notify.resourceUpdated(uri),
     lateToolEnabled,
+    lateResourceEnabled,
+    latePromptEnabled,
     publishToolListChange: () => {
       lateToolEnabled = true;
       handler.notify.toolsChanged();
+    },
+    publishResourcesListChange: () => {
+      lateResourceEnabled = true;
+      handler.notify.resourcesChanged();
+    },
+    publishPromptsListChange: () => {
+      latePromptEnabled = true;
+      handler.notify.promptsChanged();
     },
   });
   return server;

@@ -33,6 +33,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
     qualified_name: `mcp_${serverId}_late_fixture_tool`,
     updated_at: '2026-11-12T00:00:00Z',
   };
+  let lateCatalogsVisible = false;
   let server: any;
   page.on('pageerror', error => errors.push(error.message));
   await page.route('http://127.0.0.1:8765/**', async route => {
@@ -104,16 +105,17 @@ test('configure an MCP server, discover tools and explicitly grant write access'
       server = {...server,state:'connected',tools:[tool]};
       return route.fulfill({json:{state:'connected',tools:[tool]},headers});
     }
-    if (path === `/mcp/servers/${serverId}/resources`) return route.fulfill({json:{resources:[{uri:'xaa://fixture/readme',name:'readme',title:'Fixture readme',description:'Owner inspection fixture.',mime_type:'text/plain',size:20}]},headers});
+    if (path === `/mcp/servers/${serverId}/resources`) return route.fulfill({json:{resources:[{uri:'xaa://fixture/readme',name:'readme',title:'Fixture readme',description:'Owner inspection fixture.',mime_type:'text/plain',size:20},...(lateCatalogsVisible?[{uri:'xaa://fixture/late',name:'late',title:'Late fixture resource',description:'Added after connection.',mime_type:'text/plain',size:24}]:[])]},headers});
     if (path === `/mcp/servers/${serverId}/resources/subscription`) return route.fulfill({json:{uri:body.uri,subscribed:body.subscribe,trust:'untrusted_mcp_output'},headers});
     if (path === `/mcp/servers/${serverId}/resources/notifications`) {
+      lateCatalogsVisible=true;
       server={...server,tools:[tool,lateTool]};
-      return route.fulfill({json:{trust:'untrusted_mcp_output',notifications:[{kind:'resource_updated',uri:'xaa://fixture/readme',trust:'untrusted_mcp_output'},{kind:'tools_list_changed',trust:'untrusted_mcp_output'}]},headers});
+      return route.fulfill({json:{trust:'untrusted_mcp_output',notifications:[{kind:'resource_updated',uri:'xaa://fixture/readme',trust:'untrusted_mcp_output'},{kind:'tools_list_changed',trust:'untrusted_mcp_output'},{kind:'resources_list_changed',trust:'untrusted_mcp_output'},{kind:'prompts_list_changed',trust:'untrusted_mcp_output'}]},headers});
     }
     if (path === `/mcp/servers/${serverId}/resource-templates`) return route.fulfill({json:{resource_templates:[{name:'item',title:'Fixture item',uri_template:'xaa://fixture/items/{item_id}',variables:['item_id'],description:'Owner template catalog fixture.',mime_type:'text/plain'}]},headers});
     if (path === `/mcp/servers/${serverId}/resource-templates/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:'xaa://fixture/items/sample-42',mime_type:'text/plain',kind:'text',text:'Fixture item: sample-42'}]},headers});
     if (path === `/mcp/servers/${serverId}/resources/read`) return route.fulfill({json:{trust:'untrusted_mcp_output',contents:[{uri:body.uri,mime_type:'text/plain',kind:'text',text:'Fixture resource data.'}]},headers});
-    if (path === `/mcp/servers/${serverId}/prompts`) return route.fulfill({json:{prompts:[{name:'summarize_topic',title:'Summarize topic',description:'Text-only preview fixture.',arguments:[{name:'topic',description:null,required:true}]}]},headers});
+    if (path === `/mcp/servers/${serverId}/prompts`) return route.fulfill({json:{prompts:[{name:'summarize_topic',title:'Summarize topic',description:'Text-only preview fixture.',arguments:[{name:'topic',description:null,required:true}]},...(lateCatalogsVisible?[{name:'late_fixture_prompt',title:'Late fixture prompt',description:'Added after connection.',arguments:[{name:'topic',description:null,required:true}]}]:[])]},headers});
     if (path === `/mcp/servers/${serverId}/prompts/preview`) return route.fulfill({json:{trust:'untrusted_mcp_output',description:null,messages:[{role:'user',content:{kind:'text',text:`Summarize: ${body.arguments.topic}`}}]},headers});
     if (path === `/mcp/servers/${serverId}/tools/change_value/permission`) {
       Object.assign(tool,body);
@@ -155,11 +157,15 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByRole('button',{name:'Check for server updates'}).click();
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP server update notices'})).toContainText('Read it explicitly');
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP server update notices'})).toContainText('tool catalog changed');
+  await expect(panel.getByRole('complementary',{name:'Untrusted MCP server update notices'})).toContainText('resource catalog changed');
+  await expect(panel.getByRole('complementary',{name:'Untrusted MCP server update notices'})).toContainText('prompt catalog changed');
   await expect(panel.getByText('Late fixture tool')).toBeVisible();
+  await expect(panel.getByText('Late fixture resource')).toBeVisible();
+  await expect(panel.getByText('Late fixture prompt')).toBeVisible();
   await expect(panel.getByLabel('Permission').last()).toHaveValue('none');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/subscription')&&item.body.subscribe===true)).toBe(true);
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/notifications'))).toBe(true);
-  await panel.getByRole('button',{name:'Read resource'}).click();
+  await panel.getByRole('button',{name:'Read resource'}).first().click();
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP resource data'})).toContainText('Fixture resource data.');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/resources/read')&&item.body.uri==='xaa://fixture/readme')).toBe(true);
   await panel.getByRole('button',{name:'List resource templates'}).click();
@@ -173,7 +179,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   const promptArgs=panel.getByLabel('Arguments JSON for summarize_topic');
   await expect(promptArgs).toBeVisible();
   await promptArgs.fill('{"topic":"browser acceptance"}');
-  await panel.getByRole('button',{name:'Preview prompt'}).click();
+  await panel.getByRole('button',{name:'Preview prompt'}).first().click();
   await expect(panel.getByRole('complementary',{name:'Untrusted MCP prompt preview'})).toContainText('Summarize: browser acceptance');
   expect(requests.some(item=>item.method==='POST'&&item.path.endsWith('/prompts/preview')&&item.body.arguments.topic==='browser acceptance')).toBe(true);
   expect(requests.some(item=>item.method==='POST'&&item.path==='/runs')).toBe(false);

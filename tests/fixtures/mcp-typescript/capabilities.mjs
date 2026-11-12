@@ -3,9 +3,21 @@ import * as z from 'zod/v4';
 
 export function registerFixtureCapabilities(
   server,
-  { transport, protocolVersion, publishResourceUpdate, publishToolListChange, lateToolEnabled = false },
+  {
+    transport,
+    protocolVersion,
+    publishResourceUpdate,
+    publishToolListChange,
+    publishResourcesListChange,
+    publishPromptsListChange,
+    lateToolEnabled = false,
+    lateResourceEnabled = false,
+    latePromptEnabled = false,
+  },
 ) {
   let lateToolRegistered = lateToolEnabled;
+  let lateResourceRegistered = lateResourceEnabled;
+  let latePromptRegistered = latePromptEnabled;
   server.registerTool(
     'echo_value',
     {
@@ -36,6 +48,7 @@ export function registerFixtureCapabilities(
       ],
     }),
   );
+  if (lateResourceEnabled) registerLateResource(server, transport);
   server.registerResource(
     'fixture_item',
     new ResourceTemplate('xaa://typescript/items/{item_id}', { list: undefined }),
@@ -81,6 +94,21 @@ export function registerFixtureCapabilities(
       return { content: [{ type: 'text', text: `typescript-${transport}-tool-list-change-published` }] };
     },
   );
+  server.registerTool(
+    'publish_resources_list_change',
+    {
+      description: 'Add a resource and publish a TypeScript fixture resource-list change.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      if (!lateResourceRegistered) {
+        lateResourceRegistered = true;
+        registerLateResource(server, transport);
+      }
+      await publishResourcesListChange();
+      return { content: [{ type: 'text', text: `typescript-${transport}-resources-list-change-published` }] };
+    },
+  );
   server.registerPrompt(
     'summarize_topic',
     {
@@ -100,6 +128,22 @@ export function registerFixtureCapabilities(
       ],
     }),
   );
+  if (latePromptEnabled) registerLatePrompt(server, transport);
+  server.registerTool(
+    'publish_prompts_list_change',
+    {
+      description: 'Add a prompt and publish a TypeScript fixture prompt-list change.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      if (!latePromptRegistered) {
+        latePromptRegistered = true;
+        registerLatePrompt(server, transport);
+      }
+      await publishPromptsListChange();
+      return { content: [{ type: 'text', text: `typescript-${transport}-prompts-list-change-published` }] };
+    },
+  );
 }
 
 function registerLateTool(server, transport) {
@@ -110,5 +154,34 @@ function registerLateTool(server, transport) {
       inputSchema: z.object({}),
     },
     async () => ({ content: [{ type: 'text', text: `typescript-${transport}-late-tool` }] }),
+  );
+}
+
+function registerLateResource(server, transport) {
+  server.registerResource(
+    'late_fixture_resource',
+    'xaa://typescript/late',
+    {
+      title: 'Late fixture resource',
+      description: 'Added after connection when the resource catalog changes.',
+      mimeType: 'text/plain',
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: 'text/plain', text: `typescript-${transport}-late-resource` }],
+    }),
+  );
+}
+
+function registerLatePrompt(server, transport) {
+  server.registerPrompt(
+    'late_fixture_prompt',
+    {
+      title: 'Late fixture prompt',
+      description: 'Added after connection when the prompt catalog changes.',
+      argsSchema: { topic: z.string().min(1).max(128) },
+    },
+    async ({ topic }) => ({
+      messages: [{ role: 'user', content: { type: 'text', text: `typescript-${transport}-late-prompt:${topic}` } }],
+    }),
   );
 }

@@ -5,7 +5,11 @@ import { registerFixtureCapabilities } from './capabilities.mjs';
 serveStdio(({ era }) => {
   const server = new McpServer(
     { name: 'XAA TypeScript SDK fixture', version: '1.0.0' },
-    { capabilities: { tools: { listChanged: true }, resources: { subscribe: true } } },
+    { capabilities: {
+      tools: { listChanged: true },
+      resources: { listChanged: true, subscribe: true },
+      prompts: { listChanged: true },
+    } },
   );
   registerFixtureCapabilities(server, {
     transport: 'stdio',
@@ -14,6 +18,8 @@ serveStdio(({ era }) => {
     publishToolListChange: () => {
       server.server.sendToolListChanged();
     },
+    publishResourcesListChange: () => server.server.sendResourceListChanged(),
+    publishPromptsListChange: () => server.server.sendPromptListChanged(),
   });
   return server;
 });

@@ -28,7 +28,11 @@ from mcp.client.extension import ClientExtension, NotificationBinding
 from mcp.client.session import ClientRequestContext
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
-from mcp.client.subscriptions import ResourceUpdated, ToolsListChanged
+from mcp.client.subscriptions import (
+    ResourcesListChanged,
+    ResourceUpdated,
+    ToolsListChanged,
+)
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -185,6 +189,8 @@ class _ConnectedServer:
         self.notifications = notifications
         self.subscribed_resources: set[str] = set()
         self.tool_list_changed = False
+        self.prompt_list_changed = False
+        self.resource_list_changed = False
         self.subscription_task: asyncio.Task[None] | None = None
         self.sampling_handler: (
             Callable[
@@ -220,6 +226,16 @@ class _ConnectedServer:
 
     def enqueue_tools_list_changed(self) -> None:
         self._enqueue_notification({"kind": "tools_list_changed", "trust": "untrusted_mcp_output"})
+
+    def enqueue_resources_list_changed(self) -> None:
+        self._enqueue_notification(
+            {"kind": "resources_list_changed", "trust": "untrusted_mcp_output"}
+        )
+
+    def enqueue_prompts_list_changed(self) -> None:
+        self._enqueue_notification(
+            {"kind": "prompts_list_changed", "trust": "untrusted_mcp_output"}
+        )
 
     def _enqueue_notification(self, payload: dict[str, Any]) -> None:
         if self.notifications.full():
@@ -294,7 +310,11 @@ class MCPManager:
                 self._errors[server_id] = safe_error
                 raise MCPConnectionError(safe_error)
             self._connected[server_id] = connection
-            if connection.tool_list_changed:
+            if (
+                connection.tool_list_changed
+                or connection.prompt_list_changed
+                or connection.resource_list_changed
+            ):
                 try:
                     await self._restart_resource_listener(connection)
                 except Exception as error:
@@ -452,6 +472,16 @@ class MCPManager:
                     client.protocol_version in MODERN_PROTOCOL_VERSIONS
                     and capabilities.tools is not None
                     and capabilities.tools.list_changed is True
+                )
+                connection.prompt_list_changed = (
+                    client.protocol_version in MODERN_PROTOCOL_VERSIONS
+                    and capabilities.prompts is not None
+                    and capabilities.prompts.list_changed is True
+                )
+                connection.resource_list_changed = (
+                    client.protocol_version in MODERN_PROTOCOL_VERSIONS
+                    and capabilities.resources is not None
+                    and capabilities.resources.list_changed is True
                 )
                 if not ready.done():
                     ready.set_result((connection, records))
@@ -987,7 +1017,12 @@ class MCPManager:
             previous.cancel()
             await asyncio.gather(previous, return_exceptions=True)
         connection.subscription_task = None
-        if not connection.subscribed_resources and not connection.tool_list_changed:
+        if not (
+            connection.subscribed_resources
+            or connection.tool_list_changed
+            or connection.prompt_list_changed
+            or connection.resource_list_changed
+        ):
             return
         ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
@@ -995,6 +1030,8 @@ class MCPManager:
             try:
                 async with connection.client.listen(
                     tools_list_changed=connection.tool_list_changed,
+                    prompts_list_changed=connection.prompt_list_changed,
+                    resources_list_changed=connection.resource_list_changed,
                     resource_subscriptions=sorted(connection.subscribed_resources),
                 ) as subscription:
                     if not ready.done():
@@ -1007,6 +1044,16 @@ class MCPManager:
                                 await self._refresh_tool_catalog(connection)
                             except Exception:  # noqa: BLE001 - preserve the connection and require owner resync.
                                 connection.enqueue_resync_required()
+                        elif isinstance(event, ResourcesListChanged):
+                            async with connection.lock:
+                                connection.resources.clear()
+                                connection.resource_templates.clear()
+                                connection.expanded_resource_uris.clear()
+                            connection.enqueue_resources_list_changed()
+                        else:
+                            async with connection.lock:
+                                connection.prompts.clear()
+                            connection.enqueue_prompts_list_changed()
                     connection.enqueue_resync_required()
             except asyncio.CancelledError:
                 if not ready.done():

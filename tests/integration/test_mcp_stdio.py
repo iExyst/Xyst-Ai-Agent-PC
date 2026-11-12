@@ -151,8 +151,56 @@ async def test_mcp_typescript_sdk_modern_stdio_interoperability(workspace_tmp_pa
         registry.set_permission(server.id, late_tool.name, "read", late_tool.schema_sha256)
         late_result = await manager.call_tool(late_tool.qualified_name, {}, require_read=True)
         assert late_result["content"][0]["text"] == "typescript-stdio-late-tool"
+        resource_change_tool = next(
+            item for item in tools if item.name == "publish_resources_list_change"
+        )
+        registry.set_permission(
+            server.id, resource_change_tool.name, "read", resource_change_tool.schema_sha256
+        )
+        await manager.call_tool(resource_change_tool.qualified_name, {}, require_read=True)
+        resource_notices: list[dict[str, object]] = []
+        deadline = time.monotonic() + 3
+        while not any(item.get("kind") == "resources_list_changed" for item in resource_notices):
+            resource_notices.extend(
+                (await manager.drain_resource_notifications(server.id))["notifications"]
+            )
+            if time.monotonic() >= deadline:
+                pytest.fail("MCP manager did not receive resources/list_changed")
+            await asyncio.sleep(0.02)
+        assert all(item.get("trust") == "untrusted_mcp_output" for item in resource_notices)
+        assert not manager._connected[server.id].resources
+        assert not manager._connected[server.id].resource_templates
+        resources = await manager.list_resources(server.id)
+        assert "xaa://typescript/late" in {item["uri"] for item in resources}
+        assert [item["name"] for item in await manager.list_prompts(server.id)] == [
+            "summarize_topic"
+        ]
+        prompt_change_tool = next(
+            item for item in tools if item.name == "publish_prompts_list_change"
+        )
+        registry.set_permission(
+            server.id, prompt_change_tool.name, "read", prompt_change_tool.schema_sha256
+        )
+        await manager.call_tool(prompt_change_tool.qualified_name, {}, require_read=True)
+        prompt_notices: list[dict[str, object]] = []
+        deadline = time.monotonic() + 3
+        while not any(item.get("kind") == "prompts_list_changed" for item in prompt_notices):
+            prompt_notices.extend(
+                (await manager.drain_resource_notifications(server.id))["notifications"]
+            )
+            if time.monotonic() >= deadline:
+                pytest.fail("MCP manager did not receive prompts/list_changed")
+            await asyncio.sleep(0.02)
+        assert all(item.get("trust") == "untrusted_mcp_output" for item in prompt_notices)
+        assert not manager._connected[server.id].prompts
         prompts = await manager.list_prompts(server.id)
-        assert [item["name"] for item in prompts] == ["summarize_topic"]
+        assert {item["name"] for item in prompts} == {"summarize_topic", "late_fixture_prompt"}
+        late_prompt = await manager.preview_prompt(
+            server.id, "late_fixture_prompt", {"topic": "fixture"}
+        )
+        assert (
+            late_prompt["messages"][0]["content"]["text"] == "typescript-stdio-late-prompt:fixture"
+        )
         prompt = await manager.preview_prompt(server.id, "summarize_topic", {"topic": "fixture"})
         assert prompt["trust"] == "untrusted_mcp_output"
         assert prompt["messages"][0]["content"]["text"] == "typescript-stdio-prompt:fixture"
