@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import hashlib
 import json
 import subprocess
 import sys
@@ -12,7 +13,7 @@ from uuid import uuid4
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.states import RunState
 from xaa.runtime.workspace_snapshot import capture_workspace
-from xaa.runtime.wsl_transport import WSLTransport
+from xaa.runtime.wsl_transport import RESOURCE_NAMES, WSLTransport
 from xaa.storage.runs import RunStore
 
 CHILD = """
@@ -23,6 +24,16 @@ from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.runs import RunStore
 async def main():
     request=json.load(sys.stdin)
+    if request.get('prior_transport_path'):
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('xaa_prior_wsl_transport',request['prior_transport_path'])
+        if spec is None or spec.loader is None: raise RuntimeError('Cannot load prior WSL transport')
+        prior=importlib.util.module_from_spec(spec)
+        sys.modules[spec.name]=prior
+        spec.loader.exec_module(prior)
+        WSLTransport=prior.WSLTransport
+    else:
+        from xaa.runtime.wsl_transport import WSLTransport
     transport=await WSLTransport.discover(request['distribution'],deadline=time.monotonic()+30)
     controller=CommandController(RunStore(Path(request['database'])),transport)
     def crash(*args,**kwargs):
@@ -35,7 +46,42 @@ asyncio.run(main())
 """
 
 
-async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
+def stage_prior_profile(root: Path, revision: str) -> tuple[Path, str, str]:
+    if not 7 <= len(revision) <= 40 or any(
+        character not in "0123456789abcdefABCDEF" for character in revision
+    ):
+        raise ValueError("Prior profile revision must be a hexadecimal Git commit ID.")
+    resolved = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    prior_directory = root / "prior-profile"
+    prior_directory.mkdir()
+    for name in (*RESOURCE_NAMES, "wsl_transport.py"):
+        content = subprocess.run(
+            ["git", "show", f"{resolved}:engine/xaa/runtime/{name}"],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        ).stdout
+        (prior_directory / name).write_bytes(content)
+    fingerprints = {
+        name: hashlib.sha256((prior_directory / name).read_bytes()).hexdigest()
+        for name in RESOURCE_NAMES
+    }
+    digest = hashlib.sha256(json.dumps(fingerprints, sort_keys=True).encode()).hexdigest()
+    return prior_directory / "wsl_transport.py", digest, resolved
+
+
+async def diagnose(
+    distribution: str,
+    *,
+    profile_drift: bool = False,
+    prior_profile_revision: str | None = None,
+) -> None:
     root = Path(".acceptance") / str(uuid4())
     project = root / "project"
     project.mkdir(parents=True)
@@ -43,6 +89,15 @@ async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
     (project / "fixture.txt").write_text(nonce, encoding="utf-8")
     original = capture_workspace(project).sha256
     transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 60)
+    prior_transport_path: Path | None = None
+    prior_profile_sha256: str | None = None
+    prior_revision: str | None = None
+    if prior_profile_revision is not None:
+        prior_transport_path, prior_profile_sha256, prior_revision = await asyncio.to_thread(
+            stage_prior_profile, root, prior_profile_revision
+        )
+        if prior_profile_sha256 == transport.profile_sha256:
+            raise RuntimeError("Selected Git revision has the same WSL profile fingerprint.")
     database = root / "data" / "db.sqlite3"
     cases: list[dict[str, object]] = []
     for damage in (False, True):
@@ -55,7 +110,7 @@ async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
             model=None,
             command_grant={
                 "distribution": distribution,
-                "profile_sha256": transport.profile_sha256,
+                "profile_sha256": prior_profile_sha256 or transport.profile_sha256,
             },
         )
         run_id = record["id"]
@@ -73,6 +128,11 @@ async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
                     "run_id": run_id,
                     "owner": owner,
                     "distribution": distribution,
+                    **(
+                        {"prior_transport_path": str(prior_transport_path.resolve())}
+                        if prior_transport_path is not None
+                        else {}
+                    ),
                 }
             ).encode(),
             capture_output=True,
@@ -130,12 +190,16 @@ async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
         "distribution": distribution,
         "profile_sha256": transport.profile_sha256,
         "cases": cases,
-        "profile_fingerprint_changed_before_recovery": profile_drift,
+        "profile_fingerprint_changed_before_recovery": profile_drift
+        or (prior_profile_sha256 is not None and prior_profile_sha256 != transport.profile_sha256),
+        "prior_profile_revision": prior_revision,
+        "prior_profile_sha256": prior_profile_sha256,
+        "current_profile_sha256": transport.profile_sha256,
         "same_distribution_and_execution_identity_retained": True,
         "original_project_unchanged": True,
         "model_or_ui_tool_enabled": False,
         "fault_actor": "automated_diagnostic_not_model",
-        "scope": "Controller subprocess crash and saved-identity recovery; not full API/desktop restart or installed package upgrade",
+        "scope": "Controller subprocess crash and saved-identity recovery; when selected, prior WSL transport and manager source are exercised, not an installed package upgrade",
     }
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Command recovery acceptance passed: {root}")
@@ -144,10 +208,21 @@ async def diagnose(distribution: str, *, profile_drift: bool = False) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--distribution", required=True)
-    parser.add_argument(
+    profile_group = parser.add_mutually_exclusive_group()
+    profile_group.add_argument(
         "--profile-drift",
         action="store_true",
         help="Change the transport fingerprint before reconciling saved WSL identities.",
     )
+    profile_group.add_argument(
+        "--prior-profile-revision",
+        help="Run the command with a prior Git revision's WSL transport and manager resources.",
+    )
     args = parser.parse_args()
-    asyncio.run(diagnose(args.distribution, profile_drift=args.profile_drift))
+    asyncio.run(
+        diagnose(
+            args.distribution,
+            profile_drift=args.profile_drift,
+            prior_profile_revision=args.prior_profile_revision,
+        )
+    )
