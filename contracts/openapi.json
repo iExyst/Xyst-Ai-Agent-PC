@@ -1926,6 +1926,51 @@
         "title": "LMStudioSelectionRequest",
         "type": "object"
       },
+      "MCPArgumentCompletionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "argument_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Argument Name",
+            "type": "string"
+          },
+          "context_arguments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Context Arguments",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "prompt",
+              "resource_template"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 8192,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "argument_name",
+          "value"
+        ],
+        "title": "MCPArgumentCompletionRequest",
+        "type": "object"
+      },
       "MCPConnectResponse": {
         "properties": {
           "state": {
@@ -8085,6 +8130,62 @@
           }
         ],
         "summary": "Delete Mcp Server"
+      }
+    },
+    "/mcp/servers/{server_id}/completions": {
+      "post": {
+        "operationId": "complete_mcp_argument_mcp_servers__server_id__completions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPArgumentCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Mcp Argument Mcp Servers  Server Id  Completions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete Mcp Argument"
       }
     },
     "/mcp/servers/{server_id}/connect": {
