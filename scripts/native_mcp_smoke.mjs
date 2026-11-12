@@ -167,7 +167,8 @@ try {
 
   const panel = page.getByRole('region', { name: 'MCP integrations' });
   await page.locator('summary').filter({ hasText: 'MCP integrations' }).click();
-  const command = path.resolve('.venv/Scripts/python.exe');
+  const pythonCommand = process.env.XAA_NATIVE_MCP_PYTHON || '.venv/Scripts/python.exe';
+  const command = path.resolve(pythonCommand);
   const fixture = path.resolve('tests/fixtures/mcp_stdio_server.py');
   await panel.getByLabel('Server name').fill('Native fixture');
   await panel.getByLabel('Command').fill(command);
@@ -430,7 +431,7 @@ try {
       listener.close((error) => error ? reject(error) : resolve(address.port));
     });
   });
-  const fixturePython = path.resolve('.venv/Scripts/python.exe');
+  const fixturePython = path.resolve(pythonCommand);
   const oauthFixturePath = path.resolve('tests/fixtures/mcp_oauth_http_server.py');
   oauthFixture = spawn(fixturePython, [oauthFixturePath, '--port', String(oauthPort)], {
     windowsHide: true,
