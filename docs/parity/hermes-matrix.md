@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## WSL command recovery after a profile update (2026-11-12)
+
+For an existing journaled WSL command, `stop`, `cleanup` and `status` remain bound to its immutable execution ID and original distribution even if packaged resource hashes change. Starting a new command still requires the current profile fingerprint. Transport regression tests cover the mismatch and wrong-distribution denial; installed prior-version upgrade recovery and historical receipt-schema compatibility are not yet proven. The execution capability remains **partial**; this narrow recovery improvement does not change the audited backend parity status.
+
 ## Current owner-selected MCP `roots/list` support (2026-11-12)
 
 The client answers the legacy MCP `roots/list` request only for local stdio servers configured in legacy protocol mode with folders the owner chose in the desktop picker. The selected roots are canonicalized and revalidated before every disclosure; missing or redirected paths fail closed. Existing and automatically negotiated 2026-protocol integrations disclose no roots, and Streamable HTTP cannot receive local filesystem roots. The actual pinned Python SDK server fixture passes the round trip; the desktop browser acceptance verifies folder selection and request configuration; schema-34 migration leaves roots empty. Focused stdio, HTTP, migration, browser, type, production-build and native boot/lifecycle checks pass locally. Hosted Windows source run [43318104073](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43318104073) passed the complete source workflow for this commit. This legacy-only feature is a bounded MCP slice; the broad interoperability row remains partial.

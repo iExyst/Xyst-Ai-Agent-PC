@@ -181,9 +181,13 @@ class WSLTransport:
         *,
         deadline: float,
     ) -> dict[str, Any]:
-        self.require_intent(intent)
         if action not in {"stop", "cleanup", "status"}:
             raise ValueError("Unsupported execution control action.")
+        # A saved execution may outlive the packaged profile that launched it.
+        # Control addresses only its immutable identity in the original WSL
+        # distribution; profile equality remains mandatory for every launch.
+        if intent.distribution != self.distribution:
+            raise PermissionError("Execution control must use the saved WSL distribution.")
         raw = await request_process(
             self.invocation,
             json.dumps({"action": action, "execution_id": intent.execution_id}).encode(),

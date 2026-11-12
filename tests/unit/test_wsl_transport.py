@@ -171,3 +171,60 @@ async def test_run_rejects_invalid_or_duplicate_frames(frame, monkeypatch):
     monkeypatch.setattr(wsl_transport, "request_process", request_process)
     with pytest.raises(TransportError):
         await transport.run(intent, WorkspaceSnapshot((), (), ()), deadline=time.monotonic() + 30)
+
+
+@pytest.mark.parametrize("action", ["stop", "cleanup", "status"])
+async def test_saved_execution_control_survives_profile_upgrade(action, monkeypatch):
+    old_profile = "a" * 64
+    new_profile = "b" * 64
+    intent = CommandIntent(
+        argv=["/usr/bin/true"],
+        max_seconds=10,
+        execution_id="c" * 32,
+        backend="wsl-bubblewrap-v1",
+        distribution="Ubuntu-24.04",
+        profile_sha256=old_profile,
+        workspace="fixture",
+    )
+    transport = wsl_transport.WSLTransport(
+        "Ubuntu-24.04", new_profile, ("current-profile-manager",)
+    )
+    calls = []
+
+    async def request_process(command, payload, *, timeout, output_limit):
+        calls.append((command, json.loads(payload), timeout, output_limit))
+        return json.dumps({"execution_id": intent.execution_id, "action": action}).encode()
+
+    monkeypatch.setattr(wsl_transport, "request_process", request_process)
+    result = await transport.control(action, intent, deadline=time.monotonic() + 30)
+
+    assert result == {"execution_id": intent.execution_id, "action": action}
+    assert calls == [
+        (
+            transport.invocation,
+            {"action": action, "execution_id": intent.execution_id},
+            pytest.approx(15),
+            16384,
+        )
+    ]
+
+
+async def test_saved_execution_control_rejects_a_different_distribution(monkeypatch):
+    digest, _ = wsl_transport.profile_fingerprint()
+    intent = CommandIntent(
+        argv=["/usr/bin/true"],
+        max_seconds=10,
+        execution_id="d" * 32,
+        backend="wsl-bubblewrap-v1",
+        distribution="Old-Ubuntu",
+        profile_sha256="a" * 64,
+        workspace="fixture",
+    )
+    transport = wsl_transport.WSLTransport("Ubuntu-24.04", digest, ("must-not-launch",))
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Saved control must never be redirected to another distribution")
+
+    monkeypatch.setattr(wsl_transport, "request_process", forbidden)
+    with pytest.raises(PermissionError, match="saved WSL distribution"):
+        await transport.control("cleanup", intent, deadline=time.monotonic() + 30)
