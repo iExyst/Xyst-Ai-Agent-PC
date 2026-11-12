@@ -26,6 +26,7 @@ async def run_case(
     destination: str,
     approved_hosts: list[str],
     start_url: str | None = None,
+    expected_marker: str = "Herman Melville - Moby-Dick",
 ) -> dict[str, object]:
     start_url = start_url or (
         "https://postman-echo.com/redirect-to?" + urlencode({"url": destination})
@@ -79,8 +80,7 @@ async def run_case(
         "error": result.get("error"),
         "final_url": result.get("url"),
         "title": result.get("title"),
-        "content_has_fixture_marker": "Herman Melville - Moby-Dick"
-        in str(result.get("content", "")),
+        "content_has_expected_marker": expected_marker in str(result.get("content", "")),
         "blocked_subresources": result.get("blocked_subresources", {}),
         "journal_state": row[1],
         "elapsed_ms": elapsed_ms,
@@ -99,7 +99,7 @@ async def main() -> None:
         if (
             allowed["status"] != "ok"
             or allowed["final_url"] != "https://httpbin.org/html"
-            or allowed["content_has_fixture_marker"] is not True
+            or allowed["content_has_expected_marker"] is not True
         ):
             raise AssertionError(f"Approved redirect did not reach the approved content: {allowed}")
 
@@ -109,19 +109,26 @@ async def main() -> None:
             destination="https://www.iana.org/",
             approved_hosts=["postman-echo.com"],
         )
-        if blocked["status"] != "read_failed" or blocked["final_url"] is not None:
+        if (
+            blocked["status"] != "read_failed"
+            or blocked["final_url"] is not None
+            or "Browser blocked a top-level navigation" not in str(blocked["error"])
+        ):
             raise AssertionError(f"An off-host redirect was not blocked: {blocked}")
 
         subresources = await run_case(
             root / "subresources.sqlite3",
             name="unapproved_subresources",
-            destination="https://httpbin.org/",
-            approved_hosts=["postman-echo.com", "httpbin.org"],
+            destination="https://en.wikipedia.org/wiki/HTTPS",
+            approved_hosts=["en.wikipedia.org"],
+            start_url="https://en.wikipedia.org/wiki/HTTPS",
+            expected_marker="Hypertext Transfer Protocol Secure",
         )
         blocked_resources = cast(dict[str, object], subresources.get("blocked_subresources", {}))
         blocked_count = blocked_resources.get("count", 0)
         if (
             subresources["status"] != "ok"
+            or subresources["content_has_expected_marker"] is not True
             or not isinstance(blocked_count, int)
             or blocked_count < 1
         ):
@@ -133,14 +140,14 @@ async def main() -> None:
         approved_chain_second_hop = "https://httpbin.org/redirect-to?" + urlencode(
             {"url": approved_chain_destination}
         )
-        approved_chain_start = "https://postman-echo.com/redirect-to?" + urlencode(
+        approved_chain_start = "https://httpbin.org/redirect-to?" + urlencode(
             {"url": approved_chain_second_hop}
         )
         approved_chain = await run_case(
             root / "approved-chain.sqlite3",
             name="approved_multi_hop_redirect",
             destination=approved_chain_destination,
-            approved_hosts=["postman-echo.com", "httpbin.org", "example.com"],
+            approved_hosts=["httpbin.org", "example.com"],
             start_url=approved_chain_start,
         )
         if (
@@ -166,7 +173,11 @@ async def main() -> None:
             approved_hosts=["postman-echo.com", "httpbin.org"],
             start_url=blocked_chain_start,
         )
-        if blocked_chain["status"] != "read_failed" or blocked_chain["final_url"] is not None:
+        if (
+            blocked_chain["status"] != "read_failed"
+            or blocked_chain["final_url"] is not None
+            or "Browser blocked a top-level navigation" not in str(blocked_chain["error"])
+        ):
             raise AssertionError(
                 f"An unapproved destination in a redirect chain was not blocked: {blocked_chain}"
             )
@@ -174,7 +185,7 @@ async def main() -> None:
     report = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
         "browser": "Microsoft Edge via managed Playwright worker",
-        "fixture_service": "Postman Echo redirect-to endpoint",
+        "fixture_service": "Postman Echo/httpbin redirects and Wikipedia HTTPS page",
         "cases": [allowed, blocked, subresources, approved_chain, blocked_chain],
         "source_sha256": {
             "browser_redirect_smoke.py": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

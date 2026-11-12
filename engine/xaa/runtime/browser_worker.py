@@ -208,6 +208,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
     budget = {"bytes": 0, "connections": 0}
     blocked_subresources: dict[str, int] = {}
     blocked_main_navigations = {"count": 0}
+    blocked_main_hosts: list[str] = []
     server = await asyncio.start_server(
         lambda reader, writer: _proxy_client(reader, writer, hosts, budget), "127.0.0.1", 0
     )
@@ -236,6 +237,18 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                 )
                 try:
                     page = await context.new_page()
+
+                    def record_unapproved_main_request(request: Any) -> None:
+                        if not request.is_navigation_request():
+                            return
+                        request_url = getattr(request, "url", None)
+                        if not isinstance(request_url, str):
+                            return
+                        hostname: str | None = urlsplit(request_url).hostname
+                        if hostname is not None and hostname.lower().rstrip(".") not in hosts:
+                            blocked_main_hosts.append(hostname.lower().rstrip("."))
+
+                    page.on("request", record_unapproved_main_request)
                     await context.route(
                         "**/*",
                         lambda route: guard_browser_route(
@@ -247,7 +260,18 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         ),
                     )
                     context.on("page", lambda opened: close_unexpected_page(page, opened))
-                    await page.goto(request.url, wait_until="domcontentloaded", timeout=15000)
+                    try:
+                        await page.goto(request.url, wait_until="domcontentloaded", timeout=15000)
+                    except PlaywrightError as error:
+                        if blocked_main_navigations["count"] or blocked_main_hosts:
+                            raise PermissionError(
+                                "Browser blocked a top-level navigation outside the approved host list."
+                            ) from error
+                        raise
+                    if blocked_main_hosts:
+                        raise PermissionError(
+                            "Browser blocked a top-level navigation outside the approved host list."
+                        )
                     for name in request.links:
                         link = page.get_by_role("link", name=name, exact=True)
                         if await link.count() != 1:
@@ -256,7 +280,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             )
                         await link.click(timeout=8000)
                         await page.wait_for_load_state("domcontentloaded", timeout=10000)
-                    if blocked_main_navigations["count"]:
+                    if blocked_main_navigations["count"] or blocked_main_hosts:
                         raise PermissionError(
                             "Browser blocked a top-level navigation outside the approved host list."
                         )
