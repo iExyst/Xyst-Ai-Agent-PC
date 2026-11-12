@@ -103,7 +103,10 @@ try{
   if(first.runs.length!==0||firstExecution.run_id!==null)throw new Error('Skip-missed policy unexpectedly dispatched a run');
   await stop(firstSession,firstProcess);firstSession=null;
 
-  const secondDebugPort=debugPortBase+1;
+  // Hosted elevated Windows acceptance uses WebView2's app-specific HKLM
+  // policy, which pins both cold starts to debugPortBase. The first process
+  // is fully stopped before this launch, so reusing that port is safe.
+  const secondDebugPort=debugPortBase;
   secondProcess=launch(secondDebugPort,secondWebViewProfile);
   secondSession=await attach(secondProcess,'second cold start',secondDebugPort);
   apiReadyMilliseconds.push(secondSession.api_ready_milliseconds);
