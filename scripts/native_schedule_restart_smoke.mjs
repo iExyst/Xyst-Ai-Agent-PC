@@ -14,7 +14,8 @@ const appData=path.join(root,'roaming-app-data');
 const configDirectory=path.join(root,'config');
 const logDirectory=path.join(root,'logs');
 const webViewProfile=path.join(root,'webview-profile');
-await Promise.all([localAppData,appData,configDirectory,logDirectory,webViewProfile].map(dir=>mkdir(dir,{recursive:true})));
+const secondWebViewProfile=path.join(root,'webview-profile-second');
+await Promise.all([localAppData,appData,configDirectory,logDirectory,webViewProfile,secondWebViewProfile].map(dir=>mkdir(dir,{recursive:true})));
 const database=path.join(localAppData,'XAA','xaa.sqlite3');
 const fixturePath=path.join(root,'seed.json');
 const fixture=JSON.parse(execFileSync('uv',['run','python','scripts/native_schedule_restart_fixture.py','--database',database,'--report',fixturePath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
@@ -23,7 +24,7 @@ if(!Number.isInteger(debugPortBase)||debugPortBase<1024||debugPortBase>65534)thr
 const environment={...process.env,LOCALAPPDATA:localAppData,APPDATA:appData,XAA_TEST_ACCEPTANCE:'1',XAA_TEST_HIDDEN:'0',XAA_TEST_CONFIG_DIR:configDirectory,XAA_TEST_LOG_DIR:logDirectory,WEBVIEW2_USER_DATA_FOLDER:webViewProfile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debugPortBase}`};
 delete environment.XAA_DATA_DIR;delete environment.XAA_API_TOKEN;delete environment.XAA_API_PORT;delete environment.VIRTUAL_ENV;delete environment.PYTHONPATH;
 
-const launch=debugPort=>spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...environment,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debugPort}`}});
+const launch=(debugPort,profile)=>spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...environment,WEBVIEW2_USER_DATA_FOLDER:profile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debugPort}`}});
 async function attach(proc,stage,debugPort){
   let browser,lastError='Debugging endpoint unavailable';
   const deadline=Date.now()+60000;
@@ -94,7 +95,7 @@ async function stop(session,proc){
 let firstProcess,secondProcess,firstSession,secondSession;
 const apiReadyMilliseconds=[];
 try{
-  firstProcess=launch(debugPortBase);
+  firstProcess=launch(debugPortBase,webViewProfile);
   firstSession=await attach(firstProcess,'first cold start',debugPortBase);
   apiReadyMilliseconds.push(firstSession.api_ready_milliseconds);
   const first=await waitForMissed(firstSession.connection,'first cold start');
@@ -103,7 +104,7 @@ try{
   await stop(firstSession,firstProcess);firstSession=null;
 
   const secondDebugPort=debugPortBase+1;
-  secondProcess=launch(secondDebugPort);
+  secondProcess=launch(secondDebugPort,secondWebViewProfile);
   secondSession=await attach(secondProcess,'second cold start',secondDebugPort);
   apiReadyMilliseconds.push(secondSession.api_ready_milliseconds);
   const second=await waitForMissed(secondSession.connection,'second cold start');
