@@ -134,6 +134,9 @@ try {
   );
   await conversations.getByRole('button', { name: 'Save title' }).click();
   if (!(await titleUpdate).ok()) throw new Error('The native desktop title update request failed.');
+  await expect(conversations.getByRole('button', { name: 'Save title' })).toBeDisabled();
+  await expect(conversations.getByText('Native chat acceptance', { exact: true })).toBeVisible();
+  await expect(conversations.getByRole('alert')).toHaveCount(0);
   const renamedChat = await (await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers })).json();
   if (renamedChat.title !== 'Native chat acceptance') throw new Error('The native desktop did not persist the conversation title.');
   page.once('dialog', (dialog) => void dialog.accept());
@@ -143,6 +146,7 @@ try {
   );
   await conversations.getByRole('button', { name: 'Delete shared conversation' }).click();
   if ((await chatDeletion).status() !== 204) throw new Error('The native desktop conversation delete request failed.');
+  await expect(conversations.getByLabel('Saved terminal and desktop sessions')).not.toContainText(sharedChatSessionId);
   const deletedChat = await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers });
   if (deletedChat.status !== 404) throw new Error('The native desktop did not remove the shared conversation.');
   const remainingChats = await (await fetch(`${connection.base_url}/chat/sessions`, { headers })).json();

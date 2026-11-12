@@ -272,6 +272,17 @@ def test_chat_session_rename_api_is_authenticated_and_preserves_session(workspac
     store = RunStore(workspace_tmp_path / "shared-chat-rename-api.sqlite3")
     with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
         path = "/chat/sessions/desktop-thread"
+        preflight = client.options(
+            path,
+            headers={
+                "Origin": "http://tauri.localhost",
+                "Access-Control-Request-Method": "PATCH",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert preflight.status_code == 200
+        assert preflight.headers["access-control-allow-origin"] == "http://tauri.localhost"
+        assert "PATCH" in preflight.headers["access-control-allow-methods"]
         assert client.patch(path, json={"title": "Project notes"}).status_code == 401
         assert (
             client.post(

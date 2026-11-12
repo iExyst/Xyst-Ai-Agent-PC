@@ -6,8 +6,11 @@ Extended the native Tauri WebView acceptance to load a conversation from the fro
 rename it in the desktop UI, and verify the authenticated API reflects the change; confirmed the
 desktop delete action removes the session from the API and shared-session list. The flow uses an
 isolated disposable profile and makes no model inference. `node --check` passes, the existing
-desktop chat browser acceptance passes, and all 11 CLI/chat API and SQLite tests pass. The new
-native frozen-app scenario is wired into installer acceptance and awaits its hosted run.
+desktop chat browser acceptance passes, and all 11 CLI/chat API and SQLite tests pass. The first
+hosted run [43123221732](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43123221732)
+exposed a real WebView CORS defect: `PATCH` was missing from the allowed methods, so title-save
+preflight failed. The API now allows `PATCH`, and a Tauri-origin OPTIONS regression passes locally;
+the hosted rerun is pending.
 
 ## Verify shared chat rename and deletion across desktop API and terminal storage (2026-11-11)
 
