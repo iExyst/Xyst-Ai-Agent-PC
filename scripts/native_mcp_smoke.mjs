@@ -172,6 +172,25 @@ try {
     throw new Error('The native API did not persist the isolated stdio MCP server.');
   }
   const serverId = saved[0].id;
+  if (saved[0].memory_limit_mb !== 2048 || saved[0].cpu_limit_percent !== 80) {
+    throw new Error('A new native MCP server did not receive its default Windows process limits.');
+  }
+
+  await panel.getByLabel('Memory limit for Native fixture (MiB; blank is unlimited)').fill('1536');
+  await panel.getByLabel('CPU limit for Native fixture (percent; blank is unlimited)').fill('70');
+  const resourceLimitsSaved = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/mcp/servers/${serverId}/resource-limits`
+      && response.request().method() === 'PUT',
+  );
+  await panel.getByRole('button', { name: 'Save process limits for Native fixture' }).click();
+  const resourceLimitsResponse = await resourceLimitsSaved;
+  if (!resourceLimitsResponse.ok()) {
+    throw new Error(`The native desktop could not save MCP process limits (${resourceLimitsResponse.status()}).`);
+  }
+  const updatedLimits = await resourceLimitsResponse.json();
+  if (updatedLimits.memory_limit_mb !== 1536 || updatedLimits.cpu_limit_percent !== 70) {
+    throw new Error('The native desktop resource-limit editor returned unexpected values.');
+  }
 
   await panel.getByRole('button', { name: 'Connect and discover', exact: true }).click();
   await expect(panel.getByText('Add two integers.', { exact: true })).toBeVisible({ timeout: 20_000 });
@@ -179,6 +198,10 @@ try {
   const discovered = connected[0].tools;
   if (connected[0].state !== 'connected' || discovered.map((tool) => tool.name).sort().join(',') !== 'add,slow') {
     throw new Error('The native MCP fixture did not expose the expected tools.');
+  }
+  if (connected[0].memory_limit_mb !== updatedLimits.memory_limit_mb
+      || connected[0].cpu_limit_percent !== updatedLimits.cpu_limit_percent) {
+    throw new Error('The native MCP connection did not retain the saved process limits.');
   }
   if (discovered.some((tool) => tool.permission !== 'none')) {
     throw new Error('A newly discovered native MCP tool was not default-deny.');
@@ -430,6 +453,14 @@ try {
     native_package_removal_blocked_while_referenced: true,
     native_package_removed_after_integration_removal: true,
     real_fixture_process: true,
+    native_process_limits: {
+      default_memory_limit_mb: saved[0].memory_limit_mb,
+      default_cpu_limit_percent: saved[0].cpu_limit_percent,
+      edited_memory_limit_mb: updatedLimits.memory_limit_mb,
+      edited_cpu_limit_percent: updatedLimits.cpu_limit_percent,
+      retained_after_connection: connected[0].memory_limit_mb === updatedLimits.memory_limit_mb
+        && connected[0].cpu_limit_percent === updatedLimits.cpu_limit_percent,
+    },
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
     owner_resource_subscription: true,
