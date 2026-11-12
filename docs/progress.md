@@ -8,6 +8,10 @@ The current source and acceptance evidence show that the restricted WSL command 
 
 Updated the README and user guide to point at installer workflow [43162210451](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43162210451), which passed after workflow [43154565870](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43154565870) was previously described as latest. The instructions explain that Actions is the build log, link to the Summary artifact, and accurately list that run's install/upgrade/boot/uninstall, recovery, scope and standard-user checks. No app code or user data changed.
 
+## Refresh the pinned MCP audit after modern sampling acceptance (2026-11-12)
+
+The pinned web/browser/MCP source audit's “present gap” and the Hermes MCP row still said package installation, OAuth, resource/prompt support and modern sampling were unavailable, despite later completed implementation and hosted acceptance. Updated those passages to preserve the pinned upstream findings while describing X.A.A.'s current slices and the remaining full package semantics, server process/network controls, live third-party interoperability and broad browser gaps. No runtime code or live service tests changed.
+
 ## Exercise saved chat sessions in the native desktop window (2026-11-11)
 
 Extended the native Tauri WebView acceptance to load a conversation from the frozen engine API,
