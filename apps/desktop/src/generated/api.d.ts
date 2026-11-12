@@ -789,6 +789,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/servers/{server_id}/resource-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Mcp Server Resource Limits */
+        put: operations["set_mcp_server_resource_limits_mcp_servers__server_id__resource_limits_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp/servers/{server_id}/resource-templates": {
         parameters: {
             query?: never;
@@ -2850,6 +2867,13 @@ export interface components {
              * Format: password
              */
             value: string;
+        };
+        /** MCPServerResourceLimitsRequest */
+        MCPServerResourceLimitsRequest: {
+            /** Cpu Limit Percent */
+            cpu_limit_percent?: number | null;
+            /** Memory Limit Mb */
+            memory_limit_mb?: number | null;
         };
         /** MCPServerResponse */
         MCPServerResponse: {
@@ -5767,6 +5791,43 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_mcp_server_resource_limits_mcp_servers__server_id__resource_limits_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPServerResourceLimitsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number | null;
                     };
                 };
             };

@@ -69,6 +69,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
       server = {...body,id:serverId,created_at:'2026-11-05T00:00:00Z',updated_at:'2026-11-05T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{},tools:[]};
       return route.fulfill({status:201,json:server,headers});
     }
+    if (path === `/mcp/servers/${serverId}/resource-limits` && request.method() === 'PUT') {
+      server = {...server,...body};
+      return route.fulfill({json:body,headers});
+    }
     if (path === '/extensions/packages/import-mcp-server') {
       if (body.server_name==='remote-helper') {
         importedPackageHTTPServer={id:'fedcba9876543210fedcba9876543210',name:'sample-package:remote-helper',transport:'streamable_http',endpoint:'https://example.test/mcp',command:'',args:[],cwd:null,secret_env:['MCP_TOKEN'],plugin_backed:true,created_at:'2026-11-10T00:00:00Z',updated_at:'2026-11-10T00:00:00Z',state:'disconnected',error:null,secret_env_configured:{MCP_TOKEN:true},oauth_configured:false,tools:[]};
@@ -116,9 +120,12 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByLabel('Arguments (JSON string array)').fill('["fixture_server.py"]');
   await panel.getByLabel('MCP protocol').selectOption('legacy');
   await panel.getByRole('button',{name:'Add MCP server'}).click();
-  await expect(panel.getByText('Fixture MCP')).toBeVisible();
+  await expect(panel.getByRole('heading',{name:'Fixture MCP (disconnected)'})).toBeVisible();
   expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.memory_limit_mb===2048&&item.body.cpu_limit_percent===80)).toBe(true);
-  await expect(panel.getByText('Process limits: memory 2048 MiB, CPU 80%')).toBeVisible();
+  await panel.getByLabel('Memory limit for Fixture MCP (MiB; blank is unlimited)').fill('1024');
+  await panel.getByLabel('CPU limit for Fixture MCP (percent; blank is unlimited)').fill('50');
+  await panel.getByRole('button',{name:'Save process limits for Fixture MCP'}).click();
+  expect(requests.some(item=>item.method==='PUT'&&item.path===`/mcp/servers/${serverId}/resource-limits`&&item.body.memory_limit_mb===1024&&item.body.cpu_limit_percent===50)).toBe(true);
   await panel.getByRole('button',{name:'Connect and discover'}).click();
   await expect(panel.getByText('Change value')).toBeVisible();
   const samplingGrant=panel.getByLabel('Allow this server to request text-only model sampling during this run');

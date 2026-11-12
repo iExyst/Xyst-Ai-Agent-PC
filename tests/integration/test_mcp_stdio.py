@@ -673,6 +673,16 @@ def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
         assert created.json()["memory_limit_mb"] == 512
         assert created.json()["cpu_limit_percent"] == 60
         server_id = created.json()["id"]
+        updated_limits = client.put(
+            f"/mcp/servers/{server_id}/resource-limits",
+            headers=headers,
+            json={"memory_limit_mb": 1024, "cpu_limit_percent": 50},
+        )
+        assert updated_limits.status_code == 200
+        assert updated_limits.json() == {
+            "memory_limit_mb": 1024,
+            "cpu_limit_percent": 50,
+        }
         credentials.set("preserve-me", f"mcp:{server_id}:TOKEN")
         created_http = client.post(
             "/mcp/servers",
@@ -705,6 +715,8 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
     manager = MCPManager(store, None)
     try:
         tools = await manager.connect_server(server.id)
+        with pytest.raises(MCPConnectionError, match="Disconnect the MCP server"):
+            await manager.set_process_limits(server.id, memory_limit_mb=512, cpu_limit_percent=60)
         assert {tool.name for tool in tools} == {"add", "slow"}
         tool = next(item for item in tools if item.name == "add")
         assert tool.permission == "none"
@@ -733,6 +745,9 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
             await manager.call_tool(qualified, {"left": 1, "right": 1})
     finally:
         await manager.close()
+    updated = await manager.set_process_limits(server.id, memory_limit_mb=512, cpu_limit_percent=60)
+    assert updated.memory_limit_mb == 512
+    assert updated.cpu_limit_percent == 60
 
 
 @pytest.mark.asyncio

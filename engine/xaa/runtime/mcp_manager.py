@@ -436,6 +436,27 @@ class MCPManager:
         async with self._lock:
             return await self._close_connection_locked(server_id)
 
+    async def set_process_limits(
+        self,
+        server_id: str,
+        *,
+        memory_limit_mb: int | None,
+        cpu_limit_percent: int | None,
+    ) -> MCPServerRecord:
+        async with self._lock:
+            if server_id in self._connected:
+                raise MCPConnectionError(
+                    "Disconnect the MCP server before changing its process limits."
+                )
+            try:
+                return self.registry.set_process_limits(
+                    server_id,
+                    memory_limit_mb=memory_limit_mb,
+                    cpu_limit_percent=cpu_limit_percent,
+                )
+            except ValueError as error:
+                raise MCPConnectionError(str(error)) from error
+
     async def _close_connection_locked(self, server_id: str) -> bool:
         """Close an owned transport before removing its live connection record.
 

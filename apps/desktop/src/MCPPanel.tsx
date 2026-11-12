@@ -11,6 +11,8 @@ type Props = {
   refreshKey?: number;
 };
 
+type ResourceLimitDraft = { memory: string; cpu: string };
+
 export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange, selectedSamplingServers, onSamplingServersChange, onUsePromptText, refreshKey=0 }: Props) {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [name, setName] = useState('');
@@ -25,6 +27,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const [cwd, setCwd] = useState('');
   const [secretEnv, setSecretEnv] = useState('');
   const [secrets, setSecrets] = useState<Record<string,string>>({});
+  const [resourceLimitDrafts, setResourceLimitDrafts] = useState<Record<string,ResourceLimitDraft>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [resourceCatalogs, setResourceCatalogs] = useState<Record<string,MCPResource[]>>({});
@@ -75,6 +78,15 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     await client.setMCPToolPermission(server.id,tool,permission);
     if (permission!=='write') updateSelected(tool.qualified_name,false);
   });
+  const saveResourceLimits = (server:MCPServer) => act(async()=>{
+    const draft=resourceLimitDrafts[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''};
+    const memory=draft.memory.trim()===''?null:Number(draft.memory);
+    const cpu=draft.cpu.trim()===''?null:Number(draft.cpu);
+    if(memory!==null&&(!Number.isInteger(memory)||memory<128||memory>65536))throw new Error('Memory limit must be between 128 and 65,536 MiB.');
+    if(cpu!==null&&(!Number.isInteger(cpu)||cpu<1||cpu>100))throw new Error('CPU limit must be between 1 and 100 percent.');
+    await client.setMCPServerProcessLimits(server.id,{memory_limit_mb:memory,cpu_limit_percent:cpu});
+    setResourceLimitDrafts(current=>({...current,[server.id]:{memory:memory?.toString()??'',cpu:cpu?.toString()??''}}));
+  });
 
   return <section aria-label="MCP integrations">
     <h3>MCP servers</h3>
@@ -105,7 +117,11 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
       <p>Sampling uses the selected run model, shares its iteration and token limits, and receives no tools, workspace, or conversation history. Server prompts remain untrusted. Set this server to Legacy compatibility when adding it; automatic negotiation cannot receive sampling/createMessage requests.</p>
       {server.error&&<p role="alert">{server.error}</p>}
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
-      {server.transport==='stdio'&&<p>Process limits: memory {server.memory_limit_mb===null?'unlimited':`${server.memory_limit_mb} MiB`}, CPU {server.cpu_limit_percent===null?'unlimited':`${server.cpu_limit_percent}%`}</p>}
+      {server.transport==='stdio'&&<div aria-label={`Process limits for ${server.name}`}>
+        <label>Memory limit for {server.name} (MiB; blank is unlimited)<input type="number" min={128} max={65536} step={128} value={(resourceLimitDrafts[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}).memory} onChange={event=>setResourceLimitDrafts(current=>({...current,[server.id]:{...(current[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}),memory:event.target.value}}))}/></label>
+        <label>CPU limit for {server.name} (percent; blank is unlimited)<input type="number" min={1} max={100} value={(resourceLimitDrafts[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}).cpu} onChange={event=>setResourceLimitDrafts(current=>({...current,[server.id]:{...(current[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}),cpu:event.target.value}}))}/></label>
+        <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void saveResourceLimits(server)}>Save process limits for {server.name}</button>
+      </div>}
       {server.transport==='streamable_http'&&<p>HTTP proxy and CA environment variables: {server.trust_environment?'enabled':'disabled'}</p>}
       <div>
         <button type="button" disabled={busy||server.state==='connected'} onClick={()=>void act(()=>client.connectMCPServer(server.id))}>Connect and discover</button>

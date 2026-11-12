@@ -412,6 +412,12 @@ class CreateMCPServerRequest(BaseModel):
     secret_env: list[str] = Field(default_factory=list, max_length=64)
 
 
+class MCPServerResourceLimitsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    memory_limit_mb: int | None = Field(default=None, ge=128, le=65536)
+    cpu_limit_percent: int | None = Field(default=None, ge=1, le=100)
+
+
 class CreateScheduleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     objective: str = Field(min_length=1, max_length=10_000)
@@ -1126,6 +1132,27 @@ def create_app(
             "secret_env_configured": {name: False for name in server.secret_env},
             "oauth_configured": False,
             "tools": [],
+        }
+
+    @app.put("/mcp/servers/{server_id}/resource-limits")
+    async def set_mcp_server_resource_limits(
+        server_id: str,
+        payload: MCPServerResourceLimitsRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, int | None]:
+        try:
+            server = await mcp_manager.set_process_limits(
+                server_id,
+                memory_limit_mb=payload.memory_limit_mb,
+                cpu_limit_percent=payload.cpu_limit_percent,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="MCP server not found.") from error
+        except MCPConnectionError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return {
+            "memory_limit_mb": server.memory_limit_mb,
+            "cpu_limit_percent": server.cpu_limit_percent,
         }
 
     @app.delete("/mcp/servers/{server_id}", status_code=204)

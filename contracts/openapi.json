@@ -2092,6 +2092,39 @@
         "title": "MCPSecretRequest",
         "type": "object"
       },
+      "MCPServerResourceLimitsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu_limit_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Limit Percent"
+          },
+          "memory_limit_mb": {
+            "anyOf": [
+              {
+                "maximum": 65536.0,
+                "minimum": 128.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Limit Mb"
+          }
+        },
+        "title": "MCPServerResourceLimitsRequest",
+        "type": "object"
+      },
       "MCPServerResponse": {
         "additionalProperties": false,
         "properties": {
@@ -8261,6 +8294,71 @@
           }
         ],
         "summary": "Preview Mcp Prompt"
+      }
+    },
+    "/mcp/servers/{server_id}/resource-limits": {
+      "put": {
+        "operationId": "set_mcp_server_resource_limits_mcp_servers__server_id__resource_limits_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPServerResourceLimitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": "Response Set Mcp Server Resource Limits Mcp Servers  Server Id  Resource Limits Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Mcp Server Resource Limits"
       }
     },
     "/mcp/servers/{server_id}/resource-templates": {

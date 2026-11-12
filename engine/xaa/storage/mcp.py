@@ -254,6 +254,36 @@ class MCPRegistry:
             ).fetchone()
         return self._server(dict(row)) if row is not None else None
 
+    def set_process_limits(
+        self,
+        server_id: str,
+        *,
+        memory_limit_mb: int | None,
+        cpu_limit_percent: int | None,
+    ) -> MCPServerRecord:
+        if memory_limit_mb is not None and not 128 <= memory_limit_mb <= 65536:
+            raise ValueError("MCP process memory limits must be between 128 and 65,536 MiB.")
+        if cpu_limit_percent is not None and not 1 <= cpu_limit_percent <= 100:
+            raise ValueError("MCP process CPU limits must be between 1 and 100 percent.")
+        now = utc_now()
+        with self.store.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE mcp_servers SET memory_limit_mb=?,cpu_limit_percent=?,updated_at=? "
+                "WHERE id=? AND transport='stdio'",
+                (memory_limit_mb, cpu_limit_percent, now, server_id),
+            )
+            if cursor.rowcount != 1:
+                exists = connection.execute(
+                    "SELECT transport FROM mcp_servers WHERE id=?", (server_id,)
+                ).fetchone()
+                if exists is None:
+                    raise KeyError(server_id)
+                raise ValueError("Process resource limits apply only to stdio MCP servers.")
+        server = self.get_server(server_id)
+        if server is None:
+            raise KeyError(server_id)
+        return server
+
     def delete_server(self, server_id: str) -> bool:
         with self.store.connection() as connection:
             cursor = connection.execute("DELETE FROM mcp_servers WHERE id=?", (server_id,))
