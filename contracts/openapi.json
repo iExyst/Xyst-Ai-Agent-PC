@@ -646,6 +646,14 @@
             "title": "Protocol Mode",
             "type": "string"
           },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Roots",
+            "type": "array"
+          },
           "secret_env": {
             "items": {
               "type": "string"
@@ -2284,6 +2292,13 @@
             "title": "Protocol Mode",
             "type": "string"
           },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
           "secret_env": {
             "items": {
               "type": "string"
@@ -2344,6 +2359,7 @@
           "command",
           "args",
           "cwd",
+          "roots",
           "secret_env",
           "plugin_backed",
           "created_at",

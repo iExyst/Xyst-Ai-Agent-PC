@@ -2331,6 +2331,8 @@ export interface components {
              * @enum {string}
              */
             protocol_mode: "auto" | "legacy";
+            /** Roots */
+            roots?: string[];
             /** Secret Env */
             secret_env?: string[];
             /**
@@ -2954,6 +2956,8 @@ export interface components {
              * @enum {string}
              */
             protocol_mode: "auto" | "legacy";
+            /** Roots */
+            roots: string[];
             /** Secret Env */
             secret_env: string[];
             /** Secret Env Configured */

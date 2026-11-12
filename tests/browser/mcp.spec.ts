@@ -138,9 +138,17 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByLabel('Arguments (JSON string array)').fill('["fixture_server.py"]');
   await panel.getByLabel('MCP protocol').selectOption('legacy');
   await panel.getByLabel('Block network access for this MCP process (Windows)').check();
+  await page.evaluate(()=>{
+    (window as any).__TAURI_INTERNALS__={invoke:async(command:string)=>{
+      if(command==='plugin:dialog|open')return ['C:\\workspace\\shared-project'];
+      throw new Error(`Unexpected native command: ${command}`);
+    }};
+  });
+  await panel.getByRole('button',{name:'Choose folders to share with this server (optional)'}).click();
+  await expect(panel.getByText('C:\\workspace\\shared-project',{exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Add MCP server'}).click();
   await expect(panel.getByRole('heading',{name:'Fixture MCP (disconnected)'})).toBeVisible();
-  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.network_isolation===true&&item.body.memory_limit_mb===2048&&item.body.cpu_limit_percent===80)).toBe(true);
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.network_isolation===true&&item.body.memory_limit_mb===2048&&item.body.cpu_limit_percent===80&&item.body.roots[0]==='C:\\workspace\\shared-project')).toBe(true);
   await panel.getByLabel('Memory limit for Fixture MCP (MiB; blank is unlimited)').fill('1024');
   await panel.getByLabel('CPU limit for Fixture MCP (percent; blank is unlimited)').fill('50');
   await panel.getByRole('button',{name:'Save process limits for Fixture MCP'}).click();

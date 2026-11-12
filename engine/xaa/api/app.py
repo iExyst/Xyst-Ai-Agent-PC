@@ -380,6 +380,7 @@ class MCPServerResponse(BaseModel):
     command: str
     args: list[str]
     cwd: str | None
+    roots: list[str]
     secret_env: list[str]
     plugin_backed: bool
     created_at: str
@@ -438,6 +439,7 @@ class CreateMCPServerRequest(BaseModel):
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
     cwd: str | None = Field(default=None, max_length=2048)
+    roots: list[str] = Field(default_factory=list, max_length=16)
     secret_env: list[str] = Field(default_factory=list, max_length=64)
 
 

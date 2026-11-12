@@ -31,6 +31,7 @@ class MCPServerSpec(BaseModel):
     command: str = Field(default="", max_length=512)
     args: list[str] = Field(default_factory=list, max_length=64)
     cwd: str | None = Field(default=None, max_length=2048)
+    roots: list[str] = Field(default_factory=list, max_length=16)
     secret_env: list[str] = Field(default_factory=list, max_length=64)
     plugin_root: str | None = Field(default=None, max_length=2048)
     plugin_data: str | None = Field(default=None, max_length=2048)
@@ -76,7 +77,17 @@ class MCPServerSpec(BaseModel):
 
     @model_validator(mode="after")
     def validate_transport(self) -> MCPServerSpec:
+        if len(self.roots) != len(set(self.roots)) or any(
+            not root
+            or len(root) > 2048
+            or not Path(root).is_absolute()
+            or any(ord(char) < 32 for char in root)
+            for root in self.roots
+        ):
+            raise ValueError("MCP roots must be unique absolute folder paths.")
         if self.transport == "stdio":
+            if self.roots and self.protocol_mode != "legacy":
+                raise ValueError("MCP roots require legacy protocol compatibility.")
             if not self.command.strip() or self.endpoint is not None:
                 raise ValueError("stdio MCP servers need a command and cannot set an endpoint.")
             if self.trust_environment:
@@ -93,6 +104,8 @@ class MCPServerSpec(BaseModel):
                 ):
                     raise ValueError("Plugin package and data paths must be absolute plain paths.")
         else:
+            if self.roots:
+                raise ValueError("Workspace roots can be shared only with local stdio MCP servers.")
             if self.network_isolation:
                 raise ValueError("MCP network isolation applies only to stdio servers.")
             if self.memory_limit_mb is not None or self.cpu_limit_percent is not None:
@@ -205,6 +218,17 @@ class MCPRegistry:
         self.store = store
 
     def create_server(self, spec: MCPServerSpec) -> MCPServerRecord:
+        if spec.roots:
+            resolved_roots: list[str] = []
+            try:
+                for root in spec.roots:
+                    resolved = Path(root).resolve(strict=True)
+                    if not resolved.is_dir():
+                        raise ValueError("MCP roots must name existing folders.")
+                    resolved_roots.append(str(resolved))
+            except OSError as error:
+                raise ValueError("An MCP root folder is unavailable.") from error
+            spec = spec.model_copy(update={"roots": resolved_roots})
         identity = uuid4().hex
         now = utc_now()
         with self.store.connection() as connection:
@@ -221,7 +245,7 @@ class MCPRegistry:
                 if current_sha256 != spec.plugin_sha256:
                     raise ValueError("The selected MCP package changed before it was registered.")
             connection.execute(
-                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256,trust_environment,memory_limit_mb,cpu_limit_percent,network_isolation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mcp_servers (id,name,command,args,cwd,secret_env,created_at,updated_at,transport,protocol_mode,endpoint,plugin_root,plugin_data,plugin_headers,plugin_sha256,trust_environment,memory_limit_mb,cpu_limit_percent,network_isolation,roots) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identity,
                     spec.name,
@@ -242,6 +266,7 @@ class MCPRegistry:
                     spec.memory_limit_mb,
                     spec.cpu_limit_percent,
                     int(spec.network_isolation),
+                    json.dumps(spec.roots),
                 ),
             )
         return MCPServerRecord(id=identity, **spec.model_dump(), created_at=now, updated_at=now)
@@ -397,6 +422,7 @@ class MCPRegistry:
             memory_limit_mb=row.get("memory_limit_mb"),
             cpu_limit_percent=row.get("cpu_limit_percent"),
             network_isolation=bool(row.get("network_isolation", 0)),
+            roots=json.loads(row.get("roots") or "[]"),
             endpoint=row.get("endpoint"),
             plugin_root=row.get("plugin_root"),
             plugin_data=row.get("plugin_data"),

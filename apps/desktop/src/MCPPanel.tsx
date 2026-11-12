@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 import type { EngineClient, MCPArgumentCompletions, MCPPrompt, MCPPromptPreview, MCPResource, MCPResourceNotification, MCPResourceRead, MCPResourceTemplate, MCPServer, MCPTool } from './api/client.ts';
 
 type Props = {
@@ -26,6 +27,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('[]');
   const [cwd, setCwd] = useState('');
+  const [roots, setRoots] = useState<string[]>([]);
   const [secretEnv, setSecretEnv] = useState('');
   const [secrets, setSecrets] = useState<Record<string,string>>({});
   const [resourceLimitDrafts, setResourceLimitDrafts] = useState<Record<string,ResourceLimitDraft>>({});
@@ -74,8 +76,8 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     const cpuLimit = cpuLimitPercent.trim()===''?null:Number(cpuLimitPercent);
     if (transport==='stdio'&&memoryLimit!==null&&(!Number.isInteger(memoryLimit)||memoryLimit<128||memoryLimit>65536)) throw new Error('Memory limit must be between 128 and 65,536 MiB.');
     if (transport==='stdio'&&cpuLimit!==null&&(!Number.isInteger(cpuLimit)||cpuLimit<1||cpuLimit>100)) throw new Error('CPU limit must be between 1 and 100 percent.');
-    await client.createMCPServer({name,transport,protocol_mode:protocolMode,trust_environment:transport==='streamable_http'&&trustEnvironment,network_isolation:transport==='stdio'&&networkIsolation,memory_limit_mb:transport==='stdio'?memoryLimit:null,cpu_limit_percent:transport==='stdio'?cpuLimit:null,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
-    setName('');setCommand('');setArgs('[]');setCwd('');setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);setNetworkIsolation(false);setMemoryLimitMb('2048');setCpuLimitPercent('80');
+    await client.createMCPServer({name,transport,protocol_mode:protocolMode,trust_environment:transport==='streamable_http'&&trustEnvironment,network_isolation:transport==='stdio'&&networkIsolation,memory_limit_mb:transport==='stdio'?memoryLimit:null,cpu_limit_percent:transport==='stdio'?cpuLimit:null,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,roots:transport==='stdio'&&protocolMode==='legacy'?roots:[],secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
+    setName('');setCommand('');setArgs('[]');setCwd('');setRoots([]);setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);setNetworkIsolation(false);setMemoryLimitMb('2048');setCpuLimitPercent('80');
   });
   const changePermission = (server:MCPServer,tool:MCPTool,permission:MCPTool['permission']) => act(async()=>{
     await client.setMCPToolPermission(server.id,tool,permission);
@@ -98,12 +100,27 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     <div className="mcp-config">
       <label>Server name<input value={name} onChange={e=>setName(e.target.value)} /></label>
       <label>Transport<select value={transport} onChange={e=>setTransport(e.target.value as 'stdio'|'streamable_http')}><option value="stdio">Local process (stdio)</option><option value="streamable_http">Streamable HTTP</option></select></label>
-      <label>MCP protocol<select value={protocolMode} onChange={e=>setProtocolMode(e.target.value as 'auto'|'legacy')}><option value="auto">Automatic (recommended)</option><option value="legacy">Legacy compatibility (sampling)</option></select></label>
-      {protocolMode==='legacy'&&<p>Legacy mode is required for MCP sampling/createMessage. Only choose it when this server requires the older protocol; modern MCP features may be unavailable.</p>}
+      <label>MCP protocol<select value={protocolMode} onChange={e=>setProtocolMode(e.target.value as 'auto'|'legacy')}><option value="auto">Automatic (recommended)</option><option value="legacy">Legacy compatibility (sampling and roots)</option></select></label>
+      {protocolMode==='legacy'&&<p>Legacy mode enables older MCP requests such as sampling and roots/list. The current 2026 protocol forbids server initiated roots requests; choose legacy only for servers that need these features.</p>}
       {transport==='stdio'?<>
         <label>Command<input value={command} onChange={e=>setCommand(e.target.value)} placeholder="python" /></label>
         <label>Arguments (JSON string array)<input value={args} onChange={e=>setArgs(e.target.value)} /></label>
         <label>Working directory (optional)<input value={cwd} onChange={e=>setCwd(e.target.value)} /></label>
+        {protocolMode==='legacy'&&<div aria-label="MCP shared workspace roots">
+          <button type="button" disabled={busy} onClick={()=>void (async()=>{
+            try {
+              const selected=await open({directory:true,multiple:true,title:'Select folders to share with this MCP server'});
+              if(selected===null)return;
+              const chosen=Array.isArray(selected)?selected:[selected];
+              const combined=[...new Set([...roots,...chosen])];
+              if(combined.length>16)throw new Error('Choose no more than 16 folders for one MCP server.');
+              setRoots(combined);
+            } catch (failure) {
+              setError(failure instanceof Error?failure.message:'Could not select folders to share with the MCP server.');
+            }
+          })()}>Choose folders to share with this server (optional)</button>
+          {roots.length>0&&<><p>These folder paths will be disclosed to this local server when it requests MCP roots. They do not grant X.A.A. access to those folders.</p><ul>{roots.map(root=><li key={root}><code>{root}</code>{' '}<button type="button" disabled={busy} onClick={()=>setRoots(current=>current.filter(item=>item!==root))}>Remove {root}</button></li>)}</ul></>}
+        </div>}
         <label>Process memory limit (MiB, 128–65,536; blank for unlimited)<input type="number" min={128} max={65536} step={128} value={memoryLimitMb} onChange={e=>setMemoryLimitMb(e.target.value)} /></label>
         <label>Process CPU limit (percent, 1–100; blank for unlimited)<input type="number" min={1} max={100} value={cpuLimitPercent} onChange={e=>setCpuLimitPercent(e.target.value)} /></label>
         <label><input type="checkbox" checked={networkIsolation} onChange={event=>setNetworkIsolation(event.target.checked)}/>Block network access for this MCP process (Windows)</label>
@@ -122,6 +139,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
       <p>Sampling uses the selected run model, shares its iteration and token limits, and receives no tools, workspace, or conversation history. Server prompts remain untrusted. Set this server to Legacy compatibility when adding it; automatic negotiation cannot receive sampling/createMessage requests.</p>
       {server.error&&<p role="alert">{server.error}</p>}
       <code>{server.transport==='stdio'?`${server.command} ${server.args.join(' ')}`:server.endpoint}</code>
+      {server.roots?.length>0&&<p>Folders shared with this local server: {server.roots.map(root=><code key={root}>{root} </code>)}</p>}
       {server.transport==='stdio'&&<div aria-label={`Process limits for ${server.name}`}>
         <label>Memory limit for {server.name} (MiB; blank is unlimited)<input type="number" min={128} max={65536} step={128} value={(resourceLimitDrafts[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}).memory} onChange={event=>setResourceLimitDrafts(current=>({...current,[server.id]:{...(current[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}),memory:event.target.value}}))}/></label>
         <label>CPU limit for {server.name} (percent; blank is unlimited)<input type="number" min={1} max={100} value={(resourceLimitDrafts[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}).cpu} onChange={event=>setResourceLimitDrafts(current=>({...current,[server.id]:{...(current[server.id]??{memory:server.memory_limit_mb?.toString()??'',cpu:server.cpu_limit_percent?.toString()??''}),cpu:event.target.value}}))}/></label>

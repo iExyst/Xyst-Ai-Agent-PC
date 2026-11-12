@@ -741,3 +741,21 @@ def test_schema_thirty_three_adds_schedule_mode_as_observe(workspace_tmp_path):
     assert ScheduleStore(migrated).get(schedule["id"])["mode"] == "observe"
     with migrated.connection() as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_thirty_four_adds_empty_mcp_roots_without_disclosing_paths(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-thirty-four-mcp-roots.sqlite3"
+    store = RunStore(database)
+    server = MCPRegistry(store).create_server(MCPServerSpec(name="Legacy stdio", command="python"))
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN roots")
+        connection.execute("PRAGMA user_version=34")
+
+    migrated = RunStore(database)
+    restored = MCPRegistry(migrated).get_server(server.id)
+    assert restored is not None
+    assert restored.roots == []
+    with migrated.connection() as connection:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(mcp_servers)")}
+        assert "roots" in columns
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

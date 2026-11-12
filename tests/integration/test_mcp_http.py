@@ -733,3 +733,12 @@ def test_mcp_http_endpoint_policy_and_legacy_defaults():
     assert MCPServerSpec(name="legacy", command="python").trust_environment is False
     with pytest.raises(ValidationError, match="only to Streamable HTTP"):
         MCPServerSpec(name="invalid proxy", command="python", trust_environment=True)
+    with pytest.raises(ValidationError, match="only with local stdio"):
+        MCPServerSpec(
+            name="remote roots",
+            transport="streamable_http",
+            endpoint="https://example.test/mcp",
+            roots=[str(Path.cwd())],
+        )
+    with pytest.raises(ValidationError, match="require legacy protocol"):
+        MCPServerSpec(name="auto roots", command="python", roots=[str(Path.cwd())])

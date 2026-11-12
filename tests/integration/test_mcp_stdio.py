@@ -44,6 +44,7 @@ from xaa.storage.runs import RunStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py"
+ROOTS_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_roots_server.py"
 DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_server.py"
 SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server.py"
 MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
@@ -224,6 +225,50 @@ async def test_mcp_typescript_sdk_modern_stdio_interoperability(workspace_tmp_pa
         prompt = await manager.preview_prompt(server.id, "summarize_topic", {"topic": "fixture"})
         assert prompt["trust"] == "untrusted_mcp_output"
         assert prompt["messages"][0]["content"]["text"] == "typescript-stdio-prompt:fixture"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_mcp_stdio_roots_are_only_returned_for_owner_selected_folders(
+    workspace_tmp_path: Path,
+) -> None:
+    root = workspace_tmp_path / "owner-selected-project"
+    root.mkdir()
+    store = RunStore(workspace_tmp_path / "mcp-roots.sqlite3")
+    registry = MCPRegistry(store)
+    with pytest.raises(ValueError, match="root folder is unavailable"):
+        registry.create_server(
+            MCPServerSpec(
+                name="Missing root",
+                protocol_mode="legacy",
+                command=sys.executable,
+                roots=[str(workspace_tmp_path / "missing-root")],
+            )
+        )
+    server = registry.create_server(
+        MCPServerSpec(
+            name="Roots fixture",
+            protocol_mode="legacy",
+            command=sys.executable,
+            args=[str(ROOTS_FIXTURE.resolve(strict=True))],
+            cwd=str(ROOTS_FIXTURE.parent.resolve(strict=True)),
+            roots=[str(root)],
+        )
+    )
+    assert server.roots == [str(root.resolve(strict=True))]
+    manager = MCPManager(store, None)
+    try:
+        tools = await manager.connect_server(server.id)
+        tool = next(item for item in tools if item.name == "inspect_roots")
+        registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+        result = await manager.call_tool(tool.qualified_name, {}, require_read=True)
+        assert result["status"] == "ok"
+        assert result["content"][0]["text"] == f"owner-selected-project={root.resolve().as_uri()}"
+        root.rename(root.with_name("moved-after-approval"))
+        with pytest.raises(MCPInvocationError, match="server call failed") as error:
+            await manager.call_tool(tool.qualified_name, {}, require_read=True)
+        assert str(root) not in str(error.value)
     finally:
         await manager.close()
 

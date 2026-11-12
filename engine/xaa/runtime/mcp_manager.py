@@ -47,6 +47,7 @@ from mcp.types import (
     EmbeddedResource,
     ErrorData,
     ImageContent,
+    ListRootsResult,
     PaginatedRequestParams,
     Prompt,
     PromptReference,
@@ -54,12 +55,13 @@ from mcp.types import (
     ResourceTemplate,
     ResourceTemplateReference,
     ResourceUpdatedNotificationParams,
+    Root,
     TextContent,
     TextResourceContents,
     Tool,
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
-from pydantic import AnyUrl, TypeAdapter
+from pydantic import AnyUrl, FileUrl, TypeAdapter
 from uritemplate import URITemplate
 
 from xaa.credentials import CredentialStore
@@ -421,6 +423,32 @@ class MCPManager:
                         )
                     return await connection.sampling_handler(context, params)
 
+                async def on_list_roots(
+                    context: ClientRequestContext,
+                ) -> ListRootsResult | ErrorData:
+                    _ = context
+                    roots: list[Root] = []
+                    for configured in server.roots:
+                        path = Path(configured)
+                        try:
+                            resolved = path.resolve(strict=True)
+                        except OSError:
+                            return ErrorData(
+                                code=-32000,
+                                message="A shared MCP root is no longer available; review the integration.",
+                            )
+                        if resolved != path or not resolved.is_dir():
+                            return ErrorData(
+                                code=-32000,
+                                message="A shared MCP root changed after approval; review the integration.",
+                            )
+                        roots.append(
+                            Root(
+                                uri=FileUrl(resolved.as_uri()), name=resolved.name or str(resolved)
+                            )
+                        )
+                    return ListRootsResult(roots=roots)
+
                 class ResourceNotificationExtension(ClientExtension):
                     identifier = "dev.xyst.xaa/resource-notifications"
 
@@ -439,6 +467,7 @@ class MCPManager:
                     transport,
                     mode=server.protocol_mode,
                     sampling_callback=on_sampling_request,
+                    list_roots_callback=on_list_roots if server.roots else None,
                     read_timeout_seconds=float(
                         initialization_timeout
                         if server.transport == "streamable_http"
