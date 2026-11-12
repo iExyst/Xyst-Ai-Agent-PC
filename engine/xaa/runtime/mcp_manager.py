@@ -1193,7 +1193,9 @@ class MCPManager:
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
                     connection.sampling_handler = sampling_handler
                     try:
-                        result = await connection.session.call_tool(record.name, arguments)
+                        # The SDK's high-level call_tool drives modern 2026-07-28
+                        # InputRequiredResult sampling rounds as well as legacy callbacks.
+                        result = await connection.client.call_tool(record.name, arguments)
                     finally:
                         connection.sampling_handler = None
         except asyncio.CancelledError:

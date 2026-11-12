@@ -7,6 +7,7 @@ import sys
 import time
 import zipfile
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +34,7 @@ TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py"
 DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_server.py"
 SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server.py"
+MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
 
 
 @pytest.mark.asyncio
@@ -77,8 +79,14 @@ async def test_connection_that_dies_immediately_after_discovery_is_not_registere
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("protocol_mode", "sampling_fixture"),
+    [("auto", MODERN_SAMPLING_FIXTURE), ("legacy", SAMPLING_FIXTURE)],
+)
 async def test_mcp_sampling_is_run_bound_text_only_and_included_in_shared_budget(
     workspace_tmp_path: Path,
+    protocol_mode: Literal["auto", "legacy"],
+    sampling_fixture: Path,
 ):
     store = RunStore(workspace_tmp_path / "mcp-sampling.sqlite3")
     registry = MCPRegistry(store)
@@ -86,12 +94,14 @@ async def test_mcp_sampling_is_run_bound_text_only_and_included_in_shared_budget
         MCPServerSpec(
             name="Sampling fixture",
             command=sys.executable,
-            args=[str(SAMPLING_FIXTURE)],
-            protocol_mode="legacy",
+            args=[str(sampling_fixture)],
+            protocol_mode=protocol_mode,
         )
     )
     manager = MCPManager(store, None)
     tools = await manager.connect_server(server.id)
+    if protocol_mode == "auto":
+        assert manager._connected[server.id].client.protocol_version == "2026-07-28"
     tool = next(item for item in tools if item.name == "sample_text")
     registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
     qualified = next(
