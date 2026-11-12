@@ -1,7 +1,10 @@
 import { ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
-export function registerFixtureCapabilities(server, { transport, protocolVersion }) {
+export function registerFixtureCapabilities(
+  server,
+  { transport, protocolVersion, publishResourceUpdate },
+) {
   server.registerTool(
     'echo_value',
     {
@@ -49,6 +52,17 @@ export function registerFixtureCapabilities(server, { transport, protocolVersion
         },
       ],
     }),
+  );
+  server.registerTool(
+    'publish_resource_update',
+    {
+      description: 'Publish a change notification for the TypeScript fixture resource.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      await publishResourceUpdate('xaa://typescript/readme');
+      return { content: [{ type: 'text', text: `typescript-${transport}-update-published` }] };
+    },
   );
   server.registerPrompt(
     'summarize_topic',

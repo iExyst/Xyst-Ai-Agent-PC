@@ -12,10 +12,18 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('Expected an explicit loopback port.');
 }
 
-const handler = createMcpHandler(({ era, requestInfo }) => {
-  const server = new McpServer({ name: 'XAA TypeScript HTTP fixture', version: '1.0.0' });
+let handler;
+handler = createMcpHandler(({ era, requestInfo }) => {
+  const server = new McpServer(
+    { name: 'XAA TypeScript HTTP fixture', version: '1.0.0' },
+    { capabilities: { resources: { subscribe: true } } },
+  );
   const protocolVersion = requestInfo.headers.get('mcp-protocol-version') ?? era;
-  registerFixtureCapabilities(server, { transport: 'http', protocolVersion });
+  registerFixtureCapabilities(server, {
+    transport: 'http',
+    protocolVersion,
+    publishResourceUpdate: (uri) => handler.notify.resourceUpdated(uri),
+  });
   return server;
 });
 const nodeHandler = toNodeHandler(handler);

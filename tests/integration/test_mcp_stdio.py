@@ -104,6 +104,25 @@ async def test_mcp_typescript_sdk_modern_stdio_interoperability(workspace_tmp_pa
         assert template_read["trust"] == "untrusted_mcp_output"
         assert template_read["contents"][0]["uri"] == "xaa://typescript/items/two%20words"
         assert template_read["contents"][0]["text"] == "typescript-stdio-template:two%20words"
+        update_tool = next(item for item in tools if item.name == "publish_resource_update")
+        registry.set_permission(server.id, update_tool.name, "read", update_tool.schema_sha256)
+        update_uri = "xaa://typescript/readme"
+        await manager.set_resource_subscription(server.id, update_uri, subscribe=True)
+        update_result = await manager.call_tool(update_tool.qualified_name, {}, require_read=True)
+        assert update_result["status"] == "ok"
+        await asyncio.sleep(0.05)
+        updates = await manager.drain_resource_notifications(server.id)
+        assert updates == {
+            "trust": "untrusted_mcp_output",
+            "notifications": [
+                {
+                    "kind": "resource_updated",
+                    "uri": update_uri,
+                    "trust": "untrusted_mcp_output",
+                }
+            ],
+        }
+        await manager.set_resource_subscription(server.id, update_uri, subscribe=False)
         prompts = await manager.list_prompts(server.id)
         assert [item["name"] for item in prompts] == ["summarize_topic"]
         prompt = await manager.preview_prompt(server.id, "summarize_topic", {"topic": "fixture"})
