@@ -2307,7 +2307,7 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     if not value or len(value) > 128:
         return None
     match = re.fullmatch(
-        r"(?P<currency>[$€£¥])?(?P<group>#,##0|0)(?:\.(?P<decimals>0{1,8}))?(?P<percent>%)?",
+        r"(?P<currency>[$€£¥])?(?P<group>#,##0|0)(?:\.(?P<decimals>[0#]{1,8}))?(?P<percent>%)?",
         format_code,
     )
     if match is None:
@@ -2318,7 +2318,11 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
             return None
         if match.group("percent"):
             number *= 100
-        decimal_places = len(match.group("decimals") or "")
+        decimal_format = match.group("decimals") or ""
+        required_places = len(decimal_format.rstrip("#"))
+        if "#" in decimal_format[:required_places]:
+            return None
+        decimal_places = len(decimal_format)
         quantum = Decimal(1).scaleb(-decimal_places)
         rounded = number.quantize(quantum, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError):
@@ -2331,6 +2335,13 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     else:
         pattern = f".{decimal_places}f" if decimal_places else ".0f"
     rendered = format(magnitude, pattern)
+    optional_places = decimal_places - required_places
+    if optional_places and "." in rendered:
+        whole, fraction = rendered.split(".", 1)
+        fraction = fraction.rstrip("0")
+        if len(fraction) < required_places:
+            fraction = fraction.ljust(required_places, "0")
+        rendered = whole + ("." + fraction if fraction else "")
     currency = match.group("currency") or ""
     percent = "%" if match.group("percent") else ""
     return f"{sign}{currency}{rendered}{percent}"

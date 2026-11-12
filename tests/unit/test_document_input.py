@@ -8,6 +8,7 @@ from xaa.runtime.document_input import (
     MAX_DOCUMENT_BYTES,
     MAX_XLSX_FORMULA_CHARS,
     _xlsx_datetime_display,
+    _xlsx_numeric_display,
     _xlsx_time_display,
     extract_document_text,
     render_pdf_scanned_pages,
@@ -1352,6 +1353,27 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "P1=45292.75 [display: 1/1/24 6:00 PM] [number format: m/d/yy h:mm AM/PM]" in result
     assert "Q1=45292.524259259259259 [display: 2024-01-01 12:34:56]" in result
     assert "R1=45292.99999999 [display: 1/2/24 12:00 AM]" in result
+
+
+@pytest.mark.parametrize(
+    ("value", "format_code", "expected"),
+    [
+        ("1.2", "0.##", "1.2"),
+        ("1", "0.##", "1"),
+        ("1", "0.0#", "1.0"),
+        ("1.25", "0.0#", "1.25"),
+        ("1234.5", "#,##0.##", "1,234.5"),
+        ("-0.125", "0.0#%", "-12.5%"),
+    ],
+)
+def test_xlsx_numeric_display_supports_optional_decimal_places(
+    value: str, format_code: str, expected: str
+):
+    assert _xlsx_numeric_display(value, format_code) == expected
+
+
+def test_xlsx_numeric_display_rejects_interleaved_decimal_placeholders():
+    assert _xlsx_numeric_display("1.2", "0.#0") is None
 
 
 @pytest.mark.parametrize("sheet_state", ["hidden", "veryHidden"])
