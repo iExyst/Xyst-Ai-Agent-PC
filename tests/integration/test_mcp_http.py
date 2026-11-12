@@ -92,8 +92,18 @@ async def test_streamable_http_typescript_sdk_modern_interoperability(
         )
         assert result["status"] == "ok"
         assert result["trust"] == "untrusted_mcp_output"
-        assert result["content"][0]["text"] == "typescript-http-sdk:modern:round-trip"
+        assert result["content"][0]["text"] == "typescript-http-sdk:2026-07-28:round-trip"
         assert manager.server_status(server.id)[0] == "connected"
+        resources = await manager.list_resources(server.id)
+        assert [item["uri"] for item in resources] == ["xaa://typescript/readme"]
+        resource = await manager.read_resource(server.id, "xaa://typescript/readme")
+        assert resource["trust"] == "untrusted_mcp_output"
+        assert resource["contents"][0]["text"] == "typescript-http-resource:untrusted"
+        prompts = await manager.list_prompts(server.id)
+        assert [item["name"] for item in prompts] == ["summarize_topic"]
+        prompt = await manager.preview_prompt(server.id, "summarize_topic", {"topic": "fixture"})
+        assert prompt["trust"] == "untrusted_mcp_output"
+        assert prompt["messages"][0]["content"]["text"] == "typescript-http-prompt:fixture"
     finally:
         await manager.close()
         process.terminate()
