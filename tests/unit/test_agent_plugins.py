@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -291,10 +292,15 @@ def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path:
     skill_path.write_text(
         "---\nname: summarize\ndescription: Summarize selected material.\nversion: 0.2.0\n"
         "metadata:\n  hermes:\n    category: writing\n---\n"
-        "Use the linked reference only when it helps. [Guide](./references/guide.md)\n",
+        "Use the linked reference only when it helps. [Guide](./references/guide.md)\n"
+        "![Diagram](./references/diagram.png)\n[Manual](./references/manual.pdf)\n",
         encoding="utf-8",
     )
     (skill_directory / "references" / "guide.md").write_text("Reference content", encoding="utf-8")
+    diagram = b"\x89PNG\r\n\x1a\nfixture-image"
+    manual = b"%PDF-1.7\nfixture-document"
+    (skill_directory / "references" / "diagram.png").write_bytes(diagram)
+    (skill_directory / "references" / "manual.pdf").write_bytes(manual)
 
     discovery = discover_agent_plugins(str(skills_root))
     assert len(discovery.packages) == 1
@@ -318,6 +324,26 @@ def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path:
     assert imported.assets[0]["path"] == "references/guide.md"
     assert imported.assets[0]["content_base64"]
     assert imported.assets[0]["sha256"] == hashlib.sha256(b"Reference content").hexdigest()
+    assert imported.assets[1]["path"] == "references/diagram.png"
+    assert imported.assets[1]["media_type"] == "image/png"
+    assert base64.b64decode(imported.assets[1]["content_base64"]) == diagram
+    assert imported.assets[2]["path"] == "references/manual.pdf"
+    assert imported.assets[2]["media_type"] == "application/pdf"
+    assert base64.b64decode(imported.assets[2]["content_base64"]) == manual
+
+
+def test_skill_import_rejects_mislabeled_binary_resource(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    skill_directory = package / "skills" / "summarize"
+    skill_file = skill_directory / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8") + "\n[Bad image](references/bad.png)\n",
+        encoding="utf-8",
+    )
+    (skill_directory / "references" / "bad.png").write_bytes(b"not a PNG")
+
+    with pytest.raises(ValueError, match="type or file signature is unsupported"):
+        read_plugin_skill(str(tmp_path), "sample-package", "summarize")
 
 
 def test_requirement_readiness_checks_names_without_exposing_values(

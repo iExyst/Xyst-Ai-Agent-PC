@@ -16,6 +16,18 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from xaa.storage.runs import RunStore, utc_now
 
 MAX_PROCEDURE_TEXT_BYTES = 80 * 1024
+_PROCEDURE_TEXT_MEDIA_TYPES = frozenset(
+    {"application/json", "application/yaml", "application/toml", "image/svg+xml"}
+)
+SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES = frozenset(
+    {"application/pdf", "image/gif", "image/jpeg", "image/png", "image/webp"}
+)
+
+
+def is_text_asset_media_type(media_type: str) -> bool:
+    """Whether a versioned package asset is safe to offer through text reads."""
+    return media_type.startswith("text/") or media_type in _PROCEDURE_TEXT_MEDIA_TYPES
+
 
 _HERMES_TOOL_ALIASES = {
     "read_file": "workspace_read_file",
@@ -136,7 +148,7 @@ class SkillAsset(BaseModel):
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def bounded_text_asset(self) -> "SkillAsset":
+    def bounded_asset(self) -> "SkillAsset":
         from pathlib import PurePosixPath
 
         normalized = PurePosixPath(self.path)
@@ -153,10 +165,13 @@ class SkillAsset(BaseModel):
             raise ValueError("Procedure resource is not valid base64.") from exc
         if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != self.sha256:
             raise ValueError("Procedure resource exceeds 64 KiB or failed its digest check.")
-        try:
-            raw.decode("utf-8-sig")
-        except UnicodeDecodeError as exc:
-            raise ValueError("Procedure resources must contain UTF-8 text.") from exc
+        if is_text_asset_media_type(self.media_type):
+            try:
+                raw.decode("utf-8-sig")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Text procedure resources must contain UTF-8 text.") from exc
+        elif self.media_type not in SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES:
+            raise ValueError("Procedure resource media type is not supported.")
         return self
 
 

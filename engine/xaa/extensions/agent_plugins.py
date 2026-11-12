@@ -27,7 +27,11 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
-from xaa.storage.skills import MAX_PROCEDURE_TEXT_BYTES
+from xaa.storage.skills import (
+    MAX_PROCEDURE_TEXT_BYTES,
+    SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES,
+    is_text_asset_media_type,
+)
 
 MAX_PACKAGES = 128
 MAX_SKILLS = 128
@@ -1433,17 +1437,28 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         total_bytes += len(resource_bytes)
         if total_bytes > MAX_SKILL_RESOURCE_TOTAL_BYTES:
             raise ValueError("linked skill resources exceed the 1 MiB total limit")
-        try:
-            resource_bytes.decode("utf-8-sig")
-        except UnicodeError as exc:
-            raise ValueError("linked skill resources must be UTF-8 text files") from exc
         media_type = mimetypes.guess_type(resource_name)[0] or "text/plain"
-        if not media_type.startswith("text/") and media_type not in {
-            "application/json",
-            "application/yaml",
-            "application/toml",
-        }:
-            raise ValueError("linked skill resource type is not a supported text format")
+        if is_text_asset_media_type(media_type):
+            try:
+                resource_bytes.decode("utf-8-sig")
+            except UnicodeError as exc:
+                raise ValueError("linked text skill resources must be UTF-8") from exc
+        else:
+            signatures = {
+                "image/gif": resource_bytes.startswith((b"GIF87a", b"GIF89a")),
+                "image/jpeg": resource_bytes.startswith(b"\xff\xd8\xff"),
+                "image/png": resource_bytes.startswith(b"\x89PNG\r\n\x1a\n"),
+                "image/webp": (
+                    len(resource_bytes) >= 12
+                    and resource_bytes.startswith(b"RIFF")
+                    and resource_bytes[8:12] == b"WEBP"
+                ),
+                "application/pdf": b"%PDF-" in resource_bytes[:1024],
+            }
+            if media_type not in SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES or not signatures.get(
+                media_type, False
+            ):
+                raise ValueError("linked skill resource type or file signature is unsupported")
         asset_rows.append(
             {
                 "path": resource_name,

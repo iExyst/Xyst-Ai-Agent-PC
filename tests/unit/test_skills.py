@@ -254,9 +254,23 @@ def test_candidate_api_is_authenticated_and_never_executes_text(workspace_tmp_pa
 
 def test_user_procedure_export_creates_importable_agent_plugin_package(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "package-export.sqlite3")
+    diagram = b"\x89PNG\r\n\x1a\nfixture-image"
     skill = SkillStore(runs).create(
         SkillDraft.model_validate(
-            {**draft().model_dump(), "description": "Review files", "category": "engineering"}
+            {
+                **draft().model_dump(),
+                "content": draft().content + "\nSee [diagram](references/architecture.png).",
+                "description": "Review files",
+                "category": "engineering",
+                "assets": [
+                    {
+                        "path": "references/architecture.png",
+                        "content_base64": base64.b64encode(diagram).decode("ascii"),
+                        "media_type": "image/png",
+                        "sha256": hashlib.sha256(diagram).hexdigest(),
+                    }
+                ],
+            }
         )
     )
     headers = {"Authorization": "Bearer " + "x" * 32}
@@ -265,6 +279,7 @@ def test_user_procedure_export_creates_importable_agent_plugin_package(workspace
     assert exported.status_code == 200
     package_root = workspace_tmp_path / "package"
     with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        assert archive.read("skills/inspect-files/references/architecture.png") == diagram
         archive.extractall(package_root)
     discovered = discover_agent_plugins(str(package_root))
     assert len(discovered.packages) == 1
@@ -275,3 +290,4 @@ def test_user_procedure_export_creates_importable_agent_plugin_package(workspace
     assert imported.allowed_tools == ["workspace.read_file"]
     assert imported.description == "Review files"
     assert imported.category == "engineering"
+    assert base64.b64decode(imported.assets[0]["content_base64"]) == diagram

@@ -13,7 +13,13 @@ from xaa.runtime.procedure_tools import (
     PROCEDURE_VIEW_CONTRACT,
 )
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillAsset, SkillDraft, SkillRevision, SkillStore
+from xaa.storage.skills import (
+    SkillAsset,
+    SkillDraft,
+    SkillRevision,
+    SkillStore,
+    is_text_asset_media_type,
+)
 
 
 def draft(content="TRIAL_ORIGINAL: Read and report evidence.", tools=None, permissions=None):
@@ -299,14 +305,21 @@ async def test_selected_procedure_exposes_only_scoped_untrusted_resource_reader(
     workspace_tmp_path,
 ):
     raw = b"Untrusted linked reference"
+    binary = b"\x89PNG\r\n\x1a\nfixture-image"
     asset = SkillAsset(
         path="references/guide.md",
         content_base64=base64.b64encode(raw).decode("ascii"),
         media_type="text/markdown",
         sha256=hashlib.sha256(raw).hexdigest(),
     )
+    image = SkillAsset(
+        path="references/diagram.png",
+        content_base64=base64.b64encode(binary).decode("ascii"),
+        media_type="image/png",
+        sha256=hashlib.sha256(binary).hexdigest(),
+    )
     store = RunStore(workspace_tmp_path / "resource-reader.sqlite3")
-    skill = SkillStore(store).create(draft().model_copy(update={"assets": [asset]}))
+    skill = SkillStore(store).create(draft().model_copy(update={"assets": [asset, image]}))
     run = queue(store, workspace_tmp_path, skill)
 
     class Provider(LMStudioProvider):
@@ -322,6 +335,10 @@ async def test_selected_procedure_exposes_only_scoped_untrusted_resource_reader(
                 assert tool["function"]["parameters"]["properties"]["path"]["enum"] == [
                     "references/guide.md"
                 ]
+                assert (
+                    '"linked_resources": [{"path": "references/guide.md"' in messages[1]["content"]
+                )
+                assert "diagram.png" not in messages[1]["content"]
                 return {
                     "choices": [
                         {
@@ -365,6 +382,8 @@ async def test_selected_procedure_exposes_only_scoped_untrusted_resource_reader(
         "content": raw.decode(),
         "trust": "untrusted_skill_resource",
     }
+    assert is_text_asset_media_type("text/markdown")
+    assert not is_text_asset_media_type("image/png")
 
 
 @pytest.mark.parametrize(

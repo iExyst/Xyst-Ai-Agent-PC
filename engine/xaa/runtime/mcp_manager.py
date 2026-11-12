@@ -1777,7 +1777,15 @@ class MCPManager:
                 f"{MCP_MAX_STDIO_FRAME_BYTES}-byte limit."
             )
         elif isinstance(error, OSError):
-            message = "Could not start the MCP server. Check its command, arguments, and working directory."
+            code = getattr(error, "winerror", None)
+            code_label = "Windows" if isinstance(code, int) else "OS"
+            if not isinstance(code, int):
+                code = error.errno
+            detail = f" ({code_label} error {code})" if isinstance(code, int) else ""
+            message = (
+                "Could not start the MCP server. Check its command, arguments, and working "
+                f"directory{detail}."
+            )
         elif isinstance(error, TimeoutError):
             message = "The MCP server did not complete initialization or sign-in in time."
         elif _contains_oauth_flow_error(error):
