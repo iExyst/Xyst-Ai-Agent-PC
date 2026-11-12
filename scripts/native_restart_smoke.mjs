@@ -29,6 +29,8 @@ const fakeState = {
   specialistReadProposals: 0,
   specialistResultRequests: 0,
   specialistResultBlocked: false,
+  chatContinuationRequests: 0,
+  chatContextVerified: false,
   allowSpecialistResponse: false,
   rolePromptChecks: 0,
   liveToolProposals: 0,
@@ -172,6 +174,16 @@ const modelServer = createServer(async (request, response) => {
         function: { name: 'xaa_echo', arguments: JSON.stringify({ value: diagnosticsNonce }) },
       }],
     });
+    return;
+  }
+  if (!specialistMode && userText.includes('Current user turn:\nContinue it')) {
+    const expectedHistory = 'Prior turns:\n[["user","Earlier question"],["assistant","Earlier reply"]]';
+    if (!userText.includes(expectedHistory) || ++fakeState.chatContinuationRequests !== 1) {
+      reply(response, 409, { error: 'native chat continuation omitted saved history or repeated the request' });
+      return;
+    }
+    fakeState.chatContextVerified = true;
+    streamedCompletion(response, 'Native desktop continued the saved conversation.');
     return;
   }
   if (specialistMode) {
@@ -591,6 +603,66 @@ try {
   }
   const fixtureAfter = await readFile(fixtureReadme, 'utf8');
   if (fixtureAfter !== 'native restart fixture remains unchanged\n') throw new Error('The recovery fixture changed.');
+
+  const chatSessionId = `native-chat-${randomUUID()}`;
+  const chatBase = `${second.connection.base_url}/chat/sessions/${encodeURIComponent(chatSessionId)}`;
+  const openedChat = await fetch(chatBase, {
+    method: 'POST', headers: { ...second.headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: fakeModel, workspace: fixtureWorkspace, mode: 'observe' }),
+  });
+  if (!openedChat.ok) throw new Error(`Could not seed the shared conversation: ${await openedChat.text()}`);
+  const seededTurn = await fetch(`${chatBase}/turn`, {
+    method: 'POST', headers: { ...second.headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      run_id: run.id,
+      model: fakeModel,
+      workspace: fixtureWorkspace,
+      mode: 'observe',
+      user_message: 'Earlier question',
+      assistant_message: 'Earlier reply',
+    }),
+  });
+  if (!seededTurn.ok) throw new Error(`Could not seed the shared conversation turn: ${await seededTurn.text()}`);
+  await second.page.getByRole('link', { name: /New objective/ }).click();
+  await second.page.getByLabel('Workspace path').fill(fixtureWorkspace);
+  await second.page.getByLabel('Local model or compatible provider model').selectOption(fakeModel);
+  const conversations = second.page.getByRole('region', { name: 'Shared conversation sessions' });
+  await conversations.getByRole('button', { name: 'Load shared conversations' }).click();
+  await conversations.getByLabel('Saved terminal and desktop sessions').selectOption(chatSessionId);
+  await expect(conversations.getByRole('list', { name: 'Saved conversation turns' }).getByText('Earlier reply', { exact: true })).toBeVisible();
+  await second.page.getByLabel('Objective', { exact: true }).fill('Continue it');
+  await second.page.getByRole('button', { name: 'Start objective', exact: true }).click();
+  await second.page.screenshot({ path: path.join(root, 'after-chat-submit.png'), fullPage: true });
+  await expect.poll(() => fakeState.chatContextVerified).toBe(true);
+  const chatContinuationDeadline = Date.now() + 30000;
+  let continuedChat;
+  while (Date.now() < chatContinuationDeadline) {
+    const response = await fetch(chatBase, { headers: second.headers });
+    if (response.ok) {
+      continuedChat = await response.json();
+      if (continuedChat.messages.length === 4) break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!continuedChat || continuedChat.messages.length !== 4
+    || continuedChat.messages[2].role !== 'user'
+    || continuedChat.messages[2].content !== 'Continue it'
+    || continuedChat.messages[3].role !== 'assistant'
+    || continuedChat.messages[3].content !== 'Native desktop continued the saved conversation.'
+    || continuedChat.messages[3].run_id === run.id) {
+    const visibleAlerts = await second.page.getByRole('alert').allTextContents();
+    throw new Error(`The desktop continuation was not durably saved against its own coordinator run: ${JSON.stringify({ messages: continuedChat?.messages, visibleAlerts })}`);
+  }
+  await expect(second.page.getByRole('region', { name: 'Active run' }).getByText('Native desktop continued the saved conversation.', { exact: true })).toBeVisible();
+  const chatRun = await (await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(continuedChat.messages[3].run_id)}`, { headers: second.headers })).json();
+  if (chatRun.state !== 'verifying' || chatRun.model !== fakeModel || chatRun.workspace !== fixtureWorkspace || chatRun.mode !== 'observe') {
+    throw new Error(`The native continuation did not use its bound, durable coordinator run: ${JSON.stringify(chatRun)}`);
+  }
+  const chatRunEvents = await (await fetch(`${second.connection.base_url}/runs/${encodeURIComponent(chatRun.id)}/events`, { headers: second.headers })).json();
+  if (!chatRunEvents.some(event => event.event_type === 'model.message' && JSON.stringify(event.payload).includes('Native desktop continued the saved conversation.'))
+    || chatRunEvents.some(event => ['tool.intended', 'tool.executing', 'tool.completed'].includes(event.event_type))) {
+    throw new Error('The saved desktop conversation did not produce one reviewable, effect-free coordinator answer.');
+  }
   await second.page.screenshot({ path: path.join(root, 'after-restart.png'), fullPage: true });
   report = {
     passed: true,
@@ -606,6 +678,13 @@ try {
     candidate_count: savedAnswers.length,
     final_state: recovered.state,
     tool_effects: 0,
+    native_chat_continuation: {
+      prior_turn_context_verified: fakeState.chatContextVerified,
+      saved_user_and_assistant_turn: true,
+      coordinator_run_state: chatRun.state,
+      live_provider_inference: false,
+      tool_effects: 0,
+    },
     workspace_unchanged: true,
     launch_credentials_cleaned: false,
     desktop_sha256: createHash('sha256').update(await readFile(desktopExecutable)).digest('hex'),

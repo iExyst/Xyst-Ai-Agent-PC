@@ -178,6 +178,15 @@ function App() {
     specialistDraftTimers.current={};
     setActivity([]);setCommandOutput({stdout:'',stderr:''});commandDecoders.current={};setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPreview('');setPlan(undefined);
     let sharedAnswer='';
+    let sharedTurnSaved=false;
+    const saveSharedTurn=async()=>{
+      if(!sharedTurn||sharedTurnSaved||!sharedAnswer.trim()||controller.signal.aborted)return;
+      const saved=await client.getRun(next.id,controller.signal);
+      if(controller.signal.aborted||!['verifying','completed'].includes(saved.state))return;
+      sharedTurnSaved=true;
+      const record=await client.appendChatTurn(sharedTurn.sessionId,{run_id:next.id,model:sharedTurn.model,workspace:sharedTurn.workspace,mode:sharedTurn.mode,user_message:sharedTurn.userMessage,assistant_message:sharedAnswer.slice(0,16000)});
+      if(!controller.signal.aborted){setChatSession(record);setChatRefresh(value=>value+1);}
+    };
     try {
       const initialPlan = await client.plan(next.id, controller.signal);
       if (!controller.signal.aborted) setPlan(initialPlan);
@@ -238,7 +247,7 @@ function App() {
         if (event.event_type === 'model.message') {
           setPartial('');
           const message = event.payload.message;
-          if (message && typeof message === 'object' && 'content' in message && typeof message.content === 'string') {setAnswer(message.content);sharedAnswer=message.content;}
+          if (message && typeof message === 'object' && 'content' in message && typeof message.content === 'string') {setAnswer(message.content);sharedAnswer=message.content;await saveSharedTurn();}
         }
         if(event.event_type==='task.model.message'&&typeof event.payload.task_id==='string'){
           const taskId=event.payload.task_id;
@@ -249,16 +258,13 @@ function App() {
             delete specialistDraftTimers.current[taskId];
           },SPECIALIST_DRAFT_CLEAR_DELAY_MS);
         }
-        if(event.event_type==='run.state_changed')setHistoryRefresh(value=>value+1);
+        if(event.event_type==='run.state_changed'){
+          setHistoryRefresh(value=>value+1);
+          if(['verifying','completed'].includes(String(event.payload.to)))await saveSharedTurn();
+        }
         if (event.event_type.startsWith('run.')) {const saved=await client.getRun(next.id,controller.signal);if(!controller.signal.aborted)setRun(saved);}
       }
-      if(sharedTurn&&!controller.signal.aborted&&sharedAnswer.trim()){
-        const saved=await client.getRun(next.id,controller.signal);
-        if(!controller.signal.aborted&&(saved.state==='verifying'||saved.state==='completed')){
-          const record=await client.appendChatTurn(sharedTurn.sessionId,{run_id:next.id,model:sharedTurn.model,workspace:sharedTurn.workspace,mode:sharedTurn.mode,user_message:sharedTurn.userMessage,assistant_message:sharedAnswer.slice(0,16000)});
-          setChatSession(record);setChatRefresh(value=>value+1);
-        }
-      }
+      await saveSharedTurn();
     } catch (failure) { if (!controller.signal.aborted) setError(String(failure)); }
   }
   async function openSaved(id:string) {
