@@ -2461,3 +2461,7 @@ Extended the test-only TypeScript MCP fixture to the official Node adapter: `@mo
 ## Verify TypeScript MCP resources and prompts (2026-11-12)
 
 The official TypeScript fixture now shares one capability registration module across stdio and Streamable HTTP, exposing a bounded echo tool, a static text resource and an argument-validated prompt. The Python integration tests verify both transports can list/read the resource and list/preview the prompt, and that returned resource/prompt data is marked untrusted. The two focused cross-language cases pass, and the complete MCP HTTP/stdio integration files pass (35 tests). Ruff, formatting, strict engine/scripts Pyright and Node syntax checks pass. No runtime dependency or inference was added. Hosted verification is pending.
+
+## Hosted verification of TypeScript MCP HTTP interop (2026-11-12)
+
+Hosted Windows source run [43231924477](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43231924477) passed on commit `e36bea9`, including the locked Node adapter fixture install, Ruff, formatting, strict engine/scripts Pyright, desktop/browser checks, the full Python suite and Windows recovery acceptances. The installer job was skipped because the change adds only a test fixture and integration coverage. This verifies the TypeScript tool-only HTTP slice from `e36bea9`; the newer resource/prompt extension in `10794b0` still needs hosted verification. No live inference was used.
