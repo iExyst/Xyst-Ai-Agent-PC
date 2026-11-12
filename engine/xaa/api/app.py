@@ -346,6 +346,7 @@ class MCPServerResponse(BaseModel):
     transport: Literal["stdio", "streamable_http"]
     protocol_mode: Literal["auto", "legacy"]
     trust_environment: bool
+    network_isolation: bool
     memory_limit_mb: int | None
     cpu_limit_percent: int | None
     endpoint: str | None
@@ -403,6 +404,7 @@ class CreateMCPServerRequest(BaseModel):
     transport: Literal["stdio", "streamable_http"] = "stdio"
     protocol_mode: Literal["auto", "legacy"] = "auto"
     trust_environment: bool = False
+    network_isolation: bool = False
     memory_limit_mb: int | None = Field(default=None, ge=128, le=65536)
     cpu_limit_percent: int | None = Field(default=None, ge=1, le=100)
     endpoint: str | None = Field(default=None, max_length=2048)

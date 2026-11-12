@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 32
+DATABASE_SCHEMA_VERSION = 33
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -659,7 +659,8 @@ class RunStore:
                     plugin_sha256 TEXT,
                     trust_environment INTEGER NOT NULL DEFAULT 1 CHECK(trust_environment IN (0,1)),
                     memory_limit_mb INTEGER,
-                    cpu_limit_percent INTEGER
+                    cpu_limit_percent INTEGER,
+                    network_isolation INTEGER NOT NULL DEFAULT 0 CHECK(network_isolation IN (0,1))
                 );
                 CREATE TABLE IF NOT EXISTS mcp_server_tools (
                     server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
@@ -845,6 +846,10 @@ class RunStore:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN memory_limit_mb INTEGER")
             if "cpu_limit_percent" not in mcp_columns:
                 connection.execute("ALTER TABLE mcp_servers ADD COLUMN cpu_limit_percent INTEGER")
+            if "network_isolation" not in mcp_columns:
+                connection.execute(
+                    "ALTER TABLE mcp_servers ADD COLUMN network_isolation INTEGER NOT NULL DEFAULT 0 CHECK(network_isolation IN (0,1))"
+                )
             if connection.execute("PRAGMA user_version").fetchone()[0] < 3:
                 install_index(connection)
             memory_columns = {

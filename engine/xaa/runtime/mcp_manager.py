@@ -321,6 +321,13 @@ class MCPManager:
                         errlog=errlog,
                         memory_limit_mb=server.memory_limit_mb,
                         cpu_limit_percent=server.cpu_limit_percent,
+                        network_isolation=server.network_isolation,
+                        isolation_read_paths=tuple(
+                            path for path in (server.plugin_root,) if path is not None
+                        ),
+                        isolation_write_paths=tuple(
+                            path for path in (server.plugin_data,) if path is not None
+                        ),
                     )
                 else:
                     if server.endpoint is None:

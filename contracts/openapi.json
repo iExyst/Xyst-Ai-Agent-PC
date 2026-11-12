@@ -632,6 +632,11 @@
             "title": "Name",
             "type": "string"
           },
+          "network_isolation": {
+            "default": false,
+            "title": "Network Isolation",
+            "type": "boolean"
+          },
           "protocol_mode": {
             "default": "auto",
             "enum": [
@@ -2206,6 +2211,10 @@
             "title": "Name",
             "type": "string"
           },
+          "network_isolation": {
+            "title": "Network Isolation",
+            "type": "boolean"
+          },
           "oauth_configured": {
             "title": "Oauth Configured",
             "type": "boolean"
@@ -2275,6 +2284,7 @@
           "transport",
           "protocol_mode",
           "trust_environment",
+          "network_isolation",
           "memory_limit_mb",
           "cpu_limit_percent",
           "endpoint",

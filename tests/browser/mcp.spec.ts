@@ -119,9 +119,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByLabel('Command').fill('python');
   await panel.getByLabel('Arguments (JSON string array)').fill('["fixture_server.py"]');
   await panel.getByLabel('MCP protocol').selectOption('legacy');
+  await panel.getByLabel('Block network access for this MCP process (Windows)').check();
   await panel.getByRole('button',{name:'Add MCP server'}).click();
   await expect(panel.getByRole('heading',{name:'Fixture MCP (disconnected)'})).toBeVisible();
-  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.memory_limit_mb===2048&&item.body.cpu_limit_percent===80)).toBe(true);
+  expect(requests.some(item=>item.method==='POST'&&item.path==='/mcp/servers'&&item.body.protocol_mode==='legacy'&&item.body.network_isolation===true&&item.body.memory_limit_mb===2048&&item.body.cpu_limit_percent===80)).toBe(true);
   await panel.getByLabel('Memory limit for Fixture MCP (MiB; blank is unlimited)').fill('1024');
   await panel.getByLabel('CPU limit for Fixture MCP (percent; blank is unlimited)').fill('50');
   await panel.getByRole('button',{name:'Save process limits for Fixture MCP'}).click();

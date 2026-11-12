@@ -2304,6 +2304,11 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Network Isolation
+             * @default false
+             */
+            network_isolation: boolean;
+            /**
              * Protocol Mode
              * @default auto
              * @enum {string}
@@ -2897,6 +2902,8 @@ export interface components {
             memory_limit_mb: number | null;
             /** Name */
             name: string;
+            /** Network Isolation */
+            network_isolation: boolean;
             /** Oauth Configured */
             oauth_configured: boolean;
             /** Plugin Backed */

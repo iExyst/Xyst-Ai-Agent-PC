@@ -14,6 +14,10 @@ if __name__ == "__main__":
         from xaa.runtime.snapshot_worker import main
     elif sys.argv[1:] == ["--tokenizer-worker"]:
         from xaa.providers.tokenizer_worker import main
+    elif sys.argv[1:] == ["--mcp-appcontainer-shim"]:
+        from xaa.runtime.mcp_appcontainer import run_stdio_appcontainer_shim
+
+        raise SystemExit(run_stdio_appcontainer_shim())
     elif sys.argv[1:] == ["--browser-worker"]:
         from xaa.runtime.browser_worker import main
     else:

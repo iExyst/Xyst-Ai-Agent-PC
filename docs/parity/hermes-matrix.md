@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Current MCP process isolation evidence (2026-11-12)
+
+The MCP capability remains partial. Windows stdio servers now have an owner opt-in for AppContainer network isolation; a local Windows subprocess acceptance verifies a blocked loopback connection, successful MCP handshake/tool call, and removal of temporary working-directory ACL grants. Existing integrations stay non-isolated by schema default, Streamable HTTP is unchanged, and non-Windows isolation is unsupported. Abrupt engine termination may leave stale ACL ACEs, so crash-time cleanup remains open. The full source workflow and the installed-app behavior still need hosted confirmation; do not generalize the fixture result to third-party MCP servers or hermes capability parity.
+
 ## Current local desktop build note (2026-11-11)
 
 The current 0.1.1 source passed hosted source workflow [43139454967](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43139454967), including the corrected streaming browser checks. The unsigned per-user Windows installer passed the full hosted install/upgrade/recovery/uninstall acceptance in [43139931905](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43139931905); manifest, hashes, and retained reports are recorded in [`../progress.md`](../progress.md). This acceptance uses a disposable hosted runner and deterministic fixtures. Code signing, final third-party legal review, broad independent-machine readiness, live-model testing, and general release readiness remain incomplete. No Hermes capability status changes from this presentation/acceptance fix.

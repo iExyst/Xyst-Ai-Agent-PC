@@ -1,0 +1,526 @@
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+"""Launch a one-shot MCP stdio child in a Windows AppContainer.
+
+The wrapper is started by the MCP SDK and assigned to its existing Job Object
+before it receives a bootstrap record. It then creates the actual server child
+with no network capabilities and inherits the wrapper's protocol pipe handles.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import subprocess
+import sys
+from ctypes import wintypes
+from pathlib import Path
+from typing import Any, cast
+from uuid import uuid4
+
+BOOTSTRAP_PREFIX = b"XAA_APPCONTAINER_V1 "
+READY_FRAME = b"\x00XAA_APPCONTAINER_READY\n"
+MAX_BOOTSTRAP_BYTES = 64 * 1024
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+FILE_GENERIC_READ = 0x120089
+FILE_GENERIC_WRITE = 0x120116
+FILE_GENERIC_EXECUTE = 0x1200A0
+MAX_ACL_OBJECTS = 50_000
+
+ERROR_ALREADY_EXISTS = 183
+CREATE_SUSPENDED = 0x00000004
+CREATE_UNICODE_ENVIRONMENT = 0x00000400
+EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+CREATE_NO_WINDOW = 0x08000000
+STARTF_USESTDHANDLES = 0x00000100
+PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
+
+
+class MCPAppContainerError(RuntimeError):
+    """Windows could not create an isolated MCP child process."""
+
+
+class SECURITY_CAPABILITIES(ctypes.Structure):
+    _fields_ = [
+        ("AppContainerSid", ctypes.c_void_p),
+        ("Capabilities", ctypes.c_void_p),
+        ("CapabilityCount", wintypes.DWORD),
+        ("Reserved", wintypes.DWORD),
+    ]
+
+
+class STARTUPINFOW(ctypes.Structure):
+    _fields_ = [
+        ("cb", wintypes.DWORD),
+        ("lpReserved", wintypes.LPWSTR),
+        ("lpDesktop", wintypes.LPWSTR),
+        ("lpTitle", wintypes.LPWSTR),
+        ("dwX", wintypes.DWORD),
+        ("dwY", wintypes.DWORD),
+        ("dwXSize", wintypes.DWORD),
+        ("dwYSize", wintypes.DWORD),
+        ("dwXCountChars", wintypes.DWORD),
+        ("dwYCountChars", wintypes.DWORD),
+        ("dwFillAttribute", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("wShowWindow", wintypes.WORD),
+        ("cbReserved2", wintypes.WORD),
+        ("lpReserved2", ctypes.c_void_p),
+        ("hStdInput", wintypes.HANDLE),
+        ("hStdOutput", wintypes.HANDLE),
+        ("hStdError", wintypes.HANDLE),
+    ]
+
+
+class STARTUPINFOEXW(ctypes.Structure):
+    _fields_ = [("StartupInfo", STARTUPINFOW), ("lpAttributeList", ctypes.c_void_p)]
+
+
+class PROCESS_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("hProcess", wintypes.HANDLE),
+        ("hThread", wintypes.HANDLE),
+        ("dwProcessId", wintypes.DWORD),
+        ("dwThreadId", wintypes.DWORD),
+    ]
+
+
+def _win32_api() -> tuple[Any, Any]:
+    if sys.platform != "win32":
+        raise MCPAppContainerError("MCP network isolation is currently supported on Windows only.")
+    return (
+        ctypes.WinDLL("kernel32", use_last_error=True),
+        ctypes.WinDLL("userenv", use_last_error=True),
+    )
+
+
+def _appcontainer_sid(profile_name: str) -> tuple[Any, bytes, Any]:
+    kernel32, userenv = _win32_api()
+    sid = ctypes.c_void_p()
+    create_profile = userenv.CreateAppContainerProfile
+    create_profile.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    create_profile.restype = ctypes.c_long
+    result = create_profile(
+        profile_name, profile_name, "Xyst MCP server", None, 0, ctypes.byref(sid)
+    )
+    if (result & 0xFFFFFFFF) == (0x80070000 | ERROR_ALREADY_EXISTS):
+        derive_sid = userenv.DeriveAppContainerSidFromAppContainerName
+        derive_sid.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
+        derive_sid.restype = ctypes.c_long
+        result = derive_sid(profile_name, ctypes.byref(sid))
+    if result < 0 or not sid.value:
+        raise MCPAppContainerError("Windows could not create an MCP network isolation profile.")
+
+    sid_text = ctypes.c_wchar_p()
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    convert_sid = advapi32.ConvertSidToStringSidW
+    convert_sid.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
+    convert_sid.restype = wintypes.BOOL
+    if not convert_sid(sid, ctypes.byref(sid_text)):
+        free_sid = advapi32.FreeSid
+        free_sid.argtypes = [ctypes.c_void_p]
+        free_sid.restype = ctypes.c_void_p
+        free_sid(sid)
+        raise MCPAppContainerError("Windows could not read the MCP isolation identity.")
+    try:
+        # Convert back to bytes so the source SID can be freed before CreateProcess.
+        import win32security
+
+        sid_string = sid_text.value
+        if not sid_string:
+            raise MCPAppContainerError("Windows could not read the MCP isolation identity.")
+        sid_object = win32security.ConvertStringSidToSid(sid_string)
+        sid_bytes = bytes(cast(Any, win32security.GetBinarySid(sid_string)))
+    finally:
+        local_free = kernel32.LocalFree
+        local_free.argtypes = [ctypes.c_void_p]
+        local_free.restype = ctypes.c_void_p
+        local_free(ctypes.cast(sid_text, ctypes.c_void_p))
+        free_sid = advapi32.FreeSid
+        free_sid.argtypes = [ctypes.c_void_p]
+        free_sid.restype = ctypes.c_void_p
+        free_sid(sid)
+    return kernel32, sid_bytes, sid_object
+
+
+class AppContainerAccess:
+    """Temporary AppContainer profile and narrowly granted filesystem paths."""
+
+    def __init__(
+        self,
+        command: str,
+        args: list[str],
+        cwd: str | None,
+        read_roots: list[str],
+        write_roots: list[str],
+    ) -> None:
+        if sys.platform != "win32":
+            raise MCPAppContainerError(
+                "MCP network isolation is currently supported on Windows only."
+            )
+        import win32security
+
+        self._security = win32security
+        self.profile_name = f"XAA-MCP-{uuid4().hex}"
+        self._grants: list[tuple[str, int, int]] = []
+        _kernel32, _sid_bytes, self._sid = _appcontainer_sid(self.profile_name)
+        try:
+            executable = Path(command).resolve(strict=True)
+            if not executable.is_file() or executable.suffix.lower() in {".cmd", ".bat"}:
+                raise MCPAppContainerError(
+                    "Network-isolated MCP servers must use a directly executable Windows program."
+                )
+            read_roots.append(str(executable.parent))
+            if (
+                executable.name.lower() in {"python.exe", "pythonw.exe"}
+                and executable.parent.name.lower() == "scripts"
+            ):
+                read_roots.append(str(executable.parent.parent))
+            for argument in args:
+                candidate = Path(argument)
+                if candidate.is_absolute() and candidate.exists():
+                    read_roots.append(str(candidate if candidate.is_dir() else candidate.parent))
+            read_only_paths = [Path(path).resolve(strict=True) for path in read_roots]
+            if cwd and not any(
+                Path(cwd).resolve(strict=True).is_relative_to(path) for path in read_only_paths
+            ):
+                write_roots.append(cwd)
+
+            for path in self._collapse_roots(read_roots):
+                self._grant_tree(path, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)
+            for path in self._collapse_roots(write_roots):
+                self._grant_tree(
+                    path, FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE
+                )
+        except Exception:
+            self.close()
+            raise
+
+    @staticmethod
+    def _collapse_roots(paths: list[str]) -> list[str]:
+        resolved = sorted(
+            {Path(path).resolve(strict=True) for path in paths}, key=lambda path: len(path.parts)
+        )
+        roots: list[Path] = []
+        for path in resolved:
+            if not any(path == root or path.is_relative_to(root) for root in roots):
+                roots.append(path)
+        return [str(path) for path in roots]
+
+    def _grant_tree(self, raw_path: str, mask: int) -> None:
+        import win32file
+
+        requested = Path(os.path.abspath(raw_path))
+        for component in (requested, *requested.parents):
+            try:
+                attributes = cast(int, win32file.GetFileAttributes(str(component)))
+                if attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                    raise MCPAppContainerError(
+                        "MCP isolation does not follow reparse-point access paths."
+                    )
+            except OSError as error:
+                raise MCPAppContainerError(
+                    "Windows could not inspect an MCP isolation path."
+                ) from error
+
+        root = requested.resolve(strict=True)
+        if not root.is_dir():
+            raise MCPAppContainerError("A selected MCP access path is not a directory.")
+        pending = [root]
+        object_count = 0
+        while pending:
+            directory = pending.pop()
+            try:
+                with os.scandir(directory) as children:
+                    for child in children:
+                        object_count += 1
+                        if object_count > MAX_ACL_OBJECTS:
+                            raise MCPAppContainerError(
+                                f"An MCP isolation access path exceeds the {MAX_ACL_OBJECTS}-entry Windows limit."
+                            )
+                        attributes = child.stat(follow_symlinks=False).st_file_attributes
+                        if attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                            raise MCPAppContainerError(
+                                "MCP isolation access paths cannot contain reparse points."
+                            )
+                        if child.is_dir(follow_symlinks=False):
+                            pending.append(Path(child.path))
+            except OSError as error:
+                raise MCPAppContainerError(
+                    "Windows could not inspect the complete MCP isolation access path."
+                ) from error
+
+        # Windows grants traverse privilege to app processes. Avoid editing
+        # protected ancestors such as C:\Users; access is granted only at the
+        # explicitly selected subtree below.
+        self._add_ace(
+            str(root),
+            mask,
+            self._security.CONTAINER_INHERIT_ACE | self._security.OBJECT_INHERIT_ACE,
+        )
+
+    def _add_ace(self, path: str, mask: int, flags: int) -> None:
+        security = self._security
+        descriptor = security.GetNamedSecurityInfo(
+            path, security.SE_FILE_OBJECT, security.DACL_SECURITY_INFORMATION
+        )
+        dacl = cast(Any, descriptor.GetSecurityDescriptorDacl())
+        if dacl is None:
+            return
+        sid_string = security.ConvertSidToStringSid(self._sid)
+        for index in range(dacl.GetAceCount()):
+            ace_header, ace_mask, ace_sid = dacl.GetAce(index)
+            ace_type, ace_flags = ace_header
+            if (
+                ace_type == security.ACCESS_ALLOWED_ACE_TYPE
+                and ace_flags == flags
+                and ace_mask == mask
+                and security.ConvertSidToStringSid(ace_sid) == sid_string
+            ):
+                return
+        dacl.AddAccessAllowedAceEx(security.ACL_REVISION_DS, flags, mask, self._sid)
+        security.SetNamedSecurityInfo(
+            path,
+            security.SE_FILE_OBJECT,
+            security.DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            dacl,
+            None,
+        )
+        self._grants.append((path, mask, flags))
+
+    def close(self) -> None:
+        security = getattr(self, "_security", None)
+        failures: list[Exception] = []
+        if security is not None:
+            sid_string = security.ConvertSidToStringSid(self._sid)
+            for path, mask, flags in reversed(self._grants):
+                try:
+                    descriptor = security.GetNamedSecurityInfo(
+                        path, security.SE_FILE_OBJECT, security.DACL_SECURITY_INFORMATION
+                    )
+                    dacl = descriptor.GetSecurityDescriptorDacl()
+                    if dacl is None:
+                        continue
+                    for index in reversed(range(dacl.GetAceCount())):
+                        ace_header, ace_mask, ace_sid = dacl.GetAce(index)
+                        ace_type, ace_flags = ace_header
+                        if (
+                            ace_type == security.ACCESS_ALLOWED_ACE_TYPE
+                            and ace_flags == flags
+                            and ace_mask == mask
+                            and security.ConvertSidToStringSid(ace_sid) == sid_string
+                        ):
+                            dacl.DeleteAce(index)
+                            break
+                    security.SetNamedSecurityInfo(
+                        path,
+                        security.SE_FILE_OBJECT,
+                        security.DACL_SECURITY_INFORMATION,
+                        None,
+                        None,
+                        dacl,
+                        None,
+                    )
+                except OSError as error:
+                    # Keep profile identity until ACL revocation has been attempted;
+                    # a stale ACE for a deleted profile does not grant another SID access.
+                    failures.append(error)
+        try:
+            if hasattr(self, "profile_name"):
+                delete_profile = ctypes.WinDLL(
+                    "userenv", use_last_error=True
+                ).DeleteAppContainerProfile
+                delete_profile.argtypes = [wintypes.LPCWSTR]
+                delete_profile.restype = ctypes.c_long
+                result = delete_profile(self.profile_name)
+                if result != 0:
+                    failures.append(
+                        MCPAppContainerError(
+                            "Windows could not remove the temporary MCP isolation profile."
+                        )
+                    )
+        except OSError as error:
+            failures.append(error)
+        self._grants = []
+        if failures:
+            raise MCPAppContainerError(
+                "Windows could not fully remove temporary MCP isolation permissions."
+            ) from failures[0]
+
+
+def _create_no_network_child(
+    command: str, args: list[str], cwd: str | None, profile_name: str
+) -> int:
+    kernel32, sid_bytes, _sid = _appcontainer_sid(profile_name)
+    sid_buffer = ctypes.create_string_buffer(sid_bytes)
+    capabilities = SECURITY_CAPABILITIES(ctypes.cast(sid_buffer, ctypes.c_void_p), None, 0, 0)
+    attribute_bytes = ctypes.c_size_t()
+    initialize_attributes = kernel32.InitializeProcThreadAttributeList
+    initialize_attributes.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    initialize_attributes.restype = wintypes.BOOL
+    if initialize_attributes(None, 2, 0, ctypes.byref(attribute_bytes)):
+        raise MCPAppContainerError("Windows returned an unexpected AppContainer attribute size.")
+    attributes = ctypes.create_string_buffer(attribute_bytes.value)
+    attribute_list = ctypes.cast(attributes, ctypes.c_void_p)
+    if not initialize_attributes(attribute_list, 2, 0, ctypes.byref(attribute_bytes)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    process_info = PROCESS_INFORMATION()
+    startup = STARTUPINFOEXW()
+    startup.StartupInfo.cb = ctypes.sizeof(STARTUPINFOEXW)
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
+    handle_flags: list[tuple[Any, int]] = []
+    get_std_handle = kernel32.GetStdHandle
+    get_std_handle.argtypes = [wintypes.DWORD]
+    get_std_handle.restype = wintypes.HANDLE
+    get_handle_information = kernel32.GetHandleInformation
+    get_handle_information.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    get_handle_information.restype = wintypes.BOOL
+    set_handle_information = kernel32.SetHandleInformation
+    set_handle_information.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD]
+    set_handle_information.restype = wintypes.BOOL
+    try:
+        stdio_handles: list[Any] = []
+        for field, handle_id in (("hStdInput", -10), ("hStdOutput", -11), ("hStdError", -12)):
+            handle = get_std_handle(ctypes.c_uint32(handle_id).value)
+            if not handle or handle == wintypes.HANDLE(-1).value:
+                raise MCPAppContainerError(
+                    "MCP stdio handles are unavailable for network isolation."
+                )
+            old_flags = wintypes.DWORD()
+            if not get_handle_information(handle, ctypes.byref(old_flags)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not set_handle_information(handle, 1, 1):
+                raise ctypes.WinError(ctypes.get_last_error())
+            handle_flags.append((handle, old_flags.value))
+            stdio_handles.append(handle)
+            setattr(startup.StartupInfo, field, handle)
+
+        startup.lpAttributeList = attribute_list
+        if not kernel32.UpdateProcThreadAttribute(
+            attribute_list,
+            0,
+            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+            ctypes.byref(capabilities),
+            ctypes.sizeof(capabilities),
+            None,
+            None,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        unique_handles = list(dict.fromkeys(stdio_handles))
+        handle_list = (wintypes.HANDLE * len(unique_handles))(*unique_handles)
+        if not kernel32.UpdateProcThreadAttribute(
+            attribute_list,
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            ctypes.cast(handle_list, ctypes.c_void_p),
+            ctypes.sizeof(handle_list),
+            None,
+            None,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+        command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline([command, *args]))
+        create_process = kernel32.CreateProcessW
+        create_process.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.LPWSTR,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            wintypes.BOOL,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.LPCWSTR,
+            ctypes.POINTER(STARTUPINFOEXW),
+            ctypes.POINTER(PROCESS_INFORMATION),
+        ]
+        create_process.restype = wintypes.BOOL
+        flags = (
+            EXTENDED_STARTUPINFO_PRESENT
+            | CREATE_UNICODE_ENVIRONMENT
+            | CREATE_SUSPENDED
+            | CREATE_NO_WINDOW
+        )
+        if not create_process(
+            command,
+            command_line,
+            None,
+            None,
+            True,
+            flags,
+            None,
+            cwd,
+            ctypes.byref(startup),
+            ctypes.byref(process_info),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # Announce readiness before the child can write any MCP bytes. The parent
+        # consumes this private frame before handing the transport to the SDK.
+        sys.stdout.buffer.write(READY_FRAME)
+        sys.stdout.buffer.flush()
+        if kernel32.ResumeThread(process_info.hThread) == 0xFFFFFFFF:
+            kernel32.TerminateProcess(process_info.hProcess, 1)
+            raise ctypes.WinError(ctypes.get_last_error())
+        kernel32.WaitForSingleObject(process_info.hProcess, 0xFFFFFFFF)
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(process_info.hProcess, ctypes.byref(exit_code)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return int(exit_code.value)
+    finally:
+        for handle, original_flags in handle_flags:
+            set_handle_information(handle, 1, original_flags & 1)
+        kernel32.DeleteProcThreadAttributeList(attribute_list)
+        if process_info.hThread:
+            kernel32.CloseHandle(process_info.hThread)
+        if process_info.hProcess:
+            kernel32.CloseHandle(process_info.hProcess)
+
+
+def run_stdio_appcontainer_shim() -> int:
+    """Read a bounded bootstrap record and replace this process with an isolated child."""
+    try:
+        first_line = sys.stdin.buffer.readline(MAX_BOOTSTRAP_BYTES + 1)
+        if len(first_line) > MAX_BOOTSTRAP_BYTES or not first_line.startswith(BOOTSTRAP_PREFIX):
+            raise MCPAppContainerError("The MCP network isolation bootstrap was invalid.")
+        payload_raw = json.loads(first_line[len(BOOTSTRAP_PREFIX) :])
+        if not isinstance(payload_raw, dict):
+            raise MCPAppContainerError("The MCP network isolation bootstrap was invalid.")
+        payload: dict[str, object] = payload_raw
+        command = payload.get("command")
+        args = payload.get("args")
+        cwd = payload.get("cwd")
+        profile_name = payload.get("profile_name")
+        if (
+            not isinstance(command, str)
+            or not isinstance(args, list)
+            or any(not isinstance(item, str) for item in args)
+            or (cwd is not None and not isinstance(cwd, str))
+            or not isinstance(profile_name, str)
+            or not profile_name.startswith("XAA-MCP-")
+        ):
+            raise MCPAppContainerError("The MCP network isolation bootstrap was invalid.")
+        return _create_no_network_child(command, args, cwd, profile_name)
+    except Exception as error:  # noqa: BLE001 - fail closed and report bootstrap failures on stderr
+        message = str(error).replace("\r", " ").replace("\n", " ")[:512]
+        sys.stderr.write(f"MCP AppContainer launch failed ({type(error).__name__}): {message}\n")
+        sys.stderr.flush()
+        return 126
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--shim"]:
+    raise SystemExit(run_stdio_appcontainer_shim())

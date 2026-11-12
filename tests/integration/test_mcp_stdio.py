@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import json
+import os
 import shutil
 import sys
 import time
@@ -12,6 +13,7 @@ from typing import Literal
 
 import pytest
 from fastapi.testclient import TestClient
+from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters
 from mcp.types import CallToolResult, TextContent
 from pydantic import SecretStr
@@ -43,6 +45,71 @@ DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_se
 SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server.py"
 MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
 OVERSIZED_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_oversized_stdio_server.py"
+APPCONTAINER_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_probe.py"
+
+
+@pytest.mark.asyncio
+async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows AppContainer network-isolation acceptance")
+    frozen_shim = os.environ.get("XAA_MCP_APPCONTAINER_SHIM_EXE")
+    if frozen_shim:
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "executable", frozen_shim)
+    import socket
+
+    import win32security
+
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = int(listener.getsockname()[1])
+    with socket.create_connection(("127.0.0.1", port), timeout=1) as control:
+        accepted, _address = listener.accept()
+        accepted.close()
+        assert control.fileno() >= 0
+    server_python = Path(sys.base_prefix) / "python.exe"
+    nested_directory = workspace_tmp_path / "existing-child"
+    nested_directory.mkdir()
+    nested_file = nested_directory / "existing.txt"
+    nested_file.write_text("fixture", encoding="utf-8")
+    params = StdioServerParameters(
+        command=str(server_python),
+        args=["-I", str(APPCONTAINER_FIXTURE), str(port)],
+        cwd=str(workspace_tmp_path),
+    )
+
+    def ace_counts() -> tuple[int, int, int]:
+        return tuple(
+            win32security.GetNamedSecurityInfo(
+                str(path),
+                win32security.SE_FILE_OBJECT,
+                win32security.DACL_SECURITY_INFORMATION,
+            )
+            .GetSecurityDescriptorDacl()
+            .GetAceCount()
+            for path in (workspace_tmp_path, nested_directory, nested_file)
+        )  # type: ignore[return-value]
+
+    before = ace_counts()
+    try:
+        async with (
+            bounded_stdio_client(
+                params,
+                network_isolation=True,
+                isolation_read_paths=(str(APPCONTAINER_FIXTURE.parent),),
+            ) as (read_stream, write_stream),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool("try_loopback", {})
+            assert result.content and "blocked:" in getattr(result.content[0], "text", "")
+    finally:
+        listener.close()
+    after = ace_counts()
+    assert after == before
 
 
 @pytest.mark.asyncio
@@ -666,13 +733,17 @@ def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
                 "secret_env": ["TOKEN"],
                 "memory_limit_mb": 512,
                 "cpu_limit_percent": 60,
+                "network_isolation": True,
             },
         )
         assert created.status_code == 201
         assert created.json()["trust_environment"] is False
         assert created.json()["memory_limit_mb"] == 512
         assert created.json()["cpu_limit_percent"] == 60
+        assert created.json()["network_isolation"] is True
         server_id = created.json()["id"]
+        saved_server = MCPRegistry(store).get_server(server_id)
+        assert saved_server is not None and saved_server.network_isolation is True
         updated_limits = client.put(
             f"/mcp/servers/{server_id}/resource-limits",
             headers=headers,
@@ -696,6 +767,17 @@ def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
         )
         assert created_http.status_code == 201
         assert created_http.json()["trust_environment"] is True
+        invalid_http_isolation = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "Invalid HTTP isolation",
+                "transport": "streamable_http",
+                "endpoint": "https://example.test/mcp",
+                "network_isolation": True,
+            },
+        )
+        assert invalid_http_isolation.status_code == 400
 
         disconnected = client.post(f"/mcp/servers/{server_id}/disconnect", headers=headers)
         assert disconnected.status_code == 503

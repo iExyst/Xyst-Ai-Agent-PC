@@ -2,6 +2,7 @@ import json
 
 import pytest
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore, utc_now
 from xaa.storage.tasks import TaskStore
@@ -694,3 +695,23 @@ def test_schema_seventeen_adds_email_channel_deduplication_tables(workspace_tmp_
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_schema_thirty_two_adds_mcp_network_isolation_disabled_for_existing_servers(
+    workspace_tmp_path,
+):
+    database = workspace_tmp_path / "schema-thirty-two-mcp-isolation.sqlite3"
+    store = RunStore(database)
+    server = MCPRegistry(store).create_server(
+        MCPServerSpec(name="Existing stdio", command="python")
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN network_isolation")
+        connection.execute("PRAGMA user_version=32")
+
+    migrated = RunStore(database)
+    saved = MCPRegistry(migrated).get_server(server.id)
+    assert saved is not None
+    assert saved.network_isolation is False
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

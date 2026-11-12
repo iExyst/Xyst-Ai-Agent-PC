@@ -10,6 +10,7 @@ while rejecting oversized frames before JSON parsing.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from collections.abc import AsyncGenerator
@@ -33,6 +34,12 @@ from mcp.client.stdio import (
 )
 from mcp.os.win32.utilities import ServerProcess, _process_jobs
 from mcp.shared.message import SessionMessage
+
+from xaa.runtime.mcp_appcontainer import (
+    BOOTSTRAP_PREFIX,
+    READY_FRAME,
+    AppContainerAccess,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +135,9 @@ async def bounded_stdio_client(
     max_frame_bytes: int = MCP_MAX_STDIO_FRAME_BYTES,
     memory_limit_mb: int | None = None,
     cpu_limit_percent: int | None = None,
+    network_isolation: bool = False,
+    isolation_read_paths: tuple[str, ...] = (),
+    isolation_write_paths: tuple[str, ...] = (),
     errlog: TextIO = sys.stderr,
 ) -> AsyncGenerator[TransportStreams]:
     """Spawn an MCP stdio server and reject any inbound frame over the limit.
@@ -143,18 +153,75 @@ async def bounded_stdio_client(
         raise ValueError("MCP stdio CPU limits must be between 1 and 100 percent.")
 
     command = await _get_executable_command(server.command)
-    process = await _create_platform_compatible_process(
-        command=command,
-        args=server.args,
-        env=get_default_environment() | (server.env or {}),
-        errlog=errlog,
-        cwd=server.cwd,
-    )
+    environment = get_default_environment() | (server.env or {})
+    appcontainer_access: Any | None = None
+    process: ServerProcess | None = None
     try:
+        launch_command = command
+        launch_args = server.args
+        if network_isolation:
+            if sys.platform != "win32":
+                raise MCPStdioResourceLimitError(
+                    "MCP network isolation is currently supported on Windows only."
+                )
+            appcontainer_access = AppContainerAccess(
+                command,
+                server.args,
+                str(server.cwd) if server.cwd is not None else None,
+                list(isolation_read_paths),
+                list(isolation_write_paths),
+            )
+            launch_command = sys.executable
+            launch_args = (
+                ["--mcp-appcontainer-shim"]
+                if getattr(sys, "frozen", False)
+                else ["-m", "xaa.runtime.mcp_appcontainer", "--shim"]
+            )
+        process = await _create_platform_compatible_process(
+            command=launch_command,
+            args=launch_args,
+            env=environment,
+            errlog=errlog,
+            cwd=server.cwd,
+        )
         await _apply_windows_process_limits(process, memory_limit_mb, cpu_limit_percent)
-    except MCPStdioResourceLimitError:
-        await _stop_server_process(process)
+        if appcontainer_access is not None:
+            assert process.stdin is not None and process.stdout is not None
+            bootstrap = {
+                "command": command,
+                "args": server.args,
+                "cwd": server.cwd,
+                "profile_name": appcontainer_access.profile_name,
+            }
+            await process.stdin.send(
+                BOOTSTRAP_PREFIX + json.dumps(bootstrap, separators=(",", ":")).encode() + b"\n"
+            )
+            ready = bytearray()
+            with anyio.fail_after(15):
+                while len(ready) < len(READY_FRAME):
+                    ready.extend(await process.stdout.receive(len(READY_FRAME) - len(ready)))
+            if bytes(ready) != READY_FRAME:
+                raise MCPStdioResourceLimitError(
+                    "Windows could not start the network-isolated MCP server."
+                )
+    except BaseException as error:
+        try:
+            with anyio.CancelScope(shield=True):
+                if process is not None:
+                    await _stop_server_process(process)
+        finally:
+            if appcontainer_access is not None:
+                appcontainer_access.close()
+        if (
+            network_isolation
+            and isinstance(error, Exception)
+            and not isinstance(error, MCPStdioResourceLimitError)
+        ):
+            raise MCPStdioResourceLimitError(
+                "Windows could not enforce network isolation for this MCP server."
+            ) from error
         raise
+    assert process is not None
 
     read_stream_writer, read_stream = anyio.create_memory_object_stream[SessionMessage | Exception](
         0
@@ -235,14 +302,18 @@ async def bounded_stdio_client(
         await _aclose_all(read_stream, write_stream, read_stream_writer, write_stream_reader)
         await anyio.lowlevel.checkpoint()
 
-    async with anyio.create_task_group() as task_group:
-        task_group.start_soon(stdout_reader)
-        task_group.start_soon(stdin_writer)
-        try:
-            yield read_stream, write_stream
-        finally:
-            shutting_down = True
-            with anyio.CancelScope(shield=True):
-                await shutdown()
-            task_group.cancel_scope.cancel()
-    await anyio.lowlevel.cancel_shielded_checkpoint()
+    try:
+        async with anyio.create_task_group() as task_group:
+            task_group.start_soon(stdout_reader)
+            task_group.start_soon(stdin_writer)
+            try:
+                yield read_stream, write_stream
+            finally:
+                shutting_down = True
+                with anyio.CancelScope(shield=True):
+                    await shutdown()
+                task_group.cancel_scope.cancel()
+        await anyio.lowlevel.cancel_shielded_checkpoint()
+    finally:
+        if appcontainer_access is not None:
+            appcontainer_access.close()
