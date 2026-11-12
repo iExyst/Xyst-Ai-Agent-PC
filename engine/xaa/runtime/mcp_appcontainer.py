@@ -23,6 +23,8 @@ from uuid import uuid4
 
 BOOTSTRAP_PREFIX = b"XAA_APPCONTAINER_V1 "
 READY_FRAME = b"\x00XAA_APPCONTAINER_READY\n"
+ERROR_FRAME_PREFIX = b"\x00XAE"
+MAX_STARTUP_ERROR_FRAME_BYTES = 32
 MAX_BOOTSTRAP_BYTES = 64 * 1024
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 FILE_GENERIC_READ = 0x120089
@@ -47,6 +49,42 @@ PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 
 class MCPAppContainerError(RuntimeError):
     """Windows could not create an isolated MCP child process."""
+
+
+def startup_os_error_code(error: BaseException) -> int | None:
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        code = getattr(current, "winerror", None)
+        if not isinstance(code, int):
+            code = getattr(current, "errno", None)
+        if isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= 0xFFFFFFFF:
+            return code
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def startup_error_frame(error: BaseException) -> bytes:
+    """Return a bounded internal startup frame with only a numeric OS error."""
+    code = startup_os_error_code(error)
+    value = 0 if code is None else code
+    payload = value.to_bytes(4, "big", signed=False)
+    return ERROR_FRAME_PREFIX + len(payload).to_bytes(2, "big") + payload
+
+
+def startup_error_message(frame: bytes) -> str:
+    """Decode the internal frame into a path-free, user-safe diagnostic."""
+    if not frame.startswith(ERROR_FRAME_PREFIX) or len(frame) < len(ERROR_FRAME_PREFIX) + 2:
+        return "Windows could not start the network-isolated MCP server."
+    header_end = len(ERROR_FRAME_PREFIX) + 2
+    size = int.from_bytes(frame[len(ERROR_FRAME_PREFIX) : header_end], "big")
+    if size != 4 or size > MAX_STARTUP_ERROR_FRAME_BYTES or len(frame) != header_end + size:
+        return "Windows could not start the network-isolated MCP server."
+    code = int.from_bytes(frame[header_end:], "big")
+    if code == 0:
+        return "Windows could not start the network-isolated MCP server."
+    return f"Windows could not start the network-isolated MCP server (Windows error {code})."
 
 
 def _replace_journal_file(source: str, destination: Path) -> None:
@@ -805,7 +843,9 @@ def run_stdio_appcontainer_shim() -> int:
         ):
             raise MCPAppContainerError("The MCP network isolation bootstrap was invalid.")
         return _create_no_network_child(command, args, cwd, profile_name)
-    except Exception as error:  # noqa: BLE001 - fail closed and report bootstrap failures on stderr
+    except Exception as error:  # noqa: BLE001 - fail closed with a path-free startup code
+        sys.stdout.buffer.write(startup_error_frame(error))
+        sys.stdout.buffer.flush()
         message = str(error).replace("\r", " ").replace("\n", " ")[:512]
         sys.stderr.write(f"MCP AppContainer launch failed ({type(error).__name__}): {message}\n")
         sys.stderr.flush()

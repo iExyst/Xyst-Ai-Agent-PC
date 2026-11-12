@@ -67,6 +67,7 @@ from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.runtime.mcp_stdio import (
     MCP_MAX_STDIO_FRAME_BYTES,
     MCPStdioFrameLimitError,
+    MCPStdioResourceLimitError,
     bounded_stdio_client,
 )
 from xaa.storage.mcp import (
@@ -1776,6 +1777,8 @@ class MCPManager:
                 "The MCP server sent a stdio frame larger than the "
                 f"{MCP_MAX_STDIO_FRAME_BYTES}-byte limit."
             )
+        elif isinstance(error, MCPStdioResourceLimitError):
+            message = str(error)
         elif isinstance(error, OSError):
             code = getattr(error, "winerror", None)
             code_label = "Windows" if isinstance(code, int) else "OS"

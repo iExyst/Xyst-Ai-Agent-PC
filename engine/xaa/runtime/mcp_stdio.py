@@ -38,8 +38,12 @@ from mcp.shared.message import SessionMessage
 
 from xaa.runtime.mcp_appcontainer import (
     BOOTSTRAP_PREFIX,
+    ERROR_FRAME_PREFIX,
+    MAX_STARTUP_ERROR_FRAME_BYTES,
     READY_FRAME,
     AppContainerAccess,
+    startup_error_message,
+    startup_os_error_code,
 )
 
 logger = logging.getLogger(__name__)
@@ -190,6 +194,7 @@ async def bounded_stdio_client(
         await _apply_windows_process_limits(process, memory_limit_mb, cpu_limit_percent)
         if appcontainer_access is not None:
             assert process.stdin is not None and process.stdout is not None
+            stdout = process.stdout
             bootstrap = {
                 "command": command,
                 "args": server.args,
@@ -199,11 +204,25 @@ async def bounded_stdio_client(
             await process.stdin.send(
                 BOOTSTRAP_PREFIX + json.dumps(bootstrap, separators=(",", ":")).encode() + b"\n"
             )
-            ready = bytearray()
+
+            async def receive_exact(size: int) -> bytes:
+                received = bytearray()
+                while len(received) < size:
+                    received.extend(await stdout.receive(size - len(received)))
+                return bytes(received)
+
             with anyio.fail_after(15):
-                while len(ready) < len(READY_FRAME):
-                    ready.extend(await process.stdout.receive(len(READY_FRAME) - len(ready)))
-            if bytes(ready) != READY_FRAME:
+                prefix = await receive_exact(len(ERROR_FRAME_PREFIX))
+                if prefix == ERROR_FRAME_PREFIX:
+                    size = int.from_bytes(await receive_exact(2), "big")
+                    if size > MAX_STARTUP_ERROR_FRAME_BYTES:
+                        raise MCPStdioResourceLimitError(
+                            "Windows could not start the network-isolated MCP server."
+                        )
+                    error_frame = prefix + size.to_bytes(2, "big") + await receive_exact(size)
+                    raise MCPStdioResourceLimitError(startup_error_message(error_frame))
+                ready = prefix + await receive_exact(len(READY_FRAME) - len(prefix))
+            if ready != READY_FRAME:
                 raise MCPStdioResourceLimitError(
                     "Windows could not start the network-isolated MCP server."
                 )
@@ -220,9 +239,11 @@ async def bounded_stdio_client(
             and isinstance(error, Exception)
             and not isinstance(error, MCPStdioResourceLimitError)
         ):
-            raise MCPStdioResourceLimitError(
-                "Windows could not enforce network isolation for this MCP server."
-            ) from error
+            message = "Windows could not enforce network isolation for this MCP server."
+            code = startup_os_error_code(error)
+            if code is not None:
+                message += f" (Windows error {code})."
+            raise MCPStdioResourceLimitError(message) from error
         raise
     assert process is not None
 
