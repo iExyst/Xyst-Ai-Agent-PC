@@ -11,6 +11,7 @@ from typing import Literal
 
 import pytest
 from fastapi.testclient import TestClient
+from mcp.client.stdio import StdioServerParameters
 from mcp.types import CallToolResult, TextContent
 from pydantic import SecretStr
 from xaa.api.app import create_app
@@ -26,6 +27,7 @@ from xaa.runtime.mcp_manager import (
     _result_payload,
     _validate_output_schema,
 )
+from xaa.runtime.mcp_stdio import MCP_MAX_STDIO_FRAME_BYTES, bounded_stdio_client
 from xaa.runtime.states import RunState
 from xaa.storage.mcp import MCPRegistry, MCPServerRecord, MCPServerSpec, MCPToolRecord
 from xaa.storage.runs import RunStore
@@ -35,6 +37,24 @@ FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_stdio_server.py"
 DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_server.py"
 SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server.py"
 MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
+OVERSIZED_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_oversized_stdio_server.py"
+
+
+@pytest.mark.asyncio
+async def test_stdio_transport_rejects_oversized_frame_before_json_parse(
+    workspace_tmp_path: Path,
+):
+    cleanup_marker = workspace_tmp_path / "stdio-server-stopped.txt"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(OVERSIZED_FIXTURE)],
+        env={"MCP_OVERSIZED_CLEANUP_MARKER": str(cleanup_marker)},
+    )
+    async with bounded_stdio_client(params) as (read_stream, _write_stream), read_stream:
+        message = await read_stream.receive()
+    assert isinstance(message, ValueError)
+    assert str(MCP_MAX_STDIO_FRAME_BYTES) in str(message)
+    assert cleanup_marker.read_text(encoding="utf-8") == "stdin closed"
 
 
 @pytest.mark.asyncio

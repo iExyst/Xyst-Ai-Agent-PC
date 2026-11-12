@@ -26,7 +26,7 @@ from mcp.client.auth.exceptions import OAuthFlowError
 from mcp.client.auth.oauth2 import OAuthClientProvider, TokenStorage
 from mcp.client.extension import ClientExtension, NotificationBinding
 from mcp.client.session import ClientRequestContext
-from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 from mcp.client.subscriptions import ResourceUpdated
 from mcp.shared.auth import (
@@ -58,6 +58,7 @@ from uritemplate import URITemplate
 
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import plugin_source_sha256
+from xaa.runtime.mcp_stdio import bounded_stdio_client
 from xaa.storage.mcp import (
     MCPDiscoveredTool,
     MCPRegistry,
@@ -311,7 +312,7 @@ class MCPManager:
                 if server.transport == "stdio":
                     params = self._parameters(server)
                     errlog = stack.enter_context(_discard_stdio_output())
-                    transport = stdio_client(params, errlog=errlog)
+                    transport = bounded_stdio_client(params, errlog=errlog)
                 else:
                     if server.endpoint is None:
                         raise MCPConnectionError("The MCP HTTP endpoint is missing.")
