@@ -520,6 +520,37 @@ def test_schema_twenty_nine_adds_http_system_proxy_choice_with_legacy_default(
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
+def test_schema_thirty_adds_optional_mcp_stdio_memory_limit(workspace_tmp_path):
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    database = workspace_tmp_path / "schema-thirty-mcp-memory.sqlite3"
+    store = RunStore(database)
+    registry = MCPRegistry(store)
+    legacy = registry.create_server(MCPServerSpec(name="Legacy", command="python"))
+    configured = registry.create_server(
+        MCPServerSpec(name="Configured", command="python", memory_limit_mb=512)
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE mcp_servers DROP COLUMN memory_limit_mb")
+        connection.execute("PRAGMA user_version=30")
+
+    migrated = MCPRegistry(RunStore(database))
+    legacy_after = migrated.get_server(legacy.id)
+    configured_after = migrated.get_server(configured.id)
+    assert legacy_after is not None and legacy_after.memory_limit_mb is None
+    assert configured_after is not None and configured_after.memory_limit_mb is None
+    new = migrated.create_server(MCPServerSpec(name="New", command="python", memory_limit_mb=768))
+    assert new.memory_limit_mb == 768
+
+    with pytest.raises(ValueError, match="only to stdio"):
+        MCPServerSpec(
+            name="Invalid HTTP cap",
+            transport="streamable_http",
+            endpoint="https://example.test/mcp",
+            memory_limit_mb=512,
+        )
+
+
 def test_schema_twenty_five_adds_agent_plugin_source_fingerprint(workspace_tmp_path):
     from xaa.extensions.agent_plugins import plugin_source_sha256
     from xaa.storage.mcp import MCPRegistry, MCPServerSpec

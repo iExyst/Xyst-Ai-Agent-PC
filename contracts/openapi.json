@@ -600,6 +600,19 @@
             ],
             "title": "Endpoint"
           },
+          "memory_limit_mb": {
+            "anyOf": [
+              {
+                "maximum": 65536.0,
+                "minimum": 128.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Limit Mb"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
@@ -2121,6 +2134,17 @@
             "title": "Id",
             "type": "string"
           },
+          "memory_limit_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Limit Mb"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2194,6 +2218,7 @@
           "transport",
           "protocol_mode",
           "trust_environment",
+          "memory_limit_mb",
           "endpoint",
           "command",
           "args",

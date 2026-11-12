@@ -316,7 +316,11 @@ class MCPManager:
                 if server.transport == "stdio":
                     params = self._parameters(server)
                     errlog = stack.enter_context(_discard_stdio_output())
-                    transport = bounded_stdio_client(params, errlog=errlog)
+                    transport = bounded_stdio_client(
+                        params,
+                        errlog=errlog,
+                        memory_limit_mb=server.memory_limit_mb,
+                    )
                 else:
                     if server.endpoint is None:
                         raise MCPConnectionError("The MCP HTTP endpoint is missing.")

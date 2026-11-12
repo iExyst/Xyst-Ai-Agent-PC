@@ -2280,6 +2280,8 @@ export interface components {
             cwd?: string | null;
             /** Endpoint */
             endpoint?: string | null;
+            /** Memory Limit Mb */
+            memory_limit_mb?: number | null;
             /** Name */
             name: string;
             /**
@@ -2863,6 +2865,8 @@ export interface components {
             error: string | null;
             /** Id */
             id: string;
+            /** Memory Limit Mb */
+            memory_limit_mb: number | null;
             /** Name */
             name: string;
             /** Oauth Configured */

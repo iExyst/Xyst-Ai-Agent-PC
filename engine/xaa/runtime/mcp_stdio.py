@@ -14,7 +14,7 @@ import logging
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TextIO
+from typing import Any, TextIO, cast
 
 import anyio
 import anyio.lowlevel
@@ -31,6 +31,7 @@ from mcp.client.stdio import (
     _stop_server_process,
     get_default_environment,
 )
+from mcp.os.win32.utilities import ServerProcess, _process_jobs
 from mcp.shared.message import SessionMessage
 
 logger = logging.getLogger(__name__)
@@ -44,11 +45,52 @@ class MCPStdioFrameLimitError(ValueError):
     """An MCP server emitted a stdio frame larger than the configured cap."""
 
 
+class MCPStdioResourceLimitError(RuntimeError):
+    """A configured stdio process limit could not be enforced."""
+
+
+async def _apply_windows_memory_limit(process: ServerProcess, memory_limit_mb: int | None) -> None:
+    if memory_limit_mb is None:
+        return
+    if not 128 <= memory_limit_mb <= 65536:
+        raise ValueError("MCP stdio memory limits must be between 128 and 65,536 MiB.")
+    if sys.platform != "win32":
+        raise MCPStdioResourceLimitError(
+            "Configured MCP process memory limits are currently supported on Windows only."
+        )
+
+    # The pinned SDK owns process creation and Job Object lifetime. Configure its
+    # already-assigned Job Object so its kill-on-close semantics remain intact.
+    import win32job  # type: ignore[import-not-found]
+
+    job_api: Any = win32job
+
+    job = cast(Any, _process_jobs.get(process))
+    if job is None:
+        raise MCPStdioResourceLimitError(
+            "Windows could not assign this MCP server to a resource-control Job Object."
+        )
+    try:
+        extended_info: Any = job_api.QueryInformationJobObject(
+            job, job_api.JobObjectExtendedLimitInformation
+        )
+        extended_info["BasicLimitInformation"]["LimitFlags"] |= job_api.JOB_OBJECT_LIMIT_JOB_MEMORY
+        extended_info["JobMemoryLimit"] = memory_limit_mb * 1024 * 1024
+        job_api.SetInformationJobObject(
+            job, job_api.JobObjectExtendedLimitInformation, extended_info
+        )
+    except Exception as error:
+        raise MCPStdioResourceLimitError(
+            "Windows could not enforce the configured MCP server memory limit."
+        ) from error
+
+
 @asynccontextmanager
 async def bounded_stdio_client(
     server: StdioServerParameters,
     *,
     max_frame_bytes: int = MCP_MAX_STDIO_FRAME_BYTES,
+    memory_limit_mb: int | None = None,
     errlog: TextIO = sys.stderr,
 ) -> AsyncGenerator[TransportStreams]:
     """Spawn an MCP stdio server and reject any inbound frame over the limit.
@@ -58,6 +100,8 @@ async def bounded_stdio_client(
     """
     if max_frame_bytes <= 0:
         raise ValueError("max_frame_bytes must be positive")
+    if memory_limit_mb is not None and not 128 <= memory_limit_mb <= 65536:
+        raise ValueError("MCP stdio memory limits must be between 128 and 65,536 MiB.")
 
     command = await _get_executable_command(server.command)
     process = await _create_platform_compatible_process(
@@ -67,6 +111,11 @@ async def bounded_stdio_client(
         errlog=errlog,
         cwd=server.cwd,
     )
+    try:
+        await _apply_windows_memory_limit(process, memory_limit_mb)
+    except MCPStdioResourceLimitError:
+        await _stop_server_process(process)
+        raise
 
     read_stream_writer, read_stream = anyio.create_memory_object_stream[SessionMessage | Exception](
         0

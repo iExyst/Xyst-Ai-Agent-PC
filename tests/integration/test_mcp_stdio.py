@@ -74,6 +74,27 @@ async def test_stdio_transport_rejects_oversized_frame_before_json_parse(
 
 
 @pytest.mark.asyncio
+async def test_stdio_process_receives_configured_windows_job_memory_limit():
+    if sys.platform != "win32":
+        pytest.skip("Windows Job Object acceptance")
+    import win32job
+    from mcp.os.win32.utilities import _process_jobs
+
+    existing_pids = {process.pid for process in _process_jobs}
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-c", "import time; time.sleep(30)"],
+    )
+    async with bounded_stdio_client(params, memory_limit_mb=384):
+        process = next(process for process in _process_jobs if process.pid not in existing_pids)
+        job = _process_jobs[process]
+        info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
+        flags = info["BasicLimitInformation"]["LimitFlags"]
+        assert flags & win32job.JOB_OBJECT_LIMIT_JOB_MEMORY
+        assert info["JobMemoryLimit"] == 384 * 1024 * 1024
+
+
+@pytest.mark.asyncio
 async def test_connection_that_dies_immediately_after_discovery_is_not_registered(
     workspace_tmp_path: Path,
 ):
@@ -614,10 +635,16 @@ def test_mcp_api_keeps_integration_and_credentials_when_shutdown_is_uncertain(
         created = client.post(
             "/mcp/servers",
             headers=headers,
-            json={"name": "Shutdown failure", "command": sys.executable, "secret_env": ["TOKEN"]},
+            json={
+                "name": "Shutdown failure",
+                "command": sys.executable,
+                "secret_env": ["TOKEN"],
+                "memory_limit_mb": 512,
+            },
         )
         assert created.status_code == 201
         assert created.json()["trust_environment"] is False
+        assert created.json()["memory_limit_mb"] == 512
         server_id = created.json()["id"]
         credentials.set("preserve-me", f"mcp:{server_id}:TOKEN")
         created_http = client.post(
