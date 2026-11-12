@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import shutil
 import socket
 import time
 from pathlib import Path
@@ -17,7 +18,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from pydantic import ValidationError
 from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
-from xaa.storage.mcp import MCPServerSpec
+from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
 
 
@@ -33,6 +34,76 @@ class MemoryCredentials:
 
     def delete(self, profile: str = "lm-studio") -> None:
         self.values.pop(profile, None)
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_typescript_sdk_modern_interoperability(
+    workspace_tmp_path: Path,
+) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the TypeScript MCP SDK interoperability fixture")
+    fixture_dir = Path(__file__).parents[1] / "fixtures" / "mcp-typescript"
+    fixture = fixture_dir / "http-server.mjs"
+    if not (fixture_dir / "node_modules" / "@modelcontextprotocol" / "node").is_dir():
+        pytest.skip("Install the locked TypeScript MCP fixture dependencies with npm ci")
+
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = int(reservation.getsockname()[1])
+    store = RunStore(workspace_tmp_path / "mcp-typescript-http-sdk.sqlite3")
+    registry = MCPRegistry(store)
+    server = registry.create_server(
+        MCPServerSpec(
+            name="TypeScript HTTP SDK fixture",
+            transport="streamable_http",
+            endpoint=f"http://127.0.0.1:{port}/mcp",
+        )
+    )
+    manager = MCPManager(store, None)
+    process = await asyncio.create_subprocess_exec(
+        str(Path(node).resolve(strict=True)),
+        str(fixture.resolve(strict=True)),
+        str(port),
+        cwd=fixture_dir,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while True:
+            if process.returncode is not None:
+                pytest.fail("TypeScript HTTP fixture exited before accepting MCP requests")
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                    break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    pytest.fail("TypeScript HTTP fixture did not start listening")
+                await asyncio.sleep(0.02)
+
+        tools = await manager.connect_server(server.id)
+        tool = next(item for item in tools if item.name == "echo_value")
+        assert tool.permission == "none"
+        registry.set_permission(server.id, tool.name, "read", tool.schema_sha256)
+        result = await manager.call_tool(
+            tool.qualified_name, {"value": "round-trip"}, require_read=True
+        )
+        assert result["status"] == "ok"
+        assert result["trust"] == "untrusted_mcp_output"
+        assert result["content"][0]["text"] == "typescript-http-sdk:modern:round-trip"
+        assert manager.server_status(server.id)[0] == "connected"
+    finally:
+        await manager.close()
+        process.terminate()
+        try:
+            async with asyncio.timeout(5):
+                await process.wait()
+        except TimeoutError:
+            process.kill()
+            async with asyncio.timeout(5):
+                await process.wait()
 
 
 @pytest.mark.asyncio
