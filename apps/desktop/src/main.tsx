@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type Artifact, type Plan, type ChatSession } from './api/client.ts';
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { SkillsPanel, type ProcedureTrialSelection } from './SkillsPanel.tsx';
 import { MemoryPanel } from './MemoryPanel.tsx';
 import { PlanPanel } from './PlanPanel.tsx';
@@ -94,6 +94,8 @@ function App() {
   const [error, setError] = useState('');
   const [closeBehavior,setCloseBehavior]=useState<DesktopCloseBehavior>('keep_running');
   const [closeBehaviorStatus,setCloseBehaviorStatus]=useState('');
+  const [backupStatus,setBackupStatus]=useState('');
+  const [backupBusy,setBackupBusy]=useState(false);
   const [startOnLogin,setStartOnLogin]=useState(false);
   const [startOnLoginStatus,setStartOnLoginStatus]=useState('');
   const [busy, setBusy] = useState(false);
@@ -347,6 +349,19 @@ function App() {
     setPage(target);
     window.setTimeout(()=>document.getElementById(anchor)?.scrollIntoView({block:'start'}),0);
   }
+  async function savePortableBackup(){
+    if(!client||backupBusy)return;
+    setBackupBusy(true);setBackupStatus('Choose where to save the backup…');
+    try{
+      const destination=await save({defaultPath:`Xyst AI Agent ${new Date().toISOString().slice(0,10)}.xaa-backup`,filters:[{name:'Xyst AI Agent backup',extensions:['xaa-backup']}]});
+      if(!destination){setBackupStatus('Backup cancelled.');return;}
+      setBackupStatus('Creating and verifying backup…');
+      const backup=await client.createBackup();
+      const exported=await invoke<string>('export_backup_bundle',{sourcePath:backup.path,destinationPath:destination});
+      setBackupStatus(`Verified backup saved to ${exported}`);
+    }catch(failure){setBackupStatus(`Backup export failed: ${String(failure)}`);}
+    finally{setBackupBusy(false);}
+  }
   return <div className="app-shell">
     <aside className="app-sidebar" aria-label="Application navigation">
       <div className="brand-lockup"><div className="brand-mark">X</div><div><strong>Xyst</strong><span>AI Agent</span></div></div>
@@ -388,6 +403,7 @@ function App() {
       <div id="app-settings" className="page-settings" style={{display:page==='settings'?'contents':'none'}}>
       {'__TAURI_INTERNALS__' in window&&<section className="settings-card"><h2>App behavior</h2><label htmlFor="close-behavior">When the main window closes<select id="close-behavior" value={closeBehavior} onChange={event=>void updateCloseBehavior(event.target.value as DesktopCloseBehavior)}><option value="keep_running">Hide to tray and keep the agent running</option><option value="exit_on_close">Quit and stop the agent</option></select></label>{closeBehaviorStatus&&<p role="status">{closeBehaviorStatus}</p>}<label className="procedure-permission"><input type="checkbox" checked={startOnLogin} onChange={event=>void updateStartOnLogin(event.target.checked)}/>Start X.A.A. when I sign in</label><p>Starts the engine in the system tray so scheduled tasks can run after sign-in.</p>{startOnLoginStatus&&<p role="status">{startOnLoginStatus}</p>}<button type="button" className="secondary-button" onClick={()=>void invoke('quit_application')}>Quit and stop the agent</button></section>}
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
+      <section aria-labelledby="backup-title"><h2 id="backup-title">Portable backup</h2><p>Save a verified copy of X.A.A. conversations, runs, and managed artifacts. The backup is not encrypted; protect it like your application data. It stays on this computer until you choose where to save it.</p><button type="button" onClick={()=>void savePortableBackup()} disabled={backupBusy||!client}>{backupBusy?'Creating backup…':'Save verified backup'}</button>{backupStatus&&<p role="status">{backupStatus}</p>}</section>
       </div><div className="page-home" style={{display:page==='home'?'contents':'none'}}>
       <ConversationSessionsPanel client={client} model={model} workspace={workspace} mode={mode} refreshKey={String(chatRefresh)} onSelect={(id,record)=>{setChatSessionId(id);setChatSession(record);}}/>
       </div>

@@ -125,6 +125,20 @@ test('procedure package export is authenticated and remains binary', async () =>
   assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [0x50,0x4b,0x03,0x04]);
 });
 
+test('portable backup creation uses the authenticated engine endpoint', async () => {
+  let request;
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async (url, init) => {
+    request = {url: String(url), method: init.method, authorization: new Headers(init.headers).get('Authorization')};
+    return Response.json({path:'C:\\LocalAppData\\XAA\\backups\\fixture.xaa-backup',status:'verified'});
+  });
+  const backup = await client.createBackup();
+  assert.equal(request.url, 'http://127.0.0.1:8765/backups');
+  assert.equal(request.method, 'POST');
+  assert.equal(request.authorization, `Bearer ${'x'.repeat(32)}`);
+  assert.equal(backup.status, 'verified');
+  assert.match(backup.path, /fixture\.xaa-backup$/);
+});
+
 test('client rejects cloud addresses before sending a token', () => {
   assert.throws(() => new EngineClient('https://example.com', 'x'.repeat(32)), /loopback/);
 });

@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Desktop portable backup export (2026-11-13)
+
+Settings now provides a native Save dialog for verified `.xaa-backup` bundles. Creation remains in the authenticated engine; the Rust export boundary restricts the source to a regular file in X.A.A.'s own backup directory, limits size to 1 GiB, and refuses overwrite. Browser and Rust unit acceptances pass; installed UI acceptance is pending. Bundles are unencrypted and include conversation/task data and managed artifacts. Offline restore remains available through the CLI guide; desktop restore is not implemented. This advances the Phase 10 backup workflow but does not complete restore/migration acceptance.
+
 ## Blocked-run recovery entry point (2026-11-13)
 
 The desktop continues to restore the latest recoverable run into memory without resuming it. A blocked run now leaves the owner on the workspace home screen with a concise notice and an explicit “Review saved run” action. Startup browser acceptance verifies the run stays unopened until selection and that its recovery controls are then available; no model inference is used. The updated unsigned 0.1.1 installer builds successfully (local SHA-256 recorded in [`../progress.md`](../progress.md)), but installed-package UI acceptance and migration behavior remain open.

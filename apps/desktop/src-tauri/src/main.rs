@@ -16,6 +16,8 @@ use tauri::{
     Manager, WindowEvent,
 };
 
+mod backup_export;
+
 #[cfg(windows)]
 mod autostart;
 #[cfg(windows)]
@@ -144,6 +146,30 @@ fn restore_main_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn quit_application(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+fn application_backup_directory() -> Result<PathBuf, String> {
+    let data_root = if let Some(value) = std::env::var_os("XAA_DATA_DIR") {
+        PathBuf::from(value).join("XAA")
+    } else if let Some(value) = std::env::var_os("LOCALAPPDATA") {
+        PathBuf::from(value).join("XAA")
+    } else if let Some(value) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))
+    {
+        PathBuf::from(value).join(".xaa")
+    } else {
+        return Err("The X.A.A. data directory is unavailable".into());
+    };
+    Ok(data_root.join("backups"))
+}
+
+#[tauri::command]
+fn export_backup_bundle(source_path: String, destination_path: String) -> Result<String, String> {
+    let exported = backup_export::export_backup(
+        Path::new(&source_path),
+        Path::new(&destination_path),
+        &application_backup_directory()?,
+    )?;
+    Ok(exported.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -514,7 +540,8 @@ fn main() {
             get_close_behavior,
             set_close_behavior,
             get_start_on_login,
-            set_start_on_login
+            set_start_on_login,
+            export_backup_bundle
         ])
         .build(tauri::generate_context!())
         .expect("X.A.A. desktop failed to start")
