@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify the WSL offline venv bootstrap prerequisite (2026-11-13)
+
+Ubuntu-24.04 WSL has Python 3.12.3 and `ensurepip` 24.0. A disposable private venv bootstrapped pip; a locally generated root and transitive wheel pair installed with `--isolated --no-index --only-binary`, imported from that venv, and left system Python without pip. This is a manual runtime feasibility probe, not X.A.A. product support: the WSL manager, resolver, wheel-byte verification, lifecycle, and scoped procedure execution are still unimplemented. The prior source change passed the complete hosted workflow [43510494917](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43510494917); installer packaging checks were skipped because their inputs did not change.
+
 ## Close declared procedure dependency graphs in lock review (2026-11-13)
 
 Python dependency wheel records now preserve normalized `Requires-Dist` entries. Schema validation closes the target-specific dependency graph, checks versions and markers, rejects unsupported extras/direct URLs, disallows unrelated wheels, and caps aggregate dependency metadata. Empty metadata preserves the canonical digest of existing v1 locks. The desktop exposes these declarations during review and warns that they remain unverified against wheel bytes; absent entries display as “not recorded.” The 21-test schema module passes; related dependency storage, plugin, and migration tests pass 91 with one skipped and one unrelated WinError 5 directory-rename case deselected. OpenAPI and desktop types were regenerated. This does not resolve or install packages: the PyPI resolver, downloaded-wheel hash and metadata verification, offline installer, and per-procedure execution environment remain incomplete. The imported-procedure parity row stays partial.
