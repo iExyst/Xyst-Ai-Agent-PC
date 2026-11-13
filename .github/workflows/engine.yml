@@ -83,7 +83,7 @@ jobs:
           include-hidden-files: true
       - name: Verify managed Edge blocks off-host page subresources
         run: uv run python scripts/browser_subresource_smoke.py
-        timeout-minutes: 2
+        timeout-minutes: 3
       - uses: actions/upload-artifact@v4
         with:
           name: browser-subresource-edge-${{ github.run_id }}

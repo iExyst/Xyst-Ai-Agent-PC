@@ -11,7 +11,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 from playwright.async_api import async_playwright
@@ -98,6 +98,106 @@ async def verify_blocked_frame_reporting() -> tuple[str, dict[str, int]]:
             await browser.close()
 
 
+async def verify_nested_frame_resource_chain() -> tuple[str, dict[str, int]]:
+    """Exercise frame and resource blocking in a three-level Edge frame tree."""
+    approved_hosts = {"xaa-approved.example"}
+    blocked_resources: dict[str, int] = {}
+    blocked_main_navigations: dict[str, int] = {}
+    documents = {
+        "/root": """
+            <!doctype html><title>XAA root fixture</title>
+            <iframe title="approved child" src="https://xaa-approved.example/child"></iframe>
+        """,
+        "/child": """
+            <!doctype html><title>XAA child fixture</title>
+            <iframe title="approved grandchild" src="https://xaa-approved.example/grandchild"></iframe>
+        """,
+        "/grandchild": """
+            <!doctype html><title>XAA grandchild fixture</title>
+            <img src="https://xaa-blocked.example/pixel.png" alt="blocked image">
+            <script src="https://xaa-blocked.example/marker.js"></script>
+            <iframe title="blocked nested frame" src="https://xaa-blocked.example/frame"></iframe>
+            <script>document.body.dataset.thirdPartyScriptRan = String(window.xaaThirdPartyLoaded === true)</script>
+        """,
+    }
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(
+            channel="msedge",
+            headless=True,
+            env=cast(dict[str, str | float | bool], browser_worker_environment()),
+            args=["--disable-quic", "--disable-background-networking", "--no-first-run"],
+        )
+        try:
+            context = await browser.new_context(
+                accept_downloads=False,
+                service_workers="block",
+                permissions=[],
+            )
+            try:
+                page = await context.new_page()
+
+                async def route_request(route: Any) -> None:
+                    request_url = route.request.url
+                    if request_url.startswith("https://xaa-approved.example/"):
+                        path = request_url.removeprefix("https://xaa-approved.example")
+                        body = documents.get(path)
+                        if body is not None:
+                            await route.fulfill(status=200, content_type="text/html", body=body)
+                        else:
+                            await route.fulfill(status=404, body="missing fixture")
+                        return
+                    await guard_browser_route(
+                        route,
+                        approved_hosts,
+                        blocked_resources,
+                        main_frame=page.main_frame,
+                        blocked_main_navigations=blocked_main_navigations,
+                    )
+
+                await context.route("**/*", route_request)
+                await page.goto(
+                    "https://xaa-approved.example/root",
+                    wait_until="load",
+                    timeout=10000,
+                )
+                await page.wait_for_function(
+                    "document.querySelector('iframe')?.contentDocument?.querySelector('iframe')?.contentDocument?.title === 'XAA grandchild fixture'",
+                    timeout=5000,
+                )
+                await page.wait_for_timeout(100)
+                frame_urls = {frame.url for frame in page.frames}
+                expected_frames = {
+                    "https://xaa-approved.example/root",
+                    "https://xaa-approved.example/child",
+                    "https://xaa-approved.example/grandchild",
+                }
+                if not expected_frames.issubset(frame_urls):
+                    raise AssertionError(f"Approved nested frames did not all load: {frame_urls}")
+                if blocked_resources != {"frame": 1, "image": 1, "script": 1}:
+                    raise AssertionError(
+                        f"Unexpected nested-frame denial evidence: {blocked_resources}"
+                    )
+                if blocked_main_navigations:
+                    raise AssertionError("The approved top-level fixture navigation was blocked.")
+                grandchild = next(
+                    frame
+                    for frame in page.frames
+                    if frame.url == "https://xaa-approved.example/grandchild"
+                )
+                if (
+                    await grandchild.locator("body").get_attribute("data-third-party-script-ran")
+                    != "false"
+                ):
+                    raise AssertionError(
+                        "A blocked third-party script changed the nested document."
+                    )
+                return browser.version, dict(blocked_resources)
+            finally:
+                await context.close()
+        finally:
+            await browser.close()
+
+
 def main() -> None:
     request = {
         "url": "https://en.wikipedia.org/wiki/HTTPS",
@@ -137,6 +237,9 @@ def main() -> None:
     ):
         raise AssertionError("The live page did not prove off-host subresources were blocked.")
     browser_version, blocked_frame_resources = asyncio.run(verify_blocked_frame_reporting())
+    nested_browser_version, nested_blocked_resources = asyncio.run(
+        verify_nested_frame_resource_chain()
+    )
 
     report = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
@@ -152,6 +255,15 @@ def main() -> None:
         "blocked_frame_check": "real Edge context using the shared route guard; blocked requests are aborted before network",
         "blocked_frame_page_resource_types": blocked_frame_resources,
         "blocked_child_frame_documents_reported": blocked_frame_resources.get("frame", 0) > 0,
+        "nested_frame_chain_browser_version": nested_browser_version,
+        "nested_frame_chain_depth": 3,
+        "nested_frame_chain_off_host_blocked_resource_types": nested_blocked_resources,
+        "nested_frame_chain_passed": nested_blocked_resources
+        == {
+            "frame": 1,
+            "image": 1,
+            "script": 1,
+        },
         "model_inference_requested": False,
         "source_sha256": {
             "browser_subresource_smoke.py": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
