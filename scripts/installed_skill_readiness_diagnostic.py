@@ -23,7 +23,7 @@ description: Verify dependency status in the packaged runtime.
 dependencies:
   python: [\"packaging>=26.3,<27\", \"packaging==0.0\"]
   python3: [\"xaa-readiness-missing-fixture==99.0\"]
-  npm: [\"left-pad>=1.0\"]
+  npm: [\"left-pad>=1.0\", \"https://example.test/private-token\"]
 ---
 # Readiness check
 """
@@ -116,6 +116,14 @@ def main() -> None:
             raise RuntimeError(
                 f"Unsupported npm dependency was not marked unverified: {readiness!r}."
             )
+        unverified_packages = readiness.get("unverified_dependency_packages")
+        if unverified_packages != [{"manager": "npm", "name": "left-pad"}]:
+            raise RuntimeError(
+                f"Unsupported dependency identity was not safely retained: {readiness!r}."
+            )
+        readiness_json = json.dumps(readiness, sort_keys=True)
+        if any(value in readiness_json for value in ("left-pad>=1.0", "https://", "private-token")):
+            raise RuntimeError("Readiness exposed a dependency constraint or URL.")
 
         report: dict[str, Any] = {
             "checked_at_utc": datetime.now(UTC).isoformat(),
@@ -128,6 +136,7 @@ def main() -> None:
                 "incompatible_python_dependency_specs"
             ],
             "unverified_dependency_count": readiness["unverified_dependency_count"],
+            "unverified_dependency_packages": unverified_packages,
             "dependencies_unresolved": readiness["dependencies_unresolved"],
             "model_inference_requested": False,
         }
