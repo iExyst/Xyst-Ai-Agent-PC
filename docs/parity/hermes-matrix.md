@@ -2,7 +2,7 @@
 
 ## Enforce the Windows AppContainer command-output ceiling (2026-11-13)
 
-A real Windows transport fixture now loops through short `os.write` results until it emits beyond the 1 MiB output ceiling while an owned child remains active. Runs [43471071441](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43471071441) and [43473138091](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43473138091) exposed a fixture startup error: AppContainer denies Python's `subprocess.DEVNULL` opening `NUL`. The child now uses quiet pipe handles, and its failure path retains bounded, path-redacted receipt and stderr diagnostics. The focused output-limit test, Ruff, format and diff checks pass locally. Bounded output and descendant cleanup await hosted evidence; the execution-backend parity row stays partial.
+A real Windows AppContainer transport fixture emits beyond the 1 MiB output ceiling while an owned child remains active. Hosted diagnostics [43471071441](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43471071441) and [43473138091](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43473138091) exposed a fixture-only `subprocess.DEVNULL` denial under AppContainer; the child now uses quiet pipe handles. Hosted run [43475107022](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43475107022) passed all 1,217 Python tests and configured Windows checks. The acceptance verifies the output-limit exception, child termination, and transport active-record cleanup. This closes that bounded-output acceptance case only; artifact review, broader execution resource limits and the remaining execution-backend parity row stay open.
 
 ## Preserve fragmented Unicode command output (2026-11-13)
 
