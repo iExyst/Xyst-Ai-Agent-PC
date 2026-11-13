@@ -1,5 +1,9 @@
 # Progress
 
+## Define a shared command transport contract (2026-11-13)
+
+`CommandController` now depends on a typed transport protocol for immutable command intents, private workspace snapshots, streamed output, and stop/cleanup/status controls instead of importing the WSL implementation directly. The controller requires the output callback contract from every backend; existing controller fixtures were updated to match. Ruff, formatting, strict Pyright, `git diff --check`, and the command-controller unit suite pass (12 tests). WSL remains the only configured and implemented command backend; this refactor does not claim a Windows-local sandbox. It establishes the controller boundary needed to add and verify one without changing saved WSL behavior.
+
 ## Re-run the Phase 3 workspace slice through WSL without model inference (2026-11-13)
 
 Added `scripts/workspace_vertical_slice_diagnostic.py` as a reproducible acceptance for the actual coordinator workspace tools: a deterministic provider identifies and fixes a fixture defect, the coordinator runs the project check inside the Ubuntu-24.04 network-denied WSL sandbox, and the separate final-project validator confirms fresh evidence matches the edited tree. The acceptance passed with one changed file (`answer.py`), a successful restricted test command, current-tree validation evidence, and no unresolved calls. Report: [`.acceptance/workspace-vertical-slice-6e937af2ce684937af0acc3f8defe023/report.json`](../.acceptance/workspace-vertical-slice-6e937af2ce684937af0acc3f8defe023/report.json). Model inference was not requested. This adds repeatable coordinator-level evidence for the bounded Phase 3 slice; broad project compatibility and other execution backends remain open.

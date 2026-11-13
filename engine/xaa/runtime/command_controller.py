@@ -3,17 +3,15 @@
 import asyncio
 import base64
 import hashlib
-import inspect
 import os
 import time
-from collections.abc import Awaitable, Callable
 from typing import Any, Literal, cast
 from uuid import uuid4
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.command_transport import CommandTransport
 from xaa.runtime.snapshot_worker import capture_command_snapshot
-from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import (
     CommandCleanupEvidence,
     CommandJournal,
@@ -27,7 +25,7 @@ class CommandController:
     def __init__(
         self,
         store: RunStore,
-        transport: WSLTransport,
+        transport: CommandTransport,
         *,
         task_scope: TaskReadScope | None = None,
         purpose: Literal["agent", "project_validation"] = "agent",
@@ -178,13 +176,9 @@ class CommandController:
                     },
                 )
 
-            run_transport = cast(Callable[..., Awaitable[dict[str, Any]]], self.transport.run)
-            if "on_output" in inspect.signature(run_transport).parameters:
-                observed = await run_transport(
-                    intent, snapshot, deadline=deadline, on_output=save_output
-                )
-            else:
-                observed = await self.transport.run(intent, snapshot, deadline=deadline)
+            observed = await self.transport.run(
+                intent, snapshot, deadline=deadline, on_output=save_output
+            )
             output_ids: dict[str, str] = {}
             combined = 0
             for stream in ("stdout", "stderr"):

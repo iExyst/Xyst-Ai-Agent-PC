@@ -20,7 +20,7 @@ class FixtureTransport:
     def require_intent(self, intent):
         assert intent.profile_sha256 == "a" * 64
 
-    async def run(self, intent, snapshot, *, deadline):
+    async def run(self, intent, snapshot, *, deadline, on_output=None):
         out = b"untrusted command bytes"
         return {
             "execution_id": intent.execution_id,
@@ -159,7 +159,7 @@ async def test_command_controller_does_not_launch_on_external_junction_snapshot(
             super().__init__()
             self.launches = 0
 
-        async def run(self, intent, snapshot, *, deadline):
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
             self.launches += 1
             return await super().run(intent, snapshot, deadline=deadline)
 
@@ -249,7 +249,7 @@ async def test_fresh_controller_recovers_only_valid_persisted_output(workspace_t
         executions = 0
         observed = None
 
-        async def run(self, intent, snapshot, *, deadline):
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
             self.executions += 1
             self.observed = await super().run(intent, snapshot, deadline=deadline)
             return self.observed
