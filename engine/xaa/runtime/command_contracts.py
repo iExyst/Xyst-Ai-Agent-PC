@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class CommandGrant(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    backend: Literal["wsl-bubblewrap-v1"] = "wsl-bubblewrap-v1"
+    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"] = "wsl-bubblewrap-v1"
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     profile_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     max_seconds: int = Field(default=30, ge=1, le=30)
@@ -31,7 +31,7 @@ class CommandArguments(BaseModel):
 
 class CommandIntent(CommandArguments):
     execution_id: str = Field(pattern=r"^[a-f0-9]{32}$")
-    backend: Literal["wsl-bubblewrap-v1"]
+    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"]
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     profile_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     workspace: str

@@ -9,7 +9,9 @@ with no network capabilities and inherits the wrapper's protocol pipe handles.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
+import marshal
 import os
 import re
 import subprocess
@@ -47,6 +49,14 @@ PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
 PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
+JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
+JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION = 15
+JOB_OBJECT_CPU_RATE_CONTROL_ENABLE = 0x00000001
+JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP = 0x00000004
+COMMAND_MEMORY_LIMIT_BYTES = 128 * 1024 * 1024
+COMMAND_ACTIVE_PROCESS_LIMIT = 32
+COMMAND_CPU_RATE = 5000
 
 
 class MCPAppContainerError(RuntimeError):
@@ -184,6 +194,10 @@ class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
     ]
 
 
+class JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(ctypes.Structure):
+    _fields_ = [("ControlFlags", wintypes.DWORD), ("CpuRate", wintypes.DWORD)]
+
+
 def _win32_api() -> tuple[Any, Any]:
     if sys.platform != "win32":
         raise MCPAppContainerError("MCP network isolation is currently supported on Windows only.")
@@ -249,6 +263,28 @@ def _appcontainer_sid(profile_name: str) -> tuple[Any, bytes, Any]:
     return kernel32, sid_bytes, sid_object
 
 
+def _appcontainer_folder_path(sid: Any) -> Path:
+    """Return the profile-local data directory used for AppContainer temp files."""
+    import win32security
+
+    sid_text = win32security.ConvertSidToStringSid(sid)
+    folder = ctypes.c_wchar_p()
+    userenv = ctypes.WinDLL("userenv", use_last_error=True)
+    get_folder = userenv.GetAppContainerFolderPath
+    get_folder.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_wchar_p)]
+    get_folder.restype = ctypes.c_long
+    result = get_folder(sid_text, ctypes.byref(folder))
+    if result != 0 or not folder.value:
+        raise MCPAppContainerError("Windows could not locate the AppContainer local data folder.")
+    try:
+        return Path(folder.value)
+    finally:
+        free = ctypes.WinDLL("ole32").CoTaskMemFree
+        free.argtypes = [ctypes.c_void_p]
+        free.restype = None
+        free(ctypes.cast(folder, ctypes.c_void_p))
+
+
 class _FILETIME(ctypes.Structure):
     _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
 
@@ -302,6 +338,11 @@ def _process_identity(process_id: int) -> tuple[bool | None, int | None]:
         kernel32.CloseHandle(process)
 
 
+def process_identity(process_id: int) -> tuple[bool | None, int | None]:
+    """Read a Windows PID's live state and creation time for owned-process fencing."""
+    return _process_identity(process_id)
+
+
 class AppContainerAccess:
     """Temporary AppContainer profile and narrowly granted filesystem paths."""
 
@@ -313,6 +354,9 @@ class AppContainerAccess:
         read_roots: list[str],
         write_roots: list[str],
         journal_directory: str | Path,
+        *,
+        grant_argument_paths: bool = True,
+        grant_executable_directory: bool = True,
     ) -> None:
         if sys.platform != "win32":
             raise MCPAppContainerError(
@@ -339,37 +383,46 @@ class AppContainerAccess:
         self._write_journal()
         _kernel32, _sid_bytes, self._sid = _appcontainer_sid(self.profile_name)
         try:
+            self.private_temp_path = _appcontainer_folder_path(self._sid) / "Temp"
+            self.private_temp_path.mkdir(parents=True, exist_ok=True)
+            write_roots.append(str(self.private_temp_path))
             executable = Path(command).resolve(strict=True)
             if not executable.is_file() or executable.suffix.lower() in {".cmd", ".bat"}:
                 raise MCPAppContainerError(
                     "Network-isolated MCP servers must use a directly executable Windows program."
                 )
-            read_roots.append(str(executable.parent))
-            if (
-                executable.name.lower() in {"python.exe", "pythonw.exe"}
-                and executable.parent.name.lower() == "scripts"
-            ):
-                read_roots.append(str(executable.parent.parent))
-                venv_configuration = executable.parent.parent / "pyvenv.cfg"
-                if venv_configuration.is_file():
-                    for line in venv_configuration.read_text(encoding="utf-8").splitlines():
-                        key, separator, value = line.partition("=")
-                        if separator and key.strip().lower() == "home":
-                            base_runtime = Path(value.strip()).resolve(strict=True)
-                            if (
-                                not base_runtime.is_dir()
-                                or not (base_runtime / "python.exe").is_file()
-                                or not any(base_runtime.glob("python*.dll"))
-                            ):
-                                raise MCPAppContainerError(
-                                    "Windows could not identify the base runtime for this MCP Python environment."
-                                )
-                            read_roots.append(str(base_runtime))
-                            break
-            for argument in args:
-                candidate = Path(argument)
-                if candidate.is_absolute() and candidate.exists():
-                    read_roots.append(str(candidate if candidate.is_dir() else candidate.parent))
+            if grant_executable_directory:
+                read_roots.append(str(executable.parent))
+                if (
+                    executable.name.lower() in {"python.exe", "pythonw.exe"}
+                    and executable.parent.name.lower() == "scripts"
+                ):
+                    read_roots.append(str(executable.parent.parent))
+                    venv_configuration = executable.parent.parent / "pyvenv.cfg"
+                    if venv_configuration.is_file():
+                        for line in venv_configuration.read_text(encoding="utf-8").splitlines():
+                            key, separator, value = line.partition("=")
+                            if separator and key.strip().lower() == "home":
+                                base_runtime = Path(value.strip()).resolve(strict=True)
+                                if (
+                                    not base_runtime.is_dir()
+                                    or not (base_runtime / "python.exe").is_file()
+                                    or not any(base_runtime.glob("python*.dll"))
+                                ):
+                                    raise MCPAppContainerError(
+                                        "Windows could not identify the base runtime for this MCP Python environment."
+                                    )
+                                read_roots.append(str(base_runtime))
+                                break
+            else:
+                self._grant_file(str(executable), FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)
+            if grant_argument_paths:
+                for argument in args:
+                    candidate = Path(argument)
+                    if candidate.is_absolute() and candidate.exists():
+                        read_roots.append(
+                            str(candidate if candidate.is_dir() else candidate.parent)
+                        )
             read_only_paths = [Path(path).resolve(strict=True) for path in read_roots]
             if cwd and not any(
                 Path(cwd).resolve(strict=True).is_relative_to(path) for path in read_only_paths
@@ -449,6 +502,26 @@ class AppContainerAccess:
             mask,
             self._security.CONTAINER_INHERIT_ACE | self._security.OBJECT_INHERIT_ACE,
         )
+
+    def _grant_file(self, raw_path: str, mask: int) -> None:
+        import win32file
+
+        requested = Path(os.path.abspath(raw_path))
+        for component in (requested, *requested.parents):
+            try:
+                attributes = cast(int, win32file.GetFileAttributes(str(component)))
+                if attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                    raise MCPAppContainerError(
+                        "MCP isolation does not follow reparse-point access paths."
+                    )
+            except OSError as error:
+                raise MCPAppContainerError(
+                    "Windows could not inspect an MCP isolation program path."
+                ) from error
+        target = requested.resolve(strict=True)
+        if not target.is_file():
+            raise MCPAppContainerError("A selected MCP program is not a regular file.")
+        self._add_ace(str(target), mask, 0)
 
     def _add_ace(self, path: str, mask: int, flags: int) -> None:
         grant = (path, mask, flags)
@@ -565,8 +638,11 @@ class AppContainerAccess:
                             }
                             or not isinstance(flags, int)
                             or flags
-                            != win32security.CONTAINER_INHERIT_ACE
-                            | win32security.OBJECT_INHERIT_ACE
+                            not in {
+                                0,
+                                win32security.CONTAINER_INHERIT_ACE
+                                | win32security.OBJECT_INHERIT_ACE,
+                            }
                         ):
                             raise ValueError("invalid journal grant")
                         grants.append((path, mask, flags))
@@ -726,10 +802,32 @@ class AppContainerAccess:
                 "Windows could not fully remove temporary MCP isolation permissions."
             ) from failures[0]
 
+    @classmethod
+    def fingerprint_code(cls) -> tuple[Any, ...]:
+        """Expose implementation code objects for frozen profile binding."""
+        return (
+            cls.__init__.__code__,
+            cls._grant_tree.__code__,
+            cls._add_ace.__code__,
+            cls._recover_stale_grants.__func__.__code__,
+            cls.close.__code__,
+            _appcontainer_folder_path.__code__,
+        )
+
 
 def _create_no_network_child(
-    command: str, args: list[str], cwd: str | None, profile_name: str
+    command: str,
+    args: list[str],
+    cwd: str | None,
+    profile_name: str,
+    *,
+    owner_pid: int | None = None,
+    owner_creation_time: int | None = None,
+    max_seconds: int | None = None,
+    command_limits: bool = False,
+    child_environment: dict[str, str] | None = None,
 ) -> int:
+    stage = "prepare AppContainer identity"
     kernel32, sid_bytes, _sid = _appcontainer_sid(profile_name)
     sid_buffer = ctypes.create_string_buffer(sid_bytes)
     capabilities = SECURITY_CAPABILITIES(ctypes.cast(sid_buffer, ctypes.c_void_p), None, 0, 0)
@@ -766,6 +864,7 @@ def _create_no_network_child(
     set_handle_information.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD]
     set_handle_information.restype = wintypes.BOOL
     try:
+        stage = "inspect inherited process handles"
         stdio_handles: list[Any] = []
         for field, handle_id in (("hStdInput", -10), ("hStdOutput", -11), ("hStdError", -12)):
             handle = get_std_handle(ctypes.c_uint32(handle_id).value)
@@ -783,6 +882,7 @@ def _create_no_network_child(
             setattr(startup.StartupInfo, field, handle)
 
         startup.lpAttributeList = attribute_list
+        stage = "apply AppContainer security capabilities"
         if not kernel32.UpdateProcThreadAttribute(
             attribute_list,
             0,
@@ -793,6 +893,7 @@ def _create_no_network_child(
             None,
         ):
             raise ctypes.WinError(ctypes.get_last_error())
+        stage = "restrict inherited process handles"
         unique_handles = list(dict.fromkeys(stdio_handles))
         handle_list = (wintypes.HANDLE * len(unique_handles))(*unique_handles)
         if not kernel32.UpdateProcThreadAttribute(
@@ -806,7 +907,22 @@ def _create_no_network_child(
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 
+        stage = "create suspended AppContainer process"
         command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline([command, *args]))
+        environment_buffer: Any | None = None
+        environment_pointer: ctypes.c_void_p | None = None
+        if child_environment is not None:
+            environment_text = (
+                "\0".join(
+                    f"{key}={value}"
+                    for key, value in sorted(
+                        child_environment.items(), key=lambda item: item[0].casefold()
+                    )
+                )
+                + "\0\0"
+            )
+            environment_buffer = ctypes.create_unicode_buffer(environment_text)
+            environment_pointer = ctypes.cast(environment_buffer, ctypes.c_void_p)
         create_process = kernel32.CreateProcessW
         create_process.argtypes = [
             wintypes.LPCWSTR,
@@ -834,12 +950,13 @@ def _create_no_network_child(
             None,
             True,
             flags,
-            None,
+            environment_pointer,
             cwd,
             ctypes.byref(startup),
             ctypes.byref(process_info),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
+        stage = "create process-tree job"
         create_job = kernel32.CreateJobObjectW
         create_job.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
         create_job.restype = wintypes.HANDLE
@@ -848,6 +965,12 @@ def _create_no_network_child(
             raise ctypes.WinError(ctypes.get_last_error())
         job_limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         job_limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if command_limits:
+            job_limits.BasicLimitInformation.LimitFlags |= (
+                JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_JOB_MEMORY
+            )
+            job_limits.BasicLimitInformation.ActiveProcessLimit = COMMAND_ACTIVE_PROCESS_LIMIT
+            job_limits.JobMemoryLimit = COMMAND_MEMORY_LIMIT_BYTES
         set_job_info = kernel32.SetInformationJobObject
         set_job_info.argtypes = [
             wintypes.HANDLE,
@@ -856,6 +979,7 @@ def _create_no_network_child(
             wintypes.DWORD,
         ]
         set_job_info.restype = wintypes.BOOL
+        stage = "apply process-tree memory and task limits"
         if not set_job_info(
             job_handle,
             JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -863,12 +987,27 @@ def _create_no_network_child(
             ctypes.sizeof(job_limits),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
+        if command_limits:
+            cpu_limits = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(
+                JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+                COMMAND_CPU_RATE,
+            )
+            stage = "apply process-tree CPU limit"
+            if not set_job_info(
+                job_handle,
+                JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION,
+                ctypes.byref(cpu_limits),
+                ctypes.sizeof(cpu_limits),
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
+        stage = "contain process tree"
         assign_job = kernel32.AssignProcessToJobObject
         assign_job.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
         assign_job.restype = wintypes.BOOL
         if not assign_job(job_handle, process_info.hProcess):
             raise ctypes.WinError(ctypes.get_last_error())
         job_assigned = True
+        stage = "resume isolated child"
         # Announce readiness before the child can write any MCP bytes. The parent
         # consumes this private frame before handing the transport to the SDK.
         sys.stdout.buffer.write(READY_FRAME)
@@ -879,11 +1018,73 @@ def _create_no_network_child(
             terminate_job.restype = wintypes.BOOL
             terminate_job(job_handle, 1)
             raise ctypes.WinError(ctypes.get_last_error())
-        kernel32.WaitForSingleObject(process_info.hProcess, 0xFFFFFFFF)
+        if owner_pid is None and owner_creation_time is None:
+            wait_result = kernel32.WaitForSingleObject(process_info.hProcess, 0xFFFFFFFF)
+        else:
+            if (
+                not isinstance(owner_pid, int)
+                or isinstance(owner_pid, bool)
+                or owner_pid <= 0
+                or not isinstance(owner_creation_time, int)
+                or isinstance(owner_creation_time, bool)
+                or owner_creation_time <= 0
+                or not isinstance(max_seconds, int)
+                or isinstance(max_seconds, bool)
+                or not 1 <= max_seconds <= 30
+            ):
+                raise MCPAppContainerError("The MCP process lifetime policy was invalid.")
+            open_owner = kernel32.OpenProcess
+            open_owner.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            open_owner.restype = wintypes.HANDLE
+            owner = open_owner(0x00100000 | 0x1000, False, owner_pid)
+            if not owner:
+                raise MCPAppContainerError("The MCP isolation owner is no longer running.")
+            try:
+                owner_running, observed_creation_time = _process_identity(owner_pid)
+                if owner_running is not True or observed_creation_time != owner_creation_time:
+                    raise MCPAppContainerError("The MCP isolation owner identity changed.")
+                handles = (wintypes.HANDLE * 2)(process_info.hProcess, owner)
+                wait_many = kernel32.WaitForMultipleObjects
+                wait_many.argtypes = [
+                    wintypes.DWORD,
+                    ctypes.POINTER(wintypes.HANDLE),
+                    wintypes.BOOL,
+                    wintypes.DWORD,
+                ]
+                wait_many.restype = wintypes.DWORD
+                wait_result = wait_many(2, handles, False, max_seconds * 1000)
+            finally:
+                kernel32.CloseHandle(owner)
+            if wait_result == 0x00000102:
+                terminate_job = kernel32.TerminateJobObject
+                terminate_job.argtypes = [wintypes.HANDLE, wintypes.UINT]
+                terminate_job.restype = wintypes.BOOL
+                if not terminate_job(job_handle, 124):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if kernel32.WaitForSingleObject(process_info.hProcess, 5000) != 0:
+                    raise MCPAppContainerError(
+                        "Windows could not stop the isolated MCP process tree."
+                    )
+                return 124
+            if wait_result == 1:
+                terminate_job = kernel32.TerminateJobObject
+                terminate_job.argtypes = [wintypes.HANDLE, wintypes.UINT]
+                terminate_job.restype = wintypes.BOOL
+                if not terminate_job(job_handle, 125):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if kernel32.WaitForSingleObject(process_info.hProcess, 5000) != 0:
+                    raise MCPAppContainerError(
+                        "Windows could not stop the isolated MCP process tree."
+                    )
+                return 125
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(process_info.hProcess, ctypes.byref(exit_code)):
             raise ctypes.WinError(ctypes.get_last_error())
         return int(exit_code.value)
+    except BaseException as error:
+        if isinstance(error, OSError):
+            error.add_note(f"AppContainer launch stage: {stage}")
+        raise
     finally:
         for handle, original_flags in handle_flags:
             set_handle_information(handle, 1, original_flags & 1)
@@ -928,6 +1129,11 @@ def run_stdio_appcontainer_shim() -> int:
         args = payload.get("args")
         cwd = payload.get("cwd")
         profile_name = payload.get("profile_name")
+        owner_pid = payload.get("owner_pid")
+        owner_creation_time = payload.get("owner_creation_time")
+        max_seconds = payload.get("max_seconds")
+        command_limits = payload.get("command_limits", False)
+        child_environment = payload.get("child_environment")
         if (
             not isinstance(command, str)
             or not isinstance(args, list)
@@ -935,16 +1141,79 @@ def run_stdio_appcontainer_shim() -> int:
             or (cwd is not None and not isinstance(cwd, str))
             or not isinstance(profile_name, str)
             or not profile_name.startswith("XAA-MCP-")
+            or (
+                owner_pid is not None
+                and (not isinstance(owner_pid, int) or isinstance(owner_pid, bool))
+            )
+            or (
+                owner_creation_time is not None
+                and (
+                    not isinstance(owner_creation_time, int)
+                    or isinstance(owner_creation_time, bool)
+                )
+            )
+            or (
+                max_seconds is not None
+                and (not isinstance(max_seconds, int) or isinstance(max_seconds, bool))
+            )
+            or not isinstance(command_limits, bool)
+            or (
+                child_environment is not None
+                and (
+                    not isinstance(child_environment, dict)
+                    or len(child_environment) > 64
+                    or any(
+                        not isinstance(key, str)
+                        or not key
+                        or "=" in key
+                        or "\0" in key
+                        or not isinstance(value, str)
+                        or "\0" in value
+                        for key, value in child_environment.items()
+                    )
+                    or sum(len(key) + len(value) for key, value in child_environment.items())
+                    > 16384
+                )
+            )
+            or (
+                command_limits
+                and (owner_pid is None or owner_creation_time is None or max_seconds is None)
+            )
         ):
             raise MCPAppContainerError("The MCP network isolation bootstrap was invalid.")
-        return _create_no_network_child(command, args, cwd, profile_name)
+        return _create_no_network_child(
+            command,
+            args,
+            cwd,
+            profile_name,
+            owner_pid=owner_pid,
+            owner_creation_time=owner_creation_time,
+            max_seconds=max_seconds,
+            command_limits=command_limits,
+            child_environment=child_environment,
+        )
     except Exception as error:  # noqa: BLE001 - fail closed with a path-free startup code
         sys.stdout.buffer.write(startup_error_frame(error))
         sys.stdout.buffer.flush()
-        message = str(error).replace("\r", " ").replace("\n", " ")[:512]
+        notes = " ".join(getattr(error, "__notes__", []))
+        message = (str(error) + " " + notes).replace("\r", " ").replace("\n", " ")[:512]
         sys.stderr.write(f"MCP AppContainer launch failed ({type(error).__name__}): {message}\n")
         sys.stderr.flush()
         return 126
+
+
+def appcontainer_shim_fingerprint() -> str:
+    """Return a stable digest for the sandbox launcher in source and frozen builds."""
+    source = Path(__file__)
+    if source.is_file():
+        return hashlib.sha256(source.read_bytes()).hexdigest()
+    code_objects = (
+        _process_identity.__code__,
+        _create_no_network_child.__code__,
+        run_stdio_appcontainer_shim.__code__,
+        *AppContainerAccess.fingerprint_code(),
+    )
+    return hashlib.sha256(b"".join(marshal.dumps(code) for code in code_objects)).hexdigest()
 
 
 if __name__ == "__main__" and sys.argv[1:] == ["--shim"]:

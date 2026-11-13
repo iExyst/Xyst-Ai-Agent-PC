@@ -461,8 +461,11 @@
         "additionalProperties": false,
         "properties": {
           "backend": {
-            "const": "wsl-bubblewrap-v1",
             "default": "wsl-bubblewrap-v1",
+            "enum": [
+              "wsl-bubblewrap-v1",
+              "windows-appcontainer-v1"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -3621,6 +3624,15 @@
       "ReadinessRequest": {
         "additionalProperties": false,
         "properties": {
+          "backend": {
+            "default": "wsl-bubblewrap-v1",
+            "enum": [
+              "wsl-bubblewrap-v1",
+              "windows-appcontainer-v1"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
           "distribution": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
             "title": "Distribution",
@@ -3637,8 +3649,11 @@
         "additionalProperties": false,
         "properties": {
           "backend": {
-            "const": "wsl-bubblewrap-v1",
             "default": "wsl-bubblewrap-v1",
+            "enum": [
+              "wsl-bubblewrap-v1",
+              "windows-appcontainer-v1"
+            ],
             "title": "Backend",
             "type": "string"
           },

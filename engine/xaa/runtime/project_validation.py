@@ -10,9 +10,9 @@ from pydantic import ConfigDict, Field
 from xaa.api.contracts import ProjectValidationEvidence, ProjectValidationSummary
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
+from xaa.runtime.command_transport_factory import discover_command_transport
 from xaa.runtime.task_commands import verify_command_output
 from xaa.runtime.tool_worker import execute_filesystem
-from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore
 
@@ -128,7 +128,7 @@ async def validate_project(
         if request.max_seconds > grant.max_seconds:
             raise PermissionError("Validation duration exceeds the saved grant.")
         deadline = time.monotonic() + 90
-        transport = await WSLTransport.discover(grant.distribution, deadline=deadline)
+        transport = await discover_command_transport(grant, deadline=deadline)
         if transport.profile_sha256 != grant.profile_sha256:
             raise PermissionError("The execution profile changed after authorization.")
         identity = "project-validation-" + request.request_id

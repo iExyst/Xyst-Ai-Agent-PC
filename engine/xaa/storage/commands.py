@@ -243,7 +243,8 @@ class CommandJournal:
             grant, workspace = self._grant(
                 connection, run_id, self.store.path, validate_workspace=False
             )
-            if (intent.distribution, intent.profile_sha256, intent.workspace) != (
+            if (intent.backend, intent.distribution, intent.profile_sha256, intent.workspace) != (
+                grant.backend,
                 grant.distribution,
                 grant.profile_sha256,
                 workspace,
@@ -446,7 +447,8 @@ class CommandJournal:
             grant, workspace = self._grant(
                 connection, run_id, self.store.path, validate_workspace=False
             )
-            if (intent.profile_sha256, intent.distribution, intent.workspace) != (
+            if (intent.backend, intent.profile_sha256, intent.distribution, intent.workspace) != (
+                grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
                 workspace,
@@ -463,7 +465,8 @@ class CommandJournal:
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
             self.require_state(connection, run_id, call_id)
-            if (intent.profile_sha256, intent.distribution, intent.workspace) != (
+            if (intent.backend, intent.profile_sha256, intent.distribution, intent.workspace) != (
+                grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
                 workspace,
@@ -527,7 +530,8 @@ class CommandJournal:
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
             self.require_state(connection, run_id, call_id)
-            if (intent.profile_sha256, intent.distribution, intent.workspace) != (
+            if (intent.backend, intent.profile_sha256, intent.distribution, intent.workspace) != (
+                grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
                 workspace,

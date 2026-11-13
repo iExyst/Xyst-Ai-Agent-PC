@@ -85,6 +85,7 @@ from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.command_controller import CommandController
+from xaa.runtime.command_transport_factory import discover_command_transport
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
 from xaa.runtime.execution_readiness import (
@@ -113,7 +114,6 @@ from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, revi
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.web_fetch import normalize_approved_hosts
-from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import (
     MAX_BUNDLE_BYTES,
@@ -3558,8 +3558,8 @@ def create_app(
                 if match["state"] == "intended":
                     journal = CommandJournal(run_store, purpose="agent")
                     intent = journal.recovery_intent(run_id, owner, match["journal_call_id"])
-                    transport = await WSLTransport.discover(
-                        intent.distribution, deadline=time.monotonic() + 30
+                    transport = await discover_command_transport(
+                        intent, deadline=time.monotonic() + 30
                     )
                     if transport.profile_sha256 != intent.profile_sha256:
                         raise PermissionError(
@@ -3988,9 +3988,7 @@ def create_app(
         try:
             journal = CommandJournal(run_store, purpose="project_validation")
             intent = journal.recovery_intent(run_id, owner, call_id)
-            transport = await WSLTransport.discover(
-                intent.distribution, deadline=time.monotonic() + 30
-            )
+            transport = await discover_command_transport(intent, deadline=time.monotonic() + 30)
             if transport.profile_sha256 != intent.profile_sha256:
                 raise PermissionError("Execution profile changed; reconciliation is unavailable.")
             await CommandController(run_store, transport, purpose="project_validation").recover(

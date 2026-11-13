@@ -254,6 +254,9 @@ jobs:
           XAA_SIGNTOOL: ${{ vars.XAA_SIGNTOOL }}
           XAA_SIGNING_TIMESTAMP_URL: ${{ vars.XAA_SIGNING_TIMESTAMP_URL }}
         run: uv run python scripts/build_installer_ci.py
+      - name: Verify frozen Windows AppContainer readiness
+        run: uv run python scripts/frozen_windows_appcontainer_readiness.py --engine build/native-release/xaa-engine.exe --report .acceptance/frozen-windows-appcontainer-${{ github.run_id }}/report.json
+        timeout-minutes: 3
       - name: Verify installed-stage MCP OAuth and credential clearing in native desktop
         shell: pwsh
         env:

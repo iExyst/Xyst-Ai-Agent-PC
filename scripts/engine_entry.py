@@ -12,6 +12,10 @@ if __name__ == "__main__":
         from xaa.runtime.tool_worker import main
     elif sys.argv[1:] == ["--snapshot-worker"]:
         from xaa.runtime.snapshot_worker import main
+    elif sys.argv[1:] and sys.argv[1] == "--windows-appcontainer-probe":
+        from xaa.runtime.windows_local_probe import main
+
+        raise SystemExit(main(sys.argv[2:]))
     elif sys.argv[1:] == ["--tokenizer-worker"]:
         from xaa.providers.tokenizer_worker import main
     elif sys.argv[1:] == ["--mcp-appcontainer-shim"]:

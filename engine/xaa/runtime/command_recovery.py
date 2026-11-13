@@ -6,8 +6,10 @@ import sqlite3
 import time
 from collections.abc import Awaitable, Callable
 
+from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.command_controller import CommandController
-from xaa.runtime.wsl_transport import WSLTransport
+from xaa.runtime.command_transport import CommandTransport
+from xaa.runtime.command_transport_factory import discover_command_transport
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore
 
@@ -16,15 +18,17 @@ logger = logging.getLogger(__name__)
 
 class StoppedCommandRecovery:
     def __init__(
-        self, store: RunStore, discover: Callable[[str], Awaitable[WSLTransport]] | None = None
+        self,
+        store: RunStore,
+        discover: Callable[[CommandIntent], Awaitable[CommandTransport]] | None = None,
     ):
         self.store = store
         self.discover = discover or self._discover
         self.retry_after: dict[tuple[str, str, int], float] = {}
 
     @staticmethod
-    async def _discover(distribution: str) -> WSLTransport:
-        return await WSLTransport.discover(distribution, deadline=time.monotonic() + 15)
+    async def _discover(intent: CommandIntent) -> CommandTransport:
+        return await discover_command_transport(intent, deadline=time.monotonic() + 15)
 
     async def run_once(self) -> int:
         journal = CommandJournal(self.store)
@@ -39,7 +43,7 @@ class StoppedCommandRecovery:
                 continue
             try:
                 intent = journal.stopped_intent(run_id, revision, call_id)
-                transport = await self.discover(intent.distribution)
+                transport = await self.discover(intent)
                 proof = await CommandController(self.store, transport).cleanup(intent)
                 journal.record_stopped_cleanup(
                     run_id, revision, call_id, proof, preserve_available=True

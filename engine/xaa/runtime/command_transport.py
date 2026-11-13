@@ -14,6 +14,9 @@ OutputCallback = Callable[[str, bytes], Awaitable[None]]
 class CommandTransport(Protocol):
     """Run one immutable command intent and control its owned execution."""
 
+    @property
+    def profile_sha256(self) -> str: ...
+
     def require_intent(self, intent: CommandIntent) -> None: ...
 
     async def run(

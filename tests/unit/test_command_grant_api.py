@@ -21,13 +21,14 @@ async def test_grant_needs_current_server_observation(workspace_tmp_path, monkey
     grant = CommandGrant(distribution="Ubuntu", profile_sha256="a" * 64)
     result = await service.check(ReadinessRequest(distribution="Ubuntu"))
     service.require_grant(grant)
+    cache_key = ("wsl-bubblewrap-v1", "Ubuntu")
     if fault == "missing":
         service.cache.clear()
     elif fault == "expired":
-        service.cache["Ubuntu"] = (0, result)
+        service.cache[cache_key] = (0, result)
     elif fault == "wall_expired":
-        service.cache["Ubuntu"] = (
-            service.cache["Ubuntu"][0],
+        service.cache[cache_key] = (
+            service.cache[cache_key][0],
             result.model_copy(update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)}),
         )
     elif fault == "profile":
@@ -35,8 +36,8 @@ async def test_grant_needs_current_server_observation(workspace_tmp_path, monkey
     elif fault == "platform":
         monkeypatch.setattr(module, "SUPPORTED", False)
     else:
-        service.cache["Ubuntu"] = (
-            service.cache["Ubuntu"][0],
+            service.cache[cache_key] = (
+                service.cache[cache_key][0],
             result.model_copy(
                 update={"state": "unavailable"} if fault == "failed" else {"checks": []}
             ),

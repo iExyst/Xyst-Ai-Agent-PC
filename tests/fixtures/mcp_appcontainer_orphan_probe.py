@@ -54,9 +54,9 @@ def respond(request: dict[str, object]) -> dict[str, object] | None:
             )
             child = subprocess.Popen(
                 [sys.executable, "-I", "-c", code, destination],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                # This probe emits no output or input, so inheriting the MCP
+                # server's standard handles keeps it compatible with the
+                # AppContainer policy, which denies opening the Win32 NUL device.
                 close_fds=True,
             )
             time.sleep(0.2)

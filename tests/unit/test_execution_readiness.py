@@ -13,6 +13,7 @@ from xaa.runtime.execution_readiness import (
     ReadinessRequest,
     SkillDependencyReadinessRequest,
 )
+from xaa.runtime.windows_local_probe import PROBE_CODE, command_argv
 from xaa.storage.runs import RunStore
 
 
@@ -150,6 +151,44 @@ async def test_unsupported_platform_does_not_spawn(monkeypatch):
         await ExecutionReadiness().check(ReadinessRequest(distribution="Ubuntu"))
     ).state == "unsupported"
     assert backend.launches == 0
+
+
+async def test_windows_probe_listener_failure_returns_unavailable(monkeypatch):
+    monkeypatch.setattr(module, "SUPPORTED", True)
+    monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: "a" * 64)
+
+    async def discover(_cls, *, deadline):
+        return object()
+
+    async def fail_start_server(*_args, **_kwargs):
+        raise OSError("loopback listener unavailable")
+
+    monkeypatch.setattr(module.WindowsLocalTransport, "discover", discover)
+    monkeypatch.setattr(module.asyncio, "start_server", fail_start_server)
+    result = await ExecutionReadiness().check(
+        ReadinessRequest(backend="windows-appcontainer-v1", distribution="Windows-Local")
+    )
+
+    assert result.state == "unavailable"
+    assert result.error_code == "backend_probe_failed"
+    assert result.profile_sha256 == "a" * 64
+
+
+def test_windows_readiness_probe_selects_frozen_engine_dispatch():
+    assert command_argv("xaa-engine.exe", 32123, frozen=True) == [
+        "xaa-engine.exe",
+        "--windows-appcontainer-probe",
+        "32123",
+    ]
+    assert command_argv("python.exe", 32123, frozen=False) == [
+        "python.exe",
+        "-I",
+        "probe.py",
+        "32123",
+    ]
+    assert PROBE_CODE.startswith("import ctypes,json,os,pathlib,socket,sys\n")
+    with pytest.raises(ValueError, match="port"):
+        command_argv("xaa-engine.exe", 0, frozen=True)
 
 
 async def test_python_dependencies_are_checked_in_isolated_wsl_metadata(monkeypatch):

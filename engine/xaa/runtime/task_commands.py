@@ -8,10 +8,10 @@ from typing import Any
 
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
+from xaa.runtime.command_transport_factory import discover_command_transport
 from xaa.runtime.file_handles import open_for_read, opened_file_path
 from xaa.runtime.snapshot_worker import add_selected_skill_scripts
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
-from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import CommandJournal, command_artifact_root
 from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.task_workspaces import TaskWorkspaces
@@ -220,7 +220,7 @@ async def execute_task_command(
     grant = journal.grant(scope.run_id, owner=scope.parent_token)
     if parsed.max_seconds > grant.max_seconds:
         raise PermissionError("Command exceeds the saved local-user grant.")
-    transport = await WSLTransport.discover(grant.distribution, deadline=deadline)
+    transport = await discover_command_transport(grant, deadline=deadline)
     if transport.profile_sha256 != grant.profile_sha256:
         raise PermissionError("Execution profile changed after authorization.")
     return await CommandController(store, transport, task_scope=scope).execute(

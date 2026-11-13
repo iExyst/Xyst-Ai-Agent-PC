@@ -246,8 +246,8 @@ export class EngineClient {
     return this.#request('/execution/distributions', {signal});
   }
 
-  executionReadiness(distribution: string, signal?: AbortSignal): Promise<components['schemas']['ReadinessResult']> {
-    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({distribution}),signal});
+  executionReadiness(distribution: string, signal?: AbortSignal, backend: 'wsl-bubblewrap-v1'|'windows-appcontainer-v1'='wsl-bubblewrap-v1'): Promise<components['schemas']['ReadinessResult']> {
+    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({backend,distribution}),signal});
   }
 
   schedules(): Promise<Schedule[]> { return this.#request('/schedules'); }

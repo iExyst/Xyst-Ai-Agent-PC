@@ -12,7 +12,7 @@ uv run python scripts/audit_execution_inventory.py --check
 
 The factory defines six built-in families: local, Docker, SSH, Modal, Daytona and Vercel Sandbox. The registry also reserves `managed_modal`; the Modal builder selects that internal mode through gateway configuration. It is not a seventh independent factory backend. The inspected base contract describes per-call shell processes, session-state snapshots, persisted working directories and process cleanup. Source inspection here covers declarations and selected requirement/lifecycle paths, not every implementation branch. X.A.A. must implement its own execution code and pass observable acceptance tests; a compatible interface does not establish parity.
 
-X.A.A. has a Windows-first WSL/Bubblewrap restricted command backend with durable grants, isolated project snapshots, output artifacts, cancellation/recovery handling, and native installed-package acceptance. This is a partial X.A.A.-owned backend implementation; it does not establish support for the six Hermes built-in execution families, external plugins, or all shared release requirements below. The fixed Git inspector and filesystem workers remain separate supporting application operations.
+X.A.A. has two Windows-first command backends: WSL/Bubblewrap and a direct Windows AppContainer transport. The WSL path has durable grants, isolated project snapshots, output artifacts, cancellation/recovery handling, and native installed-package acceptance. The AppContainer path passes Windows source integration and freshly frozen-engine readiness acceptance for AppContainer identity, absent network capability, private snapshot/workspace/temp access, credential removal, bounded process-tree cleanup, and readiness/grant binding. The packaged readiness harness runs in the installer workflow and retains its report. These are partial X.A.A.-owned backends; the AppContainer evidence is local frozen-package acceptance, not clean-machine or installed user-command acceptance. Neither establishes support for the six Hermes built-in execution families, external plugins, or all shared release requirements below. The fixed Git inspector and filesystem workers remain separate supporting application operations.
 
 ## Requirements shared by every claimed backend
 
@@ -31,7 +31,7 @@ These are X.A.A. release requirements. Catalog descriptions sometimes declare cr
 
 ## Built-in families and internal mode
 
-Each row below remains **planned** as a direct Hermes-compatible backend adapter in X.A.A. These rows do not describe the separate X.A.A.-owned WSL/Bubblewrap command path. Phase 3 has a verified narrow Windows command/project-fix slice; its broad shared requirements and remaining backend parity are still open. Dependencies listed here describe the pinned reference and future acceptance environments, not configured accounts.
+Each row below remains **planned** as a direct Hermes-compatible backend adapter in X.A.A. These rows do not describe the separate X.A.A.-owned WSL/Bubblewrap and Windows AppContainer command paths. Phase 3 has a verified narrow Windows command/project-fix slice and a frozen AppContainer readiness acceptance; broad shared requirements and the remaining backend parity are still open. Dependencies listed here describe the pinned reference and future acceptance environments, not configured accounts.
 
 | ID | Phase | Pinned source | Specific acceptance scenario |
 |---|---:|---|---|

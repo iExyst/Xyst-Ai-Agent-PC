@@ -82,8 +82,8 @@ async def test_stopped_discovery_cleans_without_restarting_run(workspace_tmp_pat
     revision = store.get_run(run_id)["revision"]
     backend = Backend(result=available)
 
-    async def discover(distribution):
-        assert distribution == "Ubuntu"
+    async def discover(intent):
+        assert intent.distribution == "Ubuntu"
         return backend
 
     recovery = StoppedCommandRecovery(store, discover)
@@ -101,8 +101,8 @@ async def test_backend_failure_retains_slot_and_backs_off(workspace_tmp_path):
     store, run_id = stopped(workspace_tmp_path)
     calls = []
 
-    async def unavailable(distribution):
-        calls.append(distribution)
+    async def unavailable(intent):
+        calls.append(intent.distribution)
         raise OSError("diagnostic backend unavailable")
 
     recovery = StoppedCommandRecovery(store, unavailable)
@@ -117,7 +117,8 @@ async def test_resume_race_cannot_commit_stale_stopped_observation(workspace_tmp
     store, run_id = stopped(workspace_tmp_path)
     backend = Backend(on_cleanup=lambda: store.transition(run_id, RunState.QUEUED))
 
-    async def discover(distribution):
+    async def discover(intent):
+        assert intent.distribution == "Ubuntu"
         return backend
 
     assert await StoppedCommandRecovery(store, discover).run_once() == 0

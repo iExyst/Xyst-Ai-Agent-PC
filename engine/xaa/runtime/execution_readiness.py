@@ -3,9 +3,12 @@
 import asyncio
 import base64
 import json
+import logging
 import os
+import sys
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -16,6 +19,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
+from xaa.runtime.windows_local_probe import (
+    PROBE_CODE as WINDOWS_LOCAL_PROBE_CODE,
+)
+from xaa.runtime.windows_local_probe import (
+    command_argv as windows_local_probe_argv,
+)
+from xaa.runtime.windows_local_transport import (
+    WINDOWS_LOCAL_DISTRIBUTION,
+    WindowsLocalTransport,
+)
+from xaa.runtime.windows_local_transport import (
+    profile_fingerprint as windows_local_profile_fingerprint,
+)
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint, response_object
 
@@ -30,6 +46,16 @@ CHECKS = (
     "socket_families_denied",
     "nested_namespaces_denied",
     "kernel_resource_gate",
+    "cleanup_confirmed",
+)
+WINDOWS_LOCAL_CHECKS = (
+    "appcontainer_identity",
+    "network_capabilities_absent",
+    "private_snapshot",
+    "workspace_write_isolated",
+    "private_runtime_temp",
+    "credential_environment_absent",
+    "bounded_child_process_tree",
     "cleanup_confirmed",
 )
 SUPPORTED = os.name == "nt"
@@ -88,6 +114,7 @@ print(json.dumps({'versions':versions,'environment':{
 
 class ReadinessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"] = "wsl-bubblewrap-v1"
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
@@ -106,7 +133,7 @@ class ExecutionPolicy(BaseModel):
 
 class ReadinessResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    backend: Literal["wsl-bubblewrap-v1"] = "wsl-bubblewrap-v1"
+    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"] = "wsl-bubblewrap-v1"
     distribution: str
     profile_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     state: Literal["ready", "unavailable", "unsupported", "busy"]
@@ -172,11 +199,35 @@ class SkillDependencyReadinessResult(BaseModel):
 class ExecutionReadiness:
     def __init__(self) -> None:
         self.lock = asyncio.Lock()
-        self.cache: dict[str, tuple[float, ReadinessResult]] = {}
+        self.cache: dict[tuple[str, str], tuple[float, ReadinessResult]] = {}
 
     def require_grant(self, grant: CommandGrant) -> None:
         """Accept only a current successful server-observed check, never client claims."""
-        cached = self.cache.get(grant.distribution)
+        if grant.backend == "windows-appcontainer-v1":
+            try:
+                digest = windows_local_profile_fingerprint()
+            except OSError as exc:
+                raise PermissionError(
+                    "Windows command isolation is unavailable. Check the sandbox again."
+                ) from exc
+            cached = self.cache.get((grant.backend, grant.distribution))
+            if (
+                grant.distribution != WINDOWS_LOCAL_DISTRIBUTION
+                or not SUPPORTED
+                or cached is None
+                or cached[0] <= time.monotonic()
+                or cached[1].expires_at <= datetime.now(UTC)
+                or cached[1].state != "ready"
+                or cached[1].backend != grant.backend
+                or cached[1].profile_sha256 != grant.profile_sha256
+                or grant.profile_sha256 != digest
+                or tuple(cached[1].checks) != WINDOWS_LOCAL_CHECKS
+            ):
+                raise PermissionError(
+                    "A current successful Windows AppContainer check is required for this grant."
+                )
+            return
+        cached = self.cache.get((grant.backend, grant.distribution))
         try:
             digest = profile_fingerprint()[0]
         except OSError as exc:
@@ -428,6 +479,8 @@ class ExecutionReadiness:
         )
 
     async def check(self, request: ReadinessRequest) -> ReadinessResult:
+        if request.backend == "windows-appcontainer-v1":
+            return await self._check_windows_local(request.distribution)
         distribution = request.distribution
         now = datetime.now(UTC)
         digest: str | None = None
@@ -443,7 +496,8 @@ class ExecutionReadiness:
                 checks=[],
                 error_code="profile_unavailable",
             )
-        cached = self.cache.get(distribution)
+        cache_key = (request.backend, distribution)
+        cached = self.cache.get(cache_key)
         if cached and cached[0] > time.monotonic() and cached[1].profile_sha256 == digest:
             return cached[1]
         if not SUPPORTED:
@@ -560,5 +614,157 @@ class ExecutionReadiness:
             }
             if len(self.cache) >= 8:
                 self.cache.pop(next(iter(self.cache)))
-            self.cache[distribution] = (time.monotonic() + ttl, answer)
+            self.cache[cache_key] = (time.monotonic() + ttl, answer)
+            return answer
+
+    async def _check_windows_local(self, distribution: str) -> ReadinessResult:
+        now = datetime.now(UTC)
+        try:
+            digest = windows_local_profile_fingerprint()
+        except OSError:
+            return ReadinessResult(
+                backend="windows-appcontainer-v1",
+                distribution=distribution,
+                profile_sha256=None,
+                state="unavailable",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="profile_unavailable",
+            )
+        cache_key = ("windows-appcontainer-v1", distribution)
+        cached = self.cache.get(cache_key)
+        if cached and cached[0] > time.monotonic() and cached[1].profile_sha256 == digest:
+            return cached[1]
+        if distribution != WINDOWS_LOCAL_DISTRIBUTION or not SUPPORTED:
+            return ReadinessResult(
+                backend="windows-appcontainer-v1",
+                distribution=distribution,
+                profile_sha256=digest,
+                state="unsupported",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="unsupported_platform",
+            )
+        if self.lock.locked():
+            return ReadinessResult(
+                backend="windows-appcontainer-v1",
+                distribution=distribution,
+                profile_sha256=digest,
+                state="busy",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="probe_busy",
+            )
+        async with self.lock:
+            nonce = uuid4().hex
+
+            async def discard_probe_connection(
+                _reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+            ) -> None:
+                writer.close()
+
+            loopback_server: asyncio.Server | None = None
+            snapshot = WorkspaceSnapshot(
+                (
+                    SnapshotFile("probe.py", WINDOWS_LOCAL_PROBE_CODE.encode()),
+                    SnapshotFile("probe.txt", nonce.encode()),
+                ),
+                (),
+                (),
+            )
+            ready = False
+            try:
+                transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+                loopback_server = await asyncio.start_server(
+                    discard_probe_connection, "127.0.0.1", 0
+                )
+                port = loopback_server.sockets[0].getsockname()[1] if loopback_server.sockets else 0
+                intent = CommandIntent(
+                    argv=windows_local_probe_argv(
+                        sys.executable, port, frozen=bool(getattr(sys, "frozen", False))
+                    ),
+                    max_seconds=5,
+                    execution_id=uuid4().hex,
+                    backend="windows-appcontainer-v1",
+                    distribution=WINDOWS_LOCAL_DISTRIBUTION,
+                    profile_sha256=digest,
+                    workspace="application-owned-readiness-fixture",
+                )
+                result = await transport.run(intent, snapshot, deadline=time.monotonic() + 15)
+                try:
+                    output = json.loads(base64.b64decode(result["stdout_b64"], validate=True))
+                except (json.JSONDecodeError, ValueError):
+                    stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
+                    stderr_excerpt = stderr.decode("utf-8", errors="replace")[:240]
+                    local_data = os.environ.get("LOCALAPPDATA", "")
+                    if local_data:
+                        stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
+                    logging.getLogger(__name__).warning(
+                        "Windows AppContainer probe output was not JSON "
+                        "(succeeded=%s; exit=%s; stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
+                        result.get("succeeded"),
+                        result.get("exit_code"),
+                        result.get("stdout_bytes"),
+                        result.get("stderr_bytes"),
+                        stderr_excerpt,
+                    )
+                    raise
+                ready = (
+                    result.get("execution_id") == intent.execution_id
+                    and result.get("succeeded") is True
+                    and result.get("cleanup_confirmed") is True
+                    and result.get("snapshot_sha256") == snapshot.sha256
+                    and result.get("output_complete") is True
+                    and result.get("workspace_changes_persisted") is False
+                    and output
+                    == {
+                        "nonce": nonce,
+                        "appcontainer": True,
+                        "network_denied": True,
+                        "private_temp": True,
+                        "checks": True,
+                    }
+                    and windows_local_profile_fingerprint() == digest
+                )
+            except (OSError, RuntimeError, ValueError, KeyError, TypeError, TimeoutError) as exc:
+                failed_path = getattr(exc, "filename", None)
+                failed_name = Path(failed_path).name if isinstance(failed_path, str) else None
+                error_detail = str(exc)[:240]
+                local_data = os.environ.get("LOCALAPPDATA", "")
+                if local_data:
+                    error_detail = error_detail.replace(local_data, "<local-app-data>")
+                logging.getLogger(__name__).warning(
+                    "Windows AppContainer readiness probe failed "
+                    "(%s; winerror=%s; file=%s; detail=%s).",
+                    type(exc).__name__,
+                    getattr(exc, "winerror", None),
+                    failed_name,
+                    error_detail,
+                )
+                ready = False
+            finally:
+                if loopback_server is not None:
+                    loopback_server.close()
+                    await loopback_server.wait_closed()
+            observed = datetime.now(UTC)
+            ttl = 60 if ready else 10
+            answer = ReadinessResult(
+                backend="windows-appcontainer-v1",
+                distribution=distribution,
+                profile_sha256=digest,
+                state="ready" if ready else "unavailable",
+                checked_at=observed,
+                expires_at=observed + timedelta(seconds=ttl),
+                checks=list(WINDOWS_LOCAL_CHECKS) if ready else [],
+                error_code=None if ready else "backend_probe_failed",
+            )
+            self.cache = {
+                key: value for key, value in self.cache.items() if value[0] > time.monotonic()
+            }
+            if len(self.cache) >= 8:
+                self.cache.pop(next(iter(self.cache)))
+            self.cache[cache_key] = (time.monotonic() + ttl, answer)
             return answer

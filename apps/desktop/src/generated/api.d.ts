@@ -2305,9 +2305,9 @@ export interface components {
             /**
              * Backend
              * @default wsl-bubblewrap-v1
-             * @constant
+             * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1";
             /** Distribution */
             distribution: string;
             /**
@@ -3425,6 +3425,12 @@ export interface components {
         };
         /** ReadinessRequest */
         ReadinessRequest: {
+            /**
+             * Backend
+             * @default wsl-bubblewrap-v1
+             * @enum {string}
+             */
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1";
             /** Distribution */
             distribution: string;
         };
@@ -3433,9 +3439,9 @@ export interface components {
             /**
              * Backend
              * @default wsl-bubblewrap-v1
-             * @constant
+             * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1";
             /**
              * Checked At
              * Format: date-time

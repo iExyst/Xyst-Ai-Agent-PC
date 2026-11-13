@@ -101,9 +101,11 @@ async def test_selected_procedure_script_is_staged_for_granted_private_task(
             super().__init__()
             self.snapshots = []
 
-        async def run(self, intent, snapshot, *, deadline):
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
             self.snapshots.append(snapshot)
-            return await super().run(intent, snapshot, deadline=deadline)
+            return await super().run(
+                intent, snapshot, deadline=deadline, on_output=on_output
+            )
 
     transport = InspectingTransport()
     store, run_id, owner, _, scopes = await private_tasks(
@@ -137,9 +139,11 @@ async def test_commands_capture_each_private_tree_and_stale_validation_is_visibl
             super().__init__()
             self.snapshots = []
 
-        async def run(self, intent, snapshot, *, deadline):
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
             self.snapshots.append(snapshot)
-            return await super().run(intent, snapshot, deadline=deadline)
+            return await super().run(
+                intent, snapshot, deadline=deadline, on_output=on_output
+            )
 
     transport = InspectingTransport()
     store, run_id, owner, project, scopes = await private_tasks(workspace_tmp_path, transport)
@@ -765,13 +769,15 @@ async def test_workspace_hash_worker_rejects_junction_before_command_execution(w
 
 async def test_expiry_during_command_cleans_up_without_publishing_success(workspace_tmp_path):
     class RevokingTransport(FixtureTransport):
-        async def run(self, intent, snapshot, *, deadline):
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
             with store.connection() as connection:
                 connection.execute(
                     "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
                     (run_id + ":a",),
                 )
-            return await super().run(intent, snapshot, deadline=deadline)
+            return await super().run(
+                intent, snapshot, deadline=deadline, on_output=on_output
+            )
 
     transport = RevokingTransport()
     store, run_id, owner, project, scopes = await private_tasks(workspace_tmp_path, transport)

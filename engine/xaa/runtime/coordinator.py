@@ -28,6 +28,7 @@ from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.browser import BROWSER_METADATA, BROWSER_TOOL, run_approved_browser
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
+from xaa.runtime.command_transport_factory import discover_command_transport
 from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.git_tools import GIT_TOOL, GitArguments, inspect_git
 from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
@@ -68,7 +69,6 @@ from xaa.runtime.verification import FileContentCheck, verify_files_owned
 from xaa.runtime.web_fetch import WEB_FETCH_TOOL, fetch_approved_web_page
 from xaa.runtime.web_search import WEB_SEARCH_METADATA, WEB_SEARCH_TOOL, search_web
 from xaa.runtime.workspace_search import SEARCH_TOOL
-from xaa.runtime.wsl_transport import WSLTransport
 from xaa.storage.commands import TOOL as COMMAND_TOOL
 from xaa.storage.commands import CommandJournal
 from xaa.storage.memory import MemoryStore
@@ -293,9 +293,7 @@ class Coordinator:
                 continue
             try:
                 intent = CommandJournal(self.store).recovery_intent(run_id, token, call["id"])
-                transport = await WSLTransport.discover(
-                    intent.distribution, deadline=time.monotonic() + 15
-                )
+                transport = await discover_command_transport(intent, deadline=time.monotonic() + 15)
                 await CommandController(self.store, transport).recover(run_id, token, call["id"])
                 recovered.append(call["id"])
             except LeaseLost:
@@ -1111,7 +1109,7 @@ class Coordinator:
             if parsed_command.max_seconds > grant.max_seconds:
                 raise PermissionError("Command duration exceeds its saved grant.")
             async with asyncio.timeout(max(0, deadline - time.monotonic())):
-                transport = await WSLTransport.discover(grant.distribution, deadline=deadline)
+                transport = await discover_command_transport(grant, deadline=deadline)
                 if transport.profile_sha256 != grant.profile_sha256:
                     raise PermissionError("The execution profile changed after authorization.")
                 return await CommandController(self.store, transport).execute(
