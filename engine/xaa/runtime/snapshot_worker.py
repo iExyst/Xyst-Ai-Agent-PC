@@ -23,12 +23,12 @@ from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore, TaskReadScope
 
 
-def add_selected_skill_scripts(
-    snapshot: WorkspaceSnapshot, trial: dict[str, Any] | None
-) -> WorkspaceSnapshot:
-    """Overlay integrity-checked selected Python/shell resources into the private snapshot."""
+def selected_skill_script_resources(
+    trial: dict[str, Any] | None,
+) -> tuple[str, int, list[tuple[str, bytes]]] | None:
+    """Return selected, integrity-checked Python/shell resources in their immutable version."""
     if trial is None:
-        return snapshot
+        return None
     from xaa.storage.skills import snapshot_digest
 
     saved_digest = trial.get("snapshot_sha256")
@@ -40,8 +40,7 @@ def add_selected_skill_scripts(
     if not isinstance(skill_id, str) or type(version) is not int or not isinstance(assets, list):
         raise TypeError("Selected procedure identity or resources are invalid.")
 
-    staged: list[SnapshotFile] = []
-    staged_dirs: set[str] = set()
+    scripts: list[tuple[str, bytes]] = []
     for asset in cast(list[object], assets):
         if not isinstance(asset, dict):
             raise TypeError("Selected procedure resource is invalid.")
@@ -69,15 +68,39 @@ def add_selected_skill_scripts(
         ):
             raise ValueError("Selected script resource failed its integrity check.")
         raw.decode("utf-8-sig")
+        scripts.append((path, raw))
+    return skill_id, version, scripts
+
+
+def selected_skill_script_paths(trial: dict[str, Any] | None) -> list[str]:
+    """Return exact sandbox paths for a selected procedure's verified executable resources."""
+    selected = selected_skill_script_resources(trial)
+    if selected is None:
+        return []
+    skill_id, version, scripts = selected
+    return [f"__xaa_selected_skill__/{skill_id}/v{version}/{path}" for path, _ in scripts]
+
+
+def add_selected_skill_scripts(
+    snapshot: WorkspaceSnapshot, trial: dict[str, Any] | None
+) -> WorkspaceSnapshot:
+    """Overlay integrity-checked selected Python/shell resources into the private snapshot."""
+    selected = selected_skill_script_resources(trial)
+    if selected is None:
+        return snapshot
+    skill_id, version, scripts = selected
+    if not scripts:
+        return snapshot
+
+    staged: list[SnapshotFile] = []
+    staged_dirs: set[str] = set()
+    for path, content in scripts:
         relative = f"__xaa_selected_skill__/{skill_id}/v{version}/{path}"
         checked = checked_path(relative)
         for parent in checked.parents:
             if str(parent) != ".":
                 staged_dirs.add(str(parent))
-        staged.append(SnapshotFile(relative, raw))
-
-    if not staged:
-        return snapshot
+        staged.append(SnapshotFile(relative, content))
     if len(snapshot.files) + len(staged) > MAX_FILES:
         raise ValueError("Selected scripts exceed the command snapshot file limit.")
     if sum(len(item.content) for item in (*snapshot.files, *staged)) > MAX_TOTAL_BYTES:
@@ -181,7 +204,7 @@ def main() -> None:
                 base.directories,
                 base.excluded,
             )
-    if scope is None and request.purpose == "agent":
+    if request.purpose == "agent":
         snapshot = add_selected_skill_scripts(snapshot, store.procedure_trial(request.run_id))
     journal.snapshot_intent(request.run_id, request.owner, request.call_id)
     sys.stdout.buffer.write(snapshot.to_bytes())

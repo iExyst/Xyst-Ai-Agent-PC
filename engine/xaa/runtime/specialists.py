@@ -26,6 +26,7 @@ from xaa.runtime.executor import (
 )
 from xaa.runtime.line_edit import WriteLinesArguments
 from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
+from xaa.runtime.snapshot_worker import selected_skill_script_paths
 from xaa.runtime.task_commands import (
     execute_task_command,
     read_dependency_command_output,
@@ -743,6 +744,9 @@ class SpecialistRunner:
             raise ValueError("A task has an unsupported assigned input artifact type.")
         isolated = "workspace.write" in task["permission_scope"]
         commands = isolated and "workspace.command" in task["permission_scope"]
+        selected_script_paths = (
+            selected_skill_script_paths(self.store.procedure_trial(run_id)) if commands else []
+        )
         task_events = [
             event
             for event in self.store.list_events(run_id)
@@ -930,9 +934,18 @@ class SpecialistRunner:
                     + json.dumps(sourced["items"], ensure_ascii=False),
                 },
             )
+        script_hint = ""
         if commands:
+            script_hint = (
+                " Selected procedure scripts are available in the private command snapshot at: "
+                + ", ".join(selected_script_paths)
+                + ". Invoke only with structured argv."
+                if selected_script_paths
+                else ""
+            )
             messages[0]["content"] += (
                 " You may use workspace_run_command to validate the current private snapshot in the saved restricted WSL backend. It cannot access the host project or network. Each invocation starts from your current private files; command-generated changes are discarded. Report actual exit status and test output, never infer success from a proposed command."
+                + script_hint
             )
         tools = [
             {
@@ -1053,7 +1066,8 @@ class SpecialistRunner:
                     "type": "function",
                     "function": {
                         "name": "workspace_run_command",
-                        "description": "Run bounded structured argv in an isolated copy of your current private files using the saved local-user command grant. No network or host filesystem access; command file changes are discarded. Full stdout/stderr become artifacts, bounded excerpts and exact snapshot hash are returned. A nonzero exit is evidence of failure, not completion.",
+                        "description": "Run bounded structured argv in an isolated copy of your current private files using the saved local-user command grant. No network or host filesystem access; command file changes are discarded. Full stdout/stderr become artifacts, bounded excerpts and exact snapshot hash are returned. A nonzero exit is evidence of failure, not completion."
+                        + script_hint,
                         "parameters": CommandArguments.model_json_schema(),
                     },
                 }

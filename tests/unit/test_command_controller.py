@@ -52,7 +52,7 @@ class FixtureTransport:
         }
 
 
-def setup(root, transport):
+def setup(root, transport, *, procedure_trial=None):
     project = root / "project"
     project.mkdir()
     (project / "fixture.txt").write_text("fixture", encoding="utf-8")
@@ -64,6 +64,7 @@ def setup(root, transport):
         mode="workspace",
         model=None,
         command_grant={"distribution": "Ubuntu", "profile_sha256": "a" * 64},
+        procedure_trial=procedure_trial,
     )
     token = store.acquire_lease(record["id"], "worker", seconds=60)
     store.transition(record["id"], RunState.PLANNING, owner=token)

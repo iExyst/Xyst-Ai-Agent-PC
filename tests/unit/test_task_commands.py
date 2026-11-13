@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -18,11 +19,33 @@ from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore, TaskReadScope
+from xaa.storage.skills import SkillAsset, SkillDraft, SkillStore
 from xaa.storage.tasks import TaskStore
 
 
-async def private_tasks(root, transport, *, command_permission=True):
-    _, store, run_id, owner, project = setup(root, transport)
+async def private_tasks(root, transport, *, command_permission=True, selected_script=False):
+    procedure_trial = None
+    if selected_script:
+        skill_store = SkillStore(RunStore(root / "data" / "db.sqlite3"))
+        script = b"print('selected specialist script')\n"
+        skill = skill_store.create(
+            SkillDraft(
+                name="Selected specialist script fixture",
+                content="Run the linked check script when authorized.",
+                required_tools=[],
+                required_permissions=["workspace.read"],
+                assets=[
+                    SkillAsset(
+                        path="scripts/check.py",
+                        content_base64=base64.b64encode(script).decode("ascii"),
+                        media_type="text/x-python",
+                        sha256=hashlib.sha256(script).hexdigest(),
+                    )
+                ],
+            )
+        )
+        procedure_trial = {"skill_id": skill["id"], "version": 1}
+    _, store, run_id, owner, project = setup(root, transport, procedure_trial=procedure_trial)
     tasks = TaskStore(store)
     tasks.save_plan(
         run_id,
@@ -68,6 +91,42 @@ async def private_tasks(root, transport, *, command_permission=True):
                 task_token=scope.task_token,
             )
     return store, run_id, owner, project, scopes
+
+
+async def test_selected_procedure_script_is_staged_for_granted_private_task(
+    workspace_tmp_path,
+):
+    class InspectingTransport(FixtureTransport):
+        def __init__(self):
+            super().__init__()
+            self.snapshots = []
+
+        async def run(self, intent, snapshot, *, deadline):
+            self.snapshots.append(snapshot)
+            return await super().run(intent, snapshot, deadline=deadline)
+
+    transport = InspectingTransport()
+    store, run_id, owner, _, scopes = await private_tasks(
+        workspace_tmp_path, transport, selected_script=True
+    )
+    scope = scopes[0]
+    result = await CommandController(store, transport, task_scope=scope).execute(
+        run_id,
+        owner,
+        "test-selected-script",
+        {"argv": ["fixture"]},
+        idempotency_key="test-selected-script",
+        deadline=time.monotonic() + 15,
+    )
+    selected = store.procedure_trial(run_id)
+    assert selected is not None
+    path = f"__xaa_selected_skill__/{selected['skill_id']}/v1/scripts/check.py"
+    assert {item.path: item.content for item in transport.snapshots[-1].files}[path] == (
+        b"print('selected specialist script')\n"
+    )
+    evidence = command_evidence(store, run_id, scope.task_id)
+    assert result["succeeded"]
+    assert evidence[0]["matches_current_private_tree"]
 
 
 async def test_commands_capture_each_private_tree_and_stale_validation_is_visible(

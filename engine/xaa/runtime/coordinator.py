@@ -7,7 +7,6 @@ import json
 import time
 from datetime import UTC, datetime
 from functools import partial
-from pathlib import PurePosixPath
 from typing import Any, cast
 from uuid import uuid4
 
@@ -51,6 +50,7 @@ from xaa.runtime.procedure_tools import (
     bounded_procedure_read_result,
     selected_procedure_write_schema,
 )
+from xaa.runtime.snapshot_worker import selected_skill_script_paths
 from xaa.runtime.specialists import RUN_READY_TOOL, RunReadyArguments, SpecialistRunner
 from xaa.runtime.states import RunState
 from xaa.runtime.tool_contracts import (
@@ -1696,31 +1696,12 @@ class Coordinator:
                     skill_id = trial.get("skill_id")
                     version = trial.get("version")
                     if isinstance(skill_id, str) and type(version) is int:
-                        script_paths: list[str] = []
-                        assets = trial.get("assets", [])
-                        if isinstance(assets, list):
-                            for raw_asset in cast(list[object], assets):
-                                if not isinstance(raw_asset, dict):
-                                    continue
-                                asset = cast(dict[str, object], raw_asset)
-                                path = asset.get("path")
-                                media_type = asset.get("media_type")
-                                if (
-                                    isinstance(path, str)
-                                    and PurePosixPath(path).suffix.casefold() in {".py", ".sh"}
-                                    and isinstance(media_type, str)
-                                    and is_text_asset_media_type(media_type)
-                                ):
-                                    script_paths.append(path)
+                        script_paths = selected_skill_script_paths(trial)
                         if script_paths:
-                            staged_paths = ", ".join(
-                                f"__xaa_selected_skill__/{skill_id}/v{version}/{path}"
-                                for path in script_paths
-                            )
                             script_hint = (
                                 " Integrity-checked selected skill scripts are included in this "
                                 "private command snapshot at: "
-                                + staged_paths
+                                + ", ".join(script_paths)
                                 + ". Invoke a .py file with the available Python interpreter or "
                                 "a .sh file with bash, using structured argv."
                             )
