@@ -52,6 +52,7 @@ WINDOWS_LOCAL_CHECKS = (
     "appcontainer_identity",
     "network_capabilities_absent",
     "private_snapshot",
+    "nested_snapshot_access",
     "workspace_write_isolated",
     "private_runtime_temp",
     "credential_environment_absent",
@@ -671,8 +672,9 @@ class ExecutionReadiness:
                 (
                     SnapshotFile("probe.py", WINDOWS_LOCAL_PROBE_CODE.encode()),
                     SnapshotFile("probe.txt", nonce.encode()),
+                    SnapshotFile("tests/nested-fixture.txt", b"private nested fixture"),
                 ),
-                (),
+                ("tests",),
                 (),
             )
             ready = False
@@ -728,6 +730,7 @@ class ExecutionReadiness:
                         "appcontainer": True,
                         "network_denied": True,
                         "private_temp": True,
+                        "nested_snapshot_access": True,
                         "checks": True,
                     }
                     and windows_local_profile_fingerprint() == digest

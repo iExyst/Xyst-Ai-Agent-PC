@@ -18,11 +18,12 @@ PROBE_CODE = (
     "a.GetTokenInformation.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(ctypes.c_ulong)];a.GetTokenInformation.restype=ctypes.c_int;"
     "assert a.OpenProcessToken(k.GetCurrentProcess(),8,ctypes.byref(t));assert a.GetTokenInformation(t,29,ctypes.byref(p),ctypes.sizeof(p),ctypes.byref(n)) and p.value==1\n"
     "nonce=pathlib.Path('probe.txt').read_text();pathlib.Path('private-write.txt').write_text(nonce)\n"
+    "nested=pathlib.Path('tests/nested-fixture.txt').read_text();nested_path=pathlib.Path('tests/private-write.txt');nested_path.write_text(nested);assert nested_path.read_text()==nested\n"
     "assert not any(os.environ.get(n) for n in ('XAA_API_TOKEN','LM_STUDIO_API_TOKEN','LM_API_TOKEN'))\n"
     "temp=ctypes.create_unicode_buffer(32768);assert k.GetTempPathW(len(temp),temp)>0;temp_path=pathlib.Path(temp.value)/'probe-temp';temp_path.mkdir();(temp_path/'probe-temp.txt').write_text(nonce)\n"
     "try:s=socket.create_connection(('127.0.0.1',int(sys.argv[1])),timeout=1);s.close();network_denied=False\n"
     "except OSError:network_denied=True\n"
-    "print(json.dumps({'nonce':nonce,'appcontainer':True,'network_denied':network_denied,'private_temp':True,'checks':True}))\n"
+    "print(json.dumps({'nonce':nonce,'appcontainer':True,'network_denied':network_denied,'private_temp':True,'nested_snapshot_access':True,'checks':True}))\n"
 )
 
 
@@ -77,6 +78,11 @@ def main(arguments: list[str] | None = None) -> int:
         raise PermissionError("The Windows readiness process is not an AppContainer.")
     nonce = pathlib.Path("probe.txt").read_text(encoding="utf-8")
     pathlib.Path("private-write.txt").write_text(nonce, encoding="utf-8")
+    nested = pathlib.Path("tests/nested-fixture.txt").read_text(encoding="utf-8")
+    nested_path = pathlib.Path("tests/private-write.txt")
+    nested_path.write_text(nested, encoding="utf-8")
+    if nested_path.read_text(encoding="utf-8") != nested:
+        raise OSError("The nested AppContainer snapshot write did not persist.")
     if any(
         os.environ.get(name) for name in ("XAA_API_TOKEN", "LM_STUDIO_API_TOKEN", "LM_API_TOKEN")
     ):
@@ -99,6 +105,7 @@ def main(arguments: list[str] | None = None) -> int:
                 "appcontainer": True,
                 "network_denied": network_denied,
                 "private_temp": True,
+                "nested_snapshot_access": True,
                 "checks": True,
             }
         )

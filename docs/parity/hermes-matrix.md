@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Nested workspace access in packaged Windows AppContainer (2026-11-13)
+
+Windows AppContainer readiness now verifies a nested snapshot read and isolated sibling write. The freshly frozen 0.1.1 engine passes readiness and authenticated coordinator command acceptance with the nested fixture, network denial, user review, cleanup, unchanged source workspace and unchanged outside sentinel ([readiness report](../../.acceptance/frozen-windows-appcontainer-nested-20261113/report.json), [command report](../../.acceptance/frozen-windows-appcontainer-command-nested-20261113/report.json)). The installed current-user package was also exercised and uninstalled successfully with binary hashes and the same coordinator checks verified ([installed report](../../.acceptance/installed-appcontainer-4076ee9af0ed4a79a6f48ae55901b5f1/report.json)). The installer workflow now retains these installed acceptance reports. Hosted confirmation is pending. Keep execution backend parity partial: this remains one AppContainer backend and fixture, with no clean-machine or full pinned-Hermes backend inventory acceptance.
+
 ## Windows-local workspace command slice (2026-11-13)
 
 The real Windows AppContainer transport now grants the existing private snapshot tree explicit, journaled ACLs, including nested files and directories. The focused Windows integration group passes (3 tests), including nested snapshot read/write, host-file denial, loopback denial, and credential removal. A deterministic coordinator acceptance also passes the workspace read/edit/restricted-command/final-validation flow on `windows-appcontainer-v1` without model inference ([report](../../.acceptance/workspace-vertical-slice-17e29e2bfb3248c48a7100584141d36b/report.json)). Hosted verification is pending. Keep the Hermes execution-backend row partial: this verifies one X.A.A. backend slice, not the pinned reference's full backend inventory or clean-machine behavior.

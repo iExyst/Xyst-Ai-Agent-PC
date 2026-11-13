@@ -186,11 +186,13 @@ async def test_windows_readiness_allows_cold_frozen_engine_startup(monkeypatch):
             assert intent.backend == "windows-appcontainer-v1"
             assert intent.max_seconds == 20
             nonce = next(item.content for item in snapshot.files if item.path == "probe.txt")
+            assert any(item.path == "tests/nested-fixture.txt" for item in snapshot.files)
             output = {
                 "nonce": nonce.decode(),
                 "appcontainer": True,
                 "network_denied": True,
                 "private_temp": True,
+                "nested_snapshot_access": True,
                 "checks": True,
             }
             return {

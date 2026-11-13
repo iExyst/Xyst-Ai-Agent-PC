@@ -20,6 +20,7 @@ EXPECTED_CHECKS = [
     "appcontainer_identity",
     "network_capabilities_absent",
     "private_snapshot",
+    "nested_snapshot_access",
     "workspace_write_isolated",
     "private_runtime_temp",
     "credential_environment_absent",

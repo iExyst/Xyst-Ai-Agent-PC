@@ -78,6 +78,9 @@ def main() -> None:
     workspace.mkdir()
     nonce = uuid4().hex
     (workspace / "probe.txt").write_text(nonce, encoding="utf-8")
+    (workspace / "tests").mkdir()
+    nested_fixture = b"packaged nested AppContainer fixture"
+    (workspace / "tests" / "nested-fixture.txt").write_bytes(nested_fixture)
     outside = root / "outside"
     outside.mkdir()
     sentinel = outside / "sentinel.txt"
@@ -232,10 +235,13 @@ def main() -> None:
                     "appcontainer": True,
                     "network_denied": True,
                     "private_temp": True,
+                    "nested_snapshot_access": True,
                     "checks": True,
                 }:
                     raise RuntimeError("The frozen AppContainer child probe failed: " + repr(probe))
-                if (workspace / "private-write.txt").exists():
+                if (workspace / "private-write.txt").exists() or (
+                    workspace / "tests" / "private-write.txt"
+                ).exists():
                     raise RuntimeError("The command wrote into the original workspace.")
                 if sentinel.read_bytes() != b"host file must remain outside the command snapshot":
                     raise RuntimeError("The command changed a file outside its selected workspace.")
@@ -269,8 +275,11 @@ def main() -> None:
             raise RuntimeError("The fixture requested an unexpected number of command calls.")
         if (workspace / "probe.txt").read_text(encoding="utf-8") != nonce:
             raise RuntimeError("The selected source workspace changed during command execution.")
-        if (workspace / "private-write.txt").exists() or sentinel.read_bytes() != (
-            b"host file must remain outside the command snapshot"
+        if (
+            (workspace / "private-write.txt").exists()
+            or (workspace / "tests" / "private-write.txt").exists()
+            or (workspace / "tests" / "nested-fixture.txt").read_bytes() != nested_fixture
+            or sentinel.read_bytes() != b"host file must remain outside the command snapshot"
         ):
             raise RuntimeError("The AppContainer command changed files outside its private copy.")
         if verified_result is None:
@@ -289,6 +298,7 @@ def main() -> None:
                 "appcontainer_identity_verified": True,
                 "network_denial_verified": True,
                 "private_runtime_temp_verified": True,
+                "nested_snapshot_access_verified": True,
                 "stdout_sha256": hashlib.sha256(output["stdout"]).hexdigest(),
                 "stderr_sha256": hashlib.sha256(output["stderr"]).hexdigest(),
                 "tool_intended_executing_completed": True,
