@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import threading
@@ -49,6 +50,44 @@ def _download_artifact(client: httpx.Client, artifact_id: str) -> bytes:
     response = client.get(f"/artifacts/{artifact_id}", timeout=10)
     response.raise_for_status()
     return response.content
+
+
+def _command_result_diagnostics(result: dict[str, Any], output: dict[str, bytes]) -> dict[str, Any]:
+    """Keep bounded, path-scrubbed failure evidence for installed-package CI."""
+    stderr_lines = output["stderr"].decode("utf-8", errors="replace").splitlines()
+    last_stderr_line = stderr_lines[-1][:512] if stderr_lines else ""
+    last_stderr_line = re.sub(
+        r"(?i)\b[A-Z]:\\(?:[^\\\s:]+\\)*[^\\\s:]*", "<path>", last_stderr_line
+    )
+    probe: dict[str, bool] | None = None
+    try:
+        parsed: object = json.loads(output["stdout"].decode("utf-8"))
+        if isinstance(parsed, dict):
+            probe_result = cast(dict[str, Any], parsed)
+            probe = {
+                key: probe_result.get(key) is True
+                for key in (
+                    "appcontainer",
+                    "network_denied",
+                    "private_temp",
+                    "nested_snapshot_access",
+                    "checks",
+                )
+            }
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        pass
+    return {
+        "exit_code": result.get("exit_code"),
+        "supervisor_exit_code": result.get("supervisor_exit_code"),
+        "termination_reason": result.get("termination_reason"),
+        "output_complete": result.get("output_complete"),
+        "stdout_bytes": len(output["stdout"]),
+        "stderr_bytes": len(output["stderr"]),
+        "stdout_sha256": hashlib.sha256(output["stdout"]).hexdigest(),
+        "stderr_sha256": hashlib.sha256(output["stderr"]).hexdigest(),
+        "probe_checks": probe,
+        "stderr_last_line": last_stderr_line,
+    }
 
 
 def main() -> None:
@@ -117,7 +156,15 @@ def main() -> None:
         "evidence": str(root),
     }
     try:
-        process = start_api(engine, root, api_port, fixture_port, token, "appcontainer-command")
+        previous_diagnostics = os.environ.get("XAA_ACCEPTANCE_VERBOSE_ERRORS")
+        os.environ["XAA_ACCEPTANCE_VERBOSE_ERRORS"] = "1"
+        try:
+            process = start_api(engine, root, api_port, fixture_port, token, "appcontainer-command")
+        finally:
+            if previous_diagnostics is None:
+                os.environ.pop("XAA_ACCEPTANCE_VERBOSE_ERRORS", None)
+            else:
+                os.environ["XAA_ACCEPTANCE_VERBOSE_ERRORS"] = previous_diagnostics
         wait_for_api(client, time.monotonic() + 45)
         readiness_response = client.post(
             "/execution/readiness",
@@ -210,6 +257,19 @@ def main() -> None:
                 if not isinstance(decoded_result, dict):
                     raise TypeError("The completed command result is not a JSON object.")
                 verified_result = cast(dict[str, Any], decoded_result)
+                for stream in ("stdout", "stderr"):
+                    artifact_id = verified_result.get(f"{stream}_artifact_id")
+                    if not isinstance(artifact_id, str):
+                        raise TypeError(f"The saved command has no {stream} artifact.")
+                    data = _download_artifact(client, artifact_id)
+                    if len(data) != verified_result.get(f"{stream}_bytes") or hashlib.sha256(
+                        data
+                    ).hexdigest() != verified_result.get(f"{stream}_sha256"):
+                        raise RuntimeError(f"The saved {stream} artifact failed integrity checks.")
+                    output[stream] = data
+                report["command_result_diagnostics"] = _command_result_diagnostics(
+                    verified_result, output
+                )
                 command_result_checks = {
                     "succeeded": verified_result.get("succeeded") is True,
                     "cleanup_confirmed": verified_result.get("cleanup_confirmed") is True,
@@ -226,16 +286,6 @@ def main() -> None:
                         "The saved command result did not pass its sanitized success checks: "
                         + json.dumps(command_result_checks, sort_keys=True)
                     )
-                for stream in ("stdout", "stderr"):
-                    artifact_id = verified_result.get(f"{stream}_artifact_id")
-                    if not isinstance(artifact_id, str):
-                        raise TypeError(f"The command has no saved {stream} artifact.")
-                    data = _download_artifact(client, artifact_id)
-                    if len(data) != verified_result.get(f"{stream}_bytes") or hashlib.sha256(
-                        data
-                    ).hexdigest() != verified_result.get(f"{stream}_sha256"):
-                        raise RuntimeError(f"The saved {stream} artifact failed integrity checks.")
-                    output[stream] = data
                 probe = json.loads(output["stdout"].decode("utf-8"))
                 if probe != {
                     "nonce": nonce,
@@ -345,6 +395,17 @@ def main() -> None:
                 process.kill()
                 process.wait(timeout=5)
         report["engine_exit_code"] = None if process is None else process.returncode
+        api_log = root / "frozen-api-appcontainer-command.log"
+        if api_log.is_file():
+            diagnostic_lines = [
+                line
+                for line in api_log.read_text(encoding="utf-8", errors="replace").splitlines()
+                if "Coordinator failed for run " in line
+                or "Windows AppContainer readiness probe failed " in line
+                or "Windows AppContainer readiness child failed validation " in line
+            ]
+            if diagnostic_lines:
+                report["api_failure_diagnostics"] = diagnostic_lines[-8:]
         clean_launch_credentials(credential_store, token, f"http://127.0.0.1:{api_port}")
         client.close()
         fixture.shutdown()

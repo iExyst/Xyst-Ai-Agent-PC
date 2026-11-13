@@ -1,10 +1,37 @@
 import asyncio
+import logging
 import sqlite3
 
 import xaa.runtime.supervisor as supervisor_module
 from xaa.runtime.states import RunState
 from xaa.runtime.supervisor import RunSupervisor
 from xaa.storage.runs import RunStore
+
+
+async def test_supervisor_acceptance_error_context_redacts_full_paths(
+    workspace_tmp_path, monkeypatch, caplog
+):
+    async def fail():
+        raise PermissionError(13, "Access is denied", str(workspace_tmp_path / "private.txt"))
+
+    supervisor = RunSupervisor(None)
+    task = asyncio.create_task(fail())
+    await asyncio.sleep(0)
+    supervisor.tasks["acceptance"] = task
+    monkeypatch.setenv("XAA_ACCEPTANCE_VERBOSE_ERRORS", "1")
+    caplog.set_level(logging.ERROR, logger="xaa.runtime.supervisor")
+    supervisor._finished("acceptance", task)
+    assert "PermissionError; errno=13; winerror=None; file=private.txt" in caplog.text
+    assert str(workspace_tmp_path) not in caplog.text
+    caplog.clear()
+
+    task = asyncio.create_task(fail())
+    await asyncio.sleep(0)
+    supervisor.tasks["normal"] = task
+    monkeypatch.delenv("XAA_ACCEPTANCE_VERBOSE_ERRORS")
+    supervisor._finished("normal", task)
+    assert "Coordinator failed for run normal (PermissionError)" in caplog.text
+    assert "errno=" not in caplog.text
 
 
 def test_recovery_preserves_live_workers_and_blocks_uncertain_actions(workspace_tmp_path):

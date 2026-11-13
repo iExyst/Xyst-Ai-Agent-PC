@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_recovery import StoppedCommandRecovery
@@ -82,7 +83,18 @@ class RunSupervisor:
         if not task.cancelled():
             error = task.exception()
             if error is not None:
-                logger.error("Coordinator failed for run %s (%s)", run_id, type(error).__name__)
+                if os.environ.get("XAA_ACCEPTANCE_VERBOSE_ERRORS") == "1":
+                    filename = getattr(error, "filename", None)
+                    logger.error(
+                        "Coordinator failed for run %s (%s; errno=%s; winerror=%s; file=%s)",
+                        run_id,
+                        type(error).__name__,
+                        getattr(error, "errno", None),
+                        getattr(error, "winerror", None),
+                        os.path.basename(filename) if isinstance(filename, str) else None,
+                    )
+                else:
+                    logger.error("Coordinator failed for run %s (%s)", run_id, type(error).__name__)
 
     async def stop(self, run_id: str) -> None:
         task = self.tasks.get(run_id)

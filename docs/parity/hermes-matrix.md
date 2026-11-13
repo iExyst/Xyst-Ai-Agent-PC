@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Intermittent installed AppContainer acceptance (2026-11-13)
+
+Clean-runner installer run [43489515410](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43489515410) passed its staged frozen checks on both attempts. Installed readiness passed on both; installed coordinator execution failed with `PermissionError` in attempt 1 and the subsequent frozen process returned `backend_probe_failed` in attempt 2. Local execution with the exact attempt-1 package first failed and later passed the full coordinator acceptance, confirming the failure is intermittent but not identifying its cause. Installation/uninstallation and cleanup are verified; the installed command backend and Phase 10 gate are not closed. Added opt-in sanitized Windows error metadata and acceptance report diagnostics for the next reproduction. Keep Windows AppContainer parity **partial** pending a stable green installed acceptance. No real model was used.
+
 ## Verify Windows AppContainer active-process limit (2026-11-13)
 
 A real command launches quiet `findstr.exe` descendants that remain blocked on open stdin pipes until the command stops them. Windows returns quota error 1816 near the 32-process Job Object limit; the acceptance allows 28–31 descendants for the nested runner job context, records the PIDs, and confirms every child is gone after cleanup. Hosted run [43486803324](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43486803324) passed all 1,220 Python tests and configured Windows checks; the focused eight-test local module and static checks also pass. This verifies a direct active-process rejection case; broad backend parity remains partial.
