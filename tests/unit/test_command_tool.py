@@ -131,6 +131,52 @@ async def test_authorized_automation_never_exposes_or_dispatches_commands(worksp
         )
 
 
+@pytest.mark.parametrize(
+    ("backend", "distribution", "expected", "forbidden"),
+    [
+        ("wsl-bubblewrap-v1", "Ubuntu", "Linux sandbox", "Windows AppContainer"),
+        (
+            "windows-appcontainer-v1",
+            "Windows-Local",
+            "Windows AppContainer",
+            "Linux sandbox",
+        ),
+    ],
+)
+async def test_command_tool_description_matches_the_saved_backend(
+    workspace_tmp_path, backend, distribution, expected, forbidden
+):
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    store = RunStore(workspace_tmp_path / "data" / "db.sqlite3")
+    record = store.create_run(
+        objective="Describe the authorized command backend accurately.",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        command_grant={
+            "backend": backend,
+            "distribution": distribution,
+            "profile_sha256": "a" * 64,
+        },
+    )
+    provider = LMStudioProvider()
+    try:
+        run = store.get_run(record["id"])
+        assert run is not None
+        command_tool = next(
+            item
+            for item in Coordinator(store, provider)._tools(record["id"], run)
+            if item["function"]["name"] == "workspace_run_command"
+        )
+        description = command_tool["function"]["description"]
+        assert expected in description
+        assert forbidden not in description
+    finally:
+        await provider.close()
+
+
 async def test_selected_scripts_are_named_in_explicit_command_tool_description(workspace_tmp_path):
     project = workspace_tmp_path / "project"
     project.mkdir()

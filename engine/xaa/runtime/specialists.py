@@ -16,7 +16,11 @@ from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.browser import BROWSER_METADATA, BROWSER_TOOL, run_approved_browser
-from xaa.runtime.command_contracts import CommandArguments
+from xaa.runtime.command_contracts import (
+    CommandArguments,
+    CommandGrant,
+    command_tool_description,
+)
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import (
     CreateFileArguments,
@@ -743,9 +747,19 @@ class SpecialistRunner:
         if len(text_input_ids) + len(image_input_ids) != len(task["input_artifacts"]):
             raise ValueError("A task has an unsupported assigned input artifact type.")
         isolated = "workspace.write" in task["permission_scope"]
-        commands = isolated and "workspace.command" in task["permission_scope"]
+        saved_grant = run.get("command_grant")
+        command_grant = (
+            CommandGrant.model_validate(saved_grant) if isinstance(saved_grant, dict) else None
+        )
+        commands = (
+            isolated
+            and "workspace.command" in task["permission_scope"]
+            and command_grant is not None
+        )
         selected_script_paths = (
-            selected_skill_script_paths(self.store.procedure_trial(run_id)) if commands else []
+            selected_skill_script_paths(self.store.procedure_trial(run_id))
+            if commands and command_grant and command_grant.backend == "wsl-bubblewrap-v1"
+            else []
         )
         task_events = [
             event
@@ -944,9 +958,19 @@ class SpecialistRunner:
                 else ""
             )
             messages[0]["content"] += (
-                " You may use workspace_run_command to validate the current private snapshot in the saved restricted WSL backend. It cannot access the host project or network. Each invocation starts from your current private files; command-generated changes are discarded. Report actual exit status and test output, never infer success from a proposed command."
-                + script_hint
-            )
+                " You may use workspace_run_command with a directly launched Windows "
+                "executable in the saved Windows AppContainer grant. It has no network or "
+                "host filesystem access. Each invocation starts from the current private "
+                "snapshot; command-generated changes are discarded. Shell command strings "
+                "and Windows host shells are unavailable. Report actual exit status and "
+                "test output, never infer success from a proposed command."
+                if command_grant and command_grant.backend == "windows-appcontainer-v1"
+                else " You may use workspace_run_command to validate the current private "
+                "snapshot in the saved restricted WSL backend. It cannot access the host "
+                "project or network. Each invocation starts from your current private "
+                "files; command-generated changes are discarded. Report actual exit status "
+                "and test output, never infer success from a proposed command."
+            ) + script_hint
         tools = [
             {
                 "type": "function",
@@ -1060,13 +1084,14 @@ class SpecialistRunner:
                     },
                 ]
             )
-        if commands:
+        if commands and command_grant is not None:
             tools.append(
                 {
                     "type": "function",
                     "function": {
                         "name": "workspace_run_command",
-                        "description": "Run bounded structured argv in an isolated copy of your current private files using the saved local-user command grant. No network or host filesystem access; command file changes are discarded. Full stdout/stderr become artifacts, bounded excerpts and exact snapshot hash are returned. A nonzero exit is evidence of failure, not completion."
+                        "description": command_tool_description(command_grant)
+                        + " It runs in an isolated copy of your current private files using the saved local-user command grant. Full stdout/stderr become artifacts, bounded excerpts and exact snapshot hash are returned. A nonzero exit is evidence of failure, not completion."
                         + script_hint,
                         "parameters": CommandArguments.model_json_schema(),
                     },

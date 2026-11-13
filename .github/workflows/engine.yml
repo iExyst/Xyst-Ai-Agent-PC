@@ -257,6 +257,15 @@ jobs:
       - name: Verify frozen Windows AppContainer readiness
         run: uv run python scripts/frozen_windows_appcontainer_readiness.py --engine build/native-release/xaa-engine.exe --report .acceptance/frozen-windows-appcontainer-${{ github.run_id }}/report.json
         timeout-minutes: 3
+      - name: Verify frozen Windows AppContainer coordinator command
+        run: uv run python scripts/frozen_windows_appcontainer_command.py --engine build/native-release/xaa-engine.exe --report .acceptance/frozen-windows-appcontainer-command-${{ github.run_id }}/report.json
+        timeout-minutes: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frozen-windows-appcontainer-command-${{ github.run_id }}
+          path: .acceptance/frozen-windows-appcontainer-command-${{ github.run_id }}/report.json
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Verify installed-stage MCP OAuth and credential clearing in native desktop
         shell: pwsh
         env:

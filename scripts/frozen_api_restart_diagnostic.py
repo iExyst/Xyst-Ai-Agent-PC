@@ -34,10 +34,11 @@ class FixtureLMStudio(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, scenario: str) -> None:
+    def __init__(self, scenario: str, *, command_argv: list[str] | None = None) -> None:
         super().__init__(("127.0.0.1", 0), FixtureLMStudioHandler)
         self.scenario = scenario
         self.workspace_tool_requests = 0
+        self.command_argv = command_argv
 
 
 class FixtureLMStudioHandler(BaseHTTPRequestHandler):
@@ -149,6 +150,31 @@ class FixtureLMStudioHandler(BaseHTTPRequestHandler):
                                     "content": WRITE_CONTENT,
                                     "expected_sha256": hashlib.sha256(WRITE_BEFORE).hexdigest(),
                                 }
+                            ),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        elif (
+            "workspace_run_command" in tool_names
+            and cast(FixtureLMStudio, self.server).scenario == "appcontainer_command"
+        ):
+            fixture = cast(FixtureLMStudio, self.server)
+            if fixture.command_argv is None:
+                self._json({"error": "command fixture was not configured"}, 500)
+                return
+            fixture.workspace_tool_requests += 1
+            message = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "frozen-appcontainer-command-1",
+                        "type": "function",
+                        "function": {
+                            "name": "workspace_run_command",
+                            "arguments": json.dumps(
+                                {"argv": fixture.command_argv, "max_seconds": 5}
                             ),
                         },
                     }
