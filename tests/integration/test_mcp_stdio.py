@@ -50,6 +50,9 @@ SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server
 MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
 OVERSIZED_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_oversized_stdio_server.py"
 APPCONTAINER_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_probe.py"
+APPCONTAINER_ORPHAN_FIXTURE = (
+    Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_orphan_probe.py"
+)
 APPCONTAINER_CRASH_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_crash.py"
 TYPESCRIPT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp-typescript" / "server.mjs"
 
@@ -408,6 +411,41 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
         listener.close()
     after = ace_counts()
     assert after == before
+
+
+@pytest.mark.asyncio
+async def test_windows_appcontainer_closes_descendant_processes_when_server_exits(
+    workspace_tmp_path: Path,
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows AppContainer process-tree acceptance")
+    import re
+
+    marker = workspace_tmp_path / "orphan-heartbeat.bin"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-I", str(APPCONTAINER_ORPHAN_FIXTURE)],
+        cwd=str(workspace_tmp_path),
+    )
+    async with (
+        bounded_stdio_client(
+            params,
+            network_isolation=True,
+            isolation_read_paths=(str(APPCONTAINER_ORPHAN_FIXTURE.parent),),
+            isolation_journal_directory=str(workspace_tmp_path / "isolation-journal"),
+        ) as (read_stream, write_stream),
+        ClientSession(read_stream, write_stream) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("start_child", {"marker": str(marker)})
+        response = result.content[0]
+        assert isinstance(response, TextContent)
+        match = re.fullmatch(r"pid=(\d+);bytes=(\d+)", response.text)
+        assert match is not None and int(match.group(2)) > 0
+        assert marker.is_file()
+    previous_size = marker.stat().st_size
+    await asyncio.sleep(0.3)
+    assert marker.stat().st_size == previous_size
 
 
 @pytest.mark.parametrize(

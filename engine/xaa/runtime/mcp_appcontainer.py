@@ -45,6 +45,8 @@ CREATE_NO_WINDOW = 0x08000000
 STARTF_USESTDHANDLES = 0x00000100
 PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
 PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 
 
 class MCPAppContainerError(RuntimeError):
@@ -140,6 +142,45 @@ class PROCESS_INFORMATION(ctypes.Structure):
         ("hThread", wintypes.HANDLE),
         ("dwProcessId", wintypes.DWORD),
         ("dwThreadId", wintypes.DWORD),
+    ]
+
+
+class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_longlong),
+        ("PerJobUserTimeLimit", ctypes.c_longlong),
+        ("LimitFlags", wintypes.DWORD),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", wintypes.DWORD),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", wintypes.DWORD),
+        ("SchedulingClass", wintypes.DWORD),
+    ]
+
+
+class IO_COUNTERS(ctypes.Structure):
+    _fields_ = [
+        (name, ctypes.c_ulonglong)
+        for name in (
+            "ReadOperationCount",
+            "WriteOperationCount",
+            "OtherOperationCount",
+            "ReadTransferCount",
+            "WriteTransferCount",
+            "OtherTransferCount",
+        )
+    ]
+
+
+class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ("IoInfo", IO_COUNTERS),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
     ]
 
 
@@ -709,6 +750,8 @@ def _create_no_network_child(
         raise ctypes.WinError(ctypes.get_last_error())
 
     process_info = PROCESS_INFORMATION()
+    job_handle: Any | None = None
+    job_assigned = False
     startup = STARTUPINFOEXW()
     startup.StartupInfo.cb = ctypes.sizeof(STARTUPINFOEXW)
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
@@ -797,12 +840,44 @@ def _create_no_network_child(
             ctypes.byref(process_info),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
+        create_job = kernel32.CreateJobObjectW
+        create_job.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        create_job.restype = wintypes.HANDLE
+        job_handle = create_job(None, None)
+        if not job_handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        job_limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        job_limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        set_job_info = kernel32.SetInformationJobObject
+        set_job_info.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
+        set_job_info.restype = wintypes.BOOL
+        if not set_job_info(
+            job_handle,
+            JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(job_limits),
+            ctypes.sizeof(job_limits),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        assign_job = kernel32.AssignProcessToJobObject
+        assign_job.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        assign_job.restype = wintypes.BOOL
+        if not assign_job(job_handle, process_info.hProcess):
+            raise ctypes.WinError(ctypes.get_last_error())
+        job_assigned = True
         # Announce readiness before the child can write any MCP bytes. The parent
         # consumes this private frame before handing the transport to the SDK.
         sys.stdout.buffer.write(READY_FRAME)
         sys.stdout.buffer.flush()
         if kernel32.ResumeThread(process_info.hThread) == 0xFFFFFFFF:
-            kernel32.TerminateProcess(process_info.hProcess, 1)
+            terminate_job = kernel32.TerminateJobObject
+            terminate_job.argtypes = [wintypes.HANDLE, wintypes.UINT]
+            terminate_job.restype = wintypes.BOOL
+            terminate_job(job_handle, 1)
             raise ctypes.WinError(ctypes.get_last_error())
         kernel32.WaitForSingleObject(process_info.hProcess, 0xFFFFFFFF)
         exit_code = wintypes.DWORD()
@@ -816,7 +891,27 @@ def _create_no_network_child(
         if process_info.hThread:
             kernel32.CloseHandle(process_info.hThread)
         if process_info.hProcess:
+            wait_result = kernel32.WaitForSingleObject(process_info.hProcess, 0)
+            if wait_result == 0x00000102:
+                if job_handle and job_assigned:
+                    stop_process = kernel32.TerminateJobObject
+                    stop_process.argtypes = [wintypes.HANDLE, wintypes.UINT]
+                    stop_process.restype = wintypes.BOOL
+                    stopped = stop_process(job_handle, 1)
+                else:
+                    stop_process = kernel32.TerminateProcess
+                    stop_process.argtypes = [wintypes.HANDLE, wintypes.UINT]
+                    stop_process.restype = wintypes.BOOL
+                    stopped = stop_process(process_info.hProcess, 1)
+                if not stopped:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if kernel32.WaitForSingleObject(process_info.hProcess, 5000) != 0:
+                    raise MCPAppContainerError(
+                        "Windows could not stop the isolated MCP process tree."
+                    )
             kernel32.CloseHandle(process_info.hProcess)
+        if job_handle:
+            kernel32.CloseHandle(job_handle)
 
 
 def run_stdio_appcontainer_shim() -> int:

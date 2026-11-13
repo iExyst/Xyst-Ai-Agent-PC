@@ -1,5 +1,9 @@
 # Progress
 
+## Bind isolated AppContainer descendants to an owned Windows job (2026-11-13)
+
+The Windows AppContainer shim now assigns each isolated child to a nested Job Object with kill-on-close before resuming it. If setup fails before assignment, the suspended child is terminated directly; if the shim exits while descendants remain, closing the job terminates the process tree. A Windows integration acceptance starts a heartbeat child from an isolated MCP server and confirms the heartbeat stops when the server exits; the existing loopback-denial acceptance still passes. Ruff, strict Pyright, and both focused Windows integration cases pass. This hardens the MCP launch path and provides a containment primitive for the planned Windows-local executor; it does not implement or verify workspace command execution.
+
 ## Define a shared command transport contract (2026-11-13)
 
 `CommandController` now depends on a typed transport protocol for immutable command intents, private workspace snapshots, streamed output, and stop/cleanup/status controls instead of importing the WSL implementation directly. The controller requires the output callback contract from every backend; existing controller fixtures were updated to match. Ruff, formatting, strict Pyright, `git diff --check`, and the command-controller unit suite pass (12 tests). WSL remains the only configured and implemented command backend; this refactor does not claim a Windows-local sandbox. It establishes the controller boundary needed to add and verify one without changing saved WSL behavior.
