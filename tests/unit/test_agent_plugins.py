@@ -7,6 +7,7 @@ import json
 import shutil
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
 
@@ -22,6 +23,10 @@ from xaa.extensions.agent_plugins import (
     read_plugin_skill,
 )
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
+from xaa.runtime.execution_readiness import (
+    SkillDependencyReadinessResult,
+    SkillDependencyStatus,
+)
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
 
@@ -893,17 +898,53 @@ def test_plugin_http_server_import_vaults_header_values_and_omits_them_from_stor
     assert "literal-private-header" not in str(dict(raw_row))
 
 
-def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path: Path) -> None:
+def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     make_package(tmp_path)
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "import.sqlite3"))
     payload = {"root": str(tmp_path), "package_name": "sample-package", "skill_name": "summarize"}
     headers = {"Authorization": f"Bearer {TOKEN}"}
+    dependency_requests: list[tuple[str, list[str], int]] = []
+
+    async def check_dependencies(self, request, *, unverified_dependency_count=0):
+        dependency_requests.append(
+            (request.distribution, request.python_dependency_specs, unverified_dependency_count)
+        )
+        return SkillDependencyReadinessResult(
+            distribution=request.distribution,
+            state="ready",
+            python_version="3.12.0",
+            dependencies=[
+                SkillDependencyStatus(
+                    requirement="requests>=2.0", status="available", installed_version="2.32.0"
+                )
+            ],
+            unverified_dependency_count=unverified_dependency_count,
+            checked_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(
+        api_module.ExecutionReadiness, "check_python_dependencies", check_dependencies
+    )
     with TestClient(app) as client:
         assert client.post("/extensions/packages/import-skill", json=payload).status_code == 401
         created = client.post("/extensions/packages/import-skill", headers=headers, json=payload)
         assert created.status_code == 201
         assert created.json()["lifecycle_state"] == "candidate"
         version = client.get(f"/skills/{created.json()['id']}/versions/1", headers=headers)
+        assert (
+            client.post(
+                f"/skills/{created.json()['id']}/versions/1/python-readiness",
+                json={"distribution": "Ubuntu"},
+            ).status_code
+            == 401
+        )
+        readiness = client.post(
+            f"/skills/{created.json()['id']}/versions/1/python-readiness",
+            headers=headers,
+            json={"distribution": "Ubuntu"},
+        )
         assert client.get(f"/skills/{created.json()['id']}/versions/1/export").status_code == 401
         exported = client.get(f"/skills/{created.json()['id']}/versions/1/export", headers=headers)
         revised = client.post(
@@ -924,6 +965,11 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(tmp_path
             f"/skills/{created.json()['id']}/versions/2/export", headers=headers
         )
     assert version.status_code == 200
+    assert readiness.status_code == 200
+    assert readiness.json()["python_version"] == "3.12.0"
+    assert readiness.json()["dependencies"][0]["status"] == "available"
+    assert readiness.json()["unverified_dependency_count"] == 1
+    assert dependency_requests == [("Ubuntu", ["requests>=2.0"], 1)]
     evidence = version.json()["evaluation_evidence"]
     assert evidence["provenance"] == "agent_plugins_v1"
     assert evidence["source"]["package_version"] == "1.2.3"

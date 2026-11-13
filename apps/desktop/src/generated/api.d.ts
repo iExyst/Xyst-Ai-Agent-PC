@@ -1963,6 +1963,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/python-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Skill Python Dependencies */
+        post: operations["check_skill_python_dependencies_skills__skill_id__versions__version__python_readiness_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/trials": {
         parameters: {
             query?: never;
@@ -3694,6 +3711,41 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** SkillDependencyReadinessResult */
+        SkillDependencyReadinessResult: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Dependencies */
+            dependencies: components["schemas"]["SkillDependencyStatus"][];
+            /** Distribution */
+            distribution: string;
+            /** Error Code */
+            error_code?: ("profile_unavailable" | "unsupported_platform" | "sandbox_not_ready" | "probe_busy" | "dependency_probe_failed") | null;
+            /** Python Version */
+            python_version?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "unavailable" | "unsupported" | "busy" | "no_dependencies";
+            /** Unverified Dependency Count */
+            unverified_dependency_count: number;
+        };
+        /** SkillDependencyStatus */
+        SkillDependencyStatus: {
+            /** Installed Version */
+            installed_version?: string | null;
+            /** Requirement */
+            requirement: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "missing" | "incompatible" | "not_applicable" | "unchecked";
+        };
         /** SkillDraft */
         SkillDraft: {
             /** Assets */
@@ -3799,6 +3851,11 @@ export interface components {
         SkillPinDecision: {
             /** Pinned */
             pinned: boolean;
+        };
+        /** SkillPythonDependencyCheck */
+        SkillPythonDependencyCheck: {
+            /** Distribution */
+            distribution: string;
         };
         /** SkillRevision */
         SkillRevision: {
@@ -8529,6 +8586,42 @@ export interface operations {
                 };
                 content: {
                     "application/zip": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_skill_python_dependencies_skills__skill_id__versions__version__python_readiness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPythonDependencyCheck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDependencyReadinessResult"];
                 };
             };
             /** @description Validation Error */

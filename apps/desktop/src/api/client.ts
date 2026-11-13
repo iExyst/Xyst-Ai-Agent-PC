@@ -416,6 +416,7 @@ export class EngineClient {
 
   skills(): Promise<components['schemas']['SkillSummary'][]> { return this.#request('/skills'); }
   skillVersion(id:string,version:number): Promise<components['schemas']['SkillVersion']> { return this.#request(`/skills/${encodeURIComponent(id)}/versions/${version}`); }
+  skillPythonReadiness(id:string,version:number,distribution:string): Promise<components['schemas']['SkillDependencyReadinessResult']> { return this.#request(`/skills/${encodeURIComponent(id)}/versions/${version}/python-readiness`,{method:'POST',body:JSON.stringify({distribution})}); }
   saveSkill(draft:components['schemas']['SkillDraft'],id?:string,expectedVersion?:number): Promise<components['schemas']['SkillSummary']> {
     return this.#request(id?`/skills/${encodeURIComponent(id)}/versions`:'/skills',{method:'POST',body:JSON.stringify(id?{...draft,expected_version:expectedVersion}:draft)});
   }

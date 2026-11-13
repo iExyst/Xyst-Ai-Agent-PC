@@ -1,6 +1,49 @@
 import {test,expect} from '@playwright/test';
 import {navigateMainSection,selectLocalModel} from './navigation';
 
+test('check imported Python dependencies in the selected restricted WSL distribution',async({page})=>{
+  let checkBody:any;
+  const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
+  const summary={id:'imported-procedure',name:'Summarize',lifecycle_state:'candidate',pinned:false,active_version:null,lifecycle_revision:0,latest_version:1,created_at:'2026-11-12T00:00:00Z',updated_at:'2026-11-12T00:00:00Z'};
+  const version={skill_id:summary.id,version:1,content:'Read a file.',description:'Summarize a file.',category:'writing',required_tools:[],required_permissions:[],created_at:'2026-11-12T00:00:00Z',assets:[],evaluation_evidence:{state:'candidate',provenance:'hermes_skill',evaluations:[],source:{package_name:'sample',package_version:'1.0',skill_name:'summarize',content_sha256:'a'.repeat(64),description:'Summarize a file.',allowed_tools:'workspace.read_file',unmapped_allowed_tools:'none',declared_requirements:JSON.stringify({python_dependency_specs:['requests>=2.0'],unparsed_dependency_count:1})}}};
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request(),path=new URL(request.url()).pathname;
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    expect(request.headers()['authorization']).toBe('Bearer '+'x'.repeat(32));
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/memory')return route.fulfill({json:[],headers});
+    if(path==='/skills')return route.fulfill({json:[summary],headers});
+    if(path.endsWith('/versions/1')&&request.method()==='GET')return route.fulfill({json:version,headers});
+    if(path.endsWith('/lifecycle'))return route.fulfill({json:[],headers});
+    if(path==='/execution/distributions')return route.fulfill({json:{state:'available',distributions:[{name:'Ubuntu-24.04',supported_by_profile:true}]},headers});
+    if(path==='/execution/readiness')return route.fulfill({json:{backend:'wsl-bubblewrap-v1',distribution:'Ubuntu-24.04',profile_sha256:'a'.repeat(64),state:'ready',checked_at:new Date().toISOString(),expires_at:new Date(Date.now()+60000).toISOString(),checks:['cleanup_confirmed'],policy:{network:'denied',workspace_changes:'private_copy_only',max_seconds:30,memory_bytes:134217728,max_active_executions_per_distribution:2}},headers});
+    if(path.endsWith('/python-readiness')){
+      checkBody=request.postDataJSON();
+      return route.fulfill({json:{distribution:'Ubuntu-24.04',state:'ready',python_version:'3.12.0',dependencies:[{requirement:'requests>=2.0',status:'available',installed_version:'2.32.0'}],unverified_dependency_count:1,checked_at:new Date().toISOString()},headers});
+    }
+    return route.fulfill({status:404,headers});
+  });
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('details').filter({has:page.locator('summary').filter({hasText:'Command sandbox setup'})}).evaluate(element=>{(element as HTMLDetailsElement).open=true;});
+  await page.getByRole('button',{name:'Find installed distributions'}).click();
+  await page.getByLabel('Execution distribution').selectOption('Ubuntu-24.04');
+  await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
+  await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+  const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
+  await panel.getByRole('button',{name:'Inspect Summarize',exact:true}).click();
+  await panel.getByRole('button',{name:'Check Python dependencies in WSL',exact:true}).click();
+  await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Python 3.12.0');
+  await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('requests>=2.0: available (2.32.0)');
+  await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Other or unverified declared dependencies: 1');
+  expect(checkBody).toEqual({distribution:'Ubuntu-24.04'});
+});
+
 test('create, revise, inspect, export and delete an unverified procedure',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   let summary:any;const versions:any[]=[];const runSubmissions:any[]=[];let runAttempts=0;

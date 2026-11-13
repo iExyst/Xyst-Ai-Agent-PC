@@ -85,7 +85,13 @@ from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_discovery import DistributionInventory, installed_distributions
-from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest, ReadinessResult
+from xaa.runtime.execution_readiness import (
+    ExecutionReadiness,
+    ReadinessRequest,
+    ReadinessResult,
+    SkillDependencyReadinessRequest,
+    SkillDependencyReadinessResult,
+)
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.local_transcription import TranscriptionError
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
@@ -739,6 +745,11 @@ class SpecialistProfileResponse(BaseModel):
     model_route: str | None
     system_instructions: str
     updated_at: str
+
+
+class SkillPythonDependencyCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 def create_app(
@@ -1471,6 +1482,74 @@ def create_app(
             return skill_store.version(skill_id, version)
         except KeyError:
             raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/python-readiness",
+        response_model=SkillDependencyReadinessResult,
+    )
+    async def check_skill_python_dependencies(
+        skill_id: str,
+        request: SkillPythonDependencyCheck,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> SkillDependencyReadinessResult:
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        evidence_value: object = manifest.get("evaluation_evidence")
+        evidence = (
+            cast(dict[str, object], evidence_value) if isinstance(evidence_value, dict) else {}
+        )
+        source_value = evidence.get("source")
+        source = cast(dict[str, object], source_value) if isinstance(source_value, dict) else {}
+        raw_declarations: object = source.get("declared_requirements")
+        unverified_count = 0
+        specs: list[str] = []
+        if isinstance(raw_declarations, str) and len(raw_declarations) <= 8192:
+            try:
+                declarations_value: object = json.loads(raw_declarations)
+            except json.JSONDecodeError:
+                declarations_value = None
+            if isinstance(declarations_value, dict):
+                declarations = cast(dict[str, object], declarations_value)
+                raw_specs = declarations.get("python_dependency_specs", [])
+                if isinstance(raw_specs, list):
+                    spec_items = cast(list[object], raw_specs)
+                    specs = [value for value in spec_items if isinstance(value, str)]
+                    unverified_count += len(spec_items) - len(specs)
+                else:
+                    unverified_count += 1
+                for field in ("unsupported_dependency_count", "unparsed_dependency_count"):
+                    count = declarations.get(field, 0)
+                    if type(count) is int and count >= 0:
+                        unverified_count += count
+                    elif count != 0:
+                        unverified_count += 1
+                if declarations.get("dependency_names_truncated") is True:
+                    unverified_count += 1
+            else:
+                unverified_count = 1
+        elif raw_declarations is not None:
+            unverified_count = 1
+        if len(specs) > 64:
+            unverified_count += len(specs) - 64
+            specs = specs[:64]
+        try:
+            dependency_request = SkillDependencyReadinessRequest(
+                distribution=request.distribution,
+                python_dependency_specs=specs,
+            )
+        except ValueError:
+            unverified_count += len(specs)
+            dependency_request = SkillDependencyReadinessRequest(
+                distribution=request.distribution,
+                python_dependency_specs=[],
+            )
+        return await execution_readiness.check_python_dependencies(
+            dependency_request,
+            unverified_dependency_count=min(256, unverified_count),
+        )
 
     @app.get(
         "/skills/{skill_id}/versions/{version}/export",

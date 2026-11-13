@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Check imported Python requirements in the restricted WSL environment (2026-11-13)
+
+The owner can check Python dependency metadata for the exact imported procedure version in a sandbox-verified WSL distribution. The API loads declarations from immutable procedure provenance; its probe runs fixed `/usr/bin/python3 -I` code in the network-denied private sandbox, uses only `importlib.metadata`, and does not import packages or install them. Results evaluate PEP 508 markers against WSL's reported Python/platform environment and distinguish available, missing, incompatible, not-applicable and unchecked specs. Other managers remain unverified. Local Ubuntu-24.04 evidence records both installed and missing declarations in [`../.acceptance/skill-dependency-readiness/34a847308ac2476c9897203de751fdf7/report.json`](../../.acceptance/skill-dependency-readiness/34a847308ac2476c9897203de751fdf7/report.json). Hosted validation is pending. Dependency installation, other manager support and full procedure execution remain open; the skills row remains partial.
+
 ## Hosted selected-procedure permission-copy verification (2026-11-13)
 
 Hosted source run [43357517381](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43357517381) passed the current selected-procedure permission-copy follow-up, including the targeted desktop browser regression and all 1,191 Python tests. The installer job was skipped because packaging inputs were unchanged; this run verifies source behavior, not selected-script execution in an installed package. The current local unsigned installer build is recorded in `../progress.md` and has not received installed-package acceptance.

@@ -4462,6 +4462,119 @@
         "title": "SkillAsset",
         "type": "object"
       },
+      "SkillDependencyReadinessResult": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/SkillDependencyStatus"
+            },
+            "title": "Dependencies",
+            "type": "array"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "profile_unavailable",
+                  "unsupported_platform",
+                  "sandbox_not_ready",
+                  "probe_busy",
+                  "dependency_probe_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "python_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Version"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "unavailable",
+              "unsupported",
+              "busy",
+              "no_dependencies"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unverified_dependency_count": {
+            "maximum": 256.0,
+            "minimum": 0.0,
+            "title": "Unverified Dependency Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "distribution",
+          "state",
+          "dependencies",
+          "unverified_dependency_count",
+          "checked_at"
+        ],
+        "title": "SkillDependencyReadinessResult",
+        "type": "object"
+      },
+      "SkillDependencyStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed Version"
+          },
+          "requirement": {
+            "title": "Requirement",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "missing",
+              "incompatible",
+              "not_applicable",
+              "unchecked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement",
+          "status"
+        ],
+        "title": "SkillDependencyStatus",
+        "type": "object"
+      },
       "SkillDraft": {
         "additionalProperties": false,
         "properties": {
@@ -4787,6 +4900,21 @@
           "pinned"
         ],
         "title": "SkillPinDecision",
+        "type": "object"
+      },
+      "SkillPythonDependencyCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "distribution": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+            "title": "Distribution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution"
+        ],
+        "title": "SkillPythonDependencyCheck",
         "type": "object"
       },
       "SkillRevision": {
@@ -12405,6 +12533,71 @@
           }
         ],
         "summary": "Export Skill Package"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/python-readiness": {
+      "post": {
+        "operationId": "check_skill_python_dependencies_skills__skill_id__versions__version__python_readiness_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPythonDependencyCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDependencyReadinessResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Skill Python Dependencies"
       }
     },
     "/skills/{skill_id}/versions/{version}/trials": {

@@ -8,7 +8,11 @@ from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime import execution_readiness as module
-from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest
+from xaa.runtime.execution_readiness import (
+    ExecutionReadiness,
+    ReadinessRequest,
+    SkillDependencyReadinessRequest,
+)
 from xaa.storage.runs import RunStore
 
 
@@ -22,15 +26,43 @@ class Backend:
 
     async def run(self, intent, snapshot, *, deadline):
         self.launches += 1
-        assert intent.argv == ["/usr/bin/python3", "-I", "-c", module.PROBE]
-        assert len(snapshot.files) == 1 and snapshot.files[0].path == "probe.txt"
-        nonce = snapshot.files[0].content.decode()
+        dependency_probe = intent.argv == [
+            "/usr/bin/python3",
+            "-I",
+            "-c",
+            module.DEPENDENCY_PROBE,
+        ]
+        if dependency_probe:
+            assert len(snapshot.files) == 1 and snapshot.files[0].path == "probe.json"
+            names = json.loads(snapshot.files[0].content)["names"]
+            output = {
+                "versions": {
+                    name: "1.5.0" if name == "fixture-package" else None for name in names
+                },
+                "environment": {
+                    "implementation_name": "cpython",
+                    "implementation_version": "3.11.9",
+                    "os_name": "posix",
+                    "platform_machine": "x86_64",
+                    "platform_python_implementation": "CPython",
+                    "platform_release": "6.8.0",
+                    "platform_system": "Linux",
+                    "platform_version": "fixture-kernel",
+                    "python_full_version": "3.11.9",
+                    "python_version": "3.11",
+                    "sys_platform": "linux",
+                },
+            }
+        else:
+            assert intent.argv == ["/usr/bin/python3", "-I", "-c", module.PROBE]
+            assert len(snapshot.files) == 1 and snapshot.files[0].path == "probe.txt"
+            nonce = snapshot.files[0].content.decode()
+            output = {
+                "nonce": "wrong" if self.fault == "nonce" else nonce,
+                "checks": 1 if self.fault == "numeric_bool" else True,
+            }
         if self.fault == "run":
             raise OSError("do not expose raw fixture backend error")
-        output = {
-            "nonce": "wrong" if self.fault == "nonce" else nonce,
-            "checks": 1 if self.fault == "numeric_bool" else True,
-        }
         return {
             "backend": "wsl-bubblewrap-v1",
             "output_complete": True,
@@ -118,6 +150,47 @@ async def test_unsupported_platform_does_not_spawn(monkeypatch):
         await ExecutionReadiness().check(ReadinessRequest(distribution="Ubuntu"))
     ).state == "unsupported"
     assert backend.launches == 0
+
+
+async def test_python_dependencies_are_checked_in_isolated_wsl_metadata(monkeypatch):
+    backend = Backend()
+    install(monkeypatch, backend)
+    result = await ExecutionReadiness().check_python_dependencies(
+        SkillDependencyReadinessRequest(
+            distribution="Ubuntu",
+            python_dependency_specs=[
+                "fixture-package>=1",
+                "fixture-package<1",
+                "missing-package>=2",
+                "marker-package; python_version < '3.0'",
+            ],
+        ),
+        unverified_dependency_count=1,
+    )
+    assert result.state == "ready" and result.python_version == "3.11.9"
+    assert [item.status for item in result.dependencies] == [
+        "available",
+        "incompatible",
+        "missing",
+        "not_applicable",
+    ]
+    assert result.dependencies[0].installed_version == "1.5.0"
+    assert result.dependencies[1].installed_version == "1.5.0"
+    assert result.unverified_dependency_count == 1
+    assert backend.launches == 2
+    assert backend.controls == ["cleanup", "status", "cleanup", "status"]
+
+
+def test_dependency_check_rejects_direct_references_and_unbounded_lists():
+    with pytest.raises(ValueError):
+        SkillDependencyReadinessRequest(
+            distribution="Ubuntu", python_dependency_specs=["fixture @ https://example.test/pkg"]
+        )
+    with pytest.raises(ValueError):
+        SkillDependencyReadinessRequest(
+            distribution="Ubuntu",
+            python_dependency_specs=[f"fixture-{index}" for index in range(65)],
+        )
 
 
 async def test_cancellation_waits_for_cleanup_and_does_not_cache_ready(monkeypatch):

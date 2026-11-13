@@ -2,13 +2,17 @@
 
 import asyncio
 import base64
+import json
 import os
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from packaging.markers import default_environment
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.version import InvalidVersion, Version
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
@@ -55,6 +59,31 @@ pathlib.Path('private-write.txt').write_text(nonce)
 assert pathlib.Path('/input/probe.txt').read_text()==nonce
 print(json.dumps({'nonce':nonce,'checks':True}))
 """
+DEPENDENCY_PROBE = """
+import importlib.metadata,json,os,pathlib,platform,sys
+request=json.loads(pathlib.Path('probe.json').read_text())
+names=request['names']
+versions={}
+for name in names:
+    try:
+        versions[name]=importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        versions[name]=None
+implementation_version=sys.implementation.version
+print(json.dumps({'versions':versions,'environment':{
+    'implementation_name':sys.implementation.name,
+    'implementation_version':'.'.join(str(value) for value in implementation_version[:3]),
+    'os_name':os.name,
+    'platform_machine':platform.machine(),
+    'platform_python_implementation':platform.python_implementation(),
+    'platform_release':platform.release(),
+    'platform_system':platform.system(),
+    'platform_version':platform.version(),
+    'python_full_version':platform.python_version(),
+    'python_version':'.'.join(str(value) for value in sys.version_info[:2]),
+    'sys_platform':sys.platform
+}}))
+"""
 
 
 class ReadinessRequest(BaseModel):
@@ -91,6 +120,55 @@ class ReadinessResult(BaseModel):
     ) = None
 
 
+class SkillDependencyReadinessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+    python_dependency_specs: list[str] = Field(max_length=64)
+
+    @field_validator("python_dependency_specs")
+    @classmethod
+    def validate_specs(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("Python dependency declarations must be unique.")
+        for value in values:
+            if not value or len(value) > 256:
+                raise ValueError("Python dependency declaration is invalid.")
+            try:
+                requirement = Requirement(value)
+            except InvalidRequirement as exc:
+                raise ValueError("Python dependency declaration is invalid.") from exc
+            if requirement.url is not None:
+                raise ValueError("Direct dependency references cannot be checked.")
+        return values
+
+
+class SkillDependencyStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    requirement: str
+    status: Literal["available", "missing", "incompatible", "not_applicable", "unchecked"]
+    installed_version: str | None = None
+
+
+class SkillDependencyReadinessResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    distribution: str
+    state: Literal["ready", "unavailable", "unsupported", "busy", "no_dependencies"]
+    python_version: str | None = None
+    dependencies: list[SkillDependencyStatus]
+    unverified_dependency_count: int = Field(ge=0, le=256)
+    checked_at: datetime
+    error_code: (
+        Literal[
+            "profile_unavailable",
+            "unsupported_platform",
+            "sandbox_not_ready",
+            "probe_busy",
+            "dependency_probe_failed",
+        ]
+        | None
+    ) = None
+
+
 class ExecutionReadiness:
     def __init__(self) -> None:
         self.lock = asyncio.Lock()
@@ -116,6 +194,238 @@ class ExecutionReadiness:
             or tuple(cached[1].checks) != CHECKS
         ):
             raise PermissionError("A current successful sandbox check is required for this grant.")
+
+    async def check_python_dependencies(
+        self,
+        request: SkillDependencyReadinessRequest,
+        *,
+        unverified_dependency_count: int = 0,
+    ) -> SkillDependencyReadinessResult:
+        """Check declared Python distributions in the isolated WSL interpreter without importing them."""
+        if not 0 <= unverified_dependency_count <= 256:
+            raise ValueError("Unverified dependency count is out of range.")
+        now = datetime.now(UTC)
+        if not request.python_dependency_specs:
+            return SkillDependencyReadinessResult(
+                distribution=request.distribution,
+                state="no_dependencies",
+                dependencies=[],
+                unverified_dependency_count=unverified_dependency_count,
+                checked_at=now,
+            )
+
+        sandbox = await self.check(ReadinessRequest(distribution=request.distribution))
+        if sandbox.state != "ready":
+            mapped_state: Literal["unavailable", "unsupported", "busy"] = (
+                sandbox.state
+                if sandbox.state in {"unavailable", "unsupported", "busy"}
+                else "unavailable"
+            )
+            error_code: Literal[
+                "profile_unavailable",
+                "unsupported_platform",
+                "sandbox_not_ready",
+                "probe_busy",
+                "dependency_probe_failed",
+            ] = "sandbox_not_ready"
+            if sandbox.error_code == "profile_unavailable":
+                error_code = "profile_unavailable"
+            elif sandbox.error_code == "unsupported_platform":
+                error_code = "unsupported_platform"
+            elif sandbox.error_code == "probe_busy":
+                error_code = "probe_busy"
+            return SkillDependencyReadinessResult(
+                distribution=request.distribution,
+                state=mapped_state,
+                dependencies=[
+                    SkillDependencyStatus(requirement=spec, status="unchecked")
+                    for spec in request.python_dependency_specs
+                ],
+                unverified_dependency_count=unverified_dependency_count,
+                checked_at=now,
+                error_code=error_code,
+            )
+        if self.lock.locked():
+            return SkillDependencyReadinessResult(
+                distribution=request.distribution,
+                state="busy",
+                dependencies=[
+                    SkillDependencyStatus(requirement=spec, status="unchecked")
+                    for spec in request.python_dependency_specs
+                ],
+                unverified_dependency_count=unverified_dependency_count,
+                checked_at=now,
+                error_code="probe_busy",
+            )
+
+        requirements = [Requirement(spec) for spec in request.python_dependency_specs]
+        names = sorted({requirement.name for requirement in requirements}, key=str.casefold)
+        dependency_file = json.dumps({"names": names}, separators=(",", ":")).encode("utf-8")
+        digest = sandbox.profile_sha256
+        assert digest is not None
+        versions: dict[str, str | None] | None = None
+        environment: dict[str, str] | None = None
+        try:
+            async with self.lock:
+                transport = await WSLTransport.discover(
+                    request.distribution, deadline=time.monotonic() + 30
+                )
+                if transport.profile_sha256 != digest or profile_fingerprint()[0] != digest:
+                    raise PermissionError("Execution profile changed during dependency discovery.")
+                snapshot = WorkspaceSnapshot((SnapshotFile("probe.json", dependency_file),), (), ())
+                intent = CommandIntent(
+                    argv=["/usr/bin/python3", "-I", "-c", DEPENDENCY_PROBE],
+                    max_seconds=5,
+                    execution_id=uuid4().hex,
+                    backend="wsl-bubblewrap-v1",
+                    distribution=request.distribution,
+                    profile_sha256=digest,
+                    workspace="application-owned-skill-dependency-probe",
+                )
+                try:
+                    result = await transport.run(intent, snapshot, deadline=time.monotonic() + 15)
+                    encoded = result.get("stdout_b64")
+                    expected_limits = {
+                        "max_active_executions": 2,
+                        "memory_bytes": 134217728,
+                        "cpu_percent": 50,
+                        "tasks": 32,
+                        "scratch_bytes": 33554432,
+                        "workspace_bytes": 33554432,
+                        "output_bytes": 1048576,
+                        "seconds": 5,
+                        "network": "none",
+                    }
+                    if (
+                        result.get("succeeded") is not True
+                        or result.get("cleanup_confirmed") is not True
+                        or type(result.get("exit_code")) is not int
+                        or result["exit_code"] != 0
+                        or result.get("snapshot_sha256") != snapshot.sha256
+                        or result.get("backend") != "wsl-bubblewrap-v1"
+                        or result.get("output_complete") is not True
+                        or result.get("workspace_changes_persisted") is not False
+                        or result.get("limits") != expected_limits
+                        or not isinstance(encoded, str)
+                        or len(encoded) > 87_384
+                    ):
+                        raise ValueError("Skill dependency probe did not finish successfully.")
+                    output = response_object(base64.b64decode(encoded, validate=True))
+                    raw_versions_value = output.get("versions")
+                    raw_environment_value = output.get("environment")
+                    expected_environment = {
+                        "implementation_name",
+                        "implementation_version",
+                        "os_name",
+                        "platform_machine",
+                        "platform_python_implementation",
+                        "platform_release",
+                        "platform_system",
+                        "platform_version",
+                        "python_full_version",
+                        "python_version",
+                        "sys_platform",
+                    }
+                    if (
+                        set(output) != {"versions", "environment"}
+                        or not isinstance(raw_versions_value, dict)
+                        or not isinstance(raw_environment_value, dict)
+                    ):
+                        raise ValueError("Skill dependency probe returned invalid metadata.")
+                    raw_versions = cast(dict[str, object], raw_versions_value)
+                    raw_environment = cast(dict[str, object], raw_environment_value)
+                    if (
+                        set(raw_versions) != set(names)
+                        or any(
+                            version is not None and not isinstance(version, str)
+                            for version in raw_versions.values()
+                        )
+                        or set(raw_environment) != expected_environment
+                        or any(not isinstance(value, str) for value in raw_environment.values())
+                    ):
+                        raise ValueError("Skill dependency probe returned invalid metadata.")
+                    versions = {
+                        str(name): value if isinstance(value, str) else None
+                        for name, value in raw_versions.items()
+                    }
+                    environment = {str(name): str(value) for name, value in raw_environment.items()}
+                    if profile_fingerprint()[0] != digest:
+                        raise PermissionError("Execution profile changed during dependency probe.")
+                finally:
+
+                    async def cleanup() -> None:
+                        deadline = time.monotonic() + 20
+                        acknowledgement = await transport.control(
+                            "cleanup", intent, deadline=deadline
+                        )
+                        if acknowledgement.get("cleanup_confirmed") is not True:
+                            raise RuntimeError("Dependency probe cleanup is unconfirmed.")
+                        while True:
+                            status = await transport.control("status", intent, deadline=deadline)
+                            if (
+                                status.get("closed") is True
+                                and status.get("manager_alive") is False
+                            ):
+                                return
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("Dependency probe manager remains active.")
+                            await asyncio.sleep(0.05)
+
+                    await finish_cleanup(cleanup())
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            versions = None
+            environment = None
+
+        if versions is None or environment is None:
+            return SkillDependencyReadinessResult(
+                distribution=request.distribution,
+                state="unavailable",
+                dependencies=[
+                    SkillDependencyStatus(requirement=spec, status="unchecked")
+                    for spec in request.python_dependency_specs
+                ],
+                unverified_dependency_count=unverified_dependency_count,
+                checked_at=datetime.now(UTC),
+                error_code="dependency_probe_failed",
+            )
+
+        marker_environment = cast(dict[str, str], default_environment())
+        marker_environment.update(environment)
+        statuses: list[SkillDependencyStatus] = []
+        for spec, requirement in zip(request.python_dependency_specs, requirements, strict=True):
+            if requirement.marker is not None and not requirement.marker.evaluate(
+                marker_environment
+            ):
+                statuses.append(SkillDependencyStatus(requirement=spec, status="not_applicable"))
+                continue
+            installed = versions.get(requirement.name)
+            if installed is None:
+                statuses.append(SkillDependencyStatus(requirement=spec, status="missing"))
+                continue
+            try:
+                available = not requirement.specifier or Version(installed) in requirement.specifier
+            except InvalidVersion:
+                statuses.append(
+                    SkillDependencyStatus(
+                        requirement=spec, status="unchecked", installed_version=installed
+                    )
+                )
+                continue
+            statuses.append(
+                SkillDependencyStatus(
+                    requirement=spec,
+                    status="available" if available else "incompatible",
+                    installed_version=installed,
+                )
+            )
+        return SkillDependencyReadinessResult(
+            distribution=request.distribution,
+            state="ready",
+            python_version=environment["python_full_version"],
+            dependencies=statuses,
+            unverified_dependency_count=unverified_dependency_count,
+            checked_at=datetime.now(UTC),
+        )
 
     async def check(self, request: ReadinessRequest) -> ReadinessResult:
         distribution = request.distribution
