@@ -627,6 +627,7 @@ try {
   await second.page.getByLabel('Local model or compatible provider model').selectOption(fakeModel);
   await second.page.getByRole('link', { name: /New objective/ }).click();
   await second.page.getByLabel('Workspace path').fill(fixtureWorkspace);
+  await second.page.locator('details.saved-conversations > summary').click();
   const conversations = second.page.getByRole('region', { name: 'Shared conversation sessions' });
   await conversations.getByRole('button', { name: 'Load shared conversations' }).click();
   await conversations.getByLabel('Saved terminal and desktop sessions').selectOption(chatSessionId);
