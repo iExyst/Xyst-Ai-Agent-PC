@@ -2,7 +2,7 @@
 
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
-Before resuming a Windows AppContainer command, the supervisor now reads the created Job Object settings back and fails closed unless the 32-process, 128 MiB job memory, and 50% CPU hard-cap values are present. The six-test local Windows transport module and static checks pass; hosted verification is pending. This validates the configured launch policy; direct CPU saturation and active-process rejection behavior remain unverified, and broad backend parity remains partial.
+Before resuming a Windows AppContainer command, the supervisor now reads the created Job Object settings back and fails closed unless the 32-process, 128 MiB job memory, and 50% CPU hard-cap values are present. Hosted run [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) passed all 1,218 Python tests and configured Windows checks; the six-test local transport module and static checks also pass. This validates the configured launch policy; direct CPU saturation and active-process rejection behavior remain unverified, and broad backend parity remains partial.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 

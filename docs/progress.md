@@ -2,7 +2,7 @@
 
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
-The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The six-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks; hosted verification is pending. The frozen-build fingerprint includes the verification code. This confirms launch-time policy configuration; direct CPU saturation and active-process rejection tests remain open.
+The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The six-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted run [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) passed all 1,218 Python tests and configured Windows checks. The frozen-build fingerprint includes the verification code. This confirms launch-time policy configuration; direct CPU saturation and active-process rejection tests remain open.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 
