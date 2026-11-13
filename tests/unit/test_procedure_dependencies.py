@@ -1,4 +1,7 @@
+import hashlib
+import io
 import json
+import zipfile
 from collections.abc import Mapping
 
 import pytest
@@ -7,6 +10,7 @@ from xaa.extensions.procedure_dependencies import (
     LockedPythonWheel,
     ProcedurePythonDependencyLock,
     PythonDependencyTarget,
+    verify_locked_wheel_bytes,
 )
 
 
@@ -60,6 +64,134 @@ def lock(
         requirements=["idna>=3,<4"] if requirements is None else requirements,
         wheels=[wheel()] if wheels is None else wheels,
     )
+
+
+def make_wheel_bytes(
+    *,
+    name: str = "idna",
+    version: str = "3.10",
+    requirements: tuple[str, ...] = (),
+    tag: str = "py3-none-any",
+) -> bytes:
+    metadata = f"Metadata-Version: 2.3\nName: {name}\nVersion: {version}\n"
+    metadata += "".join(f"Requires-Dist: {requirement}\n" for requirement in requirements)
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        dist_info = f"{name.replace('-', '_')}-{version}.dist-info"
+        archive.writestr(f"{dist_info}/METADATA", metadata)
+        archive.writestr(
+            f"{dist_info}/WHEEL",
+            f"Wheel-Version: 1.0\nGenerator: xaa-test\nRoot-Is-Purelib: true\nTag: {tag}\n",
+        )
+        archive.writestr(f"{name}/__init__.py", "")
+    return stream.getvalue()
+
+
+def lock_for_wheel_bytes(content: bytes, *, requires_dist: list[str] | None = None):
+    record = LockedPythonWheel(
+        filename="idna-3.10-py3-none-any.whl",
+        project_name="idna",
+        version="3.10",
+        sha256=hashlib.sha256(content).hexdigest(),
+        size_bytes=len(content),
+        requires_dist=[] if requires_dist is None else requires_dist,
+    )
+    return lock(wheels=[record])
+
+
+def test_wheel_verification_binds_hash_identity_and_embedded_metadata():
+    content = make_wheel_bytes(requirements=("sniffio>=1",))
+    dependency_wheel = make_wheel_bytes(name="sniffio", version="1.3.1")
+    dependency_record = LockedPythonWheel(
+        filename="sniffio-1.3.1-py3-none-any.whl",
+        project_name="sniffio",
+        version="1.3.1",
+        sha256=hashlib.sha256(dependency_wheel).hexdigest(),
+        size_bytes=len(dependency_wheel),
+    )
+    lock_value = ProcedurePythonDependencyLock(
+        schema_version=1,
+        skill_id="12345678-1234-4234-8234-123456789abc",
+        skill_version=2,
+        source_sha256="b" * 64,
+        target=target(),
+        requirements=["idna>=3,<4", "sniffio>=1"],
+        wheels=[
+            LockedPythonWheel(
+                filename="idna-3.10-py3-none-any.whl",
+                project_name="idna",
+                version="3.10",
+                sha256=hashlib.sha256(content).hexdigest(),
+                size_bytes=len(content),
+                requires_dist=["sniffio>=1"],
+            ),
+            dependency_record,
+        ],
+    )
+
+    result = verify_locked_wheel_bytes(
+        lock_value,
+        {
+            "idna-3.10-py3-none-any.whl": content,
+            "sniffio-1.3.1-py3-none-any.whl": dependency_wheel,
+        },
+    )
+
+    assert result == {
+        "idna-3.10-py3-none-any.whl": content,
+        "sniffio-1.3.1-py3-none-any.whl": dependency_wheel,
+    }
+
+
+def test_wheel_verification_rejects_byte_size_and_hash_mismatch():
+    locked_content = make_wheel_bytes()
+    lock_value = lock_for_wheel_bytes(locked_content)
+
+    with pytest.raises(ValueError, match="byte size"):
+        verify_locked_wheel_bytes(lock_value, {"idna-3.10-py3-none-any.whl": b"short"})
+    changed_content = locked_content.replace(b"Name: idna", b"Name: xdna")
+    with pytest.raises(ValueError, match="SHA-256"):
+        verify_locked_wheel_bytes(lock_value, {"idna-3.10-py3-none-any.whl": changed_content})
+
+
+def test_wheel_verification_rejects_package_identity_mismatch():
+    content = make_wheel_bytes(name="other")
+    lock_value = lock_for_wheel_bytes(content)
+
+    with pytest.raises(ValueError, match="dist-info path"):
+        verify_locked_wheel_bytes(lock_value, {"idna-3.10-py3-none-any.whl": content})
+
+
+def test_wheel_verification_rejects_metadata_declaration_mismatch():
+    content = make_wheel_bytes(requirements=("sniffio>=2",))
+    lock_value = lock_for_wheel_bytes(content)
+
+    with pytest.raises(ValueError, match="dependencies do not match"):
+        verify_locked_wheel_bytes(lock_value, {"idna-3.10-py3-none-any.whl": content})
+
+
+def test_wheel_verification_rejects_wheel_tag_mismatch():
+    content = make_wheel_bytes(tag="py2-none-any")
+    lock_value = lock_for_wheel_bytes(content)
+
+    with pytest.raises(ValueError, match="WHEEL tags"):
+        verify_locked_wheel_bytes(lock_value, {"idna-3.10-py3-none-any.whl": content})
+
+
+def test_wheel_verification_rejects_missing_and_unlocked_artifacts():
+    content = make_wheel_bytes()
+    lock_value = lock_for_wheel_bytes(content)
+
+    with pytest.raises(ValueError, match="exactly match"):
+        verify_locked_wheel_bytes(lock_value, {})
+    with pytest.raises(ValueError, match="exactly match"):
+        verify_locked_wheel_bytes(
+            lock_value,
+            {
+                "idna-3.10-py3-none-any.whl": content,
+                "extra-1.0-py3-none-any.whl": content,
+            },
+        )
 
 
 def test_dependency_lock_hash_is_canonical_and_binds_target_and_artifacts():
