@@ -14,6 +14,7 @@ import json
 import marshal
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,8 +36,10 @@ FILE_GENERIC_EXECUTE = 0x1200A0
 MOVEFILE_REPLACE_EXISTING = 0x00000001
 MOVEFILE_WRITE_THROUGH = 0x00000008
 MAX_ACL_OBJECTS = 50_000
+MAX_ACL_JOURNAL_BYTES = 16 * 1024 * 1024
 _TEMP_JOURNAL_NAME = re.compile(r"\.(XAA-MCP-[0-9a-f]{32})-(\d+)-(\d+)-[A-Za-z0-9_-]+\.tmp")
 _RECOVERY_LOCK = threading.Lock()
+_PYTHON_ENV_CACHE_LOCK = threading.Lock()
 _RECOVERED_JOURNAL_DIRS: set[str] = set()
 
 ERROR_ALREADY_EXISTS = 183
@@ -343,6 +346,127 @@ def process_identity(process_id: int) -> tuple[bool | None, int | None]:
     return _process_identity(process_id)
 
 
+def _python_environment_fingerprint(environment_root: Path, site_packages: Path) -> str:
+    digest = hashlib.sha256()
+    configuration = environment_root / "pyvenv.cfg"
+    executable = environment_root / "Scripts" / "python.exe"
+    for path in (configuration, executable):
+        if not path.is_file() or path.is_symlink():
+            raise MCPAppContainerError(
+                "The selected Python virtual environment is incomplete or uses a reparse point."
+            )
+        metadata = path.stat()
+        digest.update(str(path.relative_to(environment_root)).encode("utf-8"))
+        digest.update(f"\0{metadata.st_size}\0{metadata.st_mtime_ns}\0".encode())
+
+    if not site_packages.is_dir() or site_packages.is_symlink():
+        raise MCPAppContainerError(
+            "The selected Python environment has no safe site-packages directory."
+        )
+    pending = [site_packages]
+    entries: list[Path] = []
+    while pending:
+        directory = pending.pop()
+        try:
+            with os.scandir(directory) as children:
+                for child in children:
+                    entry = Path(child.path)
+                    metadata = child.stat(follow_symlinks=False)
+                    if metadata.st_file_attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                        raise MCPAppContainerError(
+                            "The selected Python environment contains a reparse point and cannot be copied safely."
+                        )
+                    entries.append(entry)
+                    if len(entries) > MAX_ACL_OBJECTS:
+                        raise MCPAppContainerError(
+                            f"The selected Python environment exceeds the {MAX_ACL_OBJECTS}-entry limit."
+                        )
+                    if child.is_dir(follow_symlinks=False):
+                        pending.append(entry)
+        except OSError as error:
+            raise MCPAppContainerError(
+                "Windows could not inspect the selected Python environment."
+            ) from error
+    for entry in sorted(entries, key=lambda value: value.relative_to(site_packages).as_posix()):
+        metadata = entry.stat(follow_symlinks=False)
+        digest.update(entry.relative_to(site_packages).as_posix().encode("utf-8"))
+        digest.update(f"\0{metadata.st_size}\0{metadata.st_mtime_ns}\0".encode())
+    return digest.hexdigest()
+
+
+def _prepare_appcontainer_python_environment(
+    environment_root: Path, cache_root: Path, security: Any
+) -> Path:
+    """Copy a Python environment into an AppContainer-readable managed cache."""
+    site_packages = environment_root / "Lib" / "site-packages"
+    fingerprint = _python_environment_fingerprint(environment_root, site_packages)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    cached_root = cache_root / fingerprint
+    cached_executable = cached_root / "Scripts" / "python.exe"
+    marker_path = cached_root / ".xaa-python-environment.json"
+    expected_marker = {"version": 1, "fingerprint": fingerprint}
+
+    with _PYTHON_ENV_CACHE_LOCK:
+        if cached_executable.is_file() and marker_path.is_file():
+            try:
+                if json.loads(marker_path.read_text(encoding="utf-8")) == expected_marker:
+                    return cached_executable
+            except (OSError, json.JSONDecodeError):
+                pass
+        if cached_root.exists():
+            if cached_root.is_symlink() or cached_root.resolve(
+                strict=True
+            ).parent != cache_root.resolve(strict=True):
+                raise MCPAppContainerError("The managed Python environment cache path is unsafe.")
+            shutil.rmtree(cached_root)
+
+        cached_root.mkdir()
+        try:
+            # The AppContainer package group receives read/execute access to
+            # this code-only cache. Setting the ACE before copying lets every
+            # new package file inherit it, including native wheel DLLs whose
+            # original environment may be owned by Administrators and cannot
+            # have its DACL changed by a standard user.
+            package_sid = security.ConvertStringSidToSid("S-1-15-2-1")
+            descriptor = security.GetNamedSecurityInfo(
+                str(cached_root),
+                security.SE_FILE_OBJECT,
+                security.DACL_SECURITY_INFORMATION,
+            )
+            dacl = descriptor.GetSecurityDescriptorDacl()
+            if dacl is None:
+                raise MCPAppContainerError("The managed Python cache has no access control list.")
+            inheritance = security.CONTAINER_INHERIT_ACE | security.OBJECT_INHERIT_ACE
+            dacl.AddAccessAllowedAceEx(
+                security.ACL_REVISION_DS,
+                inheritance,
+                FILE_GENERIC_READ | FILE_GENERIC_EXECUTE,
+                package_sid,
+            )
+            security.SetNamedSecurityInfo(
+                str(cached_root),
+                security.SE_FILE_OBJECT,
+                security.DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                dacl,
+                None,
+            )
+
+            scripts = cached_root / "Scripts"
+            scripts.mkdir()
+            shutil.copy2(environment_root / "Scripts" / "python.exe", scripts / "python.exe")
+            shutil.copy2(environment_root / "pyvenv.cfg", cached_root / "pyvenv.cfg")
+            shutil.copytree(site_packages, cached_root / "Lib" / "site-packages")
+            marker_temporary = cached_root / ".xaa-python-environment.tmp"
+            marker_temporary.write_text(json.dumps(expected_marker), encoding="utf-8")
+            os.replace(marker_temporary, marker_path)
+        except BaseException:
+            shutil.rmtree(cached_root, ignore_errors=True)
+            raise
+    return cached_executable
+
+
 class AppContainerAccess:
     """Temporary AppContainer profile and narrowly granted filesystem paths."""
 
@@ -357,6 +481,7 @@ class AppContainerAccess:
         *,
         grant_argument_paths: bool = True,
         grant_executable_directory: bool = True,
+        prepare_python_environment: bool = False,
     ) -> None:
         if sys.platform != "win32":
             raise MCPAppContainerError(
@@ -386,7 +511,22 @@ class AppContainerAccess:
             self.private_temp_path = _appcontainer_folder_path(self._sid) / "Temp"
             self.private_temp_path.mkdir(parents=True, exist_ok=True)
             write_roots.append(str(self.private_temp_path))
-            executable = Path(command).resolve(strict=True)
+            site_packages: Path | None = None
+            self.command = command
+            selected_executable = Path(command).resolve(strict=True)
+            if (
+                prepare_python_environment
+                and selected_executable.name.casefold() in {"python.exe", "pythonw.exe"}
+                and selected_executable.parent.name.casefold() == "scripts"
+            ):
+                self.command = str(
+                    _prepare_appcontainer_python_environment(
+                        selected_executable.parent.parent,
+                        self._journal_directory / "python-environments",
+                        self._security,
+                    )
+                )
+            executable = Path(self.command).resolve(strict=True)
             if not executable.is_file() or executable.suffix.lower() in {".cmd", ".bat"}:
                 raise MCPAppContainerError(
                     "Network-isolated MCP servers must use a directly executable Windows program."
@@ -397,8 +537,16 @@ class AppContainerAccess:
                     executable.name.lower() in {"python.exe", "pythonw.exe"}
                     and executable.parent.name.lower() == "scripts"
                 ):
-                    read_roots.append(str(executable.parent.parent))
-                    venv_configuration = executable.parent.parent / "pyvenv.cfg"
+                    environment_root = executable.parent.parent
+                    read_roots.append(str(environment_root))
+                    # MCP servers commonly import their SDK and native wheels
+                    # from this interpreter's site-packages. The selected
+                    # Python environment is an explicit launch input, so grant
+                    # its packages read/execute access inside the container.
+                    site_packages = environment_root / "Lib" / "site-packages"
+                    if site_packages.is_dir():
+                        read_roots.append(str(site_packages))
+                    venv_configuration = environment_root / "pyvenv.cfg"
                     if venv_configuration.is_file():
                         for line in venv_configuration.read_text(encoding="utf-8").splitlines():
                             key, separator, value = line.partition("=")
@@ -654,7 +802,7 @@ class AppContainerAccess:
             import win32security
 
             for journal_path in journal_root.glob("XAA-MCP-*.json"):
-                if journal_path.is_symlink() or journal_path.stat().st_size > 1024 * 1024:
+                if journal_path.is_symlink() or journal_path.stat().st_size > MAX_ACL_JOURNAL_BYTES:
                     raise MCPAppContainerError("An MCP isolation recovery record is unsafe.")
                 try:
                     record = json.loads(journal_path.read_text(encoding="utf-8"))
@@ -670,7 +818,7 @@ class AppContainerAccess:
                         or not isinstance(owner_pid, int)
                         or owner_pid <= 0
                         or not isinstance(raw_grants, list)
-                        or len(raw_grants) > 16
+                        or len(raw_grants) > MAX_ACL_OBJECTS + 16
                         or (
                             version == 2
                             and (
@@ -734,6 +882,7 @@ class AppContainerAccess:
                         dacl = cast(Any, descriptor.GetSecurityDescriptorDacl())
                         if dacl is None:
                             continue
+                        found = False
                         for index in reversed(range(dacl.GetAceCount())):
                             ace_header, ace_mask, ace_sid = dacl.GetAce(index)
                             ace_type, ace_flags = ace_header
@@ -744,16 +893,18 @@ class AppContainerAccess:
                                 and win32security.ConvertSidToStringSid(ace_sid) == sid_string
                             ):
                                 dacl.DeleteAce(index)
+                                found = True
                                 break
-                        win32security.SetNamedSecurityInfo(
-                            path,
-                            win32security.SE_FILE_OBJECT,
-                            win32security.DACL_SECURITY_INFORMATION,
-                            None,
-                            None,
-                            dacl,
-                            None,
-                        )
+                        if found:
+                            win32security.SetNamedSecurityInfo(
+                                path,
+                                win32security.SE_FILE_OBJECT,
+                                win32security.DACL_SECURITY_INFORMATION,
+                                None,
+                                None,
+                                dacl,
+                                None,
+                            )
                     except OSError as error:
                         failures.append(error)
                 if not failures:
@@ -812,6 +963,7 @@ class AppContainerAccess:
                     dacl = descriptor.GetSecurityDescriptorDacl()
                     if dacl is None:
                         continue
+                    found = False
                     for index in reversed(range(dacl.GetAceCount())):
                         ace_header, ace_mask, ace_sid = dacl.GetAce(index)
                         ace_type, ace_flags = ace_header
@@ -822,16 +974,18 @@ class AppContainerAccess:
                             and security.ConvertSidToStringSid(ace_sid) == sid_string
                         ):
                             dacl.DeleteAce(index)
+                            found = True
                             break
-                    security.SetNamedSecurityInfo(
-                        path,
-                        security.SE_FILE_OBJECT,
-                        security.DACL_SECURITY_INFORMATION,
-                        None,
-                        None,
-                        dacl,
-                        None,
-                    )
+                    if found:
+                        security.SetNamedSecurityInfo(
+                            path,
+                            security.SE_FILE_OBJECT,
+                            security.DACL_SECURITY_INFORMATION,
+                            None,
+                            None,
+                            dacl,
+                            None,
+                        )
                 except OSError as error:
                     # Keep profile identity until ACL revocation has been attempted;
                     # a stale ACE for a deleted profile does not grant another SID access.

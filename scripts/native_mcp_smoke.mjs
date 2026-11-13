@@ -204,6 +204,7 @@ try {
   });
   if (openedChat.status !== 200) throw new Error(`Could not seed a shared conversation (${openedChat.status}).`);
   await page.getByRole('link', { name: 'New objective' }).click();
+  await page.locator('details.saved-conversations > summary').click();
   const conversations = page.getByRole('region', { name: 'Shared conversation sessions' });
   await conversations.getByRole('button', { name: 'Load shared conversations' }).click();
   await conversations.getByLabel('Saved terminal and desktop sessions').selectOption(sharedChatSessionId);
@@ -545,11 +546,16 @@ try {
   if (!parentCanReachLoopback) throw new Error('The loopback fixture listener was unreachable from the desktop process.');
 
   const isolationFixture = path.resolve('tests/fixtures/mcp_appcontainer_list_probe.py');
+  // Keep the granted working directory small and separate from the WebView
+  // profile, database and screenshots in the acceptance root. AppContainer
+  // grants validate the selected tree before allowing access.
+  const isolationWorkspace = path.join(root, 'mcp-isolation-workspace');
+  await mkdir(isolationWorkspace, { recursive: true });
   await panel.getByLabel('Transport').selectOption('stdio');
   await panel.getByLabel('Server name').fill('Native isolation fixture');
   await panel.getByLabel('Command').fill(command);
   await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([isolationFixture, String(isolationAddress.port)]));
-  await panel.getByLabel('Working directory (optional)').fill(root);
+  await panel.getByLabel('Working directory (optional)').fill(isolationWorkspace);
   await panel.getByLabel('Block network access for this MCP process (Windows)').check();
   const isolationCreatedResponse = await clickForResponse(
     page,
@@ -569,7 +575,7 @@ try {
   await panel.getByRole('button', { name: 'Connect and discover', exact: true }).click();
   let isolationServers;
   let isolatedConnection;
-  const isolationDeadline = Date.now() + 30_000;
+  const isolationDeadline = Date.now() + 65_000;
   while (Date.now() < isolationDeadline) {
     isolationServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
     isolatedConnection = isolationServers.find((server) => server.id === isolationServerId);

@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 # MCP messages are JSON-RPC lines. 1 MiB accommodates large tool schemas and
 # resource listings while bounding memory before the session/result limits run.
 MCP_MAX_STDIO_FRAME_BYTES = 1024 * 1024
+MCP_APPCONTAINER_STARTUP_TIMEOUT = 60
 
 
 class MCPStdioFrameLimitError(ValueError):
@@ -177,6 +178,15 @@ async def bounded_stdio_client(
                 list(isolation_read_paths),
                 list(isolation_write_paths),
                 isolation_journal_directory or str(Path.home() / ".xaa" / "mcp-appcontainer"),
+                # Python MCP servers load their stdlib, virtualenv packages,
+                # native extension DLLs, and the selected interpreter runtime.
+                # Grant that configured environment for read/execute inside
+                # the container; other executables receive only their file.
+                grant_executable_directory=(
+                    Path(command).name.casefold() in {"python.exe", "pythonw.exe"}
+                    and Path(command).parent.name.casefold() == "scripts"
+                ),
+                prepare_python_environment=True,
             )
             launch_command = sys.executable
             launch_args = (
@@ -195,11 +205,23 @@ async def bounded_stdio_client(
         if appcontainer_access is not None:
             assert process.stdin is not None and process.stdout is not None
             stdout = process.stdout
+            child_environment = environment | {
+                # Frozen one-file MCP servers (including the packaged engine's
+                # own shim) extract their runtime beneath TEMP. The host's temp
+                # directory is outside the AppContainer, so direct extraction
+                # there fails with Access Denied during Python DLL loading.
+                "TEMP": str(appcontainer_access.private_temp_path),
+                "TMP": str(appcontainer_access.private_temp_path),
+                # Let Windows resolve the matching Packages\\<profile>\\AC
+                # location instead of inheriting the host user's data root.
+                "LOCALAPPDATA": str(appcontainer_access.private_temp_path.parent.parents[2]),
+            }
             bootstrap = {
-                "command": command,
+                "command": appcontainer_access.command,
                 "args": server.args,
                 "cwd": server.cwd,
                 "profile_name": appcontainer_access.profile_name,
+                "child_environment": child_environment,
             }
             await process.stdin.send(
                 BOOTSTRAP_PREFIX + json.dumps(bootstrap, separators=(",", ":")).encode() + b"\n"
@@ -211,7 +233,7 @@ async def bounded_stdio_client(
                     received.extend(await stdout.receive(size - len(received)))
                 return bytes(received)
 
-            with anyio.fail_after(15):
+            with anyio.fail_after(MCP_APPCONTAINER_STARTUP_TIMEOUT):
                 prefix = await receive_exact(len(ERROR_FRAME_PREFIX))
                 if prefix == ERROR_FRAME_PREFIX:
                     size = int.from_bytes(await receive_exact(2), "big")

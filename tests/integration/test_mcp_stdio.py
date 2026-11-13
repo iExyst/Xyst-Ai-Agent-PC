@@ -49,7 +49,7 @@ DISCONNECT_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_disconnect_se
 SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_server.py"
 MODERN_SAMPLING_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_sampling_modern_server.py"
 OVERSIZED_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_oversized_stdio_server.py"
-APPCONTAINER_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_probe.py"
+APPCONTAINER_FIXTURE = Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_list_probe.py"
 APPCONTAINER_ORPHAN_FIXTURE = (
     Path(__file__).parents[1] / "fixtures" / "mcp_appcontainer_orphan_probe.py"
 )
@@ -355,6 +355,7 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
 ) -> None:
     if sys.platform != "win32":
         pytest.skip("Windows AppContainer network-isolation acceptance")
+    server_python = Path(os.environ.get("XAA_MCP_APPCONTAINER_TEST_PYTHON", sys.executable))
     frozen_shim = os.environ.get("XAA_MCP_APPCONTAINER_SHIM_EXE")
     if frozen_shim:
         monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -371,7 +372,6 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
         accepted, _address = listener.accept()
         accepted.close()
         assert control.fileno() >= 0
-    server_python = Path(sys.executable)
     nested_directory = workspace_tmp_path / "existing-child"
     nested_directory.mkdir()
     nested_file = nested_directory / "existing.txt"
@@ -405,7 +405,7 @@ async def test_windows_appcontainer_mcp_process_cannot_connect_to_loopback(
             ClientSession(read_stream, write_stream) as session,
         ):
             await session.initialize()
-            result = await session.call_tool("try_loopback", {})
+            result = await session.call_tool("loopback_status", {})
             assert result.content and "blocked:" in getattr(result.content[0], "text", "")
     finally:
         listener.close()

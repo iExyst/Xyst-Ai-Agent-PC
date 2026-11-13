@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Recheck packaged AppContainer MCP initialization (2026-11-13)
+
+The native Windows MCP acceptance initially failed while loading `cryptography`'s `_rust` extension from an Administrators-owned virtual environment. X.A.A. now creates a managed per-user Python cache, granting AppContainer read/execute access before copying its code and launching the cached interpreter. Subsequent end-to-end runs exposed a 15-second connection deadline expiring on cold isolated stdio startup; isolated stdio startup and initialization now use a 60-second bound while ordinary MCP connections retain the 15-second bound. The latest packaged Tauri WebView acceptance passes with AppContainer identity, blocked loopback, the actual MCP SDK and cryptography extension, stdio/HTTP SDK interoperability, OAuth lifecycle, package lifecycle, shared conversations, and clean shutdown ([report](../../.acceptance/94c83872-1243-4c4c-95ed-aad43b7c72e9/report.json)). This closes the local installed MCP smoke gap only. Keep the broad MCP and Hermes parity row partial until the remaining protocol, extension security, cross-platform and clean-machine inventory is audited and verified.
+
 ## Email IMAP TLS socket acceptance (2026-11-13)
 
 The actual `imaplib.IMAP4_SSL` polling path now passes a loopback TLS fixture with a trusted runtime test CA and IP SAN. It exercises authenticated login, read-only INBOX selection, UIDVALIDITY, UID search/fetch, message literal parsing and logout. `tests/unit/test_email.py` passes all 9 tests locally. The existing outbound SMTP STARTTLS socket acceptance remains separate; this does not establish real account-provider interoperability, IMAP restart/duplicate effects, or the complete Phase 8 channel gate.

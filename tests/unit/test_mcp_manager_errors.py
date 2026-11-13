@@ -25,6 +25,27 @@ def test_stdio_launch_error_reports_os_code_without_leaking_path() -> None:
     assert path not in message
 
 
+def test_stdio_launch_error_without_os_code_keeps_safe_exception_class() -> None:
+    message = MCPManager._safe_error(
+        SimpleNamespace(credential_store=None),
+        OSError("Native launch failure"),
+        SimpleNamespace(secret_env=[]),
+    )
+
+    assert " (OSError)." in message
+    assert "Native launch failure" not in message
+
+
+def test_timeout_error_is_reported_as_initialization_timeout() -> None:
+    message = MCPManager._safe_error(
+        SimpleNamespace(credential_store=None),
+        TimeoutError(),
+        SimpleNamespace(secret_env=[]),
+    )
+
+    assert message == "The MCP server did not complete initialization or sign-in in time."
+
+
 def test_appcontainer_startup_frame_preserves_only_os_code() -> None:
     path = r"D:\runner\private\python.exe"
     try:

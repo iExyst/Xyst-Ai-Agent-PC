@@ -67,6 +67,7 @@ from uritemplate import URITemplate
 from xaa.credentials import CredentialStore
 from xaa.extensions.agent_plugins import plugin_source_sha256
 from xaa.runtime.mcp_stdio import (
+    MCP_APPCONTAINER_STARTUP_TIMEOUT,
     MCP_MAX_STDIO_FRAME_BYTES,
     MCPStdioFrameLimitError,
     MCPStdioResourceLimitError,
@@ -297,7 +298,11 @@ class MCPManager:
                     if server.transport == "streamable_http"
                     and not server.secret_env
                     and self.credential_store is not None
-                    else MCP_CONNECT_TIMEOUT + 2
+                    else (
+                        MCP_APPCONTAINER_STARTUP_TIMEOUT + 2
+                        if server.transport == "stdio" and server.network_isolation
+                        else MCP_CONNECT_TIMEOUT + 2
+                    )
                 )
                 connection, discovered = await asyncio.wait_for(ready, timeout=timeout)
             except BaseException as error:
@@ -360,7 +365,11 @@ class MCPManager:
         connection: _ConnectedServer | None = None
         try:
             async with AsyncExitStack() as stack:
-                initialization_timeout = MCP_CONNECT_TIMEOUT
+                initialization_timeout = (
+                    MCP_APPCONTAINER_STARTUP_TIMEOUT
+                    if server.transport == "stdio" and server.network_isolation
+                    else MCP_CONNECT_TIMEOUT
+                )
                 if server.transport == "stdio":
                     params = self._parameters(server)
                     errlog = stack.enter_context(_discard_stdio_output())
@@ -1808,18 +1817,24 @@ class MCPManager:
             )
         elif isinstance(error, MCPStdioResourceLimitError):
             message = str(error)
+        elif isinstance(error, TimeoutError):
+            message = "The MCP server did not complete initialization or sign-in in time."
         elif isinstance(error, OSError):
             code = getattr(error, "winerror", None)
             code_label = "Windows" if isinstance(code, int) else "OS"
             if not isinstance(code, int):
                 code = error.errno
             detail = f" ({code_label} error {code})" if isinstance(code, int) else ""
+            if not detail:
+                # Some frozen Windows launch failures arrive as bare OSError
+                # instances without errno/winerror. Keep the UI path-free but
+                # retain the exception class so packaged diagnostics distinguish
+                # process-start failures from protocol initialization errors.
+                detail = f" ({type(error).__name__})"
             message = (
                 "Could not start the MCP server. Check its command, arguments, and working "
                 f"directory{detail}."
             )
-        elif isinstance(error, TimeoutError):
-            message = "The MCP server did not complete initialization or sign-in in time."
         elif _contains_oauth_flow_error(error):
             message = (
                 "MCP sign-in could not be completed. Check the authorization server and try again."
