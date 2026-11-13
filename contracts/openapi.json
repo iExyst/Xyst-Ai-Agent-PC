@@ -1937,6 +1937,49 @@
         "title": "LMStudioSelectionRequest",
         "type": "object"
       },
+      "LockedPythonWheel": {
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "project_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Project Name",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 67108864.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "project_name",
+          "version",
+          "sha256",
+          "size_bytes"
+        ],
+        "title": "LockedPythonWheel",
+        "type": "object"
+      },
       "MCPArgumentCompletionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3299,6 +3342,70 @@
         "title": "PreferenceRequest",
         "type": "object"
       },
+      "ProcedurePythonDependencyLock": {
+        "additionalProperties": false,
+        "description": "Owner-reviewable lock for one immutable skill version and WSL interpreter.",
+        "properties": {
+          "index_url": {
+            "default": "https://pypi.org/simple",
+            "pattern": "^https://pypi\\.org/simple$",
+            "title": "Index Url",
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Requirements",
+            "type": "array"
+          },
+          "schema_version": {
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_version": {
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Skill Version",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/PythonDependencyTarget"
+          },
+          "wheels": {
+            "items": {
+              "$ref": "#/components/schemas/LockedPythonWheel"
+            },
+            "maxItems": 256,
+            "title": "Wheels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "skill_id",
+          "skill_version",
+          "source_sha256",
+          "target",
+          "requirements",
+          "wheels"
+        ],
+        "title": "ProcedurePythonDependencyLock",
+        "type": "object"
+      },
       "ProjectValidationEvidence": {
         "properties": {
           "argv": {
@@ -3619,6 +3726,118 @@
           "role"
         ],
         "title": "PromptMessage",
+        "type": "object"
+      },
+      "PythonDependencyLockList": {
+        "additionalProperties": false,
+        "properties": {
+          "locks": {
+            "items": {
+              "$ref": "#/components/schemas/PythonDependencyLockRecord"
+            },
+            "title": "Locks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "locks"
+        ],
+        "title": "PythonDependencyLockList",
+        "type": "object"
+      },
+      "PythonDependencyLockRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "pending_review",
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "environment_digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Environment Digest",
+            "type": "string"
+          },
+          "lock": {
+            "$ref": "#/components/schemas/ProcedurePythonDependencyLock"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_version": {
+            "title": "Skill Version",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "skill_version",
+          "environment_digest",
+          "source_sha256",
+          "lock",
+          "decision",
+          "created_at",
+          "reviewed_at"
+        ],
+        "title": "PythonDependencyLockRecord",
+        "type": "object"
+      },
+      "PythonDependencyTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "compatible_wheel_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Compatible Wheel Tags",
+            "type": "array"
+          },
+          "distribution": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Environment",
+            "type": "object"
+          }
+        },
+        "required": [
+          "distribution",
+          "environment",
+          "compatible_wheel_tags"
+        ],
+        "title": "PythonDependencyTarget",
         "type": "object"
       },
       "ReadinessRequest": {
@@ -4953,6 +5172,24 @@
           "distribution"
         ],
         "title": "SkillPythonDependencyCheck",
+        "type": "object"
+      },
+      "SkillPythonDependencyReview": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "SkillPythonDependencyReview",
         "type": "object"
       },
       "SkillRevision": {
@@ -12618,6 +12855,198 @@
           }
         ],
         "summary": "Export Skill Package"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks": {
+      "get": {
+        "operationId": "list_skill_python_dependency_locks_skills__skill_id__versions__version__python_dependency_locks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PythonDependencyLockList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Skill Python Dependency Locks"
+      },
+      "put": {
+        "operationId": "save_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcedurePythonDependencyLock"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PythonDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Skill Python Dependency Lock"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review": {
+      "post": {
+        "operationId": "review_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks__environment_digest__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_digest",
+            "required": true,
+            "schema": {
+              "title": "Environment Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPythonDependencyReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PythonDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Review Skill Python Dependency Lock"
       }
     },
     "/skills/{skill_id}/versions/{version}/python-readiness": {

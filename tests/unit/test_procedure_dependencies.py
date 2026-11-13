@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import pytest
 from pydantic import ValidationError
 from xaa.extensions.procedure_dependencies import (
@@ -163,7 +165,7 @@ def test_lock_rejects_wheel_incompatible_with_target_abi():
 def test_lock_copies_inputs_into_immutable_collections():
     requirements = ["idna>=3"]
     wheels = [wheel()]
-    environment = target().environment
+    target_value = target()
     locked = lock(requirements=requirements, wheels=wheels)
 
     requirements.append("other>=1")
@@ -171,5 +173,7 @@ def test_lock_copies_inputs_into_immutable_collections():
 
     assert len(locked.requirements) == 1
     assert len(locked.wheels) == 1
-    assert isinstance(locked.target.environment, tuple)
-    assert isinstance(environment, tuple)
+    assert isinstance(locked.target.environment, Mapping)
+    assert isinstance(target_value.model_dump(mode="json")["environment"], dict)
+    with pytest.raises(TypeError):
+        locked.target.environment["python_version"] = "3.99"

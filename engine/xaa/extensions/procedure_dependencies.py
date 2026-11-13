@@ -5,14 +5,22 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from typing import Self, cast
+from types import MappingProxyType
+from typing import Literal, Self, cast
 
 from packaging.markers import default_environment
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.tags import parse_tag
 from packaging.utils import InvalidWheelFilename, canonicalize_name, parse_wheel_filename
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 MAX_DEPENDENCIES = 64
 MAX_WHEELS = 256
@@ -38,32 +46,26 @@ PYTHON_ENVIRONMENT_KEYS = frozenset(
 class PythonDependencyTarget(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
-    environment: tuple[tuple[str, str], ...]
+    environment: dict[str, str]
     compatible_wheel_tags: tuple[str, ...] = Field(min_length=1, max_length=256)
-
-    @field_validator("environment", mode="before")
-    @classmethod
-    def freeze_environment(cls, value: object) -> object:
-        if isinstance(value, dict):
-            return tuple(sorted(cast(dict[str, str], value).items()))
-        if isinstance(value, list):
-            pairs = cast(list[list[str]], value)
-            return tuple(tuple(pair) for pair in pairs)
-        return value
 
     @field_validator("environment")
     @classmethod
-    def validate_environment(
-        cls, value: tuple[tuple[str, str], ...]
-    ) -> tuple[tuple[str, str], ...]:
-        environment = dict(value)
-        if (
-            len(environment) != len(value)
-            or frozenset(environment) != PYTHON_ENVIRONMENT_KEYS
-            or any(not item or len(item) > 256 for item in environment.values())
+    def validate_environment(cls, environment: dict[str, str]) -> dict[str, str]:
+        if frozenset(environment) != PYTHON_ENVIRONMENT_KEYS or any(
+            not item or len(item) > 256 for item in environment.values()
         ):
             raise ValueError("Target Python environment is incomplete or out of bounds.")
-        return tuple(sorted(environment.items()))
+        return dict(sorted(environment.items()))
+
+    @model_validator(mode="after")
+    def freeze_environment(self) -> Self:
+        object.__setattr__(self, "environment", MappingProxyType(dict(self.environment)))
+        return self
+
+    @field_serializer("environment", when_used="json")
+    def serialize_environment(self, value: dict[str, str]) -> dict[str, str]:
+        return dict(value)
 
     @field_validator("compatible_wheel_tags", mode="before")
     @classmethod
@@ -184,7 +186,7 @@ class ProcedurePythonDependencyLock(BaseModel):
             if not compatible_tags.intersection(wheel_tags):
                 raise ValueError("A locked wheel is incompatible with the target Python ABI.")
         marker_environment = cast(dict[str, str], default_environment())
-        marker_environment.update(dict(self.target.environment))
+        marker_environment.update(self.target.environment)
         for value in self.requirements:
             requirement = Requirement(value)
             if requirement.marker is not None and not requirement.marker.evaluate(
@@ -200,11 +202,32 @@ class ProcedurePythonDependencyLock(BaseModel):
 
     def environment_digest(self) -> str:
         """Hash canonical lock content; timestamps and input ordering cannot change identity."""
+        encoded = self.canonical_json().encode("ascii")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def canonical_json(self) -> str:
+        """Serialize normalized lock content independently of requirement/wheel ordering."""
         payload = self.model_dump(mode="json")
         payload["requirements"] = sorted(self.requirements, key=str.casefold)
         payload["wheels"] = sorted(
             (wheel.model_dump(mode="json") for wheel in self.wheels),
             key=lambda item: item["project_name"],
         )
-        encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(encoded.encode("ascii")).hexdigest()
+        return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+class PythonDependencyLockRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    skill_id: str
+    skill_version: int
+    environment_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    lock: ProcedurePythonDependencyLock
+    decision: Literal["pending_review", "approved", "rejected"]
+    created_at: str
+    reviewed_at: str | None
+
+
+class PythonDependencyLockList(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    locks: tuple[PythonDependencyLockRecord, ...]

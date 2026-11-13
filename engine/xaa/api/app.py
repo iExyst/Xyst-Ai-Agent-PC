@@ -79,6 +79,11 @@ from xaa.extensions.agent_plugins import (
     remove_installed_agent_plugin,
     remove_managed_plugin_data,
 )
+from xaa.extensions.procedure_dependencies import (
+    ProcedurePythonDependencyLock,
+    PythonDependencyLockList,
+    PythonDependencyLockRecord,
+)
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
 from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
@@ -763,6 +768,11 @@ class SpecialistProfileResponse(BaseModel):
 class SkillPythonDependencyCheck(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+
+class SkillPythonDependencyReview(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    decision: Literal["approved", "rejected"]
 
 
 def create_app(
@@ -1563,6 +1573,66 @@ def create_app(
             dependency_request,
             unverified_dependency_count=min(256, unverified_count),
         )
+
+    @app.put(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks",
+        response_model=PythonDependencyLockRecord,
+    )
+    def save_skill_python_dependency_lock(
+        skill_id: str,
+        request: ProcedurePythonDependencyLock,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if request.skill_id != skill_id or request.skill_version != version:
+            raise HTTPException(
+                status_code=400,
+                detail="Dependency lock identity must match the selected procedure version.",
+            )
+        try:
+            return skill_store.save_python_dependency_lock(request)
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks",
+        response_model=PythonDependencyLockList,
+    )
+    def list_skill_python_dependency_locks(
+        skill_id: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> PythonDependencyLockList:
+        try:
+            skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        return PythonDependencyLockList(
+            locks=tuple(
+                PythonDependencyLockRecord.model_validate(record)
+                for record in skill_store.python_dependency_locks(skill_id, version)
+            )
+        )
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review",
+        response_model=PythonDependencyLockRecord,
+    )
+    def review_skill_python_dependency_lock(
+        skill_id: str,
+        environment_digest: str,
+        request: SkillPythonDependencyReview,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return skill_store.review_python_dependency_lock(
+                skill_id, version, environment_digest, request.decision
+            )
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get(
         "/skills/{skill_id}/versions/{version}/export",

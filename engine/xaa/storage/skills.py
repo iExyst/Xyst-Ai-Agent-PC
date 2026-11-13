@@ -11,8 +11,10 @@ from datetime import datetime
 from typing import Any, Literal, cast
 from uuid import uuid4
 
+from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from xaa.extensions.procedure_dependencies import ProcedurePythonDependencyLock
 from xaa.storage.runs import RunStore, utc_now
 
 MAX_PROCEDURE_TEXT_BYTES = 80 * 1024
@@ -1339,6 +1341,149 @@ class SkillStore:
                 raise SkillConflict("A procedure with that name already exists.") from None
             self._insert_version(connection, identity, 1, draft, evidence)
         return self.get(identity)
+
+    def save_python_dependency_lock(self, lock: ProcedurePythonDependencyLock) -> dict[str, Any]:
+        """Persist one immutable imported-procedure lock, awaiting owner review."""
+        environment_digest = lock.environment_digest()
+        lock_json = lock.canonical_json()
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            version = connection.execute(
+                "SELECT evaluation_evidence FROM skill_versions WHERE skill_id=? AND version=?",
+                (lock.skill_id, lock.skill_version),
+            ).fetchone()
+            if version is None:
+                raise SkillConflict("The locked procedure version does not exist.")
+            evidence = cast(dict[str, Any], json.loads(version["evaluation_evidence"]))
+            source_value = evidence.get("source")
+            source = cast(dict[str, Any], source_value) if isinstance(source_value, dict) else None
+            if (
+                evidence.get("provenance") not in {"agent_plugins_v1", "hermes_skill"}
+                or source is None
+                or source.get("content_sha256") != lock.source_sha256
+            ):
+                raise SkillConflict(
+                    "The dependency lock must match the imported procedure source digest."
+                )
+            declarations_value: object = source.get("declared_requirements")
+            try:
+                declarations = (
+                    json.loads(declarations_value)
+                    if isinstance(declarations_value, str) and len(declarations_value) <= 8192
+                    else None
+                )
+            except json.JSONDecodeError:
+                declarations = None
+            if not isinstance(declarations, dict):
+                raise SkillConflict("The imported Python dependency declarations are invalid.")
+            declared = cast(dict[str, Any], declarations)
+            raw_specs = declared.get("python_dependency_specs")
+            if (
+                not isinstance(raw_specs, list)
+                or declared.get("unparsed_dependency_count", 0) != 0
+                or declared.get("dependency_names_truncated") is True
+            ):
+                raise SkillConflict("The imported Python dependency declarations are incomplete.")
+            normalized_specs: list[str] = []
+            for raw_spec in cast(list[object], raw_specs):
+                if not isinstance(raw_spec, str) or len(raw_spec) > 256:
+                    raise SkillConflict("An imported Python dependency declaration is invalid.")
+                try:
+                    requirement = Requirement(raw_spec)
+                except InvalidRequirement as exc:
+                    raise SkillConflict(
+                        "An imported Python dependency declaration is invalid."
+                    ) from exc
+                if requirement.url is not None:
+                    raise SkillConflict("Direct Python dependency references are unsupported.")
+                normalized_specs.append(str(requirement))
+            if tuple(sorted(normalized_specs, key=str.casefold)) != lock.requirements:
+                raise SkillConflict(
+                    "The dependency lock requirements do not match imported Python declarations."
+                )
+            existing = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, environment_digest),
+            ).fetchone()
+            if existing is not None:
+                if existing["lock_json"] != lock_json:
+                    raise SkillConflict("The dependency environment identity already exists.")
+                return self._python_dependency_lock_record(existing)
+            created_at = utc_now()
+            connection.execute(
+                "INSERT INTO skill_python_dependency_locks "
+                "(skill_id,skill_version,environment_digest,source_sha256,lock_json,decision,created_at) "
+                "VALUES (?,?,?,?,?,'pending_review',?)",
+                (
+                    lock.skill_id,
+                    lock.skill_version,
+                    environment_digest,
+                    lock.source_sha256,
+                    lock_json,
+                    created_at,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, environment_digest),
+            ).fetchone()
+        assert row is not None
+        return self._python_dependency_lock_record(row)
+
+    @staticmethod
+    def _python_dependency_lock_record(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value["lock"] = json.loads(value.pop("lock_json"))
+        return value
+
+    def python_dependency_locks(self, skill_id: str, version: int) -> list[dict[str, Any]]:
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? ORDER BY created_at,environment_digest",
+                (skill_id, version),
+            ).fetchall()
+        return [self._python_dependency_lock_record(row) for row in rows]
+
+    def review_python_dependency_lock(
+        self,
+        skill_id: str,
+        version: int,
+        environment_digest: str,
+        decision: Literal["approved", "rejected"],
+    ) -> dict[str, Any]:
+        """Record one explicit owner decision for the exact immutable lock."""
+        if not re.fullmatch(r"[a-f0-9]{64}", environment_digest):
+            raise ValueError("Dependency environment identity is invalid.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+            if row is None:
+                raise SkillConflict("The dependency environment was not found.")
+            if row["decision"] == decision:
+                return self._python_dependency_lock_record(row)
+            if row["decision"] != "pending_review":
+                raise SkillConflict("The dependency lock already has a final owner decision.")
+            reviewed_at = utc_now()
+            connection.execute(
+                "UPDATE skill_python_dependency_locks SET decision=?,reviewed_at=? "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=? "
+                "AND decision='pending_review'",
+                (decision, reviewed_at, skill_id, version, environment_digest),
+            )
+            updated = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+        assert updated is not None
+        return self._python_dependency_lock_record(updated)
 
     def revise(self, identity: str, draft: SkillRevision) -> dict[str, Any]:
         with self.runs.connection() as connection:

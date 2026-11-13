@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 35
+DATABASE_SCHEMA_VERSION = 36
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -457,6 +457,20 @@ class RunStore:
                     evaluation_evidence TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(skill_id, version)
+                );
+                CREATE TABLE IF NOT EXISTS skill_python_dependency_locks (
+                    skill_id TEXT NOT NULL,
+                    skill_version INTEGER NOT NULL,
+                    environment_digest TEXT NOT NULL CHECK(length(environment_digest)=64),
+                    source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+                    lock_json TEXT NOT NULL,
+                    decision TEXT NOT NULL DEFAULT 'pending_review'
+                        CHECK(decision IN ('pending_review','approved','rejected')),
+                    created_at TEXT NOT NULL,
+                    reviewed_at TEXT,
+                    PRIMARY KEY(skill_id,skill_version,environment_digest),
+                    FOREIGN KEY(skill_id,skill_version)
+                        REFERENCES skill_versions(skill_id,version) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS skill_version_assets (
                     skill_id TEXT NOT NULL,

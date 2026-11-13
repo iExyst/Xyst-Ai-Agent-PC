@@ -22,6 +22,11 @@ from xaa.extensions.agent_plugins import (
     plugin_source_sha256,
     read_plugin_skill,
 )
+from xaa.extensions.procedure_dependencies import (
+    LockedPythonWheel,
+    ProcedurePythonDependencyLock,
+    PythonDependencyTarget,
+)
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.runtime.execution_readiness import (
     SkillDependencyReadinessResult,
@@ -1053,6 +1058,84 @@ def test_hermes_skill_import_api_keeps_candidate_inactive_and_records_source(
     assert version["evaluation_evidence"]["provenance"] == "hermes_skill"
     assert version["evaluation_evidence"]["source"]["package_version"] == "0.2.0"
     assert version["evaluation_evidence"]["state"] == "candidate"
+
+
+def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    skill_file = package / "skills" / "summarize" / "SKILL.md"
+    content = skill_file.read_text(encoding="utf-8").replace(
+        ', "git+https://example.test/repo.git"', ""
+    )
+    skill_file.write_text(content, encoding="utf-8")
+    app = create_app(
+        FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "dependency-api.sqlite3")
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    import_payload = {
+        "root": str(tmp_path),
+        "package_name": "sample-package",
+        "skill_name": "summarize",
+    }
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/extensions/packages/import-skill", headers=headers, json=import_payload
+        )
+        assert created.status_code == 201
+        identity = created.json()["id"]
+        version = client.get(f"/skills/{identity}/versions/1", headers=headers).json()
+        dependency_lock = ProcedurePythonDependencyLock(
+            schema_version=1,
+            skill_id=identity,
+            skill_version=1,
+            source_sha256=version["evaluation_evidence"]["source"]["content_sha256"],
+            target=PythonDependencyTarget(
+                distribution="Ubuntu-24.04",
+                environment={
+                    "implementation_name": "cpython",
+                    "implementation_version": "3.12.3",
+                    "os_name": "posix",
+                    "platform_machine": "x86_64",
+                    "platform_python_implementation": "CPython",
+                    "platform_release": "6.8.0-wsl2",
+                    "platform_system": "Linux",
+                    "platform_version": "#1 SMP",
+                    "python_full_version": "3.12.3",
+                    "python_version": "3.12",
+                    "sys_platform": "linux",
+                },
+                compatible_wheel_tags=["py3-none-any"],
+            ),
+            requirements=["requests>=2.0"],
+            wheels=[
+                LockedPythonWheel(
+                    filename="requests-2.32.3-py3-none-any.whl",
+                    project_name="requests",
+                    version="2.32.3",
+                    sha256="d" * 64,
+                    size_bytes=12_345,
+                )
+            ],
+        )
+        endpoint = f"/skills/{identity}/versions/1/python-dependency-locks"
+        lock_json = json.loads(dependency_lock.model_dump_json())
+        assert client.put(endpoint, json=lock_json).status_code == 401
+        saved = client.put(endpoint, headers=headers, json=lock_json)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["decision"] == "pending_review"
+        assert saved.json()["lock"]["requirements"] == ["requests>=2.0"]
+        listed = client.get(endpoint, headers=headers)
+        assert listed.json()["locks"] == [saved.json()]
+
+        review = f"{endpoint}/{dependency_lock.environment_digest()}/review"
+        assert client.post(review, json={"decision": "approved"}).status_code == 401
+        approved = client.post(review, headers=headers, json={"decision": "approved"})
+        assert approved.status_code == 200
+        assert approved.json()["decision"] == "approved"
+        rejected = client.post(review, headers=headers, json={"decision": "rejected"})
+        assert rejected.status_code == 409
 
 
 @pytest.mark.parametrize(

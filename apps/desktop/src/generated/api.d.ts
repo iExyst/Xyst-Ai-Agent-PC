@@ -1980,6 +1980,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Skill Python Dependency Locks */
+        get: operations["list_skill_python_dependency_locks_skills__skill_id__versions__version__python_dependency_locks_get"];
+        /** Save Skill Python Dependency Lock */
+        put: operations["save_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Skill Python Dependency Lock */
+        post: operations["review_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks__environment_digest__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/python-readiness": {
         parameters: {
             query?: never;
@@ -2857,6 +2892,19 @@ export interface components {
             /** Model */
             model?: string | null;
         };
+        /** LockedPythonWheel */
+        LockedPythonWheel: {
+            /** Filename */
+            filename: string;
+            /** Project Name */
+            project_name: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Version */
+            version: string;
+        };
         /** MCPArgumentCompletionRequest */
         MCPArgumentCompletionRequest: {
             /** Argument Name */
@@ -3324,6 +3372,30 @@ export interface components {
             /** Content */
             content: string;
         };
+        /**
+         * ProcedurePythonDependencyLock
+         * @description Owner-reviewable lock for one immutable skill version and WSL interpreter.
+         */
+        ProcedurePythonDependencyLock: {
+            /**
+             * Index Url
+             * @default https://pypi.org/simple
+             */
+            index_url: string;
+            /** Requirements */
+            requirements: string[];
+            /** Schema Version */
+            schema_version: number;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Version */
+            skill_version: number;
+            /** Source Sha256 */
+            source_sha256: string;
+            target: components["schemas"]["PythonDependencyTarget"];
+            /** Wheels */
+            wheels: components["schemas"]["LockedPythonWheel"][];
+        };
         /** ProjectValidationEvidence */
         ProjectValidationEvidence: {
             /** Argv */
@@ -3422,6 +3494,43 @@ export interface components {
             tool_call_id?: string | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ToolCall"][] | null;
+        };
+        /** PythonDependencyLockList */
+        PythonDependencyLockList: {
+            /** Locks */
+            locks: components["schemas"]["PythonDependencyLockRecord"][];
+        };
+        /** PythonDependencyLockRecord */
+        PythonDependencyLockRecord: {
+            /** Created At */
+            created_at: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "pending_review" | "approved" | "rejected";
+            /** Environment Digest */
+            environment_digest: string;
+            lock: components["schemas"]["ProcedurePythonDependencyLock"];
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Version */
+            skill_version: number;
+            /** Source Sha256 */
+            source_sha256: string;
+        };
+        /** PythonDependencyTarget */
+        PythonDependencyTarget: {
+            /** Compatible Wheel Tags */
+            compatible_wheel_tags: string[];
+            /** Distribution */
+            distribution: string;
+            /** Environment */
+            environment: {
+                [key: string]: string;
+            };
         };
         /** ReadinessRequest */
         ReadinessRequest: {
@@ -3886,6 +3995,14 @@ export interface components {
         SkillPythonDependencyCheck: {
             /** Distribution */
             distribution: string;
+        };
+        /** SkillPythonDependencyReview */
+        SkillPythonDependencyReview: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected";
         };
         /** SkillRevision */
         SkillRevision: {
@@ -8651,6 +8768,111 @@ export interface operations {
                 };
                 content: {
                     "application/zip": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_skill_python_dependency_locks_skills__skill_id__versions__version__python_dependency_locks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcedurePythonDependencyLock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks__environment_digest__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                environment_digest: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPythonDependencyReview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockRecord"];
                 };
             };
             /** @description Validation Error */
