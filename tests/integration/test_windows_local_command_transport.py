@@ -164,6 +164,53 @@ async def test_local_command_preserves_fragmented_utf8_stdout_stderr_and_exit_st
     assert receipt["stderr_sha256"] == hashlib.sha256(receipt_stderr).hexdigest()
 
 
+@pytest.mark.asyncio
+async def test_local_command_output_limit_stops_owned_process_tree(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"output limit fixture"),), (), ())
+    program = (
+        "import os,subprocess,sys,time\n"
+        "child=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(60)'],"
+        "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+        "os.write(2,f'child-pid={child.pid}\\n'.encode())\n"
+        "os.write(1,b'x'*(1024*1024+65536))\n"
+        "time.sleep(60)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program],
+        max_seconds=20,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    stderr = bytearray()
+
+    async def capture(stream: str, chunk: bytes) -> None:
+        if stream == "stderr":
+            stderr.extend(chunk)
+
+    with pytest.raises(ValueError, match="output exceeded the 1 MiB limit"):
+        await transport.run(
+            intent,
+            snapshot,
+            deadline=time.monotonic() + 30,
+            on_output=capture,
+        )
+
+    match = re.search(rb"(?m)^child-pid=(\d+)\r?$", stderr)
+    assert match is not None, stderr.decode("utf-8", errors="replace")
+    child_pid = int(match.group(1))
+    deadline = time.monotonic() + 5
+    while process_identity(child_pid)[0] is not False and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert process_identity(child_pid)[0] is False
+    assert intent.execution_id not in transport._active
+
+
 def test_local_command_rejects_shell_scripts() -> None:
     from xaa.runtime.windows_local_transport import _resolve_executable
 

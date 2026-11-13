@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Enforce the Windows AppContainer command-output ceiling (2026-11-13)
+
+A real Windows transport test now writes beyond the 1 MiB output ceiling while an owned child remains active. X.A.A. rejects the output, terminates the child process, and clears its active execution. The five-test AppContainer integration module, Ruff, format, strict engine Pyright and diff checks pass locally; hosted verification is pending. This adds bounded-output evidence to EXEC-COMMON-3/5 for one backend only; artifact inspection and broader limits remain open, and the execution-backend parity row stays partial.
+
 ## Preserve fragmented Unicode command output (2026-11-13)
 
 The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. Hosted CI exposed a Python startup diagnostic preceding the fixture's stderr; the test distinguishes that prefix while verifying full stream/receipt agreement and the exact fixture output. Hosted rerun [43463602419](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43463602419) passed all 1,216 Python tests and configured Windows checks; the focused local integration module passes (4 tests), as do Ruff, formatting and strict engine Pyright. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output-limit behavior, persisted artifact review, and SSH/hosted/container adapters remain open. No live model inference was used.

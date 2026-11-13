@@ -1,5 +1,9 @@
 # Progress
 
+## Enforce the Windows AppContainer command-output limit (2026-11-13)
+
+Added a real Windows transport acceptance that starts a child process, writes more than the 1 MiB output ceiling, and remains alive. The transport rejects the oversized output, terminates the owned descendant, and releases its active execution record. All five Windows AppContainer transport integration tests pass locally; Ruff, formatting, strict engine Pyright and diff checks pass. Hosted verification is pending. This verifies output bounding and one process-tree cleanup case on this backend; artifact review and broader execution resource limits remain open.
+
 ## Preserve fragmented Unicode command output in Windows AppContainer (2026-11-13)
 
 Added a real Windows AppContainer transport acceptance that writes multilingual UTF-8 to stdout and stderr one byte at a time, then exits with status 7. The first hosted run [43461667434](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43461667434) found the hosted Python startup diagnostic preceding the fixture's stderr; the test now distinguishes that environment prefix while verifying full streamed/receipt equality, exact command-output suffix, digests, output-complete state, cleanup, and exit status. Hosted rerun [43463602419](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43463602419) passed all 1,216 Python tests plus configured Windows browser, static, desktop and recovery checks. The focused AppContainer integration module also passes locally (4 tests), along with Ruff, formatting and strict engine Pyright. This verifies one EXEC-COMMON-5 transport case only; output-limit behavior, persisted artifact review, and broad backend parity remain open. No live model inference was used.
