@@ -175,7 +175,11 @@ async def test_local_command_output_limit_stops_owned_process_tree(
         "child=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(60)'],"
         "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
         "os.write(2,f'child-pid={child.pid}\\n'.encode())\n"
-        "os.write(1,b'x'*(1024*1024+65536))\n"
+        "data=b'x'*(1024*1024+65536)\n"
+        "while data:\n"
+        " written=os.write(1,data)\n"
+        " if written<=0: raise RuntimeError('short write made no progress')\n"
+        " data=data[written:]\n"
         "time.sleep(60)\n"
     )
     intent = CommandIntent(

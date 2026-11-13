@@ -2,7 +2,7 @@
 
 ## Enforce the Windows AppContainer command-output ceiling (2026-11-13)
 
-A real Windows transport test now writes beyond the 1 MiB output ceiling while an owned child remains active. X.A.A. rejects the output, terminates the child process, and clears its active execution. The five-test AppContainer integration module, Ruff, format, strict engine Pyright and diff checks pass locally; hosted verification is pending. This adds bounded-output evidence to EXEC-COMMON-3/5 for one backend only; artifact inspection and broader limits remain open, and the execution-backend parity row stays partial.
+A real Windows transport fixture now loops through short `os.write` results until it emits beyond the 1 MiB output ceiling while an owned child remains active. Its first hosted run [43466154291](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43466154291) demonstrated that a single write did not reliably exceed the limit on the runner; the corrected fixture awaits hosted verification. The five-test AppContainer integration module, Ruff, format, strict engine Pyright and diff checks pass locally. Bounded output and descendant cleanup are not yet confirmed by hosted evidence; artifact review and broader limits remain open, and the execution-backend parity row stays partial.
 
 ## Preserve fragmented Unicode command output (2026-11-13)
 
