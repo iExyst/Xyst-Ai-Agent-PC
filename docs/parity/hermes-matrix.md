@@ -2,7 +2,7 @@
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 
-The AppContainer command job sets a 128 MiB process-tree commit limit. A new real Windows acceptance commits and touches 192 MiB, then verifies that the command returns nonzero without reaching its successful-allocation marker. The focused local acceptance and static checks pass; hosted verification is pending. This is one resource-policy case only and does not close broad backend parity.
+The AppContainer command job sets a 128 MiB process-tree commit limit. A real Windows acceptance commits and touches 192 MiB, observes `MemoryError`, emits its explicit enforcement marker, and returns nonzero. Hosted run [43477718830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43477718830) passed all 1,218 Python tests and configured Windows checks. This verifies one resource-policy case; CPU-rate and active-process runtime limits and broad backend parity remain open.
 
 ## Enforce the Windows AppContainer command-output ceiling (2026-11-13)
 
