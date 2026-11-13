@@ -744,3 +744,268 @@ def test_email_api_keeps_password_secret_and_rejects_unauthorized_access(
         == 200
     )
     assert credentials.get("email-mailbox-password") is None
+
+
+def test_email_service_delivers_full_tls_socket_cycle_without_duplicate_reply(
+    workspace_tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmp_path = workspace_tmp_path
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "XAA mail cycle fixture")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    certificate_path = tmp_path / "mail-cycle-ca.pem"
+    key_path = tmp_path / "mail-cycle-key.pem"
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    monkeypatch.setenv("SSL_CERT_FILE", str(certificate_path))
+    server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_tls.load_cert_chain(certificate_path, key_path)
+    raw, original_message_id = message_bytes("owner@example.test", "Run a harmless check.")
+    captured: dict[str, Any] = {
+        "imap_commands": [],
+        "imap_searches": [],
+        "smtp_messages": [],
+        "smtp_tls": [],
+        "smtp_auth": [],
+    }
+
+    class IMAPHandler(socketserver.StreamRequestHandler):
+        def handle(self) -> None:
+            connection = server_tls.wrap_socket(self.request, server_side=True)
+            connection.settimeout(5)
+            reader = connection.makefile("rb")
+            writer = connection.makefile("wb")
+            writer.write(b"* OK XAA mail cycle fixture ready\r\n")
+            writer.flush()
+            while line := reader.readline():
+                parts = line.decode("utf-8").strip().split(" ", 2)
+                tag, command = parts[0], parts[1].upper()
+                arguments = parts[2] if len(parts) == 3 else ""
+                if command == "UID" and arguments:
+                    subcommand, _, arguments = arguments.partition(" ")
+                    command = f"UID {subcommand.upper()}"
+                captured["imap_commands"].append(command)
+                if command == "CAPABILITY":
+                    writer.write(b"* CAPABILITY IMAP4rev1 UIDPLUS\r\n")
+                    writer.write(f"{tag} OK CAPABILITY completed\r\n".encode())
+                elif command == "LOGIN":
+                    captured["imap_login"] = arguments
+                    writer.write(f"{tag} OK LOGIN completed\r\n".encode())
+                elif command == "EXAMINE":
+                    writer.write(b"* 1 EXISTS\r\n* OK [UIDVALIDITY 77] stable\r\n")
+                    writer.write(f"{tag} OK [READ-ONLY] EXAMINE completed\r\n".encode())
+                elif command == "UID SEARCH":
+                    captured["imap_searches"].append(arguments)
+                    if arguments.endswith("UID 1:*"):
+                        writer.write(b"* SEARCH 1\r\n")
+                    else:
+                        writer.write(b"* SEARCH\r\n")
+                    writer.write(f"{tag} OK SEARCH completed\r\n".encode())
+                elif command == "UID FETCH":
+                    if arguments.startswith("1 "):
+                        writer.write(f"* 1 FETCH (UID 1 BODY[] {{{len(raw)}}}\r\n".encode())
+                        writer.write(raw + b"\r\n)\r\n")
+                        captured["imap_fetches"] = captured.get("imap_fetches", 0) + 1
+                    writer.write(f"{tag} OK FETCH completed\r\n".encode())
+                elif command == "LOGOUT":
+                    writer.write(b"* BYE logging out\r\n")
+                    writer.write(f"{tag} OK LOGOUT completed\r\n".encode())
+                    writer.flush()
+                    return
+                else:
+                    writer.write(f"{tag} BAD unsupported command\r\n".encode())
+                writer.flush()
+
+    class SMTPHandler(socketserver.StreamRequestHandler):
+        def handle(self) -> None:
+            connection = self.request
+            connection.settimeout(5)
+            reader, writer = self.rfile, self.wfile
+            writer.write(b"220 localhost XAA mail cycle fixture\r\n")
+            writer.flush()
+            while line := reader.readline():
+                command = line.decode("ascii").strip()
+                verb, _, arguments = command.partition(" ")
+                if verb.upper() == "EHLO":
+                    writer.write(
+                        b"250-localhost\r\n250-STARTTLS\r\n250 SIZE 100000\r\n"
+                        if not captured["smtp_tls"]
+                        else b"250-localhost\r\n250-AUTH PLAIN LOGIN\r\n250 SIZE 100000\r\n"
+                    )
+                elif verb.upper() == "STARTTLS":
+                    writer.write(b"220 Ready to start TLS\r\n")
+                    writer.flush()
+                    connection = server_tls.wrap_socket(connection, server_side=True)
+                    captured["smtp_tls"].append(connection.version())
+                    self.request = connection
+                    self.rfile = connection.makefile("rb")
+                    self.wfile = connection.makefile("wb")
+                    reader, writer = self.rfile, self.wfile
+                elif verb.upper() == "AUTH":
+                    encoded = arguments.partition(" ")[2]
+                    if not encoded:
+                        writer.write(b"334 \r\n")
+                        writer.flush()
+                        encoded = reader.readline().decode("ascii").strip()
+                    captured["smtp_auth"].append(base64.b64decode(encoded).decode("utf-8"))
+                    writer.write(b"235 2.7.0 Authentication successful\r\n")
+                elif verb.upper() == "MAIL":
+                    captured["mail_from"] = arguments
+                    writer.write(b"250 2.1.0 Sender accepted\r\n")
+                elif verb.upper() == "RCPT":
+                    captured["rcpt_to"] = arguments
+                    writer.write(b"250 2.1.5 Recipient accepted\r\n")
+                elif verb.upper() == "DATA":
+                    writer.write(b"354 End data with <CR><LF>.<CR><LF>\r\n")
+                    writer.flush()
+                    body: list[bytes] = []
+                    while message_line := reader.readline():
+                        if message_line == b".\r\n":
+                            break
+                        body.append(
+                            message_line[1:] if message_line.startswith(b"..") else message_line
+                        )
+                    captured["smtp_messages"].append(b"".join(body))
+                    writer.write(b"250 2.0.0 queued\r\n")
+                elif verb.upper() == "QUIT":
+                    writer.write(b"221 2.0.0 bye\r\n")
+                    writer.flush()
+                    return
+                else:
+                    writer.write(b"250 OK\r\n")
+                writer.flush()
+
+    class MailServer(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    class IMAPServer(MailServer):
+        pass
+
+    class SMTPServer(MailServer):
+        pass
+
+    with (
+        IMAPServer(("127.0.0.1", 0), IMAPHandler) as imap_server,
+        SMTPServer(("127.0.0.1", 0), SMTPHandler) as smtp_server,
+    ):
+        imap_thread = threading.Thread(target=imap_server.serve_forever, daemon=True)
+        smtp_thread = threading.Thread(target=smtp_server.serve_forever, daemon=True)
+        imap_thread.start()
+        smtp_thread.start()
+        try:
+            config = EmailConfig.parse(
+                {
+                    "address": "agent@example.test",
+                    "password": "fixture-app-password",
+                    "imap_host": "127.0.0.1",
+                    "imap_port": str(imap_server.server_address[1]),
+                    "smtp_host": "127.0.0.1",
+                    "smtp_port": str(smtp_server.server_address[1]),
+                    "allowed_senders": "owner@example.test",
+                    "authserv_id": "mx.example.test",
+                }
+            )
+            runs = RunStore(tmp_path / "email-full-cycle.sqlite3")
+            store = EmailStore(runs)
+            mailbox_id = store.save_config(config)
+            credentials = MemoryCredentials()
+            credentials.set(
+                json.dumps(
+                    {
+                        "address": config.address,
+                        "imap_host": config.imap_host,
+                        "imap_port": str(config.imap_port),
+                        "smtp_host": config.smtp_host,
+                        "smtp_port": str(config.smtp_port),
+                        "smtp_security": config.smtp_security,
+                        "allowed_senders": "owner@example.test",
+                        "authserv_id": config.authserv_id,
+                    }
+                ),
+                "email-mailbox-config",
+            )
+            credentials.set(config.password, "email-mailbox-password")
+            with runs.connection() as connection:
+                connection.execute(
+                    "INSERT INTO provider_profiles(id,adapter,endpoint,selected_model,secret_reference,capability_snapshot,created_at,updated_at) VALUES('lm-studio','lm-studio','http://127.0.0.1:1234','fixture/model',NULL,NULL,?,?)",
+                    (utc_now(), utc_now()),
+                )
+            submitted: list[str] = []
+            service = EmailService(runs, credentials, submitted.append)
+
+            async def scenario() -> None:
+                await service.cycle()
+                assert len(submitted) == 1
+                run_id = submitted[0]
+                with runs.connection() as connection:
+                    connection.execute(
+                        "UPDATE runs SET state='completed',updated_at=? WHERE id=?",
+                        (utc_now(), run_id),
+                    )
+                    RunStore.record_event(
+                        connection,
+                        run_id,
+                        "model.message",
+                        {"message": {"role": "assistant", "content": "The check passed."}},
+                    )
+                await service.cycle()
+                restarted_service = EmailService(runs, credentials, submitted.append)
+                await restarted_service.cycle()
+
+            asyncio.run(scenario())
+            assert len(submitted) == 1
+            assert store.status(config.address)["deliveries"] == {"sent": 1}
+            with runs.connection() as connection:
+                row = connection.execute(
+                    "SELECT uid_validity,uid,delivery_state,delivery_message_id FROM email_messages WHERE mailbox_id=?",
+                    (mailbox_id,),
+                ).fetchone()
+            assert row is not None
+            assert (row["uid_validity"], row["uid"], row["delivery_state"]) == (
+                "77",
+                "1",
+                "sent",
+            )
+            assert row["delivery_message_id"]
+        finally:
+            imap_server.shutdown()
+            smtp_server.shutdown()
+            imap_thread.join(timeout=5)
+            smtp_thread.join(timeout=5)
+
+    assert captured["imap_login"] == 'agent@example.test "fixture-app-password"'
+    assert captured["imap_fetches"] == 1
+    assert len(captured["imap_searches"]) == 3
+    assert captured["imap_searches"][0].endswith("UID 1:*")
+    assert all(item.endswith("UID 2:*") for item in captured["imap_searches"][1:])
+    assert captured["smtp_tls"]
+    assert set(captured["smtp_tls"]) <= {"TLSv1.2", "TLSv1.3"}
+    assert captured["smtp_auth"] == ["\x00agent@example.test\x00fixture-app-password"]
+    assert str(captured["mail_from"]).lower().startswith("from:<agent@example.test>")
+    assert str(captured["rcpt_to"]).lower() == "to:<owner@example.test>"
+    assert len(captured["smtp_messages"]) == 1
+    reply = captured["smtp_messages"][0]
+    assert original_message_id.encode("ascii") in reply
+    assert b"The check passed." in reply
