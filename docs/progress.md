@@ -2,7 +2,7 @@
 
 ## Verify Windows AppContainer active-process limit (2026-11-13)
 
-Added a real process-tree acceptance that launches small `findstr.exe` readers with open stdin pipes so they stay active. Windows rejects the next launch with quota error 1816 near the configured 32-process ceiling; the test allows 28–31 descendants for existing nested-job membership, records every PID, and verifies cleanup. The focused test passes locally; hosted verification is pending. This directly exercises active-process rejection and descendant cleanup.
+Added a real process-tree acceptance that launches small `findstr.exe` readers with open stdin pipes so they stay active. Windows rejects the next launch with quota error 1816 near the configured 32-process ceiling; the test allows 28–31 descendants for existing nested-job membership, records every PID, and verifies cleanup. Hosted run [43486803324](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43486803324) passed all 1,220 Python tests and configured Windows checks; the focused eight-test AppContainer module and static checks pass locally. This directly verifies active-process rejection and descendant cleanup in the Windows command path.
 
 ## Verify Windows AppContainer CPU hard cap (2026-11-13)
 
@@ -10,7 +10,7 @@ Added a real CPU saturation acceptance for the Windows command Job Object. It ru
 
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
-The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The eight-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted runs [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) and [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all configured Windows checks. The frozen-build fingerprint includes the verification code. CPU saturation is verified above; hosted active-process rejection is pending.
+The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The eight-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted runs [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676), [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186), and [43486803324](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43486803324) passed configured Windows checks. The frozen-build fingerprint includes the verification code. CPU saturation and active-process rejection are verified above; broader backend parity remains partial.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 
