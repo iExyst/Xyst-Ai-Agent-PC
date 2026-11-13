@@ -1,12 +1,16 @@
 # Progress
 
+## Verify Windows AppContainer CPU hard cap (2026-11-13)
+
+Added a real CPU saturation acceptance for the Windows command Job Object. It runs PBKDF2 work across threads, measures the command's CPU time against wall time and logical processor count, and checks that its system CPU fraction remains at or below the configured 50% hard cap with scheduling tolerance. The focused test and Ruff/format checks pass locally; hosted verification is pending. Active-process rejection remains open.
+
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
 The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The six-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted run [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) passed all 1,218 Python tests and configured Windows checks. The frozen-build fingerprint includes the verification code. This confirms launch-time policy configuration; direct CPU saturation and active-process rejection tests remain open.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 
-The Windows command job config applies a 128 MiB process-tree commit limit. A real AppContainer acceptance commits and touches 192 MiB, catches `MemoryError`, and exits with its explicit enforcement marker. The focused local acceptance passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted run [43477718830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43477718830) passed all 1,218 Python tests and configured Windows checks. This verifies process-tree commit-memory enforcement for one Windows command case; CPU-rate and active-process limits need separate runtime acceptance, and general backend parity remains partial.
+The Windows command job config applies a 128 MiB process-tree commit limit. A real AppContainer acceptance commits and touches 192 MiB, catches `MemoryError`, and exits with its explicit enforcement marker. The focused local acceptance passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted run [43477718830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43477718830) passed all 1,218 Python tests and configured Windows checks. This verifies process-tree commit-memory enforcement for one Windows command case; active-process rejection and general backend parity remain open.
 
 ## Enforce the Windows AppContainer command-output limit (2026-11-13)
 

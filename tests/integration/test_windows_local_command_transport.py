@@ -282,6 +282,50 @@ async def test_local_command_enforces_process_tree_memory_limit(
     assert intent.execution_id not in transport._active
 
 
+@pytest.mark.asyncio
+async def test_local_command_respects_process_tree_cpu_hard_cap(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"CPU limit fixture"),), (), ())
+    program = (
+        "import concurrent.futures,hashlib,json,os,time\n"
+        "logical_cpus=os.cpu_count() or 2\n"
+        "workers=min(64,max(2,logical_cpus*2))\n"
+        "stop_at=time.monotonic()+5\n"
+        "start_wall=time.monotonic()\n"
+        "start_cpu=time.process_time()\n"
+        "def burn(_):\n"
+        " while time.monotonic()<stop_at:\n"
+        "  hashlib.pbkdf2_hmac('sha256',b'xaa-cpu-limit',b'fixture-salt',500000)\n"
+        "with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:\n"
+        " list(pool.map(burn,range(workers)))\n"
+        "wall=time.monotonic()-start_wall\n"
+        "cpu=time.process_time()-start_cpu\n"
+        "print(json.dumps({'logical_cpus':logical_cpus,'workers':workers,'wall_seconds':wall,'cpu_seconds':cpu},separators=(',',':')),flush=True)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program],
+        max_seconds=15,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    receipt = await transport.run(intent, snapshot, deadline=time.monotonic() + 25)
+    stdout = base64.b64decode(receipt["stdout_b64"], validate=True)
+    metrics = json.loads(stdout.decode("utf-8").splitlines()[-1])
+    wall = metrics["wall_seconds"]
+    cpu_fraction = metrics["cpu_seconds"] / (wall * metrics["logical_cpus"])
+    assert 4.0 <= wall <= 12.0
+    assert metrics["workers"] >= metrics["logical_cpus"]
+    assert 0.1 <= cpu_fraction <= 0.72
+    assert receipt["succeeded"] is True
+    assert receipt["cleanup_confirmed"] is True
+    assert intent.execution_id not in transport._active
+
+
 def test_local_command_rejects_shell_scripts() -> None:
     from xaa.runtime.windows_local_transport import _resolve_executable
 

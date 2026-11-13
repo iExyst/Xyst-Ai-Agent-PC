@@ -1,12 +1,16 @@
 # Hermes capability reference matrix
 
+## Verify Windows AppContainer CPU hard cap (2026-11-13)
+
+A real AppContainer command now saturates CPU with multithreaded PBKDF2 work and measures process CPU time against wall time and the reported logical processor count. The test allows bounded scheduler tolerance around the configured 50% Job Object hard cap. The focused test passes locally; hosted verification is pending. Active-process rejection and broad backend parity remain open.
+
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
 Before resuming a Windows AppContainer command, the supervisor now reads the created Job Object settings back and fails closed unless the 32-process, 128 MiB job memory, and 50% CPU hard-cap values are present. Hosted run [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) passed all 1,218 Python tests and configured Windows checks; the six-test local transport module and static checks also pass. This validates the configured launch policy; direct CPU saturation and active-process rejection behavior remain unverified, and broad backend parity remains partial.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 
-The AppContainer command job sets a 128 MiB process-tree commit limit. A real Windows acceptance commits and touches 192 MiB, observes `MemoryError`, emits its explicit enforcement marker, and returns nonzero. Hosted run [43477718830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43477718830) passed all 1,218 Python tests and configured Windows checks. This verifies one resource-policy case; CPU-rate and active-process runtime limits and broad backend parity remain open.
+The AppContainer command job sets a 128 MiB process-tree commit limit. A real Windows acceptance commits and touches 192 MiB, observes `MemoryError`, emits its explicit enforcement marker, and returns nonzero. Hosted run [43477718830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43477718830) passed all 1,218 Python tests and configured Windows checks. This verifies one resource-policy case; active-process rejection and broad backend parity remain open.
 
 ## Enforce the Windows AppContainer command-output ceiling (2026-11-13)
 
