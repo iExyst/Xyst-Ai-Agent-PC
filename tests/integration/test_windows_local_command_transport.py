@@ -208,6 +208,9 @@ async def test_local_command_output_limit_stops_owned_process_tree(
         assert "output exceeded the 1 MiB limit" in str(exc)
     else:
         child_match = re.search(rb"(?m)^child-pid=(\d+)\r?$", stderr)
+        stderr_summary = stderr.decode("utf-8", errors="replace")[-600:]
+        stderr_summary = re.sub(r"(?i)[A-Z]:\\[^\r\n]*", "<windows-path>", stderr_summary)
+        stderr_summary = " ".join(stderr_summary.split())
         pytest.fail(
             "AppContainer transport returned without enforcing the output ceiling: "
             f"stdout_bytes={receipt.get('stdout_bytes')}, "
@@ -216,7 +219,7 @@ async def test_local_command_output_limit_stops_owned_process_tree(
             f"termination_reason={receipt.get('termination_reason')}, "
             f"supervisor_exit_code={receipt.get('supervisor_exit_code')}, "
             f"output_complete={receipt.get('output_complete')}, "
-            f"child_marker_seen={child_match is not None}"
+            f"child_marker_seen={child_match is not None}, stderr_summary={stderr_summary!r}"
         )
 
     match = re.search(rb"(?m)^child-pid=(\d+)\r?$", stderr)
