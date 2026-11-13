@@ -52,13 +52,20 @@ async def test_local_command_runs_in_private_no_network_appcontainer(
             "except OSError:host_denied=True\n"
             "try:\n s=socket.create_connection(('127.0.0.1',int(sys.argv[2])),timeout=1);s.close();network_denied=False\n"
             "except OSError:network_denied=True\n"
-            "private=pathlib.Path('private-write.txt');private.write_text(pathlib.Path('fixture.txt').read_text())\n"
+            "private=pathlib.Path('tests/nested-write.txt');private.write_text(pathlib.Path('tests/nested-fixture.txt').read_text())\n"
             "assert set(('XAA_API_TOKEN','LM_STUDIO_API_TOKEN','LM_API_TOKEN')).isdisjoint(os.environ)\n"
             "print(json.dumps({'appcontainer':app,'host_denied':host_denied,'network_denied':network_denied,'private_write':private.read_text()}))\n"
         )
         digest = profile_fingerprint()
         transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
-        snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"private fixture"),), (), ())
+        snapshot = WorkspaceSnapshot(
+            (
+                SnapshotFile("fixture.txt", b"private fixture"),
+                SnapshotFile("tests/nested-fixture.txt", b"nested private fixture"),
+            ),
+            ("tests",),
+            (),
+        )
         intent = CommandIntent(
             argv=[sys.executable, "-I", "-c", program, str(host_sentinel), str(port)],
             max_seconds=10,
@@ -70,7 +77,7 @@ async def test_local_command_runs_in_private_no_network_appcontainer(
         )
         receipt = await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
 
-    assert receipt["succeeded"] is True
+    assert receipt["succeeded"] is True, receipt
     assert receipt["cleanup_confirmed"] is True
     assert receipt["workspace_changes_persisted"] is False
     output = json.loads(base64.b64decode(receipt["stdout_b64"], validate=True))
@@ -78,7 +85,7 @@ async def test_local_command_runs_in_private_no_network_appcontainer(
         "appcontainer": True,
         "host_denied": True,
         "network_denied": True,
-        "private_write": "private fixture",
+        "private_write": "nested private fixture",
     }
     assert host_sentinel.read_text(encoding="utf-8") == "must stay unreadable"
     readiness = ExecutionReadiness()

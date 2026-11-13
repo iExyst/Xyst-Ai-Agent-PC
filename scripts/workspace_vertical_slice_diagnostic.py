@@ -1,4 +1,4 @@
-"""Run the Phase 3 workspace-edit slice with a scripted provider and real WSL sandbox."""
+"""Run the Phase 3 workspace-edit slice with a scripted provider and a real sandbox."""
 
 from __future__ import annotations
 
@@ -6,14 +6,19 @@ import argparse
 import asyncio
 import hashlib
 import json
+import sys
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from xaa.providers.lm_studio import AdmissionCallback, DiagnosticRequest, LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest
 from xaa.runtime.project_validation import ProjectValidationRequest, summary, validate_project
+from xaa.runtime.windows_local_transport import WINDOWS_LOCAL_DISTRIBUTION
 from xaa.storage.runs import RunStore
+
+Backend = Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"]
 
 
 def tool_call(identity: str, name: str, arguments: dict[str, object]) -> dict[str, object]:
@@ -40,6 +45,10 @@ def tool_call(identity: str, name: str, arguments: dict[str, object]) -> dict[st
 
 class FixtureProvider(LMStudioProvider):
     """Script the normal coordinator protocol without making model requests."""
+
+    def __init__(self, command_argv: list[str]) -> None:
+        super().__init__()
+        self.command_argv = command_argv
 
     async def diagnose_tools(self, model: str, *, request: DiagnosticRequest | None = None) -> bool:
         return True
@@ -80,16 +89,11 @@ class FixtureProvider(LMStudioProvider):
         if call_id == "edit-1":
             if result.get("bytes_written") != len(b"def answer():\n    return 42\n"):
                 raise AssertionError("The coordinator did not persist the expected source edit.")
-            command = (
-                "from runpy import run_path; "
-                "run_path('/workspace/tests/test_answer.py'); "
-                "print('1 passed')"
-            )
             return tool_call(
                 "check-1",
                 "workspace_run_command",
                 {
-                    "argv": ["/usr/bin/python3", "-I", "-c", command],
+                    "argv": self.command_argv,
                     "max_seconds": 15,
                 },
             )
@@ -111,11 +115,23 @@ class FixtureProvider(LMStudioProvider):
         raise AssertionError(f"Unexpected scripted tool result: {call_id!r}")
 
 
-async def diagnose(root: Path, distribution: str) -> dict[str, object]:
-    readiness = await ExecutionReadiness().check(ReadinessRequest(distribution=distribution))
+def check_argv(backend: Backend) -> list[str]:
+    command = (
+        "from runpy import run_path; run_path('tests/test_answer.py'); print('1 passed')"
+        if backend == "windows-appcontainer-v1"
+        else "from runpy import run_path; run_path('/workspace/tests/test_answer.py'); print('1 passed')"
+    )
+    executable = sys.executable if backend == "windows-appcontainer-v1" else "/usr/bin/python3"
+    return [executable, "-I", "-c", command]
+
+
+async def diagnose(root: Path, backend: Backend, distribution: str) -> dict[str, object]:
+    readiness = await ExecutionReadiness().check(
+        ReadinessRequest(backend=backend, distribution=distribution)
+    )
     if readiness.state != "ready" or not readiness.profile_sha256:
         raise RuntimeError(
-            f"Selected WSL sandbox is not ready: {readiness.error_code or readiness.state}."
+            f"Selected command sandbox is not ready: {readiness.error_code or readiness.state}."
         )
 
     project = root / "project"
@@ -124,15 +140,16 @@ async def diagnose(root: Path, distribution: str) -> dict[str, object]:
     original = b"def answer():\n    return 41\n"
     (project / "answer.py").write_bytes(original)
     (project / "tests" / "test_answer.py").write_text(
+        "from pathlib import Path\n"
         "from runpy import run_path\n"
-        "answer = run_path('/workspace/answer.py')['answer']\n"
+        "answer = run_path(str(Path(__file__).resolve().parents[1] / 'answer.py'))['answer']\n"
         "assert answer() == 42\n",
         encoding="utf-8",
     )
 
     store = RunStore(root / "data" / "XAA" / "xaa.sqlite3")
     grant = {
-        "backend": "wsl-bubblewrap-v1",
+        "backend": backend,
         "distribution": distribution,
         "profile_sha256": readiness.profile_sha256,
         "max_seconds": 20,
@@ -147,7 +164,8 @@ async def diagnose(root: Path, distribution: str) -> dict[str, object]:
         max_iterations=8,
         max_seconds=120,
     )
-    provider = FixtureProvider()
+    command_argv = check_argv(backend)
+    provider = FixtureProvider(command_argv)
     try:
         await Coordinator(store, provider).execute(run["id"])
     finally:
@@ -168,14 +186,11 @@ async def diagnose(root: Path, distribution: str) -> dict[str, object]:
     ):
         raise AssertionError("The coordinator did not retain its passing restricted check.")
 
-    validation_command = (
-        "from runpy import run_path; run_path('/workspace/tests/test_answer.py'); print('1 passed')"
-    )
     validation = await validate_project(
         store,
         run["id"],
         ProjectValidationRequest(
-            argv=["/usr/bin/python3", "-I", "-c", validation_command],
+            argv=command_argv,
             max_seconds=15,
             request_id=uuid4().hex,
             expected_revision=current["revision"],
@@ -206,6 +221,7 @@ async def diagnose(root: Path, distribution: str) -> dict[str, object]:
         "run_id": run["id"],
         "state": current["state"],
         "distribution": distribution,
+        "backend": backend,
         "workspace": str(project),
         "initial_sha256": hashlib.sha256(original).hexdigest(),
         "final_sha256": hashlib.sha256(edited).hexdigest(),
@@ -224,14 +240,24 @@ async def diagnose(root: Path, distribution: str) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--distribution", default="Ubuntu-24.04")
+    parser.add_argument(
+        "--backend",
+        choices=("wsl-bubblewrap-v1", "windows-appcontainer-v1"),
+        default="wsl-bubblewrap-v1",
+    )
+    parser.add_argument("--distribution")
     parser.add_argument("--root", type=Path)
     args = parser.parse_args()
     root = args.root or Path.cwd() / ".acceptance" / f"workspace-vertical-slice-{uuid4().hex}"
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=False)
     try:
-        report = asyncio.run(diagnose(root, args.distribution))
+        distribution = args.distribution or (
+            WINDOWS_LOCAL_DISTRIBUTION
+            if args.backend == "windows-appcontainer-v1"
+            else "Ubuntu-24.04"
+        )
+        report = asyncio.run(diagnose(root, args.backend, distribution))
         report_path = root / "report.json"
         report_path.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -241,6 +267,7 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 - diagnostic preserves a bounded failure record
         report = {
             "passed": False,
+            "backend": args.backend,
             "distribution": args.distribution,
             "model_inference_requested": False,
             "failure_type": type(error).__name__,

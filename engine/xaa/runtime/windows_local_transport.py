@@ -19,6 +19,9 @@ from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.mcp_appcontainer import (
     BOOTSTRAP_PREFIX,
     ERROR_FRAME_PREFIX,
+    FILE_GENERIC_EXECUTE,
+    FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE,
     READY_FRAME,
     AppContainerAccess,
     appcontainer_shim_fingerprint,
@@ -293,6 +296,9 @@ class WindowsLocalTransport:
                 grant_executable_directory=(
                     executable_in_workspace or _trusted_executable_directory(executable)
                 ),
+            )
+            access.grant_existing_tree(
+                str(workspace), FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE
             )
             env = _restricted_environment(executable, shim_temporary)
             child_environment = _restricted_environment(executable, temporary)

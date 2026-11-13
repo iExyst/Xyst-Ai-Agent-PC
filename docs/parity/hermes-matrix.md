@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Windows-local workspace command slice (2026-11-13)
+
+The real Windows AppContainer transport now grants the existing private snapshot tree explicit, journaled ACLs, including nested files and directories. The focused Windows integration group passes (3 tests), including nested snapshot read/write, host-file denial, loopback denial, and credential removal. A deterministic coordinator acceptance also passes the workspace read/edit/restricted-command/final-validation flow on `windows-appcontainer-v1` without model inference ([report](../../.acceptance/workspace-vertical-slice-17e29e2bfb3248c48a7100584141d36b/report.json)). Hosted verification is pending. Keep the Hermes execution-backend row partial: this verifies one X.A.A. backend slice, not the pinned reference's full backend inventory or clean-machine behavior.
+
 ## Email SMTP STARTTLS socket acceptance (2026-11-13)
 
 The email adapter's real `smtplib` STARTTLS path now has a local socket-level acceptance. A disposable loopback SMTP server presents a short-lived test certificate, which the client trusts through a test-scoped CA file; the exchange verifies certificate/hostname validation, TLS negotiation, SMTP AUTH, sender and recipient, reply threading and message body. No external mail service is contacted, no real message is sent, and no model inference is used. Focused test: `tests/unit/test_email.py::test_email_smtp_starttls_uses_real_socket_and_verified_local_certificate` (1 passed locally). Full hosted source verification is pending. This does not establish interoperability with a real mail provider or verify IMAP over a real socket; Phase 8 remains partial.

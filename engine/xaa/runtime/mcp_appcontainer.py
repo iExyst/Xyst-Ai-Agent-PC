@@ -523,11 +523,70 @@ class AppContainerAccess:
             raise MCPAppContainerError("A selected MCP program is not a regular file.")
         self._add_ace(str(target), mask, 0)
 
+    def grant_existing_tree(self, raw_path: str, mask: int) -> None:
+        """Grant an existing private tree explicitly, including nested objects."""
+        root = Path(raw_path).resolve(strict=True)
+        if not root.is_dir():
+            raise MCPAppContainerError("A selected AppContainer access path is not a directory.")
+        directories: list[Path] = [root]
+        files: list[Path] = []
+        pending = [root]
+        object_count = 0
+        while pending:
+            directory = pending.pop()
+            try:
+                with os.scandir(directory) as children:
+                    for child in children:
+                        object_count += 1
+                        if object_count > MAX_ACL_OBJECTS:
+                            raise MCPAppContainerError(
+                                f"An AppContainer access path exceeds the {MAX_ACL_OBJECTS}-entry Windows limit."
+                            )
+                        attributes = child.stat(follow_symlinks=False).st_file_attributes
+                        if attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                            raise MCPAppContainerError(
+                                "AppContainer access trees cannot contain reparse points."
+                            )
+                        path = Path(child.path)
+                        if child.is_dir(follow_symlinks=False):
+                            directories.append(path)
+                            pending.append(path)
+                        else:
+                            files.append(path)
+            except OSError as error:
+                raise MCPAppContainerError(
+                    "Windows could not inspect the complete AppContainer access path."
+                ) from error
+
+        inherited = self._security.CONTAINER_INHERIT_ACE | self._security.OBJECT_INHERIT_ACE
+        requested = [(str(path), mask, inherited) for path in directories]
+        requested.extend((str(path), mask, 0) for path in files)
+        missing = [grant for grant in requested if grant not in self._grants]
+        if missing:
+            original_count = len(self._grants)
+            self._grants.extend(missing)
+            try:
+                # Persist the bounded change set before the first ACL mutation.
+                self._write_journal()
+            except BaseException:
+                del self._grants[original_count:]
+                raise
+            for path, entry_mask, flags in missing:
+                self._set_ace(path, entry_mask, flags)
+
     def _add_ace(self, path: str, mask: int, flags: int) -> None:
         grant = (path, mask, flags)
         if grant not in self._grants:
+            original_count = len(self._grants)
             self._grants.append(grant)
-            self._write_journal()
+            try:
+                self._write_journal()
+            except BaseException:
+                del self._grants[original_count:]
+                raise
+        self._set_ace(path, mask, flags)
+
+    def _set_ace(self, path: str, mask: int, flags: int) -> None:
         security = self._security
         descriptor = security.GetNamedSecurityInfo(
             path, security.SE_FILE_OBJECT, security.DACL_SECURITY_INFORMATION
