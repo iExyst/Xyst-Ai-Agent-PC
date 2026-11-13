@@ -2,11 +2,11 @@
 
 ## Verify Windows AppContainer CPU hard cap (2026-11-13)
 
-Added a real CPU saturation acceptance for the Windows command Job Object. It runs PBKDF2 work across threads, measures the command's CPU time against wall time and logical processor count, and checks that its system CPU fraction remains at or below the configured 50% hard cap with scheduling tolerance. The focused test and Ruff/format checks pass locally; hosted verification is pending. Active-process rejection remains open.
+Added a real CPU saturation acceptance for the Windows command Job Object. It runs PBKDF2 work across threads, measures the command's CPU time against wall time and logical processor count, and checks that its system CPU fraction remains within the configured 50% hard-cap range with scheduling tolerance. Hosted run [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all 1,219 Python tests and configured Windows checks; the focused seven-test module and Ruff, format, strict engine Pyright and diff checks pass locally. Active-process rejection remains open.
 
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
-The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The six-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted run [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) passed all 1,218 Python tests and configured Windows checks. The frozen-build fingerprint includes the verification code. This confirms launch-time policy configuration; direct CPU saturation and active-process rejection tests remain open.
+The Windows command supervisor now reads its actual Job Object settings back before resuming an isolated command. It fails closed unless the active-process ceiling is 32, process-tree memory is 128 MiB, and the CPU hard cap is 50%. The seven-test Windows local transport integration module passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted runs [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) and [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all configured Windows checks. The frozen-build fingerprint includes the verification code. Direct CPU saturation is now covered separately; active-process rejection remains open.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 
