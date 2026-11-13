@@ -173,7 +173,7 @@ async def test_local_command_output_limit_stops_owned_process_tree(
     program = (
         "import os,subprocess,sys,time\n"
         "child=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(60)'],"
-        "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+        "stdout=subprocess.PIPE,stderr=subprocess.PIPE)\n"
         "os.write(2,f'child-pid={child.pid}\\n'.encode())\n"
         "data=b'x'*(1024*1024+65536)\n"
         "while data:\n"
