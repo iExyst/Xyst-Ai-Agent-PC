@@ -210,14 +210,21 @@ def main() -> None:
                 if not isinstance(decoded_result, dict):
                     raise TypeError("The completed command result is not a JSON object.")
                 verified_result = cast(dict[str, Any], decoded_result)
-                if (
-                    verified_result.get("succeeded") is not True
-                    or verified_result.get("cleanup_confirmed") is not True
-                    or verified_result.get("workspace_changes_persisted") is not False
-                    or verified_result.get("trust") != "untrusted_command_output"
-                ):
+                command_result_checks = {
+                    "succeeded": verified_result.get("succeeded") is True,
+                    "cleanup_confirmed": verified_result.get("cleanup_confirmed") is True,
+                    "workspace_changes_persisted_is_false": verified_result.get(
+                        "workspace_changes_persisted"
+                    )
+                    is False,
+                    "trust_is_untrusted_command_output": verified_result.get("trust")
+                    == "untrusted_command_output",
+                }
+                report["command_result_checks"] = command_result_checks
+                if not all(command_result_checks.values()):
                     raise RuntimeError(
-                        "The saved command result did not verify successful cleanup."
+                        "The saved command result did not pass its sanitized success checks: "
+                        + json.dumps(command_result_checks, sort_keys=True)
                     )
                 for stream in ("stdout", "stderr"):
                     artifact_id = verified_result.get(f"{stream}_artifact_id")
