@@ -18,6 +18,7 @@ from xaa.storage.runs import RunStore
 
 
 async def main() -> None:
+    proxy_diagnostics: dict[str, Any] = {}
     with TemporaryDirectory(prefix="xaa-browser-live-") as directory:
         root = Path(directory)
         database = root / "runs.sqlite3"
@@ -44,6 +45,7 @@ async def main() -> None:
             {"url": "https://example.com/", "links": [], "screenshot": True},
             ["example.com"],
             deadline=time.monotonic() + 32,
+            proxy_diagnostics=proxy_diagnostics,
         )
         elapsed_ms = round((time.monotonic() - started) * 1000)
         assert result.get("status") == "ok", result
@@ -51,6 +53,12 @@ async def main() -> None:
         assert result.get("title") == "Example Domain", result
         assert "documentation examples" in str(result.get("content", "")), result
         assert result.get("trust") == "untrusted_web_content", result
+        if proxy_diagnostics.get("forwarded_connections", 0) < 1 or proxy_diagnostics.get(
+            "forwarded_hosts"
+        ) != ["example.com"]:
+            raise AssertionError(
+                f"Real Edge did not forward through the approved proxy: {proxy_diagnostics}"
+            )
         artifact_value = result.get("screenshot_artifact")
         assert isinstance(artifact_value, dict), result
         artifact: dict[str, Any] = cast(dict[str, Any], artifact_value)
@@ -75,6 +83,7 @@ async def main() -> None:
             "checked_at_utc": datetime.now(UTC).isoformat(),
             "browser": "managed Microsoft Edge worker subprocess",
             "approved_hosts": ["example.com"],
+            "proxy_diagnostics": proxy_diagnostics,
             "result": {
                 "status": result["status"],
                 "url": result["url"],

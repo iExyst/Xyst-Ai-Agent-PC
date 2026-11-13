@@ -147,6 +147,63 @@ async def test_browser_timeout_returns_actionable_error_and_journals_result(
     assert json.loads(row[1]) == result
 
 
+@pytest.mark.asyncio
+async def test_private_proxy_diagnostics_are_removed_from_browser_tool_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    store = RunStore(tmp_path / "browser-proxy-diagnostics.sqlite3")
+    run = store.create_run(
+        objective="Verify private proxy diagnostics stay internal",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-proxy-diagnostics-test", seconds=30)
+    assert token is not None
+
+    async def worker(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        del payload, timeout
+        return {
+            "url": "https://docs.example.com/",
+            "title": "Docs",
+            "content": "public page",
+            "blocked_subresources": {"count": 0, "resource_types": {}},
+            "_proxy_diagnostics": {
+                "forwarded_connections": 1,
+                "forwarded_hosts": ["docs.example.com"],
+            },
+        }
+
+    monkeypatch.setattr(browser_runtime, "_execute_worker", worker)
+    diagnostics: dict[str, Any] = {}
+    result = await browser_runtime.run_approved_browser(
+        store,
+        run["id"],
+        token,
+        "browser-proxy-diagnostics-call",
+        {"url": "https://docs.example.com/"},
+        ["docs.example.com"],
+        deadline=time.monotonic() + 5,
+        proxy_diagnostics=diagnostics,
+    )
+
+    assert result["status"] == "ok"
+    assert "_proxy_diagnostics" not in result
+    assert diagnostics == {
+        "forwarded_connections": 1,
+        "forwarded_hosts": ["docs.example.com"],
+    }
+    with closing(sqlite3.connect(tmp_path / "browser-proxy-diagnostics.sqlite3")) as connection:
+        row = connection.execute(
+            "SELECT result FROM tool_calls WHERE provider_call_id=?",
+            ("browser-proxy-diagnostics-call",),
+        ).fetchone()
+    assert row is not None and "_proxy_diagnostics" not in json.loads(row[0])
+
+
 def test_browser_url_uses_exact_approved_hosts_and_web_url_policy() -> None:
     hosts = {"docs.example.com"}
     assert browser_worker.validate_url("https://docs.example.com/guide", hosts)

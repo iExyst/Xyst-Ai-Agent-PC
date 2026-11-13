@@ -96,6 +96,13 @@ class BrowserBlockedSubresources(BaseModel):
     resource_types: dict[str, int]
 
 
+class BrowserProxyDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    forwarded_connections: int = Field(ge=0, le=32)
+    forwarded_hosts: list[str] = Field(max_length=10)
+
+
 class BrowserOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     status: Literal["ok", "read_failed", "cancelled"]
@@ -155,6 +162,7 @@ async def run_approved_browser(
     approved_hosts: list[str],
     *,
     deadline: float,
+    proxy_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     parsed = BrowserArguments.model_validate(arguments)
     hosts = normalize_approved_hosts(approved_hosts)
@@ -181,6 +189,11 @@ async def run_approved_browser(
             },
             timeout,
         )
+        diagnostics = result.pop("_proxy_diagnostics", None)
+        if isinstance(diagnostics, dict) and proxy_diagnostics is not None:
+            proxy_diagnostics.update(
+                BrowserProxyDiagnostics.model_validate(diagnostics).model_dump()
+            )
         image = result.pop("screenshot_png", None)
         if image is not None:
             content = base64.b64decode(image, validate=True)

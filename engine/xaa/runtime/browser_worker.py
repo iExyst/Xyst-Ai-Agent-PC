@@ -138,6 +138,7 @@ async def _proxy_client(
     client_writer: asyncio.StreamWriter,
     hosts: set[str],
     budget: dict[str, int],
+    forwarded_hosts: set[str],
 ) -> None:
     upstream_writer: asyncio.StreamWriter | None = None
     try:
@@ -173,6 +174,8 @@ async def _proxy_client(
             return
         client_writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         await client_writer.drain()
+        budget["forwarded_connections"] += 1
+        forwarded_hosts.add(hostname)
         await asyncio.gather(
             _pump(client_reader, upstream_writer, budget),
             _pump(upstream_reader, client_writer, budget),
@@ -205,12 +208,15 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
 
     hosts = set(request.approved_hosts)
     validate_url(request.url, hosts)
-    budget = {"bytes": 0, "connections": 0}
+    budget = {"bytes": 0, "connections": 0, "forwarded_connections": 0}
+    forwarded_hosts: set[str] = set()
     blocked_subresources: dict[str, int] = {}
     blocked_main_navigations = {"count": 0}
     blocked_main_hosts: list[str] = []
     server = await asyncio.start_server(
-        lambda reader, writer: _proxy_client(reader, writer, hosts, budget), "127.0.0.1", 0
+        lambda reader, writer: _proxy_client(reader, writer, hosts, budget, forwarded_hosts),
+        "127.0.0.1",
+        0,
     )
     socket_info = server.sockets[0].getsockname()
     proxy_url = f"http://127.0.0.1:{socket_info[1]}"
@@ -294,6 +300,10 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         "blocked_subresources": {
                             "count": sum(blocked_subresources.values()),
                             "resource_types": dict(sorted(blocked_subresources.items())),
+                        },
+                        "_proxy_diagnostics": {
+                            "forwarded_connections": budget["forwarded_connections"],
+                            "forwarded_hosts": sorted(forwarded_hosts),
                         },
                     }
                     if request.inspect_forms:

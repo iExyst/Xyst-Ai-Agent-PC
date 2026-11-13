@@ -117,6 +117,15 @@ jobs:
           path: .acceptance/browser-proxy-bypass-*/report.json
           if-no-files-found: error
           include-hidden-files: true
+      - name: Verify managed Edge forwards approved navigation through its proxy
+        run: uv run python scripts/browser_smoke.py
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-proxy-navigation-${{ github.run_id }}
+          path: docs/releases/evidence/browser-live.json
+          if-no-files-found: error
+          include-hidden-files: true
       - uses: actions/cache/save@v6
         if: success() && steps.uv-cache.outputs.cache-hit != 'true'
         with:
