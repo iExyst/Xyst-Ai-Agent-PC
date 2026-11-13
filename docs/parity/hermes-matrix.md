@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Email SMTP STARTTLS socket acceptance (2026-11-13)
+
+The email adapter's real `smtplib` STARTTLS path now has a local socket-level acceptance. A disposable loopback SMTP server presents a short-lived test certificate, which the client trusts through a test-scoped CA file; the exchange verifies certificate/hostname validation, TLS negotiation, SMTP AUTH, sender and recipient, reply threading and message body. No external mail service is contacted, no real message is sent, and no model inference is used. Focused test: `tests/unit/test_email.py::test_email_smtp_starttls_uses_real_socket_and_verified_local_certificate` (1 passed locally). Full hosted source verification is pending. This does not establish interoperability with a real mail provider or verify IMAP over a real socket; Phase 8 remains partial.
+
 ## Nested managed-browser frame and resource-chain acceptance (2026-11-13)
 
 Real Microsoft Edge 157 acceptance now verifies a three-level same-origin frame tree while the shared managed-browser route guard blocks a third-party image, script, and nested frame requested from the deepest document. The fixture pages are fulfilled inside the Edge context, so the blocked requests cannot reach a third-party server; the pre-existing live Wikipedia subresource and MDN blocked-frame checks still run in the same diagnostic. The native Windows diagnostic passes with exact denial counts and no blocked top-level navigation; report: [`.acceptance/browser-subresource-edge-5b0119bd05404278b2990a982c27ed21/report.json`](../../.acceptance/browser-subresource-edge-5b0119bd05404278b2990a982c27ed21/report.json). Hosted confirmation for this extension is pending. This closes one nested-resource acceptance gap only; managed-browser coverage, proxy egress controls and Hermes browser parity remain partial.

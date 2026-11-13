@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import socketserver
+import ssl
 import threading
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import make_msgid
+from ipaddress import ip_address
+from typing import Any
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from pydantic import SecretStr
 from starlette.testclient import TestClient
 from xaa.channels.email import EmailConfig, EmailService, EmailStore, _automated
@@ -308,6 +318,146 @@ def test_email_service_polls_imap_and_threads_reply_over_starttls(workspace_tmp_
     assert sent[0].get_content().strip() == "The harmless check passed."
     assert store.status(config.address)["deliveries"] == {"sent": 1}
     assert store.mailbox(config.address)["id"] == mailbox_id
+
+
+def test_email_smtp_starttls_uses_real_socket_and_verified_local_certificate(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "XAA SMTP fixture")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    certificate_path = tmp_path / "smtp-fixture-ca.pem"
+    key_path = tmp_path / "smtp-fixture-key.pem"
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    monkeypatch.setenv("SSL_CERT_FILE", str(certificate_path))
+    server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_tls.load_cert_chain(certificate_path, key_path)
+    captured: dict[str, Any] = {}
+
+    class SMTPHandler(socketserver.StreamRequestHandler):
+        def handle(self) -> None:
+            connection = self.request
+            connection.settimeout(5)
+            reader = self.rfile
+            writer = self.wfile
+            writer.write(b"220 localhost XAA SMTP fixture\r\n")
+            while line := reader.readline():
+                command = line.decode("ascii").strip()
+                verb, _, arguments = command.partition(" ")
+                if verb.upper() == "EHLO":
+                    writer.write(
+                        b"250-localhost\r\n250-STARTTLS\r\n250 SIZE 100000\r\n"
+                        if not captured.get("tls")
+                        else b"250-localhost\r\n250-AUTH PLAIN LOGIN\r\n250 SIZE 100000\r\n"
+                    )
+                elif verb.upper() == "STARTTLS":
+                    writer.write(b"220 Ready to start TLS\r\n")
+                    writer.flush()
+                    connection = server_tls.wrap_socket(connection, server_side=True)
+                    captured["tls"] = connection.version()
+                    self.request = connection
+                    self.rfile = connection.makefile("rb")
+                    self.wfile = connection.makefile("wb")
+                    reader, writer = self.rfile, self.wfile
+                elif verb.upper() == "AUTH":
+                    encoded = arguments.partition(" ")[2]
+                    if not encoded:
+                        writer.write(b"334 \r\n")
+                        writer.flush()
+                        encoded = reader.readline().decode("ascii").strip()
+                    decoded = base64.b64decode(encoded).decode("utf-8")
+                    captured["auth"] = decoded
+                    writer.write(b"235 2.7.0 Authentication successful\r\n")
+                elif verb.upper() == "MAIL":
+                    captured["mail_from"] = arguments
+                    writer.write(b"250 2.1.0 Sender accepted\r\n")
+                elif verb.upper() == "RCPT":
+                    captured["rcpt_to"] = arguments
+                    writer.write(b"250 2.1.5 Recipient accepted\r\n")
+                elif verb.upper() == "DATA":
+                    writer.write(b"354 End data with <CR><LF>.<CR><LF>\r\n")
+                    writer.flush()
+                    body: list[bytes] = []
+                    while message_line := reader.readline():
+                        if message_line == b".\r\n":
+                            break
+                        body.append(
+                            message_line[1:] if message_line.startswith(b"..") else message_line
+                        )
+                    captured["message"] = b"".join(body)
+                    writer.write(b"250 2.0.0 queued\r\n")
+                elif verb.upper() == "QUIT":
+                    writer.write(b"221 2.0.0 bye\r\n")
+                    writer.flush()
+                    return
+                else:
+                    writer.write(b"250 OK\r\n")
+                writer.flush()
+
+    class SMTPServer(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    with SMTPServer(("127.0.0.1", 0), SMTPHandler) as server:
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        try:
+            config = EmailConfig.parse(
+                {
+                    "address": "agent@example.test",
+                    "password": "fixture-app-password",
+                    "imap_host": "127.0.0.1",
+                    "smtp_host": "127.0.0.1",
+                    "smtp_port": str(server.server_address[1]),
+                    "allowed_senders": "owner@example.test",
+                    "authserv_id": "mx.example.test",
+                }
+            )
+            service = EmailService(
+                RunStore(tmp_path / "smtp-tls.sqlite3"), MemoryCredentials(), lambda _: None
+            )
+            message_id = service._send(
+                config,
+                {
+                    "sender": "owner@example.test",
+                    "subject": "X.A.A. task result",
+                    "in_reply_to": "<incoming@example.test>",
+                    "body": "The deterministic task completed.",
+                },
+            )
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=5)
+
+    assert captured["tls"] in {"TLSv1.2", "TLSv1.3"}
+    assert captured["auth"] == "\x00agent@example.test\x00fixture-app-password"
+    assert str(captured["mail_from"]).lower().startswith("from:<agent@example.test>")
+    assert str(captured["rcpt_to"]).lower() == "to:<owner@example.test>"
+    assert message_id.encode("ascii") in captured["message"]
+    assert b"In-Reply-To: <incoming@example.test>" in captured["message"]
+    assert b"The deterministic task completed." in captured["message"]
 
 
 def test_email_shutdown_waits_for_ambiguous_smtp_call_and_reconciles_unknown(
