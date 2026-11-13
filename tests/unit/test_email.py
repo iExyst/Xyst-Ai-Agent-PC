@@ -321,8 +321,9 @@ def test_email_service_polls_imap_and_threads_reply_over_starttls(workspace_tmp_
 
 
 def test_email_smtp_starttls_uses_real_socket_and_verified_local_certificate(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    workspace_tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    tmp_path = workspace_tmp_path
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "XAA SMTP fixture")])
     now = datetime.now(UTC)
@@ -458,6 +459,128 @@ def test_email_smtp_starttls_uses_real_socket_and_verified_local_certificate(
     assert message_id.encode("ascii") in captured["message"]
     assert b"In-Reply-To: <incoming@example.test>" in captured["message"]
     assert b"The deterministic task completed." in captured["message"]
+
+
+def test_email_imap_ssl_fetches_message_over_verified_local_socket(
+    workspace_tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmp_path = workspace_tmp_path
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "XAA IMAP fixture")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    certificate_path = tmp_path / "imap-fixture-ca.pem"
+    key_path = tmp_path / "imap-fixture-key.pem"
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    monkeypatch.setenv("SSL_CERT_FILE", str(certificate_path))
+    server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_tls.load_cert_chain(certificate_path, key_path)
+    raw, _ = message_bytes("owner@example.test", "Run a harmless check.")
+    captured: dict[str, Any] = {"commands": []}
+
+    class IMAPHandler(socketserver.StreamRequestHandler):
+        def handle(self) -> None:
+            connection = server_tls.wrap_socket(self.request, server_side=True)
+            connection.settimeout(5)
+            reader = connection.makefile("rb")
+            writer = connection.makefile("wb")
+            captured["tls"] = connection.version()
+            writer.write(b"* OK XAA IMAP fixture ready\r\n")
+            writer.flush()
+            while line := reader.readline():
+                parts = line.decode("utf-8").strip().split(" ", 2)
+                tag, command = parts[0], parts[1].upper()
+                arguments = parts[2] if len(parts) == 3 else ""
+                if command == "UID" and arguments:
+                    subcommand, _, arguments = arguments.partition(" ")
+                    command = f"UID {subcommand.upper()}"
+                captured["commands"].append(command)
+                if command == "CAPABILITY":
+                    writer.write(b"* CAPABILITY IMAP4rev1 UIDPLUS\r\n")
+                    writer.write(f"{tag} OK CAPABILITY completed\r\n".encode())
+                elif command == "LOGIN":
+                    captured["login"] = arguments
+                    writer.write(f"{tag} OK LOGIN completed\r\n".encode())
+                elif command == "EXAMINE":
+                    writer.write(b"* 1 EXISTS\r\n* OK [UIDVALIDITY 77] stable\r\n")
+                    writer.write(f"{tag} OK [READ-ONLY] EXAMINE completed\r\n".encode())
+                elif command == "UID SEARCH":
+                    writer.write(b"* SEARCH 1\r\n")
+                    writer.write(f"{tag} OK SEARCH completed\r\n".encode())
+                elif command == "UID FETCH":
+                    writer.write(f"* 1 FETCH (UID 1 BODY[] {{{len(raw)}}}\r\n".encode())
+                    writer.write(raw + b"\r\n)\r\n")
+                    writer.write(f"{tag} OK FETCH completed\r\n".encode())
+                elif command == "LOGOUT":
+                    writer.write(b"* BYE logging out\r\n")
+                    writer.write(f"{tag} OK LOGOUT completed\r\n".encode())
+                    writer.flush()
+                    return
+                else:
+                    writer.write(f"{tag} BAD unsupported command\r\n".encode())
+                writer.flush()
+
+    class IMAPServer(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    with IMAPServer(("127.0.0.1", 0), IMAPHandler) as server:
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        try:
+            config = EmailConfig.parse(
+                {
+                    "address": "agent@example.test",
+                    "password": "fixture-app-password",
+                    "imap_host": "127.0.0.1",
+                    "imap_port": str(server.server_address[1]),
+                    "smtp_host": "smtp.example.test",
+                    "allowed_senders": "owner@example.test",
+                    "authserv_id": "mx.example.test",
+                }
+            )
+            store = EmailStore(RunStore(tmp_path / "imap-tls.sqlite3"))
+            mailbox_id = store.save_config(config)
+            service = EmailService(store.runs, MemoryCredentials(), lambda _: None)
+            received = service._fetch(config, mailbox_id)
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=5)
+
+    assert received == [("77", "1", raw)]
+    assert captured["tls"] in {"TLSv1.2", "TLSv1.3"}
+    assert captured["login"] == 'agent@example.test "fixture-app-password"'
+    assert captured["commands"] == [
+        "CAPABILITY",
+        "LOGIN",
+        "CAPABILITY",
+        "EXAMINE",
+        "UID SEARCH",
+        "UID FETCH",
+        "LOGOUT",
+    ]
+    assert store.poll_cursor(mailbox_id, "77") == 0
 
 
 def test_email_shutdown_waits_for_ambiguous_smtp_call_and_reconciles_unknown(
