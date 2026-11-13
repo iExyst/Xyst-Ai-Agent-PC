@@ -91,6 +91,9 @@ try{
   if(recoverStartupRun){
     page.on('request',request=>{if(request.url().startsWith(connection.base_url))desktopApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);});
     page.on('dialog',dialog=>void dialog.accept());
+    await expect(page.getByRole('heading',{name:'A saved run needs your review'})).toBeVisible({timeout:20000});
+    await expect(page.getByRole('heading',{name:'Active run blocked'})).toHaveCount(0);
+    await page.getByRole('button',{name:'Review saved run'}).click();
     await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible({timeout:20000});
     await expect(page.locator('.active-run-objective-preview')).toHaveText(ownerRecoveryAcceptance.objective??'Review and recover interrupted workspace writes');
     await page.getByRole('button',{name:'Inspect uncertain workspace writes'}).click();
