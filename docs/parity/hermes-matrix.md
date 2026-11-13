@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Align AppContainer coordinator fixture budget (2026-11-13)
+
+Run [43498738997](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43498738997) passed staged execution but its installed command timed out after complete successful probe output at 9.13 seconds end-to-end. The fixture requested only five seconds despite its saved AppContainer grant allowing 30, so cold frozen startup could consume the fixture budget. The fixture now requests the full 30-second saved allowance and has a regression test; the new hosted package verification is pending. Windows AppContainer parity remains partial until that run passes.
+
 ## Varying frozen AppContainer child timeout (2026-11-13)
 
 Hosted installer workflow [43496929909](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43496929909) passed readiness but its staged coordinator command timed out with no output. The previous workflow passed staged command execution and timed out only after installed execution emitted its result; the exact previous package passed three consecutive local command runs. This leaves the frozen Windows command path **partial** and its intermittent cold-run behavior unresolved. Added phase markers to the acceptance probe for the next clean-runner diagnostic; no live model inference was used.

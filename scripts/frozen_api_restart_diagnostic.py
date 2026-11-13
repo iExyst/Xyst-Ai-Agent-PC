@@ -28,6 +28,7 @@ CREATE_PATH = "/".join((*CRASH_DIRECTORY_PARTS, "created.txt"))
 CREATE_CONTENT = "frozen-api-crash-boundary"
 WRITE_BEFORE = b"frozen-api-write-before"
 WRITE_CONTENT = "frozen-api-write-after:" + "z" * (65_536 - len("frozen-api-write-after:"))
+APPCONTAINER_COMMAND_MAX_SECONDS = 30
 
 
 class FixtureLMStudio(ThreadingHTTPServer):
@@ -174,7 +175,10 @@ class FixtureLMStudioHandler(BaseHTTPRequestHandler):
                         "function": {
                             "name": "workspace_run_command",
                             "arguments": json.dumps(
-                                {"argv": fixture.command_argv, "max_seconds": 5}
+                                {
+                                    "argv": fixture.command_argv,
+                                    "max_seconds": APPCONTAINER_COMMAND_MAX_SECONDS,
+                                }
                             ),
                         },
                     }

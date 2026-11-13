@@ -1,5 +1,11 @@
 # Progress
 
+## Align the AppContainer fixture timeout with its saved grant (2026-11-13)
+
+Installed acceptance run [43498738997](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43498738997) passed staged readiness and command execution. The installed command emitted the complete valid probe and all isolation checks passed, but it timed out with `supervisor_exit_code: 124`. The new timing field showed the isolated execution took 9.13 seconds end-to-end; the fixture had been asking the coordinator for a 5-second command limit while its persisted Windows AppContainer grant allowed 30 seconds. Cold frozen startup consumed enough of that test-only five-second allowance to cause the false failure.
+
+Changed the fixture proposal to use a shared 30-second limit matching its grant, and added an HTTP-level regression that reads the tool-call proposal and verifies the limit. The focused diagnostics suite passes (2 tests), Ruff and strict Pyright pass. Run [43498738997](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43498738997) remains a failure because it used the old five-second limit; a new package run is required to verify the correction. No live model inference was used.
+
 ## Capture staged AppContainer startup phase on timeout (2026-11-13)
 
 Source workflow [43494924910](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43494924910) passed on `48abc097`. The next clean installer run [43496929909](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43496929909) passed frozen readiness, then its staged coordinator command timed out with no stdout or stderr; cleanup and output-classification checks passed. This differs from the prior run, where staged execution passed and only installed execution timed out after emitting its result. The reports are under [`.acceptance/hosted-installer-43496929909/`](../.acceptance/hosted-installer-43496929909/). The exact hosted package had three consecutive local installed-command passes, while a separate local readiness attempt hit a shim-bootstrap error. These results confirm variability across the frozen child launch/exit path, not a specific root cause.

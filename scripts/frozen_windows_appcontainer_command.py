@@ -17,6 +17,7 @@ from uuid import uuid4
 
 import httpx
 from frozen_api_restart_diagnostic import (
+    APPCONTAINER_COMMAND_MAX_SECONDS,
     FixtureLMStudio,
     clean_launch_credentials,
     free_port,
@@ -189,7 +190,7 @@ def main() -> None:
             "backend": "windows-appcontainer-v1",
             "distribution": "Windows-Local",
             "profile_sha256": readiness["profile_sha256"],
-            "max_seconds": 30,
+            "max_seconds": APPCONTAINER_COMMAND_MAX_SECONDS,
         }
         created = client.post(
             "/runs",
