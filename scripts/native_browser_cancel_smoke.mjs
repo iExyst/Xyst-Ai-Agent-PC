@@ -306,6 +306,7 @@ try {
       },
     });
   });
+  await page.locator('summary').filter({ hasText: 'Permissions, attachments and run limits' }).click();
   await page.getByRole('button', { name: 'Record voice', exact: true }).click();
   await expect(page.getByText(/Recording on this computer/)).toBeVisible({ timeout: 10000 });
   await new Promise(resolve => setTimeout(resolve, 750));
@@ -319,7 +320,6 @@ try {
   await expect(page.getByText(/Attached: Microphone recording\.wav/)).not.toBeVisible();
   microphoneCapturePassed = true;
 
-  await page.locator('summary').filter({ hasText: 'Permissions, attachments and run limits' }).click();
   await page.locator('#approved-web-hosts').fill('httpbin.org');
   await page.getByLabel('Allow managed browser reads for this next run').check();
   await page.getByLabel('Workspace path').fill(workspace);

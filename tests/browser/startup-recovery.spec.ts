@@ -84,5 +84,9 @@ test('keeps retrying while the packaged engine finishes starting',async({page})=
   await expect(page.getByRole('heading',{name:'Get started'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Connect to the engine'})).toHaveCount(0);
   await expect(page.getByText('The local engine did not become ready. Inspect the engine log and restart the app.')).toHaveCount(0);
+  await expect(page.getByText('No local models are available yet.')).toBeVisible();
+  await page.getByRole('button',{name:'Open model setup'}).click();
+  await expect(page.getByRole('heading',{name:'LM Studio setup'})).toBeVisible();
+  await expect(page.getByText('In LM Studio, open Developer → Local Server and start the server if it is unavailable.')).toBeVisible();
   expect(calls).toContain('GET /runs/latest-unfinished');
 });
