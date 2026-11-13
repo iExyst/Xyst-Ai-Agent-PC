@@ -115,8 +115,8 @@ async def test_cancelling_local_command_closes_descendant_processes(
     transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
     snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"cancel fixture"),), (), ())
     command = (
-        "import subprocess,sys,time\n"
-        "child=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(60)'])\n"
+        "import os,subprocess,time\n"
+        "child=subprocess.Popen([os.path.join(os.environ['SYSTEMROOT'],'System32','timeout.exe'),'/t','60','/nobreak'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)\n"
         "print('child-pid='+str(child.pid),flush=True);time.sleep(60)\n"
     )
     intent = CommandIntent(
