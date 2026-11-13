@@ -2,7 +2,7 @@
 
 ## Preserve fragmented Unicode command output (2026-11-13)
 
-The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. A real transport acceptance confirms exact streamed and receipt bytes, byte counts, SHA-256 digests, exit status and cleanup. The focused local test plus Ruff, format and strict engine Pyright pass; hosted verification is pending. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output limits, artifact review and SSH/hosted/container adapters remain open.
+The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. Hosted CI exposed a Python startup diagnostic preceding the fixture's stderr on the hosted runner; the test now verifies that complete receipt and stream agree and that the exact fixture output appears once at the end. The focused local test plus Ruff, format and strict engine Pyright pass; hosted rerun is pending. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output limits, artifact review and SSH/hosted/container adapters remain open.
 
 ## End-to-end email cycle over verified TLS sockets (2026-11-13)
 

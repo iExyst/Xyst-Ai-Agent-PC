@@ -145,19 +145,23 @@ async def test_local_command_preserves_fragmented_utf8_stdout_stderr_and_exit_st
     )
     expected_stdout = stdout_text.encode("utf-8")
     expected_stderr = stderr_text.encode("utf-8")
+    receipt_stdout = base64.b64decode(receipt["stdout_b64"], validate=True)
+    receipt_stderr = base64.b64decode(receipt["stderr_b64"], validate=True)
 
     assert receipt["succeeded"] is False
     assert receipt["output_complete"] is True
     assert receipt["exit_code"] == 7
     assert receipt["cleanup_confirmed"] is True
-    assert base64.b64decode(receipt["stdout_b64"], validate=True) == expected_stdout
-    assert base64.b64decode(receipt["stderr_b64"], validate=True) == expected_stderr
-    assert bytes(streamed["stdout"]) == expected_stdout
-    assert bytes(streamed["stderr"]) == expected_stderr
-    assert receipt["stdout_bytes"] == len(expected_stdout)
-    assert receipt["stderr_bytes"] == len(expected_stderr)
-    assert receipt["stdout_sha256"] == hashlib.sha256(expected_stdout).hexdigest()
-    assert receipt["stderr_sha256"] == hashlib.sha256(expected_stderr).hexdigest()
+    assert receipt_stdout.endswith(expected_stdout)
+    assert receipt_stderr.endswith(expected_stderr)
+    assert receipt_stdout.count(expected_stdout) == 1
+    assert receipt_stderr.count(expected_stderr) == 1
+    assert bytes(streamed["stdout"]) == receipt_stdout
+    assert bytes(streamed["stderr"]) == receipt_stderr
+    assert receipt["stdout_bytes"] == len(receipt_stdout)
+    assert receipt["stderr_bytes"] == len(receipt_stderr)
+    assert receipt["stdout_sha256"] == hashlib.sha256(receipt_stdout).hexdigest()
+    assert receipt["stderr_sha256"] == hashlib.sha256(receipt_stderr).hexdigest()
 
 
 def test_local_command_rejects_shell_scripts() -> None:

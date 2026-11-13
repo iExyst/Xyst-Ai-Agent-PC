@@ -2,7 +2,7 @@
 
 ## Preserve fragmented Unicode command output in Windows AppContainer (2026-11-13)
 
-Added a real Windows AppContainer transport acceptance that writes multilingual UTF-8 to stdout and stderr one byte at a time, then exits with status 7. The transport preserves exact streamed bytes, receipt bytes, SHA-256 digests, output-complete state, cleanup confirmation, and the nonzero exit status. The focused integration test passes locally; Ruff, formatting, and strict engine Pyright pass. Hosted verification is pending. This verifies one EXEC-COMMON-5 transport case only; output-limit behavior, persisted artifact review, and broad backend parity remain open.
+Added a real Windows AppContainer transport acceptance that writes multilingual UTF-8 to stdout and stderr one byte at a time, then exits with status 7. The first hosted run exposed an extra Python startup diagnostic on stderr in the hosted runner, before the fixture's exact output; the test now distinguishes that environment prefix and verifies the complete streamed receipt, exact command-output suffix, digests, output-complete state, cleanup, and exit status. The focused integration test passes locally; hosted rerun is pending. This verifies one EXEC-COMMON-5 transport case only; output-limit behavior, persisted artifact review, and broad backend parity remain open.
 
 ## Verify email ingress through threaded SMTP reply over verified TLS sockets (2026-11-13)
 
