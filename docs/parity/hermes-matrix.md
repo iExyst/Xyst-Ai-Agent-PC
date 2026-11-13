@@ -2,7 +2,7 @@
 
 ## Preserve fragmented Unicode command output (2026-11-13)
 
-The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. Hosted CI exposed a Python startup diagnostic preceding the fixture's stderr on the hosted runner; the test now verifies that complete receipt and stream agree and that the exact fixture output appears once at the end. The focused local test plus Ruff, format and strict engine Pyright pass; hosted rerun is pending. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output limits, artifact review and SSH/hosted/container adapters remain open.
+The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. Hosted CI exposed a Python startup diagnostic preceding the fixture's stderr; the test distinguishes that prefix while verifying full stream/receipt agreement and the exact fixture output. Hosted rerun [43463602419](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43463602419) passed all 1,216 Python tests and configured Windows checks; the focused local integration module passes (4 tests), as do Ruff, formatting and strict engine Pyright. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output-limit behavior, persisted artifact review, and SSH/hosted/container adapters remain open. No live model inference was used.
 
 ## End-to-end email cycle over verified TLS sockets (2026-11-13)
 
