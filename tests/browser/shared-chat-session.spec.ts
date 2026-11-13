@@ -57,6 +57,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.locator('details.saved-conversations > summary').click();
   await page.getByRole('button',{name:'Load shared conversations'}).click();
   await page.getByLabel('Saved terminal and desktop sessions').selectOption('terminal-chat');
   await expect(page.getByText('Earlier reply',{exact:true})).toBeVisible();

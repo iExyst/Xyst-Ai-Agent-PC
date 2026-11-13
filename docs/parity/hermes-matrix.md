@@ -6,7 +6,7 @@ The freshly built local frozen engine passes AppContainer readiness with no netw
 
 ## Desktop product presentation refresh (2026-11-13)
 
-The native desktop keeps its existing setup, permissions, task review and recovery flows, while the product styling moves from a dark developer-console palette to a lighter, conventional desktop workspace. The change is presentation-only and does not expand capability status. TypeScript and Vite production build passed, and both browser startup/recovery tests pass. A rebuilt installer and native visual acceptance are still pending.
+The native desktop keeps its existing setup, permissions, task review and recovery flows, while the product styling moves from a dark developer-console palette to a lighter, conventional desktop workspace. The new objective form now precedes saved conversations and optional file checks; voice capture and detailed permissions remain available inside collapsed run options. Onboarding steps use a compact responsive layout. The six focused objective, shared-chat, voice, and startup/recovery browser tests pass. A freshly rebuilt unsigned 0.1.1 installer is manifest-verified, and the native packaged UI screenshot is preserved with a passing boot/lifecycle report in [`.acceptance/native-ui-refresh-20261113-final-layout/`](../../.acceptance/native-ui-refresh-20261113-final-layout/). This is a presentation change and does not expand capability status or close the fresh-user workspace-task acceptance gate.
 
 ## Desktop portable backup and profile restore (2026-11-13)
 

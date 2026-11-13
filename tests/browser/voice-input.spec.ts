@@ -34,6 +34,7 @@ test('voice attachment submits WAV and the selected local transcription endpoint
   await page.getByLabel('Local model').selectOption('fixture/model');
   await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await page.getByLabel('Objective', { exact: true }).fill(run.objective);
   await page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)').setInputFiles({ name: 'request.wav', mimeType: 'audio/wav', buffer: audio });
   await expect(page.getByLabel('Local speech service URL')).toBeVisible();
@@ -96,6 +97,7 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await page.getByLabel('Local model').selectOption('fixture/model');
   await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await page.getByLabel('Objective', { exact: true }).fill(run.objective);
   await page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)').setInputFiles({ name: 'old.wav', mimeType: 'audio/wav', buffer: oldAudio });
   await expect(page.getByText(/Attached: old\.wav/)).toBeVisible();

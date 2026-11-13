@@ -82,6 +82,7 @@ try{
     await new Promise(resolve=>setTimeout(resolve,250));
   }
   if(!ready)throw new Error('Bundled engine API did not become ready');
+  await expect(page.getByText('Engine ready',{exact:true})).toBeVisible({timeout:20000});
   let backupAcceptance;
   if(backupFixture){
     const engine=path.join(path.dirname(executable),'xaa-engine.exe');

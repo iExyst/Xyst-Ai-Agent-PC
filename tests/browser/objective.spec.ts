@@ -104,6 +104,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await navigateMainSection(page,'New objective');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
+  await page.locator('details.file-check-card > summary').click();
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('Allow Brave web search for this next run').check();
   await page.getByLabel('Allow managed browser reads for this next run').check();
