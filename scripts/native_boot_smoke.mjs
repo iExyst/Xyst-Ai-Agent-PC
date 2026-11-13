@@ -5,6 +5,8 @@ import {createHash,randomUUID} from 'node:crypto';
 import path from 'node:path';
 
 const executable=path.resolve(process.argv[2]??'build/native-release/xaa-desktop.exe');
+const desktopPath=path.resolve(executable);
+const normalizeWindowsPath=value=>path.win32.normalize(value.startsWith('\\\\?\\')?value.slice(4):value).toLowerCase();
 const requestedRoot=process.env.XAA_NATIVE_ACCEPTANCE_ROOT;
 const root=requestedRoot?path.resolve(requestedRoot):path.resolve('.acceptance',randomUUID());
 const startupValueName=`XAA Acceptance ${randomUUID()}`;
@@ -13,13 +15,19 @@ await mkdir(root,{recursive:true});
 const logDirectory=path.join(root,'logs');await mkdir(logDirectory,{recursive:true});
 const logPath=path.join(logDirectory,'engine.log');
 const previous=await readFile(logPath,'utf8').catch(()=>'');
-const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH','PYTHONPATH','VIRTUAL_ENV'].includes(key.toUpperCase())));
+const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH','PYTHONPATH','VIRTUAL_ENV','XAA_DATA_DIR'].includes(key.toUpperCase())));
 const started=Date.now();let stdout='',stderr='';
 const backupFixturePath=process.env.XAA_NATIVE_BACKUP_FIXTURE;
 const backupFixture=backupFixturePath?JSON.parse(await readFile(backupFixturePath,'utf8')):null;
 const recoverStartupRun=process.env.XAA_NATIVE_BOOT_RECOVERY==='1';
 const localAppData=backupFixture?path.dirname(path.resolve(backupFixture.directory)):path.join(root,'local-app-data');
 const testConfigDirectory=process.env.XAA_TEST_CONFIG_DIR||path.join(root,'config');
+function ownedDesktopPids(){
+  const raw=execFileSync('pwsh.exe',['-NoProfile','-NonInteractive','-Command',"$target=$env:XAA_ACCEPTANCE_DESKTOP_PATH; @(Get-CimInstance -ClassName Win32_Process | Where-Object { $_.Name -eq 'xaa-desktop.exe' -and $_.ExecutablePath -eq $target } | ForEach-Object { $_.ProcessId }) | ConvertTo-Json -Compress"],{windowsHide:true,encoding:'utf8',timeout:10000,env:{...process.env,XAA_ACCEPTANCE_DESKTOP_PATH:desktopPath}}).trim();
+  if(!raw)return [];
+  const parsed=JSON.parse(raw);
+  return (Array.isArray(parsed)?parsed:[parsed]).map(Number).filter(Number.isInteger);
+}
 let ownerRecoveryAcceptance;
 let desktopApiRequests=[];
 if(recoverStartupRun){
@@ -29,10 +37,12 @@ if(recoverStartupRun){
   ownerRecoveryAcceptance=JSON.parse(execFileSync('uv',['run','python','scripts/native_recovery_fixture.py','--database',recoveryDatabase,'--workspace',recoveryWorkspace,'--report',recoveryReportPath],{windowsHide:true,encoding:'utf8',timeout:30000,env:process.env}));
   if(ownerRecoveryAcceptance.state_at_seed!=='blocked'||ownerRecoveryAcceptance.inference_attempts_at_seed!==0)throw new Error('Recovery fixture was not seeded as a blocked, inference-free run.');
 }
-const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,XAA_DATA_DIR:localAppData,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
+const proc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_AUTOSTART_VALUE_NAME:startupValueName,XAA_TEST_CONFIG_DIR:testConfigDirectory,XAA_TEST_LOG_DIR:logDirectory,WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview-profile'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=19222'}});
 proc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
 proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
 let browser,connection,page;
+let profileRestartAttempted=false;
+let restartedDesktopPid;
 const pageConsoleErrors=[];
 const pageErrors=[];
 try{
@@ -158,7 +168,59 @@ try{
     await expect(switchButton).toBeDisabled();
     await page.getByLabel('Restart X.A.A. and use this restored profile').check();
     await expect(switchButton).toBeEnabled();
-    desktopRestoreAcceptance={passed:true,restore_dialog_selections:2,authenticated_restore_status:restoredResponse.status,restored_profile_root:restoredRoot,restore_parent:restoreParent,restored_database_and_artifacts_verified:restoredVerification.passed,active_profile_unchanged:activeVerification.passed,profile_switch_disabled_before_confirmation:true,profile_switch_enabled_after_confirmation:true,profile_activation_invoked:false,model_inference_requested:false};
+    profileRestartAttempted=true;
+    await switchButton.click();
+    await expect(page.getByRole('region',{name:'Portable backup'}).getByRole('status')).toHaveText('Switching profiles and restarting X.A.A.…',{timeout:5000});
+    await browser.close().catch(()=>{});browser=undefined;page=undefined;
+    const oldProcessDeadline=Date.now()+30000;
+    while(proc.exitCode===null&&Date.now()<oldProcessDeadline)await new Promise(resolve=>setTimeout(resolve,100));
+    if(proc.exitCode===null)throw new Error('Profile activation did not restart the installed desktop process.');
+    const relaunchDeadline=Date.now()+60000;
+    let restartError='Restarted desktop did not expose its WebView';
+    let restartProfileMismatch=false;
+    let activeDataRoot;
+    let restoredRunFound=false;
+    while(Date.now()<relaunchDeadline){
+      try{
+        const metadataResponse=await fetch('http://127.0.0.1:19222/json/version',{signal:AbortSignal.timeout(750)});
+        if(!metadataResponse.ok)throw new Error(`Restarted desktop debugging metadata returned HTTP ${metadataResponse.status}`);
+        const metadata=await metadataResponse.json();
+        const endpoint=new URL(metadata.webSocketDebuggerUrl);
+        if(endpoint.protocol!=='ws:'||!['localhost','127.0.0.1','[::1]'].includes(endpoint.hostname)||endpoint.port!=='19222')throw new Error('Unexpected restarted desktop debugging endpoint');
+        endpoint.hostname='127.0.0.1';
+        browser=await chromium.connectOverCDP(endpoint.toString(),{timeout:3000});
+        page=browser.contexts().flatMap(context=>context.pages())[0];
+        if(!page)throw new Error('Restarted desktop WebView page is unavailable');
+        page.on('console',message=>{if(message.type()==='error')pageConsoleErrors.push(message.text());});
+        page.on('pageerror',error=>pageErrors.push(String(error)));
+        await expect(page.getByRole('navigation',{name:'Main sections'})).toBeVisible({timeout:10000});
+        activeDataRoot=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_active_data_root'));
+        if(normalizeWindowsPath(activeDataRoot)!==normalizeWindowsPath(restoredRoot)){
+          restartProfileMismatch=true;
+          throw new Error('Restarted desktop did not load the selected restored profile.');
+        }
+        connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
+        const deadline=Date.now()+30000;
+        while(Date.now()<deadline){
+          const response=await fetch(`${connection.base_url}/runs`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(1000)});
+          if(response.ok){const history=await response.json();if(history.items.some(item=>item.id===backupFixture.run.id)){restoredRunFound=true;break;}}
+          await new Promise(resolve=>setTimeout(resolve,250));
+        }
+        if(!restoredRunFound)throw new Error('Restored run was not available from the restarted profile engine.');
+        await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('restore_main_window'));
+        await page.getByRole('link',{name:'Settings'}).click();
+        restartedDesktopPid=ownedDesktopPids().find(pid=>pid!==proc.pid);
+        break;
+      }catch(error){
+        restartError=String(error);
+        await browser?.close().catch(()=>{});browser=undefined;page=undefined;
+        if(restartProfileMismatch)break;
+        await new Promise(resolve=>setTimeout(resolve,300));
+      }
+    }
+    if(!restoredRunFound||!restartedDesktopPid)throw new Error(`Installed profile restart did not load restored data: ${restartError}`);
+    const restoredActiveVerification=JSON.parse(execFileSync('uv',['run','python','scripts/installed_backup_fixture.py','verify','--directory',restoredDataDirectory,'--fixture',backupFixturePath,'--report',path.join(root,'restored-profile-after-restart.json')],{windowsHide:true,encoding:'utf8',timeout:60000,env:process.env}));
+    desktopRestoreAcceptance={passed:true,restore_dialog_selections:2,authenticated_restore_status:restoredResponse.status,restored_profile_root:restoredRoot,restore_parent:restoreParent,restored_database_and_artifacts_verified:restoredVerification.passed,active_profile_unchanged_before_switch:activeVerification.passed,profile_switch_disabled_before_confirmation:true,profile_switch_enabled_after_confirmation:true,profile_activation_invoked:true,desktop_restarted:true,restarted_desktop_pid:restartedDesktopPid,active_profile_after_restart:activeDataRoot,restored_run_available_after_restart:restoredRunFound,restored_profile_reverified_after_restart:restoredActiveVerification.passed,model_inference_requested:false};
     await writeFile(path.join(root,'desktop-restore-acceptance.json'),JSON.stringify(desktopRestoreAcceptance,null,2));
   }
   const closeBehavior=page.getByLabel('When the main window closes');
@@ -200,7 +262,9 @@ try{
   while(await isWindowVisible()&&Date.now()<visibilityDeadline)await new Promise(resolve=>setTimeout(resolve,100));
   const closeWaitMilliseconds=Date.now()-closeStarted;
   if(await isWindowVisible())throw new Error('Closing the window did not hide it');
-  if(proc.exitCode!==null)throw new Error('Closing the window exited the desktop instead of keeping the engine running');
+  if(profileRestartAttempted){
+    if(!ownedDesktopPids().includes(restartedDesktopPid))throw new Error('Closing the window exited the restarted desktop instead of keeping the engine running');
+  }else if(proc.exitCode!==null)throw new Error('Closing the window exited the desktop instead of keeping the engine running');
   const backgroundResponse=await fetch(`${connection.base_url}/runs`,{headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(1000)});
   if(!backgroundResponse.ok)throw new Error('The engine did not remain available after the window was hidden');
   await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('restore_main_window'));
@@ -214,8 +278,13 @@ try{
   if(savedBehavior!=='exit_on_close')throw new Error('The selected close behavior was not saved');
   await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'})).catch(()=>{});
   const shutdownDeadline=Date.now()+30000;
-  while(proc.exitCode===null&&Date.now()<shutdownDeadline)await new Promise(resolve=>setTimeout(resolve,250));
-  if(proc.exitCode===null)throw new Error('Selecting quit on close did not stop the desktop');
+  if(profileRestartAttempted){
+    while(ownedDesktopPids().includes(restartedDesktopPid)&&Date.now()<shutdownDeadline)await new Promise(resolve=>setTimeout(resolve,500));
+    if(ownedDesktopPids().includes(restartedDesktopPid))throw new Error('Selecting quit on close did not stop the restarted desktop');
+  }else{
+    while(proc.exitCode===null&&Date.now()<shutdownDeadline)await new Promise(resolve=>setTimeout(resolve,250));
+    if(proc.exitCode===null)throw new Error('Selecting quit on close did not stop the desktop');
+  }
   let stopped=false;try{await fetch(`${connection.base_url}/runs`,{signal:AbortSignal.timeout(1000)});}catch{stopped=true;}
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
@@ -234,4 +303,4 @@ try{
   const engineLog=(await readFile(logPath,'utf8').catch(()=>''));await writeFile(path.join(root,'engine-startup.log'),engineLog.slice(previous.length));
   await writeFile(path.join(root,'report.json'),JSON.stringify({passed:false,error:String(error),desktop_exit_code:proc.exitCode,desktop_signal:proc.signalCode,process_diagnostics:processDiagnostics,page_diagnostics:pageDiagnostics,startup_recovery_seed:ownerRecoveryAcceptance,elapsed_milliseconds:Date.now()-started},null,2));throw error;
 }
-finally{await browser?.close().catch(()=>{});if(proc.exitCode===null)execFileSync('taskkill',['/PID',String(proc.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});try{execFileSync('reg.exe',['delete','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run','/v',startupValueName,'/f'],{windowsHide:true,stdio:'ignore'});}catch{}}
+finally{await browser?.close().catch(()=>{});if(proc.exitCode===null)execFileSync('taskkill',['/PID',String(proc.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});if(profileRestartAttempted)for(const pid of ownedDesktopPids())try{execFileSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}try{execFileSync('reg.exe',['delete','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run','/v',startupValueName,'/f'],{windowsHide:true,stdio:'ignore'});}catch{}}

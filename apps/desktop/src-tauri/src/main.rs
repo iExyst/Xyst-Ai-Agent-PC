@@ -29,6 +29,14 @@ struct EngineState {
     connection: Connection,
 }
 
+#[cfg(windows)]
+struct ProcessJobState {
+    handle: Mutex<std::os::windows::io::OwnedHandle>,
+}
+
+#[cfg(not(windows))]
+struct ProcessJobState;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 enum CloseBehavior {
@@ -211,6 +219,28 @@ fn export_backup_bundle(
     Ok(exported.to_string_lossy().into_owned())
 }
 
+fn restart_desktop(
+    app: tauri::AppHandle,
+    process_job: tauri::State<'_, ProcessJobState>,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let job = process_job
+            .handle
+            .lock()
+            .map_err(|_| "Desktop process state is unavailable".to_string())?;
+        confinement::spawn_restart_process(&job)
+            .map_err(|error| format!("Could not safely restart X.A.A.: {error}"))?;
+        app.exit(0);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = process_job;
+        app.restart()
+    }
+}
+
 #[tauri::command]
 fn set_acceptance_restore_dialog_selections(
     state: tauri::State<'_, AcceptanceRestoreDialogState>,
@@ -264,6 +294,7 @@ fn take_acceptance_restore_dialog_selection(
 fn activate_restored_profile(
     app: tauri::AppHandle,
     state: tauri::State<'_, CloseBehaviorState>,
+    process_job: tauri::State<'_, ProcessJobState>,
     data_root: String,
 ) -> Result<(), String> {
     if std::env::var_os("XAA_DATA_DIR").is_some() {
@@ -291,13 +322,14 @@ fn activate_restored_profile(
         .active_data_root
         .lock()
         .map_err(|_| "Desktop settings are unavailable".to_string())? = Some(selected);
-    app.restart();
+    restart_desktop(app, process_job)
 }
 
 #[tauri::command]
 fn use_default_data_profile(
     app: tauri::AppHandle,
     state: tauri::State<'_, CloseBehaviorState>,
+    process_job: tauri::State<'_, ProcessJobState>,
 ) -> Result<(), String> {
     if std::env::var_os("XAA_DATA_DIR").is_some() {
         return Err(
@@ -317,7 +349,7 @@ fn use_default_data_profile(
         .active_data_root
         .lock()
         .map_err(|_| "Desktop settings are unavailable".to_string())? = None;
-    app.restart();
+    restart_desktop(app, process_job)
 }
 
 #[tauri::command]
@@ -634,12 +666,18 @@ impl EngineState {
 
 fn main() {
     #[cfg(windows)]
-    let _process_job =
+    let process_job =
         confinement::contain_process_tree().expect("Cannot contain the desktop process tree");
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             install_system_tray(app)?;
+            #[cfg(windows)]
+            app.manage(ProcessJobState {
+                handle: Mutex::new(process_job),
+            });
+            #[cfg(not(windows))]
+            app.manage(ProcessJobState);
             let acceptance_mode = std::env::var("XAA_TEST_ACCEPTANCE").as_deref() == Ok("1")
                 || std::env::var("XAA_TEST_HIDDEN").as_deref() == Ok("1");
             let settings_path = selected_settings_path(
