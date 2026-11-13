@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Current hosted installed AppContainer timeout (2026-11-13)
+
+Hosted run [43494986067](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43494986067) passed staged readiness, staged coordinator execution, and installed readiness. Installed coordinator execution emitted its full probe output but timed out before process exit; timeout cleanup was confirmed. Three consecutive runs of the exact hosted engine and installer passed locally. Treat Windows AppContainer execution as partial until the installed hosted command passes consistently; the exact cause remains unproven. No live model inference was used.
+
 ## Intermittent installed AppContainer acceptance (2026-11-13)
 
 Clean-runner installer run [43489515410](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43489515410) passed its staged frozen checks on both attempts. Installed readiness passed on both; installed coordinator execution failed with `PermissionError` in attempt 1 and the subsequent frozen process returned `backend_probe_failed` in attempt 2. Local execution with the exact attempt-1 package first failed and later passed the full coordinator acceptance, confirming the failure is intermittent but not identifying its cause. Installation/uninstallation and cleanup are verified; the installed command backend and Phase 10 gate are not closed. Added opt-in sanitized Windows error metadata and acceptance report diagnostics for the next reproduction. Keep Windows AppContainer parity **partial** pending a stable green installed acceptance. No real model was used.
