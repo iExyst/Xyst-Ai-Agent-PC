@@ -1,5 +1,11 @@
 # Progress
 
+## Capture staged AppContainer startup phase on timeout (2026-11-13)
+
+Source workflow [43494924910](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43494924910) passed on `48abc097`. The next clean installer run [43496929909](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43496929909) passed frozen readiness, then its staged coordinator command timed out with no stdout or stderr; cleanup and output-classification checks passed. This differs from the prior run, where staged execution passed and only installed execution timed out after emitting its result. The reports are under [`.acceptance/hosted-installer-43496929909/`](../.acceptance/hosted-installer-43496929909/). The exact hosted package had three consecutive local installed-command passes, while a separate local readiness attempt hit a shim-bootstrap error. These results confirm variability across the frozen child launch/exit path, not a specific root cause.
+
+Added acceptance-probe phase markers on stderr and bounded path-scrubbed tail plus elapsed-time reporting. Markers identify Python startup, AppContainer identity, credential check, workspace write, nested write, private temp, network check, and final output; command stdout remains the exact JSON probe result. Regression coverage passes (1 test); Ruff, strict Pyright, and `git diff --check` pass. Next, rebuild and run the hosted installer acceptance to capture the point where a timeout occurs. No live model inference was used.
+
 ## Reproduce installed AppContainer timeout on the current package (2026-11-13)
 
 Fresh hosted installer run [43494986067](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43494986067) built engine SHA-256 `949d21872d8a2427fea736c81b92d06d210879d79906e5513b08360ae9accda8`. Staged readiness, staged coordinator command, and installed readiness passed. The installed coordinator command emitted the complete 163-byte probe JSON with every reported isolation check true, but its frozen process did not exit within the 30-second command limit; the transport correctly returned timeout (`supervisor_exit_code: 124`) and confirmed cleanup. Hosted artifacts and reports are preserved in [`.acceptance/hosted-installer-43494986067/`](../.acceptance/hosted-installer-43494986067/).

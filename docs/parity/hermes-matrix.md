@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Varying frozen AppContainer child timeout (2026-11-13)
+
+Hosted installer workflow [43496929909](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43496929909) passed readiness but its staged coordinator command timed out with no output. The previous workflow passed staged command execution and timed out only after installed execution emitted its result; the exact previous package passed three consecutive local command runs. This leaves the frozen Windows command path **partial** and its intermittent cold-run behavior unresolved. Added phase markers to the acceptance probe for the next clean-runner diagnostic; no live model inference was used.
+
 ## Current hosted installed AppContainer timeout (2026-11-13)
 
 Hosted run [43494986067](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43494986067) passed staged readiness, staged coordinator execution, and installed readiness. Installed coordinator execution emitted its full probe output but timed out before process exit; timeout cleanup was confirmed. Three consecutive runs of the exact hosted engine and installer passed locally. Treat Windows AppContainer execution as partial until the installed hosted command passes consistently; the exact cause remains unproven. No live model inference was used.

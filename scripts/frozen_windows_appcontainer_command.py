@@ -56,9 +56,9 @@ def _command_result_diagnostics(result: dict[str, Any], output: dict[str, bytes]
     """Keep bounded, path-scrubbed failure evidence for installed-package CI."""
     stderr_lines = output["stderr"].decode("utf-8", errors="replace").splitlines()
     last_stderr_line = stderr_lines[-1][:512] if stderr_lines else ""
-    last_stderr_line = re.sub(
-        r"(?i)\b[A-Z]:\\(?:[^\\\s:]+\\)*[^\\\s:]*", "<path>", last_stderr_line
-    )
+    path_pattern = r"(?i)\b[A-Z]:\\(?:[^\\\s:]+\\)*[^\\\s:]*"
+    last_stderr_line = re.sub(path_pattern, "<path>", last_stderr_line)
+    stderr_tail = [re.sub(path_pattern, "<path>", line[:256]) for line in stderr_lines[-8:]]
     probe: dict[str, bool] | None = None
     try:
         parsed: object = json.loads(output["stdout"].decode("utf-8"))
@@ -80,6 +80,7 @@ def _command_result_diagnostics(result: dict[str, Any], output: dict[str, bytes]
         "exit_code": result.get("exit_code"),
         "supervisor_exit_code": result.get("supervisor_exit_code"),
         "termination_reason": result.get("termination_reason"),
+        "elapsed_seconds": result.get("elapsed_seconds"),
         "output_complete": result.get("output_complete"),
         "stdout_bytes": len(output["stdout"]),
         "stderr_bytes": len(output["stderr"]),
@@ -87,6 +88,7 @@ def _command_result_diagnostics(result: dict[str, Any], output: dict[str, bytes]
         "stderr_sha256": hashlib.sha256(output["stderr"]).hexdigest(),
         "probe_checks": probe,
         "stderr_last_line": last_stderr_line,
+        "stderr_tail": stderr_tail,
     }
 
 
