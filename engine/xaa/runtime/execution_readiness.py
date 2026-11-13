@@ -326,11 +326,7 @@ class ExecutionReadiness:
                 snapshot = WorkspaceSnapshot((SnapshotFile("probe.json", dependency_file),), (), ())
                 intent = CommandIntent(
                     argv=["/usr/bin/python3", "-I", "-c", DEPENDENCY_PROBE],
-                    # The frozen one-file engine starts both an isolation shim
-                    # and a child copy of itself. Allow cold extraction/startup
-                    # on hosted Windows runners before treating the probe as
-                    # an execution failure.
-                    max_seconds=20,
+                    max_seconds=5,
                     execution_id=uuid4().hex,
                     backend="wsl-bubblewrap-v1",
                     distribution=request.distribution,
@@ -690,7 +686,10 @@ class ExecutionReadiness:
                     argv=windows_local_probe_argv(
                         sys.executable, port, frozen=bool(getattr(sys, "frozen", False))
                     ),
-                    max_seconds=5,
+                    # A frozen one-file engine starts both the isolation shim
+                    # and a child copy of itself. Allow cold extraction/startup
+                    # before treating the probe as an execution failure.
+                    max_seconds=20,
                     execution_id=uuid4().hex,
                     backend="windows-appcontainer-v1",
                     distribution=WINDOWS_LOCAL_DISTRIBUTION,

@@ -2,7 +2,11 @@
 
 ## Frozen Windows AppContainer readiness acceptance (2026-11-13)
 
-The freshly built frozen engine now passes AppContainer readiness with no network capability, private workspace and profile-temp access, stripped credentials, bounded process-tree cleanup, and cleanup confirmation. The complete local report is [`.acceptance/frozen-windows-appcontainer-c94f4ceb40d748599e304ed459bade9a/report.json`](../../.acceptance/frozen-windows-appcontainer-c94f4ceb40d748599e304ed459bade9a/report.json); hosted installer workflow coverage has been added and is pending its next run. This verifies an X.A.A.-owned Windows backend path only. The broad execution capability and Hermes backend parity remain partial; installed user-command and clean-machine acceptance remain open.
+The freshly built local frozen engine passes AppContainer readiness with no network capability, private workspace and profile-temp access, stripped credentials, bounded process-tree cleanup, and cleanup confirmation. The complete local report is [`.acceptance/frozen-windows-appcontainer-c94f4ceb40d748599e304ed459bade9a/report.json`](../../.acceptance/frozen-windows-appcontainer-c94f4ceb40d748599e304ed459bade9a/report.json). Hosted installer attempts [43420272257](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43420272257), [43421320221](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43421320221), and [43422287349](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43422287349) all stopped at readiness; the latest report identifies the frozen child timeout. The Windows readiness probe now has a 20-second child allowance and a unit regression confirms that configuration; this correction still needs a freshly frozen hosted run. This verifies an X.A.A.-owned Windows backend path only. The broad execution capability and Hermes backend parity remain partial; installed user-command and clean-machine acceptance remain open.
+
+## Desktop product presentation refresh (2026-11-13)
+
+The native desktop keeps its existing setup, permissions, task review and recovery flows, while the product styling moves from a dark developer-console palette to a lighter, conventional desktop workspace. The change is presentation-only and does not expand capability status. TypeScript and Vite production build passed, and both browser startup/recovery tests pass. A rebuilt installer and native visual acceptance are still pending.
 
 ## Desktop portable backup and profile restore (2026-11-13)
 

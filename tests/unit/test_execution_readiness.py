@@ -157,7 +157,7 @@ async def test_windows_probe_listener_failure_returns_unavailable(monkeypatch):
     monkeypatch.setattr(module, "SUPPORTED", True)
     monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: "a" * 64)
 
-    async def discover(_cls, *, deadline):
+    async def discover(*, deadline):
         return object()
 
     async def fail_start_server(*_args, **_kwargs):
@@ -172,6 +172,51 @@ async def test_windows_probe_listener_failure_returns_unavailable(monkeypatch):
     assert result.state == "unavailable"
     assert result.error_code == "backend_probe_failed"
     assert result.profile_sha256 == "a" * 64
+
+
+async def test_windows_readiness_allows_cold_frozen_engine_startup(monkeypatch):
+    from xaa.runtime.execution_readiness import WINDOWS_LOCAL_CHECKS
+
+    profile = "a" * 64
+    monkeypatch.setattr(module, "SUPPORTED", True)
+    monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: profile)
+
+    class ProbeTransport:
+        async def run(self, intent, snapshot, *, deadline):
+            assert intent.backend == "windows-appcontainer-v1"
+            assert intent.max_seconds == 20
+            nonce = next(item.content for item in snapshot.files if item.path == "probe.txt")
+            output = {
+                "nonce": nonce.decode(),
+                "appcontainer": True,
+                "network_denied": True,
+                "private_temp": True,
+                "checks": True,
+            }
+            return {
+                "execution_id": intent.execution_id,
+                "succeeded": True,
+                "cleanup_confirmed": True,
+                "snapshot_sha256": snapshot.sha256,
+                "output_complete": True,
+                "workspace_changes_persisted": False,
+                "stdout_b64": base64.b64encode(json.dumps(output).encode()).decode(),
+                "stderr_b64": "",
+            }
+
+    async def discover(*, deadline):
+        return ProbeTransport()
+
+    monkeypatch.setattr(module.WindowsLocalTransport, "discover", discover)
+    result = await ExecutionReadiness().check(
+        ReadinessRequest(
+            backend="windows-appcontainer-v1",
+            distribution="Windows-Local",
+        )
+    )
+
+    assert result.state == "ready"
+    assert result.checks == list(WINDOWS_LOCAL_CHECKS)
 
 
 def test_windows_readiness_probe_selects_frozen_engine_dispatch():
