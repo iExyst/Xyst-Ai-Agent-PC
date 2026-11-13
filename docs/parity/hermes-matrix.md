@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Preserve fragmented Unicode command output (2026-11-13)
+
+The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. A real transport acceptance confirms exact streamed and receipt bytes, byte counts, SHA-256 digests, exit status and cleanup. The focused local test plus Ruff, format and strict engine Pyright pass; hosted verification is pending. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output limits, artifact review and SSH/hosted/container adapters remain open.
+
 ## End-to-end email cycle over verified TLS sockets (2026-11-13)
 
 The real email service now has a local end-to-end socket test from authenticated IMAP poll through durable Observe-run creation and a threaded SMTP reply. Both endpoints use a disposable loopback TLS certificate with an IP SAN; the test checks certificate verification, authentication, allowlisted/DMARC-authenticated sender handling, UID cursor persistence across a fresh service instance, and exactly one recipient reply. The focused email suite passes (10 tests), along with Ruff, formatting and engine Pyright. Hosted source run [43456823593](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43456823593) attempt 2 passes all 1,215 Python tests and configured browser/recovery checks; attempt 1 timed out in the unrelated live Wikipedia redirect check before pytest. Reports are retained under `../../.acceptance/hosted-source-43456823593/` and `../../.acceptance/hosted-source-43456823593-attempt2/`. This uses no real mailbox or model; provider interoperability and real account recovery remain open, so Phase 8 stays partial.

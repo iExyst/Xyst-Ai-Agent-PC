@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -105,6 +106,58 @@ async def test_local_command_runs_in_private_no_network_appcontainer(
             profile_sha256=digest,
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_local_command_preserves_fragmented_utf8_stdout_stderr_and_exit_status(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"utf8 fixture"),), (), ())
+    stdout_text = "café ☃ — 你好 — 🧪\n"
+    stderr_text = "ошибка — naïve — 🚧\n"
+    program = (
+        "import os,sys\n"
+        "for fd,text in ((1,sys.argv[1]),(2,sys.argv[2])):\n"
+        " data=text.encode('utf-8')\n"
+        " for byte in data: os.write(fd,bytes((byte,)))\n"
+        "raise SystemExit(7)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program, stdout_text, stderr_text],
+        max_seconds=10,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    streamed: dict[str, bytearray] = {"stdout": bytearray(), "stderr": bytearray()}
+
+    async def capture(stream: str, chunk: bytes) -> None:
+        streamed[stream].extend(chunk)
+
+    receipt = await transport.run(
+        intent,
+        snapshot,
+        deadline=time.monotonic() + 30,
+        on_output=capture,
+    )
+    expected_stdout = stdout_text.encode("utf-8")
+    expected_stderr = stderr_text.encode("utf-8")
+
+    assert receipt["succeeded"] is False
+    assert receipt["output_complete"] is True
+    assert receipt["exit_code"] == 7
+    assert receipt["cleanup_confirmed"] is True
+    assert base64.b64decode(receipt["stdout_b64"], validate=True) == expected_stdout
+    assert base64.b64decode(receipt["stderr_b64"], validate=True) == expected_stderr
+    assert bytes(streamed["stdout"]) == expected_stdout
+    assert bytes(streamed["stderr"]) == expected_stderr
+    assert receipt["stdout_bytes"] == len(expected_stdout)
+    assert receipt["stderr_bytes"] == len(expected_stderr)
+    assert receipt["stdout_sha256"] == hashlib.sha256(expected_stdout).hexdigest()
+    assert receipt["stderr_sha256"] == hashlib.sha256(expected_stderr).hexdigest()
 
 
 def test_local_command_rejects_shell_scripts() -> None:
