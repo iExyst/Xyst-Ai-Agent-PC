@@ -1998,6 +1998,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Skill Python Dependencies */
+        post: operations["resolve_skill_python_dependencies_skills__skill_id__versions__version__python_dependency_locks_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/acquire": {
         parameters: {
             query?: never;
@@ -8856,6 +8873,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProcedurePythonDependencyLock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_skill_python_dependencies_skills__skill_id__versions__version__python_dependency_locks_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPythonDependencyCheck"];
             };
         };
         responses: {

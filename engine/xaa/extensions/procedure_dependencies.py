@@ -96,7 +96,10 @@ class PythonDependencyTarget(BaseModel):
                 parse_tag(value)
         except ValueError as exc:
             raise ValueError("Target wheel compatibility tag is invalid.") from exc
-        return tuple(sorted(values))
+        # sys_tags() is ordered from most to least preferred. Keep that order for
+        # resolver candidate selection; canonical_json sorts it explicitly so
+        # existing lock identities remain stable.
+        return values
 
 
 class LockedPythonWheel(BaseModel):
@@ -259,6 +262,7 @@ class ProcedurePythonDependencyLock(BaseModel):
     def canonical_json(self) -> str:
         """Serialize normalized lock content independently of requirement/wheel ordering."""
         payload = self.model_dump(mode="json")
+        payload["target"]["compatible_wheel_tags"] = sorted(self.target.compatible_wheel_tags)
         payload["requirements"] = sorted(self.requirements, key=str.casefold)
         payload["wheels"] = sorted(
             (wheel.model_dump(mode="json") for wheel in self.wheels),

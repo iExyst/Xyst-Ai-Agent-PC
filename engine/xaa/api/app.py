@@ -83,7 +83,9 @@ from xaa.extensions.procedure_dependencies import (
     ProcedurePythonDependencyLock,
     PythonDependencyLockList,
     PythonDependencyLockRecord,
+    PythonDependencyTarget,
 )
+from xaa.extensions.pypi_resolver import PyPIResolutionError, PyPIWheelResolver
 from xaa.extensions.pypi_wheels import PyPIAcquisitionError, PyPIWheelAcquirer
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
@@ -1574,6 +1576,110 @@ def create_app(
             dependency_request,
             unverified_dependency_count=min(256, unverified_count),
         )
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks/resolve",
+        response_model=PythonDependencyLockRecord,
+    )
+    async def resolve_skill_python_dependencies(
+        skill_id: str,
+        request: SkillPythonDependencyCheck,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        evidence_value: object = manifest.get("evaluation_evidence")
+        evidence = (
+            cast(dict[str, object], evidence_value) if isinstance(evidence_value, dict) else {}
+        )
+        if evidence.get("provenance") not in {"agent_plugins_v1", "hermes_skill"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Python dependency resolution is available only for imported procedures.",
+            )
+        source_value = evidence.get("source")
+        source = cast(dict[str, object], source_value) if isinstance(source_value, dict) else {}
+        declarations_value = source.get("declared_requirements")
+        try:
+            declarations = (
+                json.loads(declarations_value)
+                if isinstance(declarations_value, str) and len(declarations_value) <= 8192
+                else None
+            )
+        except json.JSONDecodeError:
+            declarations = None
+        if not isinstance(declarations, dict):
+            raise HTTPException(
+                status_code=409, detail="Imported Python dependency declarations are unavailable."
+            )
+        declaration_fields = cast(dict[str, object], declarations)
+        raw_specs_value: object = declaration_fields.get("python_dependency_specs")
+        if not isinstance(raw_specs_value, list):
+            raise HTTPException(
+                status_code=409,
+                detail="Resolve requires a complete set of supported imported Python requirements.",
+            )
+        raw_specs = cast(list[object], raw_specs_value)
+        if (
+            not raw_specs
+            or len(raw_specs) > 64
+            or any(not isinstance(item, str) for item in raw_specs)
+            or declaration_fields.get("unparsed_dependency_count", 0) != 0
+            or declaration_fields.get("unsupported_dependency_count", 0) != 0
+            or declaration_fields.get("dependency_names_truncated") is True
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Resolve requires a complete set of supported imported Python requirements.",
+            )
+        specs = cast(list[str], raw_specs)
+        source_sha256 = source.get("content_sha256")
+        if (
+            not isinstance(source_sha256, str)
+            or re.fullmatch(r"[a-f0-9]{64}", source_sha256) is None
+        ):
+            raise HTTPException(status_code=409, detail="Imported procedure provenance is invalid.")
+        try:
+            dependency_request = SkillDependencyReadinessRequest(
+                distribution=request.distribution,
+                python_dependency_specs=specs,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409, detail="Imported requirements are invalid."
+            ) from exc
+        readiness = await execution_readiness.check_python_dependencies(dependency_request)
+        if (
+            readiness.state != "ready"
+            or readiness.unverified_dependency_count != 0
+            or readiness.python_environment is None
+            or not readiness.compatible_wheel_tags
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="A successful restricted WSL Python target probe is required before resolution.",
+            )
+        target = PythonDependencyTarget(
+            distribution=readiness.distribution,
+            environment=readiness.python_environment,
+            compatible_wheel_tags=tuple(readiness.compatible_wheel_tags),
+        )
+        try:
+            lock = await PyPIWheelResolver().resolve(
+                skill_id=skill_id,
+                skill_version=version,
+                source_sha256=source_sha256,
+                target=target,
+                requirements=tuple(specs),
+            )
+            return skill_store.save_python_dependency_lock(lock)
+        except PyPIResolutionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.put(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks",

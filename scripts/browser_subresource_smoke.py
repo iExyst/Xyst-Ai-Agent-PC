@@ -43,6 +43,75 @@ class BrowserWorkerResponse(BaseModel):
     error: str | None = None
 
 
+async def verify_off_host_subresources_fixture() -> tuple[str, dict[str, int]]:
+    """Test the page-level guard with a deterministic document in real Edge."""
+    approved_hosts = {"xaa-approved.example"}
+    blocked_resources: dict[str, int] = {}
+    blocked_main_navigations: dict[str, int] = {}
+    document = """
+        <!doctype html><title>XAA subresource fixture</title>
+        <p>approved document loaded</p>
+        <img src="https://xaa-blocked.example/pixel.png" alt="blocked image">
+        <script src="https://xaa-blocked.example/marker.js"></script>
+        <iframe title="blocked frame" src="https://xaa-blocked.example/frame"></iframe>
+        <script>document.body.dataset.thirdPartyScriptRan = String(window.xaaThirdPartyLoaded === true)</script>
+    """
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(
+            channel="msedge",
+            headless=True,
+            env=cast(dict[str, str | float | bool], browser_worker_environment()),
+            args=["--disable-quic", "--disable-background-networking", "--no-first-run"],
+        )
+        try:
+            context = await browser.new_context(
+                accept_downloads=False,
+                service_workers="block",
+                permissions=[],
+            )
+            try:
+                page = await context.new_page()
+
+                async def route_request(route: Any) -> None:
+                    if route.request.url == "https://xaa-approved.example/subresource-check":
+                        await route.fulfill(status=200, content_type="text/html", body=document)
+                        return
+                    await guard_browser_route(
+                        route,
+                        approved_hosts,
+                        blocked_resources,
+                        main_frame=page.main_frame,
+                        blocked_main_navigations=blocked_main_navigations,
+                    )
+
+                await context.route("**/*", route_request)
+                await page.goto(
+                    "https://xaa-approved.example/subresource-check",
+                    wait_until="load",
+                    timeout=10000,
+                )
+                if await page.title() != "XAA subresource fixture":
+                    raise AssertionError("The approved deterministic page did not load.")
+                if await page.locator("p").inner_text() != "approved document loaded":
+                    raise AssertionError("The approved deterministic page text was not visible.")
+                if blocked_resources != {"frame": 1, "image": 1, "script": 1}:
+                    raise AssertionError(
+                        f"Off-host fixture resources were not blocked: {blocked_resources}"
+                    )
+                if blocked_main_navigations:
+                    raise AssertionError("The approved fixture navigation was blocked.")
+                if (
+                    await page.locator("body").get_attribute("data-third-party-script-ran")
+                    != "false"
+                ):
+                    raise AssertionError("The blocked third-party script modified the page.")
+                return browser.version, dict(blocked_resources)
+            finally:
+                await context.close()
+        finally:
+            await browser.close()
+
+
 async def verify_blocked_frame_reporting() -> tuple[str, dict[str, int]]:
     approved_hosts = {"developer.mozilla.org"}
     blocked_resources: dict[str, int] = {}
@@ -199,44 +268,55 @@ async def verify_nested_frame_resource_chain() -> tuple[str, dict[str, int]]:
 
 
 def main() -> None:
-    request = {
-        "url": "https://en.wikipedia.org/wiki/HTTPS",
-        "approved_hosts": ["en.wikipedia.org"],
-        "links": [],
-        "screenshot": False,
-        "inspect_forms": False,
-    }
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if key.upper() not in {"PATH", "PYTHONPATH", "VIRTUAL_ENV"}
-    }
-    environment["PATH"] = os.path.join(os.environ["SystemRoot"], "System32")
-    completed = subprocess.run(
-        [sys.executable, "-I", "-m", "xaa.runtime.browser_worker"],
-        input=json.dumps(request, separators=(",", ":")).encode(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=45,
-        check=False,
-        env=environment,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError("The managed Edge worker exited without a result.")
-    response = BrowserWorkerResponse.model_validate_json(completed.stdout)
-    result = response.result
-    if not response.ok or result is None:
-        raise RuntimeError(f"The managed Edge navigation failed: {response.error!r}")
-    blocked = result.blocked_subresources
-    if (
-        result.title != "HTTPS - Wikipedia"
-        or "Hypertext Transfer Protocol Secure" not in result.content
-        or blocked.count < 1
-        or not blocked.resource_types
-    ):
-        raise AssertionError("The live page did not prove off-host subresources were blocked.")
-    browser_version, blocked_frame_resources = asyncio.run(verify_blocked_frame_reporting())
+    browser_version, blocked_types = asyncio.run(verify_off_host_subresources_fixture())
+    live_wikipedia_result: dict[str, object] | None = None
+    if os.environ.get("XAA_BROWSER_LIVE_NETWORK") == "1":
+        request = {
+            "url": "https://en.wikipedia.org/wiki/HTTPS",
+            "approved_hosts": ["en.wikipedia.org"],
+            "links": [],
+            "screenshot": False,
+            "inspect_forms": False,
+        }
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() not in {"PATH", "PYTHONPATH", "VIRTUAL_ENV"}
+        }
+        environment["PATH"] = os.path.join(os.environ["SystemRoot"], "System32")
+        completed = subprocess.run(
+            [sys.executable, "-I", "-m", "xaa.runtime.browser_worker"],
+            input=json.dumps(request, separators=(",", ":")).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=45,
+            check=False,
+            env=environment,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError("The managed Edge worker exited without a result.")
+        response = BrowserWorkerResponse.model_validate_json(completed.stdout)
+        result = response.result
+        if not response.ok or result is None:
+            raise RuntimeError(f"The managed Edge navigation failed: {response.error!r}")
+        blocked = result.blocked_subresources
+        if (
+            result.title != "HTTPS - Wikipedia"
+            or "Hypertext Transfer Protocol Secure" not in result.content
+            or blocked.count < 1
+            or not blocked.resource_types
+        ):
+            raise AssertionError("The live page did not prove off-host subresources were blocked.")
+        live_wikipedia_result = {
+            "url": request["url"],
+            "title": result.title,
+            "blocked_subresources": blocked.count,
+            "resource_types": blocked.resource_types,
+        }
+        live_browser_version, live_frame_resources = asyncio.run(verify_blocked_frame_reporting())
+        live_wikipedia_result["frame_check_browser_version"] = live_browser_version
+        live_wikipedia_result["frame_resource_types"] = live_frame_resources
     nested_browser_version, nested_blocked_resources = asyncio.run(
         verify_nested_frame_resource_chain()
     )
@@ -245,16 +325,16 @@ def main() -> None:
         "checked_at_utc": datetime.now(UTC).isoformat(),
         "browser": "Microsoft Edge via the managed Playwright worker",
         "platform": platform.platform(),
-        "approved_host": "en.wikipedia.org",
-        "navigation_url": request["url"],
+        "approved_host": "xaa-approved.example",
+        "navigation_url": "https://xaa-approved.example/subresource-check",
+        "page_source": "deterministic Edge page fixture",
+        "page_title": "XAA subresource fixture",
         "page_loaded": True,
         "off_host_subresources_blocked": True,
-        "blocked_subresource_count": blocked.count,
-        "blocked_resource_types": blocked.resource_types,
-        "blocked_frame_page_browser_version": browser_version,
-        "blocked_frame_check": "real Edge context using the shared route guard; blocked requests are aborted before network",
-        "blocked_frame_page_resource_types": blocked_frame_resources,
-        "blocked_child_frame_documents_reported": blocked_frame_resources.get("frame", 0) > 0,
+        "blocked_resource_types": blocked_types,
+        "page_check_browser_version": browser_version,
+        "blocked_child_frame_documents_reported": blocked_types.get("frame", 0) > 0,
+        "live_wikipedia_check": live_wikipedia_result,
         "nested_frame_chain_browser_version": nested_browser_version,
         "nested_frame_chain_depth": 3,
         "nested_frame_chain_off_host_blocked_resource_types": nested_blocked_resources,

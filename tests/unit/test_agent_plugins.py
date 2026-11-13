@@ -1195,6 +1195,103 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         assert rejected.status_code == 409
 
 
+def test_python_dependency_resolution_api_uses_imported_declarations_and_wsl_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = make_package(tmp_path)
+    skill_file = package / "skills" / "summarize" / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8").replace(', "git+https://example.test/repo.git"', ""),
+        encoding="utf-8",
+    )
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=RunStore(tmp_path / "dependency-resolve.sqlite3"),
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    imported = {
+        "root": str(tmp_path),
+        "package_name": "sample-package",
+        "skill_name": "summarize",
+    }
+    environment = {
+        "implementation_name": "cpython",
+        "implementation_version": "3.12.3",
+        "os_name": "posix",
+        "platform_machine": "x86_64",
+        "platform_python_implementation": "CPython",
+        "platform_release": "6.8.0-wsl2",
+        "platform_system": "Linux",
+        "platform_version": "#1 SMP",
+        "python_full_version": "3.12.3",
+        "python_version": "3.12",
+        "sys_platform": "linux",
+    }
+    expected: dict[str, object] = {}
+
+    async def target_probe(_self, request, **_kwargs):
+        assert request.distribution == "Ubuntu-24.04"
+        assert request.python_dependency_specs == ["requests>=2.0"]
+        return SkillDependencyReadinessResult(
+            distribution="Ubuntu-24.04",
+            state="ready",
+            python_version="3.12.3",
+            python_environment=environment,
+            compatible_wheel_tags=["py3-none-any"],
+            dependencies=[SkillDependencyStatus(requirement="requests>=2.0", status="available")],
+            unverified_dependency_count=0,
+            checked_at=datetime.now(UTC),
+        )
+
+    class FixtureResolver:
+        async def resolve(self, **kwargs):
+            expected.update(kwargs)
+            target = PythonDependencyTarget(
+                distribution="Ubuntu-24.04",
+                environment=environment,
+                compatible_wheel_tags=("py3-none-any",),
+            )
+            return ProcedurePythonDependencyLock(
+                schema_version=1,
+                skill_id=kwargs["skill_id"],
+                skill_version=kwargs["skill_version"],
+                source_sha256=kwargs["source_sha256"],
+                target=target,
+                requirements=("requests>=2.0",),
+                wheels=(
+                    LockedPythonWheel(
+                        filename="requests-2.32.3-py3-none-any.whl",
+                        project_name="requests",
+                        version="2.32.3",
+                        sha256="c" * 64,
+                        size_bytes=1024,
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(api_module.ExecutionReadiness, "check_python_dependencies", target_probe)
+    monkeypatch.setattr(api_module, "PyPIWheelResolver", FixtureResolver)
+    with TestClient(app) as client:
+        created = client.post("/extensions/packages/import-skill", headers=headers, json=imported)
+        assert created.status_code == 201
+        identity = created.json()["id"]
+        version = client.get(f"/skills/{identity}/versions/1", headers=headers).json()
+        endpoint = f"/skills/{identity}/versions/1/python-dependency-locks/resolve"
+        assert client.post(endpoint, json={"distribution": "Ubuntu-24.04"}).status_code == 401
+        resolved = client.post(endpoint, headers=headers, json={"distribution": "Ubuntu-24.04"})
+
+    assert resolved.status_code == 200, resolved.text
+    payload = resolved.json()
+    assert payload["decision"] == "pending_review"
+    assert payload["wheelhouse_present"] is False
+    assert payload["lock"]["requirements"] == ["requests>=2.0"]
+    assert expected["skill_id"] == identity
+    assert expected["skill_version"] == 1
+    assert expected["source_sha256"] == version["evaluation_evidence"]["source"]["content_sha256"]
+    assert expected["requirements"] == ("requests>=2.0",)
+
+
 @pytest.mark.parametrize(
     "link",
     [
