@@ -162,7 +162,6 @@ function App() {
         const saved=await client.getRun(candidate.id,controller.signal);
         if(controller.signal.aborted||selectionRevision!==runSelectionRevision.current)return;
         setRun(saved);
-        if(saved.state==='blocked')setPage('runs');
         void watch(saved);
       } catch(failure) {
         if(!controller.signal.aborted)setError(`Could not restore the latest unfinished run: ${String(failure)}`);
@@ -367,6 +366,7 @@ function App() {
       <main className="app-content">
         {error&&<p className="app-alert" role="alert">{error}</p>}
         {client&&page==='home'&&<section className="welcome-card"><div><p className="eyebrow">YOUR PRIVATE AI WORKSPACE</p><h2>What would you like to get done?</h2><p>Give X.A.A. an objective. Follow its plan, tools, and results as it works on your computer.</p></div><button type="button" onClick={()=>document.getElementById('run-objective')?.focus()}>Start with an objective <span aria-hidden="true">↘</span></button></section>}
+        {client&&page==='home'&&run?.state==='blocked'&&<section className="recovery-card" aria-labelledby="recovery-title"><div><p className="eyebrow">RECOVERY AVAILABLE</p><h2 id="recovery-title">A saved run needs your review</h2><p>This run is blocked and has not been resumed. Review its latest activity and any pending recovery steps before deciding what to do.</p></div><button type="button" onClick={()=>navigateTo('runs','active-run')}>Review saved run</button></section>}
     {!client ? <section><h2>Connect to the engine</h2><p>Start the local engine, then enter its API token. The token stays in this window’s memory.</p><label>Engine token<input type="password" value={token} onChange={event => setToken(event.target.value)} /></label><button onClick={connect} disabled={busy || token.length < 32}>Connect</button></section> : <>
       {page==='models'&&<div id="model-setup" className="anchor-target"><ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/></div>}
       {page==='home'&&<section className="workspace-card"><label>Workspace path<input value={workspace} onChange={event=>setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><button type="button" className="secondary-button" onClick={()=>void selectWorkspace()} disabled={busy}>Browse for project folder</button></section>}

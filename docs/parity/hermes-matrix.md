@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Blocked-run recovery entry point (2026-11-13)
+
+The desktop continues to restore the latest recoverable run into memory without resuming it. A blocked run now leaves the owner on the workspace home screen with a concise notice and an explicit “Review saved run” action. Startup browser acceptance verifies the run stays unopened until selection and that its recovery controls are then available; no model inference is used. The updated unsigned 0.1.1 installer builds successfully (local SHA-256 recorded in [`../progress.md`](../progress.md)), but installed-package UI acceptance and migration behavior remain open.
+
 ## Native desktop skill-dependency readiness (2026-11-13)
 
 The actual Tauri WebView now has a local acceptance for the imported-skill readiness flow: it imports a fixture as an inactive candidate, requires a successful Ubuntu-24.04 sandbox check before enabling the action, calls the exact-version API route, and displays available, incompatible, missing and unsupported-manager results. The fresh native desktop/frozen-engine build and acceptance pass without model inference, package installation or package-code execution; the isolated report and screen capture are in [`.acceptance/native-skill-readiness-ded36a43-3a62-4fa2-9e01-645242d5ad2c/`](../../.acceptance/native-skill-readiness-ded36a43-3a62-4fa2-9e01-645242d5ad2c/). Hosted source workflow [43367241259](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43367241259) passed. The hosted installer job was skipped, so the new UI path has not been tested in a hosted installed package. Dependency installation, unsupported manager checks and full procedure execution remain open; the skills capability remains partial.

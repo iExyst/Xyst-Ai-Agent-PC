@@ -35,6 +35,9 @@ test('reopens the latest unfinished run on connection for owner recovery without
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await expect.poll(()=>calls.some(call=>call.method==='GET'&&call.path==='/runs/latest-unfinished')).toBe(true);
+  await expect(page.getByRole('heading',{name:'A saved run needs your review'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Active run blocked'})).toHaveCount(0);
+  await page.getByRole('button',{name:'Review saved run'}).click();
   await expect(page.getByRole('heading',{name:'Active run blocked'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Uncertain workspace writes'})).toBeVisible();
   await page.getByRole('button',{name:'Inspect uncertain workspace writes'}).click();
