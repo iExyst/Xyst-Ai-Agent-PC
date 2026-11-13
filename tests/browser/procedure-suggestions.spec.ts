@@ -36,6 +36,9 @@ test('suggests an active procedure but waits for explicit selection',async({page
   await suggestions.getByRole('button',{name:'Inspect active version',exact:true}).click();
   await panel.getByRole('button',{name:'Select active procedure for next run',exact:true}).click();
   await navigateMainSection(page,'New objective');
-  await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toContainText('Active procedure: Summarize Test Reports · version 2');
+  const selected=page.getByRole('region',{name:'Selected procedure',exact:true});
+  await expect(selected).toContainText('Active procedure: Summarize Test Reports · version 2');
+  await expect(selected).toContainText("The selected procedure's Python and Bash resources can run only in the restricted WSL command sandbox after you grant command access for this run.");
+  await expect(selected.getByText('workspace.command',{exact:true})).toBeVisible();
   expect(runSubmissions).toBe(0);
 });
