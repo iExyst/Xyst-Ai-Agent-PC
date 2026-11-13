@@ -414,10 +414,25 @@ def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_
     assert result["incompatible_python_dependency_specs"] == ["urllib3<2"]
     assert result["missing_python_dependency_specs"] == ["missing-lib==1.0"]
     assert result["unverified_dependency_count"] == 1
+    assert result["unverified_dependency_packages"] == [{"manager": "npm", "name": "left-pad"}]
+    assert "left-pad>=1.0" not in json.dumps(result)
     assert result["dependencies_unresolved"] is True
     assert result["dependency_count_unresolved"] == 3
     assert "dependency_installation" in result["not_assessed"]
     assert "unsupported_dependency_managers" in result["not_assessed"]
+
+
+def test_unverified_dependency_names_never_echo_unparsed_declarations() -> None:
+    requirements = agent_plugins._declared_requirements(
+        {"dependencies": ["requests==2.0", "https://example.test/private-token"]}
+    )
+    result = agent_plugins._assess_requirement_readiness(requirements)
+    assert result["unverified_dependency_packages"] == [
+        {"manager": "unspecified", "name": "requests"}
+    ]
+    serialized = json.dumps({"requirements": requirements, "readiness": result})
+    assert "requests==2.0" not in serialized
+    assert "private-token" not in serialized
 
 
 def test_requirement_readiness_skips_inapplicable_python_markers(

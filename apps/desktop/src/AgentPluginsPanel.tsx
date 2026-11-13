@@ -9,6 +9,16 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
     const items = value[key];
     return Array.isArray(items) ? items.filter((item): item is string => typeof item === 'string').join(', ') : '';
   };
+  const packageNames = (key: string) => {
+    const items = value[key];
+    return Array.isArray(items) ? items.flatMap(item => {
+      if (typeof item !== 'object' || item === null) return [];
+      const entry = item as Record<string, unknown>;
+      return typeof entry.manager === 'string' && typeof entry.name === 'string'
+        ? [`${entry.manager}:${entry.name}`]
+        : [];
+    }).join(', ') : '';
+  };
   const dependencies = value.dependencies_declared === true
     ? `declared (${typeof value.dependency_count === 'number' ? value.dependency_count : 'count unknown'})`
     : 'not declared';
@@ -23,6 +33,7 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
     `Environment variable names: ${names('required_environment_names') || 'none'}`,
     `Dependencies: ${dependencies}`,
     `Package names: ${names('dependency_names') || 'none parsed'} · manager keys: ${names('dependency_managers') || 'not declared'} · unparsed entries: ${typeof value.unparsed_dependency_count === 'number' ? value.unparsed_dependency_count : 'unknown'}`,
+    `Packages outside the checked Python managers: ${packageNames('unverified_dependency_packages') || 'none identified'}`,
     `Python version constraints: ${names('python_dependency_specs') || 'none parsed'}`,
   ].join(' · ');
 }
@@ -32,6 +43,16 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
   const names = (key: string) => {
     const items = value[key];
     return Array.isArray(items) ? items.filter((item): item is string => typeof item === 'string').join(', ') : '';
+  };
+  const packageNames = (key: string) => {
+    const items = value[key];
+    return Array.isArray(items) ? items.flatMap(item => {
+      if (typeof item !== 'object' || item === null) return [];
+      const entry = item as Record<string, unknown>;
+      return typeof entry.manager === 'string' && typeof entry.name === 'string'
+        ? [`${entry.manager}:${entry.name}`]
+        : [];
+    }).join(', ') : '';
   };
   const platform = typeof value.platform_status === 'string' ? value.platform_status : 'unknown';
   const current = typeof value.current_platform === 'string' ? value.current_platform : 'unknown';
@@ -48,6 +69,7 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
     `Required environment names present: ${names('present_environment_names') || 'none'}; missing: ${names('missing_environment_names') || 'none'}`,
     `Python package constraints: ${dependencies}; satisfied: ${names('available_python_dependency_specs') || 'none'}; missing: ${names('missing_python_dependency_specs') || 'none'}; version mismatch: ${names('incompatible_python_dependency_specs') || 'none'}; unchecked: ${names('unchecked_python_dependency_specs') || 'none'}`,
     `Other or unverified dependencies: ${typeof value.unverified_dependency_count === 'number' ? value.unverified_dependency_count : 'unknown'}`,
+    `Packages not checked by the Python version audit: ${packageNames('unverified_dependency_packages') || 'none identified'}`,
     `Unresolved Hermes toolsets: ${names('hermes_toolsets_unresolved') || 'none'}`,
     `Unresolved Hermes tools: ${names('hermes_tools_unresolved') || 'none'}`,
     `Unresolved fallback conditions: ${fallbackConditions}`,

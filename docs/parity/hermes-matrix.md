@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Skill dependency readiness display (2026-11-13)
+
+Agent Plugin discovery now gives owners manager/package names for syntactically validated dependencies outside the supported Python metadata check. Versions, URLs and unparsed dependency strings remain hidden; this assessment does not install or run package code. Unsupported managers remain unresolved, and dependency installation, credential setup, toolset mapping and representative procedure execution remain open Phase 5 gaps. The skill capability row remains partial.
+
 ## MCP catalog-change acceptance over both transports (2026-11-12)
 
 The native installed-app smoke now exercises the official TypeScript SDK fixture over stdio and Streamable HTTP. In each case, tool/resource/prompt list-change notices appear in the desktop, resource and prompt lists refresh, and a newly discovered tool retains the default `none` permission. Hosted Windows installer run [43340970557](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43340970557) passed; both installed reports confirm these checks, AppContainer network isolation and graceful shutdown ([first](../../.acceptance/hosted-installer-43340970557/xaa-windows-installer-unsigned/.acceptance/8e2736fc-1516-4c90-94ff-37caa97f6f3e/report.json), [second](../../.acceptance/hosted-installer-43340970557/xaa-windows-installer-unsigned/.acceptance/9d0ed76f-ed52-4d70-b9ef-701017efb149/report.json)). Local focused integration and browser checks also pass; the local native run verifies both transports before the machine's known AppContainer initialization failure. This is a targeted protocol acceptance only; the broad MCP capability and Hermes parity status remains partial.

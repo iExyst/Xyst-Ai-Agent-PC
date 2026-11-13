@@ -257,6 +257,7 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         len(dependency_items) + int(dependency_items_truncated and len(dependency_items) < 128),
     )
     python_dependency_specs: list[str] = []
+    unverified_dependency_packages: set[tuple[str, str]] = set()
     unsupported_dependency_count = 0
     for manager, item in dependency_items:
         if not isinstance(item, str) or len(item) > 256:
@@ -271,6 +272,7 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
             python_dependency_specs.append(item.strip())
         else:
             unsupported_dependency_count += 1
+            unverified_dependency_packages.add((manager or "unspecified", match.group(1)))
     toolsets = _bounded_names(hermes.get("requires_toolsets"))
     tools = _bounded_names(hermes.get("requires_tools"))
     fallback_toolsets = _bounded_names(hermes.get("fallback_for_toolsets"))
@@ -295,6 +297,10 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         "dependency_count": min(dependency_count, 128),
         "dependency_names": sorted(dependency_names)[:128],
         "python_dependency_specs": python_dependency_specs[:128],
+        "unverified_dependency_packages": [
+            {"manager": manager, "name": name}
+            for manager, name in sorted(unverified_dependency_packages)[:128]
+        ],
         "dependency_names_truncated": dependency_count > 128 or dependency_items_truncated,
         "dependency_managers": sorted(dependency_managers)[:64],
         "unparsed_dependency_count": min(unparsed_dependency_count, 128),
@@ -412,6 +418,24 @@ def _assess_requirement_readiness(
         + unverified_dependency_count
     )
     dependencies_unresolved = dependencies_declared and unresolved_dependency_count > 0
+    raw_unverified_packages = requirements.get("unverified_dependency_packages", [])
+    safe_unverified_packages: list[dict[str, str]] = []
+    if isinstance(raw_unverified_packages, list):
+        for raw_item in cast(list[Any], raw_unverified_packages)[:128]:
+            if not isinstance(raw_item, dict):
+                continue
+            package_entry = cast(dict[str, Any], raw_item)
+            manager = package_entry.get("manager")
+            name = package_entry.get("name")
+            if not isinstance(manager, str) or not isinstance(name, str):
+                continue
+            if manager != "unspecified" and not re.fullmatch(
+                r"[A-Za-z][A-Za-z0-9_.-]{0,31}", manager
+            ):
+                continue
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+                continue
+            safe_unverified_packages.append({"manager": manager, "name": name})
     toolsets = cast(list[str], requirements.get("hermes_toolsets", []))
     hermes_tools = cast(list[str], requirements.get("hermes_required_tools", []))
     fallback_toolsets = cast(list[str], requirements.get("hermes_fallback_toolsets", []))
@@ -431,6 +455,7 @@ def _assess_requirement_readiness(
         "missing_python_dependency_specs": missing_specs,
         "incompatible_python_dependency_specs": incompatible_specs,
         "unchecked_python_dependency_specs": unchecked_specs,
+        "unverified_dependency_packages": safe_unverified_packages,
         "unverified_dependency_count": unverified_dependency_count,
         "dependency_count": dependency_count,
         "hermes_toolsets_unresolved": toolsets,
