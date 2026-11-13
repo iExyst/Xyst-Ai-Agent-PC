@@ -15,9 +15,27 @@ export function registerFixtureCapabilities(
     latePromptEnabled = false,
   },
 ) {
-  let lateToolRegistered = lateToolEnabled;
-  let lateResourceRegistered = lateResourceEnabled;
-  let latePromptRegistered = latePromptEnabled;
+  let lateToolRegistered = false;
+  let lateResourceRegistered = false;
+  let latePromptRegistered = false;
+  const enableLateTool = () => {
+    if (!lateToolRegistered) {
+      lateToolRegistered = true;
+      registerLateTool(server, transport);
+    }
+  };
+  const enableLateResource = () => {
+    if (!lateResourceRegistered) {
+      lateResourceRegistered = true;
+      registerLateResource(server, transport);
+    }
+  };
+  const enableLatePrompt = () => {
+    if (!latePromptRegistered) {
+      latePromptRegistered = true;
+      registerLatePrompt(server, transport);
+    }
+  };
   server.registerTool(
     'echo_value',
     {
@@ -48,7 +66,7 @@ export function registerFixtureCapabilities(
       ],
     }),
   );
-  if (lateResourceEnabled) registerLateResource(server, transport);
+  if (lateResourceEnabled) enableLateResource();
   server.registerResource(
     'fixture_item',
     new ResourceTemplate('xaa://typescript/items/{item_id}', {
@@ -83,7 +101,7 @@ export function registerFixtureCapabilities(
       return { content: [{ type: 'text', text: `typescript-${transport}-update-published` }] };
     },
   );
-  if (lateToolEnabled) registerLateTool(server, transport);
+  if (lateToolEnabled) enableLateTool();
   server.registerTool(
     'publish_tool_list_change',
     {
@@ -91,10 +109,7 @@ export function registerFixtureCapabilities(
       inputSchema: z.object({}),
     },
     async () => {
-      if (!lateToolRegistered) {
-        lateToolRegistered = true;
-        registerLateTool(server, transport);
-      }
+      enableLateTool();
       await publishToolListChange();
       return { content: [{ type: 'text', text: `typescript-${transport}-tool-list-change-published` }] };
     },
@@ -106,10 +121,7 @@ export function registerFixtureCapabilities(
       inputSchema: z.object({}),
     },
     async () => {
-      if (!lateResourceRegistered) {
-        lateResourceRegistered = true;
-        registerLateResource(server, transport);
-      }
+      enableLateResource();
       await publishResourcesListChange();
       return { content: [{ type: 'text', text: `typescript-${transport}-resources-list-change-published` }] };
     },
@@ -138,7 +150,7 @@ export function registerFixtureCapabilities(
       ],
     }),
   );
-  if (latePromptEnabled) registerLatePrompt(server, transport);
+  if (latePromptEnabled) enableLatePrompt();
   server.registerTool(
     'publish_prompts_list_change',
     {
@@ -146,14 +158,12 @@ export function registerFixtureCapabilities(
       inputSchema: z.object({}),
     },
     async () => {
-      if (!latePromptRegistered) {
-        latePromptRegistered = true;
-        registerLatePrompt(server, transport);
-      }
+      enableLatePrompt();
       await publishPromptsListChange();
       return { content: [{ type: 'text', text: `typescript-${transport}-prompts-list-change-published` }] };
     },
   );
+  return { enableLateTool, enableLateResource, enableLatePrompt };
 }
 
 function registerLateTool(server, transport) {

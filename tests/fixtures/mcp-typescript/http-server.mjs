@@ -16,6 +16,7 @@ let handler;
 let lateToolEnabled = false;
 let lateResourceEnabled = false;
 let latePromptEnabled = false;
+const activeCapabilities = new Set();
 handler = createMcpHandler(({ era, requestInfo }) => {
   const server = new McpServer(
     { name: 'XAA TypeScript HTTP fixture', version: '1.0.0' },
@@ -26,7 +27,7 @@ handler = createMcpHandler(({ era, requestInfo }) => {
     } },
   );
   const protocolVersion = requestInfo.headers.get('mcp-protocol-version') ?? era;
-  registerFixtureCapabilities(server, {
+  const capabilities = registerFixtureCapabilities(server, {
     transport: 'http',
     protocolVersion,
     publishResourceUpdate: (uri) => handler.notify.resourceUpdated(uri),
@@ -46,6 +47,7 @@ handler = createMcpHandler(({ era, requestInfo }) => {
       handler.notify.promptsChanged();
     },
   });
+  activeCapabilities.add(capabilities);
   return server;
 });
 const nodeHandler = toNodeHandler(handler);
@@ -53,7 +55,26 @@ const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();
 const httpServer = createServer((request, response) => {
   if (!validateHost(request, response) || !validateOrigin(request, response)) return;
-  if (request.url?.split('?')[0] !== '/mcp') {
+  const pathname = request.url?.split('?')[0];
+  if (pathname === '/__xaa_fixture/catalog-change' && request.method === 'POST') {
+    lateToolEnabled = true;
+    lateResourceEnabled = true;
+    latePromptEnabled = true;
+    for (const capabilities of activeCapabilities) {
+      capabilities.enableLateTool();
+      capabilities.enableLateResource();
+      capabilities.enableLatePrompt();
+    }
+    void Promise.all([
+      handler.notify.toolsChanged(),
+      handler.notify.resourcesChanged(),
+      handler.notify.promptsChanged(),
+    ]).then(() => response.writeHead(204).end(), (error) => {
+      response.writeHead(500, { 'content-type': 'text/plain' }).end(String(error));
+    });
+    return;
+  }
+  if (pathname !== '/mcp') {
     response.writeHead(404).end();
     return;
   }

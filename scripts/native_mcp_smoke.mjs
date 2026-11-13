@@ -92,6 +92,7 @@ let ownerPromptCompletion = false;
 let ownerResourceTemplateCompletion = false;
 let ownerHttpPromptCompletion = false;
 let ownerHttpResourceTemplateCompletion = false;
+let typescriptHttpCatalogNotifications = false;
 
 try {
   const debugDeadline = Date.now() + 60_000;
@@ -436,6 +437,41 @@ try {
       fixture_output: typescriptHttpOutput,
     })}`);
   }
+  await typescriptHttpCard.getByRole('button', { name: 'List resources', exact: true }).click();
+  await expect(typescriptHttpCard.locator('.mcp-resource').filter({ hasText: 'xaa://typescript/readme' }))
+    .toBeVisible({ timeout: 20_000 });
+  await typescriptHttpCard.getByRole('button', { name: 'List prompts', exact: true }).click();
+  await expect(typescriptHttpCard.locator('.mcp-prompt').filter({ hasText: 'Summarize a topic' }))
+    .toBeVisible({ timeout: 20_000 });
+  const catalogChange = await fetch(`http://127.0.0.1:${typescriptHttpPort}/__xaa_fixture/catalog-change`, {
+    method: 'POST',
+  });
+  if (catalogChange.status !== 204) {
+    throw new Error(`TypeScript HTTP MCP fixture catalog update failed (${catalogChange.status}).`);
+  }
+  const updateButton = typescriptHttpCard.getByRole('button', { name: 'Check for server updates', exact: true });
+  const updateNotices = typescriptHttpCard.getByRole('complementary', { name: 'Untrusted MCP server update notices' });
+  const toolChangeNotice = updateNotices.getByText(/tool catalog changed/);
+  const resourceChangeNotice = updateNotices.getByText(/resource catalog changed/);
+  const promptChangeNotice = updateNotices.getByText(/prompt catalog changed/);
+  const updateDeadline = Date.now() + 20_000;
+  while (Date.now() < updateDeadline) {
+    await updateButton.click();
+    if (await toolChangeNotice.count() && await resourceChangeNotice.count() && await promptChangeNotice.count()) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  await expect(updateNotices).toContainText('tool catalog changed');
+  await expect(updateNotices).toContainText('resource catalog changed');
+  await expect(updateNotices).toContainText('prompt catalog changed');
+  await expect(typescriptHttpCard.locator('.mcp-resource').filter({ hasText: 'xaa://typescript/late' }))
+    .toBeVisible({ timeout: 20_000 });
+  await expect(typescriptHttpCard.locator('.mcp-prompt').filter({ hasText: 'Late fixture prompt' }))
+    .toBeVisible({ timeout: 20_000 });
+  const lateTool = typescriptHttpCard.locator('.mcp-tool').filter({ hasText: 'late_fixture_tool' });
+  await expect(lateTool).toBeVisible({ timeout: 20_000 });
+  await expect(lateTool.getByLabel('Permission')).toHaveValue('none');
+  typescriptHttpCatalogNotifications = true;
+
   await typescriptHttpCard.getByRole('button', { name: 'List resource templates', exact: true }).click();
   const httpTemplate = typescriptHttpCard.locator('.mcp-resource-template').filter({ hasText: 'xaa://typescript/items/{item_id}' });
   await expect(httpTemplate).toBeVisible({ timeout: 20_000 });
@@ -736,6 +772,7 @@ try {
     },
     typescript_sdk_modern_stdio: typescriptSdkModernStdio,
     typescript_sdk_modern_http: typescriptSdkModernHttp,
+    typescript_http_catalog_notifications: typescriptHttpCatalogNotifications,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
     owner_resource_subscription: true,
@@ -786,6 +823,7 @@ try {
     owner_http_prompt_completion: ownerHttpPromptCompletion,
     owner_http_resource_template_completion: ownerHttpResourceTemplateCompletion,
     typescript_sdk_modern_http: typescriptSdkModernHttp,
+    typescript_http_catalog_notifications: typescriptHttpCatalogNotifications,
     error: String(error),
   }, null, 2));
   throw error;
