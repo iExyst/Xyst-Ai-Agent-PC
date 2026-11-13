@@ -25,6 +25,20 @@ async function removeMcpServer(page, button) {
     throw new Error(`MCP server removal returned HTTP ${deletion.status()}.`);
   }
 }
+
+async function stopOwnedFixtureProcess(child, label) {
+  if (!child || child.exitCode !== null) return;
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  const taskkill = path.join(process.env.SystemRoot, 'System32', 'taskkill.exe');
+  try {
+    execFileSync(taskkill, ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+  } catch (error) {
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 500))]);
+    if (child.exitCode === null) throw new Error(`Could not stop ${label}.`, { cause: error });
+  }
+  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+  if (child.exitCode === null) throw new Error(`${label} did not exit after its process tree was stopped.`);
+}
 const stage = process.env.XAA_NATIVE_STAGE || 'native-dev';
 if (!['native-dev', 'native-release'].includes(stage)) throw new Error(`Unsupported native stage: ${stage}`);
 const stageRoot = path.resolve(process.env.XAA_NATIVE_STAGE_ROOT || path.join('build', stage));
@@ -68,12 +82,16 @@ proc.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-
 let browser;
 let connection;
 let oauthFixture;
+let typescriptHttpFixture;
 let isolationListener;
 let fixtureOutput = '';
 let passed = false;
 let typescriptSdkModernStdio = false;
+let typescriptSdkModernHttp = false;
 let ownerPromptCompletion = false;
 let ownerResourceTemplateCompletion = false;
+let ownerHttpPromptCompletion = false;
+let ownerHttpResourceTemplateCompletion = false;
 
 try {
   const debugDeadline = Date.now() + 60_000;
@@ -358,6 +376,112 @@ try {
   await removeMcpServer(page, panel.getByRole('button', { name: 'Remove server', exact: true }));
   typescriptSdkModernStdio = true;
 
+  const typescriptHttpPort = await new Promise((resolve, reject) => {
+    const listener = net.createServer();
+    listener.once('error', reject);
+    listener.listen(0, '127.0.0.1', () => {
+      const address = listener.address();
+      if (!address || typeof address === 'string') return reject(new Error('Could not allocate a TypeScript HTTP fixture port.'));
+      listener.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
+  const typescriptHttpFixturePath = path.resolve('tests/fixtures/mcp-typescript/http-server.mjs');
+  typescriptHttpFixture = spawn(process.execPath, [typescriptHttpFixturePath, String(typescriptHttpPort)], {
+    cwd: path.dirname(typescriptHttpFixturePath),
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let typescriptHttpOutput = '';
+  typescriptHttpFixture.stdout.on('data', (chunk) => { typescriptHttpOutput = (typescriptHttpOutput + chunk.toString()).slice(-16384); });
+  typescriptHttpFixture.stderr.on('data', (chunk) => { typescriptHttpOutput = (typescriptHttpOutput + chunk.toString()).slice(-16384); });
+  let typescriptHttpReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const reachable = await new Promise((resolve) => {
+      const socket = net.connect(typescriptHttpPort, '127.0.0.1');
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('error', () => resolve(false));
+    });
+    if (reachable) { typescriptHttpReady = true; break; }
+    if (typescriptHttpFixture.exitCode !== null) throw new Error(`TypeScript HTTP MCP fixture exited: ${typescriptHttpOutput}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!typescriptHttpReady) throw new Error(`TypeScript HTTP MCP fixture did not listen: ${typescriptHttpOutput}`);
+
+  await panel.getByLabel('Transport').selectOption('streamable_http');
+  await panel.getByLabel('Server name').fill('TypeScript HTTP fixture');
+  await panel.getByLabel('Streamable HTTP endpoint').fill(`http://127.0.0.1:${typescriptHttpPort}/mcp`);
+  const typescriptHttpCreated = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Add MCP server', exact: true }),
+    (response) => new URL(response.url()).pathname === '/mcp/servers' && response.request().method() === 'POST',
+  );
+  if (typescriptHttpCreated.status() !== 201) throw new Error('Native TypeScript HTTP MCP configuration failed.');
+  const typescriptHttpServerId = (await typescriptHttpCreated.json()).id;
+  const typescriptHttpCard = panel.locator('.mcp-server').filter({ hasText: 'TypeScript HTTP fixture' });
+  await typescriptHttpCard.getByRole('button', { name: 'Connect and discover', exact: true }).click();
+  await expect.poll(async () => {
+    const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+    return servers.find((server) => server.id === typescriptHttpServerId)?.state;
+  }, { timeout: 20_000 }).toBe('connected');
+  await expect(typescriptHttpCard.getByRole('heading', {
+    name: 'TypeScript HTTP fixture (connected)', exact: true,
+  })).toBeVisible();
+  let typescriptHttpServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  let typescriptHttpServer = typescriptHttpServers.find((server) => server.id === typescriptHttpServerId);
+  if (typescriptHttpServer?.state !== 'connected' || !typescriptHttpServer.tools.some((tool) => tool.name === 'echo_value')) {
+    throw new Error(`The installed engine did not discover the TypeScript SDK Streamable HTTP fixture: ${JSON.stringify({
+      state: typescriptHttpServer?.state,
+      error: typescriptHttpServer?.error,
+      tools: typescriptHttpServer?.tools?.map((tool) => tool.name),
+      fixture_output: typescriptHttpOutput,
+    })}`);
+  }
+  await typescriptHttpCard.getByRole('button', { name: 'List resource templates', exact: true }).click();
+  const httpTemplate = typescriptHttpCard.locator('.mcp-resource-template').filter({ hasText: 'xaa://typescript/items/{item_id}' });
+  await expect(httpTemplate).toBeVisible({ timeout: 20_000 });
+  await httpTemplate.getByLabel('Arguments JSON for resource template fixture_item').fill('{"item_id":"typescript-seed"}');
+  await httpTemplate.getByLabel('Completion prefix for resource template item_id').fill('typescript');
+  await httpTemplate.getByRole('button', { name: 'Suggest resource variable item_id' }).click();
+  const httpTemplateSuggestions = httpTemplate.getByRole('complementary', {
+    name: 'Untrusted MCP completion suggestions for resource template fixture_item item_id',
+  });
+  await expect(httpTemplateSuggestions).toContainText('typescript-item');
+  await httpTemplateSuggestions.getByRole('button', { name: 'Use suggestion' }).click();
+  await expect(httpTemplate.getByLabel('Arguments JSON for resource template fixture_item'))
+    .toHaveValue('{"item_id":"typescript-item"}');
+  await httpTemplate.getByRole('button', { name: 'Read template resource', exact: true }).click();
+  await expect(panel.getByRole('complementary', { name: 'Untrusted MCP resource data' }))
+    .toContainText('typescript-http-template:typescript-item', { timeout: 20_000 });
+  ownerHttpResourceTemplateCompletion = true;
+
+  await typescriptHttpCard.getByRole('button', { name: 'List prompts', exact: true }).click();
+  const httpPrompt = typescriptHttpCard.locator('.mcp-prompt').filter({ hasText: 'Summarize a topic' });
+  await expect(httpPrompt).toBeVisible({ timeout: 20_000 });
+  await httpPrompt.getByLabel('Arguments JSON for summarize_topic').fill('{"topic":"topic"}');
+  await httpPrompt.getByLabel('Completion prefix for topic').fill('summ');
+  await httpPrompt.getByRole('button', { name: 'Suggest topic' }).click();
+  const httpPromptSuggestions = httpPrompt.getByRole('complementary', {
+    name: 'Untrusted MCP completion suggestions for topic',
+  });
+  await expect(httpPromptSuggestions).toContainText('summary');
+  await httpPromptSuggestions.getByRole('button', { name: 'Use suggestion' }).first().click();
+  await expect(httpPrompt.getByLabel('Arguments JSON for summarize_topic'))
+    .toHaveValue('{"topic":"summary"}');
+  await httpPrompt.getByRole('button', { name: 'Preview prompt', exact: true }).click();
+  await expect(panel.getByRole('complementary', { name: 'Untrusted MCP prompt preview' }))
+    .toContainText('typescript-http-prompt:summary', { timeout: 20_000 });
+  ownerHttpPromptCompletion = true;
+  await typescriptHttpCard.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect(typescriptHttpCard.getByRole('heading', {
+    name: 'TypeScript HTTP fixture (disconnected)', exact: true,
+  })).toBeVisible();
+  typescriptHttpServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  typescriptHttpServer = typescriptHttpServers.find((server) => server.id === typescriptHttpServerId);
+  if (typescriptHttpServer?.state !== 'disconnected') throw new Error('The TypeScript HTTP MCP server did not disconnect.');
+  await removeMcpServer(page, typescriptHttpCard.getByRole('button', { name: 'Remove server', exact: true }));
+  await stopOwnedFixtureProcess(typescriptHttpFixture, 'The TypeScript HTTP MCP fixture');
+  typescriptSdkModernHttp = true;
+
   isolationListener = net.createServer((socket) => socket.destroy());
   await new Promise((resolve, reject) => {
     isolationListener.once('error', reject);
@@ -375,6 +499,7 @@ try {
   if (!parentCanReachLoopback) throw new Error('The loopback fixture listener was unreachable from the desktop process.');
 
   const isolationFixture = path.resolve('tests/fixtures/mcp_appcontainer_list_probe.py');
+  await panel.getByLabel('Transport').selectOption('stdio');
   await panel.getByLabel('Server name').fill('Native isolation fixture');
   await panel.getByLabel('Command').fill(command);
   await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([isolationFixture, String(isolationAddress.port)]));
@@ -610,6 +735,7 @@ try {
       disconnected_cleanly: true,
     },
     typescript_sdk_modern_stdio: typescriptSdkModernStdio,
+    typescript_sdk_modern_http: typescriptSdkModernHttp,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
     owner_resource_subscription: true,
@@ -621,6 +747,8 @@ try {
     resource_output_labeled_untrusted: resourceRead.trust === 'untrusted_mcp_output',
     owner_prompt_catalog: true,
     owner_prompt_completion: ownerPromptCompletion,
+    owner_http_prompt_completion: ownerHttpPromptCompletion,
+    owner_http_resource_template_completion: ownerHttpResourceTemplateCompletion,
     owner_prompt_preview: true,
     prompt_output_labeled_untrusted: promptPreview.trust === 'untrusted_mcp_output',
     new_tool_permissions: 'none',
@@ -655,6 +783,9 @@ try {
     owner_prompt_completion: ownerPromptCompletion,
     owner_resource_template_completion: ownerResourceTemplateCompletion,
     typescript_sdk_modern_stdio: typescriptSdkModernStdio,
+    owner_http_prompt_completion: ownerHttpPromptCompletion,
+    owner_http_resource_template_completion: ownerHttpResourceTemplateCompletion,
+    typescript_sdk_modern_http: typescriptSdkModernHttp,
     error: String(error),
   }, null, 2));
   throw error;
@@ -665,6 +796,7 @@ try {
   if (oauthFixture && oauthFixture.exitCode === null) {
     execFileSync(path.join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(oauthFixture.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
   }
+  await stopOwnedFixtureProcess(typescriptHttpFixture, 'The TypeScript HTTP MCP fixture');
   await browser?.close().catch(() => {});
   if (proc.exitCode === null) {
     const taskkill = path.join(process.env.SystemRoot, 'System32', 'taskkill.exe');
