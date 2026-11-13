@@ -3525,6 +3525,8 @@ export interface components {
             skill_version: number;
             /** Source Sha256 */
             source_sha256: string;
+            /** Wheelhouse Present */
+            wheelhouse_present: boolean;
         };
         /** PythonDependencyTarget */
         PythonDependencyTarget: {

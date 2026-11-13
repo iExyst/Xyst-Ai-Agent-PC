@@ -1,4 +1,7 @@
+import hashlib
+import io
 import json
+import zipfile
 
 import pytest
 from xaa.extensions.procedure_dependencies import (
@@ -10,6 +13,21 @@ from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
 from xaa.storage.skills import SkillConflict, SkillDraft, SkillStore
 
 SOURCE_SHA256 = "b" * 64
+
+
+def idna_wheel() -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr(
+            "idna-3.10.dist-info/METADATA",
+            "Metadata-Version: 2.3\nName: idna\nVersion: 3.10\n\n",
+        )
+        archive.writestr(
+            "idna-3.10.dist-info/WHEEL",
+            "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
+        )
+        archive.writestr("idna/__init__.py", "")
+    return output.getvalue()
 
 
 def imported_skill(skills: SkillStore) -> dict:
@@ -34,6 +52,7 @@ def lock_for(
     source_sha256: str = SOURCE_SHA256,
     requirements: list[str] | None = None,
 ):
+    content = idna_wheel()
     return ProcedurePythonDependencyLock(
         schema_version=1,
         skill_id=skill["id"],
@@ -62,8 +81,8 @@ def lock_for(
                 filename="idna-3.10-py3-none-any.whl",
                 project_name="idna",
                 version="3.10",
-                sha256="a" * 64,
-                size_bytes=12_345,
+                sha256=hashlib.sha256(content).hexdigest(),
+                size_bytes=len(content),
             )
         ],
     )
@@ -80,6 +99,13 @@ def test_lock_persistence_is_version_bound_idempotent_and_owner_reviewed(workspa
     assert saved["environment_digest"] == lock.environment_digest()
     assert skills.save_python_dependency_lock(lock) == saved
     assert skills.python_dependency_locks(skill["id"], 1) == [saved]
+
+    with pytest.raises(SkillConflict, match="Acquire and verify"):
+        skills.review_python_dependency_lock(skill["id"], 1, lock.environment_digest(), "approved")
+    verified = skills.store_python_dependency_wheelhouse(
+        lock, {lock.wheels[0].filename: idna_wheel()}
+    )
+    assert verified[lock.wheels[0].filename] == idna_wheel()
 
     approved = skills.review_python_dependency_lock(
         skill["id"], 1, lock.environment_digest(), "approved"

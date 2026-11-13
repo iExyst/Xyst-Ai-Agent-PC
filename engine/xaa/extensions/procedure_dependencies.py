@@ -279,6 +279,7 @@ class PythonDependencyLockRecord(BaseModel):
     source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     lock: ProcedurePythonDependencyLock
     decision: Literal["pending_review", "approved", "rejected"]
+    wheelhouse_present: bool
     created_at: str
     reviewed_at: str | None
 

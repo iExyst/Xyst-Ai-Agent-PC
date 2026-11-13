@@ -3801,6 +3801,10 @@
             "pattern": "^[a-f0-9]{64}$",
             "title": "Source Sha256",
             "type": "string"
+          },
+          "wheelhouse_present": {
+            "title": "Wheelhouse Present",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3810,6 +3814,7 @@
           "source_sha256",
           "lock",
           "decision",
+          "wheelhouse_present",
           "created_at",
           "reviewed_at"
         ],

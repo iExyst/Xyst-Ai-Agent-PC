@@ -15,6 +15,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from xaa.extensions.procedure_dependencies import ProcedurePythonDependencyLock
+from xaa.extensions.wheelhouse_storage import ProcedureWheelhouseStore, WheelhouseStorageError
 from xaa.storage.runs import RunStore, utc_now
 
 MAX_PROCEDURE_TEXT_BYTES = 80 * 1024
@@ -573,6 +574,7 @@ def ensure_model_procedure_result_bounded(result: dict[str, Any]) -> None:
 class SkillStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
+        self.wheelhouses = ProcedureWheelhouseStore(runs.path.parent / "procedure-wheelhouses")
 
     @staticmethod
     def _insert_version(
@@ -1432,11 +1434,31 @@ class SkillStore:
         assert row is not None
         return self._python_dependency_lock_record(row)
 
-    @staticmethod
-    def _python_dependency_lock_record(row: sqlite3.Row) -> dict[str, Any]:
+    def _python_dependency_lock_record(self, row: sqlite3.Row) -> dict[str, Any]:
         value = dict(row)
-        value["lock"] = json.loads(value.pop("lock_json"))
+        lock = ProcedurePythonDependencyLock.model_validate_json(value.pop("lock_json"))
+        value["wheelhouse_present"] = self.wheelhouses.present(lock)
+        value["lock"] = lock.model_dump(mode="json")
         return value
+
+    def store_python_dependency_wheelhouse(
+        self, lock: ProcedurePythonDependencyLock, artifacts: dict[str, bytes]
+    ) -> dict[str, bytes]:
+        """Persist bytes only for the exact pending lock already saved for review."""
+        with self.runs.connection() as connection:
+            row = connection.execute(
+                "SELECT lock_json,decision FROM skill_python_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, lock.environment_digest()),
+            ).fetchone()
+        if row is None or row["lock_json"] != lock.canonical_json():
+            raise SkillConflict("Save the exact dependency lock before storing its wheelhouse.")
+        if row["decision"] != "pending_review":
+            raise SkillConflict("A final dependency-lock decision cannot accept new wheel bytes.")
+        try:
+            return self.wheelhouses.store(lock, artifacts)
+        except WheelhouseStorageError as exc:
+            raise SkillConflict(str(exc)) from exc
 
     def python_dependency_locks(self, skill_id: str, version: int) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:
@@ -1466,6 +1488,14 @@ class SkillStore:
             ).fetchone()
             if row is None:
                 raise SkillConflict("The dependency environment was not found.")
+            if decision == "approved":
+                lock = ProcedurePythonDependencyLock.model_validate_json(row["lock_json"])
+                try:
+                    self.wheelhouses.read(lock)
+                except WheelhouseStorageError as exc:
+                    raise SkillConflict(
+                        "Acquire and verify the exact wheelhouse before approving this dependency lock."
+                    ) from exc
             if row["decision"] == decision:
                 return self._python_dependency_lock_record(row)
             if row["decision"] != "pending_review":

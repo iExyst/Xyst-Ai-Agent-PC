@@ -34,6 +34,7 @@ from xaa.runtime.execution_readiness import (
 )
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
+from xaa.storage.skills import SkillStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 
@@ -1073,9 +1074,8 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         ', "git+https://example.test/repo.git"', ""
     )
     skill_file.write_text(content, encoding="utf-8")
-    app = create_app(
-        FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "dependency-api.sqlite3")
-    )
+    run_store = RunStore(tmp_path / "dependency-api.sqlite3")
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=run_store)
     headers = {"Authorization": f"Bearer {TOKEN}"}
     import_payload = {
         "root": str(tmp_path),
@@ -1090,6 +1090,18 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         assert created.status_code == 201
         identity = created.json()["id"]
         version = client.get(f"/skills/{identity}/versions/1", headers=headers).json()
+        requests_wheel_output = io.BytesIO()
+        with zipfile.ZipFile(requests_wheel_output, "w") as archive:
+            archive.writestr(
+                "requests-2.32.3.dist-info/METADATA",
+                "Metadata-Version: 2.3\nName: requests\nVersion: 2.32.3\n\n",
+            )
+            archive.writestr(
+                "requests-2.32.3.dist-info/WHEEL",
+                "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
+            )
+            archive.writestr("requests/__init__.py", "")
+        requests_wheel = requests_wheel_output.getvalue()
         dependency_lock = ProcedurePythonDependencyLock(
             schema_version=1,
             skill_id=identity,
@@ -1118,8 +1130,8 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
                     filename="requests-2.32.3-py3-none-any.whl",
                     project_name="requests",
                     version="2.32.3",
-                    sha256="d" * 64,
-                    size_bytes=12_345,
+                    sha256=hashlib.sha256(requests_wheel).hexdigest(),
+                    size_bytes=len(requests_wheel),
                 )
             ],
         )
@@ -1129,15 +1141,34 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         saved = client.put(endpoint, headers=headers, json=lock_json)
         assert saved.status_code == 200, saved.text
         assert saved.json()["decision"] == "pending_review"
+        assert saved.json()["wheelhouse_present"] is False
         assert saved.json()["lock"]["requirements"] == ["requests>=2.0"]
         listed = client.get(endpoint, headers=headers)
         assert listed.json()["locks"] == [saved.json()]
 
         review = f"{endpoint}/{dependency_lock.environment_digest()}/review"
         assert client.post(review, json={"decision": "approved"}).status_code == 401
+        unavailable = client.post(review, headers=headers, json={"decision": "approved"})
+        assert unavailable.status_code == 409
+        assert "Acquire and verify" in unavailable.json()["detail"]
+        SkillStore(run_store).store_python_dependency_wheelhouse(
+            dependency_lock,
+            {dependency_lock.wheels[0].filename: requests_wheel},
+        )
+        wheel_path = (
+            tmp_path
+            / "procedure-wheelhouses"
+            / dependency_lock.environment_digest()
+            / dependency_lock.wheels[0].filename
+        )
+        wheel_path.write_bytes(requests_wheel[:-1] + bytes([requests_wheel[-1] ^ 1]))
+        corrupted = client.post(review, headers=headers, json={"decision": "approved"})
+        assert corrupted.status_code == 409
+        wheel_path.write_bytes(requests_wheel)
         approved = client.post(review, headers=headers, json={"decision": "approved"})
         assert approved.status_code == 200
         assert approved.json()["decision"] == "approved"
+        assert approved.json()["wheelhouse_present"] is True
         rejected = client.post(review, headers=headers, json={"decision": "rejected"})
         assert rejected.status_code == 409
 
