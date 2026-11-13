@@ -13,6 +13,7 @@ test('saves a portable verified backup through the desktop save dialog',async({p
         if(command==='get_close_behavior')return'keep_running';
         if(command==='get_start_on_login')return false;
         if(command==='get_active_data_root')return null;
+        if(command==='take_acceptance_restore_dialog_selection')return{configured:false,path:null};
         if(command==='plugin:dialog|save')return exportedPath;
         if(command==='plugin:dialog|open')return restoreSelections.shift()??null;
         if(command==='export_backup_bundle')return exportedPath;

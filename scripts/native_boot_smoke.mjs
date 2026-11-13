@@ -137,6 +137,30 @@ try{
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
   await page.screenshot({path:path.join(root,'release-boot.png'),fullPage:true});
   await page.getByRole('link',{name:'Settings'}).click();
+  let desktopRestoreAcceptance;
+  if(backupFixture&&backupAcceptance){
+    const restoreParent=path.join(root,'desktop-restored-profiles');
+    await mkdir(restoreParent,{recursive:true});
+    await page.evaluate(({bundle,parent})=>window.__TAURI_INTERNALS__.invoke('set_acceptance_restore_dialog_selections',{paths:[bundle,parent]}),{bundle:backupAcceptance.bundle,parent:restoreParent});
+    const restoredApiResponse=new Promise(resolve=>page.on('response',async response=>{
+      if(response.request().method()==='POST'&&new URL(response.url()).pathname==='/backups/restore')resolve({status:response.status(),body:await response.json()});
+    }));
+    await page.getByRole('button',{name:'Restore backup into a new profile'}).click();
+    await expect(page.getByRole('region',{name:'Portable backup'}).getByRole('status')).toContainText('Backup verified and restored into a separate profile',{timeout:30000});
+    const restoredResponse=await restoredApiResponse;
+    if(restoredResponse.status!==201||restoredResponse.body.status!=='verified')throw new Error('Installed desktop restore UI did not receive a verified restore response.');
+    const restoredRoot=path.resolve(restoredResponse.body.data_root);
+    if(path.dirname(restoredRoot)!==restoreParent||restoredRoot===path.resolve(backupFixture.directory))throw new Error('Desktop restore UI did not create a distinct profile under the selected destination.');
+    const restoredDataDirectory=path.dirname(path.resolve(restoredResponse.body.database));
+    const restoredVerification=JSON.parse(execFileSync('uv',['run','python','scripts/installed_backup_fixture.py','verify','--directory',restoredDataDirectory,'--fixture',backupFixturePath,'--report',path.join(root,'desktop-restore-verification.json')],{windowsHide:true,encoding:'utf8',timeout:60000,env:process.env}));
+    const activeVerification=JSON.parse(execFileSync('uv',['run','python','scripts/installed_backup_fixture.py','verify','--directory',backupFixture.directory,'--fixture',backupFixturePath,'--report',path.join(root,'active-profile-after-desktop-restore.json')],{windowsHide:true,encoding:'utf8',timeout:60000,env:process.env}));
+    const switchButton=page.getByRole('button',{name:'Switch to restored profile and restart'});
+    await expect(switchButton).toBeDisabled();
+    await page.getByLabel('Restart X.A.A. and use this restored profile').check();
+    await expect(switchButton).toBeEnabled();
+    desktopRestoreAcceptance={passed:true,restore_dialog_selections:2,authenticated_restore_status:restoredResponse.status,restored_profile_root:restoredRoot,restore_parent:restoreParent,restored_database_and_artifacts_verified:restoredVerification.passed,active_profile_unchanged:activeVerification.passed,profile_switch_disabled_before_confirmation:true,profile_switch_enabled_after_confirmation:true,profile_activation_invoked:false,model_inference_requested:false};
+    await writeFile(path.join(root,'desktop-restore-acceptance.json'),JSON.stringify(desktopRestoreAcceptance,null,2));
+  }
   const closeBehavior=page.getByLabel('When the main window closes');
   const initialCloseBehavior=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('get_close_behavior'));
   const expectedInitialCloseBehavior=process.env.XAA_NATIVE_EXPECT_CLOSE_BEHAVIOR||'keep_running';
@@ -196,7 +220,7 @@ try{
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture&&!ownerRecoveryAcceptance,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,owner_reviewed_startup_recovery:ownerRecoveryAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture&&!ownerRecoveryAcceptance,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,installed_desktop_restore_ui_verified:Boolean(desktopRestoreAcceptance?.passed),desktop_restore_acceptance:desktopRestoreAcceptance,owner_reviewed_startup_recovery:ownerRecoveryAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;

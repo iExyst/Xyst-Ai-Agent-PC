@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
+    collections::VecDeque,
     fs,
     io::Write,
     net::TcpListener,
@@ -47,6 +48,18 @@ struct CloseBehaviorState {
     value: Mutex<CloseBehavior>,
     active_data_root: Mutex<Option<PathBuf>>,
     settings_path: PathBuf,
+}
+
+struct AcceptanceRestoreDialogState {
+    enabled: bool,
+    paths: Mutex<VecDeque<String>>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcceptanceRestoreDialogSelection {
+    configured: bool,
+    path: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -196,6 +209,55 @@ fn export_backup_bundle(
         &application_backup_directory(&state)?,
     )?;
     Ok(exported.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn set_acceptance_restore_dialog_selections(
+    state: tauri::State<'_, AcceptanceRestoreDialogState>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    if !state.enabled {
+        return Err("Acceptance restore dialogs are disabled".into());
+    }
+    if paths.len() != 2 {
+        return Err("Acceptance restore needs a backup path and a destination folder".into());
+    }
+    let bundle = Path::new(&paths[0]);
+    let destination = Path::new(&paths[1]);
+    if !bundle.is_absolute()
+        || bundle.extension().and_then(|value| value.to_str()) != Some("xaa-backup")
+        || !bundle.is_file()
+        || !destination.is_absolute()
+        || !destination.is_dir()
+    {
+        return Err("Acceptance restore selections are unavailable".into());
+    }
+    *state
+        .paths
+        .lock()
+        .map_err(|_| "Acceptance restore selections are unavailable".to_string())? = paths.into();
+    Ok(())
+}
+
+#[tauri::command]
+fn take_acceptance_restore_dialog_selection(
+    state: tauri::State<'_, AcceptanceRestoreDialogState>,
+) -> Result<AcceptanceRestoreDialogSelection, String> {
+    if !state.enabled {
+        return Ok(AcceptanceRestoreDialogSelection {
+            configured: false,
+            path: None,
+        });
+    }
+    let path = state
+        .paths
+        .lock()
+        .map_err(|_| "Acceptance restore selections are unavailable".to_string())?
+        .pop_front();
+    Ok(AcceptanceRestoreDialogSelection {
+        configured: true,
+        path,
+    })
 }
 
 #[tauri::command]
@@ -593,6 +655,10 @@ fn main() {
                 active_data_root: Mutex::new(active_data_root.clone()),
                 settings_path,
             });
+            app.manage(AcceptanceRestoreDialogState {
+                enabled: std::env::var("XAA_TEST_ACCEPTANCE").as_deref() == Ok("1"),
+                paths: Mutex::new(VecDeque::new()),
+            });
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let port = listener.local_addr()?.port();
             let token = uuid::Uuid::new_v4().simple().to_string();
@@ -674,6 +740,8 @@ fn main() {
             set_start_on_login,
             get_active_data_root,
             export_backup_bundle,
+            set_acceptance_restore_dialog_selections,
+            take_acceptance_restore_dialog_selection,
             activate_restored_profile,
             use_default_data_profile
         ])

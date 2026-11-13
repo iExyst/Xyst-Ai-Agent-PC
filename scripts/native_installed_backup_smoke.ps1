@@ -39,6 +39,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installed desktop backup/restore acceptance failed.' }
     $xaaNativeReport = Get-Content -LiteralPath (Join-Path $env:XAA_NATIVE_ACCEPTANCE_ROOT 'report.json') -Raw | ConvertFrom-Json
     if (-not $xaaNativeReport.installed_backup_restore_verified -or -not $xaaNativeReport.backup_acceptance.verification.passed) { throw 'Installed backup/restore evidence was incomplete.' }
+    if (-not $xaaNativeReport.installed_desktop_restore_ui_verified -or -not $xaaNativeReport.desktop_restore_acceptance.restored_database_and_artifacts_verified -or -not $xaaNativeReport.desktop_restore_acceptance.active_profile_unchanged -or -not $xaaNativeReport.desktop_restore_acceptance.profile_switch_disabled_before_confirmation -or -not $xaaNativeReport.desktop_restore_acceptance.profile_switch_enabled_after_confirmation -or $xaaNativeReport.desktop_restore_acceptance.profile_activation_invoked) { throw 'Installed desktop restore UI acceptance was incomplete or overclaimed profile activation.' }
     $xaaReport.native_acceptance = $xaaNativeReport
     $xaaReport.installed_backup_restore_verified = $true
 } catch {

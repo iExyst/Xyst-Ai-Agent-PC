@@ -372,9 +372,13 @@ function App() {
     if(!client||restoreBusy)return;
     setRestoreBusy(true);setRestoreStatus('Choose a verified X.A.A. backup…');setRestoredDataRoot('');setConfirmProfileSwitch(false);
     try{
-      const selected=await open({title:'Choose a verified X.A.A. backup',multiple:false,directory:false,filters:[{name:'Xyst AI Agent backup',extensions:['xaa-backup']}]});
+      const chooseRestorePath=async(options:Parameters<typeof open>[0])=>{
+        const acceptance=await invoke<{configured:boolean;path:string|null}>('take_acceptance_restore_dialog_selection');
+        return acceptance.configured?acceptance.path:await open(options);
+      };
+      const selected=await chooseRestorePath({title:'Choose a verified X.A.A. backup',multiple:false,directory:false,filters:[{name:'Xyst AI Agent backup',extensions:['xaa-backup']}]});
       if(typeof selected!=='string'){setRestoreStatus('Restore cancelled.');return;}
-      const parent=await open({title:'Choose where to create the restored profile',multiple:false,directory:true});
+      const parent=await chooseRestorePath({title:'Choose where to create the restored profile',multiple:false,directory:true});
       if(typeof parent!=='string'){setRestoreStatus('Restore cancelled.');return;}
       setRestoreStatus('Verifying the backup and restoring it into a new profile…');
       const restored=await client.restoreBackup(selected,parent);
