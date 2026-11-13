@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Exact-lock PyPI acquisition core (2026-11-13)
+
+`PyPIWheelAcquirer` fetches only exact proposed wheel records from the PEP 691 JSON endpoint and the PyPI file host, with bounded time/bytes/connections, redirect and ambient-proxy denial, and byte-level lock verification. This is in-process and memory-backed; it is not the isolated resolver or persistent dependency manager described by the product objective. No owner-review or installation path consumes its artifacts. Imported-procedure dependencies remain unsupported for execution, so this does not upgrade the Hermes imported-skill or execution-backend parity rating. Mock-transport tests pass (10); no public package request or live inference was used.
+
 ## Capture the target interpreter's wheel tags (2026-11-13)
 
 The authenticated WSL dependency-readiness probe returns the actual interpreter marker environment and ordered wheel tags from a disposable `ensurepip` venv. The desktop shows this target data for later lock preparation. On Ubuntu-24.04, the real WSL run returned Python 3.12.3 and 254 compatible tags, including the universal `py3-none-any` fallback. Focused API/readiness checks pass (55 passed, 1 skipped), as do both procedure browser flows (2 passed), along with Ruff, Pyright, TypeScript, and contract generation. A neighboring procedure CRUD browser fixture returns an empty dependency-lock list for the new endpoint. This does not resolve or install procedure dependencies; the Hermes imported-procedure execution row remains partial. No live inference was used.
@@ -469,6 +473,3 @@ Hosted Windows source run [43231924477](https://github.com/iExyst/Xyst-Ai-Agent-
 2026-11-12 MCP subscription follow-up: the TypeScript fixture advertises resource-update support and publishes updates through the transport-appropriate official SDK surface: server notifier on stdio, `createMcpHandler.notify` over HTTP. Python X.A.A. clients subscribe, invoke an explicitly read-granted publisher, receive the exact `resource_updated` event and unsubscribe over both transports. Targeted acceptance passes; full integration and hosted verification are pending.
 
 Hosted run [43235406358](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43235406358) for `c907846` failed during the pre-test live Edge redirect smoke: the external Postman Echo to httpbin route timed out after 30 seconds. Static checks and pytest did not start, so this result is unrelated to MCP behavior. Resource templates pass in the local HTTP/stdio integration suite; fresh hosted verification is pending.
-## Exact-lock PyPI acquisition core (2026-11-13)
-
-`PyPIWheelAcquirer` fetches only exact proposed wheel records from the PEP 691 JSON endpoint and the PyPI file host, with bounded time/bytes/connections, redirect and ambient-proxy denial, and byte-level lock verification. This is in-process and memory-backed; it is not the isolated resolver or persistent dependency manager described by the product objective. No owner-review or installation path consumes its artifacts. Imported-procedure dependencies remain unsupported for execution, so this does not upgrade the Hermes imported-skill or execution-backend parity rating. Mock-transport tests pass (10); no public package request or live inference was used.
