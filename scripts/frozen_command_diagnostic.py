@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -21,12 +22,13 @@ from command_startup_diagnostic import ORPHAN_CHILD
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.owned_transport import request_process
 from xaa.runtime.processes import stop_owned_process
-from xaa.runtime.snapshot_worker import SnapshotRequest
+from xaa.runtime.snapshot_worker import SnapshotRequest, add_selected_skill_scripts
 from xaa.runtime.states import RunState
 from xaa.runtime.workspace_snapshot import MAX_WIRE_BYTES, WorkspaceSnapshot, capture_workspace
 from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore
+from xaa.storage.skills import SkillAsset, SkillDraft, SkillStore
 
 
 async def diagnose(
@@ -44,9 +46,25 @@ async def diagnose(
     (project / "xaa" / "__init__.py").write_text(
         "raise RuntimeError('project imports forbidden')", encoding="utf-8"
     )
-    snapshot = capture_workspace(project)
     data_root = root / "app-data"
     store = RunStore(data_root / "XAA" / "xaa.sqlite3")
+    script = b"print('frozen selected skill')\n"
+    skill = SkillStore(store).create(
+        SkillDraft(
+            name="Frozen selected script fixture",
+            content="Run the selected script only in the granted sandbox.",
+            required_tools=[],
+            required_permissions=["workspace.read"],
+            assets=[
+                SkillAsset(
+                    path="scripts/check.py",
+                    content_base64=base64.b64encode(script).decode("ascii"),
+                    media_type="text/x-python",
+                    sha256=hashlib.sha256(script).hexdigest(),
+                )
+            ],
+        )
+    )
     transport = (
         None
         if snapshot_only
@@ -59,8 +77,11 @@ async def diagnose(
         mode="workspace",
         model=None,
         command_grant={"distribution": distribution, "profile_sha256": profile_fingerprint()[0]},
+        procedure_trial={"skill_id": skill["id"], "version": 1},
     )
     run_id = record["id"]
+    original_snapshot = capture_workspace(project)
+    snapshot = add_selected_skill_scripts(original_snapshot, store.procedure_trial(run_id))
     owner = store.acquire_lease(run_id, "frozen-diagnostic", seconds=180)
     if owner is None:
         raise RuntimeError("No fixture lease")
@@ -100,8 +121,14 @@ async def diagnose(
             timeout=30,
             output_limit=MAX_WIRE_BYTES,
         )
-    assert WorkspaceSnapshot.from_bytes(raw).sha256 == snapshot.sha256
-    assert capture_workspace(project).sha256 == snapshot.sha256
+    frozen_snapshot = WorkspaceSnapshot.from_bytes(raw)
+    assert frozen_snapshot.sha256 == snapshot.sha256
+    selected_script_staged = any(
+        entry.path.endswith("/scripts/check.py") and entry.content == script
+        for entry in frozen_snapshot.files
+    )
+    assert selected_script_staged
+    assert capture_workspace(project).sha256 == original_snapshot.sha256
     assert not any(event["event_type"] == "tool.executing" for event in store.list_events(run_id))
     if snapshot_only:
         store.transition(run_id, RunState.CANCELLED)
@@ -111,6 +138,7 @@ async def diagnose(
             "resource_sha256": resources,
             "profile_sha256": profile_fingerprint()[0],
             "frozen_snapshot_matches": True,
+            "selected_skill_script_staged": selected_script_staged,
             "binary_bytes": 2 * 1024 * 1024,
             "path_system32_only": True,
             "project_import_shadow_ignored": True,
@@ -221,13 +249,14 @@ async def diagnose(
         else:
             assert result["verification"] == "not_verified"
     assert not store.unresolved_tool_calls(run_id)
-    assert capture_workspace(project).sha256 == snapshot.sha256
+    assert capture_workspace(project).sha256 == original_snapshot.sha256
     report = {
         "passed": True,
         "engine_sha256": hashlib.sha256(engine.read_bytes()).hexdigest(),
         "resource_sha256": resources,
         "profile_sha256": profile_fingerprint()[0],
         "frozen_snapshot_matches": True,
+        "selected_skill_script_staged": selected_script_staged,
         "binary_bytes": 2 * 1024 * 1024,
         "project_import_shadow_ignored": True,
         "path_system32_only": True,

@@ -1,16 +1,102 @@
 """Owned snapshot capture: project paths come only from lease-bound saved intents."""
 
+import base64
+import hashlib
 import sys
 import time
-from pathlib import Path
-from typing import Literal
+from pathlib import Path, PurePosixPath
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.owned_transport import request_process
-from xaa.runtime.workspace_snapshot import MAX_WIRE_BYTES, WorkspaceSnapshot, capture_workspace
+from xaa.runtime.workspace_snapshot import (
+    MAX_FILES,
+    MAX_TOTAL_BYTES,
+    MAX_WIRE_BYTES,
+    SnapshotFile,
+    WorkspaceSnapshot,
+    capture_workspace,
+    checked_path,
+)
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore, TaskReadScope
+
+
+def add_selected_skill_scripts(
+    snapshot: WorkspaceSnapshot, trial: dict[str, Any] | None
+) -> WorkspaceSnapshot:
+    """Overlay integrity-checked selected Python/shell resources into the private snapshot."""
+    if trial is None:
+        return snapshot
+    from xaa.storage.skills import snapshot_digest
+
+    saved_digest = trial.get("snapshot_sha256")
+    if not isinstance(saved_digest, str) or snapshot_digest(trial) != saved_digest:
+        raise ValueError("Selected procedure snapshot failed its integrity check.")
+    skill_id = trial.get("skill_id")
+    version = trial.get("version")
+    assets = trial.get("assets", [])
+    if not isinstance(skill_id, str) or type(version) is not int or not isinstance(assets, list):
+        raise TypeError("Selected procedure identity or resources are invalid.")
+
+    staged: list[SnapshotFile] = []
+    staged_dirs: set[str] = set()
+    for asset in cast(list[object], assets):
+        if not isinstance(asset, dict):
+            raise TypeError("Selected procedure resource is invalid.")
+        raw_fields = cast(dict[object, object], asset)
+        if any(not isinstance(key, str) for key in raw_fields):
+            raise TypeError("Selected procedure resource is invalid.")
+        fields = cast(dict[str, object], raw_fields)
+        path = fields.get("path")
+        media_type = fields.get("media_type")
+        encoded = fields.get("content_base64")
+        digest = fields.get("sha256")
+        if not isinstance(path, str) or not isinstance(media_type, str):
+            raise TypeError("Selected procedure resource metadata is invalid.")
+        checked_path(path)
+        suffix = PurePosixPath(path).suffix.casefold()
+        if suffix not in {".py", ".sh"}:
+            continue
+        if not media_type.startswith("text/") or not isinstance(encoded, str):
+            raise ValueError("Selected script must be a UTF-8 text resource.")
+        raw = base64.b64decode(encoded, validate=True)
+        if (
+            len(raw) > 64 * 1024
+            or not isinstance(digest, str)
+            or hashlib.sha256(raw).hexdigest() != digest
+        ):
+            raise ValueError("Selected script resource failed its integrity check.")
+        raw.decode("utf-8-sig")
+        relative = f"__xaa_selected_skill__/{skill_id}/v{version}/{path}"
+        checked = checked_path(relative)
+        for parent in checked.parents:
+            if str(parent) != ".":
+                staged_dirs.add(str(parent))
+        staged.append(SnapshotFile(relative, raw))
+
+    if not staged:
+        return snapshot
+    if len(snapshot.files) + len(staged) > MAX_FILES:
+        raise ValueError("Selected scripts exceed the command snapshot file limit.")
+    if sum(len(item.content) for item in (*snapshot.files, *staged)) > MAX_TOTAL_BYTES:
+        raise ValueError("Selected scripts exceed the command snapshot byte limit.")
+    existing = {
+        name.casefold()
+        for name in (
+            *snapshot.directories,
+            *(item.path for item in snapshot.files),
+            *snapshot.excluded,
+        )
+    }
+    if any(name.casefold() in existing for name in (*staged_dirs, *(item.path for item in staged))):
+        raise ValueError("Project snapshot conflicts with the selected script staging path.")
+    return WorkspaceSnapshot(
+        (*snapshot.files, *staged),
+        (*snapshot.directories, *sorted(staged_dirs)),
+        snapshot.excluded,
+    )
 
 
 class SnapshotRequest(BaseModel):
@@ -95,6 +181,8 @@ def main() -> None:
                 base.directories,
                 base.excluded,
             )
+    if scope is None and request.purpose == "agent":
+        snapshot = add_selected_skill_scripts(snapshot, store.procedure_trial(request.run_id))
     journal.snapshot_intent(request.run_id, request.owner, request.call_id)
     sys.stdout.buffer.write(snapshot.to_bytes())
     sys.stdout.buffer.flush()

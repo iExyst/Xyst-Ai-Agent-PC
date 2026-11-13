@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import time
 
@@ -8,6 +10,7 @@ from xaa.runtime import coordinator as module
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.states import RunState
 from xaa.storage.runs import LeaseLost, RunStore
+from xaa.storage.skills import SkillAsset, SkillDraft, SkillStore
 
 
 @pytest.mark.parametrize("grant", [False, True])
@@ -126,3 +129,51 @@ async def test_authorized_automation_never_exposes_or_dispatches_commands(worksp
         await coordinator._execute_tool(
             run["id"], owner, run, 0, time.monotonic() + 15, forged, tools
         )
+
+
+async def test_selected_scripts_are_named_in_explicit_command_tool_description(workspace_tmp_path):
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    store = RunStore(workspace_tmp_path / "data" / "db.sqlite3")
+    content = b"print('selected')\n"
+    skill = SkillStore(store).create(
+        SkillDraft(
+            name="Selected command script",
+            content="Run this check only when command access is granted.",
+            required_tools=[],
+            required_permissions=["workspace.read"],
+            assets=[
+                SkillAsset(
+                    path="scripts/check.py",
+                    content_base64=base64.b64encode(content).decode("ascii"),
+                    media_type="text/x-python",
+                    sha256=hashlib.sha256(content).hexdigest(),
+                )
+            ],
+        )
+    )
+    run = store.create_run(
+        objective="Check project",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        command_grant={"distribution": "Ubuntu", "profile_sha256": "a" * 64},
+        procedure_trial={"skill_id": skill["id"], "version": 1},
+    )
+    owner = store.acquire_lease(run["id"], "worker", seconds=60)
+    store.transition(run["id"], RunState.PLANNING, owner=owner)
+    store.transition(run["id"], RunState.RUNNING, owner=owner)
+    provider = LMStudioProvider()
+    try:
+        coordinator = Coordinator(store, provider)
+        command = next(
+            item
+            for item in coordinator._tools(run["id"], store.get_run(run["id"]))
+            if item["function"]["name"] == "workspace_run_command"
+        )
+        description = command["function"]["description"]
+        assert f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.py" in description
+        assert "structured argv" in description
+    finally:
+        await provider.close()
