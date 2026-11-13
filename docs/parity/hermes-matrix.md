@@ -1,12 +1,16 @@
 # Hermes capability reference matrix
 
+## Verify Windows AppContainer active-process limit (2026-11-13)
+
+A real command launches quiet `findstr.exe` descendants that remain blocked on open stdin pipes until the command stops them. Windows returns quota error 1816 near the 32-process Job Object limit; the acceptance allows 28–31 descendants for the nested runner job context, records the PIDs, and confirms every child is gone after cleanup. The focused local test passes; hosted verification is pending. This closes a direct active-process rejection case only; broad backend parity remains partial.
+
 ## Verify Windows AppContainer CPU hard cap (2026-11-13)
 
-A real AppContainer command saturates CPU with multithreaded PBKDF2 work and measures process CPU time against wall time and the reported logical processor count. The test allows bounded scheduler tolerance around the configured 50% Job Object hard cap. Hosted run [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all 1,219 Python tests and configured Windows checks; the focused seven-test module and static checks also pass locally. Active-process rejection and broad backend parity remain open.
+A real AppContainer command saturates CPU with multithreaded PBKDF2 work and measures process CPU time against wall time and the reported logical processor count. The test allows bounded scheduler tolerance around the configured 50% Job Object hard cap. Hosted run [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all 1,219 Python tests and configured Windows checks; the focused seven-test module and static checks also pass locally. Active-process rejection is verified separately above; broad backend parity remains open.
 
 ## Verify Windows AppContainer command job-object limits (2026-11-13)
 
-Before resuming a Windows AppContainer command, the supervisor reads the created Job Object settings back and fails closed unless the 32-process, 128 MiB job memory, and 50% CPU hard-cap values are present. Hosted runs [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) and [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all configured Windows checks; the seven-test local transport module and static checks also pass. CPU saturation is verified separately above; active-process rejection behavior and broad backend parity remain open.
+Before resuming a Windows AppContainer command, the supervisor reads the created Job Object settings back and fails closed unless the 32-process, 128 MiB job memory, and 50% CPU hard-cap values are present. Hosted runs [43481558676](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43481558676) and [43484053186](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43484053186) passed all configured Windows checks; the eight-test local transport module and static checks also pass. CPU saturation and active-process rejection are now tested separately above; broad backend parity remains open.
 
 ## Verify Windows AppContainer process-tree memory limit (2026-11-13)
 

@@ -326,6 +326,68 @@ async def test_local_command_respects_process_tree_cpu_hard_cap(
     assert intent.execution_id not in transport._active
 
 
+@pytest.mark.asyncio
+async def test_local_command_enforces_process_tree_active_process_limit(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"process limit fixture"),), (), ())
+    program = (
+        "import os,subprocess,sys\n"
+        "exe=os.path.join(os.environ['SYSTEMROOT'],'System32','findstr.exe')\n"
+        "children=[]\n"
+        "try:\n"
+        " for index in range(40):\n"
+        "  child=subprocess.Popen([exe,'XAA_NEVER_MATCH'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\n"
+        "  children.append(child)\n"
+        "  if child.poll() is not None: raise RuntimeError('sort child exited before the process limit')\n"
+        "  print(f'child-pid={child.pid}',flush=True)\n"
+        "except OSError as error:\n"
+        " print(f'active-process-limit count={len(children)} winerror={error.winerror}',flush=True)\n"
+        " limit_enforced=True\n"
+        "else:\n"
+        " print('active-process-limit-not-enforced',flush=True)\n"
+        " limit_enforced=False\n"
+        "finally:\n"
+        " for child in children:\n"
+        "  try: child.kill()\n"
+        "  except OSError: pass\n"
+        " for child in children: child.wait()\n"
+        "raise SystemExit(73 if limit_enforced else 74)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program],
+        max_seconds=20,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    receipt = await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
+    stdout = base64.b64decode(receipt["stdout_b64"], validate=True)
+    match = re.search(rb"active-process-limit count=(\d+) winerror=(\d+)", stdout)
+    assert match is not None, stdout.decode("utf-8", errors="replace")
+    spawned = int(match.group(1))
+    assert 28 <= spawned <= 31
+    assert int(match.group(2)) == 1816
+    assert b"active-process-limit-not-enforced" not in stdout
+    assert receipt["output_complete"] is True
+    assert receipt["succeeded"] is False
+    assert receipt["exit_code"] == 73
+    child_pids = [int(value) for value in re.findall(rb"(?m)^child-pid=(\d+)\r?$", stdout)]
+    assert len(child_pids) == spawned
+    deadline = time.monotonic() + 5
+    while (
+        any(process_identity(pid)[0] is not False for pid in child_pids)
+        and time.monotonic() < deadline
+    ):
+        await asyncio.sleep(0.05)
+    assert all(process_identity(pid)[0] is False for pid in child_pids)
+    assert receipt["cleanup_confirmed"] is True
+    assert intent.execution_id not in transport._active
+
+
 def test_local_command_rejects_shell_scripts() -> None:
     from xaa.runtime.windows_local_transport import _resolve_executable
 
