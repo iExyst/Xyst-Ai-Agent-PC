@@ -1,8 +1,8 @@
 # Hermes capability reference matrix
 
-## Verify the WSL offline venv bootstrap prerequisite (2026-11-13)
+## Verify an offline install within the WSL command sandbox (2026-11-13)
 
-Ubuntu-24.04 WSL has Python 3.12.3 and `ensurepip` 24.0. A disposable private venv bootstrapped pip; a locally generated root and transitive wheel pair installed with `--isolated --no-index --only-binary`, imported from that venv, and left system Python without pip. This is a manual runtime feasibility probe, not X.A.A. product support: the WSL manager, resolver, wheel-byte verification, lifecycle, and scoped procedure execution are still unimplemented. The prior source change passed the complete hosted workflow [43510494917](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43510494917); installer packaging checks were skipped because their inputs did not change.
+The repeatable [`scripts/wsl_procedure_dependency_acceptance.py`](../scripts/wsl_procedure_dependency_acceptance.py) runs through the real X.A.A. WSL Bubblewrap command transport. It builds two local wheels with a transitive relationship, bootstraps pip only in a temporary venv, installs offline with index access disabled, imports both packages only from that venv, confirms the ordinary interpreter cannot import them, and checks manager cleanup. This verifies a disposable install inside the existing restricted command workspace. It does not implement persistent environments or their product lifecycle: PyPI resolution, exact wheel-byte hash and metadata validation, manager-owned storage, owner approval gating, rollback/removal and scoped command mounting remain incomplete. The prior code change passed hosted workflow [43510494917](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43510494917); installer packaging checks were skipped because their inputs did not change.
 
 ## Close declared procedure dependency graphs in lock review (2026-11-13)
 
