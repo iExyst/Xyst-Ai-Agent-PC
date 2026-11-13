@@ -21,8 +21,8 @@ SKILL_TEXT = """---
 name: readiness-check
 description: Verify dependency status in the packaged runtime.
 dependencies:
-  python: [\"packaging>=26.3,<27\", \"packaging==0.0\"]
-  python3: [\"xaa-readiness-missing-fixture==99.0\"]
+  python: [\"packaging>=26.3,<27\", \"packaging==0.0\", \"requests>=2.0\"]
+  python3: [\"xaa-readiness-missing-fixture-20261113==99.0\"]
   npm: [\"left-pad>=1.0\", \"https://example.test/private-token\"]
 ---
 # Readiness check
@@ -38,6 +38,10 @@ def _free_port() -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", type=Path, required=True)
+    parser.add_argument(
+        "--distribution",
+        help="Also check this imported skill's Python requirements in the restricted WSL runtime.",
+    )
     args = parser.parse_args()
     engine = args.engine.resolve(strict=True)
     acceptance = Path(".acceptance") / f"installed-skill-readiness-{uuid4().hex}"
@@ -102,7 +106,7 @@ def main() -> None:
         readiness = skills[0].get("requirement_readiness", {})
         expected = {
             "available_python_dependency_specs": "packaging>=26.3,<27",
-            "missing_python_dependency_specs": "xaa-readiness-missing-fixture==99.0",
+            "missing_python_dependency_specs": "xaa-readiness-missing-fixture-20261113==99.0",
             "incompatible_python_dependency_specs": "packaging==0.0",
         }
         for field, spec in expected.items():
@@ -125,6 +129,49 @@ def main() -> None:
         if any(value in readiness_json for value in ("left-pad>=1.0", "https://", "private-token")):
             raise RuntimeError("Readiness exposed a dependency constraint or URL.")
 
+        imported: dict[str, Any] | None = None
+        wsl_readiness: dict[str, Any] | None = None
+        if args.distribution:
+            imported_response = client.post(
+                "/extensions/packages/import-skill",
+                json={
+                    "root": str(plugin_root.resolve()),
+                    "package_name": "readiness-check",
+                    "skill_name": "readiness-check",
+                },
+            )
+            imported_response.raise_for_status()
+            imported_payload: dict[str, Any] = imported_response.json()
+            skill_id = imported_payload.get("id")
+            if not isinstance(skill_id, str):
+                raise RuntimeError(
+                    "Installed API did not return the imported skill identity: "
+                    f"{imported_payload!r}."
+                )
+            wsl_response = client.post(
+                f"/skills/{skill_id}/versions/1/python-readiness",
+                json={"distribution": args.distribution},
+                timeout=60,
+            )
+            wsl_response.raise_for_status()
+            wsl_payload: dict[str, Any] = wsl_response.json()
+            wsl_by_requirement = {
+                item["requirement"]: item["status"] for item in wsl_payload.get("dependencies", [])
+            }
+            if (
+                wsl_payload.get("state") != "ready"
+                or wsl_by_requirement.get("requests>=2.0") != "available"
+                or wsl_by_requirement.get("xaa-readiness-missing-fixture-20261113==99.0")
+                != "missing"
+                or wsl_payload.get("unverified_dependency_count") != 2
+            ):
+                raise RuntimeError(
+                    "Installed imported-skill WSL readiness did not match the fixture: "
+                    f"{wsl_payload!r}."
+                )
+            imported = imported_payload
+            wsl_readiness = wsl_payload
+
         report: dict[str, Any] = {
             "checked_at_utc": datetime.now(UTC).isoformat(),
             "engine_path": str(engine),
@@ -138,6 +185,8 @@ def main() -> None:
             "unverified_dependency_count": readiness["unverified_dependency_count"],
             "unverified_dependency_packages": unverified_packages,
             "dependencies_unresolved": readiness["dependencies_unresolved"],
+            "imported_skill": imported,
+            "restricted_wsl_readiness": wsl_readiness,
             "model_inference_requested": False,
         }
         response = client.post("/shutdown")
