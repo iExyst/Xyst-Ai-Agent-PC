@@ -38,11 +38,11 @@ async def test_command_catalog_and_dispatch_require_saved_user_grant(
     transport = FixtureTransport()
     transport.profile_sha256 = "a" * 64
 
-    async def discover(distribution, *, deadline):
-        launches.append(distribution)
+    async def discover(authority, *, deadline):
+        launches.append(authority.distribution)
         return transport
 
-    monkeypatch.setattr(module.WSLTransport, "discover", discover)
+    monkeypatch.setattr(module, "discover_command_transport", discover)
     coordinator = Coordinator(store, provider)
     try:
         tools = coordinator._tools(run["id"], run)

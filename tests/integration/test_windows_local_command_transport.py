@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import socket
 import sys
 import time
@@ -116,7 +117,7 @@ async def test_cancelling_local_command_closes_descendant_processes(
     command = (
         "import subprocess,sys,time\n"
         "child=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(60)'])\n"
-        "print(child.pid,flush=True);time.sleep(60)\n"
+        "print('child-pid='+str(child.pid),flush=True);time.sleep(60)\n"
     )
     intent = CommandIntent(
         argv=[sys.executable, "-I", "-c", command],
@@ -144,7 +145,9 @@ async def test_cancelling_local_command_closes_descendant_processes(
         )
     )
     await asyncio.wait_for(child_started.wait(), timeout=20)
-    child_pid = int(output.decode("ascii").strip())
+    match = re.search(rb"(?m)^child-pid=(\d+)\r?$", output)
+    assert match is not None, output.decode("ascii", errors="replace")
+    child_pid = int(match.group(1))
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
