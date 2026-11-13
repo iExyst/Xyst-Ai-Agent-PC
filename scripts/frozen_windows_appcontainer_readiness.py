@@ -154,7 +154,7 @@ def main() -> None:
                     "backend": "windows-appcontainer-v1",
                     "distribution": "Windows-Local",
                 },
-                timeout=30,
+                timeout=45,
             )
             elapsed = time.monotonic() - started
             checks = readiness.get("checks")

@@ -326,7 +326,11 @@ class ExecutionReadiness:
                 snapshot = WorkspaceSnapshot((SnapshotFile("probe.json", dependency_file),), (), ())
                 intent = CommandIntent(
                     argv=["/usr/bin/python3", "-I", "-c", DEPENDENCY_PROBE],
-                    max_seconds=5,
+                    # The frozen one-file engine starts both an isolation shim
+                    # and a child copy of itself. Allow cold extraction/startup
+                    # on hosted Windows runners before treating the probe as
+                    # an execution failure.
+                    max_seconds=20,
                     execution_id=uuid4().hex,
                     backend="wsl-bubblewrap-v1",
                     distribution=request.distribution,
@@ -693,7 +697,7 @@ class ExecutionReadiness:
                     profile_sha256=digest,
                     workspace="application-owned-readiness-fixture",
                 )
-                result = await transport.run(intent, snapshot, deadline=time.monotonic() + 15)
+                result = await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
                 try:
                     output = json.loads(base64.b64decode(result["stdout_b64"], validate=True))
                 except (json.JSONDecodeError, ValueError):
@@ -737,11 +741,15 @@ class ExecutionReadiness:
                         stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
                     logging.getLogger(__name__).warning(
                         "Windows AppContainer readiness child failed validation "
-                        "(succeeded=%s; exit=%s; cleanup=%s; output_complete=%s; "
+                        "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
+                        "elapsed=%s; cleanup=%s; output_complete=%s; "
                         "workspace_persisted=%s; snapshot_match=%s; stdout_bytes=%s; "
                         "stderr_bytes=%s; stderr=%r).",
                         result.get("succeeded"),
                         result.get("exit_code"),
+                        result.get("supervisor_exit_code"),
+                        result.get("termination_reason"),
+                        result.get("elapsed_seconds"),
                         result.get("cleanup_confirmed"),
                         result.get("output_complete"),
                         result.get("workspace_changes_persisted"),
