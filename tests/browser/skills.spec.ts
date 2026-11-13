@@ -85,6 +85,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
         return route.fulfill({json:summary,headers});
       }
       if(path.endsWith('/lifecycle'))return route.fulfill({json:[],headers});
+      if(path.endsWith('/python-dependency-locks'))return route.fulfill({json:{locks:[]},headers});
       if(path.endsWith('/trials'))return route.fulfill({json:[{id:'trial-a',objective:'ASCII case',created_at:'2026-11-04T00:00:00Z'},{id:'trial-b',objective:'Unicode case',created_at:'2026-11-04T00:00:00Z'}],headers});
       if(path.endsWith('/evaluations')){
         const body=request.postDataJSON();expect(body.expected_evaluation_count).toBe(0);expect(body.confirmed_criteria).toEqual([0]);
