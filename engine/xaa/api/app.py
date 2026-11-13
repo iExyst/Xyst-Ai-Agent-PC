@@ -84,6 +84,7 @@ from xaa.extensions.procedure_dependencies import (
     PythonDependencyLockList,
     PythonDependencyLockRecord,
 )
+from xaa.extensions.pypi_wheels import PyPIAcquisitionError, PyPIWheelAcquirer
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
 from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
@@ -1613,6 +1614,43 @@ def create_app(
                 for record in skill_store.python_dependency_locks(skill_id, version)
             )
         )
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/acquire",
+        response_model=PythonDependencyLockRecord,
+    )
+    async def acquire_skill_python_dependency_wheelhouse(
+        skill_id: str,
+        environment_digest: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        records = skill_store.python_dependency_locks(skill_id, version)
+        record = next(
+            (item for item in records if item["environment_digest"] == environment_digest), None
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="Python dependency lock not found.")
+        if record["decision"] != "pending_review":
+            raise HTTPException(
+                status_code=409, detail="Dependency lock already has a final decision."
+            )
+        if record["wheelhouse_present"]:
+            return record
+        lock = ProcedurePythonDependencyLock.model_validate(record["lock"])
+        try:
+            artifacts = await PyPIWheelAcquirer().acquire(lock)
+            skill_store.store_python_dependency_wheelhouse(lock, artifacts)
+        except PyPIAcquisitionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        updated = next(
+            item
+            for item in skill_store.python_dependency_locks(skill_id, version)
+            if item["environment_digest"] == environment_digest
+        )
+        return updated
 
     @app.post(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review",

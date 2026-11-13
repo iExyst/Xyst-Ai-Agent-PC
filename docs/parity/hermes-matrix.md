@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Add an owner-initiated exact-lock acquisition action (2026-11-13)
+
+An authenticated API endpoint and desktop button fetch the exact wheel files from a saved pending lock, run PyPI/hash/archive metadata checks, persist verified bytes, and update lock status. Failed acquisition leaves approval blocked, and approval rechecks stored bytes. This is not a dependency resolver: package versions and hashes must already be in the lock. The HTTP client still runs in the engine process without process isolation, and no package environment is installed or exposed to a procedure. Imported-procedure dependency execution remains unsupported; Hermes parity stays partial. Mocked API failure/success and both Skills browser tests pass; static/API/TypeScript checks pass. No live public PyPI request or inference was used.
+
 ## Persist verified wheelhouses and gate review (2026-11-13)
 
 The application data store now commits the exact verified wheel set atomically under its environment digest and rechecks its manifest, hashes and wheel metadata when read. Dependency-lock approval fails until the exact wheelhouse is present and reverified; the API reports presence and the desktop disables approval while the bytes are absent. There is still no acquisition/preparation flow, and no package environment is installed or made available to procedure execution. Acquisition still runs in the engine process, so this does not establish resolver isolation or Hermes imported-procedure dependency execution parity. Focused API/storage tests pass (5 selected), both Skills browser tests pass, and strict Pyright, Ruff, API contract generation, and TypeScript pass. No public package service or live inference was used.

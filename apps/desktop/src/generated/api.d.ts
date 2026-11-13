@@ -1998,6 +1998,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/acquire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acquire Skill Python Dependency Wheelhouse */
+        post: operations["acquire_skill_python_dependency_wheelhouse_skills__skill_id__versions__version__python_dependency_locks__environment_digest__acquire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review": {
         parameters: {
             query?: never;
@@ -8841,6 +8858,39 @@ export interface operations {
                 "application/json": components["schemas"]["ProcedurePythonDependencyLock"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acquire_skill_python_dependency_wheelhouse_skills__skill_id__versions__version__python_dependency_locks__environment_digest__acquire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                environment_digest: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

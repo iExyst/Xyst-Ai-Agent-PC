@@ -27,6 +27,7 @@ from xaa.extensions.procedure_dependencies import (
     ProcedurePythonDependencyLock,
     PythonDependencyTarget,
 )
+from xaa.extensions.pypi_wheels import PyPIAcquisitionError
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.runtime.execution_readiness import (
     SkillDependencyReadinessResult,
@@ -34,7 +35,6 @@ from xaa.runtime.execution_readiness import (
 )
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillStore
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 
@@ -1066,7 +1066,7 @@ def test_hermes_skill_import_api_keeps_candidate_inactive_and_records_source(
 
 
 def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     package = make_package(tmp_path)
     skill_file = package / "skills" / "summarize" / "SKILL.md"
@@ -1147,14 +1147,36 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         assert listed.json()["locks"] == [saved.json()]
 
         review = f"{endpoint}/{dependency_lock.environment_digest()}/review"
+        acquire = f"{endpoint}/{dependency_lock.environment_digest()}/acquire"
         assert client.post(review, json={"decision": "approved"}).status_code == 401
         unavailable = client.post(review, headers=headers, json={"decision": "approved"})
         assert unavailable.status_code == 409
         assert "Acquire and verify" in unavailable.json()["detail"]
-        SkillStore(run_store).store_python_dependency_wheelhouse(
-            dependency_lock,
-            {dependency_lock.wheels[0].filename: requests_wheel},
+        assert client.post(acquire).status_code == 401
+
+        class FixtureAcquirer:
+            fail = True
+
+            async def acquire(
+                self, supplied_lock: ProcedurePythonDependencyLock
+            ) -> dict[str, bytes]:
+                assert supplied_lock == dependency_lock
+                if self.fail:
+                    raise PyPIAcquisitionError("Fixture acquisition failure.")
+                return {dependency_lock.wheels[0].filename: requests_wheel}
+
+        fixture_acquirer = FixtureAcquirer()
+        monkeypatch.setattr(api_module, "PyPIWheelAcquirer", lambda: fixture_acquirer)
+        failed_acquisition = client.post(acquire, headers=headers)
+        assert failed_acquisition.status_code == 502
+        assert failed_acquisition.json()["detail"] == "Fixture acquisition failure."
+        assert (
+            client.get(endpoint, headers=headers).json()["locks"][0]["wheelhouse_present"] is False
         )
+        fixture_acquirer.fail = False
+        acquired = client.post(acquire, headers=headers)
+        assert acquired.status_code == 200, acquired.text
+        assert acquired.json()["wheelhouse_present"] is True
         wheel_path = (
             tmp_path
             / "procedure-wheelhouses"

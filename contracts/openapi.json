@@ -13011,6 +13011,70 @@
         "summary": "Save Skill Python Dependency Lock"
       }
     },
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/acquire": {
+      "post": {
+        "operationId": "acquire_skill_python_dependency_wheelhouse_skills__skill_id__versions__version__python_dependency_locks__environment_digest__acquire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_digest",
+            "required": true,
+            "schema": {
+              "title": "Environment Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PythonDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Acquire Skill Python Dependency Wheelhouse"
+      }
+    },
     "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review": {
       "post": {
         "operationId": "review_skill_python_dependency_lock_skills__skill_id__versions__version__python_dependency_locks__environment_digest__review_post",
