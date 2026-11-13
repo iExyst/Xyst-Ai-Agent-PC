@@ -3717,6 +3717,29 @@
         "title": "ReadinessResult",
         "type": "object"
       },
+      "RestoreBackupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bundle_path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Bundle Path",
+            "type": "string"
+          },
+          "destination_parent": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Destination Parent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundle_path",
+          "destination_parent"
+        ],
+        "title": "RestoreBackupRequest",
+        "type": "object"
+      },
       "RevokeChannelIdentityLinkRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6497,6 +6520,53 @@
           }
         ],
         "summary": "Create Backup"
+      }
+    },
+    "/backups/restore": {
+      "post": {
+        "operationId": "restore_backup_backups_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreBackupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Restore Backup Backups Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Backup"
       }
     },
     "/channels/discord": {
