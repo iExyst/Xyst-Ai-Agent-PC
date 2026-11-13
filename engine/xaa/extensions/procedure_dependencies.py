@@ -24,6 +24,8 @@ from pydantic import (
 
 MAX_DEPENDENCIES = 64
 MAX_WHEELS = 256
+MAX_REQUIREMENTS_PER_WHEEL = 256
+MAX_LOCKED_REQUIREMENTS = 4096
 MAX_WHEEL_BYTES = 64 * 1024 * 1024
 MAX_ENVIRONMENT_BYTES = 256 * 1024 * 1024
 PYTHON_ENVIRONMENT_KEYS = frozenset(
@@ -94,6 +96,30 @@ class LockedPythonWheel(BaseModel):
     version: str = Field(min_length=1, max_length=128)
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     size_bytes: int = Field(gt=0, le=MAX_WHEEL_BYTES)
+    requires_dist: tuple[str, ...] = Field(default=(), max_length=MAX_REQUIREMENTS_PER_WHEEL)
+
+    @field_validator("requires_dist", mode="before")
+    @classmethod
+    def freeze_requires_dist(cls, values: object) -> object:
+        return tuple(cast(list[str], values)) if isinstance(values, list) else values
+
+    @field_validator("requires_dist")
+    @classmethod
+    def normalize_requires_dist(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for value in values:
+            if not value or len(value) > 512:
+                raise ValueError("Wheel dependency metadata is invalid or out of bounds.")
+            try:
+                requirement = Requirement(value)
+            except InvalidRequirement as exc:
+                raise ValueError(
+                    "Wheel dependency metadata contains an invalid requirement."
+                ) from exc
+            if requirement.url is not None or requirement.extras:
+                raise ValueError("Wheel dependencies cannot use direct URLs or extras.")
+            normalized.append(str(requirement))
+        return tuple(sorted(normalized, key=str.casefold))
 
     @model_validator(mode="after")
     def validate_wheel_identity(self) -> Self:
@@ -160,6 +186,8 @@ class ProcedurePythonDependencyLock(BaseModel):
                 raise ValueError("Python dependency requirement is invalid.") from exc
             if requirement.url is not None:
                 raise ValueError("Direct dependency URLs are not supported.")
+            if requirement.extras:
+                raise ValueError("Python dependency extras are not supported.")
             normalized.append(str(requirement))
         if len({value.casefold() for value in normalized}) != len(normalized):
             raise ValueError("Python dependency requirements must be unique.")
@@ -175,6 +203,8 @@ class ProcedurePythonDependencyLock(BaseModel):
         names = [wheel.project_name for wheel in self.wheels]
         if len(names) != len(set(names)):
             raise ValueError("A dependency lock may include one wheel per project.")
+        if sum(len(wheel.requires_dist) for wheel in self.wheels) > MAX_LOCKED_REQUIREMENTS:
+            raise ValueError("Wheel dependency metadata exceeds the lock graph limit.")
         if sum(wheel.size_bytes for wheel in self.wheels) > MAX_ENVIRONMENT_BYTES:
             raise ValueError("Locked wheels exceed the per-environment size limit.")
         wheel_by_name = {wheel.project_name: wheel for wheel in self.wheels}
@@ -187,17 +217,28 @@ class ProcedurePythonDependencyLock(BaseModel):
                 raise ValueError("A locked wheel is incompatible with the target Python ABI.")
         marker_environment = cast(dict[str, str], default_environment())
         marker_environment.update(self.target.environment)
-        for value in self.requirements:
+        pending = list(self.requirements)
+        reachable: set[str] = set()
+        while pending:
+            value = pending.pop()
             requirement = Requirement(value)
             if requirement.marker is not None and not requirement.marker.evaluate(
                 marker_environment
             ):
                 continue
-            wheel = wheel_by_name.get(canonicalize_name(requirement.name))
+            name = canonicalize_name(requirement.name)
+            wheel = wheel_by_name.get(name)
             if wheel is None:
-                raise ValueError("Every applicable direct requirement needs a locked wheel.")
+                raise ValueError("Every applicable wheel dependency needs a locked wheel.")
             if requirement.specifier and Version(wheel.version) not in requirement.specifier:
-                raise ValueError("A locked wheel does not satisfy its direct requirement.")
+                raise ValueError("A locked wheel does not satisfy its dependency requirement.")
+            if name not in reachable:
+                reachable.add(name)
+                pending.extend(wheel.requires_dist)
+        if reachable != set(wheel_by_name):
+            raise ValueError(
+                "A dependency lock cannot include wheels outside its requirement graph."
+            )
         return self
 
     def environment_digest(self) -> str:
@@ -213,6 +254,10 @@ class ProcedurePythonDependencyLock(BaseModel):
             (wheel.model_dump(mode="json") for wheel in self.wheels),
             key=lambda item: item["project_name"],
         )
+        for wheel in payload["wheels"]:
+            if not wheel["requires_dist"]:
+                # Preserve the v1 canonical identity for locks saved before metadata was recorded.
+                wheel.pop("requires_dist")
         return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 

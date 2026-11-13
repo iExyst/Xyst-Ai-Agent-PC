@@ -1952,6 +1952,15 @@
             "title": "Project Name",
             "type": "string"
           },
+          "requires_dist": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Requires Dist",
+            "type": "array"
+          },
           "sha256": {
             "pattern": "^[a-f0-9]{64}$",
             "title": "Sha256",

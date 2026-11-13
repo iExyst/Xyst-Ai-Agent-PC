@@ -6,7 +6,7 @@ test('check imported Python dependencies in the selected restricted WSL distribu
   const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
   const summary={id:'imported-procedure',name:'Summarize',lifecycle_state:'candidate',pinned:false,active_version:null,lifecycle_revision:0,latest_version:1,created_at:'2026-11-12T00:00:00Z',updated_at:'2026-11-12T00:00:00Z'};
   const version={skill_id:summary.id,version:1,content:'Read a file.',description:'Summarize a file.',category:'writing',required_tools:[],required_permissions:[],created_at:'2026-11-12T00:00:00Z',assets:[],evaluation_evidence:{state:'candidate',provenance:'hermes_skill',evaluations:[],source:{package_name:'sample',package_version:'1.0',skill_name:'summarize',content_sha256:'a'.repeat(64),description:'Summarize a file.',allowed_tools:'workspace.read_file',unmapped_allowed_tools:'none',declared_requirements:JSON.stringify({python_dependency_specs:['requests>=2.0'],unparsed_dependency_count:1})}}};
-  const lock={skill_id:summary.id,skill_version:1,environment_digest:'f'.repeat(64),source_sha256:'a'.repeat(64),decision:lockDecision,created_at:'2026-11-12T00:00:00Z',reviewed_at:null,lock:{schema_version:1,skill_id:summary.id,skill_version:1,source_sha256:'a'.repeat(64),index_url:'https://pypi.org/simple',requirements:['requests>=2.0'],target:{distribution:'Ubuntu-24.04',environment:{python_full_version:'3.12.3'},compatible_wheel_tags:['py3-none-any']},wheels:[{filename:'requests-2.32.3-py3-none-any.whl',project_name:'requests',version:'2.32.3',sha256:'d'.repeat(64),size_bytes:12345}]}};
+  const lock={skill_id:summary.id,skill_version:1,environment_digest:'f'.repeat(64),source_sha256:'a'.repeat(64),decision:lockDecision,created_at:'2026-11-12T00:00:00Z',reviewed_at:null,lock:{schema_version:1,skill_id:summary.id,skill_version:1,source_sha256:'a'.repeat(64),index_url:'https://pypi.org/simple',requirements:['requests>=2.0'],target:{distribution:'Ubuntu-24.04',environment:{python_full_version:'3.12.3'},compatible_wheel_tags:['py3-none-any']},wheels:[{filename:'requests-2.32.3-py3-none-any.whl',project_name:'requests',version:'2.32.3',sha256:'d'.repeat(64),size_bytes:12345,requires_dist:['urllib3>=1.21']},{filename:'urllib3-2.2.3-py3-none-any.whl',project_name:'urllib3',version:'2.2.3',sha256:'e'.repeat(64),size_bytes:54321,requires_dist:[]}]}};
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request(),path=new URL(request.url()).pathname;
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
@@ -46,6 +46,8 @@ test('check imported Python dependencies in the selected restricted WSL distribu
   await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Other or unverified declared dependencies: 1');
   const lockReview=panel.getByRole('region',{name:'Python dependency lock review'});
   await expect(lockReview).toContainText('requests-2.32.3-py3-none-any.whl');
+  await expect(lockReview).toContainText('Requires-Dist: urllib3>=1.21');
+  await expect(lockReview).toContainText('urllib3 2.2.3');
   await expect(lockReview).toContainText('f'.repeat(64));
   await lockReview.locator('details summary').click();
   await lockReview.getByRole('button',{name:'Approve this lock'}).click();

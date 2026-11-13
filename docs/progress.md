@@ -1,5 +1,9 @@
 # Progress
 
+## Validate procedure dependency lock graphs (2026-11-13)
+
+Extended the immutable Python dependency lock so every wheel can carry normalized `Requires-Dist` metadata. The schema now rejects extras and direct dependency URLs, resolves markers against the selected interpreter, checks all active direct and transitive requirements against locked wheel versions, rejects unreachable extra wheels, and caps the total lock graph. Empty metadata is omitted from canonical identity so previously saved v1 lock digests remain stable. The desktop review lists each wheel's declared dependencies and explicitly says those declarations have not yet been checked against wheel bytes; missing declarations display as “not recorded.” OpenAPI and TypeScript artifacts were regenerated. The 21-test schema module passes; the combined dependency storage, plugin, and migration suite passes 91 tests with 1 skip, excluding one unrelated local Windows directory-rename fixture that returns `WinError 5`. A default pytest temp path also returned `WinError 5`, so these checks used a fresh in-repository temp root. This is lock validation only: no resolver, artifact-byte metadata verification, downloader, installer, or scoped execution environment exists yet. The next slice must acquire wheels from an isolated PyPI-only resolver, verify hashes and metadata from those exact bytes, then install offline in the restricted WSL target. No live model inference was used.
+
 ## Resolve the AppContainer fixture timeout (2026-11-13)
 
 The earlier installed check requested five seconds for the command despite its saved Windows AppContainer grant allowing 30 seconds. On hosted Windows, the complete probe took about nine seconds including cold frozen startup, so it emitted valid output but returned timeout 124. The fixture now uses one shared 30-second limit for both its proposal and grant, covered by an HTTP-level regression.

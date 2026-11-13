@@ -2898,6 +2898,11 @@ export interface components {
             filename: string;
             /** Project Name */
             project_name: string;
+            /**
+             * Requires Dist
+             * @default []
+             */
+            requires_dist: string[];
             /** Sha256 */
             sha256: string;
             /** Size Bytes */
