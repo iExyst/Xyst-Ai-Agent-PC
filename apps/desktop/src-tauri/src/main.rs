@@ -40,10 +40,12 @@ enum CloseBehavior {
 #[serde(default)]
 struct DesktopSettings {
     close_behavior: CloseBehavior,
+    active_data_root: Option<PathBuf>,
 }
 
 struct CloseBehaviorState {
     value: Mutex<CloseBehavior>,
+    active_data_root: Mutex<Option<PathBuf>>,
     settings_path: PathBuf,
 }
 
@@ -148,9 +150,29 @@ fn quit_application(app: tauri::AppHandle) {
     app.exit(0);
 }
 
-fn application_backup_directory() -> Result<PathBuf, String> {
-    let data_root = if let Some(value) = std::env::var_os("XAA_DATA_DIR") {
-        PathBuf::from(value).join("XAA")
+fn active_data_root(state: &CloseBehaviorState) -> Option<PathBuf> {
+    std::env::var_os("XAA_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            state
+                .active_data_root
+                .lock()
+                .ok()
+                .and_then(|value| value.clone())
+        })
+}
+
+#[tauri::command]
+fn get_active_data_root(
+    state: tauri::State<'_, CloseBehaviorState>,
+) -> Result<Option<String>, String> {
+    Ok(active_data_root(&state).map(|root| root.to_string_lossy().into_owned()))
+}
+
+fn application_backup_directory(state: &CloseBehaviorState) -> Result<PathBuf, String> {
+    let configured_root = active_data_root(state);
+    let data_directory = if let Some(root) = configured_root {
+        root.join("XAA")
     } else if let Some(value) = std::env::var_os("LOCALAPPDATA") {
         PathBuf::from(value).join("XAA")
     } else if let Some(value) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))
@@ -159,17 +181,81 @@ fn application_backup_directory() -> Result<PathBuf, String> {
     } else {
         return Err("The X.A.A. data directory is unavailable".into());
     };
-    Ok(data_root.join("backups"))
+    Ok(data_directory.join("backups"))
 }
 
 #[tauri::command]
-fn export_backup_bundle(source_path: String, destination_path: String) -> Result<String, String> {
+fn export_backup_bundle(
+    state: tauri::State<'_, CloseBehaviorState>,
+    source_path: String,
+    destination_path: String,
+) -> Result<String, String> {
     let exported = backup_export::export_backup(
         Path::new(&source_path),
         Path::new(&destination_path),
-        &application_backup_directory()?,
+        &application_backup_directory(&state)?,
     )?;
     Ok(exported.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn activate_restored_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CloseBehaviorState>,
+    data_root: String,
+) -> Result<(), String> {
+    if std::env::var_os("XAA_DATA_DIR").is_some() {
+        return Err(
+            "X.A.A. was started with an external data directory and cannot switch profiles.".into(),
+        );
+    }
+    let selected = PathBuf::from(data_root)
+        .canonicalize()
+        .map_err(|_| "The restored profile folder is unavailable".to_string())?;
+    let profile_directory = selected.join("XAA");
+    let database = profile_directory.join("xaa.sqlite3");
+    if profile_directory.is_symlink() || !database.is_file() || database.is_symlink() {
+        return Err("The selected folder does not contain a verified restored profile".into());
+    }
+    let current =
+        active_data_root(&state).or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from));
+    if let Some(current) = current.and_then(|path| path.canonicalize().ok()) {
+        if current == selected {
+            return Err("This restored profile is already active".into());
+        }
+    }
+    save_active_data_root(&state.settings_path, Some(selected.clone()))?;
+    *state
+        .active_data_root
+        .lock()
+        .map_err(|_| "Desktop settings are unavailable".to_string())? = Some(selected);
+    app.restart();
+}
+
+#[tauri::command]
+fn use_default_data_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CloseBehaviorState>,
+) -> Result<(), String> {
+    if std::env::var_os("XAA_DATA_DIR").is_some() {
+        return Err(
+            "X.A.A. was started with an external data directory and cannot switch profiles.".into(),
+        );
+    }
+    if state
+        .active_data_root
+        .lock()
+        .map_err(|_| "Desktop settings are unavailable".to_string())?
+        .is_none()
+    {
+        return Err("The default X.A.A. profile is already active".into());
+    }
+    save_active_data_root(&state.settings_path, None)?;
+    *state
+        .active_data_root
+        .lock()
+        .map_err(|_| "Desktop settings are unavailable".to_string())? = None;
+    app.restart();
 }
 
 #[tauri::command]
@@ -208,31 +294,44 @@ fn should_show_main_window(
             .any(|argument| argument == "--background")
 }
 
-fn load_close_behavior(settings_path: &Path) -> CloseBehavior {
+fn load_desktop_settings(settings_path: &Path) -> DesktopSettings {
     fs::read(settings_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<DesktopSettings>(&bytes).ok())
-        .map(|settings| settings.close_behavior)
         .unwrap_or_default()
 }
 
-fn save_close_behavior(settings_path: &Path, behavior: CloseBehavior) -> Result<(), String> {
+fn save_desktop_settings(settings_path: &Path, settings: &DesktopSettings) -> Result<(), String> {
     let parent = settings_path
         .parent()
         .ok_or_else(|| "Desktop settings path has no parent directory".to_string())?;
     fs::create_dir_all(parent).map_err(|_| "Could not create the desktop settings directory")?;
     let temporary =
         settings_path.with_file_name(format!("desktop-settings.{}.tmp", uuid::Uuid::new_v4()));
-    let bytes = serde_json::to_vec(&DesktopSettings {
-        close_behavior: behavior,
-    })
-    .map_err(|_| "Could not encode desktop settings")?;
+    let bytes = serde_json::to_vec(settings).map_err(|_| "Could not encode desktop settings")?;
     let mut file = fs::File::create(&temporary).map_err(|_| "Could not write desktop settings")?;
     file.write_all(&bytes)
         .and_then(|()| file.sync_all())
         .map_err(|_| "Could not save desktop settings")?;
     fs::rename(&temporary, settings_path)
         .map_err(|_| "Could not replace desktop settings".to_string())
+}
+
+#[cfg(test)]
+fn load_close_behavior(settings_path: &Path) -> CloseBehavior {
+    load_desktop_settings(settings_path).close_behavior
+}
+
+fn save_close_behavior(settings_path: &Path, behavior: CloseBehavior) -> Result<(), String> {
+    let mut settings = load_desktop_settings(settings_path);
+    settings.close_behavior = behavior;
+    save_desktop_settings(settings_path, &settings)
+}
+
+fn save_active_data_root(settings_path: &Path, data_root: Option<PathBuf>) -> Result<(), String> {
+    let mut settings = load_desktop_settings(settings_path);
+    settings.active_data_root = data_root;
+    save_desktop_settings(settings_path, &settings)
 }
 
 #[tauri::command]
@@ -290,8 +389,9 @@ fn selected_settings_path(
 #[cfg(test)]
 mod tests {
     use super::{
-        configure_engine_environment, load_close_behavior, save_close_behavior,
-        selected_settings_path, tray_image, CloseBehavior,
+        configure_engine_environment, load_close_behavior, load_desktop_settings,
+        save_active_data_root, save_close_behavior, selected_settings_path, tray_image,
+        CloseBehavior,
     };
     use std::process::Command;
 
@@ -350,6 +450,28 @@ mod tests {
             load_close_behavior(&settings_path),
             CloseBehavior::KeepRunning
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn restored_profile_setting_survives_close_behavior_updates() {
+        let directory = std::env::temp_dir().join(format!("xaa-profile-{}", uuid::Uuid::new_v4()));
+        let settings_path = directory.join("desktop-settings.json");
+        let restored = directory.join("profile");
+        save_active_data_root(&settings_path, Some(restored.clone())).unwrap();
+        save_close_behavior(&settings_path, CloseBehavior::ExitOnClose).unwrap();
+        assert_eq!(
+            load_close_behavior(&settings_path),
+            CloseBehavior::ExitOnClose
+        );
+        assert_eq!(
+            load_desktop_settings(&settings_path).active_data_root,
+            Some(restored)
+        );
+        save_active_data_root(&settings_path, None).unwrap();
+        assert!(load_desktop_settings(&settings_path)
+            .active_data_root
+            .is_none());
         let _ = std::fs::remove_dir_all(directory);
     }
 
@@ -464,20 +586,24 @@ fn main() {
                 std::env::var_os("XAA_DATA_DIR").map(PathBuf::from),
                 app.path().app_config_dir()?,
             );
-            let close_behavior = load_close_behavior(&settings_path);
+            let settings = load_desktop_settings(&settings_path);
+            let active_data_root = settings.active_data_root.clone();
             app.manage(CloseBehaviorState {
-                value: Mutex::new(close_behavior),
+                value: Mutex::new(settings.close_behavior),
+                active_data_root: Mutex::new(active_data_root.clone()),
                 settings_path,
             });
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let port = listener.local_addr()?.port();
             let token = uuid::Uuid::new_v4().simple().to_string();
-            let mut executable = std::env::current_exe()?.with_file_name("xaa-engine.exe");
+            let executable = std::env::current_exe()?.with_file_name("xaa-engine.exe");
             #[cfg(debug_assertions)]
-            if !executable.exists() {
-                executable = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("binaries/xaa-engine-x86_64-pc-windows-msvc.exe");
-            }
+            let executable = if executable.exists() {
+                executable
+            } else {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("binaries/xaa-engine-x86_64-pc-windows-msvc.exe")
+            };
             let logs = selected_log_directory(
                 acceptance_mode,
                 std::env::var_os("XAA_TEST_LOG_DIR").map(PathBuf::from),
@@ -490,6 +616,11 @@ fn main() {
                 .open(logs.join("engine.log"))?;
             let mut command = Command::new(executable);
             configure_engine_environment(&mut command, &token, port);
+            if std::env::var_os("XAA_DATA_DIR").is_none() {
+                if let Some(data_root) = active_data_root {
+                    command.env("XAA_DATA_DIR", data_root);
+                }
+            }
             command.stdout(log.try_clone()?).stderr(log);
             #[cfg(windows)]
             {
@@ -541,7 +672,10 @@ fn main() {
             set_close_behavior,
             get_start_on_login,
             set_start_on_login,
-            export_backup_bundle
+            get_active_data_root,
+            export_backup_bundle,
+            activate_restored_profile,
+            use_default_data_profile
         ])
         .build(tauri::generate_context!())
         .expect("X.A.A. desktop failed to start")

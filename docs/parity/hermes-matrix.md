@@ -1,8 +1,8 @@
 # Hermes capability reference matrix
 
-## Desktop portable backup export (2026-11-13)
+## Desktop portable backup and profile restore (2026-11-13)
 
-Settings now provides a native Save dialog for verified `.xaa-backup` bundles. Creation remains in the authenticated engine; the Rust export boundary restricts the source to a regular file in X.A.A.'s own backup directory, limits size to 1 GiB, and refuses overwrite. Browser and Rust unit acceptances pass; installed UI acceptance is pending. Bundles are unencrypted and include conversation/task data and managed artifacts. Offline restore remains available through the CLI guide; desktop restore is not implemented. This advances the Phase 10 backup workflow but does not complete restore/migration acceptance.
+Settings exports verified `.xaa-backup` bundles through a native Save dialog and restores a selected bundle into a new, uniquely named profile under an owner-selected folder. The API validates archive membership, database integrity/schema and artifact hashes before publishing. Restore refuses to overwrite the active profile; switching profiles requires an explicit checkbox and restart. The active profile is saved by the desktop and backup export follows it; the owner can return to the default profile. Focused API, client, browser UI and Rust state/export checks pass without model inference. Installed-package UI acceptance, real-user migration, disaster-recovery behavior and the broader Phase 10 gates remain open. The backup and restore capability is partial and does not establish Hermes parity.
 
 ## Blocked-run recovery entry point (2026-11-13)
 

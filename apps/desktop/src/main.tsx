@@ -96,6 +96,11 @@ function App() {
   const [closeBehaviorStatus,setCloseBehaviorStatus]=useState('');
   const [backupStatus,setBackupStatus]=useState('');
   const [backupBusy,setBackupBusy]=useState(false);
+  const [restoreStatus,setRestoreStatus]=useState('');
+  const [restoreBusy,setRestoreBusy]=useState(false);
+  const [restoredDataRoot,setRestoredDataRoot]=useState('');
+  const [activeDataRoot,setActiveDataRoot]=useState<string|null>(null);
+  const [confirmProfileSwitch,setConfirmProfileSwitch]=useState(false);
   const [startOnLogin,setStartOnLogin]=useState(false);
   const [startOnLoginStatus,setStartOnLoginStatus]=useState('');
   const [busy, setBusy] = useState(false);
@@ -106,6 +111,7 @@ function App() {
     if(!('__TAURI_INTERNALS__' in window))return;
     void invoke<DesktopCloseBehavior>('get_close_behavior').then(setCloseBehavior).catch(failure=>setCloseBehaviorStatus(String(failure)));
     void invoke<boolean>('get_start_on_login').then(setStartOnLogin).catch(failure=>setStartOnLoginStatus(String(failure)));
+    void invoke<string|null>('get_active_data_root').then(setActiveDataRoot).catch(()=>setActiveDataRoot(null));
   },[]);
   async function updateCloseBehavior(behavior:DesktopCloseBehavior){
     setCloseBehaviorStatus('Saving close behavior…');
@@ -362,6 +368,32 @@ function App() {
     }catch(failure){setBackupStatus(`Backup export failed: ${String(failure)}`);}
     finally{setBackupBusy(false);}
   }
+  async function restorePortableBackup(){
+    if(!client||restoreBusy)return;
+    setRestoreBusy(true);setRestoreStatus('Choose a verified X.A.A. backup…');setRestoredDataRoot('');setConfirmProfileSwitch(false);
+    try{
+      const selected=await open({title:'Choose a verified X.A.A. backup',multiple:false,directory:false,filters:[{name:'Xyst AI Agent backup',extensions:['xaa-backup']}]});
+      if(typeof selected!=='string'){setRestoreStatus('Restore cancelled.');return;}
+      const parent=await open({title:'Choose where to create the restored profile',multiple:false,directory:true});
+      if(typeof parent!=='string'){setRestoreStatus('Restore cancelled.');return;}
+      setRestoreStatus('Verifying the backup and restoring it into a new profile…');
+      const restored=await client.restoreBackup(selected,parent);
+      setRestoredDataRoot(restored.data_root);
+      setRestoreStatus(`Backup verified and restored into a separate profile at ${restored.data_root}. Your current profile is unchanged.`);
+    }catch(failure){setRestoreStatus(`Restore failed: ${String(failure)}`);}
+    finally{setRestoreBusy(false);}
+  }
+  async function switchToRestoredProfile(){
+    if(!restoredDataRoot||!confirmProfileSwitch)return;
+    setRestoreStatus('Switching profiles and restarting X.A.A.…');
+    try{await invoke('activate_restored_profile',{dataRoot:restoredDataRoot});}
+    catch(failure){setRestoreStatus(`Could not switch profiles: ${String(failure)}`);}
+  }
+  async function switchToDefaultProfile(){
+    setRestoreStatus('Switching to the default profile and restarting X.A.A.…');
+    try{await invoke('use_default_data_profile');}
+    catch(failure){setRestoreStatus(`Could not switch profiles: ${String(failure)}`);}
+  }
   return <div className="app-shell">
     <aside className="app-sidebar" aria-label="Application navigation">
       <div className="brand-lockup"><div className="brand-mark">X</div><div><strong>Xyst</strong><span>AI Agent</span></div></div>
@@ -403,7 +435,7 @@ function App() {
       <div id="app-settings" className="page-settings" style={{display:page==='settings'?'contents':'none'}}>
       {'__TAURI_INTERNALS__' in window&&<section className="settings-card"><h2>App behavior</h2><label htmlFor="close-behavior">When the main window closes<select id="close-behavior" value={closeBehavior} onChange={event=>void updateCloseBehavior(event.target.value as DesktopCloseBehavior)}><option value="keep_running">Hide to tray and keep the agent running</option><option value="exit_on_close">Quit and stop the agent</option></select></label>{closeBehaviorStatus&&<p role="status">{closeBehaviorStatus}</p>}<label className="procedure-permission"><input type="checkbox" checked={startOnLogin} onChange={event=>void updateStartOnLogin(event.target.checked)}/>Start X.A.A. when I sign in</label><p>Starts the engine in the system tray so scheduled tasks can run after sign-in.</p>{startOnLoginStatus&&<p role="status">{startOnLoginStatus}</p>}<button type="button" className="secondary-button" onClick={()=>void invoke('quit_application')}>Quit and stop the agent</button></section>}
       <section><h2>Operating mode</h2><label>Workspace permissions<select value={mode} onChange={event => setMode(event.target.value as 'observe' | 'workspace')}><option value="observe">Observe — read files</option><option value="workspace">Workspace — read, create and edit files</option></select></label><p>{mode === 'workspace' ? 'New objectives may create files and edit existing files inside the selected workspace. Creation requires existing parent directories and never overwrites a destination.' : 'New objectives can read files without changing them.'}</p></section>
-      <section aria-labelledby="backup-title"><h2 id="backup-title">Portable backup</h2><p>Save a verified copy of X.A.A. conversations, runs, and managed artifacts. The backup is not encrypted; protect it like your application data. It stays on this computer until you choose where to save it.</p><button type="button" onClick={()=>void savePortableBackup()} disabled={backupBusy||!client}>{backupBusy?'Creating backup…':'Save verified backup'}</button>{backupStatus&&<p role="status">{backupStatus}</p>}</section>
+      <section aria-labelledby="backup-title"><h2 id="backup-title">Portable backup</h2><p>Save a verified copy of X.A.A. conversations, runs, and managed artifacts. The backup is not encrypted; protect it like your application data. It stays on this computer until you choose where to save it.</p><button type="button" onClick={()=>void savePortableBackup()} disabled={backupBusy||!client}>{backupBusy?'Creating backup…':'Save verified backup'}</button>{backupStatus&&<p role="status">{backupStatus}</p>}<h3>Restore a profile</h3><p>Restore a verified backup into a new profile under a folder you choose. The active profile remains untouched. After verification, you can switch to the restored profile and restart X.A.A.</p><button type="button" className="secondary-button" onClick={()=>void restorePortableBackup()} disabled={restoreBusy||!client}>{restoreBusy?'Restoring backup…':'Restore backup into a new profile'}</button>{restoredDataRoot&&<><p>Restored profile: <code>{restoredDataRoot}</code></p><label className="procedure-permission"><input type="checkbox" checked={confirmProfileSwitch} onChange={event=>setConfirmProfileSwitch(event.target.checked)}/>Restart X.A.A. and use this restored profile</label><button type="button" className="secondary-button" onClick={()=>void switchToRestoredProfile()} disabled={!confirmProfileSwitch}>Switch to restored profile and restart</button></>}{restoreStatus&&<p role="status">{restoreStatus}</p>}{activeDataRoot&&<><p>Current profile folder: <code>{activeDataRoot}</code></p><button type="button" className="secondary-button" onClick={()=>void switchToDefaultProfile()}>Switch back to the default profile</button></>}</section>
       </div><div className="page-home" style={{display:page==='home'?'contents':'none'}}>
       <ConversationSessionsPanel client={client} model={model} workspace={workspace} mode={mode} refreshKey={String(chatRefresh)} onSelect={(id,record)=>{setChatSessionId(id);setChatSession(record);}}/>
       </div>

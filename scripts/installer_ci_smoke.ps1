@@ -146,7 +146,7 @@ try {
     $xaaReadinessOutput = & uv run python scripts/installed_skill_readiness_diagnostic.py --engine $xaaEngine
     if ($LASTEXITCODE -ne 0) { throw 'Installed Agent Skill dependency readiness acceptance failed.' }
     $xaaReadinessAcceptance = ($xaaReadinessOutput | Out-String | ConvertFrom-Json)
-    if (-not $xaaReadinessAcceptance.graceful_shutdown -or $xaaReadinessAcceptance.model_inference_requested -or -not $xaaReadinessAcceptance.dependencies_unresolved -or $xaaReadinessAcceptance.unverified_dependency_count -lt 1 -or 'packaging>=26.3,<27' -notin $xaaReadinessAcceptance.available_python_dependency_specs -or 'packaging==0.0' -notin $xaaReadinessAcceptance.incompatible_python_dependency_specs -or 'xaa-readiness-missing-fixture==99.0' -notin $xaaReadinessAcceptance.missing_python_dependency_specs) {
+    if (-not $xaaReadinessAcceptance.graceful_shutdown -or $xaaReadinessAcceptance.model_inference_requested -or -not $xaaReadinessAcceptance.dependencies_unresolved -or $xaaReadinessAcceptance.unverified_dependency_count -lt 1 -or 'packaging>=26.3,<27' -notin $xaaReadinessAcceptance.available_python_dependency_specs -or 'packaging==0.0' -notin $xaaReadinessAcceptance.incompatible_python_dependency_specs -or 'xaa-readiness-missing-fixture-20261113==99.0' -notin $xaaReadinessAcceptance.missing_python_dependency_specs) {
         throw 'Installed Agent Skill dependency readiness evidence was incomplete.'
     }
     $xaaReport.installed_skill_readiness_acceptance = $xaaReadinessAcceptance

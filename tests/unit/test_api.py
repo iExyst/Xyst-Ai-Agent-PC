@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import sqlite3
 import threading
 import time
 import zipfile
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -894,6 +896,38 @@ def test_authenticated_backup_endpoint_returns_verified_artifact_bundle(workspac
     with zipfile.ZipFile(bundle) as archive:
         assert archive.testzip() is None
         assert {"manifest.json", "xaa.sqlite3"}.issubset(archive.namelist())
+
+
+def test_authenticated_backup_restore_creates_a_separate_verified_profile(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "backup-restore.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    destination_parent = workspace_tmp_path / "restored profiles"
+    destination_parent.mkdir()
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        backup = client.post("/backups", headers=headers)
+        assert backup.status_code == 201
+        response = client.post(
+            "/backups/restore",
+            headers=headers,
+            json={
+                "bundle_path": backup.json()["path"],
+                "destination_parent": str(destination_parent),
+            },
+        )
+    assert response.status_code == 201
+    restored = response.json()
+    profile_root = Path(restored["data_root"])
+    database = Path(restored["database"])
+    assert restored["status"] == "verified"
+    assert profile_root.parent == destination_parent
+    assert database == profile_root / "XAA" / "xaa.sqlite3"
+    assert database.is_file()
+    connection = sqlite3.connect(database)
+    try:
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        connection.close()
+    assert store.path.exists()
 
 
 def test_raw_chat_stream_endpoint_is_removed(workspace_tmp_path) -> None:

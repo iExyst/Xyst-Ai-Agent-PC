@@ -108,6 +108,7 @@ export class EngineClient {
 
   models(): Promise<components['schemas']['ModelInfo'][]> { return this.#request('/models'); }
   createBackup(): Promise<{path:string;status:'verified'}> { return this.#request('/backups',{method:'POST'}); }
+  restoreBackup(bundlePath:string,destinationParent:string):Promise<{data_root:string;database:string;status:'verified'}>{return this.#request('/backups/restore',{method:'POST',body:JSON.stringify({bundle_path:bundlePath,destination_parent:destinationParent})});}
   braveSearchStatus(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential'); }
   setBraveSearchKey(token:string): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'PUT',body:JSON.stringify({token})}); }
   clearBraveSearchKey(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'DELETE'}); }

@@ -139,6 +139,21 @@ test('portable backup creation uses the authenticated engine endpoint', async ()
   assert.match(backup.path, /fixture\.xaa-backup$/);
 });
 
+test('portable backup restore creates a new authenticated profile', async () => {
+  let request;
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async (url, init) => {
+    request = {url: String(url), method: init.method, authorization: new Headers(init.headers).get('Authorization'), body: JSON.parse(init.body)};
+    return Response.json({data_root:'C:\\Profiles\\XAA-Restored-a1b2',database:'C:\\Profiles\\XAA-Restored-a1b2\\XAA\\xaa.sqlite3',status:'verified'});
+  });
+  const restored = await client.restoreBackup('C:\\Backups\\owner.xaa-backup','C:\\Profiles');
+  assert.equal(request.url, 'http://127.0.0.1:8765/backups/restore');
+  assert.equal(request.method, 'POST');
+  assert.equal(request.authorization, `Bearer ${'x'.repeat(32)}`);
+  assert.deepEqual(request.body, {bundle_path:'C:\\Backups\\owner.xaa-backup',destination_parent:'C:\\Profiles'});
+  assert.equal(restored.status, 'verified');
+  assert.match(restored.database, /XAA\\xaa\.sqlite3$/);
+});
+
 test('client rejects cloud addresses before sending a token', () => {
   assert.throws(() => new EngineClient('https://example.com', 'x'.repeat(32)), /loopback/);
 });

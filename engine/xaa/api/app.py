@@ -12,11 +12,13 @@ import re
 import secrets
 import sqlite3
 import time
+import zipfile
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
@@ -113,7 +115,11 @@ from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.web_fetch import normalize_approved_hosts
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
-from xaa.storage.backup_bundle import create_backup_bundle
+from xaa.storage.backup_bundle import (
+    MAX_BUNDLE_BYTES,
+    create_backup_bundle,
+    restore_backup_bundle,
+)
 from xaa.storage.channel_identity import ChannelIdentityLinks
 from xaa.storage.cli_chat import CLIChatStore
 from xaa.storage.commands import CommandJournal
@@ -193,6 +199,13 @@ class CreateRunRequest(BaseModel):
     @classmethod
     def validate_approved_web_hosts(cls, value: list[str]) -> list[str]:
         return normalize_approved_hosts(value)
+
+
+class RestoreBackupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bundle_path: str = Field(min_length=1, max_length=4096)
+    destination_parent: str = Field(min_length=1, max_length=4096)
 
 
 class ModelRequest(BaseModel):
@@ -2586,6 +2599,46 @@ def create_app(
     @app.post("/backups", status_code=status.HTTP_201_CREATED)
     def create_backup(_: None = Depends(authenticate)) -> dict[str, str]:
         return {"path": str(create_backup_bundle(run_store)), "status": "verified"}
+
+    @app.post("/backups/restore", status_code=status.HTTP_201_CREATED)
+    def restore_backup(
+        payload: RestoreBackupRequest, _: None = Depends(authenticate)
+    ) -> dict[str, str]:
+        bundle_path = Path(payload.bundle_path)
+        destination_parent = Path(payload.destination_parent)
+        if bundle_path.is_symlink() or bundle_path.suffix.casefold() != ".xaa-backup":
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a regular .xaa-backup file.",
+            )
+        try:
+            bundle = bundle_path.resolve(strict=True)
+            parent = destination_parent.resolve(strict=True)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="The backup file or destination folder is unavailable.",
+            ) from exc
+        if not bundle.is_file() or not parent.is_dir():
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a regular backup file and an existing destination folder.",
+            )
+        try:
+            if bundle.stat().st_size > MAX_BUNDLE_BYTES:
+                raise ValueError("Backup exceeds the restore size limit.")
+            profile_root = parent / f"XAA-Restored-{uuid4().hex}"
+            restored_database = restore_backup_bundle(bundle, profile_root / "XAA")
+        except (OSError, ValueError, sqlite3.DatabaseError, zipfile.BadZipFile) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="The backup could not be verified and restored. Choose a valid backup and a writable folder.",
+            ) from exc
+        return {
+            "data_root": str(profile_root),
+            "database": str(restored_database),
+            "status": "verified",
+        }
 
     @app.get("/schedules", response_model=list[ScheduleRecord])
     def schedules(_: None = Depends(authenticate)) -> list[dict[str, Any]]:

@@ -91,8 +91,9 @@ Each turn creates a durable run. A live one-turn acceptance on qwen/qwen3.5-9b r
 - Use cancel to stop a run. Cancellation cannot reverse an external action that already completed.
 - To stop the whole desktop agent, open **Settings** and choose **Quit and stop the agent**. This exits the desktop and its engine; it does not delete saved data or reverse an external action that already completed. On the next startup, X.A.A. applies its normal recovery rules to interrupted work.
 - If a command or MCP write ends with an unknown outcome, inspect the saved event and reconciliation controls before deciding what to do. For MCP writes, the run blocks, later calls in that same model response are recorded as not started, and you must inspect the external system and reconcile before resuming. X.A.A. does not automatically repeat the ambiguous write.
-- Create a portable backup before a significant upgrade or data move. `uv run xaa backup` writes a `.xaa-backup` bundle containing the SQLite snapshot and referenced managed artifacts.
-- Restore a bundle offline into a new, nonexistent directory:
+- In **Settings → Portable backup**, save a verified `.xaa-backup` bundle before a significant upgrade or data move. The bundle contains the SQLite snapshot and referenced managed artifacts and is not encrypted.
+- To restore from the desktop, choose **Restore backup into a new profile**, select the bundle and a parent folder, then review the generated profile path. The current profile remains unchanged until you explicitly select **Restart X.A.A. and use this restored profile** and confirm the restart. Settings can switch back to the default profile; the original data remains on disk.
+- To restore from the CLI, restore offline into a new, nonexistent directory:
 
 ```powershell
 uv run xaa restore-bundle C:\path\to\backup.xaa-backup --destination C:\new-data\XAA
