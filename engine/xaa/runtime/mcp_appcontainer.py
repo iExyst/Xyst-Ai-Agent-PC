@@ -201,6 +201,53 @@ class JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(ctypes.Structure):
     _fields_ = [("ControlFlags", wintypes.DWORD), ("CpuRate", wintypes.DWORD)]
 
 
+def _verify_command_job_limits(kernel32: Any, job_handle: Any) -> None:
+    query_job = kernel32.QueryInformationJobObject
+    query_job.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    query_job.restype = wintypes.BOOL
+    returned = wintypes.DWORD()
+    limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    if not query_job(
+        job_handle,
+        JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+        ctypes.byref(limits),
+        ctypes.sizeof(limits),
+        ctypes.byref(returned),
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    required_flags = (
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        | JOB_OBJECT_LIMIT_JOB_MEMORY
+    )
+    basic = limits.BasicLimitInformation
+    if (
+        basic.LimitFlags & required_flags != required_flags
+        or basic.ActiveProcessLimit != COMMAND_ACTIVE_PROCESS_LIMIT
+        or limits.JobMemoryLimit != COMMAND_MEMORY_LIMIT_BYTES
+    ):
+        raise MCPAppContainerError("The Windows command process-tree limits were not applied.")
+
+    cpu_limits = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION()
+    if not query_job(
+        job_handle,
+        JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION,
+        ctypes.byref(cpu_limits),
+        ctypes.sizeof(cpu_limits),
+        ctypes.byref(returned),
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    required_cpu_flags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
+    if cpu_limits.ControlFlags != required_cpu_flags or cpu_limits.CpuRate != COMMAND_CPU_RATE:
+        raise MCPAppContainerError("The Windows command process-tree CPU limit was not applied.")
+
+
 def _win32_api() -> tuple[Any, Any]:
     if sys.platform != "win32":
         raise MCPAppContainerError("MCP network isolation is currently supported on Windows only.")
@@ -1213,6 +1260,8 @@ def _create_no_network_child(
                 ctypes.sizeof(cpu_limits),
             ):
                 raise ctypes.WinError(ctypes.get_last_error())
+            stage = "verify process-tree resource limits"
+            _verify_command_job_limits(kernel32, job_handle)
         stage = "contain process tree"
         assign_job = kernel32.AssignProcessToJobObject
         assign_job.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
@@ -1423,6 +1472,7 @@ def appcontainer_shim_fingerprint() -> str:
     code_objects = (
         _process_identity.__code__,
         _create_no_network_child.__code__,
+        _verify_command_job_limits.__code__,
         run_stdio_appcontainer_shim.__code__,
         *AppContainerAccess.fingerprint_code(),
     )
