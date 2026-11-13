@@ -22,7 +22,7 @@ test('check imported Python dependencies in the selected restricted WSL distribu
     if(path==='/execution/readiness')return route.fulfill({json:{backend:'wsl-bubblewrap-v1',distribution:'Ubuntu-24.04',profile_sha256:'a'.repeat(64),state:'ready',checked_at:new Date().toISOString(),expires_at:new Date(Date.now()+60000).toISOString(),checks:['cleanup_confirmed'],policy:{network:'denied',workspace_changes:'private_copy_only',max_seconds:30,memory_bytes:134217728,max_active_executions_per_distribution:2}},headers});
     if(path.endsWith('/python-readiness')){
       checkBody=request.postDataJSON();
-      return route.fulfill({json:{distribution:'Ubuntu-24.04',state:'ready',python_version:'3.12.0',dependencies:[{requirement:'requests>=2.0',status:'available',installed_version:'2.32.0'}],unverified_dependency_count:1,checked_at:new Date().toISOString()},headers});
+      return route.fulfill({json:{distribution:'Ubuntu-24.04',state:'ready',python_version:'3.12.0',python_environment:{python_full_version:'3.12.0'},compatible_wheel_tags:['cp312-cp312-manylinux_2_17_x86_64','py3-none-any'],dependencies:[{requirement:'requests>=2.0',status:'available',installed_version:'2.32.0'}],unverified_dependency_count:1,checked_at:new Date().toISOString()},headers});
     }
     if(path.endsWith('/python-dependency-locks')&&request.method()==='GET')return route.fulfill({json:{locks:[{...lock,decision:lockDecision}]},headers});
     if(path.endsWith('/review')&&request.method()==='POST'){reviewBody=request.postDataJSON();lockDecision=reviewBody.decision;return route.fulfill({json:{...lock,decision:lockDecision,reviewed_at:new Date().toISOString()},headers});}
@@ -44,6 +44,8 @@ test('check imported Python dependencies in the selected restricted WSL distribu
   await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Python 3.12.0');
   await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('requests>=2.0: available (2.32.0)');
   await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Other or unverified declared dependencies: 1');
+  await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Python target data for wheel resolution');
+  await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('Showing the first 12 of 2 compatible tags.');
   const lockReview=panel.getByRole('region',{name:'Python dependency lock review'});
   await expect(lockReview).toContainText('requests-2.32.3-py3-none-any.whl');
   await expect(lockReview).toContainText('Requires-Dist: urllib3>=1.21');

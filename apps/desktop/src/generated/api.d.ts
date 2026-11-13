@@ -3862,12 +3862,18 @@ export interface components {
              * Format: date-time
              */
             checked_at: string;
+            /** Compatible Wheel Tags */
+            compatible_wheel_tags?: string[];
             /** Dependencies */
             dependencies: components["schemas"]["SkillDependencyStatus"][];
             /** Distribution */
             distribution: string;
             /** Error Code */
             error_code?: ("profile_unavailable" | "unsupported_platform" | "sandbox_not_ready" | "probe_busy" | "dependency_probe_failed") | null;
+            /** Python Environment */
+            python_environment?: {
+                [key: string]: string;
+            } | null;
             /** Python Version */
             python_version?: string | null;
             /**

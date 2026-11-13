@@ -53,6 +53,11 @@ class Backend:
                     "python_version": "3.11",
                     "sys_platform": "linux",
                 },
+                "compatible_wheel_tags": (
+                    ["not-a-wheel-tag"]
+                    if self.fault == "wheel_tags"
+                    else ["cp311-cp311-manylinux_2_17_x86_64", "py3-none-any"]
+                ),
             }
         else:
             assert intent.argv == ["/usr/bin/python3", "-I", "-c", module.PROBE]
@@ -76,7 +81,7 @@ class Backend:
                 "scratch_bytes": 33554432,
                 "workspace_bytes": 33554432,
                 "output_bytes": 1048576,
-                "seconds": 5,
+                "seconds": 15 if dependency_probe else 5,
                 "network": "none",
             },
             "succeeded": True,
@@ -254,6 +259,12 @@ async def test_python_dependencies_are_checked_in_isolated_wsl_metadata(monkeypa
         unverified_dependency_count=1,
     )
     assert result.state == "ready" and result.python_version == "3.11.9"
+    assert result.python_environment is not None
+    assert result.python_environment["python_full_version"] == "3.11.9"
+    assert result.compatible_wheel_tags == [
+        "cp311-cp311-manylinux_2_17_x86_64",
+        "py3-none-any",
+    ]
     assert [item.status for item in result.dependencies] == [
         "available",
         "incompatible",
@@ -265,6 +276,20 @@ async def test_python_dependencies_are_checked_in_isolated_wsl_metadata(monkeypa
     assert result.unverified_dependency_count == 1
     assert backend.launches == 2
     assert backend.controls == ["cleanup", "status", "cleanup", "status"]
+
+
+async def test_python_dependency_target_rejects_malformed_wheel_tags(monkeypatch):
+    backend = Backend("wheel_tags")
+    install(monkeypatch, backend)
+
+    result = await ExecutionReadiness().check_python_dependencies(
+        SkillDependencyReadinessRequest(
+            distribution="Ubuntu", python_dependency_specs=["fixture-package>=1"]
+        )
+    )
+
+    assert result.state == "unavailable"
+    assert result.error_code == "dependency_probe_failed"
 
 
 def test_dependency_check_rejects_direct_references_and_unbounded_lists():

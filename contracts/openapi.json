@@ -4736,6 +4736,14 @@
             "title": "Checked At",
             "type": "string"
           },
+          "compatible_wheel_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Compatible Wheel Tags",
+            "type": "array"
+          },
           "dependencies": {
             "items": {
               "$ref": "#/components/schemas/SkillDependencyStatus"
@@ -4764,6 +4772,20 @@
               }
             ],
             "title": "Error Code"
+          },
+          "python_environment": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Environment"
           },
           "python_version": {
             "anyOf": [

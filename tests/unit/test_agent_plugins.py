@@ -920,6 +920,8 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
             distribution=request.distribution,
             state="ready",
             python_version="3.12.0",
+            python_environment={"python_full_version": "3.12.0"},
+            compatible_wheel_tags=["py3-none-any"],
             dependencies=[
                 SkillDependencyStatus(
                     requirement="requests>=2.0", status="available", installed_version="2.32.0"
@@ -972,6 +974,8 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
     assert version.status_code == 200
     assert readiness.status_code == 200
     assert readiness.json()["python_version"] == "3.12.0"
+    assert readiness.json()["python_environment"]["python_full_version"] == "3.12.0"
+    assert readiness.json()["compatible_wheel_tags"] == ["py3-none-any"]
     assert readiness.json()["dependencies"][0]["status"] == "available"
     assert readiness.json()["unverified_dependency_count"] == 1
     assert dependency_requests == [("Ubuntu", ["requests>=2.0"], 1)]

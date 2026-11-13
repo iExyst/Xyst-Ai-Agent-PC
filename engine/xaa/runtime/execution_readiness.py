@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from packaging.markers import default_environment
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.tags import parse_tag
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -87,7 +88,7 @@ assert pathlib.Path('/input/probe.txt').read_text()==nonce
 print(json.dumps({'nonce':nonce,'checks':True}))
 """
 DEPENDENCY_PROBE = """
-import importlib.metadata,json,os,pathlib,platform,sys
+import importlib.metadata,json,os,pathlib,platform,subprocess,sys,tempfile
 request=json.loads(pathlib.Path('probe.json').read_text())
 names=request['names']
 versions={}
@@ -97,6 +98,21 @@ for name in names:
     except importlib.metadata.PackageNotFoundError:
         versions[name]=None
 implementation_version=sys.implementation.version
+with tempfile.TemporaryDirectory(prefix='xaa-wheel-tags-') as temporary:
+    venv=pathlib.Path(temporary)/'venv'
+    created=subprocess.run(['/usr/bin/python3','-I','-m','venv',str(venv)],
+                           capture_output=True,text=True,timeout=8)
+    assert created.returncode==0, created.stderr
+    tag_probe=subprocess.run([str(venv/'bin/python'),'-I','-c',
+        'import json; from pip._vendor.packaging.tags import sys_tags; '
+        'tags=list(sys_tags()); selected=tags[:240]; '
+        'selected.extend(tag for tag in tags[240:] if tag.abi=="none" and tag.platform=="any"); '
+        'print(json.dumps(list(dict.fromkeys(str(tag) for tag in selected))[:256]))'],
+        capture_output=True,text=True,timeout=5)
+    assert tag_probe.returncode==0, tag_probe.stderr
+    compatible_wheel_tags=json.loads(tag_probe.stdout)
+    assert isinstance(compatible_wheel_tags,list) and 1<=len(compatible_wheel_tags)<=256
+    assert all(isinstance(tag,str) and tag for tag in compatible_wheel_tags)
 print(json.dumps({'versions':versions,'environment':{
     'implementation_name':sys.implementation.name,
     'implementation_version':'.'.join(str(value) for value in implementation_version[:3]),
@@ -109,7 +125,7 @@ print(json.dumps({'versions':versions,'environment':{
     'python_full_version':platform.python_version(),
     'python_version':'.'.join(str(value) for value in sys.version_info[:2]),
     'sys_platform':sys.platform
-}}))
+},'compatible_wheel_tags':compatible_wheel_tags}))
 """
 
 
@@ -182,6 +198,8 @@ class SkillDependencyReadinessResult(BaseModel):
     distribution: str
     state: Literal["ready", "unavailable", "unsupported", "busy", "no_dependencies"]
     python_version: str | None = None
+    python_environment: dict[str, str] | None = None
+    compatible_wheel_tags: list[str] = Field(default_factory=list, max_length=256)
     dependencies: list[SkillDependencyStatus]
     unverified_dependency_count: int = Field(ge=0, le=256)
     checked_at: datetime
@@ -317,6 +335,7 @@ class ExecutionReadiness:
         assert digest is not None
         versions: dict[str, str | None] | None = None
         environment: dict[str, str] | None = None
+        compatible_wheel_tags: list[str] | None = None
         try:
             async with self.lock:
                 transport = await WSLTransport.discover(
@@ -327,7 +346,7 @@ class ExecutionReadiness:
                 snapshot = WorkspaceSnapshot((SnapshotFile("probe.json", dependency_file),), (), ())
                 intent = CommandIntent(
                     argv=["/usr/bin/python3", "-I", "-c", DEPENDENCY_PROBE],
-                    max_seconds=5,
+                    max_seconds=15,
                     execution_id=uuid4().hex,
                     backend="wsl-bubblewrap-v1",
                     distribution=request.distribution,
@@ -335,7 +354,7 @@ class ExecutionReadiness:
                     workspace="application-owned-skill-dependency-probe",
                 )
                 try:
-                    result = await transport.run(intent, snapshot, deadline=time.monotonic() + 15)
+                    result = await transport.run(intent, snapshot, deadline=time.monotonic() + 25)
                     encoded = result.get("stdout_b64")
                     expected_limits = {
                         "max_active_executions": 2,
@@ -345,7 +364,7 @@ class ExecutionReadiness:
                         "scratch_bytes": 33554432,
                         "workspace_bytes": 33554432,
                         "output_bytes": 1048576,
-                        "seconds": 5,
+                        "seconds": 15,
                         "network": "none",
                     }
                     if (
@@ -365,6 +384,7 @@ class ExecutionReadiness:
                     output = response_object(base64.b64decode(encoded, validate=True))
                     raw_versions_value = output.get("versions")
                     raw_environment_value = output.get("environment")
+                    raw_tags_value = output.get("compatible_wheel_tags")
                     expected_environment = {
                         "implementation_name",
                         "implementation_version",
@@ -379,13 +399,15 @@ class ExecutionReadiness:
                         "sys_platform",
                     }
                     if (
-                        set(output) != {"versions", "environment"}
+                        set(output) != {"versions", "environment", "compatible_wheel_tags"}
                         or not isinstance(raw_versions_value, dict)
                         or not isinstance(raw_environment_value, dict)
+                        or not isinstance(raw_tags_value, list)
                     ):
                         raise ValueError("Skill dependency probe returned invalid metadata.")
                     raw_versions = cast(dict[str, object], raw_versions_value)
                     raw_environment = cast(dict[str, object], raw_environment_value)
+                    raw_tags = cast(list[object], raw_tags_value)
                     if (
                         set(raw_versions) != set(names)
                         or any(
@@ -393,14 +415,31 @@ class ExecutionReadiness:
                             for version in raw_versions.values()
                         )
                         or set(raw_environment) != expected_environment
-                        or any(not isinstance(value, str) for value in raw_environment.values())
+                        or any(
+                            not isinstance(value, str) or not value or len(value) > 256
+                            for value in raw_environment.values()
+                        )
+                        or not 1 <= len(raw_tags) <= 256
+                        or any(
+                            not isinstance(tag, str) or not tag or len(tag) > 128
+                            for tag in raw_tags
+                        )
+                        or len(set(raw_tags)) != len(raw_tags)
                     ):
                         raise ValueError("Skill dependency probe returned invalid metadata.")
+                    try:
+                        for tag in cast(list[str], raw_tags):
+                            parse_tag(tag)
+                    except ValueError as exc:
+                        raise ValueError(
+                            "Skill dependency probe returned invalid wheel tags."
+                        ) from exc
                     versions = {
                         str(name): value if isinstance(value, str) else None
                         for name, value in raw_versions.items()
                     }
                     environment = {str(name): str(value) for name, value in raw_environment.items()}
+                    compatible_wheel_tags = [str(tag) for tag in raw_tags]
                     if profile_fingerprint()[0] != digest:
                         raise PermissionError("Execution profile changed during dependency probe.")
                 finally:
@@ -428,7 +467,7 @@ class ExecutionReadiness:
             versions = None
             environment = None
 
-        if versions is None or environment is None:
+        if versions is None or environment is None or compatible_wheel_tags is None:
             return SkillDependencyReadinessResult(
                 distribution=request.distribution,
                 state="unavailable",
@@ -474,6 +513,8 @@ class ExecutionReadiness:
             distribution=request.distribution,
             state="ready",
             python_version=environment["python_full_version"],
+            python_environment=environment,
+            compatible_wheel_tags=compatible_wheel_tags,
             dependencies=statuses,
             unverified_dependency_count=unverified_dependency_count,
             checked_at=datetime.now(UTC),

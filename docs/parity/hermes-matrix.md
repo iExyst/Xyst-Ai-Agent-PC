@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Capture the target interpreter's wheel tags (2026-11-13)
+
+The authenticated WSL dependency-readiness probe returns the actual interpreter marker environment and ordered wheel tags from a disposable `ensurepip` venv. The desktop shows this target data for later lock preparation. On Ubuntu-24.04, the real WSL run returned Python 3.12.3 and 254 compatible tags, including the universal `py3-none-any` fallback. Focused API/readiness checks pass (55 passed, 1 skipped), as does the dependency-readiness Playwright flow, along with Ruff, Pyright, TypeScript, and contract generation. The neighboring procedure CRUD browser scenario timed out at its Pin control after an empty JSON response and needs separate follow-up. This does not resolve or install procedure dependencies; the Hermes imported-procedure execution row remains partial. No live inference was used.
+
 ## Add locked wheel-byte verification core (2026-11-13)
 
 `verify_locked_wheel_bytes` validates exact reviewed wheelhouse membership, hashes, sizes, archive paths, `.dist-info` identity, normalized `METADATA` dependencies, and `WHEEL` format/tags from the bytes themselves. Its focused suite passes (27 tests); the adjacent plugin API/storage suite passes with 68 passed and 1 skipped. Ruff, formatting, strict Pyright, and diff checks pass. The helper is not yet wired into wheel acquisition, durable environment preparation, owner review, or installation; the imported-procedure execution row remains partial. No live inference was used.
