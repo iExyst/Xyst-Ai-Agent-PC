@@ -131,7 +131,9 @@ async def test_cancelling_local_command_closes_descendant_processes(
     output = bytearray()
     child_started = asyncio.Event()
 
-    async def capture(_stream: str, chunk: bytes) -> None:
+    async def capture(stream: str, chunk: bytes) -> None:
+        if stream != "stdout":
+            return
         output.extend(chunk)
         if b"\n" in output:
             child_started.set()
