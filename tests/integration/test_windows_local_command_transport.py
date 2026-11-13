@@ -191,18 +191,32 @@ async def test_local_command_output_limit_stops_owned_process_tree(
         profile_sha256=profile_fingerprint(),
         workspace=str(workspace_tmp_path),
     )
+    stdout = bytearray()
     stderr = bytearray()
 
     async def capture(stream: str, chunk: bytes) -> None:
-        if stream == "stderr":
-            stderr.extend(chunk)
+        (stdout if stream == "stdout" else stderr).extend(chunk)
 
-    with pytest.raises(ValueError, match="output exceeded the 1 MiB limit"):
-        await transport.run(
+    try:
+        receipt = await transport.run(
             intent,
             snapshot,
             deadline=time.monotonic() + 30,
             on_output=capture,
+        )
+    except ValueError as exc:
+        assert "output exceeded the 1 MiB limit" in str(exc)
+    else:
+        child_match = re.search(rb"(?m)^child-pid=(\d+)\r?$", stderr)
+        pytest.fail(
+            "AppContainer transport returned without enforcing the output ceiling: "
+            f"stdout_bytes={receipt.get('stdout_bytes')}, "
+            f"stderr_bytes={receipt.get('stderr_bytes')}, "
+            f"streamed_stdout_bytes={len(stdout)}, streamed_stderr_bytes={len(stderr)}, "
+            f"termination_reason={receipt.get('termination_reason')}, "
+            f"supervisor_exit_code={receipt.get('supervisor_exit_code')}, "
+            f"output_complete={receipt.get('output_complete')}, "
+            f"child_marker_seen={child_match is not None}"
         )
 
     match = re.search(rb"(?m)^child-pid=(\d+)\r?$", stderr)
