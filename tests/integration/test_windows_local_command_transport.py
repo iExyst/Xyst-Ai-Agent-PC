@@ -232,6 +232,56 @@ async def test_local_command_output_limit_stops_owned_process_tree(
     assert intent.execution_id not in transport._active
 
 
+@pytest.mark.asyncio
+async def test_local_command_enforces_process_tree_memory_limit(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"memory limit fixture"),), (), ())
+    program = (
+        "import sys\n"
+        "print('memory-fixture-started',flush=True)\n"
+        "try:\n"
+        " data=bytearray(192*1024*1024)\n"
+        " for offset in range(0,len(data),4096): data[offset]=1\n"
+        "except MemoryError:\n"
+        " print('memory-limit-enforced',flush=True)\n"
+        " raise SystemExit(73)\n"
+        "print('memory-limit-not-enforced',flush=True)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program],
+        max_seconds=20,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    streamed = bytearray()
+
+    async def capture(stream: str, chunk: bytes) -> None:
+        if stream == "stdout":
+            streamed.extend(chunk)
+
+    receipt = await transport.run(
+        intent,
+        snapshot,
+        deadline=time.monotonic() + 30,
+        on_output=capture,
+    )
+    stdout = base64.b64decode(receipt["stdout_b64"], validate=True)
+    assert streamed == stdout
+    assert b"memory-fixture-started" in stdout
+    assert b"memory-limit-enforced" in stdout
+    assert b"memory-limit-not-enforced" not in stdout
+    assert receipt["output_complete"] is True
+    assert receipt["succeeded"] is False
+    assert receipt["exit_code"] not in {None, 0}
+    assert receipt["cleanup_confirmed"] is True
+    assert intent.execution_id not in transport._active
+
+
 def test_local_command_rejects_shell_scripts() -> None:
     from xaa.runtime.windows_local_transport import _resolve_executable
 

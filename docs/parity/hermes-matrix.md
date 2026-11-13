@@ -1,12 +1,16 @@
 # Hermes capability reference matrix
 
+## Verify Windows AppContainer process-tree memory limit (2026-11-13)
+
+The AppContainer command job sets a 128 MiB process-tree commit limit. A new real Windows acceptance commits and touches 192 MiB, then verifies that the command returns nonzero without reaching its successful-allocation marker. The focused local acceptance and static checks pass; hosted verification is pending. This is one resource-policy case only and does not close broad backend parity.
+
 ## Enforce the Windows AppContainer command-output ceiling (2026-11-13)
 
 A real Windows AppContainer transport fixture emits beyond the 1 MiB output ceiling while an owned child remains active. Hosted diagnostics [43471071441](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43471071441) and [43473138091](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43473138091) exposed a fixture-only `subprocess.DEVNULL` denial under AppContainer; the child now uses quiet pipe handles. Hosted run [43475107022](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43475107022) passed all 1,217 Python tests and configured Windows checks. The acceptance verifies the output-limit exception, child termination, and transport active-record cleanup. This closes that bounded-output acceptance case only; artifact review, broader execution resource limits and the remaining execution-backend parity row stay open.
 
 ## Preserve fragmented Unicode command output (2026-11-13)
 
-The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. Hosted CI exposed a Python startup diagnostic preceding the fixture's stderr; the test distinguishes that prefix while verifying full stream/receipt agreement and the exact fixture output. Hosted rerun [43463602419](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43463602419) passed all 1,216 Python tests and configured Windows checks; the focused local integration module passes (4 tests), as do Ruff, formatting and strict engine Pyright. This closes one EXEC-COMMON-5 case only. The execution-backend matrix row remains partial; output-limit behavior, persisted artifact review, and SSH/hosted/container adapters remain open. No live model inference was used.
+The Windows AppContainer integration now writes multilingual UTF-8 to stdout and stderr one byte at a time and exits nonzero. Hosted CI exposed a Python startup diagnostic preceding the fixture's stderr; the test distinguishes that prefix while verifying full stream/receipt agreement and the exact fixture output. Hosted rerun [43463602419](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43463602419) passed all 1,216 Python tests and configured Windows checks; the focused local integration module passes (4 tests), as do Ruff, formatting and strict engine Pyright. This closes one EXEC-COMMON-5 stream-integrity case; output-limit enforcement is verified separately above. The execution-backend matrix row remains partial because broad backend inventory/clean-machine coverage and the other adapter implementations remain open. No live model inference was used.
 
 ## End-to-end email cycle over verified TLS sockets (2026-11-13)
 

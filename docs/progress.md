@@ -1,5 +1,9 @@
 # Progress
 
+## Verify Windows AppContainer process-tree memory limit (2026-11-13)
+
+The Windows command job config applies a 128 MiB process-tree commit limit. Added a real AppContainer acceptance that commits and touches 192 MiB and checks for a nonzero bounded receipt without the successful-allocation marker. The focused local acceptance passes, as do Ruff, formatting, strict engine Pyright and diff checks. Hosted Windows verification is pending; the installed memory policy remains unverified until that run passes.
+
 ## Enforce the Windows AppContainer command-output limit (2026-11-13)
 
 Added a real Windows transport acceptance that starts a child process, writes more than the 1 MiB output ceiling, and remains alive. Hosted diagnostics [43471071441](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43471071441) and [43473138091](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43473138091) exposed that AppContainer denies the fixture's `subprocess.DEVNULL` redirection to `NUL`; replacing it with quiet pipe handles allowed the child to launch. Hosted run [43475107022](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43475107022) passed all 1,217 Python tests and configured Windows browser, static and recovery checks. This verifies that over-limit streamed output raises the 1 MiB error, the owned descendant is terminated, and the active execution record is cleared. Ruff, formatting, Pyright and diff checks pass locally. Artifact review and broader execution resource limits remain open; this does not establish general backend parity.
