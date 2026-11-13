@@ -30,7 +30,8 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
     original_snapshot = capture_workspace(project)
 
     store = RunStore(root / "app-data" / "XAA" / "xaa.sqlite3")
-    script = b"import pathlib; print(pathlib.Path('fixture.txt').read_text())\n"
+    python_script = b"import pathlib; print(pathlib.Path('fixture.txt').read_text())\n"
+    shell_script = b"#!/usr/bin/env bash\ncat fixture.txt\n"
     skill = SkillStore(store).create(
         SkillDraft(
             name="Selected specialist script diagnostic",
@@ -40,10 +41,16 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
             assets=[
                 SkillAsset(
                     path="scripts/check.py",
-                    content_base64=base64.b64encode(script).decode("ascii"),
+                    content_base64=base64.b64encode(python_script).decode("ascii"),
                     media_type="text/x-python",
-                    sha256=hashlib.sha256(script).hexdigest(),
-                )
+                    sha256=hashlib.sha256(python_script).hexdigest(),
+                ),
+                SkillAsset(
+                    path="scripts/check.sh",
+                    content_base64=base64.b64encode(shell_script).decode("ascii"),
+                    media_type="text/x-shellscript",
+                    sha256=hashlib.sha256(shell_script).hexdigest(),
+                ),
             ],
         )
     )
@@ -95,19 +102,27 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
     )
 
     transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 60)
-    script_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.py"
-    result = await CommandController(store, transport, task_scope=scope).execute(
-        run_id,
-        owner,
-        "selected-specialist-skill-script",
-        {"argv": ["/usr/bin/python3", "-I", script_path]},
-        idempotency_key="selected-specialist-skill-script",
-        deadline=time.monotonic() + 35,
-    )
-    if not result.get("succeeded") or marker not in str(result.get("stdout_excerpt", "")):
-        raise AssertionError("Specialist script did not return the project fixture marker.")
+    python_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.py"
+    shell_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.sh"
+    controller = CommandController(store, transport, task_scope=scope)
+    commands_succeeded = 0
+    for call_id, argv in [
+        ("selected-specialist-python-script", ["/usr/bin/python3", "-I", python_path]),
+        ("selected-specialist-shell-script", ["/bin/bash", shell_path]),
+    ]:
+        result = await controller.execute(
+            run_id,
+            owner,
+            call_id,
+            {"argv": argv},
+            idempotency_key=call_id,
+            deadline=time.monotonic() + 35,
+        )
+        if not result.get("succeeded") or marker not in str(result.get("stdout_excerpt", "")):
+            raise AssertionError(f"Specialist script {argv[-1]} did not return the fixture marker.")
+        commands_succeeded += 1
     evidence = command_evidence(store, run_id, scope.task_id)
-    if len(evidence) != 1 or not evidence[0]["matches_current_private_tree"]:
+    if len(evidence) != 2 or not all(item["matches_current_private_tree"] for item in evidence):
         raise AssertionError("Specialist command evidence does not match its augmented snapshot.")
     if capture_workspace(project).sha256 != original_snapshot.sha256:
         raise AssertionError("Restricted specialist execution modified the original project.")
@@ -120,17 +135,17 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
         "passed": True,
         "distribution": distribution,
         "profile_sha256": profile_sha256,
-        "selected_script_path": script_path,
+        "selected_script_paths": [python_path, shell_path],
         "task_id": scope.task_id,
         "task_permission_scope": ["workspace.read", "workspace.write", "workspace.command"],
-        "command_succeeded": True,
-        "script_read_private_project_fixture": True,
+        "commands_succeeded": commands_succeeded,
+        "python_and_shell_scripts_read_private_project_fixture": True,
         "command_evidence_matches_current_augmented_snapshot": True,
         "original_project_unchanged": True,
         "unresolved_commands": 0,
         "run_state": "cancelled_after_diagnostic",
         "model_inference": False,
-        "scope": "One selected Python resource executed through a specialist private snapshot with saved WSL and task command grants.",
+        "scope": "One selected Python resource and one selected shell resource executed through a specialist private snapshot with saved WSL and task command grants.",
     }
     report_path = root / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

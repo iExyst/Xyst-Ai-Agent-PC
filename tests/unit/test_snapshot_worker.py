@@ -172,6 +172,14 @@ def selected_trial(path="scripts/check.py", content=b"print('selected')\n"):
                 "content_base64": base64.b64encode(b"not a script").decode("ascii"),
                 "sha256": hashlib.sha256(b"not a script").hexdigest(),
             },
+            {
+                "path": "scripts/check.sh",
+                "media_type": "text/x-shellscript",
+                "content_base64": base64.b64encode(b"#!/bin/bash\nprintf 'shell'\n").decode(
+                    "ascii"
+                ),
+                "sha256": hashlib.sha256(b"#!/bin/bash\nprintf 'shell'\n").hexdigest(),
+            },
         ],
     }
     trial["snapshot_sha256"] = snapshot_digest(trial)
@@ -186,6 +194,9 @@ def test_selected_script_is_added_to_immutable_sandbox_snapshot():
     assert paths["project.txt"] == b"unchanged"
     assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.py"] == (
         b"print('selected')\n"
+    )
+    assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.sh"] == (
+        b"#!/bin/bash\nprintf 'shell'\n"
     )
     assert "__xaa_selected_skill__/fixture-skill/v2/scripts" in staged.directories
     assert "__xaa_selected_skill__/fixture-skill/v2" in staged.directories
