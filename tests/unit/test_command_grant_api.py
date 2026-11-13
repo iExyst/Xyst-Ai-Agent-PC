@@ -36,8 +36,8 @@ async def test_grant_needs_current_server_observation(workspace_tmp_path, monkey
     elif fault == "platform":
         monkeypatch.setattr(module, "SUPPORTED", False)
     else:
-            service.cache[cache_key] = (
-                service.cache[cache_key][0],
+        service.cache[cache_key] = (
+            service.cache[cache_key][0],
             result.model_copy(
                 update={"state": "unavailable"} if fault == "failed" else {"checks": []}
             ),

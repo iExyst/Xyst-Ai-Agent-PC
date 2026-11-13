@@ -103,9 +103,7 @@ async def test_selected_procedure_script_is_staged_for_granted_private_task(
 
         async def run(self, intent, snapshot, *, deadline, on_output=None):
             self.snapshots.append(snapshot)
-            return await super().run(
-                intent, snapshot, deadline=deadline, on_output=on_output
-            )
+            return await super().run(intent, snapshot, deadline=deadline, on_output=on_output)
 
     transport = InspectingTransport()
     store, run_id, owner, _, scopes = await private_tasks(
@@ -141,9 +139,7 @@ async def test_commands_capture_each_private_tree_and_stale_validation_is_visibl
 
         async def run(self, intent, snapshot, *, deadline, on_output=None):
             self.snapshots.append(snapshot)
-            return await super().run(
-                intent, snapshot, deadline=deadline, on_output=on_output
-            )
+            return await super().run(intent, snapshot, deadline=deadline, on_output=on_output)
 
     transport = InspectingTransport()
     store, run_id, owner, project, scopes = await private_tasks(workspace_tmp_path, transport)
@@ -775,9 +771,7 @@ async def test_expiry_during_command_cleans_up_without_publishing_success(worksp
                     "UPDATE task_leases SET expires_at='2000-01-01T00:00:00+00:00' WHERE task_id=?",
                     (run_id + ":a",),
                 )
-            return await super().run(
-                intent, snapshot, deadline=deadline, on_output=on_output
-            )
+            return await super().run(intent, snapshot, deadline=deadline, on_output=on_output)
 
     transport = RevokingTransport()
     store, run_id, owner, project, scopes = await private_tasks(workspace_tmp_path, transport)
