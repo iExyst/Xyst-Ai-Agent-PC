@@ -729,6 +729,27 @@ class ExecutionReadiness:
                     }
                     and windows_local_profile_fingerprint() == digest
                 )
+                if not ready:
+                    stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
+                    stderr_excerpt = stderr.decode("utf-8", errors="replace")[:240]
+                    local_data = os.environ.get("LOCALAPPDATA", "")
+                    if local_data:
+                        stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
+                    logging.getLogger(__name__).warning(
+                        "Windows AppContainer readiness child failed validation "
+                        "(succeeded=%s; exit=%s; cleanup=%s; output_complete=%s; "
+                        "workspace_persisted=%s; snapshot_match=%s; stdout_bytes=%s; "
+                        "stderr_bytes=%s; stderr=%r).",
+                        result.get("succeeded"),
+                        result.get("exit_code"),
+                        result.get("cleanup_confirmed"),
+                        result.get("output_complete"),
+                        result.get("workspace_changes_persisted"),
+                        result.get("snapshot_sha256") == snapshot.sha256,
+                        result.get("stdout_bytes"),
+                        result.get("stderr_bytes"),
+                        stderr_excerpt,
+                    )
             except (OSError, RuntimeError, ValueError, KeyError, TypeError, TimeoutError) as exc:
                 failed_path = getattr(exc, "filename", None)
                 failed_name = Path(failed_path).name if isinstance(failed_path, str) else None
