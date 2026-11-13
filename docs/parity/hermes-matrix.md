@@ -2,7 +2,7 @@
 
 ## Skill dependency readiness display (2026-11-13)
 
-Agent Plugin discovery now gives owners manager/package names for syntactically validated dependencies outside the supported Python metadata check. Versions, URLs and unparsed dependency strings remain hidden; this assessment does not install or run package code. Unsupported managers remain unresolved, and dependency installation, credential setup, toolset mapping and representative procedure execution remain open Phase 5 gaps. The skill capability row remains partial.
+Agent Plugin discovery now gives owners manager/package names for syntactically validated dependencies outside the supported Python metadata check. Versions, URLs and unparsed dependency strings remain hidden; this assessment does not install or run package code. A browser regression verifies `npm:left-pad` appears in both requirement summaries without rendering its version spec or URL. Hosted source run [43344562617](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43344562617) passed the full Windows source workflow. Hosted installer run [43344581108](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43344581108) passed package/install recovery gates; the frozen readiness report verifies Python metadata classification only ([report](../../.acceptance/hosted-installer-43344581108/xaa-windows-installer-unsigned/.acceptance/installed-skill-readiness-0534715457344a44b57d3b3ac8035a05/report.json)). Unsupported managers remain unresolved, and dependency installation, credential setup, toolset mapping and representative procedure execution remain open Phase 5 gaps. The skill capability row remains partial.
 
 ## MCP catalog-change acceptance over both transports (2026-11-12)
 
