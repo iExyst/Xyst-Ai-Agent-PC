@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## MCP catalog-change acceptance over both transports (2026-11-12)
+
+The native installed-app smoke now exercises the official TypeScript SDK fixture over stdio and Streamable HTTP. In each case, tool/resource/prompt list-change notices appear in the desktop, resource and prompt lists refresh, and a newly discovered tool retains the default `none` permission. Focused local integration and browser checks pass; the local native run completes both transport checks before the known AppContainer initialization failure. Hosted installer verification is pending. This is a targeted protocol acceptance only; the broad MCP capability and Hermes parity status remains partial.
+
 ## Installed MCP catalog-change acceptance (2026-11-12)
 
 Hosted Windows installer run [43337694665](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43337694665) exercises the official TypeScript SDK Streamable HTTP fixture in the native WebView. It publishes tool, resource and prompt list-change notifications after the owner has loaded the original catalogs; the desktop surfaces each notice, refreshes resources/prompts, and shows the new tool disabled by default. Two installed reports pass with graceful shutdown and no model inference ([first](../../.acceptance/hosted-installer-43337694665/xaa-windows-installer-unsigned/.acceptance/c18e64f9-80fc-48e0-ae2e-36501c0ee8a6/report.json), [second](../../.acceptance/hosted-installer-43337694665/xaa-windows-installer-unsigned/.acceptance/e5df2429-261c-4258-a159-d1c3de61c64c/report.json)). This is installed HTTP-fixture evidence only; broad third-party MCP compatibility and Hermes parity remain partial.

@@ -16,6 +16,52 @@ async function clickForResponse(page, locator, predicate) {
   return response;
 }
 
+async function allocateLoopbackPort() {
+  return await new Promise((resolve, reject) => {
+    const listener = net.createServer();
+    listener.once('error', reject);
+    listener.listen(0, '127.0.0.1', () => {
+      const address = listener.address();
+      if (!address || typeof address === 'string') return reject(new Error('Could not allocate a loopback fixture port.'));
+      listener.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
+}
+
+async function verifyCatalogNotifications(card, port, transportLabel) {
+  await card.getByRole('button', { name: 'List resources', exact: true }).click();
+  await expect(card.locator('.mcp-resource').filter({ hasText: 'xaa://typescript/readme' }))
+    .toBeVisible({ timeout: 20_000 });
+  await card.getByRole('button', { name: 'List prompts', exact: true }).click();
+  await expect(card.locator('.mcp-prompt').filter({ hasText: 'Summarize a topic' }))
+    .toBeVisible({ timeout: 20_000 });
+  const catalogChange = await fetch(`http://127.0.0.1:${port}/__xaa_fixture/catalog-change`, { method: 'POST' });
+  if (catalogChange.status !== 204) {
+    throw new Error(`TypeScript ${transportLabel} MCP fixture catalog update failed (${catalogChange.status}).`);
+  }
+  const updateButton = card.getByRole('button', { name: 'Check for server updates', exact: true });
+  const updateNotices = card.getByRole('complementary', { name: 'Untrusted MCP server update notices' });
+  const toolChangeNotice = updateNotices.getByText(/tool catalog changed/);
+  const resourceChangeNotice = updateNotices.getByText(/resource catalog changed/);
+  const promptChangeNotice = updateNotices.getByText(/prompt catalog changed/);
+  const updateDeadline = Date.now() + 20_000;
+  while (Date.now() < updateDeadline) {
+    await updateButton.click();
+    if (await toolChangeNotice.count() && await resourceChangeNotice.count() && await promptChangeNotice.count()) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  await expect(updateNotices).toContainText('tool catalog changed');
+  await expect(updateNotices).toContainText('resource catalog changed');
+  await expect(updateNotices).toContainText('prompt catalog changed');
+  await expect(card.locator('.mcp-resource').filter({ hasText: 'xaa://typescript/late' }))
+    .toBeVisible({ timeout: 20_000 });
+  await expect(card.locator('.mcp-prompt').filter({ hasText: 'Late fixture prompt' }))
+    .toBeVisible({ timeout: 20_000 });
+  const lateTool = card.locator('.mcp-tool').filter({ hasText: 'late_fixture_tool' });
+  await expect(lateTool).toBeVisible({ timeout: 20_000 });
+  await expect(lateTool.getByLabel('Permission')).toHaveValue('none');
+}
+
 async function removeMcpServer(page, button) {
   const deletion = await clickForResponse(page, button, (response) => {
     const pathname = new URL(response.url()).pathname;
@@ -92,6 +138,7 @@ let ownerPromptCompletion = false;
 let ownerResourceTemplateCompletion = false;
 let ownerHttpPromptCompletion = false;
 let ownerHttpResourceTemplateCompletion = false;
+let typescriptStdioCatalogNotifications = false;
 let typescriptHttpCatalogNotifications = false;
 
 try {
@@ -346,9 +393,10 @@ try {
   }
 
   const typescriptFixture = path.resolve('tests/fixtures/mcp-typescript/server.mjs');
+  const typescriptStdioControlPort = await allocateLoopbackPort();
   await panel.getByLabel('Server name').fill('TypeScript SDK fixture');
   await panel.getByLabel('Command').fill(path.resolve(process.execPath));
-  await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([typescriptFixture]));
+  await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([typescriptFixture, String(typescriptStdioControlPort)]));
   await panel.getByLabel('Working directory (optional)').fill(path.dirname(typescriptFixture));
   const typescriptCreatedResponse = await clickForResponse(
     page,
@@ -369,6 +417,8 @@ try {
   if (typescriptServer?.state !== 'connected' || !typescriptServer.tools.some((tool) => tool.name === 'echo_value')) {
     throw new Error('The installed engine did not discover the TypeScript SDK stdio tool.');
   }
+  await verifyCatalogNotifications(typescriptServerCard, typescriptStdioControlPort, 'stdio');
+  typescriptStdioCatalogNotifications = true;
   await panel.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect.poll(async () => {
     const servers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
@@ -377,15 +427,7 @@ try {
   await removeMcpServer(page, panel.getByRole('button', { name: 'Remove server', exact: true }));
   typescriptSdkModernStdio = true;
 
-  const typescriptHttpPort = await new Promise((resolve, reject) => {
-    const listener = net.createServer();
-    listener.once('error', reject);
-    listener.listen(0, '127.0.0.1', () => {
-      const address = listener.address();
-      if (!address || typeof address === 'string') return reject(new Error('Could not allocate a TypeScript HTTP fixture port.'));
-      listener.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
+  const typescriptHttpPort = await allocateLoopbackPort();
   const typescriptHttpFixturePath = path.resolve('tests/fixtures/mcp-typescript/http-server.mjs');
   typescriptHttpFixture = spawn(process.execPath, [typescriptHttpFixturePath, String(typescriptHttpPort)], {
     cwd: path.dirname(typescriptHttpFixturePath),
@@ -437,39 +479,7 @@ try {
       fixture_output: typescriptHttpOutput,
     })}`);
   }
-  await typescriptHttpCard.getByRole('button', { name: 'List resources', exact: true }).click();
-  await expect(typescriptHttpCard.locator('.mcp-resource').filter({ hasText: 'xaa://typescript/readme' }))
-    .toBeVisible({ timeout: 20_000 });
-  await typescriptHttpCard.getByRole('button', { name: 'List prompts', exact: true }).click();
-  await expect(typescriptHttpCard.locator('.mcp-prompt').filter({ hasText: 'Summarize a topic' }))
-    .toBeVisible({ timeout: 20_000 });
-  const catalogChange = await fetch(`http://127.0.0.1:${typescriptHttpPort}/__xaa_fixture/catalog-change`, {
-    method: 'POST',
-  });
-  if (catalogChange.status !== 204) {
-    throw new Error(`TypeScript HTTP MCP fixture catalog update failed (${catalogChange.status}).`);
-  }
-  const updateButton = typescriptHttpCard.getByRole('button', { name: 'Check for server updates', exact: true });
-  const updateNotices = typescriptHttpCard.getByRole('complementary', { name: 'Untrusted MCP server update notices' });
-  const toolChangeNotice = updateNotices.getByText(/tool catalog changed/);
-  const resourceChangeNotice = updateNotices.getByText(/resource catalog changed/);
-  const promptChangeNotice = updateNotices.getByText(/prompt catalog changed/);
-  const updateDeadline = Date.now() + 20_000;
-  while (Date.now() < updateDeadline) {
-    await updateButton.click();
-    if (await toolChangeNotice.count() && await resourceChangeNotice.count() && await promptChangeNotice.count()) break;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  await expect(updateNotices).toContainText('tool catalog changed');
-  await expect(updateNotices).toContainText('resource catalog changed');
-  await expect(updateNotices).toContainText('prompt catalog changed');
-  await expect(typescriptHttpCard.locator('.mcp-resource').filter({ hasText: 'xaa://typescript/late' }))
-    .toBeVisible({ timeout: 20_000 });
-  await expect(typescriptHttpCard.locator('.mcp-prompt').filter({ hasText: 'Late fixture prompt' }))
-    .toBeVisible({ timeout: 20_000 });
-  const lateTool = typescriptHttpCard.locator('.mcp-tool').filter({ hasText: 'late_fixture_tool' });
-  await expect(lateTool).toBeVisible({ timeout: 20_000 });
-  await expect(lateTool.getByLabel('Permission')).toHaveValue('none');
+  await verifyCatalogNotifications(typescriptHttpCard, typescriptHttpPort, 'HTTP');
   typescriptHttpCatalogNotifications = true;
 
   await typescriptHttpCard.getByRole('button', { name: 'List resource templates', exact: true }).click();
@@ -772,6 +782,7 @@ try {
     },
     typescript_sdk_modern_stdio: typescriptSdkModernStdio,
     typescript_sdk_modern_http: typescriptSdkModernHttp,
+    typescript_stdio_catalog_notifications: typescriptStdioCatalogNotifications,
     typescript_http_catalog_notifications: typescriptHttpCatalogNotifications,
     discovered_tools: discovered.map((tool) => tool.name).sort(),
     owner_resource_catalog: true,
@@ -823,6 +834,7 @@ try {
     owner_http_prompt_completion: ownerHttpPromptCompletion,
     owner_http_resource_template_completion: ownerHttpResourceTemplateCompletion,
     typescript_sdk_modern_http: typescriptSdkModernHttp,
+    typescript_stdio_catalog_notifications: typescriptStdioCatalogNotifications,
     typescript_http_catalog_notifications: typescriptHttpCatalogNotifications,
     error: String(error),
   }, null, 2));
