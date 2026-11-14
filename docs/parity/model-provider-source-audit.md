@@ -1,0 +1,33 @@
+# Pinned optional model-provider source audit
+
+Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-plugins` commit `83f0a896b3518c7131181838e340c9a80c79524d`, subdirectory `claude-subscription-directsdk`, version 0.3.4. The catalog manifest is `plugin-catalog/claude-subscription-directsdk.yaml` at Hermes core commit `1e208b280deb18f01d015b0acdf3ef3552d08039`. This is a source review of one optional provider candidate; it does not implement or validate that provider in X.A.A.
+
+## Reviewed source
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `plugin.yaml` | `ae4f7cd3b325cb5c9397d7f09d93269a11b3733bcc977cd3c0ef847d26854c17` | Declares an experimental model provider, MIT license, Hermes 0.21.4 minimum, `claude` executable dependency, and optional executable/config-directory environment variables. The install command is documented, not automatic. |
+| `__init__.py` | `e84d62a1331137049397d7f09d93269a11b3733bcc977cd3c0ef847d26854c17` | Registers the provider, model metadata, setup discovery and error mapping. It routes requests through an external CLI profile and exposes its model list and selected usage information. |
+| `directsdk.py` | `daac8aafe41e554c25480301446f7003873d21f2acd053366c0b47de7d2011fd` | Converts the host chat request to Claude Code stream-json, creates a request-scoped temp directory and local admission relay, disables native tools/session persistence, and owns child-process lifecycle and cancellation. |
+| `admission.py` | `fe6f9faa4cd0e5d7887343af5f0ca396f083320df467a8145081fcb9676033a6` | Binds the relay to loopback with an ephemeral port and random route, limits each native process to one upstream request, forwards to HTTPS, captures bounded response state, and suppresses HTTP request logging. |
+| `directsdk_setup.py` | `0c5d98db905b394afda6e08e4b046445f347c3d17af2f29e81ac2f465910d0c8` | Queries the installed CLI for login and model-picker state; the plugin does not implement a separate OAuth credential store. |
+| `model_catalog.py` | `fd7f1c1af30ac6f335b1cc225ec5e9b70b42c03cc751eea0e14ad6f5b2fcfe40` | Pins aliases and context/capability metadata; account-discovered IDs can also appear in the picker. |
+| `inert_mcp.py` | `6c5a0f64e4470ae90c6171bd83e2b537f641ff6d06cd76b3d49edba227274cb6` | Exposes the request tool schema to the CLI while refusing to execute tool calls; Hermes remains responsible for tool validation and execution. |
+| `README.md` | `2555d4889077dc20bd8b822875f5f36118b160d1a4d9f8c2899c303b6663183e` | Describes account usage, telemetry defaults, supported proxy behavior, version constraints and upstream self-reported live qualification. These are upstream claims, not independent X.A.A. evidence. |
+
+## Behavior and trust boundaries
+
+- The provider runs the user's separately installed and authenticated official Claude Code CLI. Its prompt and tool traffic goes to Anthropic through that CLI; using a subscription does not make the provider local. The manifest identifies the candidate as experimental and requires an external executable. The provider inherits the CLI account's entitlement, limits and potential usage-credit charges; its local list-price estimates are not proof of the actual subscription charge.
+- The core catalog manifest has an empty `platforms` list, while the plugin README claims Linux, macOS and Windows support. Treat that metadata mismatch as unresolved rather than inferring support or lack of support; X.A.A. has not run this provider on any platform.
+- The child process receives the host request and history. Its working directory and inherited environment are user-scoped. The adapter checks inherited Anthropic API-key, auth-token, endpoint and cloud-backend overrides when using the normal inherited environment path; callers that explicitly inject `env=` bypass that guard, so an embedding host must not treat the constructor as a policy boundary.
+- The request-scoped temporary directory contains the system prompt, tool schema and CLI settings. Cleanup is best-effort to tolerate a child retaining files briefly. A host adapter would need a clear local-data retention boundary and cleanup failure reporting.
+- The command disables Claude Code's built-in tools, slash commands, auto-memory, CLAUDE.md loading, compaction and session persistence. An inert local MCP server carries Hermes tool schemas, while the host retains approval and tool execution. The relay binds to `127.0.0.1`, uses an ephemeral port and random route, accepts only HTTPS upstreams (or a loopback HTTP test fixture), suppresses request logging, and blocks a second upstream request from the same native process. The adapter disables native request retries and kills its owned process tree on cancellation.
+- The telemetry and feature-flag switch defaults on in the manifest. Turning it off disables selected nonessential CLI traffic, but may reduce which models the CLI lists. This behavior needs to be disclosed and controlled by the owner if a similar adapter is ever offered.
+- The relay honors standard HTTP CONNECT proxy variables for HTTPS. An unsupported SOCKS or TLS-to-proxy value is warned about and ignored, after which the adapter connects directly; this is a fail-open proxy policy and is unsuitable wherever proxy use is a security requirement. X.A.A. should fail closed when an explicitly required network route is unavailable.
+- The README reports upstream fixture and real-account qualifications, including cancellation and streaming. We inspected those test sources but did not run them, sign in, install the CLI, contact Anthropic, or make a model request. Those claims do not establish X.A.A. compatibility or runtime behavior.
+
+## X.A.A. disposition and limits
+
+The catalog candidate remains `planned`, Phase 9. This audit classifies one entry in the 90-item `models` catalog category; it does not establish that every catalog item is a provider, does not evaluate all model candidates, and does not add a provider to X.A.A. LM Studio remains the default. Any later external-process provider needs an explicit remote-data and account-usage notice, owner-selected account/profile, credential ownership boundary, model capability/health checks, complete cancellation, retry/idempotency semantics, model-free fixture coverage, and a real provider acceptance deferred to the final LLM-testing phase. The upstream provider's permissive proxy fallback must not be copied.
+
+No external executable, credential, model or inference service was used. The audit is limited to the pinned candidate source and its declared behavior; dependency installation, signature trust, current-vendor compatibility, account entitlement, charge accounting, and clean-environment behavior remain unverified.

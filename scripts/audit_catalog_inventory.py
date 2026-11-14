@@ -12,6 +12,12 @@ import yaml
 from audit_execution_inventory import PIN, ROOT, check_reference, digest
 
 OUTPUT = Path("docs/parity/catalog-inventory.json")
+REVIEWED_SOURCE_CLASSIFICATIONS = {
+    "claude-subscription-directsdk": (
+        "model-provider; pinned source review at commit "
+        "83f0a896b3518c7131181838e340c9a80c79524d; see model-provider-source-audit.md"
+    )
+}
 
 
 def inventory() -> dict[str, Any]:
@@ -42,7 +48,10 @@ def inventory() -> dict[str, Any]:
                 "discovery_classification": (
                     "platform category; see channel-inventory.json"
                     if category == "platform"
-                    else "non-platform catalog candidate; source classification pending"
+                    else REVIEWED_SOURCE_CLASSIFICATIONS.get(
+                        path.stem,
+                        "non-platform catalog candidate; source classification pending",
+                    )
                 ),
                 "status": "planned",
                 "phase": 9,
@@ -51,16 +60,16 @@ def inventory() -> dict[str, Any]:
     categories = Counter(item["category"] for item in candidates)
     return {
         "reference_commit": PIN,
-        "audit_date": "2026-11-09",
+        "audit_date": "2026-11-14",
         "manifest_count": len(candidates),
         "category_counts": dict(sorted(categories.items())),
         "catalog_manifests": candidates,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "Only the platform category has the separate pinned source classification sweep recorded in channel-inventory.json.",
+            "The platform category has a pinned source classification sweep; selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
-            "No external plugin was imported, installed, executed or contacted.",
+            "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",
         ],
     }
 
