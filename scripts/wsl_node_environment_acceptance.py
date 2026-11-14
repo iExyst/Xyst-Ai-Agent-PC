@@ -565,6 +565,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         transitive_name = "xaa-transitive-fixture"
         peer_name = "xaa-peer-fixture"
         optional_name = "xaa-optional-fixture"
+        windows_optional_name = "xaa-windows-optional-fixture"
         optional_peer_name = "xaa-optional-peer-fixture"
         scoped_url = "https://registry.npmjs.org/@xaa/fixture-plugin/-/fixture-plugin-1.0.0.tgz"
         transitive_url = (
@@ -573,6 +574,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         peer_url = "https://registry.npmjs.org/xaa-peer-fixture/-/xaa-peer-fixture-1.0.0.tgz"
         optional_url = (
             "https://registry.npmjs.org/xaa-optional-fixture/-/xaa-optional-fixture-1.0.0.tgz"
+        )
+        windows_optional_url = (
+            "https://registry.npmjs.org/xaa-windows-optional-fixture/-/"
+            "xaa-windows-optional-fixture-1.0.0.tgz"
         )
         scoped_archive = _package_tarball(
             {
@@ -605,6 +610,15 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             {"name": optional_name, "version": "1.0.0", "main": "index.js"},
             {"index.js": b"module.exports = 'optional-root';\n"},
         )
+        windows_optional_archive = _package_tarball(
+            {
+                "name": windows_optional_name,
+                "version": "1.0.0",
+                "main": "index.js",
+                "os": ["win32"],
+            },
+            {"index.js": b"module.exports = 'windows-only';\n"},
+        )
         scoped_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(scoped_archive).digest()
         ).decode("ascii")
@@ -617,12 +631,18 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         optional_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(optional_archive).digest()
         ).decode("ascii")
+        windows_optional_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(windows_optional_archive).digest()
+        ).decode("ascii")
         graph_manifest = json.dumps(
             {
                 "name": "xaa-probe-transitive-project",
                 "version": "1.0.0",
                 "dependencies": {scoped_name: "^1.0.0"},
-                "optionalDependencies": {optional_name: "^1.0.0"},
+                "optionalDependencies": {
+                    optional_name: "^1.0.0",
+                    windows_optional_name: "^1.0.0",
+                },
             },
             separators=(",", ":"),
         ).encode()
@@ -636,7 +656,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     "name": "xaa-probe-transitive-project",
                     "version": "1.0.0",
                     "dependencies": {scoped_name: "^1.0.0"},
-                    "optionalDependencies": {optional_name: "^1.0.0"},
+                    "optionalDependencies": {
+                        optional_name: "^1.0.0",
+                        windows_optional_name: "^1.0.0",
+                    },
                 },
                 "node_modules/@xaa/fixture-plugin": {
                     "version": "1.0.0",
@@ -666,6 +689,13 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     "integrity": optional_integrity,
                     "optional": True,
                 },
+                f"node_modules/{windows_optional_name}": {
+                    "version": "1.0.0",
+                    "resolved": windows_optional_url,
+                    "integrity": windows_optional_integrity,
+                    "optional": True,
+                    "os": ["win32"],
+                },
             },
         }
         graph_package_lock = json.dumps(graph_lock_document, separators=(",", ":")).encode()
@@ -682,11 +712,17 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             requirements=(
                 f"{scoped_name}@^1.0.0",
                 f"{optional_name}@^1.0.0",
+                f"{windows_optional_name}@^1.0.0",
             ),
             root_dependencies=(
                 NpmRootDependency(name=scoped_name, version_range="^1.0.0", kind="dependencies"),
                 NpmRootDependency(
                     name=optional_name, version_range="^1.0.0", kind="optionalDependencies"
+                ),
+                NpmRootDependency(
+                    name=windows_optional_name,
+                    version_range="^1.0.0",
+                    kind="optionalDependencies",
                 ),
             ),
             packages=(
@@ -720,16 +756,25 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     resolved_url=optional_url,
                     integrity=optional_integrity,
                 ),
+                NpmLockedPackage(
+                    package_path=f"node_modules/{windows_optional_name}",
+                    name=windows_optional_name,
+                    version="1.0.0",
+                    resolved_url=windows_optional_url,
+                    integrity=windows_optional_integrity,
+                ),
             ),
         )
         scoped_archive_path = report_path.parent / "scoped-fixture.tgz"
         transitive_archive_path = report_path.parent / "transitive-fixture.tgz"
         peer_archive_path = report_path.parent / "peer-fixture.tgz"
         optional_archive_path = report_path.parent / "optional-fixture.tgz"
+        windows_optional_archive_path = report_path.parent / "windows-optional-fixture.tgz"
         scoped_archive_path.write_bytes(scoped_archive)
         transitive_archive_path.write_bytes(transitive_archive)
         peer_archive_path.write_bytes(peer_archive)
         optional_archive_path.write_bytes(optional_archive)
+        windows_optional_archive_path.write_bytes(windows_optional_archive)
         store.store_files(
             graph_lock,
             {
@@ -741,6 +786,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                         transitive_archive_path,
                         peer_archive_path,
                         optional_archive_path,
+                        windows_optional_archive_path,
                     ),
                     strict=True,
                 )
@@ -761,6 +807,8 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             f"if(require('{optional_name}')!=='optional-root')process.exit(11);"
             f"try{{require.resolve('{optional_peer_name}');process.exit(12);}}"
             "catch(error){if(error.code!=='MODULE_NOT_FOUND')process.exit(13);}"
+            f"try{{require.resolve('{windows_optional_name}');process.exit(14);}}"
+            "catch(error){if(error.code!=='MODULE_NOT_FOUND')process.exit(15);}"
             f"if(fs.realpathSync('{graph_procedure_path}/node_modules')!=="
             "'/opt/xaa/procedure-node/node_modules')process.exit(8);"
             "if(fs.existsSync('node_modules'))process.exit(9);"
@@ -974,6 +1022,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "required_peer_dependency_loaded": True,
             "root_optional_dependency_loaded": True,
             "optional_peer_dependency_absence_accepted": True,
+            "incompatible_platform_optional_dependency_skipped": True,
             "transitive_environment_removed_exactly": True,
             "both_active_environments_refused_removal": True,
             "integrity_status": True,
