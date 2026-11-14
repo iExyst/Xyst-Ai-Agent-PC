@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify CPU-specific optional npm dependency handling (2026-11-14)
+
+The live Ubuntu-24.04 WSL graph now contains an optional tarball restricted to `arm64` while the installed Node reports `x64`. With network disabled, npm 9.2 skips the incompatible package and retains the compatible root optional, peer, scoped, and transitive packages; a procedure-bound command verifies absence: [report](../../.acceptance/npm-platform-cpu-optional-20261114/report.json). The fixture derives the incompatible CPU from Node at runtime, so the case is architecture-aware. Full recovery/isolation acceptance passes. Local Ruff, Pyright, and format checks pass; hosted source CI is pending and does not provision WSL. This remains a deterministic single-platform fixture, not broad npm parity. No registry request or model inference was used.
+
 ## Verify platform-specific optional npm dependency handling (2026-11-14)
 
 The live Ubuntu-24.04 WSL fixture contains a locked optional package restricted to `win32`. With network access disabled, npm 9.2 skips that package on Linux while installing compatible optional, peer, scoped, and transitive packages; a procedure-bound command confirms the incompatible package is absent: [report](../../.acceptance/npm-platform-optional-20261114/report.json). The complete acceptance also covers rollback, recovery, isolation and exact cleanup. Ruff, strict Pyright and formatting pass. Hosted Windows source run [43591735049](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43591735049) passed the full Python suite, static checks, desktop checks, and recovery scenarios but does not provide WSL, so runtime evidence is local to one WSL distribution and npm version. This is a narrow platform-filter acceptance, not broad npm parity. No public registry access or model inference was used.
