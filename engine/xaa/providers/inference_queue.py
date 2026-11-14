@@ -42,6 +42,7 @@ class InferenceQueue:
         self.lock = asyncio.Lock()
         self._waiting = 0
         self._reserved_tokens = 0
+        self._active = False
 
     @property
     def waiting(self) -> int:
@@ -52,6 +53,21 @@ class InferenceQueue:
     def reserved_tokens(self) -> int:
         """Conservative token-weight estimate across active and queued requests."""
         return self._reserved_tokens
+
+    @property
+    def active(self) -> bool:
+        """Whether one operation currently owns the serialized provider slot."""
+        return self._active
+
+    def snapshot(self) -> dict[str, int | bool]:
+        """Expose bounded queue counters without request contents or model IDs."""
+        return {
+            "active": self._active,
+            "waiting": self._waiting,
+            "reserved_tokens": self._reserved_tokens,
+            "max_reserved_tokens": self.max_reserved_tokens,
+            "max_pending": self.max_pending,
+        }
 
     @asynccontextmanager
     async def slot(
@@ -91,9 +107,11 @@ class InferenceQueue:
             acquired = True
             self._waiting -= 1
             waiting = False
+            self._active = True
             yield
         finally:
             if acquired:
+                self._active = False
                 self.lock.release()
             if waiting:
                 self._waiting -= 1

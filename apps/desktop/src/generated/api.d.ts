@@ -2308,6 +2308,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** System Resources */
+        get: operations["system_resources_system_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhooks/inbound": {
         parameters: {
             query?: never;
@@ -4527,6 +4544,39 @@ export interface components {
         SpecialistRouteRequest: {
             /** Model Route */
             model_route: string | null;
+        };
+        /** SystemResourceSnapshot */
+        SystemResourceSnapshot: {
+            /** Accelerator Telemetry Available */
+            accelerator_telemetry_available: boolean;
+            /** Cpu Percent */
+            cpu_percent: number | null;
+            /** Disk Free Bytes */
+            disk_free_bytes: number | null;
+            /** Disk Total Bytes */
+            disk_total_bytes: number | null;
+            /** Logical Processors */
+            logical_processors: number;
+            /** Memory Available Bytes */
+            memory_available_bytes: number | null;
+            /** Memory Total Bytes */
+            memory_total_bytes: number | null;
+            /** Memory Used Percent */
+            memory_used_percent: number | null;
+            /** Platform */
+            platform: string;
+            /** Queue Active */
+            queue_active: boolean;
+            /** Queue Max Pending */
+            queue_max_pending: number;
+            /** Queue Max Reserved Tokens */
+            queue_max_reserved_tokens: number;
+            /** Queue Reserved Tokens */
+            queue_reserved_tokens: number;
+            /** Queue Waiting */
+            queue_waiting: number;
+            /** Sampled At */
+            sampled_at: string;
         };
         /** TaskBudgets */
         TaskBudgets: {
@@ -9926,6 +9976,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_resources_system_resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemResourceSnapshot"];
                 };
             };
         };

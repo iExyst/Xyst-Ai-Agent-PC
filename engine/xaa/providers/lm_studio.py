@@ -113,6 +113,10 @@ class LMStudioProvider:
             transport=transport,
         )
 
+    def inference_queue_snapshot(self) -> dict[str, int | bool]:
+        """Return queue counters for local resource observability."""
+        return self._inference_queue.snapshot()
+
     @staticmethod
     def validate_endpoint(endpoint: str) -> str:
         """Restrict provider routing to an explicitly selected loopback HTTP server."""

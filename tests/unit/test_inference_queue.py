@@ -69,6 +69,8 @@ async def test_queue_is_fifo_and_bounds_waiting_request_count():
 
     first = asyncio.create_task(work(1))
     await entered.wait()
+    assert queue.active is True
+    assert queue.snapshot()["reserved_tokens"] == 1
     second = asyncio.create_task(work(2))
     third = asyncio.create_task(work(3))
     await asyncio.sleep(0)
@@ -81,6 +83,7 @@ async def test_queue_is_fifo_and_bounds_waiting_request_count():
     assert order == [1, 2, 3]
     assert queue.waiting == 0
     assert queue.reserved_tokens == 0
+    assert queue.active is False
 
 
 async def test_queue_bounds_active_and_pending_token_weight():

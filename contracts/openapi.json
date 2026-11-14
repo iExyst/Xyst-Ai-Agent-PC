@@ -6263,6 +6263,145 @@
         "title": "SpecialistRouteRequest",
         "type": "object"
       },
+      "SystemResourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "accelerator_telemetry_available": {
+            "title": "Accelerator Telemetry Available",
+            "type": "boolean"
+          },
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "disk_free_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Free Bytes"
+          },
+          "disk_total_bytes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Total Bytes"
+          },
+          "logical_processors": {
+            "minimum": 1.0,
+            "title": "Logical Processors",
+            "type": "integer"
+          },
+          "memory_available_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Available Bytes"
+          },
+          "memory_total_bytes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Bytes"
+          },
+          "memory_used_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Used Percent"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "queue_active": {
+            "title": "Queue Active",
+            "type": "boolean"
+          },
+          "queue_max_pending": {
+            "minimum": 1.0,
+            "title": "Queue Max Pending",
+            "type": "integer"
+          },
+          "queue_max_reserved_tokens": {
+            "minimum": 1.0,
+            "title": "Queue Max Reserved Tokens",
+            "type": "integer"
+          },
+          "queue_reserved_tokens": {
+            "minimum": 0.0,
+            "title": "Queue Reserved Tokens",
+            "type": "integer"
+          },
+          "queue_waiting": {
+            "minimum": 0.0,
+            "title": "Queue Waiting",
+            "type": "integer"
+          },
+          "sampled_at": {
+            "title": "Sampled At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sampled_at",
+          "platform",
+          "logical_processors",
+          "cpu_percent",
+          "memory_total_bytes",
+          "memory_available_bytes",
+          "memory_used_percent",
+          "disk_total_bytes",
+          "disk_free_bytes",
+          "queue_active",
+          "queue_waiting",
+          "queue_reserved_tokens",
+          "queue_max_reserved_tokens",
+          "queue_max_pending",
+          "accelerator_telemetry_available"
+        ],
+        "title": "SystemResourceSnapshot",
+        "type": "object"
+      },
       "TaskBudgets": {
         "properties": {
           "max_iterations": {
@@ -14890,6 +15029,29 @@
           }
         ],
         "summary": "Set Specialist Route"
+      }
+    },
+    "/system/resources": {
+      "get": {
+        "operationId": "system_resources_system_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemResourceSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "System Resources"
       }
     },
     "/webhooks/inbound": {

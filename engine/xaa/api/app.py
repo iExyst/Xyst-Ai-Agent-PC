@@ -133,6 +133,7 @@ from xaa.runtime.project_validation import (
 from xaa.runtime.run_review import RunReviewDecision, review_run
 from xaa.runtime.states import RunState
 from xaa.runtime.supervisor import RunSupervisor
+from xaa.runtime.system_resources import SystemResourceMonitor
 from xaa.runtime.task_integration import IntegrationPreview
 from xaa.runtime.task_integration import preview as integration_preview
 from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
@@ -240,6 +241,25 @@ class ModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(min_length=1, max_length=256)
     context_length: int | None = Field(default=None, ge=512, le=10_000_000)
+
+
+class SystemResourceSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    sampled_at: str
+    platform: str
+    logical_processors: int = Field(ge=1)
+    cpu_percent: float | None = Field(ge=0, le=100)
+    memory_total_bytes: int | None = Field(ge=1)
+    memory_available_bytes: int | None = Field(ge=0)
+    memory_used_percent: float | None = Field(ge=0, le=100)
+    disk_total_bytes: int | None = Field(ge=1)
+    disk_free_bytes: int | None = Field(ge=0)
+    queue_active: bool
+    queue_waiting: int = Field(ge=0)
+    queue_reserved_tokens: int = Field(ge=0)
+    queue_max_reserved_tokens: int = Field(ge=1)
+    queue_max_pending: int = Field(ge=1)
+    accelerator_telemetry_available: bool
 
 
 class UnloadRequest(BaseModel):
@@ -828,6 +848,7 @@ def create_app(
             )
 
     run_store = store or RunStore()
+    system_resource_monitor = SystemResourceMonitor()
     channel_identity_links = ChannelIdentityLinks(run_store)
     cli_chat_store = CLIChatStore(run_store)
     specialist_profiles = SpecialistProfileStore(run_store)
@@ -2453,6 +2474,10 @@ def create_app(
             return {"status": "ok", "provider": "lm-studio"}
         except ProviderError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/system/resources", response_model=SystemResourceSnapshot)
+    def system_resources(_: None = Depends(authenticate)) -> dict[str, Any]:
+        return system_resource_monitor.snapshot(provider.lm_studio.inference_queue_snapshot())
 
     @app.post("/execution/readiness", response_model=ReadinessResult)
     async def check_execution_readiness(

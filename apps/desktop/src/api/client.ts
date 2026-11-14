@@ -49,6 +49,7 @@ export type SpecialistProfile = components['schemas']['SpecialistProfileResponse
 export type ChatSession = components['schemas']['CLIChatSessionRecord'];
 export type ChatSessionSummary = components['schemas']['CLIChatSessionSummary'];
 export type ChatSessionSettings = components['schemas']['CLIChatSessionSettings'];
+export type SystemResourceSnapshot = components['schemas']['SystemResourceSnapshot'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -59,6 +60,8 @@ export class EngineClient {
   #token: string;
   #base: URL;
   #fetch: typeof fetch;
+
+  systemResources(): Promise<SystemResourceSnapshot> { return this.#request('/system/resources'); }
 
   constructor(baseUrl: string, token: string, fetcher: typeof fetch = fetch) {
     const base = new URL(baseUrl);

@@ -94,3 +94,17 @@ body{color:#182230;background:#f4f6f9}
 .active-run-objective-full summary{color:#a9e3c7;font-size:11px;font-weight:650}
 .active-run-objective-full p{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:720px){.saved-runs-list li{grid-template-columns:1fr;gap:4px}.saved-run-meta{flex-direction:row;align-items:center;justify-content:space-between;padding:0 10px 8px}}
+
+.system-monitor{display:grid;gap:16px}
+.system-monitor-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:18px}
+.system-monitor-intro h2{margin:2px 0 6px}
+.system-monitor-intro p{max-width:680px;color:#aeb8c4}
+.system-resource-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.system-resource-card{min-width:0;margin:0;padding:18px;background:#171c23;border:1px solid #2c3440;border-radius:12px}
+.system-resource-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.system-resource-heading h2{margin:0;font-size:15px;color:#e7edf4}
+.system-resource-heading strong{font-size:20px;color:#a9e3c7;font-variant-numeric:tabular-nums}
+.system-resource-card meter{display:block;width:100%;height:12px;margin:18px 0 12px;accent-color:#64c99b}
+.system-resource-card p{margin:12px 0 0;color:#aeb8c4;font-size:12px}
+.system-monitor-note,.system-monitor-updated{margin:0;color:#8f9baa;font-size:12px}
+@media(max-width:720px){.system-monitor-intro{align-items:stretch;flex-direction:column}.system-resource-grid{grid-template-columns:1fr}}
