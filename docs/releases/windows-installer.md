@@ -1,5 +1,11 @@
 # Unsigned Windows installer development build
 
+## Current hosted installer with Agent Plugins v1 UI fix (2026-11-14)
+
+Manual installer workflow [43601606297](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43601606297) passed on commit `8eeca2a5`. It verified frozen engine readiness and installed AppContainer execution, native and specialist recovery, workspace-write recovery, install/boot, upgrade from 0.1.0, standard-user installation, uninstall, and both default preservation and explicit data-removal paths. This run skipped the source job; local type/contracts and live desktop-to-API WSL browser acceptance covered the Agent Plugins v1 UI fix, with no model inference.
+
+The exact hosted-tested [setup executable](../../.acceptance/hosted-installer-43601606297/build/installer/Xyst%20AI%20Agent_0.1.1_x64-setup.exe) is 78,143,535 bytes, SHA-256 `fe89dc2712138d84f4b3341cd8f88629434afa7a7dd100b47cb7c20e2ce50a84`. Its [manifest](../../.acceptance/hosted-installer-43601606297/build/installer/manifest.json) records desktop SHA-256 `2f670a5a714241e652b766bc62200af17d16c426b3d6467ce8acc584533e8eda` and engine SHA-256 `136987c90faae113ed125400d1a27155ad93d620b40c3f9f866109a8f0e62d1c`. This unsigned development build was not published as a release; signing and broad independent-machine compatibility remain open.
+
 ## Current hosted installed-package acceptance (2026-11-14)
 
 Source run [43583296231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583296231) passed for commit `e7418e3`, including the complete Python suite and the npm archive-worker matrix. Manual installer run [43583548211](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583548211) built and passed the unsigned current-user 0.1.1 installer on a disposable hosted Windows runner. It verified installed startup/lifecycle, frozen AppContainer command execution, MCP network isolation, native and API recovery, upgrade from 0.1.0 with schema-18 user-data preservation, backup/restore, standard-account installation, and uninstall with settings preserved and binaries removed. Model inference was not requested.
