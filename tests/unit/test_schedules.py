@@ -603,3 +603,48 @@ def test_authorized_schedule_occurrence_preserves_file_only_grant(workspace_tmp_
     assert run["workspace"] == str(workspace)
     assert submitted == created_runs
     assert ScheduleStore(store).get(schedule["id"])["mode"] == "authorized_automation"
+
+
+def test_daily_occurrence_is_not_repeated_after_forward_backward_clock_jump_and_restart(
+    workspace_tmp_path: Path,
+) -> None:
+    database = workspace_tmp_path / "clock-jump.sqlite3"
+    store = RunStore(database)
+    schedule = ScheduleStore(store).create(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2030-01-02T12:00"),
+        frequency="daily",
+        timezone="UTC",
+        missed_run_policy="run_once",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    submitted: list[str] = []
+    service = ScheduleService(store, submitted.append)
+
+    # A forward correction crosses the first occurrence. Moving the clock back
+    # must not make that already-claimed occurrence eligible again.
+    first = service.tick(datetime(2030, 1, 2, 13, 0, tzinfo=UTC))
+    assert len(first) == 1
+    assert service.tick(datetime(2030, 1, 2, 11, 0, tzinfo=UTC)) == []
+    with store.connection() as connection:
+        connection.execute("UPDATE runs SET state='completed' WHERE id=?", (first[0],))
+
+    # Restart the service/store while the clock is still before the next run.
+    reopened = RunStore(database)
+    restarted = ScheduleService(reopened, submitted.append)
+    assert restarted.tick(datetime(2030, 1, 2, 11, 30, tzinfo=UTC)) == []
+    second = restarted.tick(datetime(2030, 1, 3, 12, 0, tzinfo=UTC))
+    assert len(second) == 1
+
+    saved = ScheduleStore(reopened).get(schedule["id"])
+    assert saved is not None
+    assert [item["occurrence_id"].split(":", 1)[-1] for item in saved["executions"]] == [
+        "2030-01-03T12:00",
+        "2030-01-02T12:00",
+    ]
+    assert len({item["occurrence_id"] for item in saved["executions"]}) == 2
+    assert submitted == first + second
