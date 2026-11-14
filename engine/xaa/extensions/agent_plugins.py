@@ -50,6 +50,11 @@ MAX_PLUGIN_FINGERPRINT_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_READINESS_COMMAND_CHECKS = 256
 MAX_READINESS_DEPENDENCY_CHECKS = 128
 _PYTHON_DEPENDENCY_MANAGERS = {"python", "python3", "pip", "pip3"}
+_SCRIPT_MEDIA_TYPES = {
+    ".cjs": "application/javascript",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+}
 _SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
 _ENV = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 PLUGIN_SCHEMA_V1 = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -1462,7 +1467,12 @@ def read_plugin_skill(directory: str, package_name: str, skill_name: str) -> Plu
         total_bytes += len(resource_bytes)
         if total_bytes > MAX_SKILL_RESOURCE_TOTAL_BYTES:
             raise ValueError("linked skill resources exceed the 1 MiB total limit")
-        media_type = mimetypes.guess_type(resource_name)[0] or "text/plain"
+        suffix = PurePosixPath(resource_name).suffix.casefold()
+        media_type = (
+            _SCRIPT_MEDIA_TYPES.get(suffix)
+            or mimetypes.guess_type(resource_name)[0]
+            or "text/plain"
+        )
         if is_text_asset_media_type(media_type):
             try:
                 resource_bytes.decode("utf-8-sig")
