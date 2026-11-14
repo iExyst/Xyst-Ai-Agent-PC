@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
@@ -9,7 +11,9 @@ from xaa.storage.runs import RunStore
 TOKEN = "system-resource-api-test-token-with-more-than-32-characters"
 
 
-def test_system_resource_endpoint_requires_local_api_authentication(workspace_tmp_path) -> None:
+def test_system_resource_endpoint_requires_local_api_authentication(
+    workspace_tmp_path: Path,
+) -> None:
     provider = LMStudioProvider()
     app = create_app(
         provider,
@@ -27,4 +31,8 @@ def test_system_resource_endpoint_requires_local_api_authentication(workspace_tm
     assert snapshot["queue_waiting"] == 0
     assert snapshot["queue_reserved_tokens"] == 0
     assert snapshot["queue_max_reserved_tokens"] == 2_000_000
-    assert snapshot["accelerator_telemetry_available"] is False
+    assert snapshot["accelerator_telemetry_available"] is bool(snapshot["gpu_devices"])
+    assert all(
+        device["memory_free_bytes"] is None or device["memory_free_bytes"] >= 0
+        for device in snapshot["gpu_devices"]
+    )

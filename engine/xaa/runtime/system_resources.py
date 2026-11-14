@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 import ctypes
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -85,6 +87,7 @@ def parse_linux_memory(text: str) -> tuple[int, int] | None:
 
 def _memory_bytes() -> tuple[int, int] | None:
     if sys.platform == "win32":
+
         class MemoryStatusEx(ctypes.Structure):
             _fields_ = [
                 ("dwLength", ctypes.c_ulong),
@@ -115,6 +118,80 @@ def _memory_bytes() -> tuple[int, int] | None:
         except OSError:
             return None
     return None
+
+
+def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
+    """Parse bounded `nvidia-smi` CSV output without assuming a GPU model."""
+    devices: list[dict[str, Any]] = []
+    for row in csv.reader(text.splitlines()):
+        if len(row) != 4 or len(devices) >= 8:
+            continue
+        name = row[0].strip()[:128]
+        if not name:
+            continue
+
+        def integer(value: str) -> int | None:
+            try:
+                parsed = int(value.strip())
+            except ValueError:
+                return None
+            return parsed if parsed >= 0 else None
+
+        total_mib, free_mib, utilization = (integer(value) for value in row[1:])
+        total = total_mib * 1024 * 1024 if total_mib is not None else None
+        free = (
+            min(total, free_mib * 1024 * 1024)
+            if total is not None and free_mib is not None
+            else free_mib * 1024 * 1024
+            if free_mib is not None
+            else None
+        )
+        devices.append(
+            {
+                "name": name,
+                "memory_total_bytes": total,
+                "memory_free_bytes": free,
+                "utilization_percent": min(utilization, 100) if utilization is not None else None,
+            }
+        )
+    return devices
+
+
+def _nvidia_smi_path() -> Path | None:
+    if sys.platform == "win32":
+        system_directory = ctypes.create_unicode_buffer(32768)
+        get_system_directory = ctypes.windll.kernel32.GetSystemDirectoryW
+        get_system_directory.argtypes = [ctypes.c_wchar_p, ctypes.c_uint]
+        get_system_directory.restype = ctypes.c_uint
+        length = get_system_directory(system_directory, len(system_directory))
+        if not length or length >= len(system_directory):
+            return None
+        candidates = [Path(system_directory.value) / "nvidia-smi.exe"]
+    else:
+        candidates = [Path("/usr/bin/nvidia-smi"), Path("/usr/local/bin/nvidia-smi")]
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def _gpu_devices() -> list[dict[str, Any]]:
+    executable = _nvidia_smi_path()
+    if executable is None:
+        return []
+    try:
+        result = subprocess.run(
+            [
+                str(executable),
+                "--query-gpu=name,memory.total,memory.free,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return parse_nvidia_smi_csv(result.stdout[:8192])
 
 
 class SystemResourceMonitor:
@@ -150,6 +227,7 @@ class SystemResourceMonitor:
         except OSError:
             disk_total = disk_free = None
         memory_total, memory_available = memory if memory is not None else (None, None)
+        gpu_devices = _gpu_devices()
         memory_used_percent = (
             round((memory_total - memory_available) * 100 / memory_total, 1)
             if memory_total and memory_available is not None
@@ -170,5 +248,6 @@ class SystemResourceMonitor:
             "queue_reserved_tokens": int(queue["reserved_tokens"]),
             "queue_max_reserved_tokens": int(queue["max_reserved_tokens"]),
             "queue_max_pending": int(queue["max_pending"]),
-            "accelerator_telemetry_available": False,
+            "gpu_devices": gpu_devices,
+            "accelerator_telemetry_available": bool(gpu_devices),
         }

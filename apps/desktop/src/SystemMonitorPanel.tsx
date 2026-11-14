@@ -46,9 +46,10 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
         <ResourceCard title="Processor" value={snapshot.cpu_percent===null?'Measuring…':`${snapshot.cpu_percent.toFixed(1)}%`} detail={`${snapshot.logical_processors} logical processors`} percent={snapshot.cpu_percent}/>
         <ResourceCard title="Memory" value={memoryPercent===null?'Unavailable':`${memoryPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.memory_available_bytes)} available of ${formatBytes(snapshot.memory_total_bytes)}`} percent={memoryPercent}/>
         <ResourceCard title="Profile drive" value={diskPercent===null?'Unavailable':`${diskPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.disk_free_bytes)} free of ${formatBytes(snapshot.disk_total_bytes)}`} percent={diskPercent}/>
+        {snapshot.gpu_devices.map((gpu,index)=><ResourceCard key={`${gpu.name}-${index}`} title={gpu.name} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} VRAM free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent}/>) }
         <section className="system-resource-card" aria-label="Inference queue"><div className="system-resource-heading"><h2>Inference queue</h2><strong>{snapshot.queue_active?'Working':'Idle'}</strong></div><p>{snapshot.queue_waiting} waiting · {snapshot.queue_reserved_tokens.toLocaleString()} estimated tokens reserved</p><p>Capacity: {snapshot.queue_max_pending} waiting requests · {snapshot.queue_max_reserved_tokens.toLocaleString()} estimated tokens</p></section>
       </div>
-      <p className="system-monitor-note">Queue tokens are conservative payload estimates, not GPU memory measurements. GPU telemetry is unavailable in this version; LM Studio may use either the CPU or an accelerator.</p>
+      <p className="system-monitor-note">GPU readings are reported when NVIDIA driver telemetry is available. A missing GPU card means that telemetry isn’t available; it does not mean this computer has no accelerator. Queue tokens are payload estimates and do not predict model VRAM requirements.</p>
       <p className="system-monitor-updated" role="status">Updated {new Date(snapshot.sampled_at).toLocaleTimeString()}</p>
     </>}
     {!snapshot&&!error&&<p role="status">Waiting for the first resource sample…</p>}

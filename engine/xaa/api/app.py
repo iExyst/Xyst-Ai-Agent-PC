@@ -243,6 +243,14 @@ class ModelRequest(BaseModel):
     context_length: int | None = Field(default=None, ge=512, le=10_000_000)
 
 
+class GPUResourceSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=128)
+    memory_total_bytes: int | None = Field(ge=1)
+    memory_free_bytes: int | None = Field(ge=0)
+    utilization_percent: int | None = Field(ge=0, le=100)
+
+
 class SystemResourceSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     sampled_at: str
@@ -259,6 +267,7 @@ class SystemResourceSnapshot(BaseModel):
     queue_reserved_tokens: int = Field(ge=0)
     queue_max_reserved_tokens: int = Field(ge=1)
     queue_max_pending: int = Field(ge=1)
+    gpu_devices: list[GPUResourceSnapshot]
     accelerator_telemetry_available: bool
 
 

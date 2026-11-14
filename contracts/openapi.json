@@ -1704,6 +1704,62 @@
         "title": "FunctionCall",
         "type": "object"
       },
+      "GPUResourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "memory_free_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Free Bytes"
+          },
+          "memory_total_bytes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Bytes"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "utilization_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilization Percent"
+          }
+        },
+        "required": [
+          "name",
+          "memory_total_bytes",
+          "memory_free_bytes",
+          "utilization_percent"
+        ],
+        "title": "GPUResourceSnapshot",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -6307,6 +6363,13 @@
             ],
             "title": "Disk Total Bytes"
           },
+          "gpu_devices": {
+            "items": {
+              "$ref": "#/components/schemas/GPUResourceSnapshot"
+            },
+            "title": "Gpu Devices",
+            "type": "array"
+          },
           "logical_processors": {
             "minimum": 1.0,
             "title": "Logical Processors",
@@ -6397,6 +6460,7 @@
           "queue_reserved_tokens",
           "queue_max_reserved_tokens",
           "queue_max_pending",
+          "gpu_devices",
           "accelerator_telemetry_available"
         ],
         "title": "SystemResourceSnapshot",

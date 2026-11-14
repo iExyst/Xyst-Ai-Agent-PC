@@ -2987,6 +2987,17 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** GPUResourceSnapshot */
+        GPUResourceSnapshot: {
+            /** Memory Free Bytes */
+            memory_free_bytes: number | null;
+            /** Memory Total Bytes */
+            memory_total_bytes: number | null;
+            /** Name */
+            name: string;
+            /** Utilization Percent */
+            utilization_percent: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4555,6 +4566,8 @@ export interface components {
             disk_free_bytes: number | null;
             /** Disk Total Bytes */
             disk_total_bytes: number | null;
+            /** Gpu Devices */
+            gpu_devices: components["schemas"]["GPUResourceSnapshot"][];
             /** Logical Processors */
             logical_processors: number;
             /** Memory Available Bytes */
