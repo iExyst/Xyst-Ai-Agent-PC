@@ -392,9 +392,7 @@ def test_run_binds_approved_npm_tree_to_exact_node_procedure_and_command(workspa
         skills.store_npm_dependency_tarballs(
             lock, {"node_modules/xaa-offline-fixture": archive_path}
         )
-        skills.review_npm_dependency_lock(
-            skill["id"], 1, lock.environment_digest(), "approved"
-        )
+        skills.review_npm_dependency_lock(skill["id"], 1, lock.environment_digest(), "approved")
         skills.record_npm_dependency_environment(
             lock,
             {

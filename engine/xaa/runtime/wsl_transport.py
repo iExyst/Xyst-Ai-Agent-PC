@@ -128,9 +128,7 @@ class WSLTransport:
             request["procedure_environment_digest"] = intent.procedure_environment_digest
             request["procedure_environment_tree_sha256"] = intent.procedure_environment_tree_sha256
         if intent.procedure_node_environment_digest is not None:
-            request["procedure_node_environment_digest"] = (
-                intent.procedure_node_environment_digest
-            )
+            request["procedure_node_environment_digest"] = intent.procedure_node_environment_digest
             request["procedure_node_environment_tree_sha256"] = (
                 intent.procedure_node_environment_tree_sha256
             )

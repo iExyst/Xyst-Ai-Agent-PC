@@ -313,14 +313,13 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
     unit = f"xaa-nodeenv-{digest[:32]}.service"
     with file_lock(ROOT / "_manager.lock"):
         if target.exists() or target.is_symlink():
-            existing = status(digest)
-            if existing["installed"]:
+            try:
+                existing = status(digest)
+            except (OSError, ValueError, TypeError):
+                existing = {"installed": False}
+            if existing.get("installed") is True:
                 return existing
-            info = target.lstat()
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
-                raise PermissionError("Refusing unsafe interrupted Node environment staging.")
-            _stop_unit(unit)
-            shutil.rmtree(target)
+            _remove_owned_target(digest, unit, file_lock)
         target.mkdir(mode=0o700)
         environment = target / "environment"
         environment.mkdir(mode=0o777)
@@ -524,7 +523,7 @@ def _stop_unit(unit: str) -> None:
         .stdout.decode()
         .strip()
     )
-    if state and state != "inactive":
+    if state != "inactive":
         raise RuntimeError("Cannot confirm the owned npm installer unit is inactive.")
 
 
@@ -580,29 +579,28 @@ def execution_lease(digest_value: object, tree_sha256: object, file_lock: Any):
         yield ROOT / digest / "environment" / "project" / "node_modules"
 
 
+def _remove_owned_target(digest: str, unit: str, file_lock: Any) -> None:
+    target = ROOT / digest
+    if not target.exists() and not target.is_symlink():
+        return
+    try:
+        with file_lock(ROOT / f"_{digest}.lease", timeout=0):
+            info = target.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
+                raise PermissionError("Refusing unsafe Node environment removal target.")
+            _stop_unit(unit)
+            _make_writable(target)
+            shutil.rmtree(target)
+    except TimeoutError as exc:
+        raise EnvironmentInUseError("A running procedure is using this Node environment.") from exc
+
+
 def remove(digest_value: object, file_lock: Any) -> dict[str, Any]:
     digest = _digest(digest_value)
     _private_root()
-    target = ROOT / digest
+    unit = f"xaa-nodeenv-{digest[:32]}.service"
     with file_lock(ROOT / "_manager.lock"):
-        try:
-            with file_lock(ROOT / f"_{digest}.lease", timeout=0):
-                observed = status(digest)
-                if target.exists() and not observed["installed"]:
-                    info = target.lstat()
-                    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
-                        raise PermissionError(
-                            "Refusing unsafe interrupted npm installation removal."
-                        )
-                    _make_writable(target)
-                    shutil.rmtree(target)
-                elif observed["installed"]:
-                    _make_writable(target)
-                    shutil.rmtree(target)
-        except TimeoutError as exc:
-            raise EnvironmentInUseError(
-                "A running procedure is using this Node environment."
-            ) from exc
+        _remove_owned_target(digest, unit, file_lock)
     return {"environment_digest": digest, "removed": True}
 
 

@@ -133,10 +133,13 @@ def bubblewrap_arguments(
     if node_modules_link is not None:
         import re
 
-        if re.fullmatch(
-            r"__xaa_selected_skill__/[a-f0-9-]{36}/v[1-9][0-9]{0,2}",
-            node_modules_link,
-        ) is None:
+        if (
+            re.fullmatch(
+                r"__xaa_selected_skill__/[a-f0-9-]{36}/v[1-9][0-9]{0,2}",
+                node_modules_link,
+            )
+            is None
+        ):
             raise ValueError("Selected procedure Node module link is invalid.")
         path_parts.insert(0, "/opt/xaa/procedure-node/node_modules/.bin")
         environment_mount.extend(["--dir", "/opt", "--dir", "/opt/xaa"])

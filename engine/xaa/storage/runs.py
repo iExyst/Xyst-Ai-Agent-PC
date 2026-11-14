@@ -1761,11 +1761,7 @@ class RunStore:
                 if "python_environment" in trial
                 else {}
             )
-            | (
-                {"npm_environment": trial["npm_environment"]}
-                if "npm_environment" in trial
-                else {}
-            )
+            | ({"npm_environment": trial["npm_environment"]} if "npm_environment" in trial else {})
             if trial
             else None
         )
