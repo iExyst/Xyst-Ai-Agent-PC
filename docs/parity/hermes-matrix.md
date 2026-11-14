@@ -1,5 +1,13 @@
 # Hermes capability reference matrix
 
+## Reject hostile npm archive members in both Windows workers (2026-11-14)
+
+Valid-SRI tarballs containing path traversal, an escaping symlink, or duplicate members are rejected by both the source and frozen Windows AppContainer acquisition workers: [JUnit report](../../.acceptance/npm-hostile-members-report-20261114/report.xml), six cases passed. Archive-expansion limits and cross-procedure concurrency remain open. No registry access or model inference was used.
+
+## Roll back from a newer Node procedure version (2026-11-14)
+
+Live WSL acceptance installs version 2 to its own content-addressed digest while version 1 remains installed, runs the old version's procedure script after the update, removes the version 2 environment, and confirms version 1 remains installed until its own exact removal: [report](../../.acceptance/npm-version-rollback-20261114/report.json). This verifies rollback for one deterministic procedure fixture and WSL distribution; broader cross-procedure concurrency and hostile archive cases remain open. No model inference or public registry access was used.
+
 ## Verify Node project isolation and system runtime preservation (2026-11-14)
 
 Live Ubuntu-24.04 acceptance confirms the installed module resolves through the selected procedure's read-only Node mount, no `node_modules` appears at the workspace root, and before/after hashes of the host Node executable, npm installation tree, and global-module root match across install, execution, and exact removal: [report](../../.acceptance/npm-runtime-isolation-20261114/report.json). This covers one procedure fixture and WSL distribution; cross-procedure concurrency remains open. No model inference or public registry access was used.

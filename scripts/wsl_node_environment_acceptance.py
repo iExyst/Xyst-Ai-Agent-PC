@@ -296,6 +296,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 30)
     directory = store.root / lock.environment_digest()
     installed: dict[str, Any] | None = None
+    rollback_lock: ProcedureNpmDependencyLock | None = None
     try:
         _seed_interrupted_install(distribution, lock.environment_digest())
         installed = await transport.install_node_environment(
@@ -416,6 +417,49 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     sort_keys=True,
                 )
             )
+        rollback_lock = lock.model_copy(update={"skill_version": 2, "source_sha256": "b" * 64})
+        store.store_files(rollback_lock, {rollback_lock.packages[0].package_path: archive_path})
+        rollback_directory = store.root / rollback_lock.environment_digest()
+        newer = await transport.install_node_environment(
+            rollback_lock,
+            package_manifest,
+            package_lock,
+            rollback_directory,
+            deadline=time.monotonic() + 300,
+        )
+        old_before_rollback = await transport.node_environment_status(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        if (
+            newer.get("installed") is not True
+            or rollback_lock.environment_digest() == lock.environment_digest()
+            or old_before_rollback.get("installed") is not True
+        ):
+            raise RuntimeError("Installing the newer procedure version did not preserve v1.")
+        rollback_intent = intent.model_copy(update={"execution_id": uuid.uuid4().hex})
+        rolled_back = await transport.run(rollback_intent, snapshot, deadline=time.monotonic() + 30)
+        if (
+            rolled_back.get("succeeded") is not True
+            or rolled_back.get("stdout_b64") != base64.b64encode(b"offline-ready").decode("ascii")
+            or rolled_back.get("procedure_node_environment_digest") != lock.environment_digest()
+            or rolled_back.get("cleanup_confirmed") is not True
+        ):
+            raise RuntimeError("Rollback to the previous Node procedure digest failed.")
+        newer_removed = await transport.remove_node_environment(
+            rollback_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        newer_after = await transport.node_environment_status(
+            rollback_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        old_after_newer_removal = await transport.node_environment_status(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        if (
+            newer_removed.get("removed") is not True
+            or newer_after.get("installed") is not False
+            or old_after_newer_removal.get("installed") is not True
+        ):
+            raise RuntimeError("Removing v2 affected the retained v1 Node environment.")
         removed = await transport.remove_node_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )
@@ -447,12 +491,19 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "workspace_node_modules_absent": True,
             "system_runtime_unchanged": True,
             "system_runtime": system_runtime_after,
+            "newer_procedure_version_installed": True,
+            "rollback_to_older_digest_succeeded": True,
+            "newer_digest_removal_preserved_older": True,
             "integrity_status": True,
             "exact_environment_removed": True,
             "network": "none",
             "cleanup_confirmed": True,
         }
     finally:
+        if rollback_lock is not None:
+            await transport.remove_node_environment(
+                rollback_lock.environment_digest(), deadline=time.monotonic() + 30
+            )
         await transport.remove_node_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )

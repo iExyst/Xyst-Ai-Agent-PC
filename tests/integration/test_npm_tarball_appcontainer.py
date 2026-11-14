@@ -16,27 +16,37 @@ from xaa.extensions.npm_dependencies import (
     NpmVerifiedTarball,
     ProcedureNpmDependencyLock,
 )
-from xaa.extensions.npm_tarballs import acquire_npm_tarballs_in_appcontainer
+from xaa.extensions.npm_tarballs import NpmAcquisitionError, acquire_npm_tarballs_in_appcontainer
 
 pytestmark = pytest.mark.skipif(
     os.name != "nt", reason="npm acquisition AppContainer acceptance requires Windows."
 )
 
 
-def _fixture() -> tuple[ProcedureNpmDependencyLock, bytes]:
+def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependencyLock, bytes]:
     metadata = b'{"name":"left-pad","version":"1.3.0","scripts":{"install":"node install.js"}}'
     content = io.BytesIO()
     with (
         gzip.GzipFile(fileobj=content, mode="wb", mtime=0) as compressed,
         tarfile.open(fileobj=compressed, mode="w|", format=tarfile.PAX_FORMAT) as archive,
     ):
-        for name, value in (
+        entries = [
             ("package/package.json", metadata),
             ("package/index.js", b"module.exports = function () {};\n"),
-        ):
+        ]
+        if unsafe_member == "traversal":
+            entries.append(("package/../escape.js", b"must-not-escape"))
+        if unsafe_member == "duplicate":
+            entries.append(("package/index.js", b"duplicate-member"))
+        for name, value in entries:
             member = tarfile.TarInfo(name)
             member.size = len(value)
             archive.addfile(member, io.BytesIO(value))
+        if unsafe_member == "symlink":
+            member = tarfile.TarInfo("package/escape-link")
+            member.type = tarfile.SYMTYPE
+            member.linkname = "../escape.js"
+            archive.addfile(member)
     tarball = content.getvalue()
     locked = NpmLockedPackage(
         package_path="node_modules/left-pad",
@@ -133,13 +143,50 @@ async def test_appcontainer_npm_acquisition_rejects_registry_redirects(
     async def discard(_paths: dict[str, Path], _verified: dict[str, NpmVerifiedTarball]) -> None:
         raise AssertionError("A redirected tarball must never be accepted.")
 
-    from xaa.extensions.npm_tarballs import NpmAcquisitionError
-
     with pytest.raises(NpmAcquisitionError):
         await acquire_npm_tarballs_in_appcontainer(
             lock,
             on_verified_files=discard,
             network_transport=httpx.MockTransport(redirect),
+            test_worker_executable=frozen_executable,
+        )
+    assert calls == [lock.packages[0].resolved_url]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frozen_worker", [False, True])
+@pytest.mark.parametrize("unsafe_member", ["traversal", "symlink", "duplicate"])
+async def test_appcontainer_npm_acquisition_rejects_hostile_tarball_members(
+    tmp_path: Path, frozen_worker: bool, unsafe_member: str
+):
+    frozen_executable = (
+        Path("apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe").resolve()
+        if frozen_worker
+        else None
+    )
+    if frozen_worker and (frozen_executable is None or not frozen_executable.is_file()):
+        pytest.skip("Build the frozen engine before running the packaged worker acceptance.")
+    lock, tarball = _fixture(unsafe_member=unsafe_member)
+    calls: list[str] = []
+
+    async def fixture(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if str(request.url) != lock.packages[0].resolved_url:
+            raise AssertionError(f"Unexpected registry request: {request.url}")
+        return httpx.Response(
+            200,
+            headers={"content-length": str(len(tarball)), "content-type": "application/gzip"},
+            content=tarball,
+        )
+
+    async def discard(_paths: dict[str, Path], _verified: dict[str, NpmVerifiedTarball]) -> None:
+        raise AssertionError("A hostile tarball member must never be accepted.")
+
+    with pytest.raises(NpmAcquisitionError):
+        await acquire_npm_tarballs_in_appcontainer(
+            lock,
+            on_verified_files=discard,
+            network_transport=httpx.MockTransport(fixture),
             test_worker_executable=frozen_executable,
         )
     assert calls == [lock.packages[0].resolved_url]
