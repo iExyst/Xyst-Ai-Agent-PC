@@ -1,4 +1,4 @@
-"""Validate imported npm v2/v3 lockfiles without fetching or installing packages."""
+"""Validate imported npm v1/v2/v3 lockfiles without fetching or installing packages."""
 
 from __future__ import annotations
 
@@ -273,8 +273,9 @@ def parse_npm_package_lock(
     node_version: str,
     npm_version: str,
     requirements: Iterable[str] = (),
+    package_manifest: bytes | None = None,
 ) -> ProcedureNpmDependencyLock:
-    """Parse a v2/v3 lockfile proposal; reject links and non-registry sources."""
+    """Parse a supported npm lockfile proposal; reject links and non-registry sources."""
     if not raw or len(raw) > MAX_LOCKFILE_BYTES:
         raise ValueError("npm package-lock.json is empty or exceeds its size limit.")
     try:
@@ -285,18 +286,30 @@ def parse_npm_package_lock(
         raise TypeError("npm package-lock.json must be a JSON object.")
     document = cast(dict[str, Any], parsed_json)
     lockfile_version = document.get("lockfileVersion")
-    if type(lockfile_version) is not int or lockfile_version not in {2, 3}:
-        raise ValueError("Only npm package-lock.json format versions 2 and 3 are supported.")
-    raw_packages = document.get("packages")
-    if not isinstance(raw_packages, dict) or "" not in raw_packages:
-        raise ValueError("npm package-lock.json has no root package record.")
-    raw_packages = cast(dict[str, Any], raw_packages)
-    if len(raw_packages) - 1 > MAX_LOCKED_PACKAGES:
-        raise ValueError("npm package-lock.json exceeds the package limit.")
-    root = raw_packages.get("")
-    if not isinstance(root, dict):
-        raise TypeError("npm package-lock.json root package record is invalid.")
-    root = cast(dict[str, Any], root)
+    if type(lockfile_version) is not int or lockfile_version not in {1, 2, 3}:
+        raise ValueError("Only npm package-lock.json format versions 1, 2, and 3 are supported.")
+    if lockfile_version == 1:
+        if package_manifest is None:
+            raise ValueError("npm package-lock.json v1 requires its linked package.json resource.")
+        try:
+            parsed_manifest: object = json.loads(package_manifest, object_pairs_hook=_unique_object)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError("Linked npm package.json is invalid.") from exc
+        if not isinstance(parsed_manifest, dict):
+            raise TypeError("Linked npm package.json must be an object.")
+        root = cast(dict[str, Any], parsed_manifest)
+        raw_packages = _flatten_v1_dependency_tree(document.get("dependencies"))
+    else:
+        raw_packages = document.get("packages")
+        if not isinstance(raw_packages, dict) or "" not in raw_packages:
+            raise ValueError("npm package-lock.json has no root package record.")
+        raw_packages = cast(dict[str, Any], raw_packages)
+        if len(raw_packages) - 1 > MAX_LOCKED_PACKAGES:
+            raise ValueError("npm package-lock.json exceeds the package limit.")
+        root = raw_packages.get("")
+        if not isinstance(root, dict):
+            raise TypeError("npm package-lock.json root package record is invalid.")
+        root = cast(dict[str, Any], root)
     root_dependencies: list[NpmRootDependency] = []
     for kind in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         raw_dependencies = root.get(kind, {})
@@ -352,6 +365,45 @@ def parse_npm_package_lock(
         root_dependencies=tuple(root_dependencies),
         packages=tuple(packages),
     )
+
+
+def _flatten_v1_dependency_tree(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError("npm package-lock.json v1 dependency tree is invalid.")
+    flattened: dict[str, Any] = {"": {}}
+    pending: list[tuple[str, object, int]] = [("", value, 0)]
+    while pending:
+        parent_path, dependencies_value, depth = pending.pop()
+        if depth > 64 or not isinstance(dependencies_value, dict):
+            raise ValueError("npm package-lock.json v1 dependency nesting is invalid.")
+        dependencies = cast(dict[str, Any], dependencies_value)
+        if len(flattened) - 1 + len(dependencies) > MAX_LOCKED_PACKAGES:
+            raise ValueError("npm package-lock.json exceeds the package limit.")
+        for name, raw_record in dependencies.items():
+            if _NPM_NAME.fullmatch(name) is None:
+                raise ValueError("npm package-lock.json v1 package name is invalid.")
+            if not isinstance(raw_record, dict):
+                raise TypeError("npm package-lock.json v1 package record is invalid.")
+            record = cast(dict[str, Any], raw_record)
+            if record.get("link") is True or record.get("inBundle") is True:
+                raise ValueError("Linked and bundled npm packages are not supported.")
+            package_path = (
+                f"{parent_path}/node_modules/{name}" if parent_path else f"node_modules/{name}"
+            )
+            if len(package_path.encode("utf-8")) > MAX_PACKAGE_PATH_BYTES:
+                raise ValueError("npm package-lock.json v1 package path exceeds its limit.")
+            if package_path in flattened:
+                raise ValueError("npm package-lock.json v1 has a duplicate package path.")
+            requires = record.get("requires", {})
+            nested = record.get("dependencies", {})
+            if not isinstance(requires, dict) or not isinstance(nested, dict):
+                raise TypeError("npm package-lock.json v1 dependency edges are invalid.")
+            converted = dict(record)
+            converted["dependencies"] = requires
+            flattened[package_path] = converted
+            if nested:
+                pending.append((package_path, cast(object, nested), depth + 1))
+    return flattened
 
 
 def _validate_npm_dependency_graph(

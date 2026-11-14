@@ -92,10 +92,68 @@ def _unique_json(raw: bytes, maximum: int) -> Any:
     return json.loads(raw, object_pairs_hook=unique)
 
 
-def _validate_linked_package_lock(lock_doc: dict[str, Any], packages_raw: object) -> None:
+def validate_linked_package_lock(lock_doc: dict[str, Any], packages_raw: object) -> None:
     lockfile_version = lock_doc.get("lockfileVersion")
-    if type(lockfile_version) is not int or lockfile_version not in {2, 3}:
+    if type(lockfile_version) is not int or lockfile_version not in {1, 2, 3}:
         raise ValueError("Linked npm manifest or lockfile is invalid.")
+    if lockfile_version == 1:
+        dependencies = lock_doc.get("dependencies")
+        if not isinstance(dependencies, dict) or not isinstance(packages_raw, list):
+            raise ValueError("Linked npm lock membership differs from the reviewed proposal.")
+        locked: dict[str, dict[str, Any]] = {}
+        for item in cast(list[object], packages_raw):
+            if not isinstance(item, dict):
+                raise TypeError("Reviewed npm v1 package record is invalid.")
+            package_record = cast(dict[str, Any], item)
+            package_path = package_record.get("package_path")
+            if not isinstance(package_path, str) or package_path in locked:
+                raise ValueError("Reviewed npm package path is invalid or duplicated.")
+            locked[package_path] = package_record
+        flattened: dict[str, dict[str, Any]] = {}
+        pending: list[tuple[str, object, int]] = [("", dependencies, 0)]
+        while pending:
+            parent_path, value, depth = pending.pop()
+            if depth > 64 or not isinstance(value, dict):
+                raise ValueError("Linked npm v1 dependency tree is invalid.")
+            entries = cast(dict[str, Any], value)
+            if len(flattened) + len(entries) > MAX_TARBALLS:
+                raise ValueError("Linked npm v1 dependency tree exceeds the package limit.")
+            for name, record_value in entries.items():
+                if (
+                    not isinstance(record_value, dict)
+                    or re.fullmatch(
+                        r"(?:@[a-z0-9][a-z0-9._-]{0,127}/)?[a-z0-9][a-z0-9._-]{0,127}",
+                        name,
+                    )
+                    is None
+                ):
+                    raise ValueError("Linked npm v1 dependency record is invalid.")
+                record = cast(dict[str, Any], record_value)
+                package_path = (
+                    f"{parent_path}/node_modules/{name}" if parent_path else f"node_modules/{name}"
+                )
+                if len(package_path.encode("utf-8")) > 1024:
+                    raise ValueError("Linked npm v1 package path exceeds its limit.")
+                reviewed = locked.get(package_path)
+                if (
+                    reviewed is None
+                    or reviewed.get("name") != name
+                    or reviewed.get("version") != record.get("version")
+                    or reviewed.get("resolved_url") != record.get("resolved")
+                    or reviewed.get("integrity") != record.get("integrity")
+                    or record.get("link") is True
+                    or record.get("inBundle") is True
+                    or not isinstance(record.get("requires", {}), dict)
+                    or not isinstance(record.get("dependencies", {}), dict)
+                ):
+                    raise ValueError("Linked npm v1 package differs from the reviewed proposal.")
+                flattened[package_path] = record
+                nested = record.get("dependencies", {})
+                if nested:
+                    pending.append((package_path, cast(object, nested), depth + 1))
+        if set(flattened) != set(locked):
+            raise ValueError("Linked npm v1 lock membership differs from the reviewed proposal.")
+        return
     package_entries = lock_doc.get("packages")
     if (
         not isinstance(packages_raw, list)
@@ -303,7 +361,7 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
         raise TypeError("Linked npm manifest and lockfile must be objects.")
     manifest_doc, lock_doc = cast(dict[str, Any], manifest_doc), cast(dict[str, Any], lock_doc)
     packages_raw = lock.get("packages")
-    _validate_linked_package_lock(lock_doc, packages_raw)
+    validate_linked_package_lock(lock_doc, packages_raw)
     packages_raw = cast(list[object], packages_raw)
     if not isinstance(request["package_manifest_b64"], str) or not isinstance(
         request["package_lock_b64"], str

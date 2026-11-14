@@ -121,6 +121,24 @@ def _make_import_package(root: Path, *, lockfile_version: int = 3) -> Path:
                 },
             }
         }
+    elif lockfile_version == 1:
+        # npm v1 stores package placement and requires edges as a nested tree.
+        lock["dependencies"] = {
+            ROOT_PACKAGE["name"]: {
+                "version": ROOT_PACKAGE["version"],
+                "resolved": ROOT_PACKAGE["url"],
+                "integrity": ROOT_PACKAGE["integrity"],
+                "requires": {TRANSITIVE_PACKAGE["name"]: "^6.0.0"},
+                "dependencies": {
+                    TRANSITIVE_PACKAGE["name"]: {
+                        "version": TRANSITIVE_PACKAGE["version"],
+                        "resolved": TRANSITIVE_PACKAGE["url"],
+                        "integrity": TRANSITIVE_PACKAGE["integrity"],
+                    }
+                },
+            }
+        }
+        del lock["packages"]
     (skill / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
     (skill / "package-lock.json").write_text(json.dumps(lock), encoding="utf-8")
     (skill / "scripts" / "check.cjs").write_text(
@@ -332,7 +350,7 @@ async def run(distribution: str, report_path: Path, *, lockfile_version: int = 3
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--distribution", default="Ubuntu-24.04")
-    parser.add_argument("--lockfile-version", type=int, choices=(2, 3), default=3)
+    parser.add_argument("--lockfile-version", type=int, choices=(1, 2, 3), default=3)
     parser.add_argument("--report", type=Path, required=True)
     arguments = parser.parse_args()
     result = asyncio.run(

@@ -91,6 +91,7 @@ def _inspect(request: dict[str, Any]) -> ProcedureNpmDependencyLock:
         node_version=request["node_version"],
         npm_version=request["npm_version"],
         requirements=cast(list[str], request["requirements"]),
+        package_manifest=manifest,
     )
     verify_npm_package_manifest(manifest, proposal)
     return proposal

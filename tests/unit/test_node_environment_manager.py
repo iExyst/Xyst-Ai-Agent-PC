@@ -64,15 +64,36 @@ def test_install_source_lock_accepts_supported_npm_formats(lockfile_version: int
         "": {"name": "fixture"},
         "node_modules/left-pad": {"version": "1.3.0"},
     }
+    reviewed_packages: list[object] = [{}]
 
-    environments._validate_linked_package_lock(
-        {"lockfileVersion": lockfile_version, "packages": packages}, [{}]
+    environments.validate_linked_package_lock(
+        {"lockfileVersion": lockfile_version, "packages": packages}, reviewed_packages
     )
 
 
-@pytest.mark.parametrize("lockfile_version", [1, True, 4, "3"])
+def test_install_source_lock_accepts_v1_dependency_tree() -> None:
+    dependency: dict[str, object] = {
+        "version": "1.3.0",
+        "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+        "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    }
+    environments.validate_linked_package_lock(
+        {"lockfileVersion": 1, "dependencies": {"left-pad": dependency}},
+        [
+            {
+                "package_path": "node_modules/left-pad",
+                "name": "left-pad",
+                "version": "1.3.0",
+                "resolved_url": dependency["resolved"],
+                "integrity": dependency["integrity"],
+            }
+        ],
+    )
+
+
+@pytest.mark.parametrize("lockfile_version", [True, 4, "3"])
 def test_install_source_lock_rejects_unsupported_npm_formats(lockfile_version: object) -> None:
     with pytest.raises(ValueError, match="manifest or lockfile is invalid"):
-        environments._validate_linked_package_lock(
+        environments.validate_linked_package_lock(
             {"lockfileVersion": lockfile_version, "packages": {"": {}}}, []
         )

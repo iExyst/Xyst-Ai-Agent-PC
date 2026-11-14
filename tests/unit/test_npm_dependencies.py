@@ -55,6 +55,27 @@ def package_lock(
     ).encode()
 
 
+def package_lock_v1(*, nested_dependency: bool = False) -> bytes:
+    package: dict[str, Any] = {
+        "version": "1.3.0",
+        "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+        "integrity": INTEGRITY,
+    }
+    if nested_dependency:
+        package["requires"] = {"right-pad": "^1.0.0"}
+        package["dependencies"] = {
+            "right-pad": {
+                "version": "1.2.0",
+                "resolved": "https://registry.npmjs.org/right-pad/-/right-pad-1.2.0.tgz",
+                "integrity": INTEGRITY,
+            }
+        }
+    return json.dumps(
+        {"name": "fixture", "lockfileVersion": 1, "dependencies": {"left-pad": package}},
+        separators=(",", ":"),
+    ).encode()
+
+
 def parse(
     raw: bytes,
     *,
@@ -71,6 +92,7 @@ def parse(
         node_version="v22.2.0",
         npm_version="10.8.1",
         requirements=requirements,
+        package_manifest=manifest,
     )
 
 
@@ -104,6 +126,16 @@ def test_npm_v2_lock_uses_its_canonical_packages_map() -> None:
 
     assert lock.packages[0].package_path == "node_modules/left-pad"
     assert lock.packages[0].version == "1.3.0"
+
+
+def test_npm_v1_lock_is_bound_to_manifest_and_transitive_dependency_tree() -> None:
+    lock = parse(package_lock_v1(nested_dependency=True))
+
+    assert {(item.package_path, item.name, item.version) for item in lock.packages} == {
+        ("node_modules/left-pad", "left-pad", "1.3.0"),
+        ("node_modules/left-pad/node_modules/right-pad", "right-pad", "1.2.0"),
+    }
+    verify_npm_package_manifest(MANIFEST, lock)
 
 
 def test_package_manifest_must_match_lockfile_root_dependencies() -> None:
@@ -141,7 +173,7 @@ def test_npm_lock_supports_scoped_package_paths() -> None:
 @pytest.mark.parametrize(
     ("raw", "requirements"),
     [
-        (package_lock(lockfile_version=1), ("left-pad@^1.3.0",)),
+        (package_lock(lockfile_version=4), ("left-pad@^1.3.0",)),
         (
             package_lock(resolved="https://evil.example/left-pad-1.3.0.tgz"),
             ("left-pad@^1.3.0",),
