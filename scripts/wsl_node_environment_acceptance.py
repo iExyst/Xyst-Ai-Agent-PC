@@ -70,6 +70,36 @@ def _wsl(distribution: str, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
+def _seed_interrupted_install(distribution: str, digest: str) -> None:
+    target = PurePosixPath("/var/lib/xaa-node-environments") / digest
+    unit = f"xaa-nodeenv-{digest[:32]}.service"
+    _wsl(
+        distribution,
+        "sudo",
+        "install",
+        "-d",
+        "--",
+        str(target / "environment/project"),
+    )
+    _wsl(distribution, "sudo", "touch", "--", str(target / "environment/project/.partial"))
+    _wsl(
+        distribution,
+        "sudo",
+        "systemd-run",
+        "--quiet",
+        f"--unit={unit}",
+        "/bin/sleep",
+        "300",
+    )
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        active = _wsl(distribution, "sudo", "systemctl", "is-active", unit)
+        if active == "active":
+            return
+        time.sleep(0.1)
+    raise RuntimeError("Could not seed the active interrupted-install fixture unit.")
+
+
 async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     node_version = _wsl(distribution, "node", "--version")
     npm_version = _wsl(distribution, "npm", "--version")
@@ -139,6 +169,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     directory = store.root / lock.environment_digest()
     installed: dict[str, Any] | None = None
     try:
+        _seed_interrupted_install(distribution, lock.environment_digest())
         installed = await transport.install_node_environment(
             lock, package_manifest, package_lock, directory, deadline=time.monotonic() + 300
         )
@@ -161,16 +192,28 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "if(m!=='offline-ready')process.exit(4);"
             "if(fs.existsSync(process.argv[2]))process.exit(5);"
             "if(!fs.lstatSync(process.argv[3]).isSymbolicLink())process.exit(6);"
+            "if(fs.existsSync(process.argv[4]))process.exit(7);"
             "process.stdout.write(m)",
             str(remote_root / "node_modules/xaa-offline-fixture"),
             str(remote_root / "node_modules/xaa-offline-fixture/install-ran.txt"),
             str(remote_root / "node_modules/.bin/xaa-offline-cli"),
+            str(remote_root / ".partial"),
+        )
+        recovery_unit_state = _wsl(
+            distribution,
+            "sudo",
+            "systemctl",
+            "show",
+            f"xaa-nodeenv-{lock.environment_digest()[:32]}.service",
+            "--property=ActiveState",
+            "--value",
         )
         if (
             installed.get("installed") is not True
             or repeated.get("tree_sha256") != installed.get("tree_sha256")
             or observed.get("tree_sha256") != installed.get("tree_sha256")
             or module_value != "offline-ready"
+            or recovery_unit_state != "inactive"
         ):
             raise RuntimeError(
                 "Offline npm installation, reuse, module loading, or lifecycle suppression failed."
@@ -255,20 +298,17 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "removal_refused_while_active": removal_refused_while_active,
             "lifecycle_script_marker_absent": True,
             "idempotent_install": True,
+            "interrupted_partial_tree_recovered": True,
+            "recovery_unit_inactive": True,
             "integrity_status": True,
             "exact_environment_removed": True,
             "network": "none",
             "cleanup_confirmed": True,
         }
     finally:
-        if installed is not None:
-            after = await transport.node_environment_status(
-                lock.environment_digest(), deadline=time.monotonic() + 30
-            )
-            if after.get("installed") is True:
-                await transport.remove_node_environment(
-                    lock.environment_digest(), deadline=time.monotonic() + 30
-                )
+        await transport.remove_node_environment(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        )
 
 
 async def remove_environment(distribution: str, digest: str) -> dict[str, Any]:
