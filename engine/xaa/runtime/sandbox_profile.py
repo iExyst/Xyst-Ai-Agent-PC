@@ -99,7 +99,11 @@ def syscall_filter() -> bytes:
 
 
 def bubblewrap_arguments(
-    source: Path, argv: list[str], procedure_environment: Path | None = None
+    source: Path,
+    argv: list[str],
+    procedure_environment: Path | None = None,
+    node_modules: Path | None = None,
+    node_modules_link: str | None = None,
 ) -> list[str]:
     """stdin is the BPF descriptor and is consumed before the command starts."""
     bootstrap = (
@@ -112,24 +116,53 @@ def bubblewrap_arguments(
         "assert all(os.statvfs(p).f_blocks*os.statvfs(p).f_frsize<=33554432 for p in ('/tmp','/workspace'));"
         "shutil.copytree('/input','/workspace',dirs_exist_ok=True);"
         "os.chdir('/workspace');"
-        "args=json.loads(sys.argv[1]);"
+        "request=json.loads(sys.argv[1]);args=request['argv'];"
+        "link=request.get('node_modules_link');\n"
+        "if link is not None:\n"
+        " p=pathlib.Path(link);assert p.is_dir() and not p.is_symlink();"
+        " n=p/'node_modules';assert not n.exists() and not n.is_symlink();"
+        " os.symlink('/opt/xaa/procedure-node/node_modules',n,target_is_directory=True)\n"
         "os.execvpe(args[0],args,dict(os.environ))"
     )
     import json
 
-    path = "/usr/bin:/bin"
+    path_parts = ["/usr/bin", "/bin"]
     environment_mount: list[str] = []
+    if (node_modules is None) != (node_modules_link is None):
+        raise ValueError("Node module mount and procedure link must be paired.")
+    if node_modules_link is not None:
+        import re
+
+        if re.fullmatch(
+            r"__xaa_selected_skill__/[a-f0-9-]{36}/v[1-9][0-9]{0,2}",
+            node_modules_link,
+        ) is None:
+            raise ValueError("Selected procedure Node module link is invalid.")
+        path_parts.insert(0, "/opt/xaa/procedure-node/node_modules/.bin")
+        environment_mount.extend(["--dir", "/opt", "--dir", "/opt/xaa"])
+        environment_mount.extend(
+            [
+                "--dir",
+                "/opt/xaa/procedure-node",
+                "--ro-bind",
+                str(node_modules),
+                "/opt/xaa/procedure-node/node_modules",
+            ]
+        )
     if procedure_environment is not None:
-        path = "/opt/xaa/procedure-python/bin:/usr/bin:/bin"
-        environment_mount = [
-            "--dir",
-            "/opt",
-            "--dir",
-            "/opt/xaa",
-            "--ro-bind",
-            str(procedure_environment),
-            "/opt/xaa/procedure-python",
-        ]
+        path_parts.insert(0, "/opt/xaa/procedure-python/bin")
+        if not environment_mount:
+            environment_mount.extend(["--dir", "/opt", "--dir", "/opt/xaa"])
+        environment_mount.extend(
+            [
+                "--dir",
+                "/opt/xaa/procedure-python",
+                "--ro-bind",
+                str(procedure_environment),
+                "/opt/xaa/procedure-python",
+            ]
+        )
+    path = ":".join(path_parts)
     return [
         "/usr/bin/bwrap",
         "--unshare-all",
@@ -200,5 +233,5 @@ def bubblewrap_arguments(
         "-I",
         "-c",
         bootstrap,
-        json.dumps(argv),
+        json.dumps({"argv": argv, "node_modules_link": node_modules_link}),
     ]

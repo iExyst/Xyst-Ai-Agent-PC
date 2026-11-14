@@ -202,6 +202,7 @@ class CreateRunRequest(BaseModel):
     )
     procedure_trial: SkillTrial | None = None
     procedure_python_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    procedure_npm_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     command_grant: CommandGrant | None = None
     approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
     approved_web_search: bool = False
@@ -3954,6 +3955,7 @@ def create_app(
                 if payload.procedure_trial
                 else None,
                 procedure_python_environment_digest=payload.procedure_python_environment_digest,
+                procedure_npm_environment_digest=payload.procedure_npm_environment_digest,
                 command_grant=payload.command_grant.model_dump() if payload.command_grant else None,
                 approved_web_hosts=payload.approved_web_hosts,
                 approved_web_search=payload.approved_web_search,

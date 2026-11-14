@@ -7,7 +7,7 @@ import type {components} from './generated/api.js';
 
 type Summary=components['schemas']['SkillSummary'];
 type PythonDependencyLockRecord=components['schemas']['PythonDependencyLockRecord'];
-export type ProcedureTrialSelection=components['schemas']['SkillTrial']&{name:string;latest_version:number;python_environments:Array<{environment_digest:string;distribution:string;python_version:string;tree_sha256:string}>};
+export type ProcedureTrialSelection=components['schemas']['SkillTrial']&{name:string;latest_version:number;python_environments:Array<{environment_digest:string;distribution:string;python_version:string;tree_sha256:string}>;npm_environments:Array<{environment_digest:string;distribution:string;node_version:string;npm_version:string;tree_sha256:string}>};
 function importedRequirementsJson(raw:string|undefined):string {
   try {
     const value:unknown=JSON.parse(raw??'{}');
@@ -60,10 +60,15 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
     try{const [data,actions,locks]=await Promise.all([client.skillVersion(item.id,revision),client.skillLifecycle(item.id),client.skillPythonDependencyLocks(item.id,revision)]);if(!Array.isArray(actions))throw new Error('Procedure lifecycle unavailable.');if(!Array.isArray(locks.locks))throw new Error('Python dependency lock list unavailable.');setLifecycle(actions);setEvidence(data.evaluation_evidence);setDependencyReadiness(undefined);setDependencyLocks(locks.locks);setHasNodeScripts(data.assets?.some(asset=>['.js','.mjs','.cjs'].some(extension=>asset.path.toLowerCase().endsWith(extension)))??false);setTrials([]);setTrialOne('');setTrialTwo('');setConfirmed(false);setSelected(item);setVersion(revision);setName(item.name);setDescription(data.description??'');setCategory(data.category??'');setContent(data.content);setTools(data.required_tools.map(tool=>`${tool.name}@${tool.version}`).join('\n'));setRead(data.required_permissions.includes('workspace.read'));setWrite(data.required_permissions.includes('workspace.write'));}
     catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
-  function selectProcedure(purpose:'evaluation_trial'|'active_use'){
+  async function selectProcedure(purpose:'evaluation_trial'|'active_use'){
     if(!selected)return;
-    const python_environments=dependencyLocks.flatMap(lock=>lock.decision==='approved'&&lock.environment_installed&&lock.installed_tree_sha256?[{environment_digest:lock.environment_digest,distribution:lock.lock.target.distribution,python_version:String(lock.lock.target.environment['python_full_version']??'unknown'),tree_sha256:lock.installed_tree_sha256}]:[]);
-    onTrial({skill_id:selected.id,version,name:selected.name,latest_version:selected.latest_version,purpose,python_environments});
+    setBusy(true);setError('');
+    try{
+      const [pythonRecords,npmRecords]=await Promise.all([client.skillPythonDependencyLocks(selected.id,version),client.skillNpmDependencyLocks(selected.id,version)]);
+      const python_environments=pythonRecords.locks.flatMap(lock=>lock.decision==='approved'&&lock.environment_installed&&lock.installed_tree_sha256?[{environment_digest:lock.environment_digest,distribution:lock.lock.target.distribution,python_version:String(lock.lock.target.environment['python_full_version']??'unknown'),tree_sha256:lock.installed_tree_sha256}]:[]);
+      const npm_environments=npmRecords.locks.flatMap(lock=>lock.decision==='approved'&&lock.environment_installed&&lock.installed_tree_sha256?[{environment_digest:lock.environment_digest,distribution:lock.lock.distribution,node_version:lock.lock.node_version,npm_version:lock.lock.npm_version,tree_sha256:lock.installed_tree_sha256}]:[]);
+      onTrial({skill_id:selected.id,version,name:selected.name,latest_version:selected.latest_version,purpose,python_environments,npm_environments});
+    }catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
   async function save(){
     setBusy(true);setError('');
@@ -112,7 +117,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
       <label className="procedure-permission"><input type="checkbox" checked={write} disabled={busy} onChange={event=>setWrite(event.target.checked)}/>Requires editing workspace files</label>
       <button disabled={busy||!name.trim()||!content.trim()||!!selected&&version!==selected.latest_version}>{selected?'Save new procedure version':'Save procedure candidate'}</button>
     </form>
-    {selected&&<div className="controls"><button disabled={busy||selected.lifecycle_state==='deprecated'} onClick={()=>selectProcedure('evaluation_trial')}>Select version for trial run</button>{selected.active_version===version&&selected.lifecycle_state==='active'&&<button disabled={busy} onClick={()=>selectProcedure('active_use')}>Select active procedure for next run</button>}<button disabled={busy} onClick={()=>void exportVersion()}>Export procedure version</button><button disabled={busy} onClick={()=>void setPinned(!selected.pinned)}>{selected.pinned?'Unpin procedure':'Pin procedure'}</button><button disabled={busy||selected.active_version!==null||selected.pinned} onClick={()=>void remove()}>Delete procedure and all versions</button></div>}
+    {selected&&<div className="controls"><button disabled={busy||selected.lifecycle_state==='deprecated'} onClick={()=>void selectProcedure('evaluation_trial')}>Select version for trial run</button>{selected.active_version===version&&selected.lifecycle_state==='active'&&<button disabled={busy} onClick={()=>void selectProcedure('active_use')}>Select active procedure for next run</button>}<button disabled={busy} onClick={()=>void exportVersion()}>Export procedure version</button><button disabled={busy} onClick={()=>void setPinned(!selected.pinned)}>{selected.pinned?'Unpin procedure':'Pin procedure'}</button><button disabled={busy||selected.active_version!==null||selected.pinned} onClick={()=>void remove()}>Delete procedure and all versions</button></div>}
     {selected&&version!==selected.latest_version&&<p>Historical versions are preserved. Select the latest version to revise this procedure.</p>}
     {selected&&<section aria-label="Procedure lifecycle"><h3>Activation and rollback</h3>
       <p>Entry state: {selected.lifecycle_state}. Active version: {selected.active_version??'none'}. New runs use a procedure only when you explicitly select it.</p>

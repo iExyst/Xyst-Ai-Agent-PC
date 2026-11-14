@@ -127,6 +127,15 @@ class WSLTransport:
         if intent.procedure_environment_digest is not None:
             request["procedure_environment_digest"] = intent.procedure_environment_digest
             request["procedure_environment_tree_sha256"] = intent.procedure_environment_tree_sha256
+        if intent.procedure_node_environment_digest is not None:
+            request["procedure_node_environment_digest"] = (
+                intent.procedure_node_environment_digest
+            )
+            request["procedure_node_environment_tree_sha256"] = (
+                intent.procedure_node_environment_tree_sha256
+            )
+            request["procedure_skill_id"] = intent.procedure_skill_id
+            request["procedure_version"] = intent.procedure_version
         payload = json.dumps(request).encode("utf-8")
         if len(payload) > 18 * 1024 * 1024:
             raise ValueError("Command request exceeds the manager transport limit.")
@@ -176,6 +185,21 @@ class WSLTransport:
         result = cast(dict[str, Any], frames[0])
         if result.get("execution_id") != intent.execution_id:
             raise TransportError("Manager replied for a different execution identity.")
+        if (
+            result.get("procedure_node_environment_digest")
+            != intent.procedure_node_environment_digest
+            or result.get("procedure_node_environment_tree_sha256")
+            != intent.procedure_node_environment_tree_sha256
+            or result.get("procedure_skill_id") != intent.procedure_skill_id
+            or result.get("procedure_version") != intent.procedure_version
+        ):
+            raise TransportError("Manager result does not match the selected Node environment.")
+        if (
+            result.get("procedure_environment_digest") != intent.procedure_environment_digest
+            or result.get("procedure_environment_tree_sha256")
+            != intent.procedure_environment_tree_sha256
+        ):
+            raise TransportError("Manager result does not match the selected Python environment.")
         return result
 
     async def control(

@@ -309,6 +309,8 @@ class CommandJournal:
             self.store.require_lease(connection, run_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
             procedure_environment: dict[str, Any] | None = None
+            procedure_node_environment: dict[str, Any] | None = None
+            procedure_identity: tuple[str, int] | None = None
             if self.purpose == "agent" and grant.backend == "wsl-bubblewrap-v1":
                 selected = connection.execute(
                     "SELECT payload FROM run_events WHERE run_id=? "
@@ -318,9 +320,17 @@ class CommandJournal:
                 if selected is not None:
                     selected_value: object = json.loads(selected["payload"])
                     if isinstance(selected_value, dict):
-                        raw_environment = cast(dict[str, Any], selected_value).get(
-                            "python_environment"
-                        )
+                        selected_payload = cast(dict[str, Any], selected_value)
+                        skill_id = selected_payload.get("skill_id")
+                        version = selected_payload.get("version")
+                        if (
+                            isinstance(skill_id, str)
+                            and re.fullmatch(r"[a-f0-9-]{36}", skill_id)
+                            and type(version) is int
+                            and 1 <= version <= 128
+                        ):
+                            procedure_identity = (skill_id, version)
+                        raw_environment = selected_payload.get("python_environment")
                         if isinstance(raw_environment, dict):
                             procedure_environment = cast(dict[str, Any], raw_environment)
                             if (
@@ -336,6 +346,24 @@ class CommandJournal:
                             ):
                                 raise PermissionError(
                                     "Selected procedure dependency environment is invalid."
+                                )
+                        raw_node_environment = selected_payload.get("npm_environment")
+                        if isinstance(raw_node_environment, dict):
+                            procedure_node_environment = cast(dict[str, Any], raw_node_environment)
+                            if (
+                                procedure_node_environment.get("distribution") != grant.distribution
+                                or not re.fullmatch(
+                                    r"[a-f0-9]{64}",
+                                    str(procedure_node_environment.get("environment_digest", "")),
+                                )
+                                or not re.fullmatch(
+                                    r"[a-f0-9]{64}",
+                                    str(procedure_node_environment.get("tree_sha256", "")),
+                                )
+                                or procedure_identity is None
+                            ):
+                                raise PermissionError(
+                                    "Selected procedure Node dependency environment is invalid."
                                 )
             task_key = self.require_task(connection, run_id, owner)
             self.require_state(connection, run_id)
@@ -394,6 +422,26 @@ class CommandJournal:
                 procedure_environment_tree_sha256=(
                     procedure_environment["tree_sha256"]
                     if procedure_environment is not None
+                    else None
+                ),
+                procedure_node_environment_digest=(
+                    procedure_node_environment["environment_digest"]
+                    if procedure_node_environment is not None
+                    else None
+                ),
+                procedure_node_environment_tree_sha256=(
+                    procedure_node_environment["tree_sha256"]
+                    if procedure_node_environment is not None
+                    else None
+                ),
+                procedure_skill_id=(
+                    procedure_identity[0]
+                    if procedure_node_environment is not None and procedure_identity is not None
+                    else None
+                ),
+                procedure_version=(
+                    procedure_identity[1]
+                    if procedure_node_environment is not None and procedure_identity is not None
                     else None
                 ),
             )

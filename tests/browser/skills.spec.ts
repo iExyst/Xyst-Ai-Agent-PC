@@ -29,7 +29,7 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
     }
     if(path.endsWith('/node-readiness')){nodeReadinessBody=request.postDataJSON();return route.fulfill({json:{distribution:'Ubuntu-24.04',state:'ready',node_version:'v22.2.0',npm_version:'10.8.1',npm_available:true,checked_at:new Date().toISOString()},headers});}
     if(path.endsWith('/npm-dependency-locks/inspect'))return route.fulfill({json:npmLock,headers});
-    if(path.endsWith('/npm-dependency-locks')&&request.method()==='GET')return route.fulfill({json:{locks:[]},headers});
+    if(path.endsWith('/npm-dependency-locks')&&request.method()==='GET')return route.fulfill({json:{locks:npmEnvironmentInstalled?[npmRecord(),{...npmRecord(),environment_digest:'8'.repeat(64),lock:{...npmLock,node_version:'v20.1.0'}}]:[]},headers});
     if(path.endsWith('/npm-dependency-locks')&&request.method()==='PUT')return route.fulfill({json:npmRecord(),headers});
     if(path.endsWith('/npm-dependency-locks/'+'9'.repeat(64)+'/acquire')){npmTarballsPresent=true;return route.fulfill({json:npmRecord(),headers});}
     if(path.endsWith('/npm-dependency-locks/'+'9'.repeat(64)+'/review')){npmDecision=request.postDataJSON().decision;return route.fulfill({json:npmRecord(),headers});}
@@ -99,8 +99,10 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await lockReview.getByRole('button',{name:'Install approved wheels offline in WSL'}).click();
   await expect(lockReview).toContainText('Installed as an immutable WSL environment');
   await expect(lockReview).toContainText('37,331,550 bytes');
+  npmEnvironmentInstalled=true;
   await panel.getByRole('button',{name:'Inspect Summarize',exact:true}).click();
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await expect(panel.getByRole('button',{name:'Select version for trial run',exact:true})).toBeEnabled();
   await navigateMainSection(page,'Settings');
   await page.getByLabel('Workspace permissions').selectOption('workspace');
   await navigateMainSection(page,'New objective');
@@ -111,6 +113,10 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await expect(environmentChoice.locator('option')).toHaveCount(3);
   await environmentChoice.selectOption('c'.repeat(64));
   await expect(environmentChoice).toHaveValue('c'.repeat(64));
+  const npmEnvironmentChoice=page.getByLabel('npm environment for this procedure');
+  await expect(npmEnvironmentChoice.locator('option')).toHaveCount(3);
+  await npmEnvironmentChoice.selectOption('8'.repeat(64));
+  await expect(npmEnvironmentChoice).toHaveValue('8'.repeat(64));
   await navigateMainSection(page,'Tools & integrations');
   await panel.getByRole('button',{name:'Inspect Summarize',exact:true}).click();
   const lockDetails=lockReview.locator('details').first();
@@ -150,6 +156,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
       }
       if(path.endsWith('/lifecycle'))return route.fulfill({json:[],headers});
       if(path.endsWith('/python-dependency-locks'))return route.fulfill({json:{locks:[]},headers});
+      if(path.endsWith('/npm-dependency-locks'))return route.fulfill({json:{locks:[]},headers});
       if(path.endsWith('/trials'))return route.fulfill({json:[{id:'trial-a',objective:'ASCII case',created_at:'2026-11-04T00:00:00Z'},{id:'trial-b',objective:'Unicode case',created_at:'2026-11-04T00:00:00Z'}],headers});
       if(path.endsWith('/evaluations')){
         const body=request.postDataJSON();expect(body.expected_evaluation_count).toBe(0);expect(body.confirmed_criteria).toEqual([0]);
@@ -200,6 +207,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(panel.getByLabel('Procedure text',{exact:true})).toHaveValue('Read files and preserve evidence.');
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeDisabled();
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
+  await expect(panel.getByRole('button',{name:'Select version for trial run',exact:true})).toBeEnabled();
   await navigateMainSection(page,'New objective');
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toContainText('Inspect safely \u00b7 version 1');
   await expect(page.getByLabel('Allow this run to draft a new version of this procedure')).toBeDisabled();

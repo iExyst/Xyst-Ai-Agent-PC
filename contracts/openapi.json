@@ -892,6 +892,18 @@
             "title": "Pre Inference Token Reservations",
             "type": "boolean"
           },
+          "procedure_npm_environment_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Npm Environment Digest"
+          },
           "procedure_python_environment_digest": {
             "anyOf": [
               {
@@ -5981,6 +5993,20 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "npm_environment": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Npm Environment"
           },
           "purpose": {
             "default": "evaluation_trial",

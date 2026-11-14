@@ -82,16 +82,25 @@ def run(
     journal: Any,
     emit_output: Any = None,
     procedure_environment_lease: Any = None,
+    procedure_node_environment_lease: Any = None,
 ) -> dict[str, Any]:
     required_fields = {"action", "execution_id", "argv", "max_seconds", "snapshot_b64"}
     environment_fields = {
         "procedure_environment_digest",
         "procedure_environment_tree_sha256",
     }
+    node_environment_fields = {
+        "procedure_node_environment_digest",
+        "procedure_node_environment_tree_sha256",
+        "procedure_skill_id",
+        "procedure_version",
+    }
     request_fields = frozenset(request)
     if request_fields not in {
         frozenset(required_fields),
         frozenset(required_fields | environment_fields),
+        frozenset(required_fields | node_environment_fields),
+        frozenset(required_fields | environment_fields | node_environment_fields),
     }:
         raise ValueError("Invalid execution request fields.")
     identity = execution_id(request["execution_id"])
@@ -117,7 +126,9 @@ def run(
     )
     bpf = profile["syscall_filter"]()
     environment_path = None
+    node_environment_path = None
     lease = None
+    node_lease = None
     if environment_fields & request.keys():
         if environment_fields - request.keys() or procedure_environment_lease is None:
             raise ValueError("Procedure environment identity is incomplete.")
@@ -126,6 +137,33 @@ def run(
             request["procedure_environment_tree_sha256"],
         )
         environment_path = lease.__enter__()
+    if node_environment_fields & request.keys():
+        if (
+            node_environment_fields - request.keys()
+            or procedure_node_environment_lease is None
+            or not isinstance(request["procedure_skill_id"], str)
+            or re.fullmatch(r"[a-f0-9-]{36}", request["procedure_skill_id"]) is None
+            or type(request["procedure_version"]) is not int
+            or not 1 <= request["procedure_version"] <= 128
+        ):
+            if lease is not None:
+                lease.__exit__(None, None, None)
+            raise ValueError("Procedure Node environment identity is incomplete.")
+        try:
+            node_lease = procedure_node_environment_lease(
+                request["procedure_node_environment_digest"],
+                request["procedure_node_environment_tree_sha256"],
+            )
+            node_environment_path = node_lease.__enter__()
+        except BaseException:
+            if lease is not None:
+                lease.__exit__(None, None, None)
+            raise
+    procedure_modules_link = (
+        f"__xaa_selected_skill__/{request['procedure_skill_id']}/v{request['procedure_version']}"
+        if node_environment_path is not None
+        else None
+    )
     stage = BASE / identity
     process: subprocess.Popen[bytes] | None = None
     result: dict[str, Any] = {}
@@ -158,7 +196,17 @@ def run(
                 f"--property=RuntimeMaxSec={seconds}s",
                 "--property=TimeoutStopSec=1s",
                 "--property=KillMode=control-group",
-            ] + profile["bubblewrap_arguments"](source, arguments, environment_path)
+            ] + (
+                profile["bubblewrap_arguments"](
+                    source,
+                    arguments,
+                    environment_path,
+                    node_environment_path,
+                    procedure_modules_link,
+                )
+                if node_environment_path is not None
+                else profile["bubblewrap_arguments"](source, arguments, environment_path)
+            )
             started = time.monotonic()
             process = subprocess.Popen(
                 command,
@@ -229,6 +277,12 @@ def run(
             "workspace_changes_persisted": False,
             "procedure_environment_digest": request.get("procedure_environment_digest"),
             "procedure_environment_tree_sha256": request.get("procedure_environment_tree_sha256"),
+            "procedure_node_environment_digest": request.get("procedure_node_environment_digest"),
+            "procedure_node_environment_tree_sha256": request.get(
+                "procedure_node_environment_tree_sha256"
+            ),
+            "procedure_skill_id": request.get("procedure_skill_id"),
+            "procedure_version": request.get("procedure_version"),
             "limits": {
                 "max_active_executions": journal.active_limit,
                 "memory_bytes": 134217728,
@@ -261,6 +315,8 @@ def run(
                 journal.finished(identity, result)
         if lease is not None:
             lease.__exit__(None, None, None)
+        if node_lease is not None:
+            node_lease.__exit__(None, None, None)
     return result
 
 
@@ -386,6 +442,9 @@ def main() -> None:
             journal,
             emit_output,
             lambda digest, tree: environments["execution_lease"](digest, tree, journal._file_lock),
+            lambda digest, tree: node_environments["execution_lease"](
+                digest, tree, journal._file_lock
+            ),
         )
         print(json.dumps({"type": "result", "result": result}), flush=True)
     else:

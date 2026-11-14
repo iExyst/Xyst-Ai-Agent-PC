@@ -355,6 +355,7 @@ class SkillTrialRecord(SkillTrial):
     name: str
     snapshot_sha256: str
     python_environment: dict[str, str] | None = None
+    npm_environment: dict[str, str] | None = None
 
 
 TRIAL_TOOLS = {

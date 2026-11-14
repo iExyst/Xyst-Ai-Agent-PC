@@ -1024,6 +1024,7 @@ class RunStore:
         file_checks: list[dict[str, Any]] | None = None,
         procedure_trial: dict[str, Any] | None = None,
         procedure_python_environment_digest: str | None = None,
+        procedure_npm_environment_digest: str | None = None,
         command_grant: dict[str, Any] | None = None,
         approved_web_hosts: list[str] | None = None,
         approved_web_search: bool = False,
@@ -1053,6 +1054,11 @@ class RunStore:
             and re.fullmatch(r"[a-f0-9]{64}", procedure_python_environment_digest) is None
         ):
             raise ValueError("Procedure Python environment identity is invalid.")
+        if (
+            procedure_npm_environment_digest is not None
+            and re.fullmatch(r"[a-f0-9]{64}", procedure_npm_environment_digest) is None
+        ):
+            raise ValueError("Procedure npm environment identity is invalid.")
         if (client_request_id is None) != (request_digest is None):
             raise ValueError(
                 "Idempotent run requests require both a request ID and payload digest."
@@ -1283,11 +1289,69 @@ class RunStore:
                                 "distribution": environment["distribution"],
                                 "tree_sha256": environment["tree_sha256"],
                             }
+                has_node_resource = any(
+                    str(asset.get("path", "")).casefold().endswith((".js", ".mjs", ".cjs"))
+                    for asset in assets
+                )
+                if granted_command is not None and has_node_resource:
+                    command_profile = granted_command["grant"]
+                    if command_profile["backend"] == "wsl-bubblewrap-v1":
+                        environments = connection.execute(
+                            "SELECT environment.environment_digest,environment.distribution,"
+                            "environment.tree_sha256,environment.node_version,environment.npm_version "
+                            "FROM skill_npm_dependency_locks AS lock "
+                            "JOIN skill_npm_dependency_environments AS environment "
+                            "ON environment.skill_id=lock.skill_id "
+                            "AND environment.skill_version=lock.skill_version "
+                            "AND environment.environment_digest=lock.environment_digest "
+                            "WHERE lock.skill_id=? AND lock.skill_version=? "
+                            "AND lock.decision='approved' AND environment.distribution=? "
+                            "ORDER BY environment.environment_digest",
+                            (
+                                selected_trial.skill_id,
+                                selected_trial.version,
+                                command_profile["distribution"],
+                            ),
+                        ).fetchall()
+                        selected_environment = None
+                        if procedure_npm_environment_digest is not None:
+                            matches = [
+                                environment
+                                for environment in environments
+                                if environment["environment_digest"]
+                                == procedure_npm_environment_digest
+                            ]
+                            if len(matches) != 1:
+                                raise ValueError(
+                                    "Choose an approved installed npm environment for the selected procedure and WSL distribution."
+                                )
+                            selected_environment = matches[0]
+                        elif len(environments) == 1:
+                            selected_environment = environments[0]
+                        elif len(environments) > 1:
+                            raise ValueError(
+                                "Choose an approved installed npm environment for the selected procedure and WSL distribution."
+                            )
+                        if selected_environment is not None:
+                            environment = selected_environment
+                            trial_snapshot["npm_environment"] = {
+                                "environment_digest": environment["environment_digest"],
+                                "distribution": environment["distribution"],
+                                "tree_sha256": environment["tree_sha256"],
+                                "node_version": environment["node_version"],
+                                "npm_version": environment["npm_version"],
+                            }
             if procedure_python_environment_digest is not None and (
                 trial_snapshot is None or "python_environment" not in trial_snapshot
             ):
                 raise ValueError(
                     "A Python environment can only be selected for an authorized Python procedure run in WSL."
+                )
+            if procedure_npm_environment_digest is not None and (
+                trial_snapshot is None or "npm_environment" not in trial_snapshot
+            ):
+                raise ValueError(
+                    "An npm environment can only be selected for an authorized Node procedure run in WSL."
                 )
             if (
                 allow_procedure_revision
@@ -1695,6 +1759,11 @@ class RunStore:
             | (
                 {"python_environment": trial["python_environment"]}
                 if "python_environment" in trial
+                else {}
+            )
+            | (
+                {"npm_environment": trial["npm_environment"]}
+                if "npm_environment" in trial
                 else {}
             )
             if trial

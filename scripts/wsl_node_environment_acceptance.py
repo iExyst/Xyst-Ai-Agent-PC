@@ -21,6 +21,9 @@ from xaa.extensions.npm_dependencies import (
     ProcedureNpmDependencyLock,
 )
 from xaa.extensions.npm_tarball_storage import ProcedureNpmTarballStore
+from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.owned_transport import EnvironmentInUseError
+from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
 
@@ -172,6 +175,67 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             raise RuntimeError(
                 "Offline npm installation, reuse, module loading, or lifecycle suppression failed."
             )
+        script_path = f"__xaa_selected_skill__/{lock.skill_id}/v1/check.cjs"
+        script = (
+            "const value=require('xaa-offline-fixture');"
+            "setTimeout(()=>process.stdout.write(value),7000);"
+        ).encode("ascii")
+        snapshot = WorkspaceSnapshot(
+            files=(SnapshotFile(script_path, script),),
+            directories=(
+                "__xaa_selected_skill__",
+                f"__xaa_selected_skill__/{lock.skill_id}",
+                f"__xaa_selected_skill__/{lock.skill_id}/v1",
+            ),
+        )
+        intent = CommandIntent(
+            argv=["node", script_path],
+            max_seconds=15,
+            execution_id=uuid.uuid4().hex,
+            backend="wsl-bubblewrap-v1",
+            distribution=distribution,
+            profile_sha256=transport.profile_sha256,
+            workspace="/workspace/acceptance",
+            procedure_node_environment_digest=lock.environment_digest(),
+            procedure_node_environment_tree_sha256=installed["tree_sha256"],
+            procedure_skill_id=lock.skill_id,
+            procedure_version=1,
+        )
+        execution = asyncio.create_task(
+            transport.run(intent, snapshot, deadline=time.monotonic() + 30)
+        )
+        await asyncio.sleep(2)
+        try:
+            await transport.remove_node_environment(
+                lock.environment_digest(), deadline=time.monotonic() + 20
+            )
+        except EnvironmentInUseError:
+            removal_refused_while_active = True
+        else:
+            removal_refused_while_active = False
+        executed = await execution
+        if (
+            not removal_refused_while_active
+            or executed.get("succeeded") is not True
+            or executed.get("stdout_b64") != base64.b64encode(b"offline-ready").decode("ascii")
+            or executed.get("cleanup_confirmed") is not True
+            or executed.get("procedure_node_environment_digest") != lock.environment_digest()
+        ):
+            raise RuntimeError(
+                "Procedure-scoped Node module loading or active-use lease verification failed: "
+                + json.dumps(
+                    {
+                        "removal_refused_while_active": removal_refused_while_active,
+                        "succeeded": executed.get("succeeded"),
+                        "termination_reason": executed.get("termination_reason"),
+                        "stdout": executed.get("stdout_b64"),
+                        "stderr": executed.get("stderr_b64"),
+                        "cleanup_confirmed": executed.get("cleanup_confirmed"),
+                        "environment_digest": executed.get("procedure_node_environment_digest"),
+                    },
+                    sort_keys=True,
+                )
+            )
         removed = await transport.remove_node_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )
@@ -187,6 +251,8 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "installed_bytes": installed["installed_bytes"],
             "file_count": installed["file_count"],
             "offline_locked_module_loaded": module_value,
+            "procedure_run_module_loaded": True,
+            "removal_refused_while_active": removal_refused_while_active,
             "lifecycle_script_marker_absent": True,
             "idempotent_install": True,
             "integrity_status": True,

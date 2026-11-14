@@ -61,6 +61,10 @@ class CommandIntent(CommandArguments):
     workspace: str
     procedure_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     procedure_environment_tree_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    procedure_node_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    procedure_node_environment_tree_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    procedure_skill_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
+    procedure_version: int | None = Field(default=None, ge=1, le=128)
 
     @model_validator(mode="after")
     def paired_procedure_environment(self) -> "CommandIntent":
@@ -70,6 +74,16 @@ class CommandIntent(CommandArguments):
             raise ValueError("Procedure environment identity and tree proof must be paired.")
         if self.procedure_environment_digest is not None and self.backend != "wsl-bubblewrap-v1":
             raise ValueError("Procedure Python environments are available only in WSL.")
+        if (self.procedure_node_environment_digest is None) != (
+            self.procedure_node_environment_tree_sha256 is None
+        ):
+            raise ValueError("Procedure Node environment identity and tree proof must be paired.")
+        if self.procedure_node_environment_digest is not None and self.backend != "wsl-bubblewrap-v1":
+            raise ValueError("Procedure Node environments are available only in WSL.")
+        if (self.procedure_skill_id is None) != (self.procedure_version is None):
+            raise ValueError("Selected procedure identity fields must be paired.")
+        if self.procedure_node_environment_digest is not None and self.procedure_skill_id is None:
+            raise ValueError("A Node environment requires an exact selected procedure identity.")
         return self
 
 
