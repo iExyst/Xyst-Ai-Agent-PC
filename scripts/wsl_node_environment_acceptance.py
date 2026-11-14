@@ -27,17 +27,19 @@ from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
 
-def _tarball(*, extra_file_count: int = 0) -> bytes:
+def _tarball(
+    *, extra_file_count: int = 0, version: str = "1.0.0", module_value: str = "offline-ready"
+) -> bytes:
     package = {
         "name": "xaa-offline-fixture",
-        "version": "1.0.0",
+        "version": version,
         "main": "index.js",
         "bin": {"xaa-offline-cli": "cli.js"},
         "scripts": {"install": "node install.js"},
     }
     members = {
         "package/package.json": json.dumps(package, separators=(",", ":")).encode(),
-        "package/index.js": b"module.exports = 'offline-ready';\n",
+        "package/index.js": f"module.exports = {json.dumps(module_value)};\n".encode(),
         "package/cli.js": b"#!/usr/bin/env node\nprocess.stdout.write('offline-cli');\n",
         "package/install.js": b"require('fs').writeFileSync(__dirname + '/install-ran.txt', 'bad');\n",
     }
@@ -57,6 +59,29 @@ def _tarball(*, extra_file_count: int = 0) -> bytes:
             info.mode = 0o755 if name.endswith("cli.js") else 0o644
             archive.addfile(info, io.BytesIO(data))
     return output.getvalue()
+
+
+def _procedure_probe(
+    lock: ProcedureNpmDependencyLock, expected_value: str
+) -> tuple[str, WorkspaceSnapshot]:
+    procedure_path = f"__xaa_selected_skill__/{lock.skill_id}/v{lock.skill_version}"
+    script_path = f"{procedure_path}/check.cjs"
+    script = (
+        "const fs=require('fs'),value=require('xaa-offline-fixture');"
+        f"if(value!=={json.dumps(expected_value)})process.exit(10);"
+        f"if(fs.realpathSync('{procedure_path}/node_modules')!=='/opt/xaa/procedure-node/node_modules')process.exit(8);"
+        "if(fs.existsSync('node_modules'))process.exit(9);"
+        "setTimeout(()=>process.stdout.write(value),7000);"
+    ).encode("ascii")
+    snapshot = WorkspaceSnapshot(
+        files=(SnapshotFile(script_path, script),),
+        directories=(
+            "__xaa_selected_skill__",
+            f"__xaa_selected_skill__/{lock.skill_id}",
+            procedure_path,
+        ),
+    )
+    return script_path, snapshot
 
 
 def _wsl_binary() -> str:
@@ -417,13 +442,59 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     sort_keys=True,
                 )
             )
-        rollback_lock = lock.model_copy(update={"skill_version": 2, "source_sha256": "b" * 64})
-        store.store_files(rollback_lock, {rollback_lock.packages[0].package_path: archive_path})
+        rollback_archive = _tarball(version="1.1.0", module_value="new-version")
+        rollback_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(rollback_archive).digest()
+        ).decode("ascii")
+        rollback_resolved = (
+            "https://registry.npmjs.org/xaa-offline-fixture/-/xaa-offline-fixture-1.1.0.tgz"
+        )
+        rollback_manifest = package_manifest.replace(b"^1.0.0", b"^1.1.0")
+        rollback_lock_document = json.loads(package_lock)
+        rollback_package_record = rollback_lock_document["packages"][
+            "node_modules/xaa-offline-fixture"
+        ]
+        rollback_package_record["version"] = "1.1.0"
+        rollback_package_record["resolved"] = rollback_resolved
+        rollback_package_record["integrity"] = rollback_integrity
+        rollback_lock_document["packages"][""]["dependencies"]["xaa-offline-fixture"] = "^1.1.0"
+        rollback_package_lock = json.dumps(rollback_lock_document, separators=(",", ":")).encode()
+        rollback_lock = lock.model_copy(
+            update={
+                "skill_version": 2,
+                "source_sha256": "b" * 64,
+                "package_manifest_sha256": hashlib.sha256(rollback_manifest).hexdigest(),
+                "lockfile_sha256": hashlib.sha256(rollback_package_lock).hexdigest(),
+                "requirements": ("xaa-offline-fixture@^1.1.0",),
+                "root_dependencies": (
+                    NpmRootDependency(
+                        name="xaa-offline-fixture",
+                        version_range="^1.1.0",
+                        kind="dependencies",
+                    ),
+                ),
+                "packages": (
+                    NpmLockedPackage(
+                        package_path="node_modules/xaa-offline-fixture",
+                        name="xaa-offline-fixture",
+                        version="1.1.0",
+                        resolved_url=rollback_resolved,
+                        integrity=rollback_integrity,
+                    ),
+                ),
+            }
+        )
+        rollback_archive_path = report_path.parent / "fixture-v2.tgz"
+        rollback_archive_path.write_bytes(rollback_archive)
+        store.store_files(
+            rollback_lock,
+            {rollback_lock.packages[0].package_path: rollback_archive_path},
+        )
         rollback_directory = store.root / rollback_lock.environment_digest()
         newer = await transport.install_node_environment(
             rollback_lock,
-            package_manifest,
-            package_lock,
+            rollback_manifest,
+            rollback_package_lock,
             rollback_directory,
             deadline=time.monotonic() + 300,
         )
@@ -436,15 +507,49 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             or old_before_rollback.get("installed") is not True
         ):
             raise RuntimeError("Installing the newer procedure version did not preserve v1.")
+        newer_script, newer_snapshot = _procedure_probe(rollback_lock, "new-version")
+        newer_intent = intent.model_copy(
+            update={
+                "argv": ["node", newer_script],
+                "execution_id": uuid.uuid4().hex,
+                "procedure_node_environment_digest": rollback_lock.environment_digest(),
+                "procedure_node_environment_tree_sha256": newer["tree_sha256"],
+                "procedure_version": rollback_lock.skill_version,
+            }
+        )
         rollback_intent = intent.model_copy(update={"execution_id": uuid.uuid4().hex})
-        rolled_back = await transport.run(rollback_intent, snapshot, deadline=time.monotonic() + 30)
+        older_run = asyncio.create_task(
+            transport.run(rollback_intent, snapshot, deadline=time.monotonic() + 30)
+        )
+        newer_run = asyncio.create_task(
+            transport.run(newer_intent, newer_snapshot, deadline=time.monotonic() + 30)
+        )
+        await asyncio.sleep(2)
+        active_environment_refusals = 0
+        for active_digest in (lock.environment_digest(), rollback_lock.environment_digest()):
+            try:
+                await transport.remove_node_environment(
+                    active_digest, deadline=time.monotonic() + 20
+                )
+            except EnvironmentInUseError:
+                active_environment_refusals += 1
+        rolled_back, newer_run_result = await asyncio.gather(older_run, newer_run)
         if (
             rolled_back.get("succeeded") is not True
             or rolled_back.get("stdout_b64") != base64.b64encode(b"offline-ready").decode("ascii")
             or rolled_back.get("procedure_node_environment_digest") != lock.environment_digest()
             or rolled_back.get("cleanup_confirmed") is not True
+            or newer_run_result.get("succeeded") is not True
+            or newer_run_result.get("stdout_b64")
+            != base64.b64encode(b"new-version").decode("ascii")
+            or newer_run_result.get("procedure_node_environment_digest")
+            != rollback_lock.environment_digest()
+            or newer_run_result.get("cleanup_confirmed") is not True
+            or active_environment_refusals != 2
         ):
-            raise RuntimeError("Rollback to the previous Node procedure digest failed.")
+            raise RuntimeError(
+                "Concurrent procedure isolation or rollback to the previous Node digest failed."
+            )
         newer_removed = await transport.remove_node_environment(
             rollback_lock.environment_digest(), deadline=time.monotonic() + 30
         )
@@ -494,6 +599,8 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "newer_procedure_version_installed": True,
             "rollback_to_older_digest_succeeded": True,
             "newer_digest_removal_preserved_older": True,
+            "concurrent_procedure_versions_isolated": True,
+            "both_active_environments_refused_removal": True,
             "integrity_status": True,
             "exact_environment_removed": True,
             "network": "none",

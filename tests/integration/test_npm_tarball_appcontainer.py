@@ -11,6 +11,8 @@ from pathlib import Path
 import httpx
 import pytest
 from xaa.extensions.npm_dependencies import (
+    MAX_NPM_TARBALL_EXPANDED_BYTES,
+    MAX_NPM_TARBALL_MEMBER_BYTES,
     NpmLockedPackage,
     NpmRootDependency,
     NpmVerifiedTarball,
@@ -21,6 +23,16 @@ from xaa.extensions.npm_tarballs import NpmAcquisitionError, acquire_npm_tarball
 pytestmark = pytest.mark.skipif(
     os.name != "nt", reason="npm acquisition AppContainer acceptance requires Windows."
 )
+
+
+class _ZeroReader:
+    def __init__(self, size: int) -> None:
+        self.remaining = size
+
+    def read(self, size: int = -1) -> bytes:
+        count = self.remaining if size < 0 else min(size, self.remaining)
+        self.remaining -= count
+        return bytes(count)
 
 
 def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependencyLock, bytes]:
@@ -47,6 +59,14 @@ def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependenc
             member.type = tarfile.SYMTYPE
             member.linkname = "../escape.js"
             archive.addfile(member)
+        if unsafe_member == "expanded":
+            for index in range(MAX_NPM_TARBALL_EXPANDED_BYTES // MAX_NPM_TARBALL_MEMBER_BYTES):
+                member = tarfile.TarInfo(f"package/filler-{index}.bin")
+                member.size = MAX_NPM_TARBALL_MEMBER_BYTES
+                archive.addfile(member, _ZeroReader(member.size))
+            overflow = tarfile.TarInfo("package/expansion-overflow.bin")
+            overflow.size = (MAX_NPM_TARBALL_EXPANDED_BYTES % MAX_NPM_TARBALL_MEMBER_BYTES) + 1
+            archive.addfile(overflow, _ZeroReader(overflow.size))
     tarball = content.getvalue()
     locked = NpmLockedPackage(
         package_path="node_modules/left-pad",
@@ -155,7 +175,7 @@ async def test_appcontainer_npm_acquisition_rejects_registry_redirects(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("frozen_worker", [False, True])
-@pytest.mark.parametrize("unsafe_member", ["traversal", "symlink", "duplicate"])
+@pytest.mark.parametrize("unsafe_member", ["traversal", "symlink", "duplicate", "expanded"])
 async def test_appcontainer_npm_acquisition_rejects_hostile_tarball_members(
     tmp_path: Path, frozen_worker: bool, unsafe_member: str
 ):
@@ -167,6 +187,7 @@ async def test_appcontainer_npm_acquisition_rejects_hostile_tarball_members(
     if frozen_worker and (frozen_executable is None or not frozen_executable.is_file()):
         pytest.skip("Build the frozen engine before running the packaged worker acceptance.")
     lock, tarball = _fixture(unsafe_member=unsafe_member)
+    assert len(tarball) < 1024 * 1024
     calls: list[str] = []
 
     async def fixture(request: httpx.Request) -> httpx.Response:

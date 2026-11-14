@@ -1,5 +1,13 @@
 # Hermes capability reference matrix
 
+## Reject npm archives over the expanded-size ceiling (2026-11-14)
+
+The source and frozen Windows AppContainer workers reject a valid-SRI gzip archive under 1 MiB compressed that declares more than the 256 MiB aggregate expansion allowance: [acceptance report](../../.acceptance/npm-archive-expansion-validation-20261114/report.xml) (12 passed across source/frozen worker fixtures). The test observes rejection before a verified tarball is published. This covers the configured aggregate expansion ceiling; broader hostile archive combinations remain open. No public registry access or model inference was used.
+
+## Run two Node procedure versions concurrently (2026-11-14)
+
+Live WSL acceptance installed distinct package trees for procedure v1 and v2, ran both procedure versions concurrently, confirmed each returned its own module value, and verified that removal of either active digest was refused. After completion, removing v2 preserved v1 until its own exact removal: [report](../../.acceptance/npm-concurrent-procedure-isolation-20261114/report.json). This checks two versions in one WSL distribution; broader concurrency and archive-expansion acceptance remain open. No model inference or public registry access was used.
+
 ## Reject hostile npm archive members in both Windows workers (2026-11-14)
 
 Valid-SRI tarballs containing path traversal, an escaping symlink, or duplicate members are rejected by both the source and frozen Windows AppContainer acquisition workers: [JUnit report](../../.acceptance/npm-hostile-members-report-20261114/report.xml), six cases passed. Archive-expansion limits and cross-procedure concurrency remain open. No registry access or model inference was used.
