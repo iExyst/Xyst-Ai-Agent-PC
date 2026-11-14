@@ -28,6 +28,10 @@ Live Ubuntu-24.04 WSL acceptance installs the same package name/version with dif
 
 The source and frozen Windows AppContainer workers reject a valid-SRI archive with a member just over the 64 MiB per-file cap and a compressed archive with 20,001 entries, above the 20,000-entry cap. The expanded acceptance matrix passes 30 cases across both workers: [JUnit report](../../.acceptance/npm-archive-bounds-20261114/report.xml). Hosted run [43585387811](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43585387811) passed the complete source suite, including these cases. No public registry access or model inference was used.
 
+## Verify hosted installer with the Agent Plugins v1 UI fix (2026-11-14)
+
+Commit `8eeca2a5` passed hosted installer workflow [43601606297](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43601606297). The 0.1.1 package installed and booted, upgraded from 0.1.0, passed standard-user installation, and uninstalled with user data preserved by default. Exact tested installer, manifest, and reports: [hosted acceptance artifacts](../../.acceptance/hosted-installer-43601606297/). This is unsigned prerelease packaging evidence, not a public release or broad clean-machine survey; no model inference was requested.
+
 ## Build and accept the current unsigned Windows program (2026-11-14)
 
 Source run [43583296231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583296231) and manual installer run [43583548211](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583548211) passed for commit `e7418e3`. The hosted package acceptance covered the installed native app, upgrade from 0.1.0 with schema-18 data preservation, backup/restore, recovery, standard-account install, and uninstall. The 0.1.1 installer, manifest, and report are retained under [`.acceptance/hosted-installer-43583548211/`](../../.acceptance/hosted-installer-43583548211/). No live model was used. The installer is unsigned, and this does not establish broad independent-machine compatibility or full Hermes parity.
