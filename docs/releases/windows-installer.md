@@ -2,7 +2,7 @@
 
 ## Latest local desktop package (2026-11-14)
 
-The refreshed desktop home screen has a larger objective composer, a concrete example prompt, a simplified first-run checklist, and a model status that stays pending until a model is selected. `npm run build:desktop` and the local Windows installer build succeeded. The unsigned current-user 0.1.1 installer is available at [`build/installer/Xyst AI Agent_0.1.1_x64-setup.exe`](../../build/installer/Xyst%20AI%20Agent_0.1.1_x64-setup.exe), 77,851,634 bytes, SHA-256 `8dbacbf8d918a6fc7eacd7cfdceedae52294c4e1c7c0865f5b36e7dee8048dc7`; [manifest](../../build/installer/manifest.json) records the bundled desktop and engine hashes. This local build has not yet passed hosted installed-package acceptance and is not signed.
+The refreshed desktop home screen has a larger objective composer, a concrete example prompt, a simplified first-run checklist, and a model status that stays pending until a model is selected. `npm run build:desktop` and the local Windows installer build succeeded. The unsigned current-user 0.1.1 installer is available at [`build/installer/Xyst AI Agent_0.1.1_x64-setup.exe`](../../build/installer/Xyst%20AI%20Agent_0.1.1_x64-setup.exe), 77,854,086 bytes, SHA-256 `7cbb104fa98bdd16887931f80d294ece48baffa5e63c6a536dd1f3eef82cc548`; [manifest](../../build/installer/manifest.json) records the bundled desktop and engine hashes. This local build has not yet passed hosted installed-package acceptance and is not signed.
 
 ## Latest hosted package (2026-11-14)
 
