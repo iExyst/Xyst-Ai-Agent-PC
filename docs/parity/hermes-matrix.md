@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Parse imported npm package-lock.json v3 resources (2026-11-14)
+
+A parser can build an immutable proposal from an imported v3 lockfile, tied to the exact procedure and `package.json` hashes plus checked WSL Node/npm versions. It verifies root dependency consistency, package paths, registry-only HTTPS tarball URLs and SHA-512 integrity syntax. This validates the lock structure only; tarballs are not fetched or checked against those hashes, semver ranges and transitive graph satisfaction are not resolved, and no package environment can be installed or mounted. npm dependency parity remains planned for resolution and isolated install. See [`procedure-node-dependencies.md`](../architecture/procedure-node-dependencies.md). Unit coverage passes (12 lock parser tests); plugin regression coverage passes (40 passed, 1 skipped), and static checks are clean. No network or inference was used.
+
 ## Check the Node.js runtime for imported procedures (2026-11-14)
 
 The authenticated desktop flow can check whether Node and npm are present in the selected WSL distribution and report their versions. It invokes fixed version commands through the restricted WSL sandbox; it does not run procedure resources or use the network. This improves runtime readiness diagnostics only. npm package resolution, exact package acquisition, and scoped offline installation remain unsupported; imported-procedure dependency parity stays partial. The desktop Skills browser flows pass (2), with focused API/readiness tests (62 passed, 1 skipped), Ruff, strict Pyright, TypeScript and contract checks green. No inference was used.
