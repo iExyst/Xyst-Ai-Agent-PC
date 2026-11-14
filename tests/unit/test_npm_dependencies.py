@@ -28,14 +28,16 @@ INTEGRITY = "sha512-" + base64.b64encode(hashlib.sha512(TARBALL).digest()).decod
 def package_lock(
     *,
     lockfile_version: int = 3,
-    resolved: str = "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+    root_range: str = "^1.3.0",
+    version: str = "1.3.0",
+    resolved: str | None = None,
     integrity: str = INTEGRITY,
     package_path: str = "node_modules/left-pad",
     linked: bool = False,
 ) -> bytes:
     record: dict[str, Any] = {
-        "version": "1.3.0",
-        "resolved": resolved,
+        "version": version,
+        "resolved": resolved or f"https://registry.npmjs.org/left-pad/-/left-pad-{version}.tgz",
         "integrity": integrity,
     }
     if linked:
@@ -45,7 +47,7 @@ def package_lock(
             "name": "fixture",
             "lockfileVersion": lockfile_version,
             "packages": {
-                "": {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}},
+                "": {"name": "fixture", "dependencies": {"left-pad": root_range}},
                 package_path: record,
             },
         },
@@ -154,6 +156,129 @@ def test_npm_lock_rejects_duplicate_json_fields_and_size_overflow() -> None:
         parse(duplicate)
     with pytest.raises(ValueError, match="size limit"):
         parse(b" " * (2 * 1024 * 1024 + 1))
+
+
+@pytest.mark.parametrize(
+    ("version_range", "version"),
+    [
+        ("^1.2.0", "1.9.9"),
+        ("^0.2.0", "0.2.99"),
+        ("~1.2.3", "1.2.9"),
+        ("1.2.x", "1.2.8"),
+        (">=1.2.0 <2.0.0 || >=3.0.0", "3.1.0"),
+        ("1.2.3 - 1.2.9", "1.2.8"),
+        ("^1.2.3-beta.1", "1.2.3-beta.2"),
+    ],
+)
+def test_npm_lock_uses_npm_semver_ranges(version_range: str, version: str) -> None:
+    raw = package_lock(root_range=version_range, version=version)
+    lock = parse(raw, requirements=(f"left-pad@{version_range}",))
+
+    assert lock.packages[0].version == version
+
+
+@pytest.mark.parametrize(
+    ("version_range", "version"),
+    [
+        ("^1.2.0", "2.0.0"),
+        ("^0.2.0", "0.3.0"),
+        ("~1.2.3", "1.3.0"),
+        ("^1.2.3", "1.3.0-beta.1"),
+    ],
+)
+def test_npm_lock_rejects_locked_versions_outside_npm_range(
+    version_range: str, version: str
+) -> None:
+    with pytest.raises(ValueError, match="does not satisfy"):
+        parse(package_lock(root_range=version_range, version=version))
+
+
+def test_npm_lock_rejects_invalid_semver_range() -> None:
+    with pytest.raises(ValueError, match="invalid semantic version range"):
+        parse(package_lock(root_range=">wat"))
+
+
+def package_record(
+    name: str,
+    version: str,
+    *,
+    dependencies: dict[str, str] | None = None,
+    optional_dependencies: dict[str, str] | None = None,
+    peer_dependencies: dict[str, str] | None = None,
+    peer_dependencies_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "version": version,
+        "resolved": f"https://registry.npmjs.org/{name}/-/{name.rsplit('/', 1)[-1]}-{version}.tgz",
+        "integrity": INTEGRITY,
+    }
+    if dependencies is not None:
+        record["dependencies"] = dependencies
+    if optional_dependencies is not None:
+        record["optionalDependencies"] = optional_dependencies
+    if peer_dependencies is not None:
+        record["peerDependencies"] = peer_dependencies
+    if peer_dependencies_meta is not None:
+        record["peerDependenciesMeta"] = peer_dependencies_meta
+    return record
+
+
+def test_npm_lock_checks_nested_transitive_dependency_edges() -> None:
+    document = json.loads(package_lock().decode())
+    document["packages"]["node_modules/left-pad"]["dependencies"] = {"repeat": "~1.0.0"}
+    document["packages"]["node_modules/left-pad/node_modules/repeat"] = package_record(
+        "repeat", "1.0.4"
+    )
+
+    lock = parse(json.dumps(document).encode())
+
+    assert [package.package_path for package in lock.packages] == [
+        "node_modules/left-pad",
+        "node_modules/left-pad/node_modules/repeat",
+    ]
+
+
+def test_npm_lock_rejects_missing_mismatched_and_orphaned_transitive_packages() -> None:
+    missing = json.loads(package_lock().decode())
+    missing["packages"]["node_modules/left-pad"]["dependencies"] = {"repeat": "^1.0.0"}
+    with pytest.raises(ValueError, match="is missing"):
+        parse(json.dumps(missing).encode())
+
+    mismatched = json.loads(package_lock().decode())
+    mismatched["packages"]["node_modules/left-pad"]["dependencies"] = {"repeat": "^1.0.0"}
+    mismatched["packages"]["node_modules/left-pad/node_modules/repeat"] = package_record(
+        "repeat", "2.0.0"
+    )
+    with pytest.raises(ValueError, match="does not satisfy"):
+        parse(json.dumps(mismatched).encode())
+
+    orphaned = json.loads(package_lock().decode())
+    orphaned["packages"]["node_modules/unreachable"] = package_record("unreachable", "1.0.0")
+    with pytest.raises(ValueError, match="outside the dependency graph"):
+        parse(json.dumps(orphaned).encode())
+
+
+def test_npm_lock_handles_optional_and_peer_dependency_edges() -> None:
+    optional = json.loads(package_lock().decode())
+    optional["packages"]["node_modules/left-pad"]["optionalDependencies"] = {
+        "platform-extra": "^1.0.0"
+    }
+    parse(json.dumps(optional).encode())
+
+    peer = json.loads(package_lock().decode())
+    peer["packages"][""]["dependencies"]["repeat"] = "^1.0.0"
+    peer["packages"]["node_modules/repeat"] = package_record("repeat", "1.0.2")
+    peer["packages"]["node_modules/left-pad"]["peerDependencies"] = {"repeat": "~1.0.0"}
+    parse(json.dumps(peer).encode())
+
+    optional_peer = json.loads(package_lock().decode())
+    optional_peer["packages"]["node_modules/left-pad"]["peerDependencies"] = {
+        "platform-peer": "^1.0.0"
+    }
+    optional_peer["packages"]["node_modules/left-pad"]["peerDependenciesMeta"] = {
+        "platform-peer": {"optional": True}
+    }
+    parse(json.dumps(optional_peer).encode())
 
 
 def make_tarball(

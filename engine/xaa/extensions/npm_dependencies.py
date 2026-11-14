@@ -11,15 +11,17 @@ import json
 import re
 import tarfile
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, Self, cast
 from urllib.parse import unquote, urlsplit
 
+import nodesemver
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_LOCKFILE_BYTES = 2 * 1024 * 1024
 MAX_PACKAGE_MANIFEST_BYTES = 1024 * 1024
 MAX_LOCKED_PACKAGES = 512
+MAX_NPM_DEPENDENCY_EDGES = 20_000
 MAX_PACKAGE_PATH_BYTES = 1024
 MAX_NPM_TARBALL_BYTES = 64 * 1024 * 1024
 MAX_NPM_TARBALL_MEMBERS = 20_000
@@ -37,6 +39,10 @@ _NPM_SPEC = re.compile(
     r"^(?P<name>(?:@[a-z0-9][a-z0-9._-]{0,127}/)?[a-z0-9][a-z0-9._-]{0,127})"
     r"(?:@(?P<range>[A-Za-z0-9.*+^~<>=| -]{1,128}))?$"
 )
+_NODE_SEMVER: Any = cast(Any, nodesemver)
+_NODE_SEMVER_VALID = cast(Callable[[str, bool], str | None], _NODE_SEMVER.valid)
+_NODE_SEMVER_VALID_RANGE = cast(Callable[[str, bool], str | None], _NODE_SEMVER.valid_range)
+_NODE_SEMVER_SATISFIES = cast(Callable[[str, str], bool], _NODE_SEMVER.satisfies)
 
 
 class NpmRootDependency(BaseModel):
@@ -254,6 +260,7 @@ def parse_npm_package_lock(
                 integrity=integrity,
             )
         )
+    _validate_npm_dependency_graph(root, raw_packages, root_dependencies, packages)
     return ProcedureNpmDependencyLock(
         schema_version=1,
         skill_id=skill_id,
@@ -268,6 +275,150 @@ def parse_npm_package_lock(
         root_dependencies=tuple(root_dependencies),
         packages=tuple(packages),
     )
+
+
+def _validate_npm_dependency_graph(
+    root: dict[str, Any],
+    raw_packages: dict[str, Any],
+    root_dependencies: list[NpmRootDependency],
+    packages: list[NpmLockedPackage],
+) -> None:
+    """Require every lock edge to resolve to a locked version satisfying npm SemVer."""
+    package_by_path = {package.package_path: package for package in packages}
+    reachable: set[str] = set()
+    edges_seen = 0
+    pending: list[tuple[str, dict[str, Any], bool]] = [("", root, True)]
+    while pending:
+        parent_path, record, is_root = pending.pop()
+        if is_root:
+            dependencies = _root_dependency_edges(root_dependencies, record)
+        else:
+            dependencies = _dependency_edges(record)
+        for name, version_range, optional in dependencies:
+            edges_seen += 1
+            if edges_seen > MAX_NPM_DEPENDENCY_EDGES:
+                raise ValueError("npm package-lock.json exceeds the dependency edge limit.")
+            resolved_path = _resolve_npm_dependency_path(parent_path, name, package_by_path)
+            if resolved_path is None:
+                if optional:
+                    continue
+                raise ValueError(f"npm lock dependency {name!r} is missing from the package graph.")
+            locked = package_by_path[resolved_path]
+            _require_npm_version_satisfies(locked.version, version_range, name)
+            if resolved_path in reachable:
+                continue
+            reachable.add(resolved_path)
+            nested_record = raw_packages[resolved_path]
+            if not isinstance(nested_record, dict):
+                raise TypeError("npm package-lock.json contains an invalid package entry.")
+            pending.append((resolved_path, cast(dict[str, Any], nested_record), False))
+    if reachable != set(package_by_path):
+        raise ValueError("npm package-lock.json contains packages outside the dependency graph.")
+
+
+def _dependency_edges(record: dict[str, Any]) -> list[tuple[str, str, bool]]:
+    declarations: dict[str, tuple[str, bool]] = {}
+    for field, optional in (("dependencies", False), ("optionalDependencies", True)):
+        values = record.get(field, {})
+        if not isinstance(values, dict):
+            raise TypeError(f"npm package-lock.json {field} are invalid.")
+        for name, version_range in cast(dict[str, Any], values).items():
+            if not isinstance(version_range, str):
+                raise TypeError("npm package-lock.json dependency edge is malformed.")
+            declarations[name] = (version_range or "*", optional)
+    edges = [(name, range_, optional) for name, (range_, optional) in declarations.items()]
+
+    peer_dependencies = record.get("peerDependencies", {})
+    peer_metadata = record.get("peerDependenciesMeta", {})
+    if not isinstance(peer_dependencies, dict) or not isinstance(peer_metadata, dict):
+        raise TypeError("npm package-lock.json peer dependency metadata is invalid.")
+    peer_values = cast(dict[str, Any], peer_dependencies)
+    metadata_values = cast(dict[str, Any], peer_metadata)
+    if set(metadata_values) - set(peer_values):
+        raise ValueError("npm package-lock.json has metadata for an undeclared peer dependency.")
+    for name, version_range in peer_values.items():
+        if not isinstance(version_range, str):
+            raise TypeError("npm package-lock.json peer dependency edge is malformed.")
+        metadata = metadata_values.get(name, {})
+        if not isinstance(metadata, dict):
+            raise TypeError("npm package-lock.json peer metadata entry is invalid.")
+        metadata = cast(dict[str, Any], metadata)
+        is_optional: object = metadata.get("optional", False)
+        if not isinstance(is_optional, bool):
+            raise TypeError("npm package-lock.json peer optional flag is invalid.")
+        edges.append((name, version_range or "*", is_optional))
+    return edges
+
+
+def _root_dependency_edges(
+    root_dependencies: list[NpmRootDependency], root_record: dict[str, Any]
+) -> list[tuple[str, str, bool]]:
+    required = [
+        (item.name, item.version_range, False)
+        for item in root_dependencies
+        if item.kind not in {"optionalDependencies", "peerDependencies"}
+    ]
+    optional_overrides: dict[str, tuple[str, bool]] = {}
+    for dependency in root_dependencies:
+        if dependency.kind == "optionalDependencies":
+            optional_overrides[dependency.name] = (dependency.version_range, True)
+
+    peer_metadata = root_record.get("peerDependenciesMeta", {})
+    if not isinstance(peer_metadata, dict):
+        raise TypeError("npm package-lock.json root peer metadata is invalid.")
+    peer_values = cast(dict[str, Any], peer_metadata)
+    peer_names = {item.name for item in root_dependencies if item.kind == "peerDependencies"}
+    if set(peer_values) - peer_names:
+        raise ValueError("npm package-lock.json root has metadata for an undeclared peer.")
+    for dependency in root_dependencies:
+        if dependency.kind != "peerDependencies":
+            continue
+        metadata = peer_values.get(dependency.name, {})
+        if not isinstance(metadata, dict):
+            raise TypeError("npm package-lock.json root peer metadata entry is invalid.")
+        metadata = cast(dict[str, Any], metadata)
+        peer_is_optional: object = metadata.get("optional", False)
+        if not isinstance(peer_is_optional, bool):
+            raise TypeError("npm package-lock.json root peer optional flag is invalid.")
+        required.append((dependency.name, dependency.version_range, peer_is_optional))
+    required = [edge for edge in required if edge[0] not in optional_overrides]
+    return required + [
+        (name, range_, is_optional) for name, (range_, is_optional) in optional_overrides.items()
+    ]
+
+
+def _resolve_npm_dependency_path(
+    parent_path: str, name: str, package_by_path: dict[str, NpmLockedPackage]
+) -> str | None:
+    if len(name) > 256 or _NPM_NAME.fullmatch(name) is None:
+        raise ValueError("npm package-lock.json dependency name is invalid.")
+    ancestors: list[str] = []
+    current = parent_path
+    while current:
+        ancestors.append(current)
+        current, separator, _ = current.rpartition("/node_modules/")
+        if not separator:
+            break
+    for ancestor in (*ancestors, ""):
+        candidate = f"{ancestor}/node_modules/{name}" if ancestor else f"node_modules/{name}"
+        if candidate in package_by_path:
+            return candidate
+    return None
+
+
+def _require_npm_version_satisfies(version: str, version_range: str, package_name: str) -> None:
+    if _NODE_SEMVER_VALID(version, False) is None:
+        raise ValueError(f"npm package {package_name!r} has an invalid semantic version.")
+    if (
+        len(version_range) > 128
+        or not version_range.strip()
+        or _RANGE.fullmatch(version_range) is None
+    ):
+        raise ValueError(f"npm package {package_name!r} has an invalid semantic version range.")
+    if _NODE_SEMVER_VALID_RANGE(version_range, False) is None:
+        raise ValueError(f"npm package {package_name!r} has an invalid semantic version range.")
+    if not _NODE_SEMVER_SATISFIES(version, version_range):
+        raise ValueError(f"locked npm package {package_name!r} does not satisfy {version_range!r}.")
 
 
 def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) -> str:

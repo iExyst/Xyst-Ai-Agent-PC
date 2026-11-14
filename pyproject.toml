@@ -21,6 +21,7 @@ dependencies = [
     "discord-py>=2.6,<3",
     "uritemplate>=4.2,<5",
     "packaging>=26.3,<27",
+    "node-semver==0.9.1",
 ]
 
 [project.scripts]

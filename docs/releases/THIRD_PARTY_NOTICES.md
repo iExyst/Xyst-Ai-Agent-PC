@@ -1,6 +1,6 @@
 # Provisional third-party notices
 
-Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies and 2026-11-09 with 23 source-hash-grouped texts covering the five omitted locked Python packages and their vendored dependencies plus the `uritemplate` direct dependency. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
+Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies, 2026-11-09 with 23 source-hash-grouped texts covering the five omitted locked Python packages and their vendored dependencies plus the `uritemplate` direct dependency, and 2026-11-14 with the pinned `node-semver` Python port license. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
 
 On 2026-11-12, removed 60 scanner-generated `Additional notice: UNKNOWN` placeholders because they contained no source notice text, and removed two obsolete Python package sections for `httpx-sse` and `pydantic-settings` after the pinned MCP SDK migration. The coverage check rejects a reintroduced placeholder. This cleanup does not complete license or copyright review.
 
@@ -8342,6 +8342,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+
 
 ### 107. Rust/Cargo (Windows target) — BSD-3-Clause/MIT
 
@@ -29293,4 +29295,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+### 294. Python (locked runtime dependency) — MIT
+
+**Packages:** `node-semver@0.9.1`
+
+The license text is from `node_semver-0.9.1.dist-info/licenses/LICENSE` in the pinned wheel. Its SHA-256 is recorded in `uv.lock` as `47669dc0f7e104cc482f69fda53c04fbe34ce9b7c9d6990e43c99a028d1628bd`. PyPI reports no provenance attestation for this release file.
+
+```text
+MIT License
+
+Copyright (c) 2016 podhmo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```

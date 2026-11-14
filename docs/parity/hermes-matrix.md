@@ -1,8 +1,12 @@
 # Hermes capability reference matrix
 
+## Validate npm SemVer ranges and locked dependency graph (2026-11-14)
+
+The authenticated package-lock v3 inspection now evaluates root and transitive dependency ranges using pinned `node-semver==0.9.1`, verifies nested package resolution, and rejects missing required edges and orphan package records. It accounts for optional dependencies and optional peer metadata, with a 20,000-edge limit. Focused npm coverage passes (35 tests); Ruff and strict Pyright pass. The Python port is MIT-licensed and hash-pinned in `uv.lock`; PyPI reports no provenance attestation for this release. Tarball acquisition, persistent review, offline installation, and Node environment execution remain open, so Hermes npm dependency parity stays partial. See [`procedure-node-dependencies.md`](../architecture/procedure-node-dependencies.md) and the [npm SemVer range reference](https://github.com/npm/node-semver#ranges).
+
 ## Inspect imported npm package-lock.json v3 resources (2026-11-14)
 
-An authenticated endpoint and desktop preview inspect linked `package.json` and package-lock v3 resources against the imported procedure identity and a live WSL Node/npm readiness check. Root declarations, resource hashes, paths, registry host and SHA-512 syntax are validated. The preview lists versions and integrity values. It does not fetch or hash tarballs, verify semver satisfaction or transitive closure, persist approval, install an environment, or make one available to procedure execution. npm dependency parity remains partial. See [`procedure-node-dependencies.md`](../architecture/procedure-node-dependencies.md). The combined lock/plugin/API suites pass (53 passed, 1 skipped), the Skills browser flow passes (1), and Ruff, Pyright, TypeScript and contract checks pass. No registry access or inference was used.
+An authenticated endpoint and desktop preview inspect linked `package.json` and package-lock v3 resources against the imported procedure identity and a live WSL Node/npm readiness check. Root declarations, resource hashes, paths, registry host, SHA-512 syntax, npm SemVer ranges and dependency graph closure are validated. The preview lists versions and integrity values. It does not fetch or hash tarballs, persist approval, install an environment, or make one available to procedure execution. npm dependency parity remains partial. See [`procedure-node-dependencies.md`](../architecture/procedure-node-dependencies.md). The combined lock/plugin/API suites pass (53 passed, 1 skipped), the Skills browser flow passes (1), and Ruff, Pyright, TypeScript and contract checks pass. No npm registry access or inference was used.
 
 ## Check the Node.js runtime for imported procedures (2026-11-14)
 
