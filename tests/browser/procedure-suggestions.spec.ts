@@ -19,6 +19,7 @@ test('suggests an active procedure but waits for explicit selection',async({page
     if(path==='/skills'&&request.method()==='GET')return route.fulfill({json:[active,candidate],headers});
     if(path===`/skills/${active.id}/versions/2`)return route.fulfill({json:versions[0],headers});
     if(path===`/skills/${active.id}/lifecycle`)return route.fulfill({json:[],headers});
+    if(path.endsWith('/python-dependency-locks')||path.endsWith('/npm-dependency-locks'))return route.fulfill({json:{locks:[]},headers});
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     return route.fulfill({json:{status:'ok'},headers});
   });
@@ -38,7 +39,7 @@ test('suggests an active procedure but waits for explicit selection',async({page
   await navigateMainSection(page,'New objective');
   const selected=page.getByRole('region',{name:'Selected procedure',exact:true});
   await expect(selected).toContainText('Active procedure: Summarize Test Reports · version 2');
-  await expect(selected).toContainText("The selected procedure's Python and Bash resources can run only in the restricted WSL command sandbox after you grant command access for this run.");
+  await expect(selected).toContainText("The selected procedure's Python and Bash resources, plus Node.js .js/.mjs/.cjs resources, can run only in the restricted WSL command sandbox after you grant command access for this run.");
   await expect(selected.getByText('workspace.command',{exact:true})).toBeVisible();
   expect(runSubmissions).toBe(0);
 });

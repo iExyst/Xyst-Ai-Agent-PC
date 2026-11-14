@@ -15,7 +15,7 @@ test('sandbox selection checks controls without granting a run, including unavai
     if(path==='/memory'||path==='/skills')return route.fulfill({json:[],headers});
     if(path==='/execution/distributions')return route.fulfill({json:{state:'available',distributions:[{name:'Ubuntu-24.04',supported_by_profile:true},{name:'Custom Linux',supported_by_profile:false}]},headers});
     if(path==='/execution/readiness'){
-      checks++;expect(req.postDataJSON()).toEqual({distribution:'Ubuntu-24.04'});
+      checks++;expect(req.postDataJSON()).toEqual({backend:'wsl-bubblewrap-v1',distribution:'Ubuntu-24.04'});
       return route.fulfill({json:{backend:'wsl-bubblewrap-v1',distribution:'Ubuntu-24.04',profile_sha256:'a'.repeat(64),state:'ready',checked_at:new Date().toISOString(),expires_at:new Date(Date.now()+60000).toISOString(),checks:['cleanup_confirmed'],policy:{network:'denied',workspace_changes:'private_copy_only',max_seconds:30,memory_bytes:134217728,max_active_executions_per_distribution:2},error_code:null},headers});
     }
     return route.fulfill({status:404,headers});

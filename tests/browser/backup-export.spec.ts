@@ -39,11 +39,12 @@ test('saves a portable verified backup through the desktop save dialog',async({p
   await page.goto('/');
   await expect(page.getByText('Engine ready',{exact:true})).toBeVisible();
   await navigateMainSection(page,'Settings');
+  const backup=page.locator('section').filter({has:page.getByRole('heading',{name:'Portable backup',exact:true})});
   await page.getByRole('button',{name:'Save verified backup'}).click();
-  await expect(page.getByRole('status')).toHaveText(`Verified backup saved to ${exportedPath}`);
+  await expect(backup.getByRole('status').filter({hasText:'Verified backup saved to'})).toHaveText(`Verified backup saved to ${exportedPath}`);
   expect(await page.evaluate(()=>(window as unknown as {__backupCommands:string[]}).__backupCommands)).toContain('export_backup_bundle');
   await page.getByRole('button',{name:'Restore backup into a new profile'}).click();
-  await expect(page.getByRole('status').nth(1)).toContainText('Backup verified and restored into a separate profile');
+  await expect(backup.getByRole('status').filter({hasText:'Backup verified and restored into a separate profile'})).toBeVisible();
   await page.getByLabel('Restart X.A.A. and use this restored profile').check();
   await page.getByRole('button',{name:'Switch to restored profile and restart'}).click();
   expect(await page.evaluate(()=>(window as unknown as {__backupCommands:string[]}).__backupCommands)).toContain('activate_restored_profile');
