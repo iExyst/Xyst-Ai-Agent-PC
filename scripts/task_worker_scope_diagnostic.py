@@ -69,7 +69,7 @@ async def diagnose(engine: Path) -> None:
             raw = await request_process(
                 [str(engine), "--tool-worker"],
                 json.dumps(payload).encode(),
-                timeout=15,
+                timeout=30,
                 output_limit=65536,
             )
             return WorkerResponse.model_validate_json(raw)
