@@ -1,6 +1,7 @@
 """Immutable user-authored procedure candidates; text never grants execution authority."""
 
 import base64
+import binascii
 import builtins
 import hashlib
 import json
@@ -15,6 +16,17 @@ from uuid import uuid4
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from xaa.extensions.npm_dependencies import (
+    NpmVerifiedTarball,
+    ProcedureNpmDependencyLock,
+    parse_npm_package_lock,
+    verify_npm_package_manifest,
+    verify_npm_tarball,
+)
+from xaa.extensions.npm_tarball_storage import (
+    NpmTarballStorageError,
+    ProcedureNpmTarballStore,
+)
 from xaa.extensions.procedure_dependencies import ProcedurePythonDependencyLock
 from xaa.extensions.wheelhouse_storage import ProcedureWheelhouseStore, WheelhouseStorageError
 from xaa.storage.runs import RunStore, utc_now
@@ -583,6 +595,7 @@ class SkillStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
         self.wheelhouses = ProcedureWheelhouseStore(runs.path.parent / "procedure-wheelhouses")
+        self.npm_tarballs = ProcedureNpmTarballStore(runs.path.parent / "procedure-npm-tarballs")
 
     @staticmethod
     def _insert_version(
@@ -1441,6 +1454,220 @@ class SkillStore:
             ).fetchone()
         assert row is not None
         return self._python_dependency_lock_record(row)
+
+    def save_npm_dependency_lock(self, lock: ProcedureNpmDependencyLock) -> dict[str, Any]:
+        """Save a lock only when its source, linked files, and declaration match exactly."""
+        manifest = self.version(lock.skill_id, lock.skill_version)
+        evidence_value = manifest.get("evaluation_evidence")
+        evidence = cast(dict[str, Any], evidence_value) if isinstance(evidence_value, dict) else {}
+        source_value = evidence.get("source")
+        source = cast(dict[str, Any], source_value) if isinstance(source_value, dict) else {}
+        if (
+            evidence.get("provenance") not in {"agent_plugins_v1", "hermes_skill"}
+            or source.get("content_sha256") != lock.source_sha256
+        ):
+            raise SkillConflict("The npm lock must match the imported procedure source digest.")
+        declarations_value = source.get("declared_requirements")
+        try:
+            declarations = (
+                json.loads(declarations_value)
+                if isinstance(declarations_value, str) and len(declarations_value) <= 8192
+                else None
+            )
+        except json.JSONDecodeError:
+            declarations = None
+        if not isinstance(declarations, dict):
+            raise SkillConflict("The imported npm dependency declarations are invalid.")
+        declared = cast(dict[str, Any], declarations)
+        raw_requirements_value: object = declared.get("npm_dependency_specs", [])
+        if (
+            not isinstance(raw_requirements_value, list)
+            or len(cast(list[object], raw_requirements_value)) > 128
+            or any(not isinstance(item, str) for item in cast(list[object], raw_requirements_value))
+            or declared.get("dependency_names_truncated") is True
+        ):
+            raise SkillConflict("The imported npm dependency declarations are incomplete.")
+        raw_requirements = cast(list[str], raw_requirements_value)
+        if tuple(raw_requirements) != lock.requirements:
+            raise SkillConflict("The npm lock requirements do not match imported declarations.")
+
+        asset_by_name: dict[str, tuple[bytes, str]] = {}
+        raw_assets: object = manifest.get("assets")
+        for raw_asset in cast(list[object], raw_assets) if isinstance(raw_assets, list) else []:
+            if not isinstance(raw_asset, dict):
+                continue
+            asset = cast(dict[str, object], raw_asset)
+            path_value = asset.get("path")
+            if not isinstance(path_value, str):
+                continue
+            basename = path_value.rsplit("/", 1)[-1]
+            if basename not in {"package.json", "package-lock.json"}:
+                continue
+            encoded, asset_hash = asset.get("content_base64"), asset.get("sha256")
+            if not isinstance(encoded, str) or not isinstance(asset_hash, str):
+                raise SkillConflict("Linked npm resources are invalid.")
+            try:
+                content = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise SkillConflict("Linked npm resources are invalid.") from exc
+            if hashlib.sha256(content).hexdigest() != asset_hash or basename in asset_by_name:
+                raise SkillConflict("Linked npm resource integrity failed or names are ambiguous.")
+            asset_by_name[basename] = (content, asset_hash)
+        if set(asset_by_name) != {"package.json", "package-lock.json"}:
+            raise SkillConflict("The imported procedure must link one package manifest and lock.")
+        package_manifest, manifest_hash = asset_by_name["package.json"]
+        package_lock, _lock_hash = asset_by_name["package-lock.json"]
+        if (
+            lock.package_manifest_sha256 != manifest_hash
+            or lock.lockfile_sha256 != hashlib.sha256(package_lock).hexdigest()
+        ):
+            raise SkillConflict("The npm lock hashes do not match the linked package resources.")
+        try:
+            parsed = parse_npm_package_lock(
+                package_lock,
+                skill_id=lock.skill_id,
+                skill_version=lock.skill_version,
+                source_sha256=lock.source_sha256,
+                package_manifest_sha256=manifest_hash,
+                distribution=lock.distribution,
+                node_version=lock.node_version,
+                npm_version=lock.npm_version,
+                requirements=lock.requirements,
+            )
+            verify_npm_package_manifest(package_manifest, parsed)
+        except (TypeError, ValueError) as exc:
+            raise SkillConflict("The linked npm manifest and lock could not be validated.") from exc
+        if parsed != lock:
+            raise SkillConflict("The submitted npm lock differs from the linked lock resources.")
+
+        digest = lock.environment_digest()
+        lock_json = lock.canonical_json()
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+            if existing is not None:
+                if existing["lock_json"] != lock_json:
+                    raise SkillConflict("The npm dependency identity already exists.")
+                return self._npm_dependency_lock_record(existing)
+            connection.execute(
+                "INSERT INTO skill_npm_dependency_locks "
+                "(skill_id,skill_version,environment_digest,source_sha256,lock_json,decision,created_at) "
+                "VALUES (?,?,?,?,?,'pending_review',?)",
+                (
+                    lock.skill_id,
+                    lock.skill_version,
+                    digest,
+                    lock.source_sha256,
+                    lock_json,
+                    utc_now(),
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+        assert row is not None
+        return self._npm_dependency_lock_record(row)
+
+    def _npm_dependency_lock_record(self, row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        lock = ProcedureNpmDependencyLock.model_validate_json(value.pop("lock_json"), strict=True)
+        try:
+            paths = self.npm_tarballs.verify(lock)
+        except NpmTarballStorageError:
+            value["tarballs_present"] = False
+            value["verified_tarballs"] = []
+        else:
+            value["tarballs_present"] = True
+            value["verified_tarballs"] = [
+                verify_npm_tarball(package, paths[package.package_path].read_bytes()).model_dump(
+                    mode="json"
+                )
+                for package in lock.packages
+            ]
+        value["lock"] = lock.model_dump(mode="json")
+        return value
+
+    def npm_dependency_locks(self, skill_id: str, version: int) -> list[dict[str, Any]]:
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? ORDER BY created_at,environment_digest",
+                (skill_id, version),
+            ).fetchall()
+        return [self._npm_dependency_lock_record(row) for row in rows]
+
+    def store_npm_dependency_tarballs(
+        self,
+        lock: ProcedureNpmDependencyLock,
+        artifacts: dict[str, Path],
+    ) -> dict[str, NpmVerifiedTarball]:
+        """Persist verified tarballs only for the exact pending lock saved for review."""
+        with self.runs.connection() as connection:
+            row = connection.execute(
+                "SELECT lock_json,decision FROM skill_npm_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, lock.environment_digest()),
+            ).fetchone()
+        if row is None or row["lock_json"] != lock.canonical_json():
+            raise SkillConflict("Save the exact npm lock before acquiring its tarballs.")
+        if row["decision"] != "pending_review":
+            raise SkillConflict("A final npm lock decision cannot accept new tarball bytes.")
+        try:
+            return self.npm_tarballs.store_files(lock, artifacts)
+        except NpmTarballStorageError as exc:
+            raise SkillConflict(
+                "npm tarballs failed lock verification or durable storage."
+            ) from exc
+
+    def review_npm_dependency_lock(
+        self,
+        skill_id: str,
+        version: int,
+        environment_digest: str,
+        decision: Literal["approved", "rejected"],
+    ) -> dict[str, Any]:
+        if not re.fullmatch(r"[a-f0-9]{64}", environment_digest):
+            raise ValueError("npm dependency identity is invalid.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+            if row is None:
+                raise SkillConflict("The npm dependency lock was not found.")
+            if decision == "approved":
+                lock = ProcedureNpmDependencyLock.model_validate_json(row["lock_json"], strict=True)
+                try:
+                    self.npm_tarballs.verify(lock)
+                except NpmTarballStorageError as exc:
+                    raise SkillConflict(
+                        "Acquire and verify exact npm tarballs before approving this lock."
+                    ) from exc
+            if row["decision"] == decision:
+                return self._npm_dependency_lock_record(row)
+            if row["decision"] != "pending_review":
+                raise SkillConflict("The npm dependency lock already has a final owner decision.")
+            connection.execute(
+                "UPDATE skill_npm_dependency_locks SET decision=?,reviewed_at=? "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=? "
+                "AND decision='pending_review'",
+                (decision, utc_now(), skill_id, version, environment_digest),
+            )
+            updated = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+        assert updated is not None
+        return self._npm_dependency_lock_record(updated)
 
     def _python_dependency_lock_record(self, row: sqlite3.Row) -> dict[str, Any]:
         value = dict(row)

@@ -12,7 +12,7 @@ import re
 import tarfile
 import uuid
 from collections.abc import Callable, Iterable
-from typing import Any, Self, cast
+from typing import Any, Literal, Self, cast
 from urllib.parse import unquote, urlsplit
 
 import nodesemver
@@ -24,6 +24,7 @@ MAX_LOCKED_PACKAGES = 512
 MAX_NPM_DEPENDENCY_EDGES = 20_000
 MAX_PACKAGE_PATH_BYTES = 1024
 MAX_NPM_TARBALL_BYTES = 64 * 1024 * 1024
+MAX_NPM_TARBALL_TOTAL_BYTES = 256 * 1024 * 1024
 MAX_NPM_TARBALL_MEMBERS = 20_000
 MAX_NPM_TARBALL_MEMBER_BYTES = 64 * 1024 * 1024
 MAX_NPM_TARBALL_EXPANDED_BYTES = 256 * 1024 * 1024
@@ -115,6 +116,21 @@ class ProcedureNpmDependencyLock(BaseModel):
     root_dependencies: tuple[NpmRootDependency, ...] = Field(max_length=512)
     packages: tuple[NpmLockedPackage, ...] = Field(max_length=MAX_LOCKED_PACKAGES)
 
+    @field_validator("requirements", mode="before")
+    @classmethod
+    def freeze_requirements(cls, values: object) -> object:
+        return tuple(cast(list[str], values)) if isinstance(values, list) else values
+
+    @field_validator("root_dependencies", mode="before")
+    @classmethod
+    def freeze_root_dependencies(cls, values: object) -> object:
+        return tuple(cast(list[NpmRootDependency], values)) if isinstance(values, list) else values
+
+    @field_validator("packages", mode="before")
+    @classmethod
+    def freeze_packages(cls, values: object) -> object:
+        return tuple(cast(list[NpmLockedPackage], values)) if isinstance(values, list) else values
+
     @model_validator(mode="after")
     def validate_lock(self) -> Self:
         try:
@@ -146,10 +162,11 @@ class ProcedureNpmDependencyLock(BaseModel):
         return self
 
     def environment_digest(self) -> str:
-        payload = self.model_dump(mode="json")
-        return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
+
+    def canonical_json(self) -> str:
+        """Serialize the exact proposal with stable JSON object-key ordering."""
+        return json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
 class NpmVerifiedTarball(BaseModel):
@@ -168,6 +185,60 @@ class NpmVerifiedTarball(BaseModel):
     @classmethod
     def freeze_lifecycle_scripts(cls, values: object) -> object:
         return tuple(cast(list[str], values)) if isinstance(values, list) else values
+
+
+class NpmDependencyLockRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    skill_id: str
+    skill_version: int = Field(ge=1, le=128)
+    environment_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    lock: ProcedureNpmDependencyLock
+    decision: Literal["pending_review", "approved", "rejected"]
+    tarballs_present: bool
+    verified_tarballs: tuple[NpmVerifiedTarball, ...] = Field(
+        default=(), max_length=MAX_LOCKED_PACKAGES
+    )
+    created_at: str
+    reviewed_at: str | None
+
+    @field_validator("verified_tarballs", mode="before")
+    @classmethod
+    def freeze_verified_tarballs(cls, values: object) -> object:
+        return tuple(cast(list[NpmVerifiedTarball], values)) if isinstance(values, list) else values
+
+    @model_validator(mode="after")
+    def validate_record_identity(self) -> Self:
+        if (
+            self.skill_id != self.lock.skill_id
+            or self.skill_version != self.lock.skill_version
+            or self.source_sha256 != self.lock.source_sha256
+            or self.environment_digest != self.lock.environment_digest()
+        ):
+            raise ValueError("npm lock record identity does not match its proposal.")
+        if self.tarballs_present and (
+            len(self.verified_tarballs) != len(self.lock.packages)
+            or tuple(item.package_path for item in self.verified_tarballs)
+            != tuple(item.package_path for item in self.lock.packages)
+        ):
+            raise ValueError("npm lock record verification does not cover its exact package set.")
+        if not self.tarballs_present and self.verified_tarballs:
+            raise ValueError("npm lock record cannot list uncommitted tarball verifications.")
+        return self
+
+
+class NpmDependencyLockList(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    locks: tuple[NpmDependencyLockRecord, ...]
+
+    @field_validator("locks", mode="before")
+    @classmethod
+    def freeze_locks(cls, values: object) -> object:
+        return (
+            tuple(cast(list[NpmDependencyLockRecord], values))
+            if isinstance(values, list)
+            else values
+        )
 
 
 class _BoundedTarReader:

@@ -80,9 +80,16 @@ from xaa.extensions.agent_plugins import (
     remove_managed_plugin_data,
 )
 from xaa.extensions.npm_dependencies import (
+    NpmDependencyLockList,
+    NpmDependencyLockRecord,
+    NpmVerifiedTarball,
     ProcedureNpmDependencyLock,
     parse_npm_package_lock,
     verify_npm_package_manifest,
+)
+from xaa.extensions.npm_tarballs import (
+    NpmAcquisitionError,
+    acquire_npm_tarballs_in_appcontainer,
 )
 from xaa.extensions.procedure_dependencies import (
     ProcedurePythonDependencyLock,
@@ -1746,6 +1753,120 @@ def create_app(
                 detail="The linked npm package manifest and lockfile could not be validated.",
             ) from None
         return proposal
+
+    @app.put(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks",
+        response_model=NpmDependencyLockRecord,
+    )
+    async def save_skill_npm_dependency_lock(
+        skill_id: str,
+        request: ProcedureNpmDependencyLock,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if request.skill_id != skill_id or request.skill_version != version:
+            raise HTTPException(
+                status_code=400,
+                detail="npm lock identity must match the selected procedure version.",
+            )
+        readiness = await execution_readiness.check_node_runtime(
+            SkillNodeRuntimeReadinessRequest(distribution=request.distribution)
+        )
+        if (
+            readiness.state != "ready"
+            or not readiness.npm_available
+            or readiness.node_version != request.node_version
+            or readiness.npm_version != request.npm_version
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="The selected WSL Node/npm runtime changed; inspect the npm lock again.",
+            )
+        try:
+            return skill_store.save_npm_dependency_lock(request)
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks",
+        response_model=NpmDependencyLockList,
+    )
+    def list_skill_npm_dependency_locks(
+        skill_id: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> NpmDependencyLockList:
+        try:
+            skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        return NpmDependencyLockList(
+            locks=tuple(
+                NpmDependencyLockRecord.model_validate(record, strict=True)
+                for record in skill_store.npm_dependency_locks(skill_id, version)
+            )
+        )
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/acquire",
+        response_model=NpmDependencyLockRecord,
+    )
+    async def acquire_skill_npm_dependency_tarballs(
+        skill_id: str,
+        environment_digest: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        records = skill_store.npm_dependency_locks(skill_id, version)
+        record = next(
+            (item for item in records if item["environment_digest"] == environment_digest), None
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="npm dependency lock not found.")
+        if record["decision"] != "pending_review":
+            raise HTTPException(
+                status_code=409, detail="The npm dependency lock already has a final decision."
+            )
+        if record["tarballs_present"]:
+            return record
+        lock = ProcedureNpmDependencyLock.model_validate(record["lock"], strict=True)
+        try:
+
+            async def store_verified_files(
+                artifacts: dict[str, Path], _reports: dict[str, NpmVerifiedTarball]
+            ) -> None:
+                skill_store.store_npm_dependency_tarballs(lock, artifacts)
+
+            await acquire_npm_tarballs_in_appcontainer(lock, on_verified_files=store_verified_files)
+        except NpmAcquisitionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return next(
+            item
+            for item in skill_store.npm_dependency_locks(skill_id, version)
+            if item["environment_digest"] == environment_digest
+        )
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/review",
+        response_model=NpmDependencyLockRecord,
+    )
+    def review_skill_npm_dependency_lock(
+        skill_id: str,
+        environment_digest: str,
+        request: SkillPythonDependencyReview,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return skill_store.review_npm_dependency_lock(
+                skill_id, version, environment_digest, request.decision
+            )
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks/resolve",

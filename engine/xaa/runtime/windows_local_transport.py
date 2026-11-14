@@ -89,6 +89,8 @@ def _profile_fingerprint_record() -> dict[str, object]:
         Path(__file__).resolve().parents[1] / "extensions" / "pypi_resolver_worker.py",
         Path(__file__).resolve().parents[1] / "extensions" / "pypi_wheels.py",
         Path(__file__).resolve().parents[1] / "extensions" / "pypi_wheel_worker.py",
+        Path(__file__).resolve().parents[1] / "extensions" / "npm_tarballs.py",
+        Path(__file__).resolve().parents[1] / "extensions" / "npm_tarball_worker.py",
     )
     source_hashes = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()

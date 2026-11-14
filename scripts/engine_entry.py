@@ -22,6 +22,8 @@ if __name__ == "__main__":
         from xaa.extensions.pypi_resolver_worker import main
     elif sys.argv[1:] == ["--pypi-wheel-worker"]:
         from xaa.extensions.pypi_wheel_worker import main
+    elif sys.argv[1:] == ["--npm-tarball-worker"]:
+        from xaa.extensions.npm_tarball_worker import main
     elif sys.argv[1:] == ["--mcp-appcontainer-shim"]:
         from xaa.runtime.mcp_appcontainer import run_stdio_appcontainer_shim
 

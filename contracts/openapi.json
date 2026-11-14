@@ -2775,6 +2775,101 @@
         "title": "ModelRequest",
         "type": "object"
       },
+      "NpmDependencyLockList": {
+        "additionalProperties": false,
+        "properties": {
+          "locks": {
+            "items": {
+              "$ref": "#/components/schemas/NpmDependencyLockRecord"
+            },
+            "title": "Locks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "locks"
+        ],
+        "title": "NpmDependencyLockList",
+        "type": "object"
+      },
+      "NpmDependencyLockRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "pending_review",
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "environment_digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Environment Digest",
+            "type": "string"
+          },
+          "lock": {
+            "$ref": "#/components/schemas/ProcedureNpmDependencyLock"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_version": {
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Skill Version",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "tarballs_present": {
+            "title": "Tarballs Present",
+            "type": "boolean"
+          },
+          "verified_tarballs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/NpmVerifiedTarball"
+            },
+            "maxItems": 512,
+            "title": "Verified Tarballs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skill_id",
+          "skill_version",
+          "environment_digest",
+          "source_sha256",
+          "lock",
+          "decision",
+          "tarballs_present",
+          "created_at",
+          "reviewed_at"
+        ],
+        "title": "NpmDependencyLockRecord",
+        "type": "object"
+      },
       "NpmLockedPackage": {
         "additionalProperties": false,
         "properties": {
@@ -2846,6 +2941,71 @@
           "kind"
         ],
         "title": "NpmRootDependency",
+        "type": "object"
+      },
+      "NpmVerifiedTarball": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Archive Sha256",
+            "type": "string"
+          },
+          "archive_size_bytes": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 67108864.0,
+            "title": "Archive Size Bytes",
+            "type": "integer"
+          },
+          "expanded_size_bytes": {
+            "maximum": 268435456.0,
+            "minimum": 1.0,
+            "title": "Expanded Size Bytes",
+            "type": "integer"
+          },
+          "install_lifecycle_scripts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Install Lifecycle Scripts",
+            "type": "array"
+          },
+          "integrity": {
+            "title": "Integrity",
+            "type": "string"
+          },
+          "member_count": {
+            "maximum": 20000.0,
+            "minimum": 1.0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "package_path": {
+            "title": "Package Path",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_path",
+          "name",
+          "version",
+          "integrity",
+          "archive_sha256",
+          "archive_size_bytes",
+          "member_count",
+          "expanded_size_bytes",
+          "install_lifecycle_scripts"
+        ],
+        "title": "NpmVerifiedTarball",
         "type": "object"
       },
       "PlanRecord": {
@@ -13299,6 +13459,124 @@
         "summary": "Check Skill Node Runtime"
       }
     },
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks": {
+      "get": {
+        "operationId": "list_skill_npm_dependency_locks_skills__skill_id__versions__version__npm_dependency_locks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NpmDependencyLockList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Skill Npm Dependency Locks"
+      },
+      "put": {
+        "operationId": "save_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcedureNpmDependencyLock"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NpmDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Skill Npm Dependency Lock"
+      }
+    },
     "/skills/{skill_id}/versions/{version}/npm-dependency-locks/inspect": {
       "post": {
         "operationId": "inspect_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_inspect_post",
@@ -13362,6 +13640,144 @@
           }
         ],
         "summary": "Inspect Skill Npm Dependency Lock"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/acquire": {
+      "post": {
+        "operationId": "acquire_skill_npm_dependency_tarballs_skills__skill_id__versions__version__npm_dependency_locks__environment_digest__acquire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_digest",
+            "required": true,
+            "schema": {
+              "title": "Environment Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NpmDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Acquire Skill Npm Dependency Tarballs"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/review": {
+      "post": {
+        "operationId": "review_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks__environment_digest__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_digest",
+            "required": true,
+            "schema": {
+              "title": "Environment Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPythonDependencyReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NpmDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Review Skill Npm Dependency Lock"
       }
     },
     "/skills/{skill_id}/versions/{version}/python-dependency-locks": {

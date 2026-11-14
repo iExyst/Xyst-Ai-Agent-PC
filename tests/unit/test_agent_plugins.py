@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import shutil
+import tarfile
 import zipfile
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -1504,6 +1505,18 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
     (skill_root / "package.json").write_text(
         '{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}', encoding="utf-8"
     )
+    tarball_output = io.BytesIO()
+    package_metadata = (
+        b'{"name":"left-pad","version":"1.3.0","scripts":{"install":"node install.js"}}'
+    )
+    with tarfile.open(fileobj=tarball_output, mode="w:gz") as archive:
+        metadata_entry = tarfile.TarInfo("package/package.json")
+        metadata_entry.size = len(package_metadata)
+        archive.addfile(metadata_entry, io.BytesIO(package_metadata))
+        script_entry = tarfile.TarInfo("package/install.js")
+        script_entry.size = 0
+        archive.addfile(script_entry, io.BytesIO(b""))
+    npm_tarball = tarball_output.getvalue()
     (skill_root / "package-lock.json").write_text(
         json.dumps(
             {
@@ -1515,7 +1528,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
                         "version": "1.3.0",
                         "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
                         "integrity": "sha512-"
-                        + base64.b64encode(hashlib.sha512(b"fixture").digest()).decode(),
+                        + base64.b64encode(hashlib.sha512(npm_tarball).digest()).decode(),
                     },
                 },
             }
@@ -1561,3 +1574,38 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         ]
         assert result["packages"][0]["name"] == "left-pad"
         assert readiness_requests == ["Ubuntu-24.04"]
+        base = f"/skills/{created.json()['id']}/versions/1/npm-dependency-locks"
+        saved = client.put(base, headers=headers, json=result)
+        assert saved.status_code == 200, saved.text
+        assert readiness_requests == ["Ubuntu-24.04", "Ubuntu-24.04"]
+        proposal = saved.json()
+        assert proposal["decision"] == "pending_review"
+        assert proposal["tarballs_present"] is False
+        digest = proposal["environment_digest"]
+        assert client.get(base, headers=headers).json()["locks"][0]["lock"] == result
+        review = client.post(
+            f"{base}/{digest}/review", headers=headers, json={"decision": "approved"}
+        )
+        assert review.status_code == 409
+
+        async def acquire_fixture(lock, *, on_verified_files, **_kwargs) -> None:
+            from xaa.extensions.npm_dependencies import verify_npm_tarball
+
+            tarball_path = tmp_path / "fixture.tgz"
+            tarball_path.write_bytes(npm_tarball)
+            report = verify_npm_tarball(lock.packages[0], npm_tarball)
+            await on_verified_files(
+                {lock.packages[0].package_path: tarball_path},
+                {lock.packages[0].package_path: report},
+            )
+
+        monkeypatch.setattr(api_module, "acquire_npm_tarballs_in_appcontainer", acquire_fixture)
+        acquired = client.post(f"{base}/{digest}/acquire", headers=headers)
+        assert acquired.status_code == 200, acquired.text
+        assert acquired.json()["tarballs_present"] is True
+        assert acquired.json()["verified_tarballs"][0]["archive_size_bytes"] == len(npm_tarball)
+        approved = client.post(
+            f"{base}/{digest}/review", headers=headers, json={"decision": "approved"}
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["decision"] == "approved"

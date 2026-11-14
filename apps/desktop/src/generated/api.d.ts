@@ -1997,6 +1997,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Skill Npm Dependency Locks */
+        get: operations["list_skill_npm_dependency_locks_skills__skill_id__versions__version__npm_dependency_locks_get"];
+        /** Save Skill Npm Dependency Lock */
+        put: operations["save_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/npm-dependency-locks/inspect": {
         parameters: {
             query?: never;
@@ -2008,6 +2026,40 @@ export interface paths {
         put?: never;
         /** Inspect Skill Npm Dependency Lock */
         post: operations["inspect_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/acquire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acquire Skill Npm Dependency Tarballs */
+        post: operations["acquire_skill_npm_dependency_tarballs_skills__skill_id__versions__version__npm_dependency_locks__environment_digest__acquire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Skill Npm Dependency Lock */
+        post: operations["review_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks__environment_digest__review_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3280,6 +3332,39 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** NpmDependencyLockList */
+        NpmDependencyLockList: {
+            /** Locks */
+            locks: components["schemas"]["NpmDependencyLockRecord"][];
+        };
+        /** NpmDependencyLockRecord */
+        NpmDependencyLockRecord: {
+            /** Created At */
+            created_at: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "pending_review" | "approved" | "rejected";
+            /** Environment Digest */
+            environment_digest: string;
+            lock: components["schemas"]["ProcedureNpmDependencyLock"];
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Version */
+            skill_version: number;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Tarballs Present */
+            tarballs_present: boolean;
+            /**
+             * Verified Tarballs
+             * @default []
+             */
+            verified_tarballs: components["schemas"]["NpmVerifiedTarball"][];
+        };
         /** NpmLockedPackage */
         NpmLockedPackage: {
             /** Integrity */
@@ -3301,6 +3386,27 @@ export interface components {
             name: string;
             /** Version Range */
             version_range: string;
+        };
+        /** NpmVerifiedTarball */
+        NpmVerifiedTarball: {
+            /** Archive Sha256 */
+            archive_sha256: string;
+            /** Archive Size Bytes */
+            archive_size_bytes: number;
+            /** Expanded Size Bytes */
+            expanded_size_bytes: number;
+            /** Install Lifecycle Scripts */
+            install_lifecycle_scripts: string[];
+            /** Integrity */
+            integrity: string;
+            /** Member Count */
+            member_count: number;
+            /** Name */
+            name: string;
+            /** Package Path */
+            package_path: string;
+            /** Version */
+            version: string;
         };
         /** PlanRecord */
         PlanRecord: {
@@ -9018,6 +9124,74 @@ export interface operations {
             };
         };
     };
+    list_skill_npm_dependency_locks_skills__skill_id__versions__version__npm_dependency_locks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NpmDependencyLockList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcedureNpmDependencyLock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NpmDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     inspect_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_inspect_post: {
         parameters: {
             query?: never;
@@ -9041,6 +9215,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProcedureNpmDependencyLock"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acquire_skill_npm_dependency_tarballs_skills__skill_id__versions__version__npm_dependency_locks__environment_digest__acquire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                environment_digest: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NpmDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks__environment_digest__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                environment_digest: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPythonDependencyReview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NpmDependencyLockRecord"];
                 };
             };
             /** @description Validation Error */

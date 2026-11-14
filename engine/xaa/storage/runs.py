@@ -472,6 +472,20 @@ class RunStore:
                     FOREIGN KEY(skill_id,skill_version)
                         REFERENCES skill_versions(skill_id,version) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS skill_npm_dependency_locks (
+                    skill_id TEXT NOT NULL,
+                    skill_version INTEGER NOT NULL,
+                    environment_digest TEXT NOT NULL CHECK(length(environment_digest)=64),
+                    source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+                    lock_json TEXT NOT NULL,
+                    decision TEXT NOT NULL DEFAULT 'pending_review'
+                        CHECK(decision IN ('pending_review','approved','rejected')),
+                    created_at TEXT NOT NULL,
+                    reviewed_at TEXT,
+                    PRIMARY KEY(skill_id,skill_version,environment_digest),
+                    FOREIGN KEY(skill_id,skill_version)
+                        REFERENCES skill_versions(skill_id,version) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS skill_python_dependency_environments (
                     skill_id TEXT NOT NULL,
                     skill_version INTEGER NOT NULL,
