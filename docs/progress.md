@@ -2,7 +2,7 @@
 
 ## Verify npm per-file and archive-entry ceilings in isolated workers (2026-11-14)
 
-The source and frozen Windows AppContainer acceptance now covers the two remaining tarball shape caps: one regular file of 64 MiB plus one byte and an archive containing 20,001 members. Both correctly SRI-matched archives are rejected before verified files are published. The complete worker suite passes 30 cases: [JUnit report](../.acceptance/npm-archive-bounds-20261114/report.xml). Ruff and formatting checks pass locally; hosted verification is pending. Model-mediated procedure execution remains deferred.
+The source and frozen Windows AppContainer acceptance now covers the two remaining tarball shape caps: one regular file of 64 MiB plus one byte and an archive containing 20,001 members. Both correctly SRI-matched archives are rejected before verified files are published. The complete worker suite passes 30 cases: [JUnit report](../.acceptance/npm-archive-bounds-20261114/report.xml). Ruff and formatting checks pass locally. Hosted run [43585387811](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43585387811) passed the full Python suite, including the source/frozen limit cases. Model-mediated procedure execution remains deferred.
 
 ## Verify the current Windows program and installed package on hosted Windows (2026-11-14)
 
