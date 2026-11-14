@@ -1,6 +1,6 @@
 # Xyst AI Agent user guide
 
-**Development preview · updated 2026-11-13**
+**Development preview · updated 2026-11-14**
 
 Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends model requests to the LM Studio server you configure, records runs in SQLite, and requires explicit review before accepting agent results. The product is still under development; this guide describes behavior currently present in the repository and does not claim full Hermes parity or production release readiness.
 
@@ -11,7 +11,7 @@ Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends mode
 - A model that supports the required tool calls for the selected workflow. X.A.A. discovers model IDs; it does not download or select a model automatically.
 - WSL 2 with an Ubuntu distribution is required for isolated command execution, project validation commands, and selected Python or shell procedures. Workspace file tools remain available without WSL. X.A.A. does not install WSL or a distribution for you.
 
-The current Windows installer is an unsigned development build. GitHub Actions is only the build dashboard; you do not run the workflow page as the application. Open the latest verified [Windows installer run](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43383183151), choose **Summary**, then download the `xaa-windows-installer-unsigned` artifact. Extract its ZIP and run `Xyst AI Agent_0.1.1_x64-setup.exe` for a per-user install. The artifact is retained for 90 days; its installer SHA-256 is `059f6f8988695f5dc5cb3d3e59a01b3358fb8238fe95cd69d3575e67a98f3802`. The installer bundles X.A.A.'s engine; Python and Node are not runtime prerequisites. Hosted acceptance covers install/upgrade/boot/uninstall, standard-user installation, backup/restore, restored-profile restart, workspace review and recovery checks on a disposable GitHub runner. These checks use synthetic data; they do not establish signed distribution or recovery of a real user's profile. See [installer scope and evidence](releases/windows-installer.md).
+The current Windows installer is an unsigned development build. GitHub Actions is only the build dashboard; you do not run the workflow page as the application. Open the verified [Windows installer run](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43646604943), choose **Summary**, then download the `xaa-windows-installer-unsigned` artifact. Extract its ZIP and run `Xyst AI Agent_0.1.1_x64-setup.exe` for a per-user install. The tested installer is 78,155,822 bytes with SHA-256 `8304e4bc127f9ca7d37a7603c3b6d2ebe1c71f672fa9b62ca4b6e5784d75acae`; the artifact is retained for 90 days. The installer bundles X.A.A.'s engine; Python and Node are not runtime prerequisites. Hosted acceptance covers install/upgrade/boot/uninstall, standard-user installation, recovery, frozen workers and desktop behavior on a disposable GitHub runner. These checks use synthetic data; they do not establish signed distribution or recovery of a real user's profile. See [installer scope and evidence](releases/windows-installer.md).
 
 For a development build, follow the commands in the repository [README](../README.md). Do not run the source checkout as if it were an installed production release.
 
