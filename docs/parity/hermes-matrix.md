@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify Node project isolation and system runtime preservation (2026-11-14)
+
+Live Ubuntu-24.04 acceptance confirms the installed module resolves through the selected procedure's read-only Node mount, no `node_modules` appears at the workspace root, and before/after hashes of the host Node executable, npm installation tree, and global-module root match across install, execution, and exact removal: [report](../../.acceptance/npm-runtime-isolation-20261114/report.json). This covers one procedure fixture and WSL distribution; cross-procedure concurrency remains open. No model inference or public registry access was used.
+
 ## Exercise interrupted Node environment recovery (2026-11-14)
 
 Live Ubuntu-24.04 WSL acceptance seeded a partial root-owned environment tree and its matching active transient systemd unit. It also killed a real offline npm installer service with SIGKILL, verified the failed attempt published no environment, retried the exact approved digest, imported the fixture in the procedure sandbox, suppressed lifecycle scripts, refused removal during active use, and removed the exact environment after cleanup: [process-kill report](../../.acceptance/npm-process-kill-recovery-20261114/report.json). Two seeded partial-tree runs also passed: [first](../../.acceptance/npm-node-interrupted-recovery-20261114/report.json), [repeat](../../.acceptance/npm-node-interrupted-recovery-20261114b/report.json). This verifies recovery after one process-kill boundary; rollback, system/runtime preservation, project isolation, hostile archives, broad npm compatibility and model-mediated procedure execution remain open. No inference or public registry request was used.

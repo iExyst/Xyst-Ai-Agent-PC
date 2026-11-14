@@ -12,7 +12,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from xaa.extensions.npm_dependencies import (
@@ -106,6 +106,55 @@ def _seed_interrupted_install(distribution: str, digest: str) -> None:
     raise RuntimeError("Could not seed the active interrupted-install fixture unit.")
 
 
+def _system_runtime_snapshot(distribution: str) -> dict[str, Any]:
+    node_path = _wsl(distribution, "readlink", "-f", "/usr/bin/node")
+    npm_path = _wsl(distribution, "readlink", "-f", "/usr/bin/npm")
+    global_root = _wsl(distribution, "npm", "root", "-g")
+    npm_tree = str(PurePosixPath(npm_path).parent.parent)
+    digest_script = (
+        "import hashlib,json,os,stat,sys\n"
+        "def digest(raw):\n"
+        " root=__import__('pathlib').Path(raw)\n"
+        " if not root.exists(): return None\n"
+        " h=hashlib.sha256()\n"
+        " paths=[root,*sorted(root.rglob('*'),key=lambda p:p.relative_to(root).as_posix())] if root.is_dir() else [root]\n"
+        " for p in paths:\n"
+        "  i=p.lstat(); rel='.' if p==root else p.relative_to(root).as_posix()\n"
+        "  h.update(rel.encode()+b'\\0'+stat.S_IMODE(i.st_mode).to_bytes(2,'big'))\n"
+        "  if stat.S_ISLNK(i.st_mode): h.update(b'l'+os.readlink(p).encode())\n"
+        "  elif stat.S_ISREG(i.st_mode):\n"
+        "   h.update(b'f')\n"
+        "   with p.open('rb') as f:\n"
+        "    while c:=f.read(1048576): h.update(c)\n"
+        "  elif stat.S_ISDIR(i.st_mode): h.update(b'd')\n"
+        "  else: raise ValueError('system runtime contains a special file')\n"
+        " return h.hexdigest()\n"
+        "print(json.dumps({'node':digest(sys.argv[1]),'npm':digest(sys.argv[2]),'global':digest(sys.argv[3])},sort_keys=True))\n"
+    )
+    try:
+        hashes = json.loads(
+            _wsl(distribution, "python3", "-c", digest_script, node_path, npm_tree, global_root)
+        )
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("Could not capture the WSL system runtime inventory.") from exc
+    if not isinstance(hashes, dict):
+        raise TypeError("WSL system runtime inventory is malformed.")
+    typed_hashes = cast(dict[str, object], hashes)
+    runtime_hashes = {name: typed_hashes.get(name) for name in ("node", "npm", "global")}
+    if any(value is not None and not isinstance(value, str) for value in runtime_hashes.values()):
+        raise TypeError("WSL system runtime inventory contains invalid hashes.")
+    return {
+        "node_version": _wsl(distribution, "node", "--version"),
+        "npm_version": _wsl(distribution, "npm", "--version"),
+        "node_path": node_path,
+        "node_tree_sha256": runtime_hashes["node"],
+        "npm_path": npm_path,
+        "npm_tree_sha256": runtime_hashes["npm"],
+        "global_root": global_root,
+        "global_modules_sha256": runtime_hashes["global"],
+    }
+
+
 async def _kill_and_retry_install(
     distribution: str,
     transport: WSLTransport,
@@ -179,6 +228,7 @@ async def _kill_and_retry_install(
 
 
 async def run(distribution: str, report_path: Path) -> dict[str, Any]:
+    system_runtime_before = _system_runtime_snapshot(distribution)
     node_version = _wsl(distribution, "node", "--version")
     npm_version = _wsl(distribution, "npm", "--version")
     archive = _tarball(extra_file_count=4096)
@@ -303,8 +353,11 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                 "Offline npm installation, reuse, module loading, or lifecycle suppression failed."
             )
         script_path = f"__xaa_selected_skill__/{lock.skill_id}/v1/check.cjs"
+        selected_link = f"__xaa_selected_skill__/{lock.skill_id}/v1/node_modules"
         script = (
-            "const value=require('xaa-offline-fixture');"
+            "const fs=require('fs'),value=require('xaa-offline-fixture');"
+            f"if(fs.realpathSync('{selected_link}')!=='/opt/xaa/procedure-node/node_modules')process.exit(8);"
+            "if(fs.existsSync('node_modules'))process.exit(9);"
             "setTimeout(()=>process.stdout.write(value),7000);"
         ).encode("ascii")
         snapshot = WorkspaceSnapshot(
@@ -371,6 +424,11 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         )
         if removed.get("removed") is not True or after.get("installed") is not False:
             raise RuntimeError("Exact npm environment cleanup failed.")
+        system_runtime_after = _system_runtime_snapshot(distribution)
+        if system_runtime_after != system_runtime_before:
+            raise RuntimeError(
+                "The system Node/npm runtime changed during the managed install test."
+            )
         return {
             "distribution": distribution,
             "environment_digest": lock.environment_digest(),
@@ -385,6 +443,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "interrupted_partial_tree_recovered": True,
             "installer_process_killed_and_recovered": True,
             "recovery_unit_inactive": True,
+            "selected_node_modules_scoped_to_procedure": True,
+            "workspace_node_modules_absent": True,
+            "system_runtime_unchanged": True,
+            "system_runtime": system_runtime_after,
             "integrity_status": True,
             "exact_environment_removed": True,
             "network": "none",
