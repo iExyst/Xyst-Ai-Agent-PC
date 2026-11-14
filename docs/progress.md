@@ -2,7 +2,7 @@
 
 ## Verify scheduler behavior after clock corrections and restart (2026-11-14)
 
-Added a deterministic schedule regression that advances past a daily occurrence, moves the supplied clock backward, reopens the SQLite store, and advances to the next occurrence. The original occurrence is never queued twice, the backward time does not consume the next occurrence, and the next day runs once. `uv run pytest tests/unit/test_schedules.py -q` passes all 16 tests; Ruff, format check, and `git diff --check` pass. This exercises the scheduler with clock values but does not change the host clock, so real operating-system clock steps and timezone-database updates remain unverified. No model inference or message delivery was used.
+Added a deterministic schedule regression that advances past a daily occurrence, moves the supplied clock backward, reopens the SQLite store, and advances to the next occurrence. The original occurrence is never queued twice, the backward time does not consume the next occurrence, and the next day runs once. `uv run pytest tests/unit/test_schedules.py -q` passes all 16 tests; Ruff, format check, and `git diff --check` pass. Hosted Windows source run [43634885386](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43634885386) passed the full source workflow, including pytest and scheduler process-restart recovery; its installer job was skipped because no packaging inputs changed. This exercises the scheduler with clock values but does not change the host clock, so real operating-system clock steps and timezone-database updates remain unverified. No model inference or message delivery was used.
 
 ## Bound schedule catch-up after long downtime (2026-11-14)
 
