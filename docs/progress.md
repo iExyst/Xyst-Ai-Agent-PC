@@ -1,5 +1,9 @@
 # Progress
 
+## Rebuild and open the current Windows desktop program (2026-11-14)
+
+Built the React/Tauri UI, frozen Python engine, and native Windows development app from the current checkout (`3f34ca74`) with `npm run build:native:dev`. The TypeScript check and production UI bundle completed, PyInstaller produced the engine, and Cargo staged `build/native-dev/xaa-desktop.exe` plus `xaa-engine.exe` (13,973,504 and 76,355,077 bytes). Started the desktop executable; Windows reports its process responding with a native window handle. This confirms the current source starts as a desktop program; it does not establish a clean-machine installer, full onboarding, or installed-package UI workflow. The existing hosted unsigned installer remains the installable package.
+
 ## Refresh the installer download page and browser verification (2026-11-14)
 
 Updated the README and 0.1.1 installer notes to point to the latest hosted-tested package and to distinguish the manual installer workflow from source CI. The README records the exact hosted artifact size and SHA-256.
