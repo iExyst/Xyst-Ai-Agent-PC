@@ -14,7 +14,8 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from types import CodeType
+from typing import Any, Literal, cast
 
 from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.mcp_appcontainer import (
@@ -51,8 +52,31 @@ def _new_receipt_map() -> dict[str, dict[str, Any]]:
     return {}
 
 
-def profile_fingerprint() -> str:
-    """Bind grants to the AppContainer launcher source and current Python runtime."""
+def _stable_code_constant(value: object) -> object:
+    if isinstance(value, CodeType):
+        return value.replace(
+            co_code=value.co_code,
+            co_consts=tuple(
+                _stable_code_constant(item) for item in cast(tuple[object, ...], value.co_consts)
+            ),
+        )
+    if isinstance(value, tuple):
+        return tuple(_stable_code_constant(item) for item in cast(tuple[object, ...], value))
+    return value
+
+
+def _stable_marshaled_code(code: CodeType) -> bytes:
+    """Serialize bytecode without runtime-specialized nested code objects."""
+    stable = code.replace(
+        co_code=code.co_code,
+        co_consts=tuple(
+            _stable_code_constant(value) for value in cast(tuple[object, ...], code.co_consts)
+        ),
+    )
+    return marshal.dumps(stable)
+
+
+def _profile_fingerprint_record() -> dict[str, object]:
     shim_fingerprint = appcontainer_shim_fingerprint()
     executable = Path(sys.executable).resolve()
     runtime_hash = hashlib.sha256()
@@ -74,10 +98,10 @@ def profile_fingerprint() -> str:
     if not source_hashes and getattr(sys, "frozen", False):
         source_hashes = {
             "windows_local_transport.run": hashlib.sha256(
-                marshal.dumps(WindowsLocalTransport.run.__code__)
+                _stable_marshaled_code(WindowsLocalTransport.run.__code__)
             ).hexdigest()
         }
-    record = {
+    return {
         "shim_sha256": shim_fingerprint,
         "runtime": str(executable),
         "runtime_sha256": runtime_hash.hexdigest(),
@@ -87,6 +111,37 @@ def profile_fingerprint() -> str:
         "no_network": True,
         "private_snapshot": True,
     }
+
+
+def profile_fingerprint_components() -> dict[str, str]:
+    """Return path-free component hashes for diagnosing profile identity changes."""
+    record = _profile_fingerprint_record()
+    worker_sources = cast(dict[str, str], record["worker_source_sha256"])
+    run_code = WindowsLocalTransport.run.__code__
+    return {
+        "shim_sha256": cast(str, record["shim_sha256"]),
+        "runtime_path_sha256": hashlib.sha256(
+            cast(str, record["runtime"]).encode("utf-8")
+        ).hexdigest(),
+        "runtime_sha256": cast(str, record["runtime_sha256"]),
+        "worker_source_count": str(len(worker_sources)),
+        "worker_source_names": ",".join(sorted(worker_sources)),
+        "worker_source_sha256": hashlib.sha256(
+            json.dumps(worker_sources, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "run_code_marshaled_sha256": hashlib.sha256(marshal.dumps(run_code)).hexdigest(),
+        "run_code_bytes_sha256": hashlib.sha256(run_code.co_code).hexdigest(),
+        "run_code_constants_sha256": hashlib.sha256(marshal.dumps(run_code.co_consts)).hexdigest(),
+        "run_code_filename_sha256": hashlib.sha256(
+            run_code.co_filename.encode("utf-8")
+        ).hexdigest(),
+        "python_version": ".".join(str(value) for value in cast(list[int], record["python"])),
+    }
+
+
+def profile_fingerprint() -> str:
+    """Bind grants to the AppContainer launcher source and current Python runtime."""
+    record = _profile_fingerprint_record()
     return hashlib.sha256(json.dumps(record, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -143,6 +198,24 @@ def _restricted_environment(executable: Path, temporary: Path) -> dict[str, str]
         }
     )
     return env
+
+
+def _configure_frozen_runtime_environments(
+    shim_environment: dict[str, str],
+    command_environment: dict[str, str],
+    command_executable: Path,
+    *,
+    engine_executable: Path,
+    frozen: bool,
+) -> None:
+    if not frozen:
+        return
+    # Each frozen child must own its one-file extraction. Reusing the parent's
+    # bootloader state lets a short-lived nested engine delete the runtime files
+    # still used by the long-lived engine process.
+    shim_environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    if command_executable == engine_executable:
+        command_environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
 
 
 def _resolve_executable(value: str) -> Path:
@@ -368,6 +441,13 @@ class WindowsLocalTransport:
             )
             env = _restricted_environment(executable, shim_temporary)
             child_environment = _restricted_environment(executable, temporary)
+            _configure_frozen_runtime_environments(
+                env,
+                child_environment,
+                executable,
+                engine_executable=Path(sys.executable).resolve(strict=True),
+                frozen=bool(getattr(sys, "frozen", False)),
+            )
             # Windows appends Packages\\<container>\\AC to the inherited base
             # local-data path when it builds an AppContainer environment. Use
             # the matching base from GetAppContainerFolderPath so this works

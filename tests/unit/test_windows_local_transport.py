@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -33,6 +34,56 @@ class _DisappearingEntry:
     def is_dir(self, *, follow_symlinks: bool) -> bool:
         assert follow_symlinks is False
         return self.directory
+
+
+def test_stable_code_fingerprint_ignores_nested_runtime_specialization() -> None:
+    def outer():
+        def inner(value: int) -> int:
+            return value + 1
+
+        return inner
+
+    code = outer.__code__
+    before = hashlib.sha256(transport._stable_marshaled_code(code)).hexdigest()  # pyright: ignore[reportPrivateUsage]
+    inner = outer()
+    for value in range(1000):
+        inner(value)
+    after = hashlib.sha256(transport._stable_marshaled_code(code)).hexdigest()  # pyright: ignore[reportPrivateUsage]
+
+    assert after == before
+
+
+def test_frozen_engine_children_get_independent_pyinstaller_runtime_state(tmp_path: Path) -> None:
+    shim_environment = {"PATH": "runtime"}
+    command_environment = {"PATH": "runtime"}
+    engine = tmp_path / "xaa-engine.exe"
+
+    transport._configure_frozen_runtime_environments(  # pyright: ignore[reportPrivateUsage]
+        shim_environment,
+        command_environment,
+        engine,
+        engine_executable=engine,
+        frozen=True,
+    )
+
+    assert shim_environment["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+    assert command_environment["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+
+
+def test_external_command_does_not_receive_pyinstaller_runtime_state(tmp_path: Path) -> None:
+    shim_environment = {"PATH": "runtime"}
+    command_environment = {"PATH": "runtime"}
+
+    transport._configure_frozen_runtime_environments(  # pyright: ignore[reportPrivateUsage]
+        shim_environment,
+        command_environment,
+        tmp_path / "findstr.exe",
+        engine_executable=tmp_path / "xaa-engine.exe",
+        frozen=True,
+    )
+
+    assert shim_environment["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+    assert "PYINSTALLER_RESET_ENVIRONMENT" not in command_environment
 
 
 @pytest.mark.parametrize("disappears_during", ["stat", "scandir"])

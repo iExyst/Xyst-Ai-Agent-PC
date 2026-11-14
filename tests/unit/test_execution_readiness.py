@@ -185,6 +185,7 @@ async def test_windows_readiness_allows_cold_frozen_engine_startup(monkeypatch):
     profile = "a" * 64
     monkeypatch.setattr(module, "SUPPORTED", True)
     monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: profile)
+    monkeypatch.setattr(module, "windows_local_profile_fingerprint_components", dict)
 
     class ProbeTransport:
         async def run(self, intent, snapshot, *, deadline):
@@ -230,6 +231,7 @@ async def test_windows_readiness_logs_sanitized_probe_mismatch(monkeypatch, capl
     profile = "a" * 64
     monkeypatch.setattr(module, "SUPPORTED", True)
     monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: profile)
+    monkeypatch.setattr(module, "windows_local_profile_fingerprint_components", dict)
 
     class ProbeTransport:
         async def run(self, intent, snapshot, *, deadline):

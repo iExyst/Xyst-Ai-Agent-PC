@@ -192,13 +192,21 @@ def main() -> None:
         result["error"] = f"{type(exc).__name__}: {exc}"
         raise
     finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
+        if process is not None:
             try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+                _request(f"{base_url}/shutdown", token, body={}, timeout=3)
+            except (OSError, urllib.error.URLError, TimeoutError):
+                pass
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
         result["engine_exit_code"] = None if process is None else process.returncode
         result["log_path"] = str(log_path)
         report_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

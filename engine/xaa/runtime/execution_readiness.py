@@ -33,6 +33,9 @@ from xaa.runtime.windows_local_transport import (
 from xaa.runtime.windows_local_transport import (
     profile_fingerprint as windows_local_profile_fingerprint,
 )
+from xaa.runtime.windows_local_transport import (
+    profile_fingerprint_components as windows_local_profile_fingerprint_components,
+)
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint, response_object
 
@@ -662,6 +665,7 @@ class ExecutionReadiness:
     async def _check_windows_local(self, distribution: str) -> ReadinessResult:
         now = datetime.now(UTC)
         try:
+            expected_profile_components = windows_local_profile_fingerprint_components()
             digest = windows_local_profile_fingerprint()
         except OSError:
             return ReadinessResult(
@@ -761,6 +765,7 @@ class ExecutionReadiness:
                 output_object = (
                     cast(dict[str, object] | None, output) if isinstance(output, dict) else None
                 )
+                observed_profile_components = windows_local_profile_fingerprint_components()
                 observed_profile = windows_local_profile_fingerprint()
                 output_matches: dict[str, bool] = {
                     "probe_nonce": output_object is not None
@@ -807,7 +812,8 @@ class ExecutionReadiness:
                         "Windows AppContainer readiness child failed validation "
                         "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
                         "elapsed=%s; result_checks=%s; expected_profile=%s; observed_profile=%s; "
-                        "stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
+                        "expected_components=%s; observed_components=%s; stdout_bytes=%s; "
+                        "stderr_bytes=%s; stderr=%r).",
                         result.get("succeeded"),
                         result.get("exit_code"),
                         result.get("supervisor_exit_code"),
@@ -816,6 +822,8 @@ class ExecutionReadiness:
                         result_matches,
                         digest,
                         observed_profile,
+                        expected_profile_components,
+                        observed_profile_components,
                         result.get("stdout_bytes"),
                         result.get("stderr_bytes"),
                         stderr_excerpt,
