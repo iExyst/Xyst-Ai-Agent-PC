@@ -563,9 +563,16 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             raise RuntimeError("Removing one procedure's npm environment affected another.")
         scoped_name = "@xaa/fixture-plugin"
         transitive_name = "xaa-transitive-fixture"
+        peer_name = "xaa-peer-fixture"
+        optional_name = "xaa-optional-fixture"
+        optional_peer_name = "xaa-optional-peer-fixture"
         scoped_url = "https://registry.npmjs.org/@xaa/fixture-plugin/-/fixture-plugin-1.0.0.tgz"
         transitive_url = (
             "https://registry.npmjs.org/xaa-transitive-fixture/-/xaa-transitive-fixture-1.0.0.tgz"
+        )
+        peer_url = "https://registry.npmjs.org/xaa-peer-fixture/-/xaa-peer-fixture-1.0.0.tgz"
+        optional_url = (
+            "https://registry.npmjs.org/xaa-optional-fixture/-/xaa-optional-fixture-1.0.0.tgz"
         )
         scoped_archive = _package_tarball(
             {
@@ -573,12 +580,30 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                 "version": "1.0.0",
                 "main": "index.js",
                 "dependencies": {transitive_name: "^1.0.0"},
+                "peerDependencies": {
+                    peer_name: "^1.0.0",
+                    optional_peer_name: "^1.0.0",
+                },
+                "peerDependenciesMeta": {optional_peer_name: {"optional": True}},
             },
-            {"index.js": b"module.exports = require('xaa-transitive-fixture') + '-scoped';\n"},
+            {
+                "index.js": (
+                    b"module.exports = require('xaa-transitive-fixture') + '-' + "
+                    b"require('xaa-peer-fixture') + '-scoped';\n"
+                )
+            },
         )
         transitive_archive = _package_tarball(
             {"name": transitive_name, "version": "1.0.0", "main": "index.js"},
             {"index.js": b"module.exports = 'offline-transitive';\n"},
+        )
+        peer_archive = _package_tarball(
+            {"name": peer_name, "version": "1.0.0", "main": "index.js"},
+            {"index.js": b"module.exports = 'required-peer';\n"},
+        )
+        optional_archive = _package_tarball(
+            {"name": optional_name, "version": "1.0.0", "main": "index.js"},
+            {"index.js": b"module.exports = 'optional-root';\n"},
         )
         scoped_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(scoped_archive).digest()
@@ -586,11 +611,18 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         transitive_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(transitive_archive).digest()
         ).decode("ascii")
+        peer_integrity = "sha512-" + base64.b64encode(hashlib.sha512(peer_archive).digest()).decode(
+            "ascii"
+        )
+        optional_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(optional_archive).digest()
+        ).decode("ascii")
         graph_manifest = json.dumps(
             {
                 "name": "xaa-probe-transitive-project",
                 "version": "1.0.0",
                 "dependencies": {scoped_name: "^1.0.0"},
+                "optionalDependencies": {optional_name: "^1.0.0"},
             },
             separators=(",", ":"),
         ).encode()
@@ -604,17 +636,35 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     "name": "xaa-probe-transitive-project",
                     "version": "1.0.0",
                     "dependencies": {scoped_name: "^1.0.0"},
+                    "optionalDependencies": {optional_name: "^1.0.0"},
                 },
                 "node_modules/@xaa/fixture-plugin": {
                     "version": "1.0.0",
                     "resolved": scoped_url,
                     "integrity": scoped_integrity,
                     "dependencies": {transitive_name: "^1.0.0"},
+                    "peerDependencies": {
+                        peer_name: "^1.0.0",
+                        optional_peer_name: "^1.0.0",
+                    },
+                    "peerDependenciesMeta": {optional_peer_name: {"optional": True}},
                 },
                 "node_modules/@xaa/fixture-plugin/node_modules/xaa-transitive-fixture": {
                     "version": "1.0.0",
                     "resolved": transitive_url,
                     "integrity": transitive_integrity,
+                },
+                f"node_modules/{peer_name}": {
+                    "version": "1.0.0",
+                    "resolved": peer_url,
+                    "integrity": peer_integrity,
+                    "peer": True,
+                },
+                f"node_modules/{optional_name}": {
+                    "version": "1.0.0",
+                    "resolved": optional_url,
+                    "integrity": optional_integrity,
+                    "optional": True,
                 },
             },
         }
@@ -629,9 +679,15 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             distribution=distribution,
             node_version=node_version,
             npm_version=npm_version,
-            requirements=(f"{scoped_name}@^1.0.0",),
+            requirements=(
+                f"{scoped_name}@^1.0.0",
+                f"{optional_name}@^1.0.0",
+            ),
             root_dependencies=(
                 NpmRootDependency(name=scoped_name, version_range="^1.0.0", kind="dependencies"),
+                NpmRootDependency(
+                    name=optional_name, version_range="^1.0.0", kind="optionalDependencies"
+                ),
             ),
             packages=(
                 NpmLockedPackage(
@@ -650,17 +706,44 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     resolved_url=transitive_url,
                     integrity=transitive_integrity,
                 ),
+                NpmLockedPackage(
+                    package_path=f"node_modules/{peer_name}",
+                    name=peer_name,
+                    version="1.0.0",
+                    resolved_url=peer_url,
+                    integrity=peer_integrity,
+                ),
+                NpmLockedPackage(
+                    package_path=f"node_modules/{optional_name}",
+                    name=optional_name,
+                    version="1.0.0",
+                    resolved_url=optional_url,
+                    integrity=optional_integrity,
+                ),
             ),
         )
         scoped_archive_path = report_path.parent / "scoped-fixture.tgz"
         transitive_archive_path = report_path.parent / "transitive-fixture.tgz"
+        peer_archive_path = report_path.parent / "peer-fixture.tgz"
+        optional_archive_path = report_path.parent / "optional-fixture.tgz"
         scoped_archive_path.write_bytes(scoped_archive)
         transitive_archive_path.write_bytes(transitive_archive)
+        peer_archive_path.write_bytes(peer_archive)
+        optional_archive_path.write_bytes(optional_archive)
         store.store_files(
             graph_lock,
             {
-                graph_lock.packages[0].package_path: scoped_archive_path,
-                graph_lock.packages[1].package_path: transitive_archive_path,
+                package.package_path: archive_path
+                for package, archive_path in zip(
+                    graph_lock.packages,
+                    (
+                        scoped_archive_path,
+                        transitive_archive_path,
+                        peer_archive_path,
+                        optional_archive_path,
+                    ),
+                    strict=True,
+                )
             },
         )
         graph_installed = await transport.install_node_environment(
@@ -674,7 +757,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         graph_procedure_path = f"__xaa_selected_skill__/{graph_lock.skill_id}/v1"
         graph_script = (
             "const fs=require('fs'),value=require('@xaa/fixture-plugin');"
-            "if(value!=='offline-transitive-scoped')process.exit(10);"
+            "if(value!=='offline-transitive-required-peer-scoped')process.exit(10);"
+            f"if(require('{optional_name}')!=='optional-root')process.exit(11);"
+            f"try{{require.resolve('{optional_peer_name}');process.exit(12);}}"
+            "catch(error){if(error.code!=='MODULE_NOT_FOUND')process.exit(13);}"
             f"if(fs.realpathSync('{graph_procedure_path}/node_modules')!=="
             "'/opt/xaa/procedure-node/node_modules')process.exit(8);"
             "if(fs.existsSync('node_modules'))process.exit(9);"
@@ -706,7 +792,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             graph_installed.get("installed") is not True
             or graph_result.get("succeeded") is not True
             or graph_result.get("stdout_b64")
-            != base64.b64encode(b"offline-transitive-scoped").decode("ascii")
+            != base64.b64encode(b"offline-transitive-required-peer-scoped").decode("ascii")
             or graph_result.get("procedure_node_environment_digest")
             != graph_lock.environment_digest()
             or graph_result.get("cleanup_confirmed") is not True
@@ -885,6 +971,9 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "cross_procedure_exact_removal_preserved_neighbor": True,
             "scoped_package_installed_offline": True,
             "nested_transitive_dependency_loaded_in_procedure": True,
+            "required_peer_dependency_loaded": True,
+            "root_optional_dependency_loaded": True,
+            "optional_peer_dependency_absence_accepted": True,
             "transitive_environment_removed_exactly": True,
             "both_active_environments_refused_removal": True,
             "integrity_status": True,
