@@ -1578,8 +1578,119 @@ class SkillStore:
                 )
                 for package in lock.packages
             ]
+        with self.runs.connection() as connection:
+            environment = connection.execute(
+                "SELECT tree_sha256,installed_bytes,file_count,installed_at "
+                "FROM skill_npm_dependency_environments WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, lock.environment_digest()),
+            ).fetchone()
+        value["environment_installed"] = environment is not None
+        value["installed_tree_sha256"] = environment["tree_sha256"] if environment else None
+        value["installed_bytes"] = environment["installed_bytes"] if environment else None
+        value["installed_file_count"] = environment["file_count"] if environment else None
+        value["installed_at"] = environment["installed_at"] if environment else None
         value["lock"] = lock.model_dump(mode="json")
         return value
+
+    def record_npm_dependency_environment(
+        self, lock: ProcedureNpmDependencyLock, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist WSL's receipt for one approved, immutable Node environment."""
+        digest = lock.environment_digest()
+        tree_hash = result.get("tree_sha256")
+        installed_bytes, file_count = result.get("installed_bytes"), result.get("file_count")
+        if (
+            result.get("environment_digest") != digest
+            or result.get("lock_sha256") != digest
+            or result.get("installed") is not True
+            or result.get("distribution") != lock.distribution
+            or result.get("node_version") != lock.node_version
+            or result.get("npm_version") != lock.npm_version
+            or not isinstance(tree_hash, str)
+            or re.fullmatch(r"[a-f0-9]{64}", tree_hash) is None
+            or type(installed_bytes) is not int
+            or not 1 <= installed_bytes <= 1_610_612_736
+            or type(file_count) is not int
+            or not 1 <= file_count <= 50_000
+        ):
+            raise SkillConflict("WSL did not return a valid immutable npm environment receipt.")
+        self.npm_tarballs.verify(lock)
+        self.npm_dependency_lock_resources(lock)
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT lock_json,decision FROM skill_npm_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+            if row is None or row["lock_json"] != lock.canonical_json():
+                raise SkillConflict("Save the exact npm lock before installation.")
+            if row["decision"] != "approved":
+                raise SkillConflict("Only an approved npm lock can be installed.")
+            previous = connection.execute(
+                "SELECT tree_sha256,installed_bytes,file_count FROM "
+                "skill_npm_dependency_environments WHERE skill_id=? AND skill_version=? "
+                "AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+            if previous is not None and (
+                previous["tree_sha256"] != tree_hash
+                or previous["installed_bytes"] != installed_bytes
+                or previous["file_count"] != file_count
+            ):
+                raise SkillConflict("An immutable npm environment changed after installation.")
+            connection.execute(
+                "INSERT OR IGNORE INTO skill_npm_dependency_environments "
+                "(skill_id,skill_version,environment_digest,distribution,node_version,npm_version,tree_sha256,installed_bytes,file_count,installed_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    lock.skill_id,
+                    lock.skill_version,
+                    digest,
+                    lock.distribution,
+                    lock.node_version,
+                    lock.npm_version,
+                    tree_hash,
+                    installed_bytes,
+                    file_count,
+                    utc_now(),
+                ),
+            )
+            saved = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+        assert saved is not None
+        return self._npm_dependency_lock_record(saved)
+
+    def forget_npm_dependency_environment(
+        self, skill_id: str, version: int, environment_digest: str
+    ) -> dict[str, Any]:
+        if not re.fullmatch(r"[a-f0-9]{64}", environment_digest):
+            raise ValueError("npm environment identity is invalid.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+            if row is None:
+                raise SkillConflict("The npm dependency lock was not found.")
+            connection.execute(
+                "DELETE FROM skill_npm_dependency_environments WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            )
+            saved = connection.execute(
+                "SELECT * FROM skill_npm_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+        assert saved is not None
+        return self._npm_dependency_lock_record(saved)
 
     def npm_dependency_locks(self, skill_id: str, version: int) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:

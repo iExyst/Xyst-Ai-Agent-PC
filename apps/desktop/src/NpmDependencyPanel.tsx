@@ -42,6 +42,22 @@ export function NpmDependencyPanel({client,skillId,version,distribution,hasNodeS
       setLocks(current=>current.map(item=>item.environment_digest===updated.environment_digest?updated:item));
     }catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
+  async function install(lock:LockRecord){
+    setBusy(true);setError('');setNotice('');
+    try{
+      const updated=await client.installSkillNpmDependencyEnvironment(skillId,version,lock.environment_digest);
+      setLocks(current=>current.map(item=>item.environment_digest===updated.environment_digest?updated:item));
+      setNotice('The approved npm lock is installed in a sealed, network-denied WSL environment. Lifecycle scripts were disabled during installation.');
+    }catch(failure){setError(String(failure));}finally{setBusy(false);}
+  }
+  async function remove(lock:LockRecord){
+    setBusy(true);setError('');setNotice('');
+    try{
+      const updated=await client.removeSkillNpmDependencyEnvironment(skillId,version,lock.environment_digest);
+      setLocks(current=>current.map(item=>item.environment_digest===updated.environment_digest?updated:item));
+      setNotice('The exact managed npm environment was removed.');
+    }catch(failure){setError(String(failure));}finally{setBusy(false);}
+  }
   if(!hasNodeScripts||!hasNpmDependencies)return null;
   return <section aria-label="npm dependency lock review">
     <h4>Node.js package dependencies</h4>
@@ -74,10 +90,13 @@ export function NpmDependencyPanel({client,skillId,version,distribution,hasNodeS
           <button disabled={busy} onClick={()=>void acquire(lock)}>{busy?'Fetching and verifying…':'Fetch and verify exact tarballs'}</button>
         </>}
         {lock.tarballs_present&&<p role="status">Stored tarballs are reverified against the lock when loaded.</p>}
+        {lock.environment_installed&&<p role="status">Installed environment · {lock.installed_bytes?.toLocaleString()} bytes · {lock.installed_file_count?.toLocaleString()} files · tree <code>{lock.installed_tree_sha256}</code></p>}
         {lock.decision==='pending_review'&&<div className="controls">
           <button disabled={busy||!lock.tarballs_present} onClick={()=>void review(lock,'approved')}>Approve this npm lock</button>
           <button disabled={busy} onClick={()=>void review(lock,'rejected')}>Reject this npm lock</button>
         </div>}
+        {lock.decision==='approved'&&lock.tarballs_present&&!lock.environment_installed&&<button disabled={busy} onClick={()=>void install(lock)}>{busy?'Installing offline…':'Install approved environment'}</button>}
+        {lock.decision==='approved'&&lock.environment_installed&&<button disabled={busy} onClick={()=>void remove(lock)}>Remove installed environment</button>}
         {lock.reviewed_at&&<p>Reviewed {new Date(lock.reviewed_at).toLocaleString()}: {lock.decision}.</p>}
       </details>;
     })}

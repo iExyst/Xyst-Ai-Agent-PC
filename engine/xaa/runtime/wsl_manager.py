@@ -292,6 +292,7 @@ def main() -> None:
     prepare_base()
     receipts = runpy.run_path(sys.argv[3])
     environments = runpy.run_path(sys.argv[5])
+    node_environments = runpy.run_path(sys.argv[6])
     journal = receipts["ExecutionReceipts"](Path("/var/lib/xaa-execution-manager"))
     if request.get("action") in {"stop", "cleanup", "status"} and set(request) == {
         "action",
@@ -337,6 +338,28 @@ def main() -> None:
                     {
                         "error_code": environments["error_code"](exc),
                         "error_detail": environments["error_detail"](exc),
+                    }
+                )
+            )
+        else:
+            print(json.dumps(result))
+    elif request.get("action") in {"install_node", "status_node", "remove_node"}:
+        filter_bytes = runpy.run_path(sys.argv[2])["syscall_filter"]()
+        try:
+            result = node_environments["dispatch"](request, filter_bytes, journal._file_lock)
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            TypeError,
+            KeyError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            print(
+                json.dumps(
+                    {
+                        "error_code": node_environments["error_code"](exc),
+                        "error_detail": node_environments["error_detail"](exc),
                     }
                 )
             )

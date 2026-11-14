@@ -486,6 +486,22 @@ class RunStore:
                     FOREIGN KEY(skill_id,skill_version)
                         REFERENCES skill_versions(skill_id,version) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS skill_npm_dependency_environments (
+                    skill_id TEXT NOT NULL,
+                    skill_version INTEGER NOT NULL,
+                    environment_digest TEXT NOT NULL CHECK(length(environment_digest)=64),
+                    distribution TEXT NOT NULL,
+                    node_version TEXT NOT NULL,
+                    npm_version TEXT NOT NULL,
+                    tree_sha256 TEXT NOT NULL CHECK(length(tree_sha256)=64),
+                    installed_bytes INTEGER NOT NULL CHECK(installed_bytes BETWEEN 1 AND 1610612736),
+                    file_count INTEGER NOT NULL CHECK(file_count BETWEEN 1 AND 50000),
+                    installed_at TEXT NOT NULL,
+                    PRIMARY KEY(skill_id,skill_version,environment_digest),
+                    FOREIGN KEY(skill_id,skill_version,environment_digest)
+                        REFERENCES skill_npm_dependency_locks(skill_id,skill_version,environment_digest)
+                        ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS skill_python_dependency_environments (
                     skill_id TEXT NOT NULL,
                     skill_version INTEGER NOT NULL,

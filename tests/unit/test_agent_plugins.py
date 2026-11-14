@@ -1640,3 +1640,39 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         )
         assert approved.status_code == 200, approved.text
         assert approved.json()["decision"] == "approved"
+
+        class FixtureTransport:
+            async def install_node_environment(
+                self, lock, package_manifest, package_lock, tarball_directory, *, deadline
+            ):
+                assert package_manifest == (skill_root / "package.json").read_bytes()
+                assert package_lock == (skill_root / "package-lock.json").read_bytes()
+                assert tarball_directory.name == digest
+                return {
+                    "environment_digest": digest,
+                    "lock_sha256": digest,
+                    "installed": True,
+                    "distribution": lock.distribution,
+                    "node_version": lock.node_version,
+                    "npm_version": lock.npm_version,
+                    "tree_sha256": "b" * 64,
+                    "installed_bytes": 1024,
+                    "file_count": 10,
+                }
+
+            async def remove_node_environment(self, environment_digest, *, deadline):
+                assert environment_digest == digest
+                return {"environment_digest": digest, "removed": True}
+
+        async def discover_fixture(distribution, *, deadline):
+            assert distribution == "Ubuntu-24.04"
+            return FixtureTransport()
+
+        monkeypatch.setattr(api_module.WSLTransport, "discover", discover_fixture)
+        installed = client.post(f"{base}/{digest}/install", headers=headers)
+        assert installed.status_code == 200, installed.text
+        assert installed.json()["environment_installed"] is True
+        assert installed.json()["installed_tree_sha256"] == "b" * 64
+        removed = client.delete(f"{base}/{digest}/install", headers=headers)
+        assert removed.status_code == 200, removed.text
+        assert removed.json()["environment_installed"] is False

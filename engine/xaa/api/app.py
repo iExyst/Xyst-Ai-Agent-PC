@@ -2076,6 +2076,102 @@ def create_app(
         return updated
 
     @app.post(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/install",
+        response_model=NpmDependencyLockRecord,
+    )
+    async def install_skill_npm_dependency_environment(
+        skill_id: str,
+        environment_digest: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        records = skill_store.npm_dependency_locks(skill_id, version)
+        record = next(
+            (item for item in records if item["environment_digest"] == environment_digest), None
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="npm dependency lock not found.")
+        if record["decision"] != "approved":
+            raise HTTPException(
+                status_code=409, detail="Approve the exact npm lock before installation."
+            )
+        lock = ProcedureNpmDependencyLock.model_validate(record["lock"], strict=True)
+        if not record["tarballs_present"]:
+            raise HTTPException(
+                status_code=409, detail="Acquire and verify exact npm tarballs before installation."
+            )
+        try:
+            package_manifest, package_lock = skill_store.npm_dependency_lock_resources(lock)
+            skill_store.npm_tarballs.verify(lock)
+            deadline = time.monotonic() + 300
+            transport = await WSLTransport.discover(
+                lock.distribution, deadline=min(deadline, time.monotonic() + 30)
+            )
+            result = await transport.install_node_environment(
+                lock,
+                package_manifest,
+                package_lock,
+                skill_store.npm_tarballs.root / environment_digest,
+                deadline=deadline,
+            )
+            return skill_store.record_npm_dependency_environment(lock, result)
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TransportError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="WSL npm installation timed out.") from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409, detail="Verified WSL npm installation failed."
+            ) from exc
+
+    @app.delete(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks/{environment_digest}/install",
+        response_model=NpmDependencyLockRecord,
+    )
+    async def remove_skill_npm_dependency_environment(
+        skill_id: str,
+        environment_digest: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        record = next(
+            (
+                item
+                for item in skill_store.npm_dependency_locks(skill_id, version)
+                if item["environment_digest"] == environment_digest
+            ),
+            None,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="npm dependency lock not found.")
+        if record["decision"] != "approved" or not record["environment_installed"]:
+            raise HTTPException(
+                status_code=409, detail="No approved installed npm environment exists."
+            )
+        lock = ProcedureNpmDependencyLock.model_validate(record["lock"], strict=True)
+        deadline = time.monotonic() + 45
+        try:
+            transport = await WSLTransport.discover(
+                lock.distribution, deadline=min(deadline, time.monotonic() + 30)
+            )
+            await transport.remove_node_environment(environment_digest, deadline=deadline)
+            return skill_store.forget_npm_dependency_environment(
+                skill_id, version, environment_digest
+            )
+        except EnvironmentInUseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TransportError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=504, detail="WSL npm environment removal timed out."
+            ) from exc
+
+    @app.post(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/install",
         response_model=PythonDependencyLockRecord,
     )

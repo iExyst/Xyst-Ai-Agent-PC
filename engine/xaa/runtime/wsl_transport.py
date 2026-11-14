@@ -22,6 +22,7 @@ RESOURCE_NAMES = (
     "execution_receipts.py",
     "cgroup_gate.py",
     "procedure_environment_manager.py",
+    "node_environment_manager.py",
 )
 
 
@@ -296,6 +297,146 @@ class WSLTransport:
                     )
                 raise TransportError("WSL procedure environment installation failed: " + error_code)
             raise TransportError("WSL did not confirm the exact immutable procedure environment.")
+        return result
+
+    async def install_node_environment(
+        self,
+        lock: Any,
+        package_manifest: bytes,
+        package_lock: bytes,
+        tarball_directory: Path,
+        *,
+        deadline: float,
+    ) -> dict[str, Any]:
+        """Install exact owner-approved npm tarballs offline in managed WSL storage."""
+        from xaa.extensions.npm_dependencies import ProcedureNpmDependencyLock
+
+        if not isinstance(lock, ProcedureNpmDependencyLock):
+            raise TypeError("Install request must contain a validated npm dependency lock.")
+        if lock.distribution != self.distribution:
+            raise PermissionError("npm dependency lock targets a different WSL distribution.")
+        if (
+            hashlib.sha256(package_manifest).hexdigest() != lock.package_manifest_sha256
+            or hashlib.sha256(package_lock).hexdigest() != lock.lockfile_sha256
+        ):
+            raise ValueError("Linked npm resources do not match the validated dependency lock.")
+        if profile_fingerprint()[0] != self.profile_sha256:
+            raise PermissionError("WSL manager profile changed; rediscover before installation.")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Node environment installation deadline expired.")
+        directory = tarball_directory.resolve(strict=True)
+        mapper = (
+            "import json,subprocess,sys\n"
+            "paths=json.load(sys.stdin)\n"
+            "mapped=[]\n"
+            "for path in paths:\n"
+            " result=subprocess.run(['/usr/bin/wslpath','-a','-u',path],check=True,"
+            "stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)\n"
+            " mapped.append(result.stdout.strip())\n"
+            "sys.stdout.write(json.dumps(mapped))\n"
+        )
+        prefix = (
+            str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/wsl.exe"),
+            "--distribution",
+            self.distribution,
+            "--user",
+            "root",
+            "--exec",
+        )
+        mapped_raw = await request_process(
+            (*prefix, "/usr/bin/python3", "-I", "-c", mapper),
+            json.dumps([str(directory)]).encode("utf-8"),
+            timeout=min(20, deadline - time.monotonic()),
+            output_limit=8192,
+        )
+        try:
+            mapped: object = json.loads(mapped_raw.decode("utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise TransportError("WSL returned invalid npm tarball path data.") from exc
+        if (
+            not isinstance(mapped, list)
+            or len(cast(list[object], mapped)) != 1
+            or not isinstance(cast(list[object], mapped)[0], str)
+            or not cast(list[str], mapped)[0].startswith("/mnt/")
+        ):
+            raise TransportError("WSL returned an invalid npm tarball path.")
+        payload = json.dumps(
+            {
+                "action": "install_node",
+                "environment_digest": lock.environment_digest(),
+                "lock_json": lock.canonical_json(),
+                "package_manifest_b64": base64.b64encode(package_manifest).decode("ascii"),
+                "package_lock_b64": base64.b64encode(package_lock).decode("ascii"),
+                "tarball_path": cast(list[str], mapped)[0],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        if len(payload) > 18 * 1024 * 1024:
+            raise ValueError("npm environment install request exceeds its transport limit.")
+        raw = await request_process(
+            self.invocation, payload, timeout=deadline - time.monotonic(), output_limit=16384
+        )
+        result = response_object(raw)
+        if (
+            result.get("environment_digest") != lock.environment_digest()
+            or result.get("lock_sha256") != lock.environment_digest()
+            or result.get("installed") is not True
+            or not isinstance(result.get("tree_sha256"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", cast(str, result.get("tree_sha256"))) is None
+        ):
+            code, detail = result.get("error_code"), result.get("error_detail")
+            if isinstance(code, str):
+                suffix = f": {detail}" if isinstance(detail, str) and len(detail) <= 240 else ""
+                raise TransportError(f"WSL npm environment installation failed ({code}){suffix}")
+            raise TransportError("WSL did not confirm the exact immutable npm environment.")
+        return result
+
+    async def node_environment_status(
+        self, environment_digest: str, *, deadline: float
+    ) -> dict[str, Any]:
+        return await self._node_environment_control(
+            "status_node", environment_digest, deadline=deadline
+        )
+
+    async def remove_node_environment(
+        self, environment_digest: str, *, deadline: float
+    ) -> dict[str, Any]:
+        result = await self._node_environment_control(
+            "remove_node", environment_digest, deadline=deadline
+        )
+        if result.get("removed") is not True:
+            raise TransportError("WSL did not confirm exact npm environment removal.")
+        return result
+
+    async def _node_environment_control(
+        self, action: str, environment_digest: str, *, deadline: float
+    ) -> dict[str, Any]:
+        if (
+            action not in {"status_node", "remove_node"}
+            or re.fullmatch(r"[a-f0-9]{64}", environment_digest) is None
+        ):
+            raise ValueError("Node environment identity or action is invalid.")
+        if profile_fingerprint()[0] != self.profile_sha256:
+            raise PermissionError(
+                "WSL manager profile changed; rediscover before environment control."
+            )
+        raw = await request_process(
+            self.invocation,
+            json.dumps(
+                {"action": action, "environment_digest": environment_digest}, separators=(",", ":")
+            ).encode("ascii"),
+            timeout=deadline - time.monotonic(),
+            output_limit=8192,
+        )
+        result = response_object(raw)
+        if isinstance(result.get("error_code"), str):
+            if result["error_code"] == "environment_in_use":
+                raise EnvironmentInUseError("A running procedure is using this Node environment.")
+            raise TransportError("WSL Node environment operation failed.")
+        if result.get("environment_digest") != environment_digest:
+            raise TransportError("WSL returned a different npm environment identity.")
+        if action == "status_node" and type(result.get("installed")) is not bool:
+            raise TransportError("WSL returned an invalid npm environment status.")
         return result
 
     async def procedure_environment_status(

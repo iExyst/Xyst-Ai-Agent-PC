@@ -25,7 +25,7 @@ export function NodeRuntimeReadinessPanel({client,skillId,version,distribution}:
       <p>Check state: {result.state}{result.node_version?` · Node.js ${result.node_version}`:''}{result.npm_version?` · npm ${result.npm_version}`:''}</p>
       {result.state==='node_missing'&&<p>Node.js was not found in this distribution’s restricted PATH, so linked JavaScript scripts cannot run there.</p>}
       {result.state==='ready'&&!result.npm_available&&<p>Node.js scripts can run, but npm is unavailable. Package resolution and dependency installation are not supported yet.</p>}
-      {result.state==='ready'&&result.npm_available&&<p>Runtime check passed. Imported npm locks can be inspected and exact tarballs prepared for owner review; offline installation is not available yet.</p>}
+      {result.state==='ready'&&result.npm_available&&<p>Runtime check passed. Approved npm locks can be installed offline; this check does not run procedure scripts or bind an installed package environment to a procedure run.</p>}
       {result.state==='unavailable'&&<p>The restricted runtime check did not complete. Review the selected distribution and sandbox readiness.</p>}
     </div>}
     {error&&<p role="alert">{error}</p>}

@@ -201,6 +201,11 @@ class NpmDependencyLockRecord(BaseModel):
     )
     created_at: str
     reviewed_at: str | None
+    environment_installed: bool = False
+    installed_tree_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    installed_bytes: int | None = Field(default=None, ge=1, le=1_610_612_736)
+    installed_file_count: int | None = Field(default=None, ge=1, le=50_000)
+    installed_at: str | None = None
 
     @field_validator("verified_tarballs", mode="before")
     @classmethod
