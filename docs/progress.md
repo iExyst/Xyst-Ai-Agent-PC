@@ -1,9 +1,10 @@
+# Progress
+
 ## Refresh the installer download page and browser verification (2026-11-14)
 
 Updated the README and 0.1.1 installer notes to point to the latest hosted-tested package and to distinguish the manual installer workflow from source CI. The README records the exact hosted artifact size and SHA-256.
 
-The full desktop Playwright suite initially exposed three stale assertions: a global backup status selector, the sandbox readiness body before the backend field was added, and a procedure-selection fixture missing Python/npm lock-list responses plus updated Node resource wording. Updated those tests to match current accessible scopes and API contracts. `npm run test:browser` now passes 38 tests with 3 opt-in live tests skipped (LM Studio, WSL sandbox, and npm browser acceptance). The live npm browser acceptance was run separately and passed. No model inference was used.
-# Progress
+The full desktop Playwright suite initially exposed three stale assertions: a global backup status selector, the sandbox readiness body before the backend field was added, and a procedure-selection fixture missing Python/npm lock-list responses plus updated Node resource wording. Updated those tests to match current accessible scopes and API contracts. `npm run test:browser` now passes 38 tests with 3 opt-in live tests skipped (LM Studio, WSL sandbox, and npm browser acceptance). The live npm browser acceptance was run separately and passed. Hosted source run [43603741402](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43603741402) passed after these fixes: 1,356 Python tests passed and 19 skipped, and static, contract, browser, and recovery checks passed; the installer job was skipped for the feature branch. No model inference was used.
 
 ## Make the npm owner flow visible in the Windows program (2026-11-14)
 
