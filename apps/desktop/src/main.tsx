@@ -414,6 +414,7 @@ function App() {
     catch(failure){setRestoreStatus(`Could not switch profiles: ${String(failure)}`);}
   }
   return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to main content</a>
     <aside className="app-sidebar" aria-label="Application navigation">
       <div className="brand-lockup"><div className="brand-mark">X</div><div><strong>Xyst</strong><span>AI Agent</span></div></div>
       <p className="sidebar-label">WORKSPACE</p>
@@ -430,7 +431,7 @@ function App() {
     </aside>
     <div className="app-frame">
       <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1 tabIndex={-1}>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='integrations'?'Integrations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`}><span className={`connection-dot ${client&&model?'online':''}`}/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span><button type="button" className="topbar-new" onClick={()=>{setPage('home');setActiveSection('new-objective');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button></div></header>
-      <main className="app-content">
+      <main id="main-content" className="app-content" tabIndex={-1}>
         {(error||client&&models.length===0)&&<div className="app-alert" role={error?'alert':'status'}><p>{error||'No local models are available yet.'}</p>{client&&models.length===0&&<div><p>Open LM Studio, choose Developer → Local Server, and start the server. If it is already running, refresh the model list here.</p><button type="button" className="secondary-button" onClick={()=>navigateTo('models','model-setup')}>Open model setup</button></div>}</div>}
         {client&&page==='home'&&<section className="welcome-card"><div><p className="eyebrow">YOUR PRIVATE AI WORKSPACE</p><h2>What would you like to get done?</h2><p>Give X.A.A. an objective. Follow its plan, tools, and results as it works on your computer.</p></div><button type="button" onClick={()=>document.getElementById('run-objective')?.focus()}>Start with an objective <span aria-hidden="true">↘</span></button></section>}
         {client&&page==='home'&&run?.state==='blocked'&&<section className="recovery-card" aria-labelledby="recovery-title"><div><p className="eyebrow">RECOVERY AVAILABLE</p><h2 id="recovery-title">A saved run needs your review</h2><p>This run is blocked and has not been resumed. Review its latest activity and any pending recovery steps before deciding what to do.</p></div><button type="button" onClick={()=>navigateTo('runs','active-run')}>Review saved run</button></section>}

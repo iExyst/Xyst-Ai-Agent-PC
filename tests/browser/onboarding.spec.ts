@@ -22,6 +22,14 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     return route.fulfill({json:[],headers});
   });
   await page.goto('/');
+  await page.keyboard.press('Tab');
+  const skipLink=page.getByRole('link',{name:'Skip to main content'});
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeInViewport();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('main')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Engine token')).toBeFocused();
   await expect(page.getByRole('note')).toContainText('keeps it running in the system tray');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByLabel('Engine token').focus();
