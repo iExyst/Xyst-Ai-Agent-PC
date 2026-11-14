@@ -20,6 +20,8 @@ if __name__ == "__main__":
         from xaa.providers.tokenizer_worker import main
     elif sys.argv[1:] == ["--pypi-resolver-worker"]:
         from xaa.extensions.pypi_resolver_worker import main
+    elif sys.argv[1:] == ["--pypi-wheel-worker"]:
+        from xaa.extensions.pypi_wheel_worker import main
     elif sys.argv[1:] == ["--mcp-appcontainer-shim"]:
         from xaa.runtime.mcp_appcontainer import run_stdio_appcontainer_shim
 

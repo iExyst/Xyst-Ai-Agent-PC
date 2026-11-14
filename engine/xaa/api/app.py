@@ -86,7 +86,7 @@ from xaa.extensions.procedure_dependencies import (
     PythonDependencyTarget,
 )
 from xaa.extensions.pypi_resolver import PyPIResolutionError, PyPIWheelResolver
-from xaa.extensions.pypi_wheels import PyPIAcquisitionError, PyPIWheelAcquirer
+from xaa.extensions.pypi_wheels import PyPIAcquisitionError, acquire_wheelhouse_in_appcontainer
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
 from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
@@ -1745,8 +1745,11 @@ def create_app(
             return record
         lock = ProcedurePythonDependencyLock.model_validate(record["lock"])
         try:
-            artifacts = await PyPIWheelAcquirer().acquire(lock)
-            skill_store.store_python_dependency_wheelhouse(lock, artifacts)
+
+            async def store_verified_files(artifacts: dict[str, Path]) -> None:
+                skill_store.store_python_dependency_wheelhouse_files(lock, artifacts)
+
+            await acquire_wheelhouse_in_appcontainer(lock, on_verified_files=store_verified_files)
         except PyPIAcquisitionError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         except SkillConflict as exc:

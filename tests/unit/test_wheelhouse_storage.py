@@ -82,6 +82,24 @@ def test_wheelhouse_store_is_atomic_idempotent_and_lock_bound(tmp_path):
     }
 
 
+def test_wheelhouse_store_streams_verified_paths_atomically(tmp_path):
+    content = wheel_bytes()
+    lock = lock_for(content)
+    source = tmp_path / "staging" / lock.wheels[0].filename
+    source.parent.mkdir()
+    source.write_bytes(content)
+    store = ProcedureWheelhouseStore(tmp_path / "wheelhouses")
+
+    store.store_files(lock, {source.name: source})
+
+    assert store.present(lock)
+    assert store.read(lock) == {source.name: content}
+    store.store_files(lock, {source.name: source})
+    source.write_bytes(content[:-1] + bytes([content[-1] ^ 1]))
+    with pytest.raises(WheelhouseStorageError, match="do not match"):
+        store.store_files(lock, {source.name: source})
+
+
 def test_wheelhouse_store_rechecks_artifact_and_manifest_bytes(tmp_path):
     content = wheel_bytes()
     lock = lock_for(content)

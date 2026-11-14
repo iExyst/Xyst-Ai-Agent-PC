@@ -12,6 +12,7 @@ import zipfile
 from collections.abc import Mapping
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, Self, cast
 
@@ -300,100 +301,132 @@ def verify_locked_wheel_bytes(
     expected = {wheel.filename: wheel for wheel in lock.wheels}
     if set(artifacts) != set(expected):
         raise ValueError("Wheelhouse files must exactly match the reviewed dependency lock.")
+    for filename in expected:
+        _verify_wheel_source(lock, filename, artifacts[filename])
+    return dict(artifacts)
 
-    verified: dict[str, bytes] = {}
-    for filename, record in expected.items():
-        content = artifacts[filename]
-        if len(content) != record.size_bytes:
+
+def verify_locked_wheel_paths(
+    lock: ProcedurePythonDependencyLock, artifacts: Mapping[str, Path]
+) -> dict[str, Path]:
+    """Verify an exact wheelhouse by path with bounded memory use."""
+    expected = {wheel.filename: wheel for wheel in lock.wheels}
+    if set(artifacts) != set(expected):
+        raise ValueError("Wheelhouse files must exactly match the reviewed dependency lock.")
+    for filename, path in artifacts.items():
+        if path.is_symlink() or path.is_junction() or not path.is_file():
+            raise ValueError("A wheel artifact must be a regular file.")
+        _verify_wheel_source(lock, filename, path)
+    return dict(artifacts)
+
+
+def _verify_wheel_source(
+    lock: ProcedurePythonDependencyLock, filename: str, source: bytes | Path
+) -> None:
+    record = next((item for item in lock.wheels if item.filename == filename), None)
+    if record is None:
+        raise ValueError("Wheelhouse contains a file outside the reviewed dependency lock.")
+    if isinstance(source, bytes):
+        if len(source) != record.size_bytes:
             raise ValueError("A wheel's byte size does not match the reviewed lock.")
-        if hashlib.sha256(content).hexdigest() != record.sha256:
+        if hashlib.sha256(source).hexdigest() != record.sha256:
             raise ValueError("A wheel's SHA-256 does not match the reviewed lock.")
-        try:
-            with zipfile.ZipFile(io.BytesIO(content)) as archive:
-                members = archive.infolist()
-                if len(members) > MAX_WHEEL_MEMBERS:
-                    raise ValueError("A wheel contains too many archive members.")
-                archive_names: set[str] = set()
-                metadata_members: list[zipfile.ZipInfo] = []
-                wheel_description_members: list[zipfile.ZipInfo] = []
-                for member in members:
-                    name = member.filename
-                    if (
-                        not name
-                        or name.startswith("/")
-                        or "\\" in name
-                        or any(part in {"", ".", ".."} for part in name.rstrip("/").split("/"))
-                        or name in archive_names
-                        or member.flag_bits & 0x1
-                        or stat.S_IFMT(member.external_attr >> 16) == stat.S_IFLNK
-                    ):
-                        raise ValueError("A wheel contains an unsafe or duplicate archive path.")
-                    archive_names.add(name)
-                    if name.endswith(".dist-info/METADATA"):
-                        metadata_members.append(member)
-                    if name.endswith(".dist-info/WHEEL"):
-                        wheel_description_members.append(member)
-                if len(metadata_members) != 1:
-                    raise ValueError("A wheel must contain exactly one dist-info METADATA file.")
-                if len(wheel_description_members) != 1:
-                    raise ValueError("A wheel must contain exactly one dist-info WHEEL file.")
-                metadata_member = metadata_members[0]
-                wheel_description_member = wheel_description_members[0]
-                if metadata_member.file_size > MAX_WHEEL_METADATA_BYTES:
-                    raise ValueError("Wheel METADATA exceeds its size limit.")
-                if wheel_description_member.file_size > MAX_WHEEL_DESCRIPTION_BYTES:
-                    raise ValueError("Wheel WHEEL metadata exceeds its size limit.")
-                expected_dist_info = (
-                    f"{record.project_name.replace('-', '_')}-"
-                    f"{record.version.replace('-', '_')}.dist-info/METADATA"
-                )
-                if metadata_member.filename != expected_dist_info:
-                    raise ValueError("Wheel dist-info path does not match the reviewed identity.")
-                if wheel_description_member.filename != expected_dist_info.replace(
-                    "METADATA", "WHEEL"
+        archive_source: bytes | Path = source
+    else:
+        info = source.stat(follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode) or info.st_size != record.size_bytes:
+            raise ValueError("A wheel's byte size does not match the reviewed lock.")
+        digest = hashlib.sha256()
+        with source.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        if digest.hexdigest() != record.sha256:
+            raise ValueError("A wheel's SHA-256 does not match the reviewed lock.")
+        archive_source = source
+    try:
+        with zipfile.ZipFile(
+            io.BytesIO(archive_source) if isinstance(archive_source, bytes) else archive_source
+        ) as archive:
+            members = archive.infolist()
+            if len(members) > MAX_WHEEL_MEMBERS:
+                raise ValueError("A wheel contains too many archive members.")
+            archive_names: set[str] = set()
+            metadata_members: list[zipfile.ZipInfo] = []
+            wheel_description_members: list[zipfile.ZipInfo] = []
+            for member in members:
+                name = member.filename
+                if (
+                    not name
+                    or name.startswith("/")
+                    or "\\" in name
+                    or any(part in {"", ".", ".."} for part in name.rstrip("/").split("/"))
+                    or name in archive_names
+                    or member.flag_bits & 0x1
+                    or stat.S_IFMT(member.external_attr >> 16) == stat.S_IFLNK
                 ):
-                    raise ValueError("Wheel WHEEL path does not match the reviewed identity.")
-                metadata_bytes = archive.read(metadata_member)
-                wheel_description_bytes = archive.read(wheel_description_member)
-        except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
-            raise ValueError("A locked wheel is not a readable wheel archive.") from exc
-
-        message = BytesParser(policy=policy.default).parsebytes(metadata_bytes)
-        if message.defects:
-            raise ValueError("Wheel METADATA is malformed.")
-        name_headers = message.get_all("Name", [])
-        versions = message.get_all("Version", [])
-        if len(name_headers) != 1 or len(versions) != 1:
-            raise ValueError("Wheel METADATA must declare exactly one Name and Version.")
-        try:
-            metadata_version = Version(str(versions[0]))
-            requirements = tuple(
-                sorted(
-                    (str(Requirement(value)) for value in message.get_all("Requires-Dist", [])),
-                    key=str.casefold,
-                )
+                    raise ValueError("A wheel contains an unsafe or duplicate archive path.")
+                archive_names.add(name)
+                if name.endswith(".dist-info/METADATA"):
+                    metadata_members.append(member)
+                if name.endswith(".dist-info/WHEEL"):
+                    wheel_description_members.append(member)
+            if len(metadata_members) != 1:
+                raise ValueError("A wheel must contain exactly one dist-info METADATA file.")
+            if len(wheel_description_members) != 1:
+                raise ValueError("A wheel must contain exactly one dist-info WHEEL file.")
+            metadata_member = metadata_members[0]
+            wheel_description_member = wheel_description_members[0]
+            if metadata_member.file_size > MAX_WHEEL_METADATA_BYTES:
+                raise ValueError("Wheel METADATA exceeds its size limit.")
+            if wheel_description_member.file_size > MAX_WHEEL_DESCRIPTION_BYTES:
+                raise ValueError("Wheel WHEEL metadata exceeds its size limit.")
+            expected_dist_info = (
+                f"{record.project_name.replace('-', '_')}-"
+                f"{record.version.replace('-', '_')}.dist-info/METADATA"
             )
-        except (InvalidRequirement, InvalidVersion) as exc:
-            raise ValueError("Wheel METADATA contains an invalid dependency declaration.") from exc
-        if canonicalize_name(str(name_headers[0])) != record.project_name:
-            raise ValueError("Wheel METADATA project name does not match the reviewed lock.")
-        if metadata_version != Version(record.version):
-            raise ValueError("Wheel METADATA version does not match the reviewed lock.")
-        if requirements != record.requires_dist:
-            raise ValueError("Wheel METADATA dependencies do not match the reviewed lock.")
-        wheel_description = BytesParser(policy=policy.default).parsebytes(wheel_description_bytes)
-        if wheel_description.defects:
-            raise ValueError("Wheel WHEEL metadata is malformed.")
-        wheel_versions = wheel_description.get_all("Wheel-Version", [])
-        actual_tags = wheel_description.get_all("Tag", [])
-        if len(wheel_versions) != 1 or not re.fullmatch(r"1\.\d+", str(wheel_versions[0])):
-            raise ValueError("Wheel WHEEL metadata has an unsupported format version.")
-        try:
-            _name, _version, _build, filename_tags = parse_wheel_filename(record.filename)
-            declared_tags = {tag for value in actual_tags for tag in parse_tag(str(value))}
-        except (InvalidWheelFilename, ValueError) as exc:
-            raise ValueError("Wheel WHEEL metadata contains invalid compatibility tags.") from exc
-        if not actual_tags or declared_tags != set(filename_tags):
-            raise ValueError("Wheel WHEEL tags do not match its reviewed filename.")
-        verified[filename] = content
-    return verified
+            if metadata_member.filename != expected_dist_info:
+                raise ValueError("Wheel dist-info path does not match the reviewed identity.")
+            if wheel_description_member.filename != expected_dist_info.replace("METADATA", "WHEEL"):
+                raise ValueError("Wheel WHEEL path does not match the reviewed identity.")
+            metadata_bytes = archive.read(metadata_member)
+            wheel_description_bytes = archive.read(wheel_description_member)
+    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+        raise ValueError("A locked wheel is not a readable wheel archive.") from exc
+
+    message = BytesParser(policy=policy.default).parsebytes(metadata_bytes)
+    if message.defects:
+        raise ValueError("Wheel METADATA is malformed.")
+    name_headers = message.get_all("Name", [])
+    versions = message.get_all("Version", [])
+    if len(name_headers) != 1 or len(versions) != 1:
+        raise ValueError("Wheel METADATA must declare exactly one Name and Version.")
+    try:
+        metadata_version = Version(str(versions[0]))
+        requirements = tuple(
+            sorted(
+                (str(Requirement(value)) for value in message.get_all("Requires-Dist", [])),
+                key=str.casefold,
+            )
+        )
+    except (InvalidRequirement, InvalidVersion) as exc:
+        raise ValueError("Wheel METADATA contains an invalid dependency declaration.") from exc
+    if canonicalize_name(str(name_headers[0])) != record.project_name:
+        raise ValueError("Wheel METADATA project name does not match the reviewed lock.")
+    if metadata_version != Version(record.version):
+        raise ValueError("Wheel METADATA version does not match the reviewed lock.")
+    if requirements != record.requires_dist:
+        raise ValueError("Wheel METADATA dependencies do not match the reviewed lock.")
+    wheel_description = BytesParser(policy=policy.default).parsebytes(wheel_description_bytes)
+    if wheel_description.defects:
+        raise ValueError("Wheel WHEEL metadata is malformed.")
+    wheel_versions = wheel_description.get_all("Wheel-Version", [])
+    actual_tags = wheel_description.get_all("Tag", [])
+    if len(wheel_versions) != 1 or not re.fullmatch(r"1\.\d+", str(wheel_versions[0])):
+        raise ValueError("Wheel WHEEL metadata has an unsupported format version.")
+    try:
+        _name, _version, _build, filename_tags = parse_wheel_filename(record.filename)
+        declared_tags = {tag for value in actual_tags for tag in parse_tag(str(value))}
+    except (InvalidWheelFilename, ValueError) as exc:
+        raise ValueError("Wheel WHEEL metadata contains invalid compatibility tags.") from exc
+    if not actual_tags or declared_tags != set(filename_tags):
+        raise ValueError("Wheel WHEEL tags do not match its reviewed filename.")

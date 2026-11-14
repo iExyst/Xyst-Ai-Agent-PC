@@ -63,6 +63,8 @@ def profile_fingerprint() -> str:
         Path(__file__).resolve(),
         Path(__file__).resolve().parents[1] / "extensions" / "pypi_resolver.py",
         Path(__file__).resolve().parents[1] / "extensions" / "pypi_resolver_worker.py",
+        Path(__file__).resolve().parents[1] / "extensions" / "pypi_wheels.py",
+        Path(__file__).resolve().parents[1] / "extensions" / "pypi_wheel_worker.py",
     )
     source_hashes = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -252,9 +254,13 @@ class WindowsLocalTransport:
         deadline: float,
         on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
         on_protocol_frame: Callable[[bytes], Awaitable[bytes | None]] | None = None,
+        on_workspace_result: Callable[[Path], Awaitable[None]] | None = None,
         isolated_python_worker: bool = False,
         max_seconds: int | None = None,
         max_output_bytes: int = MAX_OUTPUT_BYTES,
+        max_workspace_bytes: int = MAX_PRIVATE_WORKSPACE_BYTES,
+        streaming_protocol: bool = False,
+        max_protocol_bytes: int = MAX_OUTPUT_BYTES,
     ) -> dict[str, Any]:
         self.require_intent(intent)
         duration = intent.max_seconds if max_seconds is None else max_seconds
@@ -265,6 +271,15 @@ class WindowsLocalTransport:
             or not MAX_OUTPUT_BYTES <= max_output_bytes <= 8 * 1024 * 1024
         ):
             raise ValueError("Windows isolated command output limit must be 1..8 MiB.")
+        if (
+            type(max_workspace_bytes) is not int
+            or not MAX_PRIVATE_WORKSPACE_BYTES <= max_workspace_bytes <= MAX_PRIVATE_COMMAND_BYTES
+        ):
+            raise ValueError("Windows isolated workspace limit is outside its supported bound.")
+        if streaming_protocol and on_protocol_frame is None:
+            raise ValueError("Streaming protocol mode requires an interactive frame handler.")
+        if type(max_protocol_bytes) is not int or not 1 <= max_protocol_bytes <= 512 * 1024 * 1024:
+            raise ValueError("Windows protocol stream limit must be 1..512 MiB.")
         if deadline - time.monotonic() < duration:
             raise TimeoutError("Command duration exceeds the remaining parent time budget.")
         executable = _resolve_executable(intent.argv[0])
@@ -316,6 +331,9 @@ class WindowsLocalTransport:
         stdout = bytearray()
         stderr = bytearray()
         streamed = 0
+        protocol_streamed = 0
+        stdout_bytes = 0
+        stdout_digest = hashlib.sha256()
         started = time.monotonic()
         timed_out = False
         reader_tasks: list[asyncio.Task[None]] = []
@@ -414,17 +432,30 @@ class WindowsLocalTransport:
             async def read_stream(
                 name: Literal["stdout", "stderr"], reader: asyncio.StreamReader
             ) -> None:
-                nonlocal streamed
+                nonlocal streamed, protocol_streamed, stdout_bytes
                 target = stdout if name == "stdout" else stderr
                 protocol_buffer = bytearray()
                 while chunk := await reader.read(16384):
-                    streamed += len(chunk)
-                    if streamed > max_output_bytes:
-                        if max_output_bytes == MAX_OUTPUT_BYTES:
-                            raise ValueError("Windows command output exceeded the 1 MiB limit.")
-                        raise ValueError("Windows command output exceeded its configured limit.")
-                    target.extend(chunk)
                     if name == "stdout" and on_protocol_frame is not None:
+                        stdout_bytes += len(chunk)
+                        stdout_digest.update(chunk)
+                        if streaming_protocol:
+                            protocol_streamed += len(chunk)
+                            if protocol_streamed > max_protocol_bytes:
+                                raise ValueError(
+                                    "Windows command protocol stream exceeded its limit."
+                                )
+                        else:
+                            streamed += len(chunk)
+                            target.extend(chunk)
+                            if streamed > max_output_bytes:
+                                if max_output_bytes == MAX_OUTPUT_BYTES:
+                                    raise ValueError(
+                                        "Windows command output exceeded the 1 MiB limit."
+                                    )
+                                raise ValueError(
+                                    "Windows command output exceeded its configured limit."
+                                )
                         protocol_buffer.extend(chunk)
                         while b"\n" in protocol_buffer:
                             frame, _, remainder = protocol_buffer.partition(b"\n")
@@ -455,6 +486,18 @@ class WindowsLocalTransport:
                         raise RuntimeError(
                             "Windows command protocol ended with an incomplete frame."
                         )
+                    else:
+                        streamed += len(chunk)
+                        if name == "stdout":
+                            stdout_bytes += len(chunk)
+                            stdout_digest.update(chunk)
+                        target.extend(chunk)
+                        if streamed > max_output_bytes:
+                            if max_output_bytes == MAX_OUTPUT_BYTES:
+                                raise ValueError("Windows command output exceeded the 1 MiB limit.")
+                            raise ValueError(
+                                "Windows command output exceeded its configured limit."
+                            )
                     if on_output is not None:
                         await on_output(name, chunk)
                 if name == "stdout" and protocol_buffer:
@@ -469,7 +512,7 @@ class WindowsLocalTransport:
             async def monitor_workspace() -> None:
                 assert process_wait is not None
                 while not process_wait.done():
-                    _private_workspace_size(workspace)
+                    _private_workspace_size(workspace, max_bytes=max_workspace_bytes)
                     staging_bytes = _private_workspace_size(
                         run_root, max_bytes=MAX_PRIVATE_COMMAND_BYTES
                     )
@@ -500,6 +543,8 @@ class WindowsLocalTransport:
                 termination = "timeout" if exit_code == 124 else "finished"
                 output_complete = exit_code not in {124, 125}
                 normal_exit = exit_code if output_complete else None
+            if on_workspace_result is not None and output_complete and exit_code == 0:
+                await on_workspace_result(workspace)
             receipt: dict[str, Any] = {
                 "execution_id": intent.execution_id,
                 "snapshot_sha256": snapshot.sha256,
@@ -515,9 +560,9 @@ class WindowsLocalTransport:
                 "workspace_changes_persisted": False,
                 "stdout_b64": __import__("base64").b64encode(stdout).decode("ascii"),
                 "stderr_b64": __import__("base64").b64encode(stderr).decode("ascii"),
-                "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                "stdout_sha256": stdout_digest.hexdigest(),
                 "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
-                "stdout_bytes": len(stdout),
+                "stdout_bytes": stdout_bytes,
                 "stderr_bytes": len(stderr),
                 "elapsed_seconds": max(0.0, time.monotonic() - started),
             }

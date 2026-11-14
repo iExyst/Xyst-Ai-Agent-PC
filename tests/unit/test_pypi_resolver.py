@@ -89,13 +89,19 @@ def _target() -> PythonDependencyTarget:
     )
 
 
-def test_network_broker_allows_only_bounded_https_pypi_metadata_urls():
+def test_network_broker_allows_only_bounded_https_pypi_and_wheel_urls():
     assert validate_pypi_broker_url("https://pypi.org/simple/requests/")[1] == 2 * 1024 * 1024
     assert (
         validate_pypi_broker_url(
             "https://files.pythonhosted.org/packages/fixture/requests-1-py3-none-any.whl.metadata"
         )[1]
         == 1024 * 1024
+    )
+    assert (
+        validate_pypi_broker_url(
+            "https://files.pythonhosted.org/packages/fixture/requests-1-py3-none-any.whl"
+        )[1]
+        == 64 * 1024 * 1024
     )
     for value in (
         "http://pypi.org/simple/requests/",

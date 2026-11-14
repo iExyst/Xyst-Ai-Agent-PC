@@ -106,6 +106,52 @@ async def test_acquirer_fetches_only_exact_pypi_files_and_verifies_wheel_bytes()
 
 
 @pytest.mark.asyncio
+async def test_acquirer_streams_verified_wheel_to_disk(tmp_path):
+    content = wheel_bytes()
+    lock = make_lock(content)
+
+    async def serve(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "pypi.org":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/vnd.pypi.simple.v1+json"},
+                content=pypi_page(lock),
+            )
+        return httpx.Response(200, headers={"content-length": str(len(content))}, content=content)
+
+    destination = tmp_path / "wheel-stage"
+    paths = await PyPIWheelAcquirer(transport=httpx.MockTransport(serve)).acquire_to_directory(
+        lock, destination
+    )
+
+    assert paths == {lock.wheels[0].filename: destination / lock.wheels[0].filename}
+    assert paths[lock.wheels[0].filename].read_bytes() == content
+
+
+@pytest.mark.asyncio
+async def test_acquirer_streaming_hash_failure_removes_partial_wheel(tmp_path):
+    content = wheel_bytes()
+    lock = make_lock(content)
+    wrong = content[:-1] + bytes([content[-1] ^ 1])
+
+    async def serve(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "pypi.org":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/vnd.pypi.simple.v1+json"},
+                content=pypi_page(lock),
+            )
+        return httpx.Response(200, content=wrong)
+
+    destination = tmp_path / "wheel-stage"
+    with pytest.raises(PyPIAcquisitionError, match="SHA-256"):
+        await PyPIWheelAcquirer(transport=httpx.MockTransport(serve)).acquire_to_directory(
+            lock, destination
+        )
+    assert list(destination.iterdir()) == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [

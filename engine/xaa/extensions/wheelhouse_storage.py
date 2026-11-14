@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +15,7 @@ from xaa.extensions.procedure_dependencies import (
     MAX_ENVIRONMENT_BYTES,
     ProcedurePythonDependencyLock,
     verify_locked_wheel_bytes,
+    verify_locked_wheel_paths,
 )
 
 _MANIFEST_NAME = "manifest.json"
@@ -81,6 +83,50 @@ class ProcedureWheelhouseStore:
                 shutil.rmtree(stage, ignore_errors=True)
         return self.read(lock)
 
+    def store_files(
+        self, lock: ProcedurePythonDependencyLock, artifacts: Mapping[str, Path]
+    ) -> None:
+        """Verify and atomically persist exact wheel files without aggregating them in memory."""
+        try:
+            verified = verify_locked_wheel_paths(lock, artifacts)
+        except (OSError, ValueError) as exc:
+            raise WheelhouseStorageError(
+                "Wheelhouse files do not match the dependency lock."
+            ) from exc
+        if sum(wheel.size_bytes for wheel in lock.wheels) > MAX_ENVIRONMENT_BYTES:
+            raise WheelhouseStorageError("Wheelhouse exceeds its aggregate storage limit.")
+
+        target = self.root / lock.environment_digest()
+        if target.exists():
+            self._read_verified_paths(lock)
+            return
+
+        stage = self.root / f".stage-{uuid.uuid4().hex}"
+        stage.mkdir(mode=0o700)
+        try:
+            for filename, source in verified.items():
+                destination = stage / filename
+                with source.open("rb") as input_file, destination.open("xb") as output_file:
+                    shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
+                    output_file.flush()
+                    os.fsync(output_file.fileno())
+            staged = {name: stage / name for name in verified}
+            verify_locked_wheel_paths(lock, staged)
+            self._write_new_file(stage / _MANIFEST_NAME, self._manifest(lock, {}))
+            try:
+                os.replace(stage, target)
+            except OSError:
+                if not target.exists():
+                    raise
+                self._read_verified_paths(lock)
+        except WheelhouseStorageError:
+            raise
+        except (OSError, ValueError) as exc:
+            raise WheelhouseStorageError("Wheelhouse could not be durably committed.") from exc
+        finally:
+            if stage.exists():
+                shutil.rmtree(stage, ignore_errors=True)
+
     def read(self, lock: ProcedurePythonDependencyLock) -> dict[str, bytes]:
         """Read and independently verify an immutable wheelhouse for one lock."""
         environment_digest = lock.environment_digest()
@@ -142,6 +188,67 @@ class ProcedureWheelhouseStore:
             raise WheelhouseStorageError(
                 "Stored wheelhouse failed integrity verification."
             ) from exc
+
+    def _read_verified_paths(self, lock: ProcedurePythonDependencyLock) -> dict[str, Path]:
+        """Validate the committed manifest and wheel files without loading file bytes."""
+        directory = self.root / lock.environment_digest()
+        if directory.is_symlink() or not directory.is_dir():
+            raise WheelhouseStorageError("Verified wheelhouse is not available for this lock.")
+        try:
+            resolved_directory = directory.resolve(strict=True)
+            if not resolved_directory.is_relative_to(self.root):
+                raise WheelhouseStorageError("Wheelhouse escaped managed storage.")
+            manifest: object = json.loads(
+                self._read_file(directory / _MANIFEST_NAME, _MANIFEST_LIMIT)
+            )
+            expected = {wheel.filename: wheel for wheel in lock.wheels}
+            if not isinstance(manifest, dict):
+                raise WheelhouseStorageError("Wheelhouse manifest is invalid.")
+            value = cast(dict[str, Any], manifest)
+            if (
+                value.get("schema_version") != 1
+                or value.get("environment_digest") != lock.environment_digest()
+                or value.get("lock_sha256")
+                != hashlib.sha256(lock.canonical_json().encode("utf-8")).hexdigest()
+                or not isinstance(value.get("files"), list)
+            ):
+                raise WheelhouseStorageError("Wheelhouse manifest does not match its lock.")
+            records: dict[str, tuple[int, str]] = {}
+            for item in cast(list[object], value["files"]):
+                if not isinstance(item, dict):
+                    raise WheelhouseStorageError("Wheelhouse manifest entry is invalid.")
+                record = cast(dict[str, Any], item)
+                filename, size, digest = (
+                    record.get("filename"),
+                    record.get("size_bytes"),
+                    record.get("sha256"),
+                )
+                if (
+                    not isinstance(filename, str)
+                    or type(size) is not int
+                    or not isinstance(digest, str)
+                    or filename in records
+                ):
+                    raise WheelhouseStorageError("Wheelhouse manifest entry is invalid.")
+                records[filename] = (size, digest)
+            wanted = {name: (wheel.size_bytes, wheel.sha256) for name, wheel in expected.items()}
+            if records != wanted or {item.name for item in directory.iterdir()} != (
+                set(expected) | {_MANIFEST_NAME}
+            ):
+                raise WheelhouseStorageError("Wheelhouse manifest files do not match the lock.")
+            paths = {name: directory / name for name in expected}
+            verify_locked_wheel_paths(lock, paths)
+            return paths
+        except WheelhouseStorageError:
+            raise
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise WheelhouseStorageError(
+                "Stored wheelhouse failed integrity verification."
+            ) from exc
+
+    def verify(self, lock: ProcedurePythonDependencyLock) -> None:
+        """Recheck the immutable manifest and wheel hashes using bounded-memory file reads."""
+        self._read_verified_paths(lock)
 
     @staticmethod
     def _manifest(lock: ProcedurePythonDependencyLock, artifacts: dict[str, bytes]) -> bytes:

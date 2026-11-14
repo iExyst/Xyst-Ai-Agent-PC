@@ -6,6 +6,7 @@ import io
 import json
 import shutil
 import zipfile
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1158,15 +1159,30 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
             fail = True
 
             async def acquire(
-                self, supplied_lock: ProcedurePythonDependencyLock
-            ) -> dict[str, bytes]:
+                self,
+                supplied_lock: ProcedurePythonDependencyLock,
+                *,
+                on_verified_files: Callable[[dict[str, Path]], Awaitable[None]],
+            ) -> None:
                 assert supplied_lock == dependency_lock
                 if self.fail:
                     raise PyPIAcquisitionError("Fixture acquisition failure.")
-                return {dependency_lock.wheels[0].filename: requests_wheel}
+                staging = tmp_path / "fixture-staging"
+                staging.mkdir(exist_ok=True)
+                wheel = staging / dependency_lock.wheels[0].filename
+                wheel.write_bytes(requests_wheel)
+                await on_verified_files({wheel.name: wheel})
 
         fixture_acquirer = FixtureAcquirer()
-        monkeypatch.setattr(api_module, "PyPIWheelAcquirer", lambda: fixture_acquirer)
+
+        async def fixture_acquire(
+            supplied_lock: ProcedurePythonDependencyLock,
+            *,
+            on_verified_files: Callable[[dict[str, Path]], Awaitable[None]],
+        ) -> None:
+            await fixture_acquirer.acquire(supplied_lock, on_verified_files=on_verified_files)
+
+        monkeypatch.setattr(api_module, "acquire_wheelhouse_in_appcontainer", fixture_acquire)
         failed_acquisition = client.post(acquire, headers=headers)
         assert failed_acquisition.status_code == 502
         assert failed_acquisition.json()["detail"] == "Fixture acquisition failure."

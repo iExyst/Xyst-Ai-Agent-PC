@@ -8,6 +8,7 @@ import re
 import sqlite3
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal, cast
 from uuid import uuid4
 
@@ -1460,6 +1461,25 @@ class SkillStore:
         except WheelhouseStorageError as exc:
             raise SkillConflict(str(exc)) from exc
 
+    def store_python_dependency_wheelhouse_files(
+        self, lock: ProcedurePythonDependencyLock, artifacts: dict[str, Path]
+    ) -> None:
+        """Atomically persist verified wheel files from a bounded private staging area."""
+        with self.runs.connection() as connection:
+            row = connection.execute(
+                "SELECT lock_json,decision FROM skill_python_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, lock.environment_digest()),
+            ).fetchone()
+        if row is None or row["lock_json"] != lock.canonical_json():
+            raise SkillConflict("Save the exact dependency lock before storing its wheelhouse.")
+        if row["decision"] != "pending_review":
+            raise SkillConflict("A final dependency-lock decision cannot accept new wheel files.")
+        try:
+            self.wheelhouses.store_files(lock, artifacts)
+        except WheelhouseStorageError as exc:
+            raise SkillConflict(str(exc)) from exc
+
     def python_dependency_locks(self, skill_id: str, version: int) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:
             rows = connection.execute(
@@ -1491,7 +1511,7 @@ class SkillStore:
             if decision == "approved":
                 lock = ProcedurePythonDependencyLock.model_validate_json(row["lock_json"])
                 try:
-                    self.wheelhouses.read(lock)
+                    self.wheelhouses.verify(lock)
                 except WheelhouseStorageError as exc:
                     raise SkillConflict(
                         "Acquire and verify the exact wheelhouse before approving this dependency lock."

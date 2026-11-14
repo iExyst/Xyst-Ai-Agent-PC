@@ -542,19 +542,22 @@ def validate_pypi_broker_url(value: object) -> tuple[str, int]:
         ) or parsed.path.endswith("//"):
             raise PyPIResolutionError("Resolver worker requested an invalid PyPI project page.")
         return urlunsplit(("https", "pypi.org", parsed.path, "", "")), MAX_SIMPLE_PAGE_BYTES
-    if not parsed.path.startswith("/packages/") or not parsed.path.endswith(".whl.metadata"):
-        raise PyPIResolutionError("Resolver worker requested unsupported PyPI file metadata.")
+    if not parsed.path.startswith("/packages/"):
+        raise PyPIResolutionError("Resolver worker requested an unsupported PyPI file.")
+    is_metadata = parsed.path.endswith(".whl.metadata")
+    if not is_metadata and not parsed.path.endswith(".whl"):
+        raise PyPIResolutionError("Resolver worker requested an unsupported PyPI file.")
     filename = unquote(parsed.path.rsplit("/", 1)[-1])
     if (
-        len(filename) > 264
-        or not filename.endswith(".whl.metadata")
+        len(filename) > (264 if is_metadata else 255)
+        or not filename.endswith(".whl.metadata" if is_metadata else ".whl")
         or "/" in filename
         or "\\" in filename
     ):
-        raise PyPIResolutionError("Resolver worker requested invalid wheel metadata.")
+        raise PyPIResolutionError("Resolver worker requested an invalid wheel file.")
     return (
         urlunsplit(("https", "files.pythonhosted.org", parsed.path, "", "")),
-        MAX_METADATA_BYTES,
+        MAX_METADATA_BYTES if is_metadata else MAX_WHEEL_BYTES,
     )
 
 
