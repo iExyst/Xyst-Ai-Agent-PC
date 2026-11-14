@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -166,6 +166,30 @@ def test_quiet_hours_reject_invalid_or_empty_ranges() -> None:
             pass
         else:
             raise AssertionError(f"Invalid quiet hours accepted: {value}")
+
+
+def test_long_downtime_catchup_calculates_daily_and_weekly_occurrences_directly(
+    monkeypatch,
+) -> None:
+    import xaa.scheduler.service as scheduler_service
+
+    def fail_if_iterative(*_args, **_kwargs):
+        raise AssertionError("Catch-up must not walk each missed occurrence.")
+
+    monkeypatch.setattr(scheduler_service, "advance_local", fail_if_iterative)
+    start = parse_local_time("1900-01-01T12:00")
+    now = datetime(2025, 6, 15, 11, tzinfo=UTC)
+
+    daily = due_occurrence({"next_at": start.isoformat(), "frequency": "daily"}, "UTC", now)
+    assert daily is not None
+    assert daily[0] == datetime(2025, 6, 14, 12)
+    assert daily[1] == datetime(2025, 6, 14, 12, tzinfo=UTC)
+    assert daily[2] == (now.date() - start.date()).days
+
+    weekly = due_occurrence({"next_at": start.isoformat(), "frequency": "weekly"}, "UTC", now)
+    assert weekly is not None
+    assert weekly[0] == start + timedelta(weeks=(now.date() - start.date()).days // 7)
+    assert weekly[2] == (now.date() - start.date()).days // 7 + 1
 
 
 def test_daily_schedule_skips_nonexistent_wall_time_and_advances() -> None:

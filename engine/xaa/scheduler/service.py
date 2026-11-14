@@ -24,6 +24,17 @@ logger = logging.getLogger(__name__)
 MISSED_GRACE = timedelta(seconds=60)
 
 
+def _occurrence_at(start: datetime, frequency: str, index: int) -> datetime:
+    """Calculate a recurrence wall time without walking missed occurrences."""
+    if frequency == "daily":
+        return start + timedelta(days=index)
+    if frequency == "weekly":
+        return start + timedelta(weeks=index)
+    if frequency == "once":
+        return start
+    raise ValueError("Unsupported saved schedule frequency.")
+
+
 def due_occurrence(
     recurrence: dict[str, Any], timezone: str, now: datetime
 ) -> tuple[datetime, datetime | None, int] | None:
@@ -47,17 +58,13 @@ def due_occurrence(
         count = (local_now.date() - start.date()).days // 7 + 1
     else:
         raise ValueError("Unsupported saved schedule frequency.")
-    latest = start
-    for _ in range(count - 1):
-        latest = advance_local(latest, frequency)
+    latest = _occurrence_at(start, frequency, count - 1)
     instant = local_instant(latest, timezone)
     if latest > local_now and (instant is None or instant > current_instant):
         count -= 1
         if count == 0:
             return None
-        latest = start
-        for _ in range(count - 1):
-            latest = advance_local(latest, frequency)
+        latest = _occurrence_at(start, frequency, count - 1)
         instant = local_instant(latest, timezone)
     return latest, instant, count
 

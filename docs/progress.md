@@ -1,5 +1,9 @@
 # Progress
 
+## Bound schedule catch-up after long downtime (2026-11-14)
+
+Daily and weekly schedule recovery now calculates the latest occurrence directly from the saved start and missed-count, rather than iterating over every missed date. A 125-year fixture verifies both recurrence types without calling the incremental step function. The focused schedule suite passes (15); no model inference or live delivery was used. This bounds catch-up work; timezone database changes and real external clock transitions remain separate acceptance gaps.
+
 ## Allow cold start for frozen CLI diagnostics (2026-11-14)
 
 The installer retry passed the task-worker scope probe after its timeout adjustment, then exposed a separate 15-second cold-start limit in the frozen CLI checks. Both frozen ACP/compression CLI probe limits are now 30 seconds. The current hosted source and installer runs passed, including the ACP version and trajectory-compression help checks; these are diagnostic-only bounds and do not change user execution deadlines ([source 43630380192](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43630380192), [installer 43630393305](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43630393305)).
