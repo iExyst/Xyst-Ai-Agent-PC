@@ -1,5 +1,9 @@
 # Progress
 
+## Allow cold start for frozen CLI diagnostics (2026-11-14)
+
+The installer retry passed the task-worker scope probe after its timeout adjustment, then failed when the frozen CLI version command exceeded a separate 15-second limit. Increased both frozen ACP/compression CLI probe limits to 30 seconds. This affects only diagnostics, not application execution or user-visible command deadlines; the hosted installer retry on the corrected UI commit is pending.
+
 ## Allow cold start for frozen task workers (2026-11-14)
 
 The first hosted installer run for the v1 npm parser commit stopped in the frozen filesystem-worker diagnostic: the one-file engine did not answer within the diagnostic's 15-second per-process limit. The same check passed locally against the just-built frozen engine in 11.3 seconds total. Raised only the diagnostic's bounded process allowance to 30 seconds, consistent with the neighboring frozen snapshot check; production execution deadlines are unchanged. Hosted retry is pending.

@@ -19,7 +19,7 @@ def main() -> None:
         [str(args.engine.resolve()), "--cli", "acp", "--version"],
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=30,
         check=False,
     )
     expected_output = f"Xyst AI Agent ACP {expected_version}"
@@ -33,7 +33,7 @@ def main() -> None:
         [str(args.engine.resolve()), "--cli", "compress-trajectories", "--help"],
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=30,
         check=False,
     )
     required_help = (
