@@ -22,12 +22,12 @@ from xaa.extensions.npm_dependencies import (
 )
 from xaa.extensions.npm_tarball_storage import ProcedureNpmTarballStore
 from xaa.runtime.command_contracts import CommandIntent
-from xaa.runtime.owned_transport import EnvironmentInUseError
+from xaa.runtime.owned_transport import EnvironmentInUseError, TransportError
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
 
-def _tarball() -> bytes:
+def _tarball(*, extra_file_count: int = 0) -> bytes:
     package = {
         "name": "xaa-offline-fixture",
         "version": "1.0.0",
@@ -41,6 +41,12 @@ def _tarball() -> bytes:
         "package/cli.js": b"#!/usr/bin/env node\nprocess.stdout.write('offline-cli');\n",
         "package/install.js": b"require('fs').writeFileSync(__dirname + '/install-ran.txt', 'bad');\n",
     }
+    members.update(
+        {
+            f"package/recovery-fixture/{index:05d}.txt": b"recovery-fixture\n"
+            for index in range(extra_file_count)
+        }
+    )
     output = io.BytesIO()
     import tarfile
 
@@ -100,10 +106,82 @@ def _seed_interrupted_install(distribution: str, digest: str) -> None:
     raise RuntimeError("Could not seed the active interrupted-install fixture unit.")
 
 
+async def _kill_and_retry_install(
+    distribution: str,
+    transport: WSLTransport,
+    lock: ProcedureNpmDependencyLock,
+    package_manifest: bytes,
+    package_lock: bytes,
+    directory: Path,
+) -> dict[str, Any]:
+    digest = lock.environment_digest()
+    unit = f"xaa-nodeenv-{digest[:32]}.service"
+    install_task = asyncio.create_task(
+        transport.install_node_environment(
+            lock,
+            package_manifest,
+            package_lock,
+            directory,
+            deadline=time.monotonic() + 300,
+        )
+    )
+    deadline = time.monotonic() + 90
+    killed = False
+    while time.monotonic() < deadline and not install_task.done():
+        state = await asyncio.to_thread(
+            _wsl,
+            distribution,
+            "sudo",
+            "systemctl",
+            "show",
+            unit,
+            "--property=ActiveState",
+            "--value",
+        )
+        if state == "active":
+            await asyncio.sleep(0.2)
+            if not install_task.done():
+                _wsl(
+                    distribution,
+                    "sudo",
+                    "systemctl",
+                    "kill",
+                    "--kill-whom=all",
+                    "--signal=SIGKILL",
+                    unit,
+                )
+                killed = True
+                break
+        await asyncio.sleep(0.05)
+    if not killed:
+        if not install_task.done():
+            await install_task
+        raise RuntimeError("Could not interrupt the live npm installation service.")
+    try:
+        await install_task
+    except TransportError:
+        pass
+    else:
+        raise RuntimeError("The npm installer completed despite the requested process kill.")
+    status = await transport.node_environment_status(digest, deadline=time.monotonic() + 30)
+    if status.get("installed") is not False:
+        raise RuntimeError("Killed npm install published an environment instead of cleaning up.")
+    recovered = await transport.install_node_environment(
+        lock,
+        package_manifest,
+        package_lock,
+        directory,
+        deadline=time.monotonic() + 300,
+    )
+    if recovered.get("installed") is not True:
+        raise RuntimeError("Retry after killing npm install did not recover the environment.")
+    return recovered
+
+
 async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     node_version = _wsl(distribution, "node", "--version")
     npm_version = _wsl(distribution, "npm", "--version")
-    archive = _tarball()
+    archive = _tarball(extra_file_count=4096)
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(archive).digest()).decode("ascii")
     resolved = "https://registry.npmjs.org/xaa-offline-fixture/-/xaa-offline-fixture-1.0.0.tgz"
     package_manifest = json.dumps(
@@ -172,6 +250,12 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         _seed_interrupted_install(distribution, lock.environment_digest())
         installed = await transport.install_node_environment(
             lock, package_manifest, package_lock, directory, deadline=time.monotonic() + 300
+        )
+        await transport.remove_node_environment(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        installed = await _kill_and_retry_install(
+            distribution, transport, lock, package_manifest, package_lock, directory
         )
         repeated = await transport.install_node_environment(
             lock, package_manifest, package_lock, directory, deadline=time.monotonic() + 60
@@ -299,6 +383,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "lifecycle_script_marker_absent": True,
             "idempotent_install": True,
             "interrupted_partial_tree_recovered": True,
+            "installer_process_killed_and_recovered": True,
             "recovery_unit_inactive": True,
             "integrity_status": True,
             "exact_environment_removed": True,
