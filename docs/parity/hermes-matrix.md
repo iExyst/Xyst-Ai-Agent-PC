@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Build and accept the current unsigned Windows program (2026-11-14)
+
+Source run [43583296231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583296231) and manual installer run [43583548211](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583548211) passed for commit `e7418e3`. The hosted package acceptance covered the installed native app, upgrade from 0.1.0 with schema-18 data preservation, backup/restore, recovery, standard-account install, and uninstall. The 0.1.1 installer, manifest, and report are retained under [`.acceptance/hosted-installer-43583548211/`](../../.acceptance/hosted-installer-43583548211/). No live model was used. The installer is unsigned, and this does not establish broad independent-machine compatibility or full Hermes parity.
+
 ## Expand npm archive rejection coverage in isolated workers (2026-11-14)
 
 The source and frozen Windows AppContainer workers reject correctly SRI-matched tarballs containing traversal, absolute/backslash paths, symbolic or hard links, FIFO entries, duplicate members, missing package metadata, truncated or checksum-invalid gzip streams, and aggregate expansion above 256 MiB. The expanded archive stays under 1 MiB compressed. The full matrix passes 26 cases: [JUnit report](../../.acceptance/npm-hostile-archive-matrix-20261114/report.xml). Hosted run [43583296231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583296231) passed the complete source job, including the expanded matrix. This does not establish broad npm archive or package compatibility; no public registry access or model inference was used.
