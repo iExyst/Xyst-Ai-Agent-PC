@@ -1,4 +1,4 @@
-"""Acquire one pinned public npm package and run it in its bound offline WSL environment."""
+"""Acquire a pinned npm graph and run it in its bound offline WSL environment."""
 
 from __future__ import annotations
 
@@ -24,10 +24,18 @@ from xaa.runtime.owned_transport import TransportError
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
-PACKAGE_NAME = "is-number"
-PACKAGE_VERSION = "7.0.0"
-PACKAGE_URL = "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz"
-PACKAGE_INTEGRITY = "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
+ROOT_PACKAGE = (
+    "is-odd",
+    "3.0.1",
+    "https://registry.npmjs.org/is-odd/-/is-odd-3.0.1.tgz",
+    "sha512-CQpnWPrDwmP1+SMHXZhtLtJv90yiyVfluGsX5iNCVkrhQtU3TQHsUWPG9wkdk9Lgd5yNpAg9jQEo90CBaXgWMA==",
+)
+TRANSITIVE_PACKAGE = (
+    "is-number",
+    "6.0.0",
+    "https://registry.npmjs.org/is-number/-/is-number-6.0.0.tgz",
+    "sha512-Wu1VHeILBK8KAWJUAiSZQX94GmOE45Rg6/538fKwiloUu21KncEkYGPqob2oSZ5mUT73vLGrHQjKw3KMPwfDzg==",
+)
 
 
 async def run(distribution: str, report_path: Path) -> dict[str, Any]:
@@ -35,11 +43,13 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 30)
     node_version = await asyncio.to_thread(_wsl, distribution, "node", "--version")
     npm_version = await asyncio.to_thread(_wsl, distribution, "npm", "--version")
+    root_name, root_version, root_url, root_integrity = ROOT_PACKAGE
+    transitive_name, transitive_version, transitive_url, transitive_integrity = TRANSITIVE_PACKAGE
     manifest = json.dumps(
         {
             "name": "xaa-live-registry-acceptance",
             "version": "1.0.0",
-            "dependencies": {PACKAGE_NAME: f"^{PACKAGE_VERSION}"},
+            "dependencies": {root_name: f"^{root_version}"},
         },
         separators=(",", ":"),
     ).encode("utf-8")
@@ -53,12 +63,18 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                 "": {
                     "name": "xaa-live-registry-acceptance",
                     "version": "1.0.0",
-                    "dependencies": {PACKAGE_NAME: f"^{PACKAGE_VERSION}"},
+                    "dependencies": {root_name: f"^{root_version}"},
                 },
-                f"node_modules/{PACKAGE_NAME}": {
-                    "version": PACKAGE_VERSION,
-                    "resolved": PACKAGE_URL,
-                    "integrity": PACKAGE_INTEGRITY,
+                f"node_modules/{root_name}": {
+                    "version": root_version,
+                    "resolved": root_url,
+                    "integrity": root_integrity,
+                    "dependencies": {transitive_name: "^6.0.0"},
+                },
+                f"node_modules/{transitive_name}": {
+                    "version": transitive_version,
+                    "resolved": transitive_url,
+                    "integrity": transitive_integrity,
                 },
             },
         },
@@ -74,19 +90,26 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         distribution=distribution,
         node_version=node_version,
         npm_version=npm_version,
-        requirements=(f"{PACKAGE_NAME}@^{PACKAGE_VERSION}",),
+        requirements=(f"{root_name}@^{root_version}",),
         root_dependencies=(
             NpmRootDependency(
-                name=PACKAGE_NAME, version_range=f"^{PACKAGE_VERSION}", kind="dependencies"
+                name=root_name, version_range=f"^{root_version}", kind="dependencies"
             ),
         ),
         packages=(
             NpmLockedPackage(
-                package_path=f"node_modules/{PACKAGE_NAME}",
-                name=PACKAGE_NAME,
-                version=PACKAGE_VERSION,
-                resolved_url=PACKAGE_URL,
-                integrity=PACKAGE_INTEGRITY,
+                package_path=f"node_modules/{root_name}",
+                name=root_name,
+                version=root_version,
+                resolved_url=root_url,
+                integrity=root_integrity,
+            ),
+            NpmLockedPackage(
+                package_path=f"node_modules/{transitive_name}",
+                name=transitive_name,
+                version=transitive_version,
+                resolved_url=transitive_url,
+                integrity=transitive_integrity,
             ),
         ),
     )
@@ -98,7 +121,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         acquired.update(verified)
 
     await acquire_npm_tarballs_in_appcontainer(lock, on_verified_files=persist)
-    if set(acquired) != {lock.packages[0].package_path}:
+    if set(acquired) != {package.package_path for package in lock.packages}:
         raise RuntimeError(
             "The isolated npm acquisition worker returned an incomplete package set."
         )
@@ -117,12 +140,12 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         script_path = f"__xaa_selected_skill__/{lock.skill_id}/v1/check.cjs"
         procedure_path = f"__xaa_selected_skill__/{lock.skill_id}/v1"
         script = (
-            "const fs=require('fs'),isNumber=require('is-number');"
-            "if(isNumber(7)!==true||isNumber('7')!==true||isNumber('')!==false)process.exit(10);"
+            "const fs=require('fs'),isOdd=require('is-odd');"
+            "if(isOdd(7)!==true||isOdd(2)!==false||isOdd(-3)!==true)process.exit(10);"
             f"if(fs.realpathSync('{procedure_path}/node_modules')!=="
             "'/opt/xaa/procedure-node/node_modules')process.exit(11);"
             "if(fs.existsSync('node_modules'))process.exit(12);"
-            "process.stdout.write('number-check-passed');"
+            "process.stdout.write('transitive-package-check-passed');"
         ).encode("ascii")
         snapshot = WorkspaceSnapshot(
             files=(SnapshotFile(path=script_path, content=script),),
@@ -151,21 +174,27 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             execution.get("succeeded") is not True
             or execution.get("cleanup_confirmed") is not True
             or execution.get("procedure_node_environment_digest") != digest
-            or stdout != "number-check-passed"
+            or stdout != "transitive-package-check-passed"
         ):
-            raise RuntimeError("The real npm package failed its selected-procedure WSL run.")
+            raise RuntimeError("The real npm graph failed its selected-procedure WSL run.")
         report = {
             "acquisition_worker": "Windows AppContainer",
-            "archive_size_bytes": acquired[lock.packages[0].package_path].archive_size_bytes,
+            "packages": [
+                {
+                    "archive_size_bytes": acquired[package.package_path].archive_size_bytes,
+                    "integrity": package.integrity,
+                    "name": package.name,
+                    "resolved_url": package.resolved_url,
+                    "version": package.version,
+                }
+                for package in lock.packages
+            ],
             "distribution": distribution,
             "environment_digest": digest,
             "installed_tree_sha256": installed["tree_sha256"],
             "module_check": stdout,
             "network_during_install_and_run": "none",
-            "npm_package": f"{PACKAGE_NAME}@{PACKAGE_VERSION}",
             "npm_runtime": npm_version,
-            "package_integrity": PACKAGE_INTEGRITY,
-            "registry_url": PACKAGE_URL,
             "system_node": node_version,
             "workspace_node_modules_absent": True,
             "procedure_environment_scoped": True,
