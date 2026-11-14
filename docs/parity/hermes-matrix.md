@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Expand npm archive rejection coverage in isolated workers (2026-11-14)
+
+The source and frozen Windows AppContainer workers reject correctly SRI-matched tarballs containing traversal, absolute/backslash paths, symbolic or hard links, FIFO entries, duplicate members, missing package metadata, truncated or checksum-invalid gzip streams, and aggregate expansion above 256 MiB. The expanded archive stays under 1 MiB compressed. The full matrix passes 26 cases: [JUnit report](../../.acceptance/npm-hostile-archive-matrix-20261114/report.xml). Hosted verification is pending. This does not establish broad npm archive or package compatibility; no public registry access or model inference was used.
+
 ## Reject npm archives over the expanded-size ceiling (2026-11-14)
 
 The source and frozen Windows AppContainer workers reject a valid-SRI gzip archive under 1 MiB compressed that declares more than the 256 MiB aggregate expansion allowance: [acceptance report](../../.acceptance/npm-archive-expansion-validation-20261114/report.xml) (12 passed across source/frozen worker fixtures). The test observes rejection before a verified tarball is published. This covers the configured aggregate expansion ceiling; broader hostile archive combinations remain open. No public registry access or model inference was used.

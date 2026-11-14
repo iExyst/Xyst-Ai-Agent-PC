@@ -46,8 +46,14 @@ def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependenc
             ("package/package.json", metadata),
             ("package/index.js", b"module.exports = function () {};\n"),
         ]
+        if unsafe_member == "missing-metadata":
+            entries.pop(0)
         if unsafe_member == "traversal":
             entries.append(("package/../escape.js", b"must-not-escape"))
+        if unsafe_member == "absolute-path":
+            entries.append(("/package/escape.js", b"must-not-escape"))
+        if unsafe_member == "backslash-path":
+            entries.append(("package\\escape.js", b"must-not-escape"))
         if unsafe_member == "duplicate":
             entries.append(("package/index.js", b"duplicate-member"))
         for name, value in entries:
@@ -59,6 +65,15 @@ def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependenc
             member.type = tarfile.SYMTYPE
             member.linkname = "../escape.js"
             archive.addfile(member)
+        if unsafe_member == "hardlink":
+            member = tarfile.TarInfo("package/hard-link")
+            member.type = tarfile.LNKTYPE
+            member.linkname = "package/index.js"
+            archive.addfile(member)
+        if unsafe_member == "fifo":
+            member = tarfile.TarInfo("package/special-entry")
+            member.type = tarfile.FIFOTYPE
+            archive.addfile(member)
         if unsafe_member == "expanded":
             for index in range(MAX_NPM_TARBALL_EXPANDED_BYTES // MAX_NPM_TARBALL_MEMBER_BYTES):
                 member = tarfile.TarInfo(f"package/filler-{index}.bin")
@@ -68,6 +83,12 @@ def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependenc
             overflow.size = (MAX_NPM_TARBALL_EXPANDED_BYTES % MAX_NPM_TARBALL_MEMBER_BYTES) + 1
             archive.addfile(overflow, _ZeroReader(overflow.size))
     tarball = content.getvalue()
+    if unsafe_member == "truncated-gzip":
+        tarball = tarball[:-8]
+    elif unsafe_member == "bad-gzip-checksum":
+        damaged = bytearray(tarball)
+        damaged[-8] ^= 0xFF
+        tarball = bytes(damaged)
     locked = NpmLockedPackage(
         package_path="node_modules/left-pad",
         name="left-pad",
@@ -175,7 +196,22 @@ async def test_appcontainer_npm_acquisition_rejects_registry_redirects(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("frozen_worker", [False, True])
-@pytest.mark.parametrize("unsafe_member", ["traversal", "symlink", "duplicate", "expanded"])
+@pytest.mark.parametrize(
+    "unsafe_member",
+    [
+        "traversal",
+        "absolute-path",
+        "backslash-path",
+        "symlink",
+        "hardlink",
+        "fifo",
+        "duplicate",
+        "missing-metadata",
+        "truncated-gzip",
+        "bad-gzip-checksum",
+        "expanded",
+    ],
+)
 async def test_appcontainer_npm_acquisition_rejects_hostile_tarball_members(
     tmp_path: Path, frozen_worker: bool, unsafe_member: str
 ):

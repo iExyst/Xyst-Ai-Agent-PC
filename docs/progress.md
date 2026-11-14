@@ -2941,3 +2941,7 @@ The live WSL fixture now installs distinct v1 and v2 package contents, launches 
 ## Verify npm archive expansion limits in isolated workers (2026-11-14)
 
 Added a correctly integrity-hashed gzip tarball whose compressed size is below 1 MiB but whose regular-file members exceed the 256 MiB aggregate expanded-size limit. Both the source worker and frozen Windows AppContainer engine reject it before verified files are published. Together with the existing traversal, escaping symlink, and duplicate-member cases, the Windows worker acceptance passes all 12 source/frozen cases: [JUnit report](../.acceptance/npm-archive-expansion-validation-20261114/report.xml). Ruff and formatting checks pass locally. Hosted verification is pending. Broader hostile archive combinations and the deferred model-mediated imported-procedure run remain open.
+
+## Expand npm archive rejection coverage in both isolated workers (2026-11-14)
+
+The Windows source/frozen worker matrix now checks traversal, absolute and backslash paths, symbolic and hard links, FIFO entries, duplicate members, missing package metadata, truncated gzip data, bad gzip checksums, and aggregate expansion above 256 MiB. All 26 source/frozen cases pass locally: [JUnit report](../.acceptance/npm-hostile-archive-matrix-20261114/report.xml). Ruff and formatting checks pass; hosted verification is pending. Model-mediated procedure execution remains deferred until the end.
