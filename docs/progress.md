@@ -6,7 +6,7 @@ The first hosted installer run for the v1 npm parser commit stopped in the froze
 
 ## Turn the workspace into a clearer desktop app (2026-11-14)
 
-The home screen now separates the task prompt from the first-run checklist, gives a concrete example objective, and reports “Choose a model” until one is actually selected. The objective composer has a larger input area, clearer privacy cue, and responsive layout; existing run permissions and controls are unchanged. `npm run build:desktop` passed (TypeScript and Vite production bundle). The local Windows per-user installer built successfully at `build/installer/Xyst AI Agent_0.1.1_x64-setup.exe` (77,851,072 bytes, SHA-256 `c3c0580283167e4ff161164afc16556cb74275239225c1df2ab6bb5870c48025`). This is a freshly built unsigned package; it has not yet completed hosted installed-package acceptance.
+The home screen now separates the task prompt from the first-run checklist, gives a concrete example objective, and reports “Choose a model” until one is actually selected. The objective composer has a larger input area, clearer privacy cue, and responsive layout; existing run permissions and controls are unchanged. `npm run build:desktop` passed (TypeScript and Vite production bundle). The local Windows per-user installer built successfully at `build/installer/Xyst AI Agent_0.1.1_x64-setup.exe` (77,851,634 bytes, SHA-256 `8dbacbf8d918a6fc7eacd7cfdceedae52294c4e1c7c0865f5b36e7dee8048dc7`). This is a freshly built unsigned package; it has not yet completed hosted installed-package acceptance.
 
 ## Accept legacy npm lockfile v1 for imported procedure packages (2026-11-14)
 
