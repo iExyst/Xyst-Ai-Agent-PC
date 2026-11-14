@@ -1,5 +1,9 @@
 # Progress
 
+## Verify concurrent npm isolation between different imported procedures (2026-11-14)
+
+Expanded the live Ubuntu-24.04 WSL dependency acceptance beyond concurrent versions of one procedure. Two distinct imported procedure IDs now install the same package name/version with different verified bytes and module values, then execute concurrently through separate saved procedure identities. Each command imports only its own value; both active environment removals are refused, cleanup is confirmed, and exact removal of one environment preserves the other. The full acceptance also rechecked offline installation, lifecycle-script suppression, idempotent install, content integrity, interrupted-install and process-kill recovery, rollback, workspace `node_modules` absence, and unchanged system Node/npm/global-module trees. Report: [`.acceptance/npm-cross-procedure-isolation-20261114/report.json`](../.acceptance/npm-cross-procedure-isolation-20261114/report.json). No live model, public npm request, or source project change was involved. Broader package compatibility, additional WSL distributions, hosted acceptance of this added scenario, and model-mediated imported-procedure execution remain open.
+
 ## Verify npm per-file and archive-entry ceilings in isolated workers (2026-11-14)
 
 The source and frozen Windows AppContainer acceptance now covers the two remaining tarball shape caps: one regular file of 64 MiB plus one byte and an archive containing 20,001 members. Both correctly SRI-matched archives are rejected before verified files are published. The complete worker suite passes 30 cases: [JUnit report](../.acceptance/npm-archive-bounds-20261114/report.xml). Ruff and formatting checks pass locally. Hosted run [43585387811](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43585387811) passed the full Python suite, including the source/frozen limit cases. Model-mediated procedure execution remains deferred.

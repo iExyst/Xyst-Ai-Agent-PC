@@ -322,6 +322,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     directory = store.root / lock.environment_digest()
     installed: dict[str, Any] | None = None
     rollback_lock: ProcedureNpmDependencyLock | None = None
+    other_procedure_lock: ProcedureNpmDependencyLock | None = None
     try:
         _seed_interrupted_install(distribution, lock.environment_digest())
         installed = await transport.install_node_environment(
@@ -442,6 +443,111 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     sort_keys=True,
                 )
             )
+        other_archive = _tarball(module_value="other-procedure")
+        other_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(other_archive).digest()
+        ).decode("ascii")
+        other_package_lock_document = json.loads(package_lock)
+        other_package_lock_document["packages"]["node_modules/xaa-offline-fixture"]["integrity"] = (
+            other_integrity
+        )
+        other_package_lock = json.dumps(other_package_lock_document, separators=(",", ":")).encode()
+        other_procedure_lock = lock.model_copy(
+            update={
+                "skill_id": str(uuid4()),
+                "source_sha256": "c" * 64,
+                "lockfile_sha256": hashlib.sha256(other_package_lock).hexdigest(),
+                "packages": (
+                    NpmLockedPackage(
+                        package_path="node_modules/xaa-offline-fixture",
+                        name="xaa-offline-fixture",
+                        version="1.0.0",
+                        resolved_url=resolved,
+                        integrity=other_integrity,
+                    ),
+                ),
+            }
+        )
+        other_archive_path = report_path.parent / "other-procedure-fixture.tgz"
+        other_archive_path.write_bytes(other_archive)
+        store.store_files(
+            other_procedure_lock,
+            {other_procedure_lock.packages[0].package_path: other_archive_path},
+        )
+        other_directory = store.root / other_procedure_lock.environment_digest()
+        other_installed = await transport.install_node_environment(
+            other_procedure_lock,
+            package_manifest,
+            other_package_lock,
+            other_directory,
+            deadline=time.monotonic() + 300,
+        )
+        if (
+            other_installed.get("installed") is not True
+            or other_procedure_lock.skill_id == lock.skill_id
+            or other_procedure_lock.environment_digest() == lock.environment_digest()
+        ):
+            raise RuntimeError("A second procedure's distinct npm environment was not installed.")
+        other_script, other_snapshot = _procedure_probe(other_procedure_lock, "other-procedure")
+        other_intent = intent.model_copy(
+            update={
+                "argv": ["node", other_script],
+                "execution_id": uuid.uuid4().hex,
+                "procedure_node_environment_digest": other_procedure_lock.environment_digest(),
+                "procedure_node_environment_tree_sha256": other_installed["tree_sha256"],
+                "procedure_skill_id": other_procedure_lock.skill_id,
+                "procedure_version": other_procedure_lock.skill_version,
+            }
+        )
+        original_intent = intent.model_copy(update={"execution_id": uuid.uuid4().hex})
+        original_procedure_run = asyncio.create_task(
+            transport.run(original_intent, snapshot, deadline=time.monotonic() + 30)
+        )
+        other_procedure_run = asyncio.create_task(
+            transport.run(other_intent, other_snapshot, deadline=time.monotonic() + 30)
+        )
+        await asyncio.sleep(2)
+        cross_procedure_removal_refusals = 0
+        for active_digest in (lock.environment_digest(), other_procedure_lock.environment_digest()):
+            try:
+                await transport.remove_node_environment(
+                    active_digest, deadline=time.monotonic() + 20
+                )
+            except EnvironmentInUseError:
+                cross_procedure_removal_refusals += 1
+        original_result, other_result = await asyncio.gather(
+            original_procedure_run, other_procedure_run
+        )
+        if (
+            original_result.get("succeeded") is not True
+            or original_result.get("stdout_b64")
+            != base64.b64encode(b"offline-ready").decode("ascii")
+            or original_result.get("procedure_node_environment_digest") != lock.environment_digest()
+            or original_result.get("cleanup_confirmed") is not True
+            or other_result.get("succeeded") is not True
+            or other_result.get("stdout_b64")
+            != base64.b64encode(b"other-procedure").decode("ascii")
+            or other_result.get("procedure_node_environment_digest")
+            != other_procedure_lock.environment_digest()
+            or other_result.get("cleanup_confirmed") is not True
+            or cross_procedure_removal_refusals != 2
+        ):
+            raise RuntimeError("Concurrent distinct-procedure npm isolation failed.")
+        other_removed = await transport.remove_node_environment(
+            other_procedure_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        other_after = await transport.node_environment_status(
+            other_procedure_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        original_after_other_removal = await transport.node_environment_status(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        if (
+            other_removed.get("removed") is not True
+            or other_after.get("installed") is not False
+            or original_after_other_removal.get("installed") is not True
+        ):
+            raise RuntimeError("Removing one procedure's npm environment affected another.")
         rollback_archive = _tarball(version="1.1.0", module_value="new-version")
         rollback_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(rollback_archive).digest()
@@ -600,6 +706,9 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "rollback_to_older_digest_succeeded": True,
             "newer_digest_removal_preserved_older": True,
             "concurrent_procedure_versions_isolated": True,
+            "concurrent_distinct_procedures_isolated": True,
+            "cross_procedure_active_removal_refused": True,
+            "cross_procedure_exact_removal_preserved_neighbor": True,
             "both_active_environments_refused_removal": True,
             "integrity_status": True,
             "exact_environment_removed": True,
@@ -610,6 +719,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         if rollback_lock is not None:
             await transport.remove_node_environment(
                 rollback_lock.environment_digest(), deadline=time.monotonic() + 30
+            )
+        if other_procedure_lock is not None:
+            await transport.remove_node_environment(
+                other_procedure_lock.environment_digest(), deadline=time.monotonic() + 30
             )
         await transport.remove_node_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
