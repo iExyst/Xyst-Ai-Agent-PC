@@ -240,10 +240,12 @@ try {
   const pythonCommand = process.env.XAA_NATIVE_MCP_PYTHON || '.venv/Scripts/python.exe';
   const command = path.resolve(pythonCommand);
   const fixture = path.resolve('tests/fixtures/mcp_stdio_server.py');
+  const fixtureWorkingDirectory = path.join(root, 'mcp-fixture-workspace');
+  await mkdir(fixtureWorkingDirectory);
   await panel.getByLabel('Server name').fill('Native fixture');
   await panel.getByLabel('Command').fill(command);
   await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([fixture]));
-  await panel.getByLabel('Working directory (optional)').fill(path.resolve('.'));
+  await panel.getByLabel('Working directory (optional)').fill(fixtureWorkingDirectory);
   const createdResponse = await clickForResponse(
     page,
     panel.getByRole('button', { name: 'Add MCP server', exact: true }),
@@ -275,9 +277,24 @@ try {
     throw new Error('The native desktop resource-limit editor returned unexpected values.');
   }
 
-  await panel.getByRole('button', { name: 'Connect and discover', exact: true }).click();
-  await expect(panel.getByText('Add two integers.', { exact: true })).toBeVisible({ timeout: 20_000 });
+  const connectResponse = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Connect and discover', exact: true }),
+    (response) => new URL(response.url()).pathname === `/mcp/servers/${serverId}/connect`
+      && response.request().method() === 'POST',
+  );
   const connected = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  if (!connectResponse.ok()) {
+    throw new Error(
+      `The native MCP fixture connection returned HTTP ${connectResponse.status()}: ${connected[0]?.error || 'connection details unavailable'}`,
+    );
+  }
+  if (connected.length !== 1 || connected[0].id !== serverId || connected[0].state !== 'connected') {
+    throw new Error(
+      `The native MCP fixture connection failed: ${connected[0]?.error || connected[0]?.state || 'server status unavailable'}`,
+    );
+  }
+  await expect(panel.getByText('Add two integers.', { exact: true })).toBeVisible({ timeout: 20_000 });
   const discovered = connected[0].tools;
   if (connected[0].state !== 'connected' || discovered.map((tool) => tool.name).sort().join(',') !== 'add,slow') {
     throw new Error('The native MCP fixture did not expose the expected tools.');
@@ -399,6 +416,9 @@ try {
   await panel.getByLabel('Command').fill(path.resolve(process.execPath));
   await panel.getByLabel('Arguments (JSON string array)').fill(JSON.stringify([typescriptFixture, String(typescriptStdioControlPort)]));
   await panel.getByLabel('Working directory (optional)').fill(path.dirname(typescriptFixture));
+  // This fixture deliberately binds a loopback control endpoint for catalog-change
+  // acceptance. The isolated Python fixture above covers the default-deny path.
+  await panel.getByLabel('Block network access for this MCP process (Windows)').uncheck();
   const typescriptCreatedResponse = await clickForResponse(
     page,
     panel.getByRole('button', { name: 'Add MCP server', exact: true }),
@@ -407,14 +427,28 @@ try {
   if (typescriptCreatedResponse.status() !== 201) {
     throw new Error(`Native TypeScript SDK MCP configuration failed (${typescriptCreatedResponse.status()}).`);
   }
-  const typescriptServerId = (await typescriptCreatedResponse.json()).id;
-  await panel.getByRole('button', { name: 'Connect and discover', exact: true }).click();
+  const createdTypescriptServer = await typescriptCreatedResponse.json();
+  if (createdTypescriptServer.network_isolation !== false) {
+    throw new Error('The loopback-controlled TypeScript fixture did not persist its explicit network opt-out.');
+  }
+  const typescriptServerId = createdTypescriptServer.id;
+  const typescriptConnectResponse = await clickForResponse(
+    page,
+    panel.getByRole('button', { name: 'Connect and discover', exact: true }),
+    (response) => new URL(response.url()).pathname === `/mcp/servers/${typescriptServerId}/connect`
+      && response.request().method() === 'POST',
+  );
+  const typescriptServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
+  const typescriptServer = typescriptServers.find((server) => server.id === typescriptServerId);
+  if (!typescriptConnectResponse.ok()) {
+    throw new Error(
+      `Native TypeScript SDK MCP connection returned HTTP ${typescriptConnectResponse.status()}: ${typescriptServer?.error || 'connection details unavailable'}`,
+    );
+  }
   const typescriptServerCard = panel.locator('.mcp-server').filter({ hasText: 'TypeScript SDK fixture' });
   await expect(typescriptServerCard.getByRole('heading', { name: /TypeScript SDK fixture.*connected/ }))
     .toBeVisible({ timeout: 20_000 });
   await expect(typescriptServerCard).toContainText('echo_value');
-  const typescriptServers = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
-  const typescriptServer = typescriptServers.find((server) => server.id === typescriptServerId);
   if (typescriptServer?.state !== 'connected' || !typescriptServer.tools.some((tool) => tool.name === 'echo_value')) {
     throw new Error('The installed engine did not discover the TypeScript SDK stdio tool.');
   }
