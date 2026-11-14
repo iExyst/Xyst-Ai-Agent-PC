@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
+import hmac
+import io
 import json
 import re
+import tarfile
 import uuid
 from collections.abc import Iterable
 from typing import Any, Self, cast
 from urllib.parse import unquote, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_LOCKFILE_BYTES = 2 * 1024 * 1024
 MAX_PACKAGE_MANIFEST_BYTES = 1024 * 1024
 MAX_LOCKED_PACKAGES = 512
 MAX_PACKAGE_PATH_BYTES = 1024
+MAX_NPM_TARBALL_BYTES = 64 * 1024 * 1024
+MAX_NPM_TARBALL_MEMBERS = 20_000
+MAX_NPM_TARBALL_MEMBER_BYTES = 64 * 1024 * 1024
+MAX_NPM_TARBALL_EXPANDED_BYTES = 256 * 1024 * 1024
+MAX_NPM_TARBALL_STREAM_BYTES = 320 * 1024 * 1024
+MAX_NPM_TARBALL_PACKAGE_JSON_BYTES = 1024 * 1024
 _NPM_NAME = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]{0,127}/)?[a-z0-9][a-z0-9._-]{0,127}$")
 _SEMVER = re.compile(
     r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -134,6 +144,40 @@ class ProcedureNpmDependencyLock(BaseModel):
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
+
+
+class NpmVerifiedTarball(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    package_path: str
+    name: str
+    version: str
+    integrity: str
+    archive_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    archive_size_bytes: int = Field(gt=0, le=MAX_NPM_TARBALL_BYTES)
+    member_count: int = Field(ge=1, le=MAX_NPM_TARBALL_MEMBERS)
+    expanded_size_bytes: int = Field(ge=1, le=MAX_NPM_TARBALL_EXPANDED_BYTES)
+    install_lifecycle_scripts: tuple[str, ...] = Field(max_length=4)
+
+    @field_validator("install_lifecycle_scripts", mode="before")
+    @classmethod
+    def freeze_lifecycle_scripts(cls, values: object) -> object:
+        return tuple(cast(list[str], values)) if isinstance(values, list) else values
+
+
+class _BoundedTarReader:
+    def __init__(self, source: Any, maximum: int) -> None:
+        self._source = source
+        self._maximum = maximum
+        self._read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        remaining = self._maximum - self._read
+        requested = remaining + 1 if size < 0 else min(size, remaining + 1)
+        data = self._source.read(requested)
+        self._read += len(data)
+        if self._read > self._maximum:
+            raise ValueError("npm tarball decompressed stream exceeds its size limit.")
+        return data
 
 
 def parse_npm_package_lock(
@@ -256,6 +300,109 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     if digest != lock.package_manifest_sha256:
         raise ValueError("npm package.json bytes do not match the bound procedure resource.")
     return digest
+
+
+def verify_npm_tarball(locked: NpmLockedPackage, archive: bytes) -> NpmVerifiedTarball:
+    """Verify SRI and inspect a bounded npm tarball without writing or executing its files."""
+    if not archive or len(archive) > MAX_NPM_TARBALL_BYTES:
+        raise ValueError("npm tarball is empty or exceeds its size limit.")
+    expected_integrity = locked.integrity[7:]
+    actual_integrity = base64.b64encode(hashlib.sha512(archive).digest()).decode("ascii")
+    if not hmac.compare_digest(actual_integrity, expected_integrity):
+        raise ValueError("npm tarball bytes do not match the lockfile integrity value.")
+
+    member_count = 0
+    expanded_size = 0
+    seen_paths: set[str] = set()
+    package_metadata: dict[str, Any] | None = None
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(archive), mode="rb") as compressed:
+            bounded = _BoundedTarReader(compressed, MAX_NPM_TARBALL_STREAM_BYTES)
+            with cast(Any, tarfile.open(fileobj=cast(Any, bounded), mode="r|")) as tar:
+                for member in tar:
+                    member_count += 1
+                    if member_count > MAX_NPM_TARBALL_MEMBERS:
+                        raise ValueError("npm tarball contains too many entries.")
+                    name = member.name
+                    if member.isdir() and name.endswith("/"):
+                        name = name[:-1]
+                    if (
+                        not name
+                        or "\x00" in name
+                        or "\\" in name
+                        or name.startswith("/")
+                        or any(part in {"", ".", ".."} for part in name.split("/"))
+                        or name.split("/", 1)[0] != "package"
+                        or len(name.encode("utf-8", errors="strict")) > MAX_PACKAGE_PATH_BYTES
+                    ):
+                        raise ValueError("npm tarball contains an unsafe package path.")
+                    if name in seen_paths:
+                        raise ValueError("npm tarball contains duplicate paths.")
+                    seen_paths.add(name)
+                    if member.isdir():
+                        if member.size != 0:
+                            raise ValueError("npm tarball directory entry has a nonzero size.")
+                        continue
+                    if not member.isfile() or getattr(member, "sparse", None):
+                        raise ValueError("npm tarball contains a link or special filesystem entry.")
+                    if member.size < 0 or member.size > MAX_NPM_TARBALL_MEMBER_BYTES:
+                        raise ValueError("npm tarball file exceeds its size limit.")
+                    expanded_size += member.size
+                    if expanded_size > MAX_NPM_TARBALL_EXPANDED_BYTES:
+                        raise ValueError("npm tarball exceeds its expanded size limit.")
+                    if name != "package/package.json":
+                        continue
+                    if member.size > MAX_NPM_TARBALL_PACKAGE_JSON_BYTES:
+                        raise ValueError("npm package metadata exceeds its size limit.")
+                    stream = tar.extractfile(member)
+                    if stream is None:
+                        raise ValueError("npm package metadata could not be read.")
+                    raw_metadata = stream.read(MAX_NPM_TARBALL_PACKAGE_JSON_BYTES + 1)
+                    if (
+                        len(raw_metadata) != member.size
+                        or len(raw_metadata) > MAX_NPM_TARBALL_PACKAGE_JSON_BYTES
+                    ):
+                        raise ValueError("npm package metadata size is invalid.")
+                    try:
+                        parsed: object = json.loads(raw_metadata, object_pairs_hook=_unique_object)
+                    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                        raise ValueError("npm package metadata is invalid JSON.") from exc
+                    if not isinstance(parsed, dict):
+                        raise TypeError("npm package metadata must be a JSON object.")
+                    package_metadata = cast(dict[str, Any], parsed)
+    except (tarfile.TarError, OSError, EOFError, UnicodeError) as exc:
+        raise ValueError("npm tarball archive is malformed.") from exc
+
+    if package_metadata is None:
+        raise ValueError("npm tarball has no package/package.json entry.")
+    if (
+        package_metadata.get("name") != locked.name
+        or package_metadata.get("version") != locked.version
+    ):
+        raise ValueError("npm tarball package identity does not match the lockfile.")
+    scripts_value = package_metadata.get("scripts", {})
+    if not isinstance(scripts_value, dict):
+        raise TypeError("npm package scripts metadata is invalid.")
+    scripts = cast(dict[str, Any], scripts_value)
+    lifecycle = ("preinstall", "install", "postinstall", "prepare")
+    script_names: list[str] = []
+    for script_name in lifecycle:
+        script_value = scripts.get(script_name)
+        if script_value is not None:
+            if not isinstance(script_value, str):
+                raise ValueError("npm package lifecycle script metadata is invalid.")
+            script_names.append(script_name)
+    return NpmVerifiedTarball(
+        package_path=locked.package_path,
+        name=locked.name,
+        version=locked.version,
+        integrity=locked.integrity,
+        archive_sha256=hashlib.sha256(archive).hexdigest(),
+        archive_size_bytes=len(archive),
+        member_count=member_count,
+        expanded_size_bytes=expanded_size,
+        install_lifecycle_scripts=tuple(script_names),
+    )
 
 
 def _package_name_from_lock_path(package_path: str) -> str:

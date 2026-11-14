@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
+import io
 import json
+import tarfile
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 from xaa.extensions.npm_dependencies import (
+    NpmLockedPackage,
     parse_npm_package_lock,
     verify_npm_package_manifest,
+    verify_npm_tarball,
 )
 
 SKILL_ID = "12345678-1234-4234-8234-123456789abc"
@@ -149,3 +154,96 @@ def test_npm_lock_rejects_duplicate_json_fields_and_size_overflow() -> None:
         parse(duplicate)
     with pytest.raises(ValueError, match="size limit"):
         parse(b" " * (2 * 1024 * 1024 + 1))
+
+
+def make_tarball(
+    *,
+    metadata: bytes = b'{"name":"left-pad","version":"1.3.0","scripts":{"install":"node gyp.js"}}',
+    entries: tuple[tuple[str, bytes], ...] = (("package/index.js", b"module.exports = 1;"),),
+    link: tuple[str, str] | None = None,
+) -> bytes:
+    output = io.BytesIO()
+    with (
+        gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as compressed,
+        tarfile.open(fileobj=compressed, mode="w|", format=tarfile.USTAR_FORMAT) as archive,
+    ):
+        metadata_info = tarfile.TarInfo("package/package.json")
+        metadata_info.size = len(metadata)
+        archive.addfile(metadata_info, io.BytesIO(metadata))
+        for name, contents in entries:
+            info = tarfile.TarInfo(name)
+            info.size = len(contents)
+            archive.addfile(info, io.BytesIO(contents))
+        if link is not None:
+            info = tarfile.TarInfo(link[0])
+            info.type = tarfile.SYMTYPE
+            info.linkname = link[1]
+            archive.addfile(info)
+    return output.getvalue()
+
+
+def locked_package(archive: bytes) -> NpmLockedPackage:
+    integrity = "sha512-" + base64.b64encode(hashlib.sha512(archive).digest()).decode("ascii")
+    return NpmLockedPackage(
+        package_path="node_modules/left-pad",
+        name="left-pad",
+        version="1.3.0",
+        resolved_url="https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+        integrity=integrity,
+    )
+
+
+def test_npm_tarball_verification_checks_integrity_identity_and_lifecycle_names() -> None:
+    archive = make_tarball()
+    locked = locked_package(archive)
+
+    verified = verify_npm_tarball(locked, archive)
+
+    assert verified.package_path == locked.package_path
+    assert (verified.name, verified.version) == (locked.name, locked.version)
+    assert verified.integrity == locked.integrity
+    assert verified.archive_sha256 == hashlib.sha256(archive).hexdigest()
+    assert verified.archive_size_bytes == len(archive)
+    assert verified.member_count == 2
+    assert verified.expanded_size_bytes > 0
+    assert verified.install_lifecycle_scripts == ("install",)
+
+
+def test_npm_tarball_rejects_integrity_and_package_identity_mismatches() -> None:
+    archive = make_tarball()
+    locked = locked_package(archive)
+    with pytest.raises(ValueError, match="integrity"):
+        verify_npm_tarball(locked, archive + b"tampered")
+
+    wrong_identity = make_tarball(metadata=b'{"name":"other","version":"1.3.0"}')
+    with pytest.raises(ValueError, match="identity"):
+        verify_npm_tarball(locked_package(wrong_identity), wrong_identity)
+
+
+@pytest.mark.parametrize(
+    ("entries", "link"),
+    [
+        ((("package/../escape", b"bad"),), None),
+        ((("/package/absolute", b"bad"),), None),
+        ((("package\\\\escape", b"bad"),), None),
+        ((("other/file", b"bad"),), None),
+        ((("package/index.js", b"one"), ("package/index.js", b"two")), None),
+        ((("package/index.js", b""),), ("package/link", "../escape")),
+    ],
+)
+def test_npm_tarball_rejects_unsafe_or_duplicate_members(
+    entries: tuple[tuple[str, bytes], ...], link: tuple[str, str] | None
+) -> None:
+    archive = make_tarball(entries=entries, link=link)
+    with pytest.raises(ValueError):
+        verify_npm_tarball(locked_package(archive), archive)
+
+
+def test_npm_tarball_rejects_malformed_archive_and_duplicate_metadata_fields() -> None:
+    malformed = b"not a gzip tarball"
+    with pytest.raises(ValueError, match="malformed"):
+        verify_npm_tarball(locked_package(malformed), malformed)
+
+    archive = make_tarball(metadata=b'{"name":"left-pad","name":"left-pad","version":"1.3.0"}')
+    with pytest.raises(ValueError, match="metadata is invalid JSON"):
+        verify_npm_tarball(locked_package(archive), archive)

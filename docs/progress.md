@@ -1,5 +1,9 @@
 # Progress
 
+## Verify exact npm tarball bytes and package identity (2026-11-14)
+
+Added a bounded core verifier for exact npm tarball bytes. It checks SHA-512 SRI from the parsed lock entry, rejects unsafe paths, duplicate paths, links and special entries, caps archive/member/expanded sizes, and requires `package/package.json` name and version to match the lock. The result records the byte hash and size, archive counts, and lifecycle hook names; it never writes package files or runs scripts. Focused npm parser/verifier tests pass (21). This helper is not yet connected to a download flow or API; future untrusted archive processing must run in the planned isolated worker. No registry request, package installation, or model inference was used.
+
 ## Inspect imported npm v3 package locks from the desktop (2026-11-14)
 
 Added an authenticated, exact-version API action and desktop preview for linked npm v3 lockfiles. The server checks Node/npm readiness in the selected WSL distribution, verifies the stored hashes of the linked `package.json` and `package-lock.json`, and requires the manifest dependency sections to match the lock root and imported npm requirements. The strict parser accepts SHA-512 integrity values and HTTPS tarballs only from `registry.npmjs.org`; it rejects duplicate JSON keys, unsupported lockfile versions, linked/bundled packages, malformed paths and unsupported sources. The UI displays package paths, versions and integrity values and states that the tarballs are not fetched or verified. No proposal is persisted, approved or installed. Focused lock/plugin/API suites pass (53 passed, 1 skipped), the imported Skills browser flow passes (1), and Ruff, strict Pyright, desktop TypeScript, generated contracts and diff checks pass. No registry request or model inference was used. Format references: [npm package-lock.json](https://docs.npmjs.com/files/package-lock.json) and [npm ci](https://docs.npmjs.com/cli/commands/npm-ci/).
