@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify npm per-file and member-count bounds (2026-11-14)
+
+The source and frozen Windows AppContainer workers reject a valid-SRI archive with a member just over the 64 MiB per-file cap and a compressed archive with 20,001 entries, above the 20,000-entry cap. The expanded acceptance matrix passes 30 cases across both workers: [JUnit report](../../.acceptance/npm-archive-bounds-20261114/report.xml). Local acceptance passed; hosted verification is pending. No public registry access or model inference was used.
+
 ## Build and accept the current unsigned Windows program (2026-11-14)
 
 Source run [43583296231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583296231) and manual installer run [43583548211](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583548211) passed for commit `e7418e3`. The hosted package acceptance covered the installed native app, upgrade from 0.1.0 with schema-18 data preservation, backup/restore, recovery, standard-account install, and uninstall. The 0.1.1 installer, manifest, and report are retained under [`.acceptance/hosted-installer-43583548211/`](../../.acceptance/hosted-installer-43583548211/). No live model was used. The installer is unsigned, and this does not establish broad independent-machine compatibility or full Hermes parity.

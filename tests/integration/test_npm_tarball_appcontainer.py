@@ -13,6 +13,7 @@ import pytest
 from xaa.extensions.npm_dependencies import (
     MAX_NPM_TARBALL_EXPANDED_BYTES,
     MAX_NPM_TARBALL_MEMBER_BYTES,
+    MAX_NPM_TARBALL_MEMBERS,
     NpmLockedPackage,
     NpmRootDependency,
     NpmVerifiedTarball,
@@ -74,6 +75,15 @@ def _fixture(*, unsafe_member: str | None = None) -> tuple[ProcedureNpmDependenc
             member = tarfile.TarInfo("package/special-entry")
             member.type = tarfile.FIFOTYPE
             archive.addfile(member)
+        if unsafe_member == "member-size":
+            member = tarfile.TarInfo("package/oversized.bin")
+            member.size = MAX_NPM_TARBALL_MEMBER_BYTES + 1
+            archive.addfile(member, _ZeroReader(member.size))
+        if unsafe_member == "member-count":
+            for index in range(MAX_NPM_TARBALL_MEMBERS - 1):
+                member = tarfile.TarInfo(f"package/d{index:05d}")
+                member.type = tarfile.DIRTYPE
+                archive.addfile(member)
         if unsafe_member == "expanded":
             for index in range(MAX_NPM_TARBALL_EXPANDED_BYTES // MAX_NPM_TARBALL_MEMBER_BYTES):
                 member = tarfile.TarInfo(f"package/filler-{index}.bin")
@@ -205,6 +215,8 @@ async def test_appcontainer_npm_acquisition_rejects_registry_redirects(
         "symlink",
         "hardlink",
         "fifo",
+        "member-size",
+        "member-count",
         "duplicate",
         "missing-metadata",
         "truncated-gzip",
