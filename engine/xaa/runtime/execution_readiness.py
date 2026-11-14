@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -130,6 +131,27 @@ print(json.dumps({'versions':versions,'environment':{
     'sys_platform':sys.platform
 },'compatible_wheel_tags':compatible_wheel_tags}))
 """
+NODE_RUNTIME_PROBE = """
+import json,pathlib,re,shutil,subprocess
+request=json.loads(pathlib.Path('probe.json').read_text())
+version_pattern=re.compile(r'^(?:v)?[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,64})?$')
+def version_for(name):
+    executable=shutil.which(name)
+    if executable is None:
+        return None
+    result=subprocess.run([executable,'--version'],stdin=subprocess.DEVNULL,
+                          capture_output=True,text=True,timeout=2,check=False)
+    if result.returncode!=0:
+        raise RuntimeError(name+' version command failed')
+    value=result.stdout.strip()
+    if not version_pattern.fullmatch(value):
+        raise RuntimeError(name+' returned an invalid version')
+    return value
+node_version=version_for('node')
+npm_version=version_for('npm') if node_version is not None else None
+print(json.dumps({'nonce':request['nonce'],'node_version':node_version,
+                  'npm_version':npm_version},separators=(',',':')))
+"""
 
 
 class ReadinessRequest(BaseModel):
@@ -213,6 +235,31 @@ class SkillDependencyReadinessResult(BaseModel):
             "sandbox_not_ready",
             "probe_busy",
             "dependency_probe_failed",
+        ]
+        | None
+    ) = None
+
+
+class SkillNodeRuntimeReadinessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+
+class SkillNodeRuntimeReadinessResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    distribution: str
+    state: Literal["ready", "node_missing", "unavailable", "unsupported", "busy"]
+    node_version: str | None = Field(default=None, max_length=128)
+    npm_version: str | None = Field(default=None, max_length=128)
+    npm_available: bool
+    checked_at: datetime
+    error_code: (
+        Literal[
+            "profile_unavailable",
+            "unsupported_platform",
+            "sandbox_not_ready",
+            "probe_busy",
+            "runtime_probe_failed",
         ]
         | None
     ) = None
@@ -520,6 +567,168 @@ class ExecutionReadiness:
             compatible_wheel_tags=compatible_wheel_tags,
             dependencies=statuses,
             unverified_dependency_count=unverified_dependency_count,
+            checked_at=datetime.now(UTC),
+        )
+
+    async def check_node_runtime(
+        self, request: SkillNodeRuntimeReadinessRequest
+    ) -> SkillNodeRuntimeReadinessResult:
+        """Read Node/npm versions inside the selected WSL sandbox without running procedure code."""
+        checked_at = datetime.now(UTC)
+        sandbox = await self.check(ReadinessRequest(distribution=request.distribution))
+        if sandbox.state != "ready":
+            mapped_state: Literal["unavailable", "unsupported", "busy"] = (
+                sandbox.state
+                if sandbox.state in {"unavailable", "unsupported", "busy"}
+                else "unavailable"
+            )
+            error_code: Literal[
+                "profile_unavailable",
+                "unsupported_platform",
+                "sandbox_not_ready",
+                "probe_busy",
+                "runtime_probe_failed",
+            ] = "sandbox_not_ready"
+            if sandbox.error_code == "profile_unavailable":
+                error_code = "profile_unavailable"
+            elif sandbox.error_code == "unsupported_platform":
+                error_code = "unsupported_platform"
+            elif sandbox.error_code == "probe_busy":
+                error_code = "probe_busy"
+            return SkillNodeRuntimeReadinessResult(
+                distribution=request.distribution,
+                state=mapped_state,
+                npm_available=False,
+                checked_at=checked_at,
+                error_code=error_code,
+            )
+        if self.lock.locked():
+            return SkillNodeRuntimeReadinessResult(
+                distribution=request.distribution,
+                state="busy",
+                npm_available=False,
+                checked_at=checked_at,
+                error_code="probe_busy",
+            )
+
+        nonce = uuid4().hex
+        snapshot = WorkspaceSnapshot(
+            (SnapshotFile("probe.json", json.dumps({"nonce": nonce}).encode("ascii")),), (), ()
+        )
+        digest = sandbox.profile_sha256
+        assert digest is not None
+        node_version: str | None = None
+        npm_version: str | None = None
+        probe_succeeded = False
+        try:
+            async with self.lock:
+                transport = await WSLTransport.discover(
+                    request.distribution, deadline=time.monotonic() + 30
+                )
+                if transport.profile_sha256 != digest or profile_fingerprint()[0] != digest:
+                    raise PermissionError("Execution profile changed during Node runtime probe.")
+                intent = CommandIntent(
+                    argv=["/usr/bin/python3", "-I", "-c", NODE_RUNTIME_PROBE],
+                    max_seconds=5,
+                    execution_id=uuid4().hex,
+                    backend="wsl-bubblewrap-v1",
+                    distribution=request.distribution,
+                    profile_sha256=digest,
+                    workspace="application-owned-node-runtime-probe",
+                )
+                try:
+                    result = await transport.run(intent, snapshot, deadline=time.monotonic() + 15)
+                    encoded = result.get("stdout_b64")
+                    expected_limits = {
+                        "max_active_executions": 2,
+                        "memory_bytes": 134217728,
+                        "cpu_percent": 50,
+                        "tasks": 32,
+                        "scratch_bytes": 33554432,
+                        "workspace_bytes": 33554432,
+                        "output_bytes": 1048576,
+                        "seconds": 5,
+                        "network": "none",
+                    }
+                    if (
+                        result.get("succeeded") is not True
+                        or result.get("cleanup_confirmed") is not True
+                        or type(result.get("exit_code")) is not int
+                        or result["exit_code"] != 0
+                        or result.get("snapshot_sha256") != snapshot.sha256
+                        or result.get("backend") != "wsl-bubblewrap-v1"
+                        or result.get("output_complete") is not True
+                        or result.get("workspace_changes_persisted") is not False
+                        or result.get("limits") != expected_limits
+                        or not isinstance(encoded, str)
+                        or len(encoded) > 5_462
+                    ):
+                        raise ValueError("Node runtime probe did not finish successfully.")
+                    output = response_object(base64.b64decode(encoded, validate=True))
+                    if set(output) != {"nonce", "node_version", "npm_version"}:
+                        raise ValueError("Node runtime probe returned invalid metadata.")
+                    raw_nonce = output.get("nonce")
+                    raw_node = output.get("node_version")
+                    raw_npm = output.get("npm_version")
+                    version_pattern = re.compile(
+                        r"^(?:v)?[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
+                        r"(?:[-+][A-Za-z0-9.-]{1,64})?$"
+                    )
+                    if (
+                        raw_nonce != nonce
+                        or (raw_node is not None and not isinstance(raw_node, str))
+                        or (raw_npm is not None and not isinstance(raw_npm, str))
+                        or (isinstance(raw_node, str) and not version_pattern.fullmatch(raw_node))
+                        or (isinstance(raw_npm, str) and not version_pattern.fullmatch(raw_npm))
+                        or (raw_npm is not None and raw_node is None)
+                    ):
+                        raise ValueError("Node runtime probe returned invalid metadata.")
+                    node_version = raw_node if isinstance(raw_node, str) else None
+                    npm_version = raw_npm if isinstance(raw_npm, str) else None
+                    if profile_fingerprint()[0] != digest:
+                        raise PermissionError(
+                            "Execution profile changed during Node runtime probe."
+                        )
+                    probe_succeeded = True
+                finally:
+
+                    async def cleanup() -> None:
+                        deadline = time.monotonic() + 20
+                        acknowledgement = await transport.control(
+                            "cleanup", intent, deadline=deadline
+                        )
+                        if acknowledgement.get("cleanup_confirmed") is not True:
+                            raise RuntimeError("Node runtime probe cleanup is unconfirmed.")
+                        while True:
+                            status = await transport.control("status", intent, deadline=deadline)
+                            if (
+                                status.get("closed") is True
+                                and status.get("manager_alive") is False
+                            ):
+                                return
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("Node runtime probe manager remains active.")
+                            await asyncio.sleep(0.05)
+
+                    await finish_cleanup(cleanup())
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            node_version = None
+            npm_version = None
+
+        if not probe_succeeded:
+            return SkillNodeRuntimeReadinessResult(
+                distribution=request.distribution,
+                state="unavailable",
+                npm_available=False,
+                checked_at=datetime.now(UTC),
+                error_code="runtime_probe_failed",
+            )
+        return SkillNodeRuntimeReadinessResult(
+            distribution=request.distribution,
+            state="ready" if node_version is not None else "node_missing",
+            node_version=node_version,
+            npm_version=npm_version,
+            npm_available=npm_version is not None,
             checked_at=datetime.now(UTC),
         )
 

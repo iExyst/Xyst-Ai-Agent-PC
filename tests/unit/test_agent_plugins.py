@@ -33,6 +33,7 @@ from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.runtime.execution_readiness import (
     SkillDependencyReadinessResult,
     SkillDependencyStatus,
+    SkillNodeRuntimeReadinessResult,
 )
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.runs import RunStore
@@ -915,11 +916,20 @@ def test_plugin_http_server_import_vaults_header_values_and_omits_them_from_stor
 def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    make_package(tmp_path)
+    package = make_package(tmp_path)
+    skill_root = package / "skills" / "summarize"
+    skill_file = skill_root / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8") + "\n[Run](scripts/run.mjs)\n",
+        encoding="utf-8",
+    )
+    (skill_root / "scripts").mkdir()
+    (skill_root / "scripts" / "run.mjs").write_text("console.log('fixture');\n", encoding="utf-8")
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "import.sqlite3"))
     payload = {"root": str(tmp_path), "package_name": "sample-package", "skill_name": "summarize"}
     headers = {"Authorization": f"Bearer {TOKEN}"}
     dependency_requests: list[tuple[str, list[str], int]] = []
+    node_requests: list[str] = []
 
     async def check_dependencies(self, request, *, unverified_dependency_count=0):
         dependency_requests.append(
@@ -943,6 +953,19 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
     monkeypatch.setattr(
         api_module.ExecutionReadiness, "check_python_dependencies", check_dependencies
     )
+
+    async def check_node_runtime(self, request):
+        node_requests.append(request.distribution)
+        return SkillNodeRuntimeReadinessResult(
+            distribution=request.distribution,
+            state="ready",
+            node_version="v22.2.0",
+            npm_version="10.8.1",
+            npm_available=True,
+            checked_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(api_module.ExecutionReadiness, "check_node_runtime", check_node_runtime)
     with TestClient(app) as client:
         assert client.post("/extensions/packages/import-skill", json=payload).status_code == 401
         created = client.post("/extensions/packages/import-skill", headers=headers, json=payload)
@@ -958,6 +981,18 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
         )
         readiness = client.post(
             f"/skills/{created.json()['id']}/versions/1/python-readiness",
+            headers=headers,
+            json={"distribution": "Ubuntu"},
+        )
+        assert (
+            client.post(
+                f"/skills/{created.json()['id']}/versions/1/node-readiness",
+                json={"distribution": "Ubuntu"},
+            ).status_code
+            == 401
+        )
+        node_readiness = client.post(
+            f"/skills/{created.json()['id']}/versions/1/node-readiness",
             headers=headers,
             json={"distribution": "Ubuntu"},
         )
@@ -988,6 +1023,10 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
     assert readiness.json()["dependencies"][0]["status"] == "available"
     assert readiness.json()["unverified_dependency_count"] == 1
     assert dependency_requests == [("Ubuntu", ["requests>=2.0"], 1)]
+    assert node_readiness.status_code == 200
+    assert node_readiness.json()["node_version"] == "v22.2.0"
+    assert node_readiness.json()["npm_version"] == "10.8.1"
+    assert node_requests == ["Ubuntu"]
     evidence = version.json()["evaluation_evidence"]
     assert evidence["provenance"] == "agent_plugins_v1"
     assert evidence["source"]["package_version"] == "1.2.3"

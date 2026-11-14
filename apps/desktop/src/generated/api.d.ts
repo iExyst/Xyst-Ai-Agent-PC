@@ -1980,6 +1980,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/node-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Skill Node Runtime */
+        post: operations["check_skill_node_runtime_skills__skill_id__versions__version__node_readiness_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/python-dependency-locks": {
         parameters: {
             query?: never;
@@ -4065,6 +4082,34 @@ export interface components {
             snapshot_sha256: string | null;
             /** To Version */
             to_version: number | null;
+        };
+        /** SkillNodeRuntimeReadinessRequest */
+        SkillNodeRuntimeReadinessRequest: {
+            /** Distribution */
+            distribution: string;
+        };
+        /** SkillNodeRuntimeReadinessResult */
+        SkillNodeRuntimeReadinessResult: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Distribution */
+            distribution: string;
+            /** Error Code */
+            error_code?: ("profile_unavailable" | "unsupported_platform" | "sandbox_not_ready" | "probe_busy" | "runtime_probe_failed") | null;
+            /** Node Version */
+            node_version?: string | null;
+            /** Npm Available */
+            npm_available: boolean;
+            /** Npm Version */
+            npm_version?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "node_missing" | "unavailable" | "unsupported" | "busy";
         };
         /** SkillPinDecision */
         SkillPinDecision: {
@@ -8852,6 +8897,42 @@ export interface operations {
                 };
                 content: {
                     "application/zip": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_skill_node_runtime_skills__skill_id__versions__version__node_readiness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillNodeRuntimeReadinessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillNodeRuntimeReadinessResult"];
                 };
             };
             /** @description Validation Error */

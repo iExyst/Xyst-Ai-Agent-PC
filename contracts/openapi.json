@@ -5247,6 +5247,100 @@
         "title": "SkillLifecycleEvent",
         "type": "object"
       },
+      "SkillNodeRuntimeReadinessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "distribution": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+            "title": "Distribution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution"
+        ],
+        "title": "SkillNodeRuntimeReadinessRequest",
+        "type": "object"
+      },
+      "SkillNodeRuntimeReadinessResult": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "profile_unavailable",
+                  "unsupported_platform",
+                  "sandbox_not_ready",
+                  "probe_busy",
+                  "runtime_probe_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "node_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Version"
+          },
+          "npm_available": {
+            "title": "Npm Available",
+            "type": "boolean"
+          },
+          "npm_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Npm Version"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "node_missing",
+              "unavailable",
+              "unsupported",
+              "busy"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "state",
+          "npm_available",
+          "checked_at"
+        ],
+        "title": "SkillNodeRuntimeReadinessResult",
+        "type": "object"
+      },
       "SkillPinDecision": {
         "additionalProperties": false,
         "properties": {
@@ -12971,6 +13065,71 @@
           }
         ],
         "summary": "Export Skill Package"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/node-readiness": {
+      "post": {
+        "operationId": "check_skill_node_runtime_skills__skill_id__versions__version__node_readiness_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillNodeRuntimeReadinessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillNodeRuntimeReadinessResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Skill Node Runtime"
       }
     },
     "/skills/{skill_id}/versions/{version}/python-dependency-locks": {

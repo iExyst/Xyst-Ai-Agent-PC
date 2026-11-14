@@ -12,6 +12,7 @@ from xaa.runtime.execution_readiness import (
     ExecutionReadiness,
     ReadinessRequest,
     SkillDependencyReadinessRequest,
+    SkillNodeRuntimeReadinessRequest,
 )
 from xaa.runtime.windows_local_probe import PROBE_CODE, command_argv
 from xaa.storage.runs import RunStore
@@ -27,13 +28,31 @@ class Backend:
 
     async def run(self, intent, snapshot, *, deadline):
         self.launches += 1
+        node_probe = intent.argv == [
+            "/usr/bin/python3",
+            "-I",
+            "-c",
+            module.NODE_RUNTIME_PROBE,
+        ]
         dependency_probe = intent.argv == [
             "/usr/bin/python3",
             "-I",
             "-c",
             module.DEPENDENCY_PROBE,
         ]
-        if dependency_probe:
+        if node_probe:
+            assert len(snapshot.files) == 1 and snapshot.files[0].path == "probe.json"
+            nonce = json.loads(snapshot.files[0].content)["nonce"]
+            output = {
+                "nonce": nonce,
+                "node_version": None if self.fault == "node_missing" else "v22.2.0",
+                "npm_version": (
+                    None if self.fault in {"node_missing", "npm_missing"} else "10.8.1"
+                ),
+            }
+            if self.fault == "invalid_node_version":
+                output["node_version"] = "latest"
+        elif dependency_probe:
             assert len(snapshot.files) == 1 and snapshot.files[0].path == "probe.json"
             names = json.loads(snapshot.files[0].content)["names"]
             output = {
@@ -67,6 +86,8 @@ class Backend:
                 "nonce": "wrong" if self.fault == "nonce" else nonce,
                 "checks": 1 if self.fault == "numeric_bool" else True,
             }
+        if self.fault == "node_run" and node_probe:
+            raise OSError("node runtime probe failed")
         if self.fault == "run":
             raise OSError("do not expose raw fixture backend error")
         return {
@@ -341,6 +362,32 @@ async def test_python_dependency_target_rejects_malformed_wheel_tags(monkeypatch
 
     assert result.state == "unavailable"
     assert result.error_code == "dependency_probe_failed"
+
+
+@pytest.mark.parametrize(
+    ("fault", "expected_state", "expected_node", "expected_npm"),
+    [
+        (None, "ready", "v22.2.0", "10.8.1"),
+        ("npm_missing", "ready", "v22.2.0", None),
+        ("node_missing", "node_missing", None, None),
+        ("invalid_node_version", "unavailable", None, None),
+        ("node_run", "unavailable", None, None),
+    ],
+)
+async def test_node_runtime_probe_reports_versions_and_fails_closed(
+    monkeypatch, fault, expected_state, expected_node, expected_npm
+):
+    backend = Backend(fault)
+    install(monkeypatch, backend)
+    result = await ExecutionReadiness().check_node_runtime(
+        SkillNodeRuntimeReadinessRequest(distribution="Ubuntu")
+    )
+    assert result.state == expected_state
+    assert result.node_version == expected_node
+    assert result.npm_version == expected_npm
+    assert result.npm_available is (expected_npm is not None)
+    assert backend.launches == 2
+    assert backend.controls == ["cleanup", "status", "cleanup", "status"]
 
 
 def test_dependency_check_rejects_direct_references_and_unbounded_lists():

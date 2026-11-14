@@ -102,6 +102,8 @@ from xaa.runtime.execution_readiness import (
     ReadinessResult,
     SkillDependencyReadinessRequest,
     SkillDependencyReadinessResult,
+    SkillNodeRuntimeReadinessRequest,
+    SkillNodeRuntimeReadinessResult,
 )
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.local_transcription import TranscriptionError
@@ -1579,6 +1581,46 @@ def create_app(
             dependency_request,
             unverified_dependency_count=min(256, unverified_count),
         )
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/node-readiness",
+        response_model=SkillNodeRuntimeReadinessResult,
+    )
+    async def check_skill_node_runtime(
+        skill_id: str,
+        request: SkillNodeRuntimeReadinessRequest,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> SkillNodeRuntimeReadinessResult:
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        evidence_value: object = manifest.get("evaluation_evidence")
+        evidence = (
+            cast(dict[str, object], evidence_value) if isinstance(evidence_value, dict) else {}
+        )
+        if evidence.get("provenance") not in {"agent_plugins_v1", "hermes_skill"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Node runtime checks are available only for imported procedures.",
+            )
+        raw_assets: object = manifest.get("assets")
+        assets = cast(list[object], raw_assets) if isinstance(raw_assets, list) else []
+        has_node_script = False
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            path_value = cast(dict[str, object], asset).get("path")
+            if isinstance(path_value, str) and path_value.lower().endswith((".js", ".mjs", ".cjs")):
+                has_node_script = True
+                break
+        if not has_node_script:
+            raise HTTPException(
+                status_code=409,
+                detail="This imported procedure version has no linked Node.js scripts.",
+            )
+        return await execution_readiness.check_node_runtime(request)
 
     @app.post(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks/resolve",
