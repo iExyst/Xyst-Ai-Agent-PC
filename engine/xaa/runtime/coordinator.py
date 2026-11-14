@@ -1704,8 +1704,10 @@ class Coordinator:
                                 " Integrity-checked selected skill scripts are included in this "
                                 "private command snapshot at: "
                                 + ", ".join(script_paths)
-                                + ". Invoke a .py file with the available Python interpreter or "
-                                "a .sh file with bash, using structured argv."
+                                + ". Invoke .py with Python, .sh with bash, or .js/.mjs/.cjs "
+                                "with Node.js, using structured argv. Node.js must be installed "
+                                "in the selected WSL distribution; npm dependencies are not "
+                                "installed by this procedure environment."
                             )
                 tools.append(
                     {

@@ -26,7 +26,7 @@ from xaa.storage.runs import RunStore, TaskReadScope
 def selected_skill_script_resources(
     trial: dict[str, Any] | None,
 ) -> tuple[str, int, list[tuple[str, bytes]]] | None:
-    """Return selected, integrity-checked Python/shell resources in their immutable version."""
+    """Return selected, integrity-checked Python/shell/Node resources in their immutable version."""
     if trial is None:
         return None
     from xaa.storage.skills import snapshot_digest
@@ -56,9 +56,13 @@ def selected_skill_script_resources(
             raise TypeError("Selected procedure resource metadata is invalid.")
         checked_path(path)
         suffix = PurePosixPath(path).suffix.casefold()
-        if suffix not in {".py", ".sh"}:
+        if suffix not in {".py", ".sh", ".js", ".mjs", ".cjs"}:
             continue
-        if not media_type.startswith("text/") or not isinstance(encoded, str):
+        javascript = suffix in {".js", ".mjs", ".cjs"}
+        valid_media_type = media_type.startswith("text/") or (
+            javascript and media_type == "application/javascript"
+        )
+        if not valid_media_type or not isinstance(encoded, str):
             raise ValueError("Selected script must be a UTF-8 text resource.")
         raw = base64.b64decode(encoded, validate=True)
         if (
@@ -84,7 +88,7 @@ def selected_skill_script_paths(trial: dict[str, Any] | None) -> list[str]:
 def add_selected_skill_scripts(
     snapshot: WorkspaceSnapshot, trial: dict[str, Any] | None
 ) -> WorkspaceSnapshot:
-    """Overlay integrity-checked selected Python/shell resources into the private snapshot."""
+    """Overlay integrity-checked selected executable resources into the private snapshot."""
     selected = selected_skill_script_resources(trial)
     if selected is None:
         return snapshot

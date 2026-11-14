@@ -21,7 +21,13 @@ from xaa.storage.runs import RunStore, utc_now
 
 MAX_PROCEDURE_TEXT_BYTES = 80 * 1024
 _PROCEDURE_TEXT_MEDIA_TYPES = frozenset(
-    {"application/json", "application/yaml", "application/toml", "image/svg+xml"}
+    {
+        "application/json",
+        "application/javascript",
+        "application/yaml",
+        "application/toml",
+        "image/svg+xml",
+    }
 )
 SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES = frozenset(
     {"application/pdf", "image/gif", "image/jpeg", "image/png", "image/webp"}

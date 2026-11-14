@@ -305,7 +305,8 @@ def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path:
         "---\nname: summarize\ndescription: Summarize selected material.\nversion: 0.2.0\n"
         "metadata:\n  hermes:\n    category: writing\n---\n"
         "Use the linked reference only when it helps. [Guide](./references/guide.md)\n"
-        "![Diagram](./references/diagram.png)\n[Manual](./references/manual.pdf)\n",
+        "![Diagram](./references/diagram.png)\n[Manual](./references/manual.pdf)\n"
+        "[Check](./scripts/check.mjs)\n",
         encoding="utf-8",
     )
     (skill_directory / "references" / "guide.md").write_text("Reference content", encoding="utf-8")
@@ -313,6 +314,9 @@ def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path:
     manual = b"%PDF-1.7\nfixture-document"
     (skill_directory / "references" / "diagram.png").write_bytes(diagram)
     (skill_directory / "references" / "manual.pdf").write_bytes(manual)
+    javascript = b"console.log('selected resource')\n"
+    (skill_directory / "scripts").mkdir()
+    (skill_directory / "scripts" / "check.mjs").write_bytes(javascript)
 
     discovery = discover_agent_plugins(str(skills_root))
     assert len(discovery.packages) == 1
@@ -342,6 +346,9 @@ def test_discovery_and_import_accept_standalone_hermes_skill_directory(tmp_path:
     assert imported.assets[2]["path"] == "references/manual.pdf"
     assert imported.assets[2]["media_type"] == "application/pdf"
     assert base64.b64decode(imported.assets[2]["content_base64"]) == manual
+    assert imported.assets[3]["path"] == "scripts/check.mjs"
+    assert imported.assets[3]["media_type"] == "text/javascript"
+    assert base64.b64decode(imported.assets[3]["content_base64"]) == javascript
 
 
 def test_skill_import_rejects_mislabeled_binary_resource(tmp_path: Path) -> None:

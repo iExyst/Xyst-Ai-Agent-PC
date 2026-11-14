@@ -10,6 +10,7 @@ from xaa.runtime.snapshot_worker import (
     SnapshotRequest,
     add_selected_skill_scripts,
     capture_command_snapshot,
+    selected_skill_script_paths,
 )
 from xaa.runtime.states import RunState
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot, capture_workspace
@@ -180,6 +181,26 @@ def selected_trial(path="scripts/check.py", content=b"print('selected')\n"):
                 ),
                 "sha256": hashlib.sha256(b"#!/bin/bash\nprintf 'shell'\n").hexdigest(),
             },
+            {
+                "path": "scripts/check.mjs",
+                "media_type": "text/javascript",
+                "content_base64": base64.b64encode(
+                    b"import { readFileSync } from 'node:fs';\nconsole.log(readFileSync('fixture.txt', 'utf8'));\n"
+                ).decode("ascii"),
+                "sha256": hashlib.sha256(
+                    b"import { readFileSync } from 'node:fs';\nconsole.log(readFileSync('fixture.txt', 'utf8'));\n"
+                ).hexdigest(),
+            },
+            {
+                "path": "scripts/check.cjs",
+                "media_type": "application/javascript",
+                "content_base64": base64.b64encode(
+                    b"const fs = require('node:fs');\nconsole.log(fs.readFileSync('fixture.txt', 'utf8'));\n"
+                ).decode("ascii"),
+                "sha256": hashlib.sha256(
+                    b"const fs = require('node:fs');\nconsole.log(fs.readFileSync('fixture.txt', 'utf8'));\n"
+                ).hexdigest(),
+            },
         ],
     }
     trial["snapshot_sha256"] = snapshot_digest(trial)
@@ -198,6 +219,18 @@ def test_selected_script_is_added_to_immutable_sandbox_snapshot():
     assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.sh"] == (
         b"#!/bin/bash\nprintf 'shell'\n"
     )
+    assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.mjs"].startswith(
+        b"import { readFileSync }"
+    )
+    assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.cjs"].startswith(
+        b"const fs = require"
+    )
+    assert selected_skill_script_paths(selected_trial()) == [
+        "__xaa_selected_skill__/fixture-skill/v2/scripts/check.py",
+        "__xaa_selected_skill__/fixture-skill/v2/scripts/check.sh",
+        "__xaa_selected_skill__/fixture-skill/v2/scripts/check.mjs",
+        "__xaa_selected_skill__/fixture-skill/v2/scripts/check.cjs",
+    ]
     assert "__xaa_selected_skill__/fixture-skill/v2/scripts" in staged.directories
     assert "__xaa_selected_skill__/fixture-skill/v2" in staged.directories
     assert len(source.files) == 1
