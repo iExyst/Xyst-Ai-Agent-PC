@@ -2,7 +2,7 @@
 
 ## Bound schedule catch-up after long downtime (2026-11-14)
 
-Daily and weekly schedule recovery now calculates the latest occurrence directly from the saved start and missed-count, rather than iterating over every missed date. A 125-year fixture verifies both recurrence types without calling the incremental step function. The focused schedule suite passes (15); no model inference or live delivery was used. This bounds catch-up work; timezone database changes and real external clock transitions remain separate acceptance gaps.
+Daily and weekly schedule recovery now calculates the latest occurrence directly from the saved start and missed-count, rather than iterating over every missed date. A 125-year fixture verifies both recurrence types without calling the incremental step function. The focused schedule suite passes (15); source run [43632412413](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43632412413) and installer run [43632435692](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43632435692) passed on `7e3a9440`. The tested unsigned installer is 78,156,658 bytes, SHA-256 `f235d97ed50c7685cc8502db5e155fb45d2f550a74e687f93321cf0c515e2638`, retained in `.acceptance/hosted-installer-43632435692/`. No model inference or live delivery was used. This bounds catch-up work; timezone database changes and real external clock transitions remain separate acceptance gaps.
 
 ## Allow cold start for frozen CLI diagnostics (2026-11-14)
 
