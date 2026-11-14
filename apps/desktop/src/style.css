@@ -123,3 +123,4 @@ body{color:#182230;background:#f4f6f9}
 #get-started ol{margin-top:16px}
 @media(max-width:640px){.composer-heading{align-items:flex-start;flex-direction:column}.composer-heading h2{font-size:19px!important}.composer-private{align-self:flex-start}#run-objective{min-height:115px;height:115px}}
 .skip-link{position:fixed;top:10px;left:10px;z-index:20;transform:translateY(-160%);padding:11px 14px;background:#c5f1dc;color:#10231a;border:2px solid #10231a;border-radius:8px;font-size:13px;font-weight:750;text-decoration:none;box-shadow:0 4px 18px #0008}.skip-link:focus{transform:translateY(0);outline:3px solid #90b9ff;outline-offset:3px}
+.app-content .system-monitor-intro p{color:#596579}.app-content .system-resource-card{background:#fff;border-color:#e2e7ee}.app-content .system-resource-card .system-resource-heading h2{color:#182230}.app-content .system-resource-card .system-resource-heading strong{color:#205a41}.app-content .system-resource-card p{color:#596579}
