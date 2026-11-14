@@ -1486,3 +1486,78 @@ def test_plugin_skill_import_refuses_oversized_skill_without_creating_candidate(
     assert response.status_code == 400
     assert "80 KiB" in response.json()["detail"]
     assert procedures.json() == []
+
+
+def test_npm_lock_inspection_reads_only_bound_imported_resources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = make_package(tmp_path)
+    skill_root = package / "skills" / "summarize"
+    skill_file = skill_root / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n[Script](scripts/run.mjs) [Manifest](package.json) [Lock](package-lock.json)\n",
+        encoding="utf-8",
+    )
+    (skill_root / "scripts").mkdir()
+    (skill_root / "scripts" / "run.mjs").write_text("console.log('fixture');\n", encoding="utf-8")
+    (skill_root / "package.json").write_text(
+        '{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}', encoding="utf-8"
+    )
+    (skill_root / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "name": "fixture",
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}},
+                    "node_modules/left-pad": {
+                        "version": "1.3.0",
+                        "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+                        "integrity": "sha512-"
+                        + base64.b64encode(hashlib.sha512(b"fixture").digest()).decode(),
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "npm.sqlite3"))
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    readiness_requests: list[str] = []
+
+    async def check_node_runtime(self, request):
+        readiness_requests.append(request.distribution)
+        return SkillNodeRuntimeReadinessResult(
+            distribution=request.distribution,
+            state="ready",
+            node_version="v22.2.0",
+            npm_version="10.8.1",
+            npm_available=True,
+            checked_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(api_module.ExecutionReadiness, "check_node_runtime", check_node_runtime)
+    with TestClient(app) as client:
+        created = client.post(
+            "/extensions/packages/import-skill",
+            headers=headers,
+            json={
+                "root": str(tmp_path),
+                "package_name": "sample-package",
+                "skill_name": "summarize",
+            },
+        )
+        assert created.status_code == 201, created.text
+        endpoint = f"/skills/{created.json()['id']}/versions/1/npm-dependency-locks/inspect"
+        assert client.post(endpoint, json={"distribution": "Ubuntu"}).status_code == 401
+        inspected = client.post(endpoint, headers=headers, json={"distribution": "Ubuntu-24.04"})
+        assert inspected.status_code == 200, inspected.text
+        result = inspected.json()
+        assert result["node_version"] == "v22.2.0"
+        assert result["npm_version"] == "10.8.1"
+        assert result["root_dependencies"] == [
+            {"name": "left-pad", "version_range": "^1.3.0", "kind": "dependencies"}
+        ]
+        assert result["packages"][0]["name"] == "left-pad"
+        assert readiness_requests == ["Ubuntu-24.04"]

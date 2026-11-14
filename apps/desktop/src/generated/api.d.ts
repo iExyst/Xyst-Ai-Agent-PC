@@ -1997,6 +1997,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inspect Skill Npm Dependency Lock */
+        post: operations["inspect_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/python-dependency-locks": {
         parameters: {
             query?: never;
@@ -3263,6 +3280,28 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** NpmLockedPackage */
+        NpmLockedPackage: {
+            /** Integrity */
+            integrity: string;
+            /** Name */
+            name: string;
+            /** Package Path */
+            package_path: string;
+            /** Resolved Url */
+            resolved_url: string;
+            /** Version */
+            version: string;
+        };
+        /** NpmRootDependency */
+        NpmRootDependency: {
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Version Range */
+            version_range: string;
+        };
         /** PlanRecord */
         PlanRecord: {
             /** Blocked */
@@ -3447,6 +3486,39 @@ export interface components {
         PreferenceRequest: {
             /** Content */
             content: string;
+        };
+        /**
+         * ProcedureNpmDependencyLock
+         * @description Immutable review record for one imported procedure and Node runtime.
+         */
+        ProcedureNpmDependencyLock: {
+            /** Distribution */
+            distribution: string;
+            /** Lockfile Sha256 */
+            lockfile_sha256: string;
+            /** Node Version */
+            node_version: string;
+            /** Npm Version */
+            npm_version: string;
+            /** Package Manifest Sha256 */
+            package_manifest_sha256: string;
+            /** Packages */
+            packages: components["schemas"]["NpmLockedPackage"][];
+            /**
+             * Requirements
+             * @default []
+             */
+            requirements: string[];
+            /** Root Dependencies */
+            root_dependencies: components["schemas"]["NpmRootDependency"][];
+            /** Schema Version */
+            schema_version: number;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Version */
+            skill_version: number;
+            /** Source Sha256 */
+            source_sha256: string;
         };
         /**
          * ProcedurePythonDependencyLock
@@ -8933,6 +9005,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillNodeRuntimeReadinessResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPythonDependencyCheck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcedureNpmDependencyLock"];
                 };
             };
             /** @description Validation Error */

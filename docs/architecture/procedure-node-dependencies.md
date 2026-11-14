@@ -2,7 +2,7 @@
 
 ## Current support
 
-X.A.A. can stage linked `.js`, `.mjs`, and `.cjs` resources into restricted WSL command snapshots and can report the selected WSL Node/npm versions. Imported npm declarations are displayed as unverified metadata. A strict parser can validate an imported `package-lock.json` v3 proposal against its paired `package.json`, source identity, package names/paths, registry URLs, and SHA-512 integrity syntax.
+X.A.A. can stage linked `.js`, `.mjs`, and `.cjs` resources into restricted WSL command snapshots and can report the selected WSL Node/npm versions. Imported npm declarations are displayed as unverified metadata. An authenticated API action and desktop preview parse linked `package-lock.json` v3 and `package.json` resources against the exact imported procedure identity and a fresh WSL runtime check. The parser validates their stored hashes, root dependency agreement, package names/paths, registry URLs, and SHA-512 integrity syntax.
 
 The parser does not fetch or hash tarballs, prove that package versions satisfy the declared semver ranges, close the complete transitive dependency graph, persist an owner-reviewed lock, install packages, or expose a Node environment to procedure execution. A parsed proposal must not be treated as a trusted or installable lock.
 

@@ -79,6 +79,11 @@ from xaa.extensions.agent_plugins import (
     remove_installed_agent_plugin,
     remove_managed_plugin_data,
 )
+from xaa.extensions.npm_dependencies import (
+    ProcedureNpmDependencyLock,
+    parse_npm_package_lock,
+    verify_npm_package_manifest,
+)
 from xaa.extensions.procedure_dependencies import (
     ProcedurePythonDependencyLock,
     PythonDependencyLockList,
@@ -1621,6 +1626,126 @@ def create_app(
                 detail="This imported procedure version has no linked Node.js scripts.",
             )
         return await execution_readiness.check_node_runtime(request)
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/npm-dependency-locks/inspect",
+        response_model=ProcedureNpmDependencyLock,
+    )
+    async def inspect_skill_npm_dependency_lock(
+        skill_id: str,
+        request: SkillPythonDependencyCheck,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> ProcedureNpmDependencyLock:
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        evidence_value: object = manifest.get("evaluation_evidence")
+        evidence = (
+            cast(dict[str, object], evidence_value) if isinstance(evidence_value, dict) else {}
+        )
+        if evidence.get("provenance") not in {"agent_plugins_v1", "hermes_skill"}:
+            raise HTTPException(
+                status_code=409,
+                detail="npm lock inspection is available only for imported procedures.",
+            )
+        source_value = evidence.get("source")
+        source = cast(dict[str, object], source_value) if isinstance(source_value, dict) else {}
+        source_sha256 = source.get("content_sha256")
+        if not isinstance(source_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", source_sha256):
+            raise HTTPException(
+                status_code=409, detail="Imported procedure source identity is invalid."
+            )
+        raw_declarations = source.get("declared_requirements")
+        try:
+            declarations = (
+                json.loads(raw_declarations)
+                if isinstance(raw_declarations, str) and len(raw_declarations) <= 8192
+                else None
+            )
+        except json.JSONDecodeError:
+            declarations = None
+        if not isinstance(declarations, dict):
+            raise HTTPException(
+                status_code=409, detail="Imported npm requirements are unavailable."
+            )
+        declaration_map = cast(dict[str, object], declarations)
+        raw_requirements = declaration_map.get("npm_dependency_specs", [])
+        if not isinstance(raw_requirements, list):
+            raise HTTPException(status_code=409, detail="Imported npm requirements are invalid.")
+        requirement_items = cast(list[object], raw_requirements)
+        if any(not isinstance(item, str) for item in requirement_items):
+            raise HTTPException(status_code=409, detail="Imported npm requirements are invalid.")
+        requirements = cast(list[str], requirement_items)
+        if len(requirements) > 128 or declaration_map.get("dependency_names_truncated") is True:
+            raise HTTPException(
+                status_code=409, detail="Imported npm requirements exceed supported limits."
+            )
+        raw_assets: object = manifest.get("assets")
+        assets = cast(list[object], raw_assets) if isinstance(raw_assets, list) else []
+        asset_by_name: dict[str, tuple[bytes, str]] = {}
+        for raw_asset in assets:
+            if not isinstance(raw_asset, dict):
+                continue
+            asset = cast(dict[str, object], raw_asset)
+            path_value = asset.get("path")
+            if not isinstance(path_value, str):
+                continue
+            basename = path_value.rsplit("/", 1)[-1]
+            if basename not in {"package.json", "package-lock.json"}:
+                continue
+            encoded = asset.get("content_base64")
+            expected_hash = asset.get("sha256")
+            if not isinstance(encoded, str) or not isinstance(expected_hash, str):
+                raise HTTPException(status_code=409, detail="Linked npm resources are invalid.")
+            try:
+                content = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                raise HTTPException(
+                    status_code=409, detail="Linked npm resources are invalid."
+                ) from None
+            if hashlib.sha256(content).hexdigest() != expected_hash:
+                raise HTTPException(status_code=409, detail="Linked npm resource integrity failed.")
+            if basename in asset_by_name:
+                raise HTTPException(
+                    status_code=409, detail="Linked npm resource names are ambiguous."
+                )
+            asset_by_name[basename] = (content, expected_hash)
+        if set(asset_by_name) != {"package.json", "package-lock.json"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Link exactly one package.json and package-lock.json to inspect npm dependencies.",
+            )
+        readiness = await execution_readiness.check_node_runtime(
+            SkillNodeRuntimeReadinessRequest(distribution=request.distribution)
+        )
+        if readiness.state != "ready" or not readiness.npm_available:
+            raise HTTPException(
+                status_code=409,
+                detail="The selected WSL distribution must have a ready Node.js and npm runtime.",
+            )
+        package_manifest, manifest_hash = asset_by_name["package.json"]
+        package_lock, _lock_asset_hash = asset_by_name["package-lock.json"]
+        try:
+            proposal = parse_npm_package_lock(
+                package_lock,
+                skill_id=skill_id,
+                skill_version=version,
+                source_sha256=source_sha256,
+                package_manifest_sha256=manifest_hash,
+                distribution=request.distribution,
+                node_version=readiness.node_version or "",
+                npm_version=readiness.npm_version or "",
+                requirements=requirements,
+            )
+            verify_npm_package_manifest(package_manifest, proposal)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=409,
+                detail="The linked npm package manifest and lockfile could not be validated.",
+            ) from None
+        return proposal
 
     @app.post(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks/resolve",

@@ -2775,6 +2775,79 @@
         "title": "ModelRequest",
         "type": "object"
       },
+      "NpmLockedPackage": {
+        "additionalProperties": false,
+        "properties": {
+          "integrity": {
+            "maxLength": 96,
+            "pattern": "^sha512-[A-Za-z0-9+/]{86}==$",
+            "title": "Integrity",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "package_path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Package Path",
+            "type": "string"
+          },
+          "resolved_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Resolved Url",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 128,
+            "minLength": 5,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_path",
+          "name",
+          "version",
+          "resolved_url",
+          "integrity"
+        ],
+        "title": "NpmLockedPackage",
+        "type": "object"
+      },
+      "NpmRootDependency": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "pattern": "^(?:dependencies|devDependencies|optionalDependencies|peerDependencies)$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "version_range": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Version Range",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version_range",
+          "kind"
+        ],
+        "title": "NpmRootDependency",
+        "type": "object"
+      },
       "PlanRecord": {
         "properties": {
           "blocked": {
@@ -3361,6 +3434,100 @@
           "content"
         ],
         "title": "PreferenceRequest",
+        "type": "object"
+      },
+      "ProcedureNpmDependencyLock": {
+        "additionalProperties": false,
+        "description": "Immutable review record for one imported procedure and Node runtime.",
+        "properties": {
+          "distribution": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "lockfile_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Lockfile Sha256",
+            "type": "string"
+          },
+          "node_version": {
+            "maxLength": 128,
+            "minLength": 5,
+            "title": "Node Version",
+            "type": "string"
+          },
+          "npm_version": {
+            "maxLength": 128,
+            "minLength": 5,
+            "title": "Npm Version",
+            "type": "string"
+          },
+          "package_manifest_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Package Manifest Sha256",
+            "type": "string"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/NpmLockedPackage"
+            },
+            "maxItems": 512,
+            "title": "Packages",
+            "type": "array"
+          },
+          "requirements": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Requirements",
+            "type": "array"
+          },
+          "root_dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/NpmRootDependency"
+            },
+            "maxItems": 512,
+            "title": "Root Dependencies",
+            "type": "array"
+          },
+          "schema_version": {
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_version": {
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Skill Version",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "skill_id",
+          "skill_version",
+          "source_sha256",
+          "package_manifest_sha256",
+          "lockfile_sha256",
+          "distribution",
+          "node_version",
+          "npm_version",
+          "root_dependencies",
+          "packages"
+        ],
+        "title": "ProcedureNpmDependencyLock",
         "type": "object"
       },
       "ProcedurePythonDependencyLock": {
@@ -13130,6 +13297,71 @@
           }
         ],
         "summary": "Check Skill Node Runtime"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/npm-dependency-locks/inspect": {
+      "post": {
+        "operationId": "inspect_skill_npm_dependency_lock_skills__skill_id__versions__version__npm_dependency_locks_inspect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPythonDependencyCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcedureNpmDependencyLock"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Inspect Skill Npm Dependency Lock"
       }
     },
     "/skills/{skill_id}/versions/{version}/python-dependency-locks": {
