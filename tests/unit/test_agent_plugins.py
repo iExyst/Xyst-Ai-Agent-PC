@@ -1150,6 +1150,7 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         review = f"{endpoint}/{dependency_lock.environment_digest()}/review"
         acquire = f"{endpoint}/{dependency_lock.environment_digest()}/acquire"
         install = f"{endpoint}/{dependency_lock.environment_digest()}/install"
+        assert client.delete(install).status_code == 401
         assert client.post(review, json={"decision": "approved"}).status_code == 401
         unavailable = client.post(review, headers=headers, json={"decision": "approved"})
         assert unavailable.status_code == 409
@@ -1211,6 +1212,8 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         assert approved.json()["wheelhouse_present"] is True
 
         class FixtureWSLTransport:
+            removal_blocked = True
+
             async def install_procedure_environment(
                 self,
                 supplied_lock: ProcedurePythonDependencyLock,
@@ -1232,10 +1235,23 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
                     "file_count": 15,
                 }
 
+            async def remove_procedure_environment(
+                self, environment_digest: str, *, deadline: float
+            ) -> dict[str, object]:
+                assert environment_digest == dependency_lock.environment_digest()
+                assert deadline > 0
+                if self.removal_blocked:
+                    raise api_module.EnvironmentInUseError(
+                        "A running procedure is using this environment."
+                    )
+                return {"environment_digest": environment_digest, "removed": True}
+
+        fixture_transport = FixtureWSLTransport()
+
         async def fixture_discover(_cls, distribution: str, *, deadline: float):
             assert distribution == "Ubuntu-24.04"
             assert deadline > 0
-            return FixtureWSLTransport()
+            return fixture_transport
 
         monkeypatch.setattr(api_module.WSLTransport, "discover", classmethod(fixture_discover))
         installed = client.post(install, headers=headers)
@@ -1247,6 +1263,18 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         assert listed_after_install["environment_installed"] is True
         rejected = client.post(review, headers=headers, json={"decision": "rejected"})
         assert rejected.status_code == 409
+        blocked_remove = client.delete(install, headers=headers)
+        assert blocked_remove.status_code == 409
+        assert client.get(endpoint, headers=headers).json()["locks"][0]["environment_installed"]
+        fixture_transport.removal_blocked = False
+        removed = client.delete(install, headers=headers)
+        assert removed.status_code == 200, removed.text
+        assert removed.json()["environment_installed"] is False
+        assert removed.json()["wheelhouse_present"] is True
+        assert (
+            client.get(endpoint, headers=headers).json()["locks"][0]["environment_installed"]
+            is False
+        )
 
 
 def test_python_dependency_resolution_api_uses_imported_declarations_and_wsl_target(

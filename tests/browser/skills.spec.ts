@@ -29,6 +29,7 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
     if(path.endsWith('/acquire')&&request.method()==='POST'){wheelhousePresent=true;return route.fulfill({json:{...lock,decision:lockDecision,wheelhouse_present:true},headers});}
     if(path.endsWith('/review')&&request.method()==='POST'){reviewBody=request.postDataJSON();lockDecision=reviewBody.decision;return route.fulfill({json:{...lock,decision:lockDecision,wheelhouse_present:wheelhousePresent,reviewed_at:new Date().toISOString()},headers});}
     if(path.endsWith('/install')&&request.method()==='POST'){environmentInstalled=true;return route.fulfill({json:{...lock,decision:lockDecision,wheelhouse_present:wheelhousePresent,environment_installed:true,installed_tree_sha256:'b'.repeat(64),installed_bytes:37331550,installed_file_count:100,installed_at:new Date().toISOString()},headers});}
+    if(path.endsWith('/install')&&request.method()==='DELETE'){environmentInstalled=false;return route.fulfill({json:{...lock,decision:lockDecision,wheelhouse_present:wheelhousePresent,environment_installed:false,installed_tree_sha256:null,installed_bytes:null,installed_file_count:null,installed_at:null},headers});}
     return route.fulfill({status:404,headers});
   });
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
@@ -66,6 +67,8 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await lockReview.getByRole('button',{name:'Install approved wheels offline in WSL'}).click();
   await expect(lockReview).toContainText('Installed as an immutable WSL environment');
   await expect(lockReview).toContainText('37,331,550 bytes');
+  await lockReview.getByRole('button',{name:'Remove installed environment'}).click();
+  await expect(lockReview.getByRole('button',{name:'Install approved wheels offline in WSL'})).toBeVisible();
   expect(reviewBody).toEqual({decision:'approved'});
   expect(checkBody).toEqual({distribution:'Ubuntu-24.04'});
   expect(resolveBody).toEqual({distribution:'Ubuntu-24.04'});

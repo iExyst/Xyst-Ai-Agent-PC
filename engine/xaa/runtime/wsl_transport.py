@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from xaa.runtime.command_contracts import CommandIntent
-from xaa.runtime.owned_transport import TransportError, request_process
+from xaa.runtime.owned_transport import EnvironmentInUseError, TransportError, request_process
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 
 RESOURCE_NAMES = (
@@ -342,6 +342,8 @@ class WSLTransport:
         )
         result = response_object(raw)
         if isinstance(result.get("error_code"), str):
+            if result["error_code"] == "environment_in_use":
+                raise EnvironmentInUseError("A running procedure is using this environment.")
             raise TransportError("WSL procedure environment removal failed.")
         if (
             result.get("environment_digest") != environment_digest

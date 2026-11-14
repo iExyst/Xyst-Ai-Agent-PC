@@ -81,7 +81,7 @@ def run(
     profile: dict[str, Any],
     journal: Any,
     emit_output: Any = None,
-    procedure_environment_path: Any = None,
+    procedure_environment_lease: Any = None,
 ) -> dict[str, Any]:
     required_fields = {"action", "execution_id", "argv", "max_seconds", "snapshot_b64"}
     environment_fields = {
@@ -115,15 +115,17 @@ def run(
     snapshot = codec["WorkspaceSnapshot"].from_bytes(
         base64.b64decode(encoded_snapshot, validate=True)
     )
+    bpf = profile["syscall_filter"]()
     environment_path = None
+    lease = None
     if environment_fields & request.keys():
-        if environment_fields - request.keys() or procedure_environment_path is None:
+        if environment_fields - request.keys() or procedure_environment_lease is None:
             raise ValueError("Procedure environment identity is incomplete.")
-        environment_path = procedure_environment_path(
+        lease = procedure_environment_lease(
             request["procedure_environment_digest"],
             request["procedure_environment_tree_sha256"],
         )
-    bpf = profile["syscall_filter"]()
+        environment_path = lease.__enter__()
     stage = BASE / identity
     process: subprocess.Popen[bytes] | None = None
     result: dict[str, Any] = {}
@@ -257,6 +259,8 @@ def run(
                         result[name + "_bytes"] = len(data)
                         result[name + "_sha256"] = hashlib.sha256(data).hexdigest()
                 journal.finished(identity, result)
+        if lease is not None:
+            lease.__exit__(None, None, None)
     return result
 
 
@@ -358,7 +362,7 @@ def main() -> None:
             runpy.run_path(sys.argv[2]),
             journal,
             emit_output,
-            environments["execution_path"],
+            lambda digest, tree: environments["execution_lease"](digest, tree, journal._file_lock),
         )
         print(json.dumps({"type": "result", "result": result}), flush=True)
     else:

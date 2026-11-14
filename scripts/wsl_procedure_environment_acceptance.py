@@ -21,6 +21,7 @@ from xaa.extensions.procedure_dependencies import (
 )
 from xaa.extensions.wheelhouse_storage import ProcedureWheelhouseStore
 from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.owned_transport import EnvironmentInUseError
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
@@ -121,6 +122,51 @@ async def run(distribution: str) -> dict[str, Any]:
             or observed.get("installed_bytes", 0) <= 0
         ):
             raise RuntimeError("Managed WSL environment install or integrity status failed.")
+        lease_started = asyncio.Event()
+
+        async def capture_lease_start(stream: str, chunk: bytes) -> None:
+            if stream == "stdout" and b"LEASE_OPEN" in chunk:
+                lease_started.set()
+
+        lease_run = asyncio.create_task(
+            transport.run(
+                CommandIntent(
+                    argv=[
+                        "/opt/xaa/procedure-python/bin/python",
+                        "-I",
+                        "-c",
+                        "import time; print('LEASE_OPEN', flush=True); time.sleep(3)",
+                    ],
+                    max_seconds=10,
+                    execution_id=uuid4().hex,
+                    backend="wsl-bubblewrap-v1",
+                    distribution=distribution,
+                    profile_sha256=transport.profile_sha256,
+                    workspace="procedure-environment-lease-acceptance",
+                    procedure_environment_digest=lock.environment_digest(),
+                    procedure_environment_tree_sha256=installed["tree_sha256"],
+                ),
+                WorkspaceSnapshot((), (), ()),
+                deadline=time.monotonic() + 30,
+                on_output=capture_lease_start,
+            )
+        )
+        try:
+            await asyncio.wait_for(lease_started.wait(), timeout=15)
+        except TimeoutError as exc:
+            await lease_run
+            raise RuntimeError("The leased procedure did not start in time.") from exc
+        try:
+            await transport.remove_procedure_environment(
+                lock.environment_digest(), deadline=time.monotonic() + 30
+            )
+        except EnvironmentInUseError:
+            active_removal_refused = True
+        else:
+            active_removal_refused = False
+        active_run_receipt = await lease_run
+        if not active_removal_refused or active_run_receipt.get("succeeded") is not True:
+            raise RuntimeError("Environment removal was not fenced by the active execution lease.")
         execution = await transport.run(
             CommandIntent(
                 argv=[
@@ -177,6 +223,7 @@ async def run(distribution: str) -> dict[str, Any]:
             "idempotent_install": True,
             "integrity_status": True,
             "procedure_imports_from_read_only_mount": True,
+            "active_use_removal_refused": active_removal_refused,
             "exact_environment_removed": True,
             "network": "none",
             "cleanup_confirmed": True,

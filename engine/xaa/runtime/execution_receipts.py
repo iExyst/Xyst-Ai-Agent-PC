@@ -63,7 +63,9 @@ class ExecutionReceipts:
             os.close(descriptor)
 
     @contextmanager
-    def _file_lock(self, path: Path) -> Generator[None]:
+    def _file_lock(
+        self, path: Path, *, shared: bool = False, timeout: float = 6
+    ) -> Generator[None]:
         if os.name == "nt":
             raise RuntimeError("Execution receipt locks require the Linux manager.")
         import fcntl
@@ -74,15 +76,16 @@ class ExecutionReceipts:
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != 0:
                 raise PermissionError("Invalid execution lock file.")
-            deadline = time.monotonic() + 6
+            deadline = time.monotonic() + timeout
             while True:
                 try:
-                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+                    fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
                         raise TimeoutError(
-                            "Execution control is busy; reconcile before retrying."
+                            "Execution control is busy; retry after it finishes."
                         ) from None
                     time.sleep(0.02)
             yield

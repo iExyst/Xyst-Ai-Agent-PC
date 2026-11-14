@@ -1534,6 +1534,34 @@ class SkillStore:
         assert saved is not None
         return self._python_dependency_lock_record(saved)
 
+    def forget_python_dependency_environment(
+        self, skill_id: str, version: int, environment_digest: str
+    ) -> dict[str, Any]:
+        """Forget only the exact environment after WSL confirms it was removed."""
+        if not re.fullmatch(r"[a-f0-9]{64}", environment_digest):
+            raise ValueError("Dependency environment identity is invalid.")
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+            if row is None:
+                raise SkillConflict("The dependency lock was not found.")
+            connection.execute(
+                "DELETE FROM skill_python_dependency_environments WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            )
+            saved = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (skill_id, version, environment_digest),
+            ).fetchone()
+        assert saved is not None
+        return self._python_dependency_lock_record(saved)
+
     def store_python_dependency_wheelhouse(
         self, lock: ProcedurePythonDependencyLock, artifacts: dict[str, bytes]
     ) -> dict[str, bytes]:

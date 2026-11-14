@@ -12,6 +12,10 @@ class TransportError(RuntimeError):
     """No authoritative reply; side effects may require reconciliation."""
 
 
+class EnvironmentInUseError(TransportError):
+    """The WSL manager refused removal while an execution holds a lease."""
+
+
 async def request_process(
     command: Sequence[str],
     payload: bytes,

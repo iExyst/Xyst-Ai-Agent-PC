@@ -106,7 +106,7 @@ from xaa.runtime.execution_readiness import (
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.local_transcription import TranscriptionError
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
-from xaa.runtime.owned_transport import TransportError
+from xaa.runtime.owned_transport import EnvironmentInUseError, TransportError
 from xaa.runtime.project_validation import (
     ProjectValidationRequest,
     validate_project,
@@ -1813,6 +1813,45 @@ def create_app(
         except (OSError, ValueError) as exc:
             raise HTTPException(
                 status_code=409, detail="Verified WSL wheel installation failed."
+            ) from exc
+
+    @app.delete(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/install",
+        response_model=PythonDependencyLockRecord,
+    )
+    async def remove_skill_python_dependency_environment(
+        skill_id: str,
+        environment_digest: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        records = skill_store.python_dependency_locks(skill_id, version)
+        record = next(
+            (item for item in records if item["environment_digest"] == environment_digest), None
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="Python dependency lock not found.")
+        if record["decision"] != "approved" or not record["environment_installed"]:
+            raise HTTPException(status_code=409, detail="No approved installed environment exists.")
+        lock = ProcedurePythonDependencyLock.model_validate(record["lock"])
+        deadline = time.monotonic() + 45
+        try:
+            transport = await WSLTransport.discover(
+                lock.target.distribution, deadline=min(deadline, time.monotonic() + 30)
+            )
+            await transport.remove_procedure_environment(environment_digest, deadline=deadline)
+            return skill_store.forget_python_dependency_environment(
+                skill_id, version, environment_digest
+            )
+        except EnvironmentInUseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TransportError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=504, detail="WSL environment removal timed out."
             ) from exc
 
     @app.post(

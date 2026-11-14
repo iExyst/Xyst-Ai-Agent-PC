@@ -17,6 +17,7 @@ import subprocess
 import sys
 import uuid
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,6 +29,12 @@ MAX_ENVIRONMENT_FILES = 20_000
 MAX_WHEELS = 256
 MAX_WHEEL_MEMBERS = 20_000
 MAX_INSTALL_SECONDS = 120
+
+
+class EnvironmentInUseError(RuntimeError):
+    """An active command holds a shared lease on the environment."""
+
+
 _INSTALL_SCRIPT = r"""
 import json, pathlib, subprocess, sys
 root = pathlib.Path('/environment')
@@ -584,36 +591,50 @@ def execution_path(digest_value: object, tree_sha256: object) -> Path:
     return ROOT / digest / "environment" / "venv"
 
 
+@contextmanager
+def execution_lease(digest_value: object, tree_sha256: object, file_lock: Any):
+    """Pin an immutable environment until the managed command is fully cleaned up."""
+    digest = _digest(digest_value)
+    with file_lock(ROOT / f"_{digest}.lease", shared=True):
+        yield execution_path(digest, tree_sha256)
+
+
 def remove(digest_value: object, file_lock: Any) -> dict[str, Any]:
     digest = _digest(digest_value)
     _private_root()
     target = ROOT / digest
     with file_lock(ROOT / "_manager.lock"):
-        existing = status(digest)
-        if not existing["installed"]:
-            if target.is_symlink():
-                raise PermissionError("Refusing to remove a linked environment target.")
-            if target.exists():
-                info = target.lstat()
-                if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
-                    raise PermissionError("Refusing to remove an unowned environment target.")
-                shutil.rmtree(target)
-            return {"environment_digest": digest, "removed": True}
-        for path in target.rglob("*"):
-            info = path.lstat()
-            if stat.S_ISDIR(info.st_mode):
-                path.chmod(0o700)
-            elif stat.S_ISREG(info.st_mode):
-                path.chmod(0o600)
-            else:
-                raise ValueError("Environment contains a link or special file.")
-        target.chmod(0o700)
-        shutil.rmtree(target)
-        directory = os.open(ROOT, os.O_RDONLY)
         try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            with file_lock(ROOT / f"_{digest}.lease", timeout=0):
+                existing = status(digest)
+                if not existing["installed"]:
+                    if target.is_symlink():
+                        raise PermissionError("Refusing to remove a linked environment target.")
+                    if target.exists():
+                        info = target.lstat()
+                        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
+                            raise PermissionError(
+                                "Refusing to remove an unowned environment target."
+                            )
+                        shutil.rmtree(target)
+                    return {"environment_digest": digest, "removed": True}
+                for path in target.rglob("*"):
+                    info = path.lstat()
+                    if stat.S_ISDIR(info.st_mode):
+                        path.chmod(0o700)
+                    elif stat.S_ISREG(info.st_mode):
+                        path.chmod(0o600)
+                    else:
+                        raise ValueError("Environment contains a link or special file.")
+                target.chmod(0o700)
+                shutil.rmtree(target)
+                directory = os.open(ROOT, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        except TimeoutError as exc:
+            raise EnvironmentInUseError("An active procedure is using this environment.") from exc
     return {"environment_digest": digest, "removed": True}
 
 
@@ -628,6 +649,8 @@ def dispatch(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> 
 
 
 def error_code(error: Exception) -> str:
+    if isinstance(error, EnvironmentInUseError):
+        return "environment_in_use"
     if isinstance(error, PermissionError):
         return "storage_denied"
     if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)):

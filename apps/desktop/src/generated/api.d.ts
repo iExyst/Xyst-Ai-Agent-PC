@@ -2043,7 +2043,8 @@ export interface paths {
         put?: never;
         /** Install Skill Python Dependency Environment */
         post: operations["install_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_post"];
-        delete?: never;
+        /** Remove Skill Python Dependency Environment */
+        delete: operations["remove_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9000,6 +9001,39 @@ export interface operations {
         };
     };
     install_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                environment_digest: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_delete: {
         parameters: {
             query?: never;
             header?: never;
