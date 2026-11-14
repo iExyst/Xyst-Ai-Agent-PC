@@ -6,7 +6,7 @@ The source and frozen Windows AppContainer workers reject correctly SRI-matched 
 
 ## Reject npm archives over the expanded-size ceiling (2026-11-14)
 
-The source and frozen Windows AppContainer workers reject a valid-SRI gzip archive under 1 MiB compressed that declares more than the 256 MiB aggregate expansion allowance: [acceptance report](../../.acceptance/npm-archive-expansion-validation-20261114/report.xml) (12 passed across source/frozen worker fixtures). The test observes rejection before a verified tarball is published. This covers the configured aggregate expansion ceiling; broader hostile archive combinations remain open. No public registry access or model inference was used.
+The source and frozen Windows AppContainer workers reject a valid-SRI gzip archive under 1 MiB compressed that declares more than the 256 MiB aggregate expansion allowance: [acceptance report](../../.acceptance/npm-archive-expansion-validation-20261114/report.xml) (12 passed across source/frozen worker fixtures). The test observes rejection before a verified tarball is published. Hosted run [43582338641](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43582338641) passed these worker cases with the full source suite. Broader hostile archive combinations remain open. No public registry access or model inference was used.
 
 ## Run two Node procedure versions concurrently (2026-11-14)
 
