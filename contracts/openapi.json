@@ -892,6 +892,18 @@
             "title": "Pre Inference Token Reservations",
             "type": "boolean"
           },
+          "procedure_python_environment_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Python Environment Digest"
+          },
           "procedure_trial": {
             "anyOf": [
               {

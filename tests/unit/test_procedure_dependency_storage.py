@@ -67,6 +67,7 @@ def lock_for(
     *,
     source_sha256: str = SOURCE_SHA256,
     requirements: list[str] | None = None,
+    platform_version: str = "#1 SMP",
 ):
     content = idna_wheel()
     return ProcedurePythonDependencyLock(
@@ -84,7 +85,7 @@ def lock_for(
                 "platform_python_implementation": "CPython",
                 "platform_release": "6.8.0-wsl2",
                 "platform_system": "Linux",
-                "platform_version": "#1 SMP",
+                "platform_version": platform_version,
                 "python_full_version": "3.12.3",
                 "python_version": "3.12",
                 "sys_platform": "linux",
@@ -221,3 +222,52 @@ def test_run_selects_only_the_approved_installed_environment_for_its_wsl_grant(
     )
     assert intent.procedure_environment_digest == lock.environment_digest()
     assert intent.procedure_environment_tree_sha256 == "c" * 64
+
+    second_lock = lock_for(skill, platform_version="#2 SMP")
+    skills.save_python_dependency_lock(second_lock)
+    skills.store_python_dependency_wheelhouse(
+        second_lock, {second_lock.wheels[0].filename: idna_wheel()}
+    )
+    skills.review_python_dependency_lock(
+        skill["id"], 1, second_lock.environment_digest(), "approved"
+    )
+    skills.record_python_dependency_environment(
+        second_lock,
+        {
+            "environment_digest": second_lock.environment_digest(),
+            "lock_sha256": hashlib.sha256(second_lock.canonical_json().encode("ascii")).hexdigest(),
+            "installed": True,
+            "tree_sha256": "d" * 64,
+            "installed_bytes": 128,
+            "file_count": 2,
+        },
+    )
+    run_arguments = {
+        "objective": "Choose an installed procedure environment",
+        "acceptance_criteria": [],
+        "workspace": str(project),
+        "mode": "workspace",
+        "model": None,
+        "procedure_trial": SkillTrial(
+            skill_id=skill["id"], version=1, purpose="evaluation_trial"
+        ).model_dump(),
+        "command_grant": {
+            "backend": "wsl-bubblewrap-v1",
+            "distribution": "Ubuntu-24.04",
+            "profile_sha256": "a" * 64,
+            "max_seconds": 10,
+        },
+    }
+    with pytest.raises(ValueError, match="Choose an approved installed Python environment"):
+        runs.create_run(**run_arguments)
+    chosen = runs.create_run(
+        **run_arguments,
+        procedure_python_environment_digest=second_lock.environment_digest(),
+    )
+    assert chosen["procedure_trial"]["python_environment"] == {
+        "environment_digest": second_lock.environment_digest(),
+        "distribution": "Ubuntu-24.04",
+        "tree_sha256": "d" * 64,
+    }
+    with pytest.raises(ValueError, match="Choose an approved installed Python environment"):
+        runs.create_run(**run_arguments, procedure_python_environment_digest="f" * 64)

@@ -993,6 +993,7 @@ class RunStore:
         pre_inference_token_reservations: bool = False,
         file_checks: list[dict[str, Any]] | None = None,
         procedure_trial: dict[str, Any] | None = None,
+        procedure_python_environment_digest: str | None = None,
         command_grant: dict[str, Any] | None = None,
         approved_web_hosts: list[str] | None = None,
         approved_web_search: bool = False,
@@ -1017,6 +1018,11 @@ class RunStore:
             allow_procedure_resource_revision or allow_procedure_resource_removal
         ):
             raise ValueError("Choose only one procedure edit permission for a run.")
+        if (
+            procedure_python_environment_digest is not None
+            and re.fullmatch(r"[a-f0-9]{64}", procedure_python_environment_digest) is None
+        ):
+            raise ValueError("Procedure Python environment identity is invalid.")
         if (client_request_id is None) != (request_digest is None):
             raise ValueError(
                 "Idempotent run requests require both a request ID and payload digest."
@@ -1221,13 +1227,38 @@ class RunStore:
                                 command_profile["distribution"],
                             ),
                         ).fetchall()
-                        if len(environments) == 1:
-                            environment = environments[0]
+                        selected_environment = None
+                        if procedure_python_environment_digest is not None:
+                            matches = [
+                                environment
+                                for environment in environments
+                                if environment["environment_digest"]
+                                == procedure_python_environment_digest
+                            ]
+                            if len(matches) != 1:
+                                raise ValueError(
+                                    "Choose an approved installed Python environment for the selected procedure and WSL distribution."
+                                )
+                            selected_environment = matches[0]
+                        elif len(environments) == 1:
+                            selected_environment = environments[0]
+                        elif len(environments) > 1:
+                            raise ValueError(
+                                "Choose an approved installed Python environment for the selected procedure and WSL distribution."
+                            )
+                        if selected_environment is not None:
+                            environment = selected_environment
                             trial_snapshot["python_environment"] = {
                                 "environment_digest": environment["environment_digest"],
                                 "distribution": environment["distribution"],
                                 "tree_sha256": environment["tree_sha256"],
                             }
+            if procedure_python_environment_digest is not None and (
+                trial_snapshot is None or "python_environment" not in trial_snapshot
+            ):
+                raise ValueError(
+                    "A Python environment can only be selected for an authorized Python procedure run in WSL."
+                )
             if (
                 allow_procedure_revision
                 or allow_procedure_resource_revision

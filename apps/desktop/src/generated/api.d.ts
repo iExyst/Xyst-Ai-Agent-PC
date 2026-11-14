@@ -2549,6 +2549,8 @@ export interface components {
              * @default false
              */
             pre_inference_token_reservations: boolean;
+            /** Procedure Python Environment Digest */
+            procedure_python_environment_digest?: string | null;
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
             /** Transcription Url */
             transcription_url?: string | null;
