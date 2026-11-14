@@ -758,24 +758,44 @@ class ExecutionReadiness:
                         stderr_excerpt,
                     )
                     raise
-                ready = (
-                    result.get("execution_id") == intent.execution_id
-                    and result.get("succeeded") is True
-                    and result.get("cleanup_confirmed") is True
-                    and result.get("snapshot_sha256") == snapshot.sha256
-                    and result.get("output_complete") is True
-                    and result.get("workspace_changes_persisted") is False
-                    and output
-                    == {
-                        "nonce": nonce,
-                        "appcontainer": True,
-                        "network_denied": True,
-                        "private_temp": True,
-                        "nested_snapshot_access": True,
-                        "checks": True,
-                    }
-                    and windows_local_profile_fingerprint() == digest
+                output_object = (
+                    cast(dict[str, object] | None, output) if isinstance(output, dict) else None
                 )
+                output_matches: dict[str, bool] = {
+                    "probe_nonce": output_object is not None
+                    and output_object.get("nonce") == nonce,
+                    "appcontainer": output_object is not None
+                    and output_object.get("appcontainer") is True,
+                    "network_denied": output_object is not None
+                    and output_object.get("network_denied") is True,
+                    "private_temp": output_object is not None
+                    and output_object.get("private_temp") is True,
+                    "nested_snapshot_access": output_object is not None
+                    and output_object.get("nested_snapshot_access") is True,
+                    "probe_checks": output_object is not None
+                    and output_object.get("checks") is True,
+                    "exact_output_fields": output_object is not None
+                    and set(output_object)
+                    == {
+                        "nonce",
+                        "appcontainer",
+                        "network_denied",
+                        "private_temp",
+                        "nested_snapshot_access",
+                        "checks",
+                    },
+                }
+                result_matches: dict[str, bool] = {
+                    "execution_id": result.get("execution_id") == intent.execution_id,
+                    "succeeded": result.get("succeeded") is True,
+                    "cleanup_confirmed": result.get("cleanup_confirmed") is True,
+                    "snapshot_match": result.get("snapshot_sha256") == snapshot.sha256,
+                    "output_complete": result.get("output_complete") is True,
+                    "workspace_not_persisted": result.get("workspace_changes_persisted") is False,
+                    "profile_match": windows_local_profile_fingerprint() == digest,
+                    **output_matches,
+                }
+                ready = all(result_matches.values())
                 if not ready:
                     stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
                     stderr_excerpt = stderr.decode("utf-8", errors="replace")[:240]
@@ -785,18 +805,13 @@ class ExecutionReadiness:
                     logging.getLogger(__name__).warning(
                         "Windows AppContainer readiness child failed validation "
                         "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
-                        "elapsed=%s; cleanup=%s; output_complete=%s; "
-                        "workspace_persisted=%s; snapshot_match=%s; stdout_bytes=%s; "
-                        "stderr_bytes=%s; stderr=%r).",
+                        "elapsed=%s; result_checks=%s; stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
                         result.get("succeeded"),
                         result.get("exit_code"),
                         result.get("supervisor_exit_code"),
                         result.get("termination_reason"),
                         result.get("elapsed_seconds"),
-                        result.get("cleanup_confirmed"),
-                        result.get("output_complete"),
-                        result.get("workspace_changes_persisted"),
-                        result.get("snapshot_sha256") == snapshot.sha256,
+                        result_matches,
                         result.get("stdout_bytes"),
                         result.get("stderr_bytes"),
                         stderr_excerpt,
