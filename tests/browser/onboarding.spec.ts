@@ -90,6 +90,8 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await page.keyboard.press('Enter');
   const navigation=page.getByRole('navigation',{name:'Main sections'});
   await expect(navigation.getByRole('link',{name:'New objective'})).toBeVisible();
+  const setupGuide=page.locator('.onboarding-guide');
+  await expect(setupGuide).toHaveAttribute('open','');
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   const placeholderPairs=await Promise.all([page.getByLabel('Workspace path').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor})),page.locator('#run-objective').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor}))]);
   for(const pair of placeholderPairs)expect(contrastRatio(pair.foreground,pair.background)).toBeGreaterThanOrEqual(4.5);
@@ -139,6 +141,11 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(demo).toBeEnabled();
   await demo.click();
   await expect(page.getByRole('heading',{name:'Active run verifying'})).toBeVisible();
+  await navigation.getByRole('link',{name:'New objective'}).click();
+  await expect(setupGuide).not.toHaveAttribute('open','');
+  await setupGuide.getByText('First time here? Set up your local model and project').click();
+  await expect(setupGuide).toHaveAttribute('open','');
+  await navigation.getByRole('link',{name:'Active run'}).click();
   await navigation.getByRole('link',{name:'Active run'}).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#active-run')).toBeInViewport();

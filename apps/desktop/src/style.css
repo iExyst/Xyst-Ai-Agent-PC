@@ -125,3 +125,33 @@ body{color:#182230;background:#f4f6f9}
 .skip-link{position:fixed;top:10px;left:10px;z-index:20;transform:translateY(-160%);padding:11px 14px;background:#c5f1dc;color:#10231a;border:2px solid #10231a;border-radius:8px;font-size:13px;font-weight:750;text-decoration:none;box-shadow:0 4px 18px #0008}.skip-link:focus{transform:translateY(0);outline:3px solid var(--blue);outline-offset:3px}
 .app-content .system-monitor-intro p{color:#596579}.app-content .system-resource-card{background:#fff;border-color:#e2e7ee}.app-content .system-resource-card .system-resource-heading h2{color:#182230}.app-content .system-resource-card .system-resource-heading strong{color:#205a41}.app-content .system-resource-card p{color:#596579}
 a:focus-visible,summary:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+
+/* Keep the everyday landing screen focused on a task; leave setup available
+   as a compact guide once the first local demonstration has been started. */
+.app-topbar{height:74px}
+.app-topbar h1{font-size:20px;letter-spacing:-.035em}
+.app-content{max-width:1000px;padding-top:26px;gap:12px}
+.app-content>.welcome-card{min-height:142px;padding:25px 30px;border-radius:15px}
+.app-content>.welcome-card h2{font-size:24px;letter-spacing:-.035em}
+.app-content>.welcome-card p:not(.eyebrow){font-size:13px;max-width:590px}
+.app-content>.workspace-card{min-height:0;padding:11px 15px;background:#fff;border:1px solid #e3e8ef;border-radius:11px;box-shadow:none}
+.app-content>.workspace-card label{color:#475467;font-size:11px}
+.app-content>.workspace-card input{margin-top:4px!important;padding:8px 10px!important}
+.page-home{width:100%;min-width:0;flex-direction:column;gap:12px}
+.page-home>.workspace-card{order:0;min-height:0;margin:0;padding:11px 15px;align-items:center;background:#fff;border:1px solid #e3e8ef;border-radius:11px;box-shadow:none}
+.page-home>.workspace-card label{color:#475467;font-size:11px}
+.page-home>.workspace-card input{margin-top:4px!important;padding:8px 10px!important}
+.page-home>#new-objective{order:1;margin:0;padding:22px 24px;border-radius:15px}
+.page-home>#new-objective .composer-heading{margin-bottom:8px}
+.page-home>#new-objective .composer-heading h2{font-size:22px!important}
+.page-home>#new-objective .objective-intro{margin:7px 0 13px}
+.page-home>#new-objective>button:not(.secondary-button){min-width:150px;padding:11px 18px;font-size:13px}
+.page-home>.onboarding-guide{order:2;margin:0;padding:0;background:#fff;border:1px solid #e2e7ee;border-radius:11px;box-shadow:0 4px 14px #243b2d06}
+.page-home>.onboarding-guide>summary{padding:13px 16px;color:#344054;font-size:12px;font-weight:650}
+.page-home>.onboarding-guide[open]>summary{border-bottom:1px solid #e9edf2}
+.page-home>.onboarding-guide>#get-started{margin:0;padding:17px 18px;border:0;border-radius:0;box-shadow:none}
+.page-home>.onboarding-guide>#get-started h2{margin-bottom:8px}
+.page-home>.onboarding-guide>#get-started ol{margin:12px 0}
+.page-home>.onboarding-guide>#get-started li{font-size:12px}
+.page-home>.saved-conversations,.page-home>.file-check-card{order:3;margin-top:0}
+@media(max-width:640px){.app-content{gap:9px}.app-content>.welcome-card{min-height:0;padding:20px}.app-content>.welcome-card h2{font-size:21px}.page-home>#new-objective{padding:17px}.page-home>.workspace-card{align-items:stretch}.page-home>.onboarding-guide>summary{padding:12px}}
