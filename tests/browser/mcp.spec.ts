@@ -137,7 +137,7 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await panel.getByLabel('Command').fill('python');
   await panel.getByLabel('Arguments (JSON string array)').fill('["fixture_server.py"]');
   await panel.getByLabel('MCP protocol').selectOption('legacy');
-  await panel.getByLabel('Block network access for this MCP process (Windows)').check();
+  await expect(panel.getByLabel('Block network access for this MCP process (Windows)')).toBeChecked();
   await page.evaluate(()=>{
     (window as any).__TAURI_INTERNALS__={invoke:async(command:string)=>{
       if(command==='plugin:dialog|open')return ['C:\\workspace\\shared-project'];

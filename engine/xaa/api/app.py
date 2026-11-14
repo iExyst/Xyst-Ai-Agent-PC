@@ -508,7 +508,10 @@ class CreateMCPServerRequest(BaseModel):
     transport: Literal["stdio", "streamable_http"] = "stdio"
     protocol_mode: Literal["auto", "legacy"] = "auto"
     trust_environment: bool = False
-    network_isolation: bool = False
+    network_isolation: bool | None = Field(
+        default=None,
+        description="Defaults to network isolation for stdio servers; HTTP transports are unaffected.",
+    )
     memory_limit_mb: int | None = Field(default=None, ge=128, le=65536)
     cpu_limit_percent: int | None = Field(default=None, ge=1, le=100)
     endpoint: str | None = Field(default=None, max_length=2048)
@@ -517,6 +520,12 @@ class CreateMCPServerRequest(BaseModel):
     cwd: str | None = Field(default=None, max_length=2048)
     roots: list[str] = Field(default_factory=list, max_length=16)
     secret_env: list[str] = Field(default_factory=list, max_length=64)
+
+    @model_validator(mode="after")
+    def apply_stdio_network_isolation_default(self) -> CreateMCPServerRequest:
+        if self.network_isolation is None:
+            self.network_isolation = self.transport == "stdio"
+        return self
 
 
 class MCPServerResourceLimitsRequest(BaseModel):
@@ -1115,6 +1124,7 @@ def create_app(
                     args=cast(list[str], raw["args"]),
                     cwd=cast(str | None, raw["cwd"]),
                     secret_env=sorted(inline_values),
+                    network_isolation=True,
                     memory_limit_mb=2048,
                     cpu_limit_percent=80,
                     plugin_root=str(package_root),

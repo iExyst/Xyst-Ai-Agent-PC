@@ -89,6 +89,7 @@ def test_mcp_oauth_credentials_are_private_and_owner_clearable(workspace_tmp_pat
             },
         )
         assert created.status_code == 201, created.text
+        assert created.json()["network_isolation"] is False
         server_id = created.json()["id"]
         credentials.set('{"access_token":"private-token"}', f"mcp:{server_id}:oauth-tokens")
         credentials.set('{"client_id":"private-client"}', f"mcp:{server_id}:oauth-client")
@@ -98,6 +99,48 @@ def test_mcp_oauth_credentials_are_private_and_owner_clearable(workspace_tmp_pat
         assert client.delete(f"/mcp/servers/{server_id}/oauth", headers=headers).status_code == 204
         assert credentials.get(f"mcp:{server_id}:oauth-tokens") is None
         assert credentials.get(f"mcp:{server_id}:oauth-client") is None
+
+
+def test_new_stdio_mcp_defaults_to_network_isolation_with_explicit_opt_out(
+    workspace_tmp_path,
+):
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=RunStore(workspace_tmp_path / "mcp-network-defaults.sqlite3"),
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        isolated = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={"name": "isolated default", "command": "python"},
+        )
+        explicit_opt_out = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "reviewed network server",
+                "command": "python",
+                "network_isolation": False,
+            },
+        )
+        http = client.post(
+            "/mcp/servers",
+            headers=headers,
+            json={
+                "name": "http integration",
+                "transport": "streamable_http",
+                "endpoint": "https://mcp.example.test/mcp",
+            },
+        )
+
+    assert isolated.status_code == 201
+    assert isolated.json()["network_isolation"] is True
+    assert explicit_opt_out.status_code == 201
+    assert explicit_opt_out.json()["network_isolation"] is False
+    assert http.status_code == 201
+    assert http.json()["network_isolation"] is False
 
 
 def test_project_validation_timeout_requires_reconciliation_before_retry(

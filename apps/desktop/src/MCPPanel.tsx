@@ -21,7 +21,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
   const [protocolMode, setProtocolMode] = useState<'auto'|'legacy'>('auto');
   const [endpoint, setEndpoint] = useState('');
   const [trustEnvironment, setUseSystemProxy] = useState(false);
-  const [networkIsolation, setNetworkIsolation] = useState(false);
+  const [networkIsolation, setNetworkIsolation] = useState(true);
   const [memoryLimitMb, setMemoryLimitMb] = useState('2048');
   const [cpuLimitPercent, setCpuLimitPercent] = useState('80');
   const [command, setCommand] = useState('');
@@ -77,7 +77,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
     if (transport==='stdio'&&memoryLimit!==null&&(!Number.isInteger(memoryLimit)||memoryLimit<128||memoryLimit>65536)) throw new Error('Memory limit must be between 128 and 65,536 MiB.');
     if (transport==='stdio'&&cpuLimit!==null&&(!Number.isInteger(cpuLimit)||cpuLimit<1||cpuLimit>100)) throw new Error('CPU limit must be between 1 and 100 percent.');
     await client.createMCPServer({name,transport,protocol_mode:protocolMode,trust_environment:transport==='streamable_http'&&trustEnvironment,network_isolation:transport==='stdio'&&networkIsolation,memory_limit_mb:transport==='stdio'?memoryLimit:null,cpu_limit_percent:transport==='stdio'?cpuLimit:null,endpoint:transport==='streamable_http'?endpoint.trim():null,command:transport==='stdio'?command:'',args:transport==='stdio'?parsed:[],cwd:transport==='stdio'?(cwd.trim()||null):null,roots:transport==='stdio'&&protocolMode==='legacy'?roots:[],secret_env:secretEnv.split(/[\s,]+/).filter(Boolean)});
-    setName('');setCommand('');setArgs('[]');setCwd('');setRoots([]);setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);setNetworkIsolation(false);setMemoryLimitMb('2048');setCpuLimitPercent('80');
+    setName('');setCommand('');setArgs('[]');setCwd('');setRoots([]);setEndpoint('');setSecretEnv('');setProtocolMode('auto');setUseSystemProxy(false);setNetworkIsolation(true);setMemoryLimitMb('2048');setCpuLimitPercent('80');
   });
   const changePermission = (server:MCPServer,tool:MCPTool,permission:MCPTool['permission']) => act(async()=>{
     await client.setMCPToolPermission(server.id,tool,permission);
@@ -124,7 +124,7 @@ export function MCPPanel({ client, selectedRunWriteTools, onRunWriteToolsChange,
         <label>Process memory limit (MiB, 128–65,536; blank for unlimited)<input type="number" min={128} max={65536} step={128} value={memoryLimitMb} onChange={e=>setMemoryLimitMb(e.target.value)} /></label>
         <label>Process CPU limit (percent, 1–100; blank for unlimited)<input type="number" min={1} max={100} value={cpuLimitPercent} onChange={e=>setCpuLimitPercent(e.target.value)} /></label>
         <label><input type="checkbox" checked={networkIsolation} onChange={event=>setNetworkIsolation(event.target.checked)}/>Block network access for this MCP process (Windows)</label>
-        <p>Uses Windows AppContainer with no network capabilities. The server can read its executable and package, and can access its configured working directory and package data. Some servers may not work in isolation.</p>
+        <p>Enabled by default. Uses Windows AppContainer with no network capabilities. The server can read its executable and package, and can access its configured working directory and package data. Clear this option only if the reviewed server needs network access; some servers may not work in isolation.</p>
         <label>Secret environment variable names<input value={secretEnv} onChange={e=>setSecretEnv(e.target.value)} placeholder="API_TOKEN" /></label>
       </>:<>
         <label>Streamable HTTP endpoint<input value={endpoint} onChange={e=>setEndpoint(e.target.value)} placeholder="https://mcp.example.com/mcp" /></label>

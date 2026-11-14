@@ -1361,6 +1361,9 @@ async def test_installed_agent_plugin_mcp_explicit_activation_lifecycle(
         )
         assert imported.status_code == 201
         server_id = imported.json()["id"]
+        saved_servers = client.get("/mcp/servers", headers=headers).json()
+        saved_plugin_server = next(server for server in saved_servers if server["id"] == server_id)
+        assert saved_plugin_server["network_isolation"] is True
         assert imported.json()["state"] == "disconnected"
         assert (
             client.post(
@@ -1645,6 +1648,7 @@ def test_authenticated_mcp_api_connect_and_permission(workspace_tmp_path: Path):
             },
         )
         assert created.status_code == 201
+        assert created.json()["network_isolation"] is True
         server_id = created.json()["id"]
         missing_secret = client.post(f"/mcp/servers/{server_id}/connect", headers=headers)
         assert missing_secret.status_code == 502
@@ -1926,6 +1930,7 @@ def test_mcp_legacy_protocol_mode_is_authenticated_and_persisted(workspace_tmp_p
             },
         )
         assert created.status_code == 201, created.text
+        assert created.json()["network_isolation"] is True
         assert created.json()["protocol_mode"] == "legacy"
         servers = client.get("/mcp/servers", headers=headers)
         assert servers.status_code == 200

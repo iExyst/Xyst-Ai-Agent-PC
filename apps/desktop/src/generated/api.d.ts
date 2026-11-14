@@ -2564,9 +2564,9 @@ export interface components {
             name: string;
             /**
              * Network Isolation
-             * @default false
+             * @description Defaults to network isolation for stdio servers; HTTP transports are unaffected.
              */
-            network_isolation: boolean;
+            network_isolation?: boolean | null;
             /**
              * Protocol Mode
              * @default auto

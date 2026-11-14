@@ -636,9 +636,16 @@
             "type": "string"
           },
           "network_isolation": {
-            "default": false,
-            "title": "Network Isolation",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Defaults to network isolation for stdio servers; HTTP transports are unaffected.",
+            "title": "Network Isolation"
           },
           "protocol_mode": {
             "default": "auto",
