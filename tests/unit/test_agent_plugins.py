@@ -1551,6 +1551,35 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         )
 
     monkeypatch.setattr(api_module.ExecutionReadiness, "check_node_runtime", check_node_runtime)
+    worker_requests: list[tuple[int, int, tuple[str, ...]]] = []
+    worker_errors: list[str] = []
+
+    async def inspect_npm_fixture(package_manifest, package_lock, **identity):
+        from xaa.extensions.npm_dependencies import (
+            parse_npm_package_lock,
+            verify_npm_package_manifest,
+        )
+
+        worker_requests.append(
+            (len(package_manifest), len(package_lock), tuple(identity["requirements"]))
+        )
+        try:
+            proposal = parse_npm_package_lock(
+                package_lock,
+                package_manifest_sha256=hashlib.sha256(package_manifest).hexdigest(),
+                **identity,
+            )
+            verify_npm_package_manifest(package_manifest, proposal)
+            return proposal
+        except Exception as exc:
+            worker_errors.append(f"{type(exc).__name__}: {exc}")
+            raise
+
+    monkeypatch.setattr(
+        api_module,
+        "inspect_npm_package_lock_in_appcontainer",
+        inspect_npm_fixture,
+    )
     with TestClient(app) as client:
         created = client.post(
             "/extensions/packages/import-skill",
@@ -1565,7 +1594,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         endpoint = f"/skills/{created.json()['id']}/versions/1/npm-dependency-locks/inspect"
         assert client.post(endpoint, json={"distribution": "Ubuntu"}).status_code == 401
         inspected = client.post(endpoint, headers=headers, json={"distribution": "Ubuntu-24.04"})
-        assert inspected.status_code == 200, inspected.text
+        assert inspected.status_code == 200, f"{inspected.text}; {worker_errors!r}"
         result = inspected.json()
         assert result["node_version"] == "v22.2.0"
         assert result["npm_version"] == "10.8.1"
@@ -1574,10 +1603,12 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         ]
         assert result["packages"][0]["name"] == "left-pad"
         assert readiness_requests == ["Ubuntu-24.04"]
+        assert len(worker_requests) == 1
         base = f"/skills/{created.json()['id']}/versions/1/npm-dependency-locks"
         saved = client.put(base, headers=headers, json=result)
         assert saved.status_code == 200, saved.text
         assert readiness_requests == ["Ubuntu-24.04", "Ubuntu-24.04"]
+        assert len(worker_requests) == 2
         proposal = saved.json()
         assert proposal["decision"] == "pending_review"
         assert proposal["tarballs_present"] is False

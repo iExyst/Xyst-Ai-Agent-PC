@@ -19,8 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from xaa.extensions.npm_dependencies import (
     NpmVerifiedTarball,
     ProcedureNpmDependencyLock,
-    parse_npm_package_lock,
-    verify_npm_package_manifest,
     verify_npm_tarball,
 )
 from xaa.extensions.npm_tarball_storage import (
@@ -1455,8 +1453,10 @@ class SkillStore:
         assert row is not None
         return self._python_dependency_lock_record(row)
 
-    def save_npm_dependency_lock(self, lock: ProcedureNpmDependencyLock) -> dict[str, Any]:
-        """Save a lock only when its source, linked files, and declaration match exactly."""
+    def npm_dependency_lock_resources(
+        self, lock: ProcedureNpmDependencyLock
+    ) -> tuple[bytes, bytes]:
+        """Return exact source-bound npm files after checking metadata and byte hashes."""
         manifest = self.version(lock.skill_id, lock.skill_version)
         evidence_value = manifest.get("evaluation_evidence")
         evidence = cast(dict[str, Any], evidence_value) if isinstance(evidence_value, dict) else {}
@@ -1522,23 +1522,11 @@ class SkillStore:
             or lock.lockfile_sha256 != hashlib.sha256(package_lock).hexdigest()
         ):
             raise SkillConflict("The npm lock hashes do not match the linked package resources.")
-        try:
-            parsed = parse_npm_package_lock(
-                package_lock,
-                skill_id=lock.skill_id,
-                skill_version=lock.skill_version,
-                source_sha256=lock.source_sha256,
-                package_manifest_sha256=manifest_hash,
-                distribution=lock.distribution,
-                node_version=lock.node_version,
-                npm_version=lock.npm_version,
-                requirements=lock.requirements,
-            )
-            verify_npm_package_manifest(package_manifest, parsed)
-        except (TypeError, ValueError) as exc:
-            raise SkillConflict("The linked npm manifest and lock could not be validated.") from exc
-        if parsed != lock:
-            raise SkillConflict("The submitted npm lock differs from the linked lock resources.")
+        return package_manifest, package_lock
+
+    def save_npm_dependency_lock(self, lock: ProcedureNpmDependencyLock) -> dict[str, Any]:
+        """Persist a proposal after the API validates its exact graph in AppContainer."""
+        self.npm_dependency_lock_resources(lock)
 
         digest = lock.environment_digest()
         lock_json = lock.canonical_json()

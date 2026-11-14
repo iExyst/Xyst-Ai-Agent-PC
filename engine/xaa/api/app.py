@@ -84,8 +84,10 @@ from xaa.extensions.npm_dependencies import (
     NpmDependencyLockRecord,
     NpmVerifiedTarball,
     ProcedureNpmDependencyLock,
-    parse_npm_package_lock,
-    verify_npm_package_manifest,
+)
+from xaa.extensions.npm_lock_inspector import (
+    NpmLockInspectionError,
+    inspect_npm_package_lock_in_appcontainer,
 )
 from xaa.extensions.npm_tarballs import (
     NpmAcquisitionError,
@@ -1732,22 +1734,21 @@ def create_app(
                 status_code=409,
                 detail="The selected WSL distribution must have a ready Node.js and npm runtime.",
             )
-        package_manifest, manifest_hash = asset_by_name["package.json"]
+        package_manifest, _manifest_hash = asset_by_name["package.json"]
         package_lock, _lock_asset_hash = asset_by_name["package-lock.json"]
         try:
-            proposal = parse_npm_package_lock(
+            proposal = await inspect_npm_package_lock_in_appcontainer(
+                package_manifest,
                 package_lock,
                 skill_id=skill_id,
                 skill_version=version,
                 source_sha256=source_sha256,
-                package_manifest_sha256=manifest_hash,
                 distribution=request.distribution,
                 node_version=readiness.node_version or "",
                 npm_version=readiness.npm_version or "",
                 requirements=requirements,
             )
-            verify_npm_package_manifest(package_manifest, proposal)
-        except (TypeError, ValueError):
+        except (NpmLockInspectionError, TypeError, ValueError):
             raise HTTPException(
                 status_code=409,
                 detail="The linked npm package manifest and lockfile could not be validated.",
@@ -1783,7 +1784,29 @@ def create_app(
                 detail="The selected WSL Node/npm runtime changed; inspect the npm lock again.",
             )
         try:
+            package_manifest, package_lock = skill_store.npm_dependency_lock_resources(request)
+            validated = await inspect_npm_package_lock_in_appcontainer(
+                package_manifest,
+                package_lock,
+                skill_id=skill_id,
+                skill_version=version,
+                source_sha256=request.source_sha256,
+                distribution=request.distribution,
+                node_version=request.node_version,
+                npm_version=request.npm_version,
+                requirements=request.requirements,
+            )
+            if validated != request:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The submitted npm lock differs from its linked source resources.",
+                )
             return skill_store.save_npm_dependency_lock(request)
+        except NpmLockInspectionError:
+            raise HTTPException(
+                status_code=409,
+                detail="The linked npm package manifest and lockfile could not be validated.",
+            ) from None
         except SkillConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
