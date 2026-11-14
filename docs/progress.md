@@ -1,5 +1,10 @@
 # Progress
 
+## Keep desktop navigation selection accessible and unambiguous (2026-11-14)
+
+The app previously marked both “Active run” and “Saved runs” selected whenever the Runs screen was open, and the Saved runs link omitted `aria-current`. Navigation selection now follows the actual section anchor, so exactly one visible section is current; the selected link exposes `aria-current="page"`. Opening or creating a run selects Active run, while the Saved runs link selects its own target. The model-free onboarding browser flow now checks single selection and screen-reader state on each section, plus Enter activation from keyboard focus. `npm run typecheck`, `npm run build:desktop`, and `npx playwright test tests/browser/onboarding.spec.ts --reporter=line` pass (1). The onboarding test uses a mocked API/diagnostic and does not run inference. A full-screen keyboard, assistive-technology, and contrast audit remains open.
+
+
 ## Verify scheduler behavior after clock corrections and restart (2026-11-14)
 
 Added a deterministic schedule regression that advances past a daily occurrence, moves the supplied clock backward, reopens the SQLite store, and advances to the next occurrence. The original occurrence is never queued twice, the backward time does not consume the next occurrence, and the next day runs once. `uv run pytest tests/unit/test_schedules.py -q` passes all 16 tests; Ruff, format check, and `git diff --check` pass. Hosted Windows source run [43634885386](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43634885386) passed the full source workflow, including pytest and scheduler process-restart recovery; its installer job was skipped because no packaging inputs changed. This exercises the scheduler with clock values but does not change the host clock, so real operating-system clock steps and timezone-database updates remain unverified. No model inference or message delivery was used.

@@ -30,6 +30,7 @@ const ENGINE_STARTUP_RETRY_ATTEMPTS=240;
 const ENGINE_STARTUP_RETRY_DELAY_MS=250;
 type DesktopCloseBehavior='keep_running'|'exit_on_close';
 type DesktopPage='home'|'runs'|'integrations'|'models'|'monitor'|'settings';
+type DesktopNavTarget='new-objective'|'active-run'|'saved-runs'|'integrations'|'model-setup'|'system-monitor'|'app-settings';
 
 function conversationObjective(previous:ChatSession['messages'],current:string):string {
   const turns:[string,string][] = previous.map(message=>[message.role,message.content]);
@@ -41,6 +42,7 @@ function conversationObjective(previous:ChatSession['messages'],current:string):
 
 function App() {
   const [page,setPage]=useState<DesktopPage>('home');
+  const [activeSection,setActiveSection]=useState<DesktopNavTarget>('new-objective');
   const [token, setToken] = useState('');
   const [client, setClient] = useState<EngineClient>();
   const [models, setModels] = useState<string[]>([]);
@@ -287,7 +289,7 @@ function App() {
     stream.current?.abort();
     const controller=new AbortController();stream.current=controller;
     setBusy(true);setError('');
-    try {const saved=await client.getRun(id,controller.signal);if(!controller.signal.aborted){setRun(saved);setPage('runs');setBusy(false);void watch(saved);}}
+    try {const saved=await client.getRun(id,controller.signal);if(!controller.signal.aborted){setRun(saved);setPage('runs');setActiveSection('active-run');setBusy(false);void watch(saved);}}
     catch(failure){if(!controller.signal.aborted)setError(String(failure));}
     finally{if(stream.current===controller||!controller.signal.aborted)setBusy(false);}
   }
@@ -328,7 +330,7 @@ function App() {
     setAllowProcedureResourceRevision(false);
     setAllowProcedureResourceRemoval(false);
     setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
-    try { const next = await client.createRun({ objective:runObjective, image:imageData, document:documentData, audio:audioData, transcription_url:audioData?transcriptionUrl:undefined, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, allow_procedure_drafting:procedureDraftingGrant, allow_procedure_revision:procedureRevisionGrant, allow_procedure_resource_revision:procedureResourceRevisionGrant, allow_procedure_resource_removal:procedureResourceRemovalGrant, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, approved_mcp_sampling_servers:approvedMCPSamplingServers, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, procedure_python_environment_digest:commandAllowed?selectedProcedurePythonEnvironmentDigest:undefined, procedure_npm_environment_digest:commandAllowed?selectedProcedureNpmEnvironmentDigest:undefined, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setPage('runs');setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedMCPTools([]);setApprovedMCPSamplingServers([]);setProcedureTrial(undefined);setProcedurePythonEnvironmentDigest(undefined);setProcedureNpmEnvironmentDigest(undefined);setHistoryRefresh(value=>value+1); void watch(next,sharedTurn); }
+    try { const next = await client.createRun({ objective:runObjective, image:imageData, document:documentData, audio:audioData, transcription_url:audioData?transcriptionUrl:undefined, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, allow_procedure_drafting:procedureDraftingGrant, allow_procedure_revision:procedureRevisionGrant, allow_procedure_resource_revision:procedureResourceRevisionGrant, allow_procedure_resource_removal:procedureResourceRemovalGrant, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, approved_mcp_sampling_servers:approvedMCPSamplingServers, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, procedure_python_environment_digest:commandAllowed?selectedProcedurePythonEnvironmentDigest:undefined, procedure_npm_environment_digest:commandAllowed?selectedProcedureNpmEnvironmentDigest:undefined, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setPage('runs');setActiveSection('active-run');setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedMCPTools([]);setApprovedMCPSamplingServers([]);setProcedureTrial(undefined);setProcedurePythonEnvironmentDigest(undefined);setProcedureNpmEnvironmentDigest(undefined);setHistoryRefresh(value=>value+1); void watch(next,sharedTurn); }
     catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
   async function selectWorkspace() {
@@ -345,7 +347,7 @@ function App() {
     setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
     try {
       const next = await client.createRun({ objective: demoObjective, model, workspace, mode: 'observe', approved_web_search:false, approved_browser:false, allow_procedure_drafting:false, allow_procedure_revision:false, allow_procedure_resource_revision:false, allow_procedure_resource_removal:false, command_grant: null, ...parsedLimits, file_checks: [] });
-      setObjective(demoObjective); setRun(next); setPage('runs'); setCommandAllowed(false); setAllowProcedureDrafting(false); setAllowProcedureRevision(false); setAllowProcedureResourceRevision(false); setApprovedBrowser(false); setHistoryRefresh(value => value + 1); void watch(next);
+      setObjective(demoObjective); setRun(next); setPage('runs'); setActiveSection('active-run'); setCommandAllowed(false); setAllowProcedureDrafting(false); setAllowProcedureRevision(false); setAllowProcedureResourceRevision(false); setApprovedBrowser(false); setHistoryRefresh(value => value + 1); void watch(next);
     } catch (failure) { setError(String(failure)); }
     finally { setBusy(false); }
   }
@@ -360,8 +362,9 @@ function App() {
     if (!client || !run) return;
     try { setRun(await client.control(run.id, action)); } catch (failure) { setError(String(failure)); }
   }
-  function navigateTo(target:DesktopPage,anchor:string){
+  function navigateTo(target:DesktopPage,anchor:DesktopNavTarget){
     setPage(target);
+    setActiveSection(anchor);
     window.setTimeout(()=>document.getElementById(anchor)?.scrollIntoView({block:'start'}),0);
   }
   async function savePortableBackup(){
@@ -412,18 +415,18 @@ function App() {
       <div className="brand-lockup"><div className="brand-mark">X</div><div><strong>Xyst</strong><span>AI Agent</span></div></div>
       <p className="sidebar-label">WORKSPACE</p>
       <nav className="side-nav" aria-label="Main sections">
-        <a href="#new-objective" className={page==='home'?'active':''} aria-current={page==='home'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('home','new-objective');}}>New objective</a>
-        {run&&<a href="#active-run" className={page==='runs'?'active':''} aria-current={page==='runs'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('runs','active-run');}}>Active run<i className={`run-dot ${run.state}`}/></a>}
-        <a href="#saved-runs" className={page==='runs'?'active':''} onClick={event=>{event.preventDefault();navigateTo('runs','saved-runs');}}>Saved runs</a>
-        <a href="#integrations" className={page==='integrations'?'active':''} aria-current={page==='integrations'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('integrations','integrations');}}>Tools &amp; integrations</a>
-        <a href="#model-setup" className={page==='models'?'active':''} aria-current={page==='models'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('models','model-setup');}}>Model setup</a>
-        <a href="#system-monitor" className={page==='monitor'?'active':''} aria-current={page==='monitor'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('monitor','system-monitor');}}>System monitor</a>
-        <a href="#app-settings" className={page==='settings'?'active':''} aria-current={page==='settings'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('settings','app-settings');}}>Settings</a>
+        <a href="#new-objective" className={activeSection==='new-objective'?'active':''} aria-current={activeSection==='new-objective'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('home','new-objective');}}>New objective</a>
+        {run&&<a href="#active-run" className={activeSection==='active-run'?'active':''} aria-current={activeSection==='active-run'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('runs','active-run');}}>Active run<i className={`run-dot ${run.state}`}/></a>}
+        <a href="#saved-runs" className={activeSection==='saved-runs'?'active':''} aria-current={activeSection==='saved-runs'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('runs','saved-runs');}}>Saved runs</a>
+        <a href="#integrations" className={activeSection==='integrations'?'active':''} aria-current={activeSection==='integrations'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('integrations','integrations');}}>Tools &amp; integrations</a>
+        <a href="#model-setup" className={activeSection==='model-setup'?'active':''} aria-current={activeSection==='model-setup'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('models','model-setup');}}>Model setup</a>
+        <a href="#system-monitor" className={activeSection==='system-monitor'?'active':''} aria-current={activeSection==='system-monitor'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('monitor','system-monitor');}}>System monitor</a>
+        <a href="#app-settings" className={activeSection==='app-settings'?'active':''} aria-current={activeSection==='app-settings'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('settings','app-settings');}}>Settings</a>
       </nav>
       <div className="sidebar-footer"><span className={`connection-dot ${client&&models.length?'online':''}`}/><div><strong>{client?'Engine ready':'Starting engine'}</strong><small>{models.length?`${models.length} model${models.length===1?'':'s'} found`:'Local runtime'}</small></div></div>
     </aside>
     <div className="app-frame">
-      <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='integrations'?'Integrations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`}><span className={`connection-dot ${client&&model?'online':''}`}/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span><button type="button" className="topbar-new" onClick={()=>{setPage('home');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button></div></header>
+      <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='integrations'?'Integrations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`}><span className={`connection-dot ${client&&model?'online':''}`}/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span><button type="button" className="topbar-new" onClick={()=>{setPage('home');setActiveSection('new-objective');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button></div></header>
       <main className="app-content">
         {(error||client&&models.length===0)&&<div className="app-alert" role={error?'alert':'status'}><p>{error||'No local models are available yet.'}</p>{client&&models.length===0&&<div><p>Open LM Studio, choose Developer → Local Server, and start the server. If it is already running, refresh the model list here.</p><button type="button" className="secondary-button" onClick={()=>navigateTo('models','model-setup')}>Open model setup</button></div>}</div>}
         {client&&page==='home'&&<section className="welcome-card"><div><p className="eyebrow">YOUR PRIVATE AI WORKSPACE</p><h2>What would you like to get done?</h2><p>Give X.A.A. an objective. Follow its plan, tools, and results as it works on your computer.</p></div><button type="button" onClick={()=>document.getElementById('run-objective')?.focus()}>Start with an objective <span aria-hidden="true">↘</span></button></section>}
