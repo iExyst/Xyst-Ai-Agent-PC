@@ -65,6 +65,10 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   const skipLink=page.getByRole('link',{name:'Skip to main content'});
   await expect(skipLink).toBeFocused();
   await expect(skipLink).toBeInViewport();
+  const skipFocus=await skipLink.evaluate(element=>({outlineColor:getComputedStyle(element).outlineColor,outlineWidth:getComputedStyle(element).outlineWidth,outlineStyle:getComputedStyle(element).outlineStyle,background:getComputedStyle(document.body).backgroundColor}));
+  expect(skipFocus.outlineStyle).toBe('solid');
+  expect(parseFloat(skipFocus.outlineWidth)).toBeGreaterThanOrEqual(3);
+  expect(contrastRatio(skipFocus.outlineColor,skipFocus.background)).toBeGreaterThanOrEqual(3);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('main')).toBeFocused();
   await page.keyboard.press('Tab');
