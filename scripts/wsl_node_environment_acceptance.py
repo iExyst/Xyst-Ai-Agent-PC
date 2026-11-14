@@ -576,6 +576,9 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         transitive_url = (
             "https://registry.npmjs.org/xaa-transitive-fixture/-/xaa-transitive-fixture-1.0.0.tgz"
         )
+        root_transitive_url = (
+            "https://registry.npmjs.org/xaa-transitive-fixture/-/xaa-transitive-fixture-2.0.0.tgz"
+        )
         peer_url = "https://registry.npmjs.org/xaa-peer-fixture/-/xaa-peer-fixture-1.0.0.tgz"
         optional_url = (
             "https://registry.npmjs.org/xaa-optional-fixture/-/xaa-optional-fixture-1.0.0.tgz"
@@ -611,6 +614,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             {"name": transitive_name, "version": "1.0.0", "main": "index.js"},
             {"index.js": b"module.exports = 'offline-transitive';\n"},
         )
+        root_transitive_archive = _package_tarball(
+            {"name": transitive_name, "version": "2.0.0", "main": "index.js"},
+            {"index.js": b"module.exports = 'offline-root-v2';\n"},
+        )
         peer_archive = _package_tarball(
             {"name": peer_name, "version": "1.0.0", "main": "index.js"},
             {"index.js": b"module.exports = 'required-peer';\n"},
@@ -643,6 +650,9 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         transitive_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(transitive_archive).digest()
         ).decode("ascii")
+        root_transitive_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(root_transitive_archive).digest()
+        ).decode("ascii")
         peer_integrity = "sha512-" + base64.b64encode(hashlib.sha512(peer_archive).digest()).decode(
             "ascii"
         )
@@ -659,7 +669,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             {
                 "name": "xaa-probe-transitive-project",
                 "version": "1.0.0",
-                "dependencies": {scoped_name: "^1.0.0"},
+                "dependencies": {
+                    scoped_name: "^1.0.0",
+                    transitive_name: "^2.0.0",
+                },
                 "optionalDependencies": {
                     optional_name: "^1.0.0",
                     windows_optional_name: "^1.0.0",
@@ -677,7 +690,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                 "": {
                     "name": "xaa-probe-transitive-project",
                     "version": "1.0.0",
-                    "dependencies": {scoped_name: "^1.0.0"},
+                    "dependencies": {
+                        scoped_name: "^1.0.0",
+                        transitive_name: "^2.0.0",
+                    },
                     "optionalDependencies": {
                         optional_name: "^1.0.0",
                         windows_optional_name: "^1.0.0",
@@ -705,6 +721,11 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     "resolved": peer_url,
                     "integrity": peer_integrity,
                     "peer": True,
+                },
+                f"node_modules/{transitive_name}": {
+                    "version": "2.0.0",
+                    "resolved": root_transitive_url,
+                    "integrity": root_transitive_integrity,
                 },
                 f"node_modules/{optional_name}": {
                     "version": "1.0.0",
@@ -741,12 +762,16 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             npm_version=npm_version,
             requirements=(
                 f"{scoped_name}@^1.0.0",
+                f"{transitive_name}@^2.0.0",
                 f"{optional_name}@^1.0.0",
                 f"{windows_optional_name}@^1.0.0",
                 f"{cpu_optional_name}@^1.0.0",
             ),
             root_dependencies=(
                 NpmRootDependency(name=scoped_name, version_range="^1.0.0", kind="dependencies"),
+                NpmRootDependency(
+                    name=transitive_name, version_range="^2.0.0", kind="dependencies"
+                ),
                 NpmRootDependency(
                     name=optional_name, version_range="^1.0.0", kind="optionalDependencies"
                 ),
@@ -777,6 +802,13 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     version="1.0.0",
                     resolved_url=transitive_url,
                     integrity=transitive_integrity,
+                ),
+                NpmLockedPackage(
+                    package_path=f"node_modules/{transitive_name}",
+                    name=transitive_name,
+                    version="2.0.0",
+                    resolved_url=root_transitive_url,
+                    integrity=root_transitive_integrity,
                 ),
                 NpmLockedPackage(
                     package_path=f"node_modules/{peer_name}",
@@ -810,12 +842,14 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         )
         scoped_archive_path = report_path.parent / "scoped-fixture.tgz"
         transitive_archive_path = report_path.parent / "transitive-fixture.tgz"
+        root_transitive_archive_path = report_path.parent / "root-transitive-fixture.tgz"
         peer_archive_path = report_path.parent / "peer-fixture.tgz"
         optional_archive_path = report_path.parent / "optional-fixture.tgz"
         windows_optional_archive_path = report_path.parent / "windows-optional-fixture.tgz"
         cpu_optional_archive_path = report_path.parent / "cpu-optional-fixture.tgz"
         scoped_archive_path.write_bytes(scoped_archive)
         transitive_archive_path.write_bytes(transitive_archive)
+        root_transitive_archive_path.write_bytes(root_transitive_archive)
         peer_archive_path.write_bytes(peer_archive)
         optional_archive_path.write_bytes(optional_archive)
         windows_optional_archive_path.write_bytes(windows_optional_archive)
@@ -829,6 +863,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
                     (
                         scoped_archive_path,
                         transitive_archive_path,
+                        root_transitive_archive_path,
                         peer_archive_path,
                         optional_archive_path,
                         windows_optional_archive_path,
@@ -850,6 +885,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         graph_script = (
             "const fs=require('fs'),value=require('@xaa/fixture-plugin');"
             "if(value!=='offline-transitive-required-peer-scoped')process.exit(10);"
+            f"if(require('{transitive_name}')!=='offline-root-v2')process.exit(18);"
             f"if(require('{optional_name}')!=='optional-root')process.exit(11);"
             f"try{{require.resolve('{optional_peer_name}');process.exit(12);}}"
             "catch(error){if(error.code!=='MODULE_NOT_FOUND')process.exit(13);}"
@@ -1068,6 +1104,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "cross_procedure_exact_removal_preserved_neighbor": True,
             "scoped_package_installed_offline": True,
             "nested_transitive_dependency_loaded_in_procedure": True,
+            "duplicate_package_versions_resolved_by_nearest_path": True,
             "required_peer_dependency_loaded": True,
             "root_optional_dependency_loaded": True,
             "optional_peer_dependency_absence_accepted": True,
