@@ -269,5 +269,17 @@ def test_run_selects_only_the_approved_installed_environment_for_its_wsl_grant(
         "distribution": "Ubuntu-24.04",
         "tree_sha256": "d" * 64,
     }
+    chosen_owner = runs.acquire_lease(chosen["id"], "fixture-selected-environment")
+    runs.transition(chosen["id"], RunState.PLANNING, owner=chosen_owner)
+    runs.transition(chosen["id"], RunState.RUNNING, owner=chosen_owner)
+    chosen_intent = CommandJournal(runs).reserve(
+        chosen["id"],
+        chosen_owner,
+        uuid.uuid4().hex,
+        {"argv": ["python", "scripts/check.py"]},
+        idempotency_key=uuid.uuid4().hex,
+    )
+    assert chosen_intent.procedure_environment_digest == second_lock.environment_digest()
+    assert chosen_intent.procedure_environment_tree_sha256 == "d" * 64
     with pytest.raises(ValueError, match="Choose an approved installed Python environment"):
         runs.create_run(**run_arguments, procedure_python_environment_digest="f" * 64)
