@@ -1292,7 +1292,7 @@ def _create_no_network_child(
                 or owner_creation_time <= 0
                 or not isinstance(max_seconds, int)
                 or isinstance(max_seconds, bool)
-                or not 1 <= max_seconds <= 30
+                or not 1 <= max_seconds <= 120
             ):
                 raise MCPAppContainerError("The MCP process lifetime policy was invalid.")
             open_owner = kernel32.OpenProcess

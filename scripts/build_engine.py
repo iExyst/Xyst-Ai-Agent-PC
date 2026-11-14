@@ -99,6 +99,8 @@ def main() -> None:
             "--hidden-import",
             "xaa.cli",
             "--hidden-import",
+            "xaa.extensions.pypi_resolver_worker",
+            "--hidden-import",
             "keyring.backends.Windows",
             *[
                 argument

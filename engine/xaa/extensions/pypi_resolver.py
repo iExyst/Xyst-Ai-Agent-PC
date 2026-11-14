@@ -8,15 +8,22 @@ the owner can approve the lock.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
+import os
 import re
+import sys
+import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 from packaging.markers import default_environment
@@ -36,6 +43,9 @@ from xaa.extensions.procedure_dependencies import (
     ProcedurePythonDependencyLock,
     PythonDependencyTarget,
 )
+from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.windows_local_transport import WINDOWS_LOCAL_DISTRIBUTION, WindowsLocalTransport
+from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 
 SIMPLE_API_ACCEPT = "application/vnd.pypi.simple.v1+json"
 MAX_SIMPLE_PAGE_BYTES = 2 * 1024 * 1024
@@ -111,6 +121,14 @@ class PyPIWheelResolver:
         parsed = tuple({str(item): item for item in parsed_values}.values())
         if not parsed:
             raise PyPIResolutionError("Resolution requires at least one unique requirement.")
+        if self._transport is None:
+            return await resolve_in_appcontainer(
+                skill_id=skill_id,
+                skill_version=skill_version,
+                source_sha256=source_sha256,
+                target=target,
+                requirements=tuple(str(item) for item in parsed),
+            )
 
         self._pages.clear()
         self._files.clear()
@@ -489,3 +507,317 @@ class PyPIWheelResolver:
                 raise PyPIResolutionError("PyPI response exceeded its declared size limit.")
             content.extend(chunk)
         return bytes(content)
+
+
+MAX_BROKER_REQUESTS = MAX_PROJECTS + MAX_METADATA_REQUESTS
+MAX_BROKER_TOTAL_BYTES = 96 * 1024 * 1024
+MAX_BROKER_FRAME_BYTES = 3 * 1024 * 1024
+
+
+def validate_pypi_broker_url(value: object) -> tuple[str, int]:
+    if not isinstance(value, str) or len(value) > 2048:
+        raise PyPIResolutionError("Resolver worker requested an invalid PyPI URL.")
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise PyPIResolutionError("Resolver worker requested an invalid PyPI port.") from exc
+    decoded_path = unquote(parsed.path)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in {"pypi.org", "files.pythonhosted.org"}
+        or port not in {None, 443}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or "\\" in decoded_path
+        or any(ord(character) < 32 for character in decoded_path)
+        or any(part in {".", ".."} for part in decoded_path.split("/"))
+    ):
+        raise PyPIResolutionError("Resolver worker requested a URL outside the PyPI broker.")
+    if parsed.hostname == "pypi.org":
+        if not re.fullmatch(
+            r"/simple/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/", parsed.path
+        ) or parsed.path.endswith("//"):
+            raise PyPIResolutionError("Resolver worker requested an invalid PyPI project page.")
+        return urlunsplit(("https", "pypi.org", parsed.path, "", "")), MAX_SIMPLE_PAGE_BYTES
+    if not parsed.path.startswith("/packages/") or not parsed.path.endswith(".whl.metadata"):
+        raise PyPIResolutionError("Resolver worker requested unsupported PyPI file metadata.")
+    filename = unquote(parsed.path.rsplit("/", 1)[-1])
+    if (
+        len(filename) > 264
+        or not filename.endswith(".whl.metadata")
+        or "/" in filename
+        or "\\" in filename
+    ):
+        raise PyPIResolutionError("Resolver worker requested invalid wheel metadata.")
+    return (
+        urlunsplit(("https", "files.pythonhosted.org", parsed.path, "", "")),
+        MAX_METADATA_BYTES,
+    )
+
+
+async def resolve_in_appcontainer(
+    *,
+    skill_id: str,
+    skill_version: int,
+    source_sha256: str,
+    target: PythonDependencyTarget,
+    requirements: tuple[str, ...],
+    network_transport: httpx.AsyncBaseTransport | None = None,
+    test_worker_executable: Path | None = None,
+) -> ProcedurePythonDependencyLock:
+    try:
+        return await _resolve_in_appcontainer_impl(
+            skill_id=skill_id,
+            skill_version=skill_version,
+            source_sha256=source_sha256,
+            target=target,
+            requirements=requirements,
+            network_transport=network_transport,
+            test_worker_executable=test_worker_executable,
+        )
+    except PyPIResolutionError:
+        raise
+    except Exception as exc:
+        raise PyPIResolutionError("Windows could not complete isolated PyPI resolution.") from exc
+
+
+async def _resolve_in_appcontainer_impl(
+    *,
+    skill_id: str,
+    skill_version: int,
+    source_sha256: str,
+    target: PythonDependencyTarget,
+    requirements: tuple[str, ...],
+    network_transport: httpx.AsyncBaseTransport | None,
+    test_worker_executable: Path | None,
+) -> ProcedurePythonDependencyLock:
+    """Run the metadata parser/solver in X.A.A.'s bounded no-network container."""
+    if os.name != "nt":
+        raise PyPIResolutionError(
+            "Python dependency resolution requires the Windows AppContainer worker."
+        )
+    if test_worker_executable is not None and network_transport is None:
+        raise PyPIResolutionError(
+            "An alternate resolver executable is accepted only by fixture tests."
+        )
+    try:
+        transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    except Exception as exc:
+        raise PyPIResolutionError("Windows could not prepare the isolated resolver.") from exc
+
+    execution_id = uuid4().hex
+    with tempfile.TemporaryDirectory(prefix=f"xaa-resolver-owner-{execution_id}-") as workspace:
+        if test_worker_executable is not None:
+            try:
+                executable = test_worker_executable.resolve(strict=True)
+            except OSError as exc:
+                raise PyPIResolutionError(
+                    "The frozen resolver test executable is unavailable."
+                ) from exc
+            if executable.suffix.casefold() != ".exe" or not executable.is_file():
+                raise PyPIResolutionError("The frozen resolver test executable is invalid.")
+            argv = [str(executable), "--pypi-resolver-worker"]
+            source_worker = False
+        elif getattr(sys, "frozen", False):
+            argv = [sys.executable, "--pypi-resolver-worker"]
+            source_worker = False
+        else:
+            engine_root = Path(__file__).resolve().parents[2]
+            bootstrap = (
+                "import sys; "
+                f"sys.path.insert(0, {str(engine_root)!r}); "
+                "from xaa.extensions.pypi_resolver_worker import main; "
+                "raise SystemExit(main())"
+            )
+            argv = [sys.executable, "-s", "-c", bootstrap]
+            source_worker = True
+        intent = CommandIntent(
+            execution_id=execution_id,
+            backend="windows-appcontainer-v1",
+            distribution=WINDOWS_LOCAL_DISTRIBUTION,
+            profile_sha256=transport.profile_sha256,
+            workspace=workspace,
+            argv=argv,
+            max_seconds=30,
+        )
+        normalized_requirements = tuple(sorted(set(requirements), key=str.casefold))
+        request_bytes = json.dumps(
+            {
+                "skill_id": skill_id,
+                "skill_version": skill_version,
+                "source_sha256": source_sha256,
+                "target": target.model_dump(mode="json"),
+                "requirements": list(normalized_requirements),
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        snapshot = WorkspaceSnapshot(
+            files=(SnapshotFile(path="request.json", content=request_bytes),),
+            directories=(),
+        )
+        response_result: dict[str, Any] | None = None
+        request_count = 0
+        total_bytes = 0
+        timeout = MAX_RESOLUTION_SECONDS
+        network_timeout = httpx.Timeout(connect=8, read=12, write=8, pool=8)
+        network_limits = httpx.Limits(max_connections=2, max_keepalive_connections=2)
+
+        async with httpx.AsyncClient(
+            transport=network_transport,
+            trust_env=False,
+            verify=True,
+            follow_redirects=False,
+            timeout=network_timeout,
+            limits=network_limits,
+            headers={"User-Agent": "Xyst-AI-Agent/0.1", "Accept-Encoding": "identity"},
+        ) as client:
+
+            async def broker(frame: bytes) -> bytes | None:
+                nonlocal request_count, total_bytes, response_result
+
+                def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+                    result: dict[str, Any] = {}
+                    for key, value in pairs:
+                        if key in result:
+                            raise PyPIResolutionError(
+                                "Resolver worker sent duplicate protocol fields."
+                            )
+                        result[key] = value
+                    return result
+
+                try:
+                    value: object = json.loads(frame, object_pairs_hook=unique)
+                except (ValueError, UnicodeError, RecursionError) as exc:
+                    raise PyPIResolutionError(
+                        "Resolver worker sent malformed protocol data."
+                    ) from exc
+                if not isinstance(value, dict):
+                    raise PyPIResolutionError("Resolver worker protocol frame was not an object.")
+                message = cast(dict[str, Any], value)
+                if message.get("type") == "result":
+                    valid_success = message.get("ok") is True and set(message) == {
+                        "type",
+                        "ok",
+                        "lock",
+                    }
+                    valid_failure = message.get("ok") is False and set(message) == {
+                        "type",
+                        "ok",
+                        "error",
+                    }
+                    if response_result is not None or not (valid_success or valid_failure):
+                        raise PyPIResolutionError(
+                            "Resolver worker returned an invalid result frame."
+                        )
+                    response_result = message
+                    return None
+                if set(message) != {"type", "id", "method", "url", "headers"}:
+                    raise PyPIResolutionError("Resolver worker sent an invalid broker request.")
+                request_count += 1
+                if request_count > MAX_BROKER_REQUESTS:
+                    raise PyPIResolutionError(
+                        "Resolver worker exceeded its network request budget."
+                    )
+                if (
+                    message.get("type") != "request"
+                    or type(message.get("id")) is not int
+                    or message.get("id") != request_count
+                    or message.get("method") != "GET"
+                    or not isinstance(message.get("headers"), dict)
+                    or len(cast(dict[str, Any], message["headers"])) > 3
+                ):
+                    raise PyPIResolutionError("Resolver worker broker request failed validation.")
+                url, body_limit = validate_pypi_broker_url(message.get("url"))
+                headers: dict[str, str] = {"Accept-Encoding": "identity"}
+                worker_headers = cast(dict[str, Any], message["headers"])
+                for key, value in worker_headers.items():
+                    if (
+                        key == "accept"
+                        and value == SIMPLE_API_ACCEPT
+                        and url.startswith("https://pypi.org/")
+                    ):
+                        headers["Accept"] = SIMPLE_API_ACCEPT
+                    elif (
+                        key == "accept"
+                        and value == "*/*"
+                        and url.startswith("https://files.pythonhosted.org/")
+                    ):
+                        headers["Accept"] = "*/*"
+                    elif key == "user-agent" and value == "Xyst-AI-Agent/0.1":
+                        headers["User-Agent"] = "Xyst-AI-Agent/0.1"
+                    elif key == "accept-encoding" and value == "identity":
+                        continue
+                    else:
+                        raise PyPIResolutionError(
+                            "Resolver worker requested unsupported HTTP headers."
+                        )
+                content = bytearray()
+                status = 0
+                content_type = ""
+                async with client.stream("GET", url, headers=headers) as response:
+                    status = response.status_code
+                    content_type = response.headers.get("content-type", "")[:256]
+                    if status == 200:
+                        async for chunk in response.aiter_bytes():
+                            if len(content) + len(chunk) > body_limit:
+                                raise PyPIResolutionError(
+                                    "PyPI response exceeded its declared size limit."
+                                )
+                            content.extend(chunk)
+                total_bytes += len(content)
+                if total_bytes > MAX_BROKER_TOTAL_BYTES:
+                    raise PyPIResolutionError(
+                        "PyPI resolution exceeded its aggregate metadata limit."
+                    )
+                body_b64 = base64.b64encode(content).decode("ascii")
+                reply = {
+                    "type": "response",
+                    "id": request_count,
+                    "status": status,
+                    "content_type": content_type,
+                    "body_b64": body_b64,
+                }
+                encoded = json.dumps(reply, separators=(",", ":")).encode("ascii") + b"\n"
+                if len(encoded) > MAX_BROKER_FRAME_BYTES:
+                    raise PyPIResolutionError("PyPI response exceeded the resolver IPC limit.")
+                return encoded
+
+            try:
+                receipt = await transport.run(
+                    intent,
+                    snapshot,
+                    deadline=time.monotonic() + timeout + 10,
+                    on_protocol_frame=broker,
+                    isolated_python_worker=source_worker,
+                    max_seconds=timeout,
+                    max_output_bytes=4 * 1024 * 1024,
+                )
+            except Exception as exc:
+                raise PyPIResolutionError("The isolated PyPI resolver did not complete.") from exc
+
+    if response_result is None:
+        raise PyPIResolutionError("The isolated PyPI resolver omitted its result.")
+    if response_result.get("type") != "result" or response_result.get("ok") is not True:
+        message = response_result.get("error")
+        if isinstance(message, str) and message:
+            raise PyPIResolutionError(message[:512])
+        raise PyPIResolutionError("The isolated PyPI resolver rejected the package set.")
+    if not receipt.get("succeeded"):
+        raise PyPIResolutionError("The isolated PyPI resolver exited without a verified result.")
+    lock_value = response_result.get("lock")
+    try:
+        lock = ProcedurePythonDependencyLock.model_validate(lock_value, strict=True)
+    except (ValueError, TypeError) as exc:
+        raise PyPIResolutionError("The isolated PyPI resolver returned an invalid lock.") from exc
+    if (
+        lock.skill_id != skill_id
+        or lock.skill_version != skill_version
+        or lock.source_sha256 != source_sha256
+        or lock.target != target
+        or lock.requirements != normalized_requirements
+    ):
+        raise PyPIResolutionError("The isolated PyPI resolver returned a mismatched lock identity.")
+    return lock

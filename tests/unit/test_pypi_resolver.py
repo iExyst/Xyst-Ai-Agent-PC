@@ -8,7 +8,11 @@ from typing import Any
 import httpx
 import pytest
 from xaa.extensions.procedure_dependencies import PythonDependencyTarget
-from xaa.extensions.pypi_resolver import PyPIResolutionError, PyPIWheelResolver
+from xaa.extensions.pypi_resolver import (
+    PyPIResolutionError,
+    PyPIWheelResolver,
+    validate_pypi_broker_url,
+)
 
 
 def _file(
@@ -83,6 +87,28 @@ def _target() -> PythonDependencyTarget:
         },
         compatible_wheel_tags=("py3-none-any",),
     )
+
+
+def test_network_broker_allows_only_bounded_https_pypi_metadata_urls():
+    assert validate_pypi_broker_url("https://pypi.org/simple/requests/")[1] == 2 * 1024 * 1024
+    assert (
+        validate_pypi_broker_url(
+            "https://files.pythonhosted.org/packages/fixture/requests-1-py3-none-any.whl.metadata"
+        )[1]
+        == 1024 * 1024
+    )
+    for value in (
+        "http://pypi.org/simple/requests/",
+        "https://evil.example/simple/requests/",
+        "https://pypi.org:444/simple/requests/",
+        "https://pypi.org:bad/simple/requests/",
+        "https://pypi.org/simple/../requests/",
+        "https://pypi.org/simple/%2e%2e/requests/",
+        "https://pypi.org/simple/requests/?next=https://evil.example/",
+        "https://files.pythonhosted.org/packages/fixture/requests.tar.gz",
+    ):
+        with pytest.raises(PyPIResolutionError):
+            validate_pypi_broker_url(value)
 
 
 @pytest.mark.asyncio
@@ -215,7 +241,7 @@ async def test_resolver_prefers_target_tag_order_for_equal_versions():
 
 @pytest.mark.asyncio
 async def test_resolver_applies_exact_version_constraints_before_candidate_bound():
-    releases = []
+    releases: list[tuple[dict[str, Any], bytes]] = []
     for major in range(25, 0, -1):
         version = f"{major}.0"
         metadata = _metadata("xaa-pinned", version)
@@ -236,7 +262,8 @@ async def test_resolver_applies_exact_version_constraints_before_candidate_bound
 @pytest.mark.asyncio
 async def test_resolver_rejects_metadata_hash_mismatch_and_unsafe_project_redirect():
     actual = _metadata("xaa-top", "1.0")
-    entry = _file("xaa-top", "1.0", actual, **{"core-metadata": {"sha256": "c" * 64}})
+    entry = _file("xaa-top", "1.0", actual)
+    entry["core-metadata"] = {"sha256": "c" * 64}
     projects = {"xaa-top": [(entry, actual)]}
     resolver = PyPIWheelResolver(transport=_pages(projects))
 

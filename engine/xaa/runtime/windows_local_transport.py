@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import marshal
 import os
 import shutil
 import sys
@@ -33,6 +34,7 @@ from xaa.runtime.workspace_snapshot import WorkspaceSnapshot, materialize_snapsh
 
 WINDOWS_LOCAL_DISTRIBUTION = "Windows-Local"
 MAX_OUTPUT_BYTES = 1024 * 1024
+MAX_INTERACTIVE_FRAME_BYTES = 3 * 1024 * 1024
 MAX_PRIVATE_WORKSPACE_BYTES = 32 * 1024 * 1024
 MAX_PRIVATE_RUNTIME_BYTES = 256 * 1024 * 1024
 MAX_PRIVATE_COMMAND_BYTES = MAX_PRIVATE_WORKSPACE_BYTES + MAX_PRIVATE_RUNTIME_BYTES
@@ -57,10 +59,27 @@ def profile_fingerprint() -> str:
     with executable.open("rb") as source:
         while chunk := source.read(1024 * 1024):
             runtime_hash.update(chunk)
+    source_paths = (
+        Path(__file__).resolve(),
+        Path(__file__).resolve().parents[1] / "extensions" / "pypi_resolver.py",
+        Path(__file__).resolve().parents[1] / "extensions" / "pypi_resolver_worker.py",
+    )
+    source_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in source_paths
+        if path.is_file()
+    }
+    if not source_hashes and getattr(sys, "frozen", False):
+        source_hashes = {
+            "windows_local_transport.run": hashlib.sha256(
+                marshal.dumps(WindowsLocalTransport.run.__code__)
+            ).hexdigest()
+        }
     record = {
         "shim_sha256": shim_fingerprint,
         "runtime": str(executable),
         "runtime_sha256": runtime_hash.hexdigest(),
+        "worker_source_sha256": source_hashes,
         "python": list(sys.version_info[:3]),
         "backend": "windows-appcontainer-v1",
         "no_network": True,
@@ -232,11 +251,29 @@ class WindowsLocalTransport:
         *,
         deadline: float,
         on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
+        on_protocol_frame: Callable[[bytes], Awaitable[bytes | None]] | None = None,
+        isolated_python_worker: bool = False,
+        max_seconds: int | None = None,
+        max_output_bytes: int = MAX_OUTPUT_BYTES,
     ) -> dict[str, Any]:
         self.require_intent(intent)
-        if deadline - time.monotonic() < intent.max_seconds:
+        duration = intent.max_seconds if max_seconds is None else max_seconds
+        if type(duration) is not int or not 1 <= duration <= 120:
+            raise ValueError("Windows isolated command runtime must be 1..120 seconds.")
+        if (
+            type(max_output_bytes) is not int
+            or not MAX_OUTPUT_BYTES <= max_output_bytes <= 8 * 1024 * 1024
+        ):
+            raise ValueError("Windows isolated command output limit must be 1..8 MiB.")
+        if deadline - time.monotonic() < duration:
             raise TimeoutError("Command duration exceeds the remaining parent time budget.")
         executable = _resolve_executable(intent.argv[0])
+        if isolated_python_worker and (
+            executable != Path(sys.executable).resolve(strict=True) or getattr(sys, "frozen", False)
+        ):
+            raise PermissionError(
+                "Source Python worker access is restricted to this engine runtime."
+            )
         try:
             selected_workspace: Path | None = Path(intent.workspace).resolve(strict=True)
         except OSError:
@@ -289,7 +326,16 @@ class WindowsLocalTransport:
                 str(executable),
                 intent.argv[1:],
                 str(workspace),
-                [str(executable.parent)] if _trusted_executable_directory(executable) else [],
+                ([str(executable.parent)] if _trusted_executable_directory(executable) else [])
+                + (
+                    [
+                        str(Path(__file__).resolve().parents[2]),
+                        str(Path(sys.prefix) / "Lib" / "site-packages"),
+                        str(Path(sys.base_prefix)),
+                    ]
+                    if isolated_python_worker
+                    else []
+                ),
                 [str(workspace), str(temporary)],
                 _journal_root(),
                 grant_argument_paths=False,
@@ -332,7 +378,7 @@ class WindowsLocalTransport:
                 "profile_name": access.profile_name,
                 "owner_pid": os.getpid(),
                 "owner_creation_time": owner_creation_time,
-                "max_seconds": intent.max_seconds,
+                "max_seconds": duration,
                 "command_limits": True,
                 "child_environment": child_environment,
             }
@@ -341,7 +387,8 @@ class WindowsLocalTransport:
                 BOOTSTRAP_PREFIX + json.dumps(bootstrap, separators=(",", ":")).encode() + b"\n"
             )
             await process.stdin.drain()
-            process.stdin.close()
+            if on_protocol_frame is None:
+                process.stdin.close()
             self._active[intent.execution_id] = process
 
             assert process.stdout is not None
@@ -369,13 +416,49 @@ class WindowsLocalTransport:
             ) -> None:
                 nonlocal streamed
                 target = stdout if name == "stdout" else stderr
+                protocol_buffer = bytearray()
                 while chunk := await reader.read(16384):
                     streamed += len(chunk)
-                    if streamed > MAX_OUTPUT_BYTES:
-                        raise ValueError("Windows command output exceeded the 1 MiB limit.")
+                    if streamed > max_output_bytes:
+                        if max_output_bytes == MAX_OUTPUT_BYTES:
+                            raise ValueError("Windows command output exceeded the 1 MiB limit.")
+                        raise ValueError("Windows command output exceeded its configured limit.")
                     target.extend(chunk)
+                    if name == "stdout" and on_protocol_frame is not None:
+                        protocol_buffer.extend(chunk)
+                        while b"\n" in protocol_buffer:
+                            frame, _, remainder = protocol_buffer.partition(b"\n")
+                            protocol_buffer[:] = remainder
+                            if not frame or len(frame) > MAX_INTERACTIVE_FRAME_BYTES:
+                                raise ValueError(
+                                    "Windows command emitted an invalid protocol frame."
+                                )
+                            response = await on_protocol_frame(bytes(frame))
+                            if response is None:
+                                if process.stdin is not None and not process.stdin.is_closing():
+                                    process.stdin.close()
+                                continue
+                            if (
+                                len(response) > MAX_INTERACTIVE_FRAME_BYTES
+                                or not response.endswith(b"\n")
+                                or process.stdin is None
+                                or process.stdin.is_closing()
+                            ):
+                                raise ValueError(
+                                    "Windows command protocol response exceeded its limit."
+                                )
+                            process.stdin.write(response)
+                            await process.stdin.drain()
+                        if len(protocol_buffer) > MAX_INTERACTIVE_FRAME_BYTES:
+                            raise ValueError("Windows command protocol frame exceeded its limit.")
+                    elif name == "stdout" and protocol_buffer:
+                        raise RuntimeError(
+                            "Windows command protocol ended with an incomplete frame."
+                        )
                     if on_output is not None:
                         await on_output(name, chunk)
+                if name == "stdout" and protocol_buffer:
+                    raise RuntimeError("Windows command protocol ended with an incomplete frame.")
 
             assert process.stderr is not None
             reader_tasks = [
@@ -401,9 +484,7 @@ class WindowsLocalTransport:
             process_wait = asyncio.create_task(process.wait())
             workspace_monitor = asyncio.create_task(monitor_workspace())
             try:
-                async with asyncio.timeout(
-                    min(deadline - time.monotonic(), intent.max_seconds + 3)
-                ):
+                async with asyncio.timeout(min(deadline - time.monotonic(), duration + 3)):
                     await asyncio.gather(*reader_tasks, workspace_monitor)
                     exit_code = await process_wait
             except TimeoutError:
