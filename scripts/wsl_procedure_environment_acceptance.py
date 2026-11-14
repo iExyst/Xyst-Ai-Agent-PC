@@ -56,7 +56,12 @@ def build_wheel(name: str, value: str, requires_dist: str | None = None) -> tupl
     return f"{normalized}-{version}-py3-none-any.whl", output.getvalue()
 
 
-def make_lock(distribution: str, artifacts: dict[str, bytes]) -> ProcedurePythonDependencyLock:
+def make_lock(
+    distribution: str,
+    artifacts: dict[str, bytes],
+    *,
+    requirements: tuple[str, ...] = ("xaa-top==1.0",),
+) -> ProcedurePythonDependencyLock:
     return ProcedurePythonDependencyLock(
         schema_version=1,
         skill_id="12345678-1234-4234-8234-123456789abc",
@@ -79,7 +84,7 @@ def make_lock(distribution: str, artifacts: dict[str, bytes]) -> ProcedurePython
             },
             compatible_wheel_tags=("py3-none-any",),
         ),
-        requirements=("xaa-top==1.0",),
+        requirements=requirements,
         wheels=tuple(
             LockedPythonWheel(
                 filename=filename,
@@ -99,15 +104,28 @@ async def run(distribution: str) -> dict[str, Any]:
     top_name, top_bytes = build_wheel("xaa-top", "top-ready", "xaa-leaf==1.0")
     artifacts = {leaf_name: leaf_bytes, top_name: top_bytes}
     lock = make_lock(distribution, artifacts)
+    isolated_name, isolated_bytes = build_wheel("xaa-isolation-probe", "other-environment-only")
+    isolated_artifacts = {isolated_name: isolated_bytes}
+    isolated_lock = make_lock(
+        distribution,
+        isolated_artifacts,
+        requirements=("xaa-isolation-probe==1.0",),
+    )
     with tempfile.TemporaryDirectory(prefix="xaa-procedure-environment-") as temporary:
         store = ProcedureWheelhouseStore(Path(temporary) / "wheelhouses")
         store.store(lock, artifacts)
+        store.store(isolated_lock, isolated_artifacts)
         transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 30)
         installed = await transport.install_procedure_environment(
             lock, store.root / lock.environment_digest(), deadline=time.monotonic() + 180
         )
         repeated = await transport.install_procedure_environment(
             lock, store.root / lock.environment_digest(), deadline=time.monotonic() + 60
+        )
+        isolated_installed = await transport.install_procedure_environment(
+            isolated_lock,
+            store.root / isolated_lock.environment_digest(),
+            deadline=time.monotonic() + 180,
         )
         observed = await transport.procedure_environment_status(
             lock.environment_digest(), deadline=time.monotonic() + 30
@@ -120,6 +138,8 @@ async def run(distribution: str) -> dict[str, Any]:
             or observed.get("lock_sha256")
             != hashlib.sha256(lock.canonical_json().encode()).hexdigest()
             or observed.get("installed_bytes", 0) <= 0
+            or isolated_installed.get("installed") is not True
+            or isolated_installed.get("environment_digest") != isolated_lock.environment_digest()
         ):
             raise RuntimeError("Managed WSL environment install or integrity status failed.")
         lease_started = asyncio.Event()
@@ -167,6 +187,44 @@ async def run(distribution: str) -> dict[str, Any]:
         active_run_receipt = await lease_run
         if not active_removal_refused or active_run_receipt.get("succeeded") is not True:
             raise RuntimeError("Environment removal was not fenced by the active execution lease.")
+        isolation = await transport.run(
+            CommandIntent(
+                argv=[
+                    "/opt/xaa/procedure-python/bin/python",
+                    "-I",
+                    "-c",
+                    (
+                        "import pathlib\n"
+                        f"other=pathlib.Path('/var/lib/xaa-procedure-environments/{isolated_lock.environment_digest()}/environment/venv')\n"
+                        "print('other-environment-visible', other.exists())\n"
+                        "assert not other.exists()\n"
+                        "try:\n import xaa_isolation_probe\n"
+                        "except ModuleNotFoundError:\n print('cross-environment-import-blocked')\n"
+                        "else:\n raise SystemExit('another procedure environment was importable')\n"
+                    ),
+                ],
+                max_seconds=10,
+                execution_id=uuid4().hex,
+                backend="wsl-bubblewrap-v1",
+                distribution=distribution,
+                profile_sha256=transport.profile_sha256,
+                workspace="procedure-environment-isolation-acceptance",
+                procedure_environment_digest=lock.environment_digest(),
+                procedure_environment_tree_sha256=installed["tree_sha256"],
+            ),
+            WorkspaceSnapshot((), (), ()),
+            deadline=time.monotonic() + 30,
+        )
+        isolation_output = base64.b64decode(isolation["stdout_b64"], validate=True).decode("utf-8")
+        if (
+            isolation.get("succeeded") is not True
+            or "other-environment-visible False" not in isolation_output
+            or "cross-environment-import-blocked" not in isolation_output
+        ):
+            raise RuntimeError(
+                "The selected procedure could access another installed Python environment: "
+                f"receipt={isolation!r}; stdout={isolation_output!r}"
+            )
         execution = await transport.run(
             CommandIntent(
                 argv=[
@@ -203,6 +261,9 @@ async def run(distribution: str) -> dict[str, Any]:
             await transport.remove_procedure_environment(
                 lock.environment_digest(), deadline=time.monotonic() + 30
             )
+            await transport.remove_procedure_environment(
+                isolated_lock.environment_digest(), deadline=time.monotonic() + 30
+            )
             raise RuntimeError(
                 "WSL did not execute the selected environment read-only: "
                 f"receipt={execution!r}; stdout={output!r}; stderr={stderr!r}"
@@ -210,10 +271,21 @@ async def run(distribution: str) -> dict[str, Any]:
         removed = await transport.remove_procedure_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )
+        isolated_removed = await transport.remove_procedure_environment(
+            isolated_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
         after_remove = await transport.procedure_environment_status(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )
-        if removed.get("removed") is not True or after_remove.get("installed") is not False:
+        isolated_after_remove = await transport.procedure_environment_status(
+            isolated_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        if (
+            removed.get("removed") is not True
+            or isolated_removed.get("removed") is not True
+            or after_remove.get("installed") is not False
+            or isolated_after_remove.get("installed") is not False
+        ):
             raise RuntimeError("Managed WSL environment removal did not close the exact fixture.")
         return {
             "distribution": distribution,
@@ -223,6 +295,9 @@ async def run(distribution: str) -> dict[str, Any]:
             "idempotent_install": True,
             "integrity_status": True,
             "procedure_imports_from_read_only_mount": True,
+            "other_environment_path_hidden": "other-environment-visible False" in isolation_output,
+            "cross_environment_import_blocked": "cross-environment-import-blocked"
+            in isolation_output,
             "active_use_removal_refused": active_removal_refused,
             "exact_environment_removed": True,
             "network": "none",

@@ -1,10 +1,16 @@
 # Progress
 
+## Verify isolation between installed procedure environments (2026-11-13)
+
+Extended the real Ubuntu-24.04 WSL acceptance to install two separate approved-style lock fixtures at the same time. A command bound to the first environment imports only its own packages; the second environment's root path is absent in its Bubblewrap view, and its unique probe module raises `ModuleNotFoundError`. The acceptance then removes both exact fixture digests and confirms both are absent. Report: [`.acceptance/wsl-procedure-environment-isolation-20261113/report.json`](../.acceptance/wsl-procedure-environment-isolation-20261113/report.json).
+
+This adds runtime evidence for cross-procedure environment isolation without live-model testing. Exact selected-environment binding is pushed in commit `0675af9`; hosted Windows CI run [43548435490](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43548435490) is still running. Remaining procedure gaps include complete model-run acceptance (deferred until the end), broader package managers, and overall Hermes parity. No public PyPI request or live model inference was used.
+
 ## Select an exact approved procedure Python environment (2026-11-13)
 
 The run composer now lists approved installed environments matching the selected procedure version and WSL distribution. If more than one matches, the owner must choose one; if exactly one matches, it remains automatically selected. `CreateRunRequest` carries only the selected digest, and `RunStore` independently checks that it belongs to an approved installed lock for the exact procedure version and WSL distribution. The immutable `procedure.selected` event stores its digest and tree hash, and command reservations continue to inherit that binding from the saved event, not model arguments.
 
-Unit coverage verifies ambiguous selection is rejected, an exact valid digest is persisted into the run and command intent, and an unknown digest is rejected. The Skills browser flow displays two matching environments and allows an explicit choice. Focused validation passes: 41 Python tests, browser acceptance, generated contracts, TypeScript, Ruff, formatting, and strict Pyright. The prior lease/removal checkpoint passed hosted Windows CI in [run 43547089002](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43547089002); this slice is not yet pushed. The next dependency gap is exercising a real imported procedure through a model run, which remains deferred until the end per the user's testing preference. No live model inference or public PyPI request was used.
+Unit coverage verifies ambiguous selection is rejected, an exact valid digest is persisted into the run and command intent, and an unknown digest is rejected. The Skills browser flow displays two matching environments and allows an explicit choice. Focused validation passes: 41 Python tests, browser acceptance, generated contracts, TypeScript, Ruff, formatting, and strict Pyright. This slice is pushed in commit `0675af9`; hosted Windows CI is running as [run 43548435490](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43548435490). The next dependency gap is exercising a real imported procedure through a model run, which remains deferred until the end per the user's testing preference. No live model inference or public PyPI request was used.
 
 ## Fence active procedure use and expose environment removal (2026-11-13)
 
