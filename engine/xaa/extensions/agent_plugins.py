@@ -50,6 +50,13 @@ MAX_PLUGIN_FINGERPRINT_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_READINESS_COMMAND_CHECKS = 256
 MAX_READINESS_DEPENDENCY_CHECKS = 128
 _PYTHON_DEPENDENCY_MANAGERS = {"python", "python3", "pip", "pip3"}
+_NPM_PACKAGE_SPEC = re.compile(
+    r"^(?P<name>(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,127}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
+    r"(?:@(?P<range>[A-Za-z0-9.*+^~<>=| -]{1,128}))?$"
+)
+_NPM_PACKAGE_NAME = re.compile(
+    r"^(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,127}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+)
 _SCRIPT_MEDIA_TYPES = {
     ".cjs": "application/javascript",
     ".js": "text/javascript",
@@ -262,11 +269,29 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         len(dependency_items) + int(dependency_items_truncated and len(dependency_items) < 128),
     )
     python_dependency_specs: list[str] = []
+    npm_dependency_specs: list[str] = []
     unverified_dependency_packages: set[tuple[str, str]] = set()
     unsupported_dependency_count = 0
     for manager, item in dependency_items:
         if not isinstance(item, str) or len(item) > 256:
             unparsed_dependency_count += 1
+            continue
+        if manager == "npm":
+            npm_match = _NPM_PACKAGE_SPEC.fullmatch(item.strip())
+            if (
+                npm_match is None
+                or "  " in item
+                or item.startswith(("-", ".", "@/"))
+                or npm_match.group("range") is not None
+                and not npm_match.group("range").strip()
+            ):
+                unparsed_dependency_count += 1
+                continue
+            npm_name = npm_match.group("name")
+            dependency_names.add(npm_name)
+            npm_dependency_specs.append(item.strip())
+            unsupported_dependency_count += 1
+            unverified_dependency_packages.add((manager, npm_name))
             continue
         match = _DEPENDENCY_SPEC.fullmatch(item)
         if match is None or "://" in item or item.startswith(("git+", "hg+", "svn+")):
@@ -302,6 +327,7 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         "dependency_count": min(dependency_count, 128),
         "dependency_names": sorted(dependency_names)[:128],
         "python_dependency_specs": python_dependency_specs[:128],
+        "npm_dependency_specs": npm_dependency_specs[:128],
         "unverified_dependency_packages": [
             {"manager": manager, "name": name}
             for manager, name in sorted(unverified_dependency_packages)[:128]
@@ -438,7 +464,12 @@ def _assess_requirement_readiness(
                 r"[A-Za-z][A-Za-z0-9_.-]{0,31}", manager
             ):
                 continue
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+            valid_name = (
+                _NPM_PACKAGE_NAME.fullmatch(name) is not None
+                if manager == "npm"
+                else re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name) is not None
+            )
+            if not valid_name:
                 continue
             safe_unverified_packages.append({"manager": manager, "name": name})
     toolsets = cast(list[str], requirements.get("hermes_toolsets", []))

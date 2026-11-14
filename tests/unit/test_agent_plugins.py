@@ -415,7 +415,7 @@ def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_
         {
             "dependencies": {
                 "python": ["requests>=2.0", "urllib3<2", "missing-lib==1.0"],
-                "npm": ["left-pad>=1.0"],
+                "npm": ["left-pad@^1.0.0"],
             }
         }
     )
@@ -435,11 +435,31 @@ def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_
     assert result["missing_python_dependency_specs"] == ["missing-lib==1.0"]
     assert result["unverified_dependency_count"] == 1
     assert result["unverified_dependency_packages"] == [{"manager": "npm", "name": "left-pad"}]
-    assert "left-pad>=1.0" not in json.dumps(result)
+    assert requirements["npm_dependency_specs"] == ["left-pad@^1.0.0"]
+    assert "left-pad@^1.0.0" not in json.dumps(result)
     assert result["dependencies_unresolved"] is True
     assert result["dependency_count_unresolved"] == 3
     assert "dependency_installation" in result["not_assessed"]
     assert "unsupported_dependency_managers" in result["not_assessed"]
+
+
+def test_npm_requirements_are_safely_classified_but_remain_unverified() -> None:
+    requirements = agent_plugins._declared_requirements(
+        {
+            "dependencies": {
+                "npm": ["left-pad@^1.3.0", "@xyst/toolkit@~2.4.1", "git+https://example.test/a.git"]
+            }
+        }
+    )
+    readiness = agent_plugins._assess_requirement_readiness(requirements)
+    assert requirements["npm_dependency_specs"] == ["left-pad@^1.3.0", "@xyst/toolkit@~2.4.1"]
+    assert requirements["unparsed_dependency_count"] == 1
+    assert readiness["unverified_dependency_packages"] == [
+        {"manager": "npm", "name": "@xyst/toolkit"},
+        {"manager": "npm", "name": "left-pad"},
+    ]
+    assert readiness["unverified_dependency_count"] == 3
+    assert "example.test" not in json.dumps(requirements)
 
 
 def test_unverified_dependency_names_never_echo_unparsed_declarations() -> None:

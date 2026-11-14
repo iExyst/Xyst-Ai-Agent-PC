@@ -35,6 +35,7 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
     `Package names: ${names('dependency_names') || 'none parsed'} · manager keys: ${names('dependency_managers') || 'not declared'} · unparsed entries: ${typeof value.unparsed_dependency_count === 'number' ? value.unparsed_dependency_count : 'unknown'}`,
     `Packages outside the checked Python managers: ${packageNames('unverified_dependency_packages') || 'none identified'}`,
     `Python version constraints: ${names('python_dependency_specs') || 'none parsed'}`,
+    `npm package constraints (not resolved or installed): ${names('npm_dependency_specs') || 'none parsed'}`,
   ].join(' · ');
 }
 
