@@ -89,6 +89,23 @@ def test_npm_v3_lock_is_bound_to_procedure_assets_and_runtime() -> None:
     assert parse(raw).environment_digest() == lock.environment_digest()
 
 
+def test_npm_v2_lock_uses_its_canonical_packages_map() -> None:
+    document = json.loads(package_lock(lockfile_version=2).decode())
+    # npm v2 keeps a v1-shaped compatibility tree alongside `packages`.
+    document["dependencies"] = {
+        "left-pad": {
+            "version": "1.3.0",
+            "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+            "integrity": INTEGRITY,
+        }
+    }
+
+    lock = parse(json.dumps(document).encode())
+
+    assert lock.packages[0].package_path == "node_modules/left-pad"
+    assert lock.packages[0].version == "1.3.0"
+
+
 def test_package_manifest_must_match_lockfile_root_dependencies() -> None:
     lock = parse(package_lock())
     manifest = MANIFEST
@@ -124,7 +141,7 @@ def test_npm_lock_supports_scoped_package_paths() -> None:
 @pytest.mark.parametrize(
     ("raw", "requirements"),
     [
-        (package_lock(lockfile_version=2), ("left-pad@^1.3.0",)),
+        (package_lock(lockfile_version=1), ("left-pad@^1.3.0",)),
         (
             package_lock(resolved="https://evil.example/left-pad-1.3.0.tgz"),
             ("left-pad@^1.3.0",),

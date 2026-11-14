@@ -1,4 +1,4 @@
-"""Validate imported npm v3 lockfiles without fetching or installing packages."""
+"""Validate imported npm v2/v3 lockfiles without fetching or installing packages."""
 
 from __future__ import annotations
 
@@ -274,7 +274,7 @@ def parse_npm_package_lock(
     npm_version: str,
     requirements: Iterable[str] = (),
 ) -> ProcedureNpmDependencyLock:
-    """Parse a lockfile v3 proposal; reject links and non-registry package sources."""
+    """Parse a v2/v3 lockfile proposal; reject links and non-registry sources."""
     if not raw or len(raw) > MAX_LOCKFILE_BYTES:
         raise ValueError("npm package-lock.json is empty or exceeds its size limit.")
     try:
@@ -284,8 +284,9 @@ def parse_npm_package_lock(
     if not isinstance(parsed_json, dict):
         raise TypeError("npm package-lock.json must be a JSON object.")
     document = cast(dict[str, Any], parsed_json)
-    if document.get("lockfileVersion") != 3:
-        raise ValueError("Only npm package-lock.json format version 3 is supported.")
+    lockfile_version = document.get("lockfileVersion")
+    if type(lockfile_version) is not int or lockfile_version not in {2, 3}:
+        raise ValueError("Only npm package-lock.json format versions 2 and 3 are supported.")
     raw_packages = document.get("packages")
     if not isinstance(raw_packages, dict) or "" not in raw_packages:
         raise ValueError("npm package-lock.json has no root package record.")

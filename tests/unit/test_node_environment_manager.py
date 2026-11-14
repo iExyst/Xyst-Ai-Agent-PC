@@ -56,3 +56,23 @@ def test_removal_keeps_digest_when_a_procedure_holds_its_shared_lease(
     with pytest.raises(environments.EnvironmentInUseError, match="running procedure"):
         environments.remove(digest, lock)
     assert target.is_dir()
+
+
+@pytest.mark.parametrize("lockfile_version", [2, 3])
+def test_install_source_lock_accepts_supported_npm_formats(lockfile_version: int) -> None:
+    packages = {
+        "": {"name": "fixture"},
+        "node_modules/left-pad": {"version": "1.3.0"},
+    }
+
+    environments._validate_linked_package_lock(
+        {"lockfileVersion": lockfile_version, "packages": packages}, [{}]
+    )
+
+
+@pytest.mark.parametrize("lockfile_version", [1, True, 4, "3"])
+def test_install_source_lock_rejects_unsupported_npm_formats(lockfile_version: object) -> None:
+    with pytest.raises(ValueError, match="manifest or lockfile is invalid"):
+        environments._validate_linked_package_lock(
+            {"lockfileVersion": lockfile_version, "packages": {"": {}}}, []
+        )

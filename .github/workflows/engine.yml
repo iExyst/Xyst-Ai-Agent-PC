@@ -279,10 +279,11 @@ jobs:
         shell: pwsh
         run: ./scripts/installed_appcontainer_smoke.ps1 -AcceptanceId $env:GITHUB_RUN_ID
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: installed-windows-appcontainer-${{ github.run_id }}
           path: .acceptance/installed-appcontainer-${{ github.run_id }}/
-          if-no-files-found: error
+          if-no-files-found: warn
           include-hidden-files: true
       - name: Verify installed-stage MCP OAuth and credential clearing in native desktop
         shell: pwsh

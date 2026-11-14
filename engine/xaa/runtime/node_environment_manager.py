@@ -92,6 +92,19 @@ def _unique_json(raw: bytes, maximum: int) -> Any:
     return json.loads(raw, object_pairs_hook=unique)
 
 
+def _validate_linked_package_lock(lock_doc: dict[str, Any], packages_raw: object) -> None:
+    lockfile_version = lock_doc.get("lockfileVersion")
+    if type(lockfile_version) is not int or lockfile_version not in {2, 3}:
+        raise ValueError("Linked npm manifest or lockfile is invalid.")
+    package_entries = lock_doc.get("packages")
+    if (
+        not isinstance(packages_raw, list)
+        or not isinstance(package_entries, dict)
+        or len(cast(list[object], packages_raw)) + 1 != len(cast(dict[str, Any], package_entries))
+    ):
+        raise ValueError("Linked npm lock membership differs from the reviewed proposal.")
+
+
 def _source_tarballs(path_value: object, lock: dict[str, Any]) -> tuple[Path, list[dict[str, Any]]]:
     if not isinstance(path_value, str) or "\0" in path_value or not path_value.startswith("/mnt/"):
         raise ValueError("npm tarballs must be in the mapped local application data volume.")
@@ -289,16 +302,8 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
     if not isinstance(manifest_doc, dict) or not isinstance(lock_doc, dict):
         raise TypeError("Linked npm manifest and lockfile must be objects.")
     manifest_doc, lock_doc = cast(dict[str, Any], manifest_doc), cast(dict[str, Any], lock_doc)
-    if lock_doc.get("lockfileVersion") != 3:
-        raise ValueError("Linked npm manifest or lockfile is invalid.")
     packages_raw = lock.get("packages")
-    package_entries = lock_doc.get("packages")
-    if (
-        not isinstance(packages_raw, list)
-        or not isinstance(package_entries, dict)
-        or len(cast(list[object], packages_raw)) + 1 != len(cast(dict[str, Any], package_entries))
-    ):
-        raise ValueError("Linked npm lock membership differs from the reviewed proposal.")
+    _validate_linked_package_lock(lock_doc, packages_raw)
     packages_raw = cast(list[object], packages_raw)
     if not isinstance(request["package_manifest_b64"], str) or not isinstance(
         request["package_lock_b64"], str

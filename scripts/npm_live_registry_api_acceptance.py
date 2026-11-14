@@ -57,7 +57,7 @@ class NoInferenceProvider(LMStudioProvider):
         return None
 
 
-def _make_import_package(root: Path) -> Path:
+def _make_import_package(root: Path, *, lockfile_version: int = 3) -> Path:
     package = root / "fixture-plugin"
     skill = package / "skills" / "live-npm-check"
     skill.mkdir(parents=True)
@@ -80,10 +80,10 @@ def _make_import_package(root: Path) -> Path:
         "version": "1.0.0",
         "dependencies": {ROOT_PACKAGE["name"]: "^3.0.1"},
     }
-    lock = {
+    lock: dict[str, Any] = {
         "name": manifest["name"],
         "version": manifest["version"],
-        "lockfileVersion": 3,
+        "lockfileVersion": lockfile_version,
         "requires": True,
         "packages": {
             "": {
@@ -104,6 +104,23 @@ def _make_import_package(root: Path) -> Path:
             },
         },
     }
+    if lockfile_version == 2:
+        # npm v2 carries the v1-compatible dependency tree alongside `packages`.
+        lock["dependencies"] = {
+            ROOT_PACKAGE["name"]: {
+                "version": ROOT_PACKAGE["version"],
+                "resolved": ROOT_PACKAGE["url"],
+                "integrity": ROOT_PACKAGE["integrity"],
+                "requires": {TRANSITIVE_PACKAGE["name"]: "^6.0.0"},
+                "dependencies": {
+                    TRANSITIVE_PACKAGE["name"]: {
+                        "version": TRANSITIVE_PACKAGE["version"],
+                        "resolved": TRANSITIVE_PACKAGE["url"],
+                        "integrity": TRANSITIVE_PACKAGE["integrity"],
+                    }
+                },
+            }
+        }
     (skill / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
     (skill / "package-lock.json").write_text(json.dumps(lock), encoding="utf-8")
     (skill / "scripts" / "check.cjs").write_text(
@@ -138,10 +155,10 @@ def _checked(response: ApiResponse, expected_status: int, label: str) -> dict[st
     return response.json()
 
 
-async def run(distribution: str, report_path: Path) -> dict[str, Any]:
+async def run(distribution: str, report_path: Path, *, lockfile_version: int = 3) -> dict[str, Any]:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     work_root = report_path.parent / f"{report_path.stem}-work"
-    package = _make_import_package(work_root / "import-source")
+    package = _make_import_package(work_root / "import-source", lockfile_version=lockfile_version)
     store = RunStore(work_root / "api-state" / "runs.sqlite3")
     app = create_app(NoInferenceProvider(), SecretStr(TOKEN), store=store)
     auth = {"Authorization": f"Bearer {TOKEN}"}
@@ -150,6 +167,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     installed = False
     evidence: dict[str, Any] = {
         "distribution": distribution,
+        "lockfile_version": lockfile_version,
         "model_inference": "not used",
         "registry_packages": [ROOT_PACKAGE["name"], TRANSITIVE_PACKAGE["name"]],
         "owner_api_steps": [],
@@ -314,9 +332,16 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--distribution", default="Ubuntu-24.04")
+    parser.add_argument("--lockfile-version", type=int, choices=(2, 3), default=3)
     parser.add_argument("--report", type=Path, required=True)
     arguments = parser.parse_args()
-    result = asyncio.run(run(arguments.distribution, arguments.report))
+    result = asyncio.run(
+        run(
+            arguments.distribution,
+            arguments.report,
+            lockfile_version=arguments.lockfile_version,
+        )
+    )
     arguments.report.parent.mkdir(parents=True, exist_ok=True)
     arguments.report.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
