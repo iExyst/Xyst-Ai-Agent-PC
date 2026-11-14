@@ -35,15 +35,18 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await navigation.getByRole('link',{name:'New objective'}).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#new-objective')).toBeInViewport();
+  await expect(page.getByRole('heading',{level:1})).toBeFocused();
   await navigation.getByRole('link',{name:'Tools & integrations'}).click();
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Tools & integrations'})).toHaveAttribute('aria-current','page');
   await expect(page.locator('#integrations')).toBeInViewport();
+  await expect(page.getByRole('heading',{level:1})).toBeFocused();
   await expect(page.getByLabel('Local model')).toHaveCount(0);
   await navigation.getByRole('link',{name:'Model setup'}).click();
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Model setup'})).toHaveAttribute('aria-current','page');
   await expect(page.getByRole('heading',{name:'Model setup'})).toBeVisible();
+  await expect(page.getByRole('heading',{level:1})).toBeFocused();
   await expect(page.getByLabel('Local model')).toBeVisible();
   const demo=page.getByRole('button',{name:'Start read-only onboarding demonstration'});
   await page.getByLabel('Local model').selectOption('fixture/model');
@@ -57,6 +60,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await navigation.getByRole('link',{name:'Active run'}).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#active-run')).toBeInViewport();
+  await expect(page.getByRole('heading',{level:1})).toBeFocused();
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Active run'})).toHaveAttribute('aria-current','page');
   await navigation.getByRole('link',{name:'Saved runs'}).click();
