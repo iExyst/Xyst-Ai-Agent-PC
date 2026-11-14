@@ -37,7 +37,7 @@ body{color:#182230;background:#f4f6f9}
 .app-content p,.app-content li{color:#596579}
 .app-content label{color:#344054}
 .app-content input:not([type=checkbox]),.app-content select,.app-content textarea{background:#fff;color:#182230;border-color:#cfd7e2}
-.app-content input::placeholder,.app-content textarea::placeholder{color:#8a94a4}
+.app-content input::placeholder,.app-content textarea::placeholder{color:#667085}
 .app-content input[type=checkbox]{accent-color:#287a5b}
 .app-content details.advanced-options{background:#f8fafc;border-color:#e2e7ee}
 .app-content details.advanced-options summary,.app-content details>summary{color:#344054}
@@ -118,7 +118,7 @@ body{color:#182230;background:#f4f6f9}
 .composer-private{display:inline-flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid #dbe8df;border-radius:999px;background:#f5faf6;color:#42644f;font-size:11px;font-weight:650;white-space:nowrap}
 .composer-private span{display:grid;place-items:center;min-width:28px;height:20px;padding:0 5px;border-radius:6px;background:#e5f3e9;color:#287a5b;font-size:9px;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
 #run-objective{min-height:132px;height:132px;padding:15px 16px!important;border-radius:11px!important;font-size:14px!important;line-height:1.6!important;resize:vertical}
-#run-objective::placeholder{color:#8b96a5}
+#run-objective::placeholder{color:#667085}
 .setup-summary{margin-top:-3px}
 #get-started ol{margin-top:16px}
 @media(max-width:640px){.composer-heading{align-items:flex-start;flex-direction:column}.composer-heading h2{font-size:19px!important}.composer-private{align-self:flex-start}#run-objective{min-height:115px;height:115px}}

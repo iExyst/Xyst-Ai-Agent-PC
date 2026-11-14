@@ -1,5 +1,17 @@
 import {test,expect} from '@playwright/test';
 
+function relativeLuminance(color:string){
+  const channels=color.match(/[\d.]+/g)?.slice(0,3).map(Number);
+  if(!channels||channels.length!==3)throw new Error(`Unexpected computed color: ${color}`);
+  const [red,green,blue]=channels.map(value=>{const normalized=value/255;return normalized<=0.04045?normalized/12.92:((normalized+0.055)/1.055)**2.4;});
+  return 0.2126*red!+0.7152*green!+0.0722*blue!;
+}
+
+function contrastRatio(foreground:string,background:string){
+  const first=relativeLuminance(foreground),second=relativeLuminance(background);
+  return (Math.max(first,second)+0.05)/(Math.min(first,second)+0.05);
+}
+
 test('onboarding requires a real tool diagnostic and runs its demonstration in Observe mode',async({page})=>{
   let created:Record<string,unknown>|undefined;
   const run={id:'onboarding-run',objective:'Read project documentation',state:'verifying',acceptance_criteria:[],revision:1,model:'fixture/model',limits:{max_iterations:8,max_seconds:900}};
@@ -38,6 +50,8 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await page.keyboard.press('Enter');
   const navigation=page.getByRole('navigation',{name:'Main sections'});
   await expect(navigation.getByRole('link',{name:'New objective'})).toBeVisible();
+  const placeholderPairs=await Promise.all([page.getByLabel('Workspace path').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor})),page.locator('#run-objective').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor}))]);
+  for(const pair of placeholderPairs)expect(contrastRatio(pair.foreground,pair.background)).toBeGreaterThanOrEqual(4.5);
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'New objective'})).toHaveAttribute('aria-current','page');
   await navigation.getByRole('link',{name:'New objective'}).focus();
