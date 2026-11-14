@@ -271,6 +271,7 @@ async def test_windows_readiness_logs_sanitized_probe_mismatch(monkeypatch, capl
         if "readiness child failed validation" in record.getMessage()
     )
     assert "'network_denied': False" in warning
+    assert f"expected_profile={profile}; observed_profile={profile}" in warning
     assert "'nonce':" not in warning
 
 

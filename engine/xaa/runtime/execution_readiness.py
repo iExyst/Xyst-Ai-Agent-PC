@@ -761,6 +761,7 @@ class ExecutionReadiness:
                 output_object = (
                     cast(dict[str, object] | None, output) if isinstance(output, dict) else None
                 )
+                observed_profile = windows_local_profile_fingerprint()
                 output_matches: dict[str, bool] = {
                     "probe_nonce": output_object is not None
                     and output_object.get("nonce") == nonce,
@@ -792,7 +793,7 @@ class ExecutionReadiness:
                     "snapshot_match": result.get("snapshot_sha256") == snapshot.sha256,
                     "output_complete": result.get("output_complete") is True,
                     "workspace_not_persisted": result.get("workspace_changes_persisted") is False,
-                    "profile_match": windows_local_profile_fingerprint() == digest,
+                    "profile_match": observed_profile == digest,
                     **output_matches,
                 }
                 ready = all(result_matches.values())
@@ -805,13 +806,16 @@ class ExecutionReadiness:
                     logging.getLogger(__name__).warning(
                         "Windows AppContainer readiness child failed validation "
                         "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
-                        "elapsed=%s; result_checks=%s; stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
+                        "elapsed=%s; result_checks=%s; expected_profile=%s; observed_profile=%s; "
+                        "stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
                         result.get("succeeded"),
                         result.get("exit_code"),
                         result.get("supervisor_exit_code"),
                         result.get("termination_reason"),
                         result.get("elapsed_seconds"),
                         result_matches,
+                        digest,
+                        observed_profile,
                         result.get("stdout_bytes"),
                         result.get("stderr_bytes"),
                         stderr_excerpt,
