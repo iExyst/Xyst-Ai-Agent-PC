@@ -335,6 +335,109 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     store = ProcedureNpmTarballStore(report_path.parent / "tarballs")
     store.store_files(lock, {lock.packages[0].package_path: archive_path})
     transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 30)
+    required_platform_name = "xaa-required-windows-fixture"
+    required_platform_url = (
+        "https://registry.npmjs.org/xaa-required-windows-fixture/-/"
+        "xaa-required-windows-fixture-1.0.0.tgz"
+    )
+    required_platform_archive = _package_tarball(
+        {
+            "name": required_platform_name,
+            "version": "1.0.0",
+            "main": "index.js",
+            "os": ["win32"],
+        },
+        {"index.js": b"module.exports = 'windows-only-required';\n"},
+    )
+    required_platform_integrity = "sha512-" + base64.b64encode(
+        hashlib.sha512(required_platform_archive).digest()
+    ).decode("ascii")
+    required_platform_manifest = json.dumps(
+        {
+            "name": "xaa-probe-required-platform-project",
+            "version": "1.0.0",
+            "dependencies": {required_platform_name: "^1.0.0"},
+        },
+        separators=(",", ":"),
+    ).encode()
+    required_platform_lock_document = {
+        "name": "xaa-probe-required-platform-project",
+        "version": "1.0.0",
+        "lockfileVersion": 3,
+        "requires": True,
+        "packages": {
+            "": {
+                "name": "xaa-probe-required-platform-project",
+                "version": "1.0.0",
+                "dependencies": {required_platform_name: "^1.0.0"},
+            },
+            f"node_modules/{required_platform_name}": {
+                "version": "1.0.0",
+                "resolved": required_platform_url,
+                "integrity": required_platform_integrity,
+                "os": ["win32"],
+            },
+        },
+    }
+    required_platform_package_lock = json.dumps(
+        required_platform_lock_document, separators=(",", ":")
+    ).encode()
+    required_platform_lock = ProcedureNpmDependencyLock(
+        schema_version=1,
+        skill_id=str(uuid4()),
+        skill_version=1,
+        source_sha256="e" * 64,
+        package_manifest_sha256=hashlib.sha256(required_platform_manifest).hexdigest(),
+        lockfile_sha256=hashlib.sha256(required_platform_package_lock).hexdigest(),
+        distribution=distribution,
+        node_version=node_version,
+        npm_version=npm_version,
+        requirements=(f"{required_platform_name}@^1.0.0",),
+        root_dependencies=(
+            NpmRootDependency(
+                name=required_platform_name, version_range="^1.0.0", kind="dependencies"
+            ),
+        ),
+        packages=(
+            NpmLockedPackage(
+                package_path=f"node_modules/{required_platform_name}",
+                name=required_platform_name,
+                version="1.0.0",
+                resolved_url=required_platform_url,
+                integrity=required_platform_integrity,
+            ),
+        ),
+    )
+    required_platform_archive_path = report_path.parent / "required-windows-fixture.tgz"
+    required_platform_archive_path.write_bytes(required_platform_archive)
+    required_platform_store = ProcedureNpmTarballStore(report_path.parent / "required-tarballs")
+    required_platform_store.store_files(
+        required_platform_lock,
+        {required_platform_lock.packages[0].package_path: required_platform_archive_path},
+    )
+    required_platform_digest = required_platform_lock.environment_digest()
+    try:
+        await transport.install_node_environment(
+            required_platform_lock,
+            required_platform_manifest,
+            required_platform_package_lock,
+            required_platform_store.root / required_platform_digest,
+            deadline=time.monotonic() + 300,
+        )
+    except TransportError:
+        pass
+    else:
+        await transport.remove_node_environment(
+            required_platform_digest, deadline=time.monotonic() + 30
+        )
+        raise RuntimeError(
+            "npm accepted a required package restricted to another operating system."
+        )
+    required_platform_status = await transport.node_environment_status(
+        required_platform_digest, deadline=time.monotonic() + 30
+    )
+    if required_platform_status.get("installed") is not False:
+        raise RuntimeError("Failed required-platform install left a published environment.")
     directory = store.root / lock.environment_digest()
     installed: dict[str, Any] | None = None
     rollback_lock: ProcedureNpmDependencyLock | None = None
@@ -1110,6 +1213,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "optional_peer_dependency_absence_accepted": True,
             "incompatible_platform_optional_dependency_skipped": True,
             "incompatible_cpu_optional_dependency_skipped": True,
+            "required_incompatible_platform_dependency_failed_cleanly": True,
             "transitive_environment_removed_exactly": True,
             "both_active_environments_refused_removal": True,
             "integrity_status": True,

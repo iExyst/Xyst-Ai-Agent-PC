@@ -1,6 +1,8 @@
 # Hermes capability reference matrix
 
-Live Ubuntu-24.04 WSL acceptance now covers two locked versions of one transitive package: root resolution selects `2.0.0`, while the scoped plugin loads its nested `1.0.0` copy. Exact tarballs install offline under npm 9.2.0, and the procedure-bound command verifies both paths alongside recovery, isolation, cleanup and platform optional behavior: [report](../../.acceptance/npm-duplicate-versions-retry-20261114/report.json). This demonstrates nearest-path resolution for this fixture only; broad npm parity and model-mediated procedure execution remain open.
+Live Ubuntu-24.04 WSL acceptance now covers two locked versions of one transitive package: root resolution selects `2.0.0`, while the scoped plugin loads its nested `1.0.0` copy. Exact tarballs install offline under npm 9.2.0, and the procedure-bound command verifies both paths alongside recovery, isolation, cleanup and platform optional behavior: [report](../../.acceptance/npm-duplicate-versions-retry-20261114/report.json). Hosted Windows source run [43594360256](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43594360256) passed the full source workflow but does not provision WSL. This demonstrates nearest-path resolution for this fixture only; broad npm parity and model-mediated procedure execution remain open.
+
+The Ubuntu-24.04 WSL npm fixture also confirms a required `win32`-only package fails installation on Linux without leaving a published environment; the optional platform-filter cases still skip cleanly: [report](../../.acceptance/npm-required-platform-20261114/report.json). This failure-path behavior is verified for npm 9.2.0 on one distribution; broad npm install parity remains open.
 
 ## Verify CPU-specific optional npm dependency handling (2026-11-14)
 
