@@ -434,7 +434,11 @@ class WindowsLocalTransport:
                     if isolated_python_worker
                     else []
                 ),
-                [str(workspace), str(temporary)],
+                # The one-file isolation shim extracts its own runtime under
+                # this dedicated TEMP directory before it starts the command.
+                # Grant only this per-execution subtree so the AppContainer
+                # can read/write its extraction and the parent can clean it up.
+                [str(workspace), str(temporary), str(shim_temporary)],
                 _journal_root(),
                 grant_argument_paths=False,
                 grant_executable_directory=(
