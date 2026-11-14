@@ -9,6 +9,7 @@ import io
 import json
 import os
 import subprocess
+import tarfile
 import time
 import uuid
 from pathlib import Path, PurePosixPath
@@ -50,13 +51,24 @@ def _tarball(
         }
     )
     output = io.BytesIO()
-    import tarfile
-
     with tarfile.open(fileobj=output, mode="w:gz") as archive:
         for name, data in members.items():
             info = tarfile.TarInfo(name)
             info.size = len(data)
             info.mode = 0o755 if name.endswith("cli.js") else 0o644
+            archive.addfile(info, io.BytesIO(data))
+    return output.getvalue()
+
+
+def _package_tarball(package: dict[str, object], files: dict[str, bytes]) -> bytes:
+    members = {"package/package.json": json.dumps(package, separators=(",", ":")).encode()}
+    members.update({f"package/{name}": data for name, data in files.items()})
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w:gz") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = 0o644
             archive.addfile(info, io.BytesIO(data))
     return output.getvalue()
 
@@ -323,6 +335,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     installed: dict[str, Any] | None = None
     rollback_lock: ProcedureNpmDependencyLock | None = None
     other_procedure_lock: ProcedureNpmDependencyLock | None = None
+    graph_lock: ProcedureNpmDependencyLock | None = None
     try:
         _seed_interrupted_install(distribution, lock.environment_digest())
         installed = await transport.install_node_environment(
@@ -548,6 +561,167 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             or original_after_other_removal.get("installed") is not True
         ):
             raise RuntimeError("Removing one procedure's npm environment affected another.")
+        scoped_name = "@xaa/fixture-plugin"
+        transitive_name = "xaa-transitive-fixture"
+        scoped_url = "https://registry.npmjs.org/@xaa/fixture-plugin/-/fixture-plugin-1.0.0.tgz"
+        transitive_url = (
+            "https://registry.npmjs.org/xaa-transitive-fixture/-/xaa-transitive-fixture-1.0.0.tgz"
+        )
+        scoped_archive = _package_tarball(
+            {
+                "name": scoped_name,
+                "version": "1.0.0",
+                "main": "index.js",
+                "dependencies": {transitive_name: "^1.0.0"},
+            },
+            {"index.js": b"module.exports = require('xaa-transitive-fixture') + '-scoped';\n"},
+        )
+        transitive_archive = _package_tarball(
+            {"name": transitive_name, "version": "1.0.0", "main": "index.js"},
+            {"index.js": b"module.exports = 'offline-transitive';\n"},
+        )
+        scoped_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(scoped_archive).digest()
+        ).decode("ascii")
+        transitive_integrity = "sha512-" + base64.b64encode(
+            hashlib.sha512(transitive_archive).digest()
+        ).decode("ascii")
+        graph_manifest = json.dumps(
+            {
+                "name": "xaa-probe-transitive-project",
+                "version": "1.0.0",
+                "dependencies": {scoped_name: "^1.0.0"},
+            },
+            separators=(",", ":"),
+        ).encode()
+        graph_lock_document = {
+            "name": "xaa-probe-transitive-project",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "requires": True,
+            "packages": {
+                "": {
+                    "name": "xaa-probe-transitive-project",
+                    "version": "1.0.0",
+                    "dependencies": {scoped_name: "^1.0.0"},
+                },
+                "node_modules/@xaa/fixture-plugin": {
+                    "version": "1.0.0",
+                    "resolved": scoped_url,
+                    "integrity": scoped_integrity,
+                    "dependencies": {transitive_name: "^1.0.0"},
+                },
+                "node_modules/@xaa/fixture-plugin/node_modules/xaa-transitive-fixture": {
+                    "version": "1.0.0",
+                    "resolved": transitive_url,
+                    "integrity": transitive_integrity,
+                },
+            },
+        }
+        graph_package_lock = json.dumps(graph_lock_document, separators=(",", ":")).encode()
+        graph_lock = ProcedureNpmDependencyLock(
+            schema_version=1,
+            skill_id=str(uuid4()),
+            skill_version=1,
+            source_sha256="d" * 64,
+            package_manifest_sha256=hashlib.sha256(graph_manifest).hexdigest(),
+            lockfile_sha256=hashlib.sha256(graph_package_lock).hexdigest(),
+            distribution=distribution,
+            node_version=node_version,
+            npm_version=npm_version,
+            requirements=(f"{scoped_name}@^1.0.0",),
+            root_dependencies=(
+                NpmRootDependency(name=scoped_name, version_range="^1.0.0", kind="dependencies"),
+            ),
+            packages=(
+                NpmLockedPackage(
+                    package_path="node_modules/@xaa/fixture-plugin",
+                    name=scoped_name,
+                    version="1.0.0",
+                    resolved_url=scoped_url,
+                    integrity=scoped_integrity,
+                ),
+                NpmLockedPackage(
+                    package_path=(
+                        "node_modules/@xaa/fixture-plugin/node_modules/xaa-transitive-fixture"
+                    ),
+                    name=transitive_name,
+                    version="1.0.0",
+                    resolved_url=transitive_url,
+                    integrity=transitive_integrity,
+                ),
+            ),
+        )
+        scoped_archive_path = report_path.parent / "scoped-fixture.tgz"
+        transitive_archive_path = report_path.parent / "transitive-fixture.tgz"
+        scoped_archive_path.write_bytes(scoped_archive)
+        transitive_archive_path.write_bytes(transitive_archive)
+        store.store_files(
+            graph_lock,
+            {
+                graph_lock.packages[0].package_path: scoped_archive_path,
+                graph_lock.packages[1].package_path: transitive_archive_path,
+            },
+        )
+        graph_installed = await transport.install_node_environment(
+            graph_lock,
+            graph_manifest,
+            graph_package_lock,
+            store.root / graph_lock.environment_digest(),
+            deadline=time.monotonic() + 300,
+        )
+        graph_script_path = f"__xaa_selected_skill__/{graph_lock.skill_id}/v1/check.cjs"
+        graph_procedure_path = f"__xaa_selected_skill__/{graph_lock.skill_id}/v1"
+        graph_script = (
+            "const fs=require('fs'),value=require('@xaa/fixture-plugin');"
+            "if(value!=='offline-transitive-scoped')process.exit(10);"
+            f"if(fs.realpathSync('{graph_procedure_path}/node_modules')!=="
+            "'/opt/xaa/procedure-node/node_modules')process.exit(8);"
+            "if(fs.existsSync('node_modules'))process.exit(9);"
+            "process.stdout.write(value);"
+        ).encode("ascii")
+        graph_snapshot = WorkspaceSnapshot(
+            files=(SnapshotFile(graph_script_path, graph_script),),
+            directories=(
+                "__xaa_selected_skill__",
+                f"__xaa_selected_skill__/{graph_lock.skill_id}",
+                graph_procedure_path,
+            ),
+        )
+        graph_intent = intent.model_copy(
+            update={
+                "argv": ["node", graph_script_path],
+                "execution_id": uuid.uuid4().hex,
+                "max_seconds": 10,
+                "procedure_node_environment_digest": graph_lock.environment_digest(),
+                "procedure_node_environment_tree_sha256": graph_installed["tree_sha256"],
+                "procedure_skill_id": graph_lock.skill_id,
+                "procedure_version": graph_lock.skill_version,
+            }
+        )
+        graph_result = await transport.run(
+            graph_intent, graph_snapshot, deadline=time.monotonic() + 30
+        )
+        if (
+            graph_installed.get("installed") is not True
+            or graph_result.get("succeeded") is not True
+            or graph_result.get("stdout_b64")
+            != base64.b64encode(b"offline-transitive-scoped").decode("ascii")
+            or graph_result.get("procedure_node_environment_digest")
+            != graph_lock.environment_digest()
+            or graph_result.get("cleanup_confirmed") is not True
+        ):
+            raise RuntimeError(
+                "Scoped npm package with a nested transitive dependency failed in WSL."
+            )
+        graph_removed = await transport.remove_node_environment(
+            graph_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        graph_after = await transport.node_environment_status(
+            graph_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        if graph_removed.get("removed") is not True or graph_after.get("installed") is not False:
+            raise RuntimeError("Exact cleanup of the scoped transitive npm environment failed.")
         rollback_archive = _tarball(version="1.1.0", module_value="new-version")
         rollback_integrity = "sha512-" + base64.b64encode(
             hashlib.sha512(rollback_archive).digest()
@@ -709,6 +883,9 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "concurrent_distinct_procedures_isolated": True,
             "cross_procedure_active_removal_refused": True,
             "cross_procedure_exact_removal_preserved_neighbor": True,
+            "scoped_package_installed_offline": True,
+            "nested_transitive_dependency_loaded_in_procedure": True,
+            "transitive_environment_removed_exactly": True,
             "both_active_environments_refused_removal": True,
             "integrity_status": True,
             "exact_environment_removed": True,
@@ -723,6 +900,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         if other_procedure_lock is not None:
             await transport.remove_node_environment(
                 other_procedure_lock.environment_digest(), deadline=time.monotonic() + 30
+            )
+        if graph_lock is not None:
+            await transport.remove_node_environment(
+                graph_lock.environment_digest(), deadline=time.monotonic() + 30
             )
         await transport.remove_node_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
