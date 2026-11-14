@@ -1149,6 +1149,7 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
 
         review = f"{endpoint}/{dependency_lock.environment_digest()}/review"
         acquire = f"{endpoint}/{dependency_lock.environment_digest()}/acquire"
+        install = f"{endpoint}/{dependency_lock.environment_digest()}/install"
         assert client.post(review, json={"decision": "approved"}).status_code == 401
         unavailable = client.post(review, headers=headers, json={"decision": "approved"})
         assert unavailable.status_code == 409
@@ -1193,6 +1194,7 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         acquired = client.post(acquire, headers=headers)
         assert acquired.status_code == 200, acquired.text
         assert acquired.json()["wheelhouse_present"] is True
+        assert client.post(install, headers=headers).status_code == 409
         wheel_path = (
             tmp_path
             / "procedure-wheelhouses"
@@ -1207,6 +1209,42 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         assert approved.status_code == 200
         assert approved.json()["decision"] == "approved"
         assert approved.json()["wheelhouse_present"] is True
+
+        class FixtureWSLTransport:
+            async def install_procedure_environment(
+                self,
+                supplied_lock: ProcedurePythonDependencyLock,
+                wheelhouse_path: Path,
+                *,
+                deadline: float,
+            ) -> dict[str, object]:
+                assert supplied_lock == dependency_lock
+                assert wheelhouse_path.is_dir()
+                assert deadline > 0
+                return {
+                    "environment_digest": supplied_lock.environment_digest(),
+                    "lock_sha256": hashlib.sha256(
+                        supplied_lock.canonical_json().encode("ascii")
+                    ).hexdigest(),
+                    "installed": True,
+                    "tree_sha256": "f" * 64,
+                    "installed_bytes": 4096,
+                    "file_count": 15,
+                }
+
+        async def fixture_discover(_cls, distribution: str, *, deadline: float):
+            assert distribution == "Ubuntu-24.04"
+            assert deadline > 0
+            return FixtureWSLTransport()
+
+        monkeypatch.setattr(api_module.WSLTransport, "discover", classmethod(fixture_discover))
+        installed = client.post(install, headers=headers)
+        assert installed.status_code == 200, installed.text
+        assert installed.json()["environment_installed"] is True
+        assert installed.json()["installed_tree_sha256"] == "f" * 64
+        assert installed.json()["installed_bytes"] == 4096
+        listed_after_install = client.get(endpoint, headers=headers).json()["locks"][0]
+        assert listed_after_install["environment_installed"] is True
         rejected = client.post(review, headers=headers, json={"decision": "rejected"})
         assert rejected.status_code == 409
 

@@ -59,6 +59,18 @@ class CommandIntent(CommandArguments):
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     profile_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     workspace: str
+    procedure_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    procedure_environment_tree_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def paired_procedure_environment(self) -> "CommandIntent":
+        if (self.procedure_environment_digest is None) != (
+            self.procedure_environment_tree_sha256 is None
+        ):
+            raise ValueError("Procedure environment identity and tree proof must be paired.")
+        if self.procedure_environment_digest is not None and self.backend != "wsl-bubblewrap-v1":
+            raise ValueError("Procedure Python environments are available only in WSL.")
+        return self
 
 
 def command_workspace(workspace: str | None, database: Path, mode: str) -> Path:

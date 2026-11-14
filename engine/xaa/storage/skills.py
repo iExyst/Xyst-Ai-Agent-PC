@@ -338,6 +338,7 @@ class SkillTrial(BaseModel):
 class SkillTrialRecord(SkillTrial):
     name: str
     snapshot_sha256: str
+    python_environment: dict[str, str] | None = None
 
 
 TRIAL_TOOLS = {
@@ -1440,7 +1441,98 @@ class SkillStore:
         lock = ProcedurePythonDependencyLock.model_validate_json(value.pop("lock_json"))
         value["wheelhouse_present"] = self.wheelhouses.present(lock)
         value["lock"] = lock.model_dump(mode="json")
+        with self.runs.connection() as connection:
+            environment = connection.execute(
+                "SELECT distribution,tree_sha256,installed_bytes,file_count,installed_at "
+                "FROM skill_python_dependency_environments WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, lock.environment_digest()),
+            ).fetchone()
+        value["environment_installed"] = environment is not None
+        value["installed_tree_sha256"] = (
+            environment["tree_sha256"] if environment is not None else None
+        )
+        value["installed_bytes"] = (
+            environment["installed_bytes"] if environment is not None else None
+        )
+        value["installed_file_count"] = (
+            environment["file_count"] if environment is not None else None
+        )
+        value["installed_at"] = environment["installed_at"] if environment is not None else None
         return value
+
+    def record_python_dependency_environment(
+        self, lock: ProcedurePythonDependencyLock, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist WSL's proof for one approved, content-addressed environment."""
+        digest = lock.environment_digest()
+        tree_sha256 = result.get("tree_sha256")
+        installed_bytes = result.get("installed_bytes")
+        file_count = result.get("file_count")
+        lock_sha256 = hashlib.sha256(lock.canonical_json().encode("ascii")).hexdigest()
+        if (
+            result.get("environment_digest") != digest
+            or result.get("lock_sha256") != lock_sha256
+            or result.get("installed") is not True
+            or not isinstance(tree_sha256, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", tree_sha256)
+            or type(installed_bytes) is not int
+            or not 1 <= installed_bytes <= 671088640
+            or type(file_count) is not int
+            or not 1 <= file_count <= 20_000
+        ):
+            raise SkillConflict("WSL did not return a valid immutable environment receipt.")
+        try:
+            self.wheelhouses.verify(lock)
+        except WheelhouseStorageError as exc:
+            raise SkillConflict("The reviewed wheelhouse changed during WSL installation.") from exc
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT lock_json,decision FROM skill_python_dependency_locks "
+                "WHERE skill_id=? AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+            if row is None or row["lock_json"] != lock.canonical_json():
+                raise SkillConflict("Save the exact dependency lock before installation.")
+            if row["decision"] != "approved":
+                raise SkillConflict("Only an approved dependency lock can be installed.")
+            previous = connection.execute(
+                "SELECT tree_sha256,installed_bytes,file_count FROM "
+                "skill_python_dependency_environments WHERE skill_id=? AND skill_version=? "
+                "AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+            if previous is not None and (
+                previous["tree_sha256"] != tree_sha256
+                or previous["installed_bytes"] != installed_bytes
+                or previous["file_count"] != file_count
+            ):
+                raise SkillConflict(
+                    "An immutable dependency environment changed after installation."
+                )
+            connection.execute(
+                "INSERT OR IGNORE INTO skill_python_dependency_environments "
+                "(skill_id,skill_version,environment_digest,distribution,tree_sha256,installed_bytes,file_count,installed_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    lock.skill_id,
+                    lock.skill_version,
+                    digest,
+                    lock.target.distribution,
+                    tree_sha256,
+                    installed_bytes,
+                    file_count,
+                    utc_now(),
+                ),
+            )
+            saved = connection.execute(
+                "SELECT * FROM skill_python_dependency_locks WHERE skill_id=? "
+                "AND skill_version=? AND environment_digest=?",
+                (lock.skill_id, lock.skill_version, digest),
+            ).fetchone()
+        assert saved is not None
+        return self._python_dependency_lock_record(saved)
 
     def store_python_dependency_wheelhouse(
         self, lock: ProcedurePythonDependencyLock, artifacts: dict[str, bytes]

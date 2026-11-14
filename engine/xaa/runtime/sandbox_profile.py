@@ -98,7 +98,9 @@ def syscall_filter() -> bytes:
         seccomp.seccomp_release(context)
 
 
-def bubblewrap_arguments(source: Path, argv: list[str]) -> list[str]:
+def bubblewrap_arguments(
+    source: Path, argv: list[str], procedure_environment: Path | None = None
+) -> list[str]:
     """stdin is the BPF descriptor and is consumed before the command starts."""
     bootstrap = (
         "import json,os,pathlib,shutil,sys;"
@@ -115,6 +117,19 @@ def bubblewrap_arguments(source: Path, argv: list[str]) -> list[str]:
     )
     import json
 
+    path = "/usr/bin:/bin"
+    environment_mount: list[str] = []
+    if procedure_environment is not None:
+        path = "/opt/xaa/procedure-python/bin:/usr/bin:/bin"
+        environment_mount = [
+            "--dir",
+            "/opt",
+            "--dir",
+            "/opt/xaa",
+            "--ro-bind",
+            str(procedure_environment),
+            "/opt/xaa/procedure-python",
+        ]
     return [
         "/usr/bin/bwrap",
         "--unshare-all",
@@ -137,7 +152,7 @@ def bubblewrap_arguments(source: Path, argv: list[str]) -> list[str]:
         "--clearenv",
         "--setenv",
         "PATH",
-        "/usr/bin:/bin",
+        path,
         "--setenv",
         "LANG",
         "C.UTF-8",
@@ -163,6 +178,7 @@ def bubblewrap_arguments(source: Path, argv: list[str]) -> list[str]:
         "--ro-bind",
         str(source),
         "/input",
+        *environment_mount,
         "--size",
         "33554432",
         "--tmpfs",

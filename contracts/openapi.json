@@ -3775,6 +3775,60 @@
             "title": "Environment Digest",
             "type": "string"
           },
+          "environment_installed": {
+            "default": false,
+            "title": "Environment Installed",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "installed_bytes": {
+            "anyOf": [
+              {
+                "maximum": 671088640.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed Bytes"
+          },
+          "installed_file_count": {
+            "anyOf": [
+              {
+                "maximum": 20000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed File Count"
+          },
+          "installed_tree_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed Tree Sha256"
+          },
           "lock": {
             "$ref": "#/components/schemas/ProcedurePythonDependencyLock"
           },
@@ -5449,6 +5503,20 @@
             ],
             "title": "Purpose",
             "type": "string"
+          },
+          "python_environment": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Environment"
           },
           "skill_id": {
             "maxLength": 128,
@@ -13138,6 +13206,70 @@
           }
         ],
         "summary": "Acquire Skill Python Dependency Wheelhouse"
+      }
+    },
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/install": {
+      "post": {
+        "operationId": "install_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment_digest",
+            "required": true,
+            "schema": {
+              "title": "Environment Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PythonDependencyLockRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Install Skill Python Dependency Environment"
       }
     },
     "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review": {

@@ -21,6 +21,7 @@ RESOURCE_NAMES = (
     "sandbox_profile.py",
     "execution_receipts.py",
     "cgroup_gate.py",
+    "procedure_environment_manager.py",
 )
 
 
@@ -95,7 +96,7 @@ class WSLTransport:
             paths.append(value)
         if profile_fingerprint()[0] != digest:
             raise TransportError("Execution resources changed during discovery.")
-        return cls(distribution, digest, (*prefix, "/usr/bin/python3", "-I", *paths[:4]))
+        return cls(distribution, digest, (*prefix, "/usr/bin/python3", "-I", *paths))
 
     def require_intent(self, intent: CommandIntent) -> None:
         if intent.distribution != self.distribution or intent.profile_sha256 != self.profile_sha256:
@@ -115,15 +116,17 @@ class WSLTransport:
         remaining = deadline - time.monotonic()
         if remaining < intent.max_seconds:
             raise TimeoutError("Command duration exceeds the remaining parent time budget.")
-        payload = json.dumps(
-            {
-                "action": "run",
-                "execution_id": intent.execution_id,
-                "argv": intent.argv,
-                "max_seconds": intent.max_seconds,
-                "snapshot_b64": base64.b64encode(snapshot.to_bytes()).decode("ascii"),
-            }
-        ).encode("utf-8")
+        request: dict[str, Any] = {
+            "action": "run",
+            "execution_id": intent.execution_id,
+            "argv": intent.argv,
+            "max_seconds": intent.max_seconds,
+            "snapshot_b64": base64.b64encode(snapshot.to_bytes()).decode("ascii"),
+        }
+        if intent.procedure_environment_digest is not None:
+            request["procedure_environment_digest"] = intent.procedure_environment_digest
+            request["procedure_environment_tree_sha256"] = intent.procedure_environment_tree_sha256
+        payload = json.dumps(request).encode("utf-8")
         if len(payload) > 18 * 1024 * 1024:
             raise ValueError("Command request exceeds the manager transport limit.")
 
@@ -197,4 +200,152 @@ class WSLTransport:
         result = response_object(raw)
         if result.get("execution_id") != intent.execution_id:
             raise TransportError("Manager replied for a different execution identity.")
+        return result
+
+    async def install_procedure_environment(
+        self,
+        lock: Any,
+        wheelhouse_path: Path,
+        *,
+        deadline: float,
+    ) -> dict[str, Any]:
+        """Install an already owner-approved immutable lock using the root WSL manager."""
+        from xaa.extensions.procedure_dependencies import ProcedurePythonDependencyLock
+
+        if not isinstance(lock, ProcedurePythonDependencyLock):
+            raise TypeError("Install request must contain a validated dependency lock.")
+        if lock.target.distribution != self.distribution:
+            raise PermissionError("Procedure lock targets a different WSL distribution.")
+        if profile_fingerprint()[0] != self.profile_sha256:
+            raise PermissionError("WSL manager profile changed; rediscover before installation.")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Procedure environment installation deadline expired.")
+        windows_path = wheelhouse_path.resolve(strict=True)
+        mapper = (
+            "import json,subprocess,sys\n"
+            "paths=json.load(sys.stdin)\n"
+            "mapped=[]\n"
+            "for path in paths:\n"
+            " result=subprocess.run(['/usr/bin/wslpath','-a','-u',path],check=True,"
+            "stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)\n"
+            " mapped.append(result.stdout.strip())\n"
+            "sys.stdout.write(json.dumps(mapped))\n"
+        )
+        prefix = (
+            str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/wsl.exe"),
+            "--distribution",
+            self.distribution,
+            "--user",
+            "root",
+            "--exec",
+        )
+        mapped_raw = await request_process(
+            (*prefix, "/usr/bin/python3", "-I", "-c", mapper),
+            json.dumps([str(windows_path)]).encode("utf-8"),
+            timeout=min(20, deadline - time.monotonic()),
+            output_limit=8192,
+        )
+        try:
+            mapped_value: object = json.loads(mapped_raw.decode("utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise TransportError("WSL returned invalid wheelhouse path data.") from exc
+        if not isinstance(mapped_value, list):
+            raise TransportError("WSL returned an invalid wheelhouse path.")
+        mapped_paths = cast(list[object], mapped_value)
+        if (
+            len(mapped_paths) != 1
+            or not isinstance(mapped_paths[0], str)
+            or not mapped_paths[0].startswith("/mnt/")
+        ):
+            raise TransportError("WSL returned an invalid wheelhouse path.")
+        payload = json.dumps(
+            {
+                "action": "install",
+                "environment_digest": lock.environment_digest(),
+                "lock_json": lock.canonical_json(),
+                "wheelhouse_path": mapped_paths[0],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        if len(payload) > 512 * 1024:
+            raise ValueError("Procedure dependency install request exceeds its transport limit.")
+        raw = await request_process(
+            self.invocation,
+            payload,
+            timeout=deadline - time.monotonic(),
+            output_limit=16384,
+        )
+        result = response_object(raw)
+        if (
+            result.get("environment_digest") != lock.environment_digest()
+            or result.get("lock_sha256")
+            != hashlib.sha256(lock.canonical_json().encode("ascii")).hexdigest()
+            or result.get("installed") is not True
+            or not isinstance(result.get("tree_sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", cast(str, result.get("tree_sha256")))
+        ):
+            error_code = result.get("error_code")
+            if isinstance(error_code, str):
+                detail = result.get("error_detail")
+                if isinstance(detail, str) and len(detail) <= 240:
+                    raise TransportError(
+                        "WSL procedure environment installation failed ("
+                        + error_code
+                        + "): "
+                        + detail
+                    )
+                raise TransportError("WSL procedure environment installation failed: " + error_code)
+            raise TransportError("WSL did not confirm the exact immutable procedure environment.")
+        return result
+
+    async def procedure_environment_status(
+        self, environment_digest: str, *, deadline: float
+    ) -> dict[str, Any]:
+        if not re.fullmatch(r"[a-f0-9]{64}", environment_digest):
+            raise ValueError("Procedure environment identity is invalid.")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Procedure environment status deadline expired.")
+        raw = await request_process(
+            self.invocation,
+            json.dumps(
+                {"action": "status", "environment_digest": environment_digest},
+                separators=(",", ":"),
+            ).encode("ascii"),
+            timeout=deadline - time.monotonic(),
+            output_limit=8192,
+        )
+        result = response_object(raw)
+        if isinstance(result.get("error_code"), str):
+            raise TransportError("WSL procedure environment status failed.")
+        if (
+            result.get("environment_digest") != environment_digest
+            or type(result.get("installed")) is not bool
+        ):
+            raise TransportError("WSL returned an invalid procedure environment status.")
+        return result
+
+    async def remove_procedure_environment(
+        self, environment_digest: str, *, deadline: float
+    ) -> dict[str, Any]:
+        if not re.fullmatch(r"[a-f0-9]{64}", environment_digest):
+            raise ValueError("Procedure environment identity is invalid.")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Procedure environment removal deadline expired.")
+        raw = await request_process(
+            self.invocation,
+            json.dumps(
+                {"action": "remove", "environment_digest": environment_digest},
+                separators=(",", ":"),
+            ).encode("ascii"),
+            timeout=deadline - time.monotonic(),
+            output_limit=8192,
+        )
+        result = response_object(raw)
+        if isinstance(result.get("error_code"), str):
+            raise TransportError("WSL procedure environment removal failed.")
+        if (
+            result.get("environment_digest") != environment_digest
+            or result.get("removed") is not True
+        ):
+            raise TransportError("WSL did not confirm exact procedure environment removal.")
         return result

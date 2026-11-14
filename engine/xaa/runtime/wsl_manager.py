@@ -81,8 +81,18 @@ def run(
     profile: dict[str, Any],
     journal: Any,
     emit_output: Any = None,
+    procedure_environment_path: Any = None,
 ) -> dict[str, Any]:
-    if set(request) != {"action", "execution_id", "argv", "max_seconds", "snapshot_b64"}:
+    required_fields = {"action", "execution_id", "argv", "max_seconds", "snapshot_b64"}
+    environment_fields = {
+        "procedure_environment_digest",
+        "procedure_environment_tree_sha256",
+    }
+    request_fields = frozenset(request)
+    if request_fields not in {
+        frozenset(required_fields),
+        frozenset(required_fields | environment_fields),
+    }:
         raise ValueError("Invalid execution request fields.")
     identity = execution_id(request["execution_id"])
     raw_arguments = request["argv"]
@@ -105,6 +115,14 @@ def run(
     snapshot = codec["WorkspaceSnapshot"].from_bytes(
         base64.b64decode(encoded_snapshot, validate=True)
     )
+    environment_path = None
+    if environment_fields & request.keys():
+        if environment_fields - request.keys() or procedure_environment_path is None:
+            raise ValueError("Procedure environment identity is incomplete.")
+        environment_path = procedure_environment_path(
+            request["procedure_environment_digest"],
+            request["procedure_environment_tree_sha256"],
+        )
     bpf = profile["syscall_filter"]()
     stage = BASE / identity
     process: subprocess.Popen[bytes] | None = None
@@ -138,7 +156,7 @@ def run(
                 f"--property=RuntimeMaxSec={seconds}s",
                 "--property=TimeoutStopSec=1s",
                 "--property=KillMode=control-group",
-            ] + profile["bubblewrap_arguments"](source, arguments)
+            ] + profile["bubblewrap_arguments"](source, arguments, environment_path)
             started = time.monotonic()
             process = subprocess.Popen(
                 command,
@@ -207,6 +225,8 @@ def run(
             "output_complete": reason not in {"output_limit", "manager_deadline"},
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "workspace_changes_persisted": False,
+            "procedure_environment_digest": request.get("procedure_environment_digest"),
+            "procedure_environment_tree_sha256": request.get("procedure_environment_tree_sha256"),
             "limits": {
                 "max_active_executions": journal.active_limit,
                 "memory_bytes": 134217728,
@@ -267,6 +287,7 @@ def main() -> None:
     request = decode_request(raw)
     prepare_base()
     receipts = runpy.run_path(sys.argv[3])
+    environments = runpy.run_path(sys.argv[5])
     journal = receipts["ExecutionReceipts"](Path("/var/lib/xaa-execution-manager"))
     if request.get("action") in {"stop", "cleanup", "status"} and set(request) == {
         "action",
@@ -295,6 +316,28 @@ def main() -> None:
             else:
                 cleanup(identity, journal)
                 print(json.dumps({"execution_id": identity, "cleanup_confirmed": True}))
+    elif request.get("action") in {"install", "status", "remove"}:
+        filter_bytes = runpy.run_path(sys.argv[2])["syscall_filter"]()
+        try:
+            result = environments["dispatch"](request, filter_bytes, journal._file_lock)
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            TypeError,
+            KeyError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            print(
+                json.dumps(
+                    {
+                        "error_code": environments["error_code"](exc),
+                        "error_detail": environments["error_detail"](exc),
+                    }
+                )
+            )
+        else:
+            print(json.dumps(result))
     elif request.get("action") == "run":
 
         def emit_output(stream: str, chunk: bytes) -> None:
@@ -310,7 +353,12 @@ def main() -> None:
             )
 
         result = run(
-            request, runpy.run_path(sys.argv[1]), runpy.run_path(sys.argv[2]), journal, emit_output
+            request,
+            runpy.run_path(sys.argv[1]),
+            runpy.run_path(sys.argv[2]),
+            journal,
+            emit_output,
+            environments["execution_path"],
         )
         print(json.dumps({"type": "result", "result": result}), flush=True)
     else:

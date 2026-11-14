@@ -43,8 +43,8 @@ async def test_discovery_maps_all_worker_resources_with_one_bounded_wsl_launch(m
     )
     assert payload == [str(path) for path in resources]
     assert 0 < timeout <= 30 and output_limit == 8192
-    assert transport.invocation[-4:] == tuple(
-        f"/mnt/c/engine/resource-{index}.py" for index in range(4)
+    assert transport.invocation[-5:] == tuple(
+        f"/mnt/c/engine/resource-{index}.py" for index in range(5)
     )
     assert transport.profile_sha256 == digest
 

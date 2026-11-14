@@ -68,6 +68,19 @@ body{color:#182230;background:#f4f6f9}
 #run-objective{min-height:94px;height:100px}
 @media(max-width:760px){#get-started ol{grid-template-columns:1fr;gap:6px}}
 
+/* Put the objective composer near the top so the first screen feels like an
+   agent workspace instead of a setup checklist. */
+.app-content{display:flex;flex-direction:column}
+.app-content>.welcome-card{order:0}
+.app-content>.workspace-card{order:1;min-height:0;padding:12px 18px;align-items:center}
+.app-content>#new-objective{order:2}
+.app-content>#get-started{order:3}
+.app-content>.saved-conversations{order:4}
+.app-content>.file-check-card{order:5}
+.workspace-card label{margin:0;display:flex;align-items:center;gap:14px}
+.workspace-card label input{max-width:680px}
+@media(max-width:640px){.workspace-card{align-items:stretch;flex-direction:column}.workspace-card label{display:block}.workspace-card label input{max-width:none}}
+
 .saved-runs-list{list-style:none;padding:0;margin:16px 0;display:grid;gap:10px}
 .saved-runs-list li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;margin:0;padding:10px 12px;background:#14181e;border:1px solid #2a3039;border-radius:10px;min-width:0}
 .saved-run-open{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;width:100%;margin:0!important;padding:8px 10px!important;border:0!important;border-radius:6px!important;background:transparent!important;color:#e7edf4!important;text-align:left!important;transition:background .15s}

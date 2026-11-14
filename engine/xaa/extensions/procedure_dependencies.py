@@ -287,6 +287,11 @@ class PythonDependencyLockRecord(BaseModel):
     wheelhouse_present: bool
     created_at: str
     reviewed_at: str | None
+    environment_installed: bool = False
+    installed_tree_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    installed_bytes: int | None = Field(default=None, ge=1, le=671088640)
+    installed_file_count: int | None = Field(default=None, ge=1, le=20000)
+    installed_at: str | None = None
 
 
 class PythonDependencyLockList(BaseModel):

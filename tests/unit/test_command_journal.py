@@ -118,6 +118,49 @@ def test_snapshot_launch_result_and_reopen_preserve_identity(workspace_tmp_path)
         journal.reserve(run, owner, "another-call", {"argv": ["python3"]}, idempotency_key="call")
 
 
+def test_procedure_environment_binding_comes_from_saved_selection(workspace_tmp_path):
+    store, run, owner, _ = setup(workspace_tmp_path)
+    selected_environment = {
+        "environment_digest": "b" * 64,
+        "distribution": "Ubuntu-24.04",
+        "tree_sha256": "c" * 64,
+    }
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run,
+            "procedure.selected",
+            {
+                "skill_id": "selected-procedure",
+                "version": 1,
+                "name": "Fixture procedure",
+                "snapshot_sha256": "a" * 64,
+                "purpose": "active_use",
+                "python_environment": selected_environment,
+            },
+        )
+    intent = CommandJournal(store).reserve(
+        run,
+        owner,
+        "procedure-command",
+        {"argv": ["python", "script.py"]},
+        idempotency_key="procedure-command",
+    )
+    assert intent.procedure_environment_digest == "b" * 64
+    assert intent.procedure_environment_tree_sha256 == "c" * 64
+    assert (
+        store.unresolved_tool_calls(run)[0]["arguments"]["procedure_environment_digest"] == "b" * 64
+    )
+    with pytest.raises(ValidationError):
+        CommandJournal(store).reserve(
+            run,
+            owner,
+            "model-forged-environment",
+            {"argv": ["python"], "procedure_environment_digest": "d" * 64},
+            idempotency_key="model-forged-environment",
+        )
+
+
 def test_intent_and_events_roll_back_together(workspace_tmp_path, monkeypatch):
     store, run, owner, _ = setup(workspace_tmp_path)
     original = store.record_event

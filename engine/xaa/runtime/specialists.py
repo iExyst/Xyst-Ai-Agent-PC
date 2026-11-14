@@ -957,6 +957,13 @@ class SpecialistRunner:
                 if selected_script_paths
                 else ""
             )
+            selected_trial = self.store.procedure_trial(run_id)
+            if selected_trial and isinstance(selected_trial.get("python_environment"), dict):
+                script_hint += (
+                    " The owner-approved Python environment is mounted read-only at "
+                    "`/opt/xaa/procedure-python`; the saved WSL PATH selects it first. "
+                    "Use `python` for selected procedure scripts and do not install packages."
+                )
             messages[0]["content"] += (
                 " You may use workspace_run_command with a directly launched Windows "
                 "executable in the saved Windows AppContainer grant. It has no network or "

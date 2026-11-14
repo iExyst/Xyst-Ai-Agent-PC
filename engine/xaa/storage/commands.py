@@ -3,9 +3,10 @@
 import hashlib
 import json
 import os
+import re
 import stat
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -307,6 +308,35 @@ class CommandJournal:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
+            procedure_environment: dict[str, Any] | None = None
+            if self.purpose == "agent" and grant.backend == "wsl-bubblewrap-v1":
+                selected = connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? "
+                    "AND event_type='procedure.selected' ORDER BY sequence LIMIT 1",
+                    (run_id,),
+                ).fetchone()
+                if selected is not None:
+                    selected_value: object = json.loads(selected["payload"])
+                    if isinstance(selected_value, dict):
+                        raw_environment = cast(dict[str, Any], selected_value).get(
+                            "python_environment"
+                        )
+                        if isinstance(raw_environment, dict):
+                            procedure_environment = cast(dict[str, Any], raw_environment)
+                            if (
+                                procedure_environment.get("distribution") != grant.distribution
+                                or not re.fullmatch(
+                                    r"[a-f0-9]{64}",
+                                    str(procedure_environment.get("environment_digest", "")),
+                                )
+                                or not re.fullmatch(
+                                    r"[a-f0-9]{64}",
+                                    str(procedure_environment.get("tree_sha256", "")),
+                                )
+                            ):
+                                raise PermissionError(
+                                    "Selected procedure dependency environment is invalid."
+                                )
             task_key = self.require_task(connection, run_id, owner)
             self.require_state(connection, run_id)
             if (
@@ -356,6 +386,16 @@ class CommandJournal:
                 distribution=grant.distribution,
                 profile_sha256=grant.profile_sha256,
                 workspace=workspace,
+                procedure_environment_digest=(
+                    procedure_environment["environment_digest"]
+                    if procedure_environment is not None
+                    else None
+                ),
+                procedure_environment_tree_sha256=(
+                    procedure_environment["tree_sha256"]
+                    if procedure_environment is not None
+                    else None
+                ),
             )
             now = utc_now()
             connection.execute(

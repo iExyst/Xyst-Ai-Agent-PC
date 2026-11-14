@@ -1,6 +1,8 @@
+import base64
 import hashlib
 import io
 import json
+import uuid
 import zipfile
 
 import pytest
@@ -9,8 +11,9 @@ from xaa.extensions.procedure_dependencies import (
     ProcedurePythonDependencyLock,
     PythonDependencyTarget,
 )
-from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore
-from xaa.storage.skills import SkillConflict, SkillDraft, SkillStore
+from xaa.storage.commands import CommandJournal
+from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunState, RunStore
+from xaa.storage.skills import SkillAsset, SkillConflict, SkillDraft, SkillStore, SkillTrial
 
 SOURCE_SHA256 = "b" * 64
 
@@ -30,13 +33,26 @@ def idna_wheel() -> bytes:
     return output.getvalue()
 
 
-def imported_skill(skills: SkillStore) -> dict:
+def imported_skill(skills: SkillStore, *, python_script: bool = False) -> dict:
+    script = b"import idna\nprint(idna.__version__)\n"
     return skills.import_agent_plugin(
         SkillDraft(
             name="Imported test procedure",
             content="A test procedure.",
             required_tools=[],
             required_permissions=[],
+            assets=(
+                [
+                    SkillAsset(
+                        path="scripts/check.py",
+                        content_base64=base64.b64encode(script).decode("ascii"),
+                        media_type="text/x-python",
+                        sha256=hashlib.sha256(script).hexdigest(),
+                    )
+                ]
+                if python_script
+                else []
+            ),
         ),
         {
             "content_sha256": SOURCE_SHA256,
@@ -147,3 +163,61 @@ def test_lock_requirements_must_match_the_imported_declarations(workspace_tmp_pa
     skill = imported_skill(skills)
     with pytest.raises(SkillConflict, match="do not match imported Python declarations"):
         skills.save_python_dependency_lock(lock_for(skill, requirements=["idna>=3,<5"]))
+
+
+def test_run_selects_only_the_approved_installed_environment_for_its_wsl_grant(
+    workspace_tmp_path,
+):
+    runs = RunStore(workspace_tmp_path / "dependency-environment-run.sqlite3")
+    skills = SkillStore(runs)
+    skill = imported_skill(skills, python_script=True)
+    lock = lock_for(skill)
+    skills.save_python_dependency_lock(lock)
+    skills.store_python_dependency_wheelhouse(lock, {lock.wheels[0].filename: idna_wheel()})
+    skills.review_python_dependency_lock(skill["id"], 1, lock.environment_digest(), "approved")
+    skills.record_python_dependency_environment(
+        lock,
+        {
+            "environment_digest": lock.environment_digest(),
+            "lock_sha256": hashlib.sha256(lock.canonical_json().encode("ascii")).hexdigest(),
+            "installed": True,
+            "tree_sha256": "c" * 64,
+            "installed_bytes": 128,
+            "file_count": 2,
+        },
+    )
+    project = workspace_tmp_path.parent / f"project-{uuid.uuid4().hex}"
+    project.mkdir()
+    run = runs.create_run(
+        objective="Run the selected procedure",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        procedure_trial=SkillTrial(
+            skill_id=skill["id"], version=1, purpose="evaluation_trial"
+        ).model_dump(),
+        command_grant={
+            "backend": "wsl-bubblewrap-v1",
+            "distribution": "Ubuntu-24.04",
+            "profile_sha256": "a" * 64,
+            "max_seconds": 10,
+        },
+    )
+    assert run["procedure_trial"]["python_environment"] == {
+        "environment_digest": lock.environment_digest(),
+        "distribution": "Ubuntu-24.04",
+        "tree_sha256": "c" * 64,
+    }
+    owner = runs.acquire_lease(run["id"], "fixture")
+    runs.transition(run["id"], RunState.PLANNING, owner=owner)
+    runs.transition(run["id"], RunState.RUNNING, owner=owner)
+    intent = CommandJournal(runs).reserve(
+        run["id"],
+        owner,
+        uuid.uuid4().hex,
+        {"argv": ["python", "scripts/check.py"]},
+        idempotency_key=uuid.uuid4().hex,
+    )
+    assert intent.procedure_environment_digest == lock.environment_digest()
+    assert intent.procedure_environment_tree_sha256 == "c" * 64

@@ -106,6 +106,7 @@ from xaa.runtime.execution_readiness import (
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.local_transcription import TranscriptionError
 from xaa.runtime.mcp_manager import MCPConnectionError, MCPManager
+from xaa.runtime.owned_transport import TransportError
 from xaa.runtime.project_validation import (
     ProjectValidationRequest,
     validate_project,
@@ -122,6 +123,7 @@ from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, revi
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.web_fetch import normalize_approved_hosts
+from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import (
     MAX_BUNDLE_BYTES,
@@ -1760,6 +1762,58 @@ def create_app(
             if item["environment_digest"] == environment_digest
         )
         return updated
+
+    @app.post(
+        "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/install",
+        response_model=PythonDependencyLockRecord,
+    )
+    async def install_skill_python_dependency_environment(
+        skill_id: str,
+        environment_digest: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        records = skill_store.python_dependency_locks(skill_id, version)
+        record = next(
+            (item for item in records if item["environment_digest"] == environment_digest), None
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="Python dependency lock not found.")
+        if record["decision"] != "approved":
+            raise HTTPException(
+                status_code=409,
+                detail="Review and approve the exact dependency lock before installation.",
+            )
+        lock = ProcedurePythonDependencyLock.model_validate(record["lock"])
+        if not record["wheelhouse_present"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Acquire and verify the exact locked wheels before installation.",
+            )
+        deadline = time.monotonic() + 180
+        try:
+            skill_store.wheelhouses.verify(lock)
+            transport = await WSLTransport.discover(
+                lock.target.distribution, deadline=min(deadline, time.monotonic() + 30)
+            )
+            result = await transport.install_procedure_environment(
+                lock,
+                skill_store.wheelhouses.root / environment_digest,
+                deadline=deadline,
+            )
+            return skill_store.record_python_dependency_environment(lock, result)
+        except SkillConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TransportError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=504, detail="WSL dependency installation timed out."
+            ) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409, detail="Verified WSL wheel installation failed."
+            ) from exc
 
     @app.post(
         "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review",

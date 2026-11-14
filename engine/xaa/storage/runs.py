@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 36
+DATABASE_SCHEMA_VERSION = 37
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -471,6 +471,20 @@ class RunStore:
                     PRIMARY KEY(skill_id,skill_version,environment_digest),
                     FOREIGN KEY(skill_id,skill_version)
                         REFERENCES skill_versions(skill_id,version) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS skill_python_dependency_environments (
+                    skill_id TEXT NOT NULL,
+                    skill_version INTEGER NOT NULL,
+                    environment_digest TEXT NOT NULL CHECK(length(environment_digest)=64),
+                    distribution TEXT NOT NULL,
+                    tree_sha256 TEXT NOT NULL CHECK(length(tree_sha256)=64),
+                    installed_bytes INTEGER NOT NULL CHECK(installed_bytes BETWEEN 1 AND 671088640),
+                    file_count INTEGER NOT NULL CHECK(file_count BETWEEN 1 AND 20000),
+                    installed_at TEXT NOT NULL,
+                    PRIMARY KEY(skill_id,skill_version,environment_digest),
+                    FOREIGN KEY(skill_id,skill_version,environment_digest)
+                        REFERENCES skill_python_dependency_locks(skill_id,skill_version,environment_digest)
+                        ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS skill_version_assets (
                     skill_id TEXT NOT NULL,
@@ -1124,7 +1138,7 @@ class RunStore:
             for server_id in approved_mcp_sampling_servers
         ):
             raise ValueError("Approve up to 50 valid MCP server IDs for sampling per run.")
-        granted_command = None
+        granted_command: dict[str, Any] | None = None
         if command_grant is not None:
             from xaa.runtime.command_contracts import CommandGrant, command_workspace
 
@@ -1184,6 +1198,36 @@ class RunStore:
                     mode=mode,
                     workspace=workspace,
                 )
+                assets = cast(list[dict[str, Any]], trial_snapshot.get("assets", []))
+                has_python_resource = any(
+                    str(asset.get("path", "")).casefold().endswith(".py") for asset in assets
+                )
+                if granted_command is not None and has_python_resource:
+                    command_profile = granted_command["grant"]
+                    if command_profile["backend"] == "wsl-bubblewrap-v1":
+                        environments = connection.execute(
+                            "SELECT environment.environment_digest,environment.distribution,"
+                            "environment.tree_sha256 FROM skill_python_dependency_locks AS lock "
+                            "JOIN skill_python_dependency_environments AS environment "
+                            "ON environment.skill_id=lock.skill_id "
+                            "AND environment.skill_version=lock.skill_version "
+                            "AND environment.environment_digest=lock.environment_digest "
+                            "WHERE lock.skill_id=? AND lock.skill_version=? "
+                            "AND lock.decision='approved' AND environment.distribution=? "
+                            "ORDER BY environment.environment_digest",
+                            (
+                                selected_trial.skill_id,
+                                selected_trial.version,
+                                command_profile["distribution"],
+                            ),
+                        ).fetchall()
+                        if len(environments) == 1:
+                            environment = environments[0]
+                            trial_snapshot["python_environment"] = {
+                                "environment_digest": environment["environment_digest"],
+                                "distribution": environment["distribution"],
+                                "tree_sha256": environment["tree_sha256"],
+                            }
             if (
                 allow_procedure_revision
                 or allow_procedure_resource_revision
@@ -1587,6 +1631,11 @@ class RunStore:
                 key: trial[key]
                 for key in ("skill_id", "version", "name", "snapshot_sha256", "purpose")
             }
+            | (
+                {"python_environment": trial["python_environment"]}
+                if "python_environment" in trial
+                else {}
+            )
             if trial
             else None
         )

@@ -2032,6 +2032,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Skill Python Dependency Environment */
+        post: operations["install_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/python-dependency-locks/{environment_digest}/review": {
         parameters: {
             query?: never;
@@ -3550,6 +3567,19 @@ export interface components {
             decision: "pending_review" | "approved" | "rejected";
             /** Environment Digest */
             environment_digest: string;
+            /**
+             * Environment Installed
+             * @default false
+             */
+            environment_installed: boolean;
+            /** Installed At */
+            installed_at?: string | null;
+            /** Installed Bytes */
+            installed_bytes?: number | null;
+            /** Installed File Count */
+            installed_file_count?: number | null;
+            /** Installed Tree Sha256 */
+            installed_tree_sha256?: string | null;
             lock: components["schemas"]["ProcedurePythonDependencyLock"];
             /** Reviewed At */
             reviewed_at: string | null;
@@ -4146,6 +4176,10 @@ export interface components {
              * @enum {string}
              */
             purpose: "evaluation_trial" | "active_use";
+            /** Python Environment */
+            python_environment?: {
+                [key: string]: string;
+            } | null;
             /** Skill Id */
             skill_id: string;
             /** Snapshot Sha256 */
@@ -8933,6 +8967,39 @@ export interface operations {
         };
     };
     acquire_skill_python_dependency_wheelhouse_skills__skill_id__versions__version__python_dependency_locks__environment_digest__acquire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                environment_digest: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PythonDependencyLockRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_skill_python_dependency_environment_skills__skill_id__versions__version__python_dependency_locks__environment_digest__install_post: {
         parameters: {
             query?: never;
             header?: never;

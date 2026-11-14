@@ -236,6 +236,8 @@ class WindowsLocalTransport:
         return cls(profile_fingerprint())
 
     def require_intent(self, intent: CommandIntent) -> None:
+        if intent.procedure_environment_digest is not None:
+            raise PermissionError("Procedure Python environments are available only in WSL.")
         if (
             intent.backend != "windows-appcontainer-v1"
             or intent.distribution != WINDOWS_LOCAL_DISTRIBUTION
