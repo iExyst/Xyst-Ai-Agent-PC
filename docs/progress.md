@@ -2,7 +2,7 @@
 
 ## Give links and disclosure controls consistent focus rings (2026-11-14)
 
-Keyboard focus styling now covers links throughout the app and native `<summary>` disclosure controls, in addition to buttons and fields. The onboarding browser flow reaches the first sidebar link using Tab, checks its 3 px outline and at least 3:1 contrast, returns to the skip link, and verifies the Memory preferences disclosure receives the same visible ring when reached through keyboard traversal. TypeScript and the focused browser flow pass. This verifies representative links/disclosures; a complete tab-order and focus-visibility pass over every screen remains open.
+Keyboard focus styling now covers links throughout the app and native `<summary>` disclosure controls, in addition to buttons and fields. The onboarding browser flow reaches the first sidebar link using Tab, checks its 3 px outline and at least 3:1 contrast, returns to the skip link, and verifies the Memory preferences disclosure receives the same visible ring when reached through keyboard traversal. TypeScript and the focused browser flow pass. A fresh unsigned current-user installer was built at `build/installer/Xyst AI Agent_0.1.1_x64-setup.exe` (77,854,208 bytes; SHA-256 `e8f7dfba4564b98800a9ffb79ba915f15d57c18e58c6ee05a90bf92521164446`). Hosted Windows source run [43645130132](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43645130132) passed on `73c25a13`, including the full Python suite and restart recovery checks; installer packaging was skipped because packaging inputs were unchanged. This verifies representative links/disclosures; a complete tab-order and focus-visibility pass over every screen remains open.
 
 ## Raise keyboard focus-ring contrast (2026-11-14)
 
