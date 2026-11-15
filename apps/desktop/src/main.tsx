@@ -450,8 +450,8 @@ function App() {
       <div className="engine-connect-panel">
         <div className="engine-connect-panel-heading"><div><span className="engine-connect-step">01 / CONNECTION</span><h3>Connect your engine</h3></div><span className="engine-connect-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3"/></svg></span></div>
         <p>The local service listens on this device. Enter its API token to open your workspace.</p>
-        <label htmlFor="engine-token">Engine API token<input id="engine-token" type="password" autoComplete="off" spellCheck={false} value={token} onChange={event => setToken(event.target.value)} onKeyDown={event => {if(event.key==='Enter'&&!busy&&token.length>=32)void connect();}} aria-describedby="engine-token-note" /></label>
-        <div className="engine-connect-submit"><button onClick={connect} disabled={busy || token.length < 32}>{busy?'Connecting…':'Connect to X.A.A.'}</button><small id="engine-token-note">The token stays in this window’s memory and clears after connection.</small></div>
+        <label htmlFor="engine-token">Engine token<input id="engine-token" type="password" autoComplete="off" spellCheck={false} value={token} onChange={event => setToken(event.target.value)} onKeyDown={event => {if(event.key==='Enter'&&!busy&&token.length>=32)void connect();}} aria-describedby="engine-token-note" /></label>
+        <div className="engine-connect-submit"><button onClick={connect} disabled={busy || token.length < 32}>{busy?'Connecting…':'Connect'}</button><small id="engine-token-note">The token stays in this window’s memory and clears after connection.</small></div>
       </div>
       <div className="engine-connect-footer"><span className="engine-connect-footer-icon" aria-hidden="true">↗</span><p><strong>Next up: choose a model</strong><span>Once connected, open Model setup to select an LM Studio model and complete onboarding.</span></p><span className="engine-connect-footer-index">02</span>
       </div>
