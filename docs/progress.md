@@ -1,8 +1,12 @@
 # Progress
 
+## Review Gondola model provider (2026-11-15)
+
+Reviewed the pinned provider, which routes OpenAI-compatible inference to a USDC-settled marketplace and attaches `GONDOLA_API_KEY` to live model discovery. The source keeps a process-global catalog cache that is not keyed by base URL or expired, and reads the response without a size cap; this can serve the wrong model list after an endpoint change and needs explicit bounds in any X.A.A. adapter. Thirty-two of 90 model-category entries are now reviewed across 31 distinct source trees; 58 remain pending. No source, account, wallet, key, catalog request, or inference endpoint was used.
+
 ## Review EmpirioLabs model provider (2026-11-15)
 
-Reviewed the pinned provider package and catalog manifest. It fetches and caches a capped model catalog, filters out models that do not declare chat-completions tool support, records context/vision/reasoning metadata, and only sends a reasoning level when the model advertises compatible values. The keyed discovery path accepts the configured endpoint override, so X.A.A. must validate that origin before forwarding credentials. The companion media plugin is separate and remains outside this provider review. Thirty-one of 90 model-category entries are now reviewed across 30 distinct source trees; 59 remain pending. No plugin, key, account, catalog request, or inference endpoint was used.
+Reviewed the pinned provider package and catalog manifest. It fetches and caches a capped model catalog, filters out models that do not declare chat-completions tool support, records context/vision/reasoning metadata, and only sends a reasoning level when the model advertises compatible values. The keyed discovery path accepts the configured endpoint override, so X.A.A. must validate that origin before forwarding credentials. The companion media plugin is separate and remains outside this provider review. At that checkpoint, 31 of 90 model-category entries were reviewed across 30 distinct source trees, with 59 pending. No plugin, key, account, catalog request, or inference endpoint was used.
 
 ## Review CloudGPU provider (2026-11-15)
 

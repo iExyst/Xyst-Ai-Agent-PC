@@ -148,6 +148,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "20f049d5913ec850e98bef3d289f6cb43645869e; "
         "see model-provider-source-audit.md#empiriolabs-provider"
     ),
+    "gondola-provider": (
+        "model-provider; pinned source review at commit "
+        "ad3f352b6a9814f1b550c819bee5ef2fb92a1851; "
+        "see model-provider-source-audit.md#gondola-provider"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "
