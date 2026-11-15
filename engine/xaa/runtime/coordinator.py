@@ -1429,12 +1429,16 @@ class Coordinator:
         return True
 
     def _tools(self, run_id: str, run: dict[str, Any]) -> list[dict[str, Any]]:
+        remaining_iterations = max(
+            0, run["limits"]["max_iterations"] - self.store.inference_attempts(run_id) - 1
+        )
+        remaining_seconds = TaskStore(self.store).remaining_run_seconds(run_id)
         tools: list[dict[str, Any]] = [
             {
                 "type": "function",
                 "function": {
                     "name": "plan_save",
-                    "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, optional input_artifacts (up to 8 existing plain-text or PNG/JPEG image artifact IDs; images require a vision-capable model and are unavailable with exact text-token admission), at least one expected_outputs description, permissions, max_iterations and max_seconds. Total reservations cannot exceed {run['limits']['max_iterations']} iterations and {run['limits']['max_seconds']} seconds. Permissions may include workspace.read{' and workspace.write' if workspace_write_authorized(run) else ''}{' and web.search' if run.get('approved_web_search') else ''}{' and web.read for exact run-approved hosts' if run.get('approved_web_hosts') else ''}{' and web.browser.read for the exact run-approved hosts' if run.get('approved_browser') and run.get('approved_web_hosts') else ''}. Tasks with workspace.write use private working trees. Only when this run has a saved command grant may a private read/write task additionally receive workspace.command to validate its private files. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
+                    "description": f"Save a dependency graph for a multi-step objective. Each task has an id, objective, role, dependencies, acceptance_criteria, optional input_artifacts (up to 8 existing plain-text or PNG/JPEG image artifact IDs; images require a vision-capable model and are unavailable with exact text-token admission), at least one expected_outputs description, permissions, max_iterations and max_seconds. Total reservations cannot exceed the remaining {remaining_iterations} inference iterations and {remaining_seconds} seconds in this run. Permissions may include workspace.read{' and workspace.write' if workspace_write_authorized(run) else ''}{' and web.search' if run.get('approved_web_search') else ''}{' and web.read for exact run-approved hosts' if run.get('approved_web_hosts') else ''}{' and web.browser.read for the exact run-approved hosts' if run.get('approved_browser') and run.get('approved_web_hosts') else ''}. Tasks with workspace.write use private working trees. Only when this run has a saved command grant may a private read/write task additionally receive workspace.command to validate its private files. This saves the plan; it does not execute specialists. A saved plan cannot be replaced.",
                     "parameters": PLAN_TOOL_CONTRACT["input_schema"],
                 },
             },

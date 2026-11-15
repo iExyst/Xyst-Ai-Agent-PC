@@ -4,7 +4,7 @@ import {EngineClient,type ChatSession,type ChatSessionSummary} from './api/clien
 type ChatMode='observe'|'workspace';
 
 export function ConversationSessionsPanel({
-  client,model,workspace,mode,refreshKey,onSelect,
+  client,model,workspace,mode,refreshKey,onSelect,onContinue,
 }: {
   client:EngineClient;
   model:string;
@@ -12,6 +12,7 @@ export function ConversationSessionsPanel({
   mode:ChatMode;
   refreshKey:string;
   onSelect:(sessionId:string,session?:ChatSession)=>void;
+  onContinue?:()=>void;
 }) {
   const [items,setItems]=useState<ChatSessionSummary[]>([]);
   const [sessionId,setSessionId]=useState('');
@@ -100,6 +101,7 @@ export function ConversationSessionsPanel({
       <p>Session ID <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
       <p>Continue this same history in a terminal with <code>xaa chat --model "{session.model}"{session.workspace?` --workspace "${session.workspace}"`:''} --mode "{session.mode}" --session "{session.session_id}"</code>.</p>
       <button type="button" disabled={busy} onClick={()=>void deleteCurrent()}>Delete shared conversation</button>
+      {onContinue&&<button type="button" disabled={busy} onClick={onContinue}>Continue in workspace</button>}
     </>}
     </>}
     {error&&<p role="alert">{error}</p>}

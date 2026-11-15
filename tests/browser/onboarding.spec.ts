@@ -227,8 +227,10 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
   await expectKeyboardCoverageWithExpandedDisclosures(page);
-  const memorySummary=page.locator('#integrations summary').first();
-  const memoryDisclosure=page.locator('#integrations details').first();
+  await navigation.getByRole('link',{name:'Memory'}).click();
+  await expect(page.locator('#memory')).toBeInViewport();
+  const memorySummary=page.locator('#memory summary').first();
+  const memoryDisclosure=page.locator('#memory details').first();
   await expect(memoryDisclosure).toHaveAttribute('open','');
   await memorySummary.focus();
   await page.keyboard.press('Enter');

@@ -27,8 +27,7 @@ test('suggests an active procedure but waits for explicit selection',async({page
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByLabel('Objective',{exact:true}).fill('Please summarize the engineering test reports');
-  await navigateMainSection(page,'Tools & integrations');
-  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+  await navigateMainSection(page,'Skills');
   const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
   const suggestions=page.getByRole('region',{name:'Active procedure suggestions',exact:true});
   await suggestions.getByRole('button',{name:'Find matching active procedures',exact:true}).click();

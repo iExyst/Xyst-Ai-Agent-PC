@@ -1,3 +1,6 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
@@ -5,6 +8,77 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
+
+
+def test_plan_time_reservations_use_remaining_run_budget_without_invalidating_saved_plan(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "remaining-plan-time.sqlite3")
+    identity = store.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_seconds=100,
+    )["id"]
+    parent = store.acquire_lease(identity, "parent")
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET created_at=? WHERE id=?",
+            ((datetime.now(UTC) - timedelta(seconds=30)).isoformat(), identity),
+        )
+    tasks = TaskStore(store)
+    with pytest.raises(ValueError, match="budget"):
+        tasks.save_plan(
+            identity,
+            parent,
+            [TaskDefinition(id="too-long", objective="Use stale full budget", max_seconds=80)],
+        )
+
+    fresh_identity = store.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_seconds=100,
+    )["id"]
+    fresh_parent = store.acquire_lease(fresh_identity, "parent")
+    fresh_tasks = TaskStore(store)
+    fresh_tasks.save_plan(
+        fresh_identity,
+        fresh_parent,
+        [TaskDefinition(id="saved", objective="Keep saved plan readable", max_seconds=90)],
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET created_at=? WHERE id=?",
+            ((datetime.now(UTC) - timedelta(seconds=110)).isoformat(), fresh_identity),
+        )
+    assert fresh_tasks.readiness(fresh_identity) == (["saved"], [])
+
+
+def test_plan_persistence_rechecks_time_budget_at_transaction_boundary(
+    workspace_tmp_path, monkeypatch
+):
+    store = RunStore(workspace_tmp_path / "plan-time-transaction.sqlite3")
+    identity = store.create_run(
+        objective="Plan", acceptance_criteria=[], workspace=None, mode="observe", model="fixture"
+    )["id"]
+    parent = store.acquire_lease(identity, "parent")
+    tasks = TaskStore(store)
+    remaining = iter((100, 1))
+    monkeypatch.setattr(tasks, "remaining_run_seconds", lambda _: next(remaining))
+
+    with pytest.raises(ValueError, match="remaining shared time budget"):
+        tasks.save_plan(
+            identity,
+            parent,
+            [TaskDefinition(id="too-late", objective="Plan duration changed", max_seconds=10)],
+        )
+
+    assert tasks.records(identity) == []
 
 
 def test_plan_api_returns_typed_tasks_without_worker_authority(workspace_tmp_path):

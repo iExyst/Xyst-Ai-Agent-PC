@@ -28,6 +28,9 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
     if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
     if(path==='/memory'||path==='/skills'||path==='/specialists/profiles'||path==='/schedules'||path==='/mcp/servers'||path==='/extensions/packages/discover')return route.fulfill({json:[],headers});
     if(path==='/chat/sessions'&&request.method()==='GET')return route.fulfill({json:[{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',updated_at:stamp}],headers});
+    const newSessionMatch=path.match(/^\/chat\/sessions\/(desktop-[^/]+)$/);
+    if(newSessionMatch&&request.method()==='POST'){const id=newSessionMatch[1]!;return route.fulfill({json:{session_id:id,title:id,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages:[]},headers});}
+    if(newSessionMatch&&request.method()==='PATCH'){const id=newSessionMatch[1]!;return route.fulfill({json:{session_id:id,title:request.postDataJSON().title,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages:[]},headers});}
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='GET')return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='PATCH'){sessionTitle=request.postDataJSON().title;return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});}
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='DELETE'){deleted=true;messages=[];return route.fulfill({status:204,headers});}
@@ -58,6 +61,28 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByRole('link',{name:'Memory',exact:true}).click();
+  await expect(page.locator('.app-topbar h1')).toHaveText('Memory');
+  await expect(page.getByText(/Explicit preferences and user-added knowledge/)).toBeVisible();
+  await page.getByRole('link',{name:'Skills',exact:true}).click();
+  await expect(page.locator('.app-topbar h1')).toHaveText('Skills');
+  await expect(page.getByRole('heading',{name:'Procedure candidates'})).toBeVisible();
+  await page.getByRole('link',{name:'Automations',exact:true}).click();
+  await expect(page.locator('.app-topbar h1')).toHaveText('Automations');
+  await expect(page.getByRole('heading',{name:'Automations',level:2})).toBeVisible();
+  await page.getByRole('link',{name:'New objective',exact:true}).click();
+  await page.getByRole('link',{name:'Chats',exact:true}).click();
+  await expect(page.locator('.app-topbar h1')).toHaveText('Chats');
+  await page.getByRole('button',{name:'Load shared conversations'}).click();
+  await page.getByLabel('Saved terminal and desktop sessions').selectOption('terminal-chat');
+  await expect(page.getByText(/Session ID terminal-chat/)).toBeVisible();
+  await page.getByRole('button',{name:'Continue in workspace'}).click();
+  await expect(page.getByRole('heading',{name:'Continue the conversation'})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'New conversation',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Continue the conversation'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'New conversation',exact:true})).toBeVisible();
+  await expect(page.getByLabel('Objective',{exact:true})).toHaveValue('');
   await page.locator('details.saved-conversations > summary').click();
   await page.getByRole('button',{name:'Load shared conversations'}).click();
   await page.getByLabel('Saved terminal and desktop sessions').selectOption('terminal-chat');

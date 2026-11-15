@@ -21,6 +21,24 @@ class TaskStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
 
+    def remaining_run_seconds(self, run_id: str) -> int:
+        run = self.runs.get_run(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        events = self.runs.list_events(run_id)
+        planning_start = next(
+            (
+                event["created_at"]
+                for event in events
+                if event["event_type"] == "run.state_changed"
+                and event["payload"].get("to") == "planning"
+            ),
+            run["created_at"],
+        )
+        started_at = datetime.fromisoformat(planning_start)
+        elapsed = max(0.0, (datetime.now(UTC) - started_at).total_seconds())
+        return max(0, int(run["limits"]["max_seconds"] - elapsed))
+
     @staticmethod
     def _task_elapsed_seconds(events: list[dict[str, Any]]) -> float:
         elapsed = 0.0
@@ -382,7 +400,12 @@ class TaskStore:
             )
 
     def validate_plan(
-        self, run_id: str, tasks: list[TaskDefinition], *, remaining_tokens: bool = True
+        self,
+        run_id: str,
+        tasks: list[TaskDefinition],
+        *,
+        remaining_tokens: bool = True,
+        remaining_seconds: bool = True,
     ) -> TaskGraph:
         run = self.runs.get_run(run_id)
         if run is None:
@@ -445,7 +468,11 @@ class TaskStore:
             tasks,
             parent_permissions=permissions,
             iteration_budget=run["limits"]["max_iterations"],
-            seconds_budget=run["limits"]["max_seconds"],
+            seconds_budget=(
+                self.remaining_run_seconds(run_id)
+                if remaining_seconds
+                else run["limits"]["max_seconds"]
+            ),
             token_budget=(
                 max(
                     0,
@@ -468,6 +495,8 @@ class TaskStore:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, token)
+            if sum(task.max_seconds for task in tasks) > self.remaining_run_seconds(run_id):
+                raise ValueError("Task reservations exceed the remaining shared time budget.")
             if (
                 parent_headroom < 0
                 or sum(task.max_iterations for task in tasks)
@@ -1386,7 +1415,7 @@ class TaskStore:
             )
             for row in records
         ]
-        graph = self.validate_plan(run_id, tasks, remaining_tokens=False)
+        graph = self.validate_plan(run_id, tasks, remaining_tokens=False, remaining_seconds=False)
         return graph.readiness(
             {row["local_id"]: cast(TaskStatus, row["status"]) for row in records}
         )

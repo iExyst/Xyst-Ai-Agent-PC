@@ -275,9 +275,10 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/import-mcp-server'&&item.body.package_name==='sample-package'&&item.body.server_name==='local-helper')).toBe(true);
   await plugins.getByRole('button',{name:'Import as candidate'}).click();
   await expect(plugins.getByRole('status')).toContainText('inactive candidate');
-  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Skills',exact:true}).click();
   await expect(page.getByRole('button',{name:'Inspect summarize',exact:true})).toBeVisible();
   expect(requests.some(item=>item.method==='POST'&&item.path==='/extensions/packages/import-skill'&&item.body.package_name==='sample-package'&&item.body.skill_name==='summarize')).toBe(true);
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Tools & integrations',exact:true}).click();
   for(const packageServer of ['sample-package:remote-helper','sample-package:local-helper','HTTP MCP']) {
     await mcpPanel.locator('article').filter({hasText:packageServer}).getByRole('button',{name:'Remove server'}).click();
   }

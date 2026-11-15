@@ -50,8 +50,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await selectLocalModel(page,'fixture/model');
   await page.getByLabel('Workspace path').fill('C:\\fixture-project');
-  await navigateMainSection(page,'Tools & integrations');
-  await page.locator('summary').filter({hasText:'Automations'}).click();
+  await navigateMainSection(page,'Automations');
   const panel=page.getByRole('region',{name:'Automations',exact:true});
   await panel.getByLabel('Scheduled objective',{exact:true}).fill('Review repository health');
   await panel.getByLabel('Authorize recurring file changes in this workspace',{exact:true}).check();

@@ -51,8 +51,7 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await page.getByLabel('Execution distribution').selectOption('Ubuntu-24.04');
   await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
   await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible();
-  await navigateMainSection(page,'Tools & integrations');
-  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+  await navigateMainSection(page,'Skills');
   const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
   await panel.getByRole('button',{name:'Inspect Summarize',exact:true}).click();
   await panel.getByRole('button',{name:'Check Python dependencies in WSL',exact:true}).click();
@@ -117,7 +116,7 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await expect(npmEnvironmentChoice.locator('option')).toHaveCount(3);
   await npmEnvironmentChoice.selectOption('8'.repeat(64));
   await expect(npmEnvironmentChoice).toHaveValue('8'.repeat(64));
-  await navigateMainSection(page,'Tools & integrations');
+  await navigateMainSection(page,'Skills');
   await panel.getByRole('button',{name:'Inspect Summarize',exact:true}).click();
   const lockDetails=lockReview.locator('details').first();
   await lockDetails.evaluate(element=>{(element as HTMLDetailsElement).open=true;});
@@ -180,8 +179,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   });
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await navigateMainSection(page,'Tools & integrations');
-  await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+  await navigateMainSection(page,'Skills');
   const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
   await panel.getByLabel('Procedure name',{exact:true}).fill('Inspect safely');
   await panel.getByLabel('Procedure description',{exact:true}).fill('Read-only project inspection');
@@ -213,7 +211,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(page.getByLabel('Allow this run to draft a new version of this procedure')).toBeDisabled();
   await page.getByRole('button',{name:'Remove selected procedure',exact:true}).click();
   await expect(page.getByRole('region',{name:'Selected procedure',exact:true})).toHaveCount(0);
-  await navigateMainSection(page,'Tools & integrations');
+  await navigateMainSection(page,'Skills');
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('2');
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   await navigateMainSection(page,'New objective');
@@ -234,7 +232,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(revisionGrant).not.toBeChecked();
   await revisionGrant.check();
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
-  await navigateMainSection(page,'Tools & integrations');
+  await navigateMainSection(page,'Skills');
   expect(runSubmissions[0].allow_procedure_revision).toBe(true);
   expect(runSubmissions[1].allow_procedure_revision).toBe(true);
   expect(runSubmissions[0].allow_procedure_resource_revision).toBe(false);
@@ -248,7 +246,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(revisionGrant).toBeDisabled();
   await page.getByLabel('Objective',{exact:true}).fill('Update one linked procedure resource');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
-  await navigateMainSection(page,'Tools & integrations');
+  await navigateMainSection(page,'Skills');
   expect(runSubmissions[2].allow_procedure_revision).toBe(false);
   expect(runSubmissions[2].allow_procedure_resource_revision).toBe(true);
   expect(runSubmissions[2].allow_procedure_resource_removal).toBe(false);
@@ -257,7 +255,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await resourceRemovalGrant.check();
   await page.getByLabel('Objective',{exact:true}).fill('Remove one obsolete linked procedure resource');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
-  await navigateMainSection(page,'Tools & integrations');
+  await navigateMainSection(page,'Skills');
   expect(runSubmissions[3].allow_procedure_resource_removal).toBe(true);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   await navigateMainSection(page,'New objective');
@@ -267,7 +265,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await resourceRemovalGrant.check();
   await page.getByLabel('Objective',{exact:true}).fill('Replace one resource and remove one obsolete resource atomically');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
-  await navigateMainSection(page,'Tools & integrations');
+  await navigateMainSection(page,'Skills');
   expect(runSubmissions[4].allow_procedure_resource_revision).toBe(true);
   expect(runSubmissions[4].allow_procedure_resource_removal).toBe(true);
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();

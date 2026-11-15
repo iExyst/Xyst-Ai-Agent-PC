@@ -53,7 +53,7 @@ test('real desktop npm review flow reaches the live WSL installer',async({page,r
     await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
     await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible({timeout:60000});
     steps.push('real WSL sandbox selected in desktop');
-    await page.locator('summary').filter({hasText:'Reusable procedures'}).click();
+    await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Skills',exact:true}).click();
     const panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
     await panel.getByRole('button',{name:'Inspect live-npm-check',exact:true}).click();
     const npmReview=panel.getByRole('region',{name:'npm dependency lock review'});

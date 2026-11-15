@@ -86,8 +86,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   expect(braveSearchSecret).toBe('');
   await page.locator('summary').filter({hasText:'Web search'}).click();
   await selectLocalModel(page,'fixture/model');
-  await navigateMainSection(page,'Tools & integrations');
-  await page.locator('summary').filter({hasText:'Memory preferences'}).click();
+  await navigateMainSection(page,'Memory');
   await page.getByLabel('Preference', {exact:true}).fill('Use concise examples');
   await page.getByRole('button',{name:'Save preference',exact:true}).click();
   await expect(page.getByText('Use concise examples',{exact:true})).toBeVisible();
@@ -100,7 +99,6 @@ test('connect, submit an objective and render its saved events', async ({ page }
   expect((await downloaded).suggestedFilename()).toBe('xaa-memory.json');
   await page.getByRole('button',{name:'Delete memory',exact:true}).click();
   await expect(page.getByText('Use detailed examples',{exact:true})).toHaveCount(0);
-  await page.locator('summary').filter({hasText:'Memory preferences'}).click();
   await navigateMainSection(page,'New objective');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
