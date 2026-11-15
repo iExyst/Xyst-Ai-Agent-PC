@@ -534,3 +534,23 @@ body{
   .side-nav a[href="#system-monitor"]:before{content:"▥"}
   .side-nav a:before{width:auto}
 }
+
+/* Finish the dark theme at the browser-control level so native widgets,
+   keyboard focus, and motion preferences follow the same visual system. */
+:root{color-scheme:dark}
+body{scrollbar-color:#35483a #101612}
+.app-content select option{background:#141b17;color:#edf4ef}
+.app-content input[type=file]::file-selector-button{
+  margin-right:12px;padding:8px 11px;border:1px solid #405447;border-radius:7px;
+  background:#1c2920;color:#dce9df;font:inherit;font-size:11px;font-weight:650;
+  transition:background .16s ease,border-color .16s ease
+}
+.app-content input[type=file]::file-selector-button:hover{background:#26392c;border-color:#587360}
+.app-content button:focus-visible,.app-content input:focus-visible,.app-content select:focus-visible,
+.app-content textarea:focus-visible,.topbar-new:focus-visible,.side-nav a:focus-visible{
+  outline:2px solid #a6c1ff;outline-offset:3px
+}
+.app-content button:disabled{filter:none;opacity:.52}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
