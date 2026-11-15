@@ -293,6 +293,95 @@ a:focus-visible,summary:focus-visible,.side-nav a:focus-visible{outline-color:va
 .page-home>.workspace-card label,.page-home>.onboarding-guide>summary{font-size:12px}
 .page-home>#new-objective .objective-intro{font-size:13px}
 .page-home>#new-objective #run-objective{font-size:14px!important}
+
+/* Midnight forest theme: layered charcoal surfaces with clear green actions. */
+:root{
+  --surface:#141b17;
+  --surface-raised:#19221d;
+  --surface-subtle:#101612;
+  --surface-hover:#1e2b24;
+  --border:#2b3a31;
+  --border-strong:#405449;
+  --ink:#edf4ef;
+  --ink-soft:#c1cec5;
+  --ink-muted:#a6b6ab;
+  --accent:#7ce3aa;
+  --accent-strong:#9bf0bd;
+  --accent-soft:#1c3828;
+  --focus:#9bc0ff;
+  --blue:#a6c1ff;
+  color-scheme:dark;
+  color:var(--ink);
+  background:#0b100d;
+}
+body,.app-frame{background:#0b100d;color:var(--ink)}
+.app-sidebar{background:#101612;border-color:#25332a;box-shadow:8px 0 28px #0003}
+.brand-mark{background:linear-gradient(145deg,#b5f5cc,#55c58c);color:#092116;box-shadow:0 6px 20px #58d39525}
+.brand-lockup strong,.sidebar-footer strong{color:#f0f6f1}
+.brand-lockup span,.sidebar-footer small{color:#a6b6ab}
+.sidebar-label,.eyebrow{color:#a4b7aa}
+.side-nav a{color:#bdc9c1}
+.side-nav a:before{color:#9eafa4}
+.side-nav a:hover{background:#1b251f;color:#f0f7f2}
+.side-nav a.active{background:#1a3325;border-color:#305740;color:#c5f5d4}
+.side-nav a.active:before{color:#83e8ad}
+.sidebar-footer{border-color:#2a3830}
+.connection-dot{background:#f0c36d;box-shadow:0 0 0 3px #f0c36d22}
+.connection-dot.online{background:#7ce3aa;box-shadow:0 0 0 3px #7ce3aa24}
+.app-topbar{background:#101612ed;border-color:#27352c;backdrop-filter:blur(18px)}
+.app-topbar h1{color:#f0f6f1}
+.status-pill{background:#162b20;border-color:#2f5c40;color:#c6f4d4}
+.status-pill.muted{background:#302719;border-color:#65502c;color:#ffe0a1}
+.app-content>section,.app-content>div>section{background:linear-gradient(145deg,#151d18,#121813 75%);border-color:var(--border);box-shadow:0 12px 30px #0002}
+.app-content section h2,.app-content section h3{color:#edf4ef}
+.app-content p,.app-content li{color:#bdc9c1}
+.app-content label{color:#d4dfd7}
+.app-content input:not([type=checkbox]),.app-content select,.app-content textarea{background:#0d1310;color:#edf4ef;border-color:#3a4a40;box-shadow:inset 0 1px 2px #0003}
+.app-content input:not([type=checkbox]):hover,.app-content select:hover,.app-content textarea:hover{border-color:#5c7867}
+.app-content input:not([type=checkbox]):focus,.app-content select:focus,.app-content textarea:focus{border-color:#7ce3aa;box-shadow:0 0 0 3px #7ce3aa35;outline:0}
+.app-content input::placeholder,.app-content textarea::placeholder{color:#a3b3a8;opacity:1}
+#run-objective::placeholder{color:#a3b3a8;opacity:1}
+.app-content input[type=checkbox]{accent-color:#7ce3aa}
+.app-content details.advanced-options{background:#101713;border-color:var(--border)}
+.app-content details.advanced-options summary,.app-content details>summary{color:#d4dfd7}
+.app-content pre{background:#0b110e;border-color:#314137;color:#d9e5dc}
+.app-content button:not(.topbar-new):not(.side-nav a),.topbar-new,button:not(.side-nav a){background:#7ce3aa;color:#0a2014;box-shadow:0 2px 7px #0003}
+.app-content button:not(.topbar-new):not(.side-nav a):hover:not(:disabled),.topbar-new:hover,button:not(.side-nav a):not(:disabled):hover{background:#9bf0bd;filter:none}
+.app-content .secondary-button,.secondary-button{background:#202b24!important;color:#dce8df!important;border:1px solid #394b3f!important;box-shadow:none!important}
+.app-content .secondary-button:hover:not(:disabled){background:#29382f!important}
+.app-alert{background:#302719;border-color:#6b542c;color:#ffe0a1!important}
+.app-content [role=alert]{color:#ffb4a8}
+.app-content>section.recovery-card{background:linear-gradient(115deg,#302719,#1c211c 78%);border-color:#6b542c}
+.app-content .recovery-card .eyebrow{color:#ffdf99}
+.app-content .system-resource-card{background:linear-gradient(145deg,#18211b,#141b17);border-color:#314137}
+.app-content .system-resource-card .system-resource-heading h2{color:#edf4ef}
+.app-content .system-resource-card .system-resource-heading strong{color:#91eab0}
+.app-content .system-resource-card p{color:#c1cec5}
+.app-content .system-monitor-intro p{color:#c1cec5}
+.saved-runs-list li{background:#101713;border-color:#2b3a31}
+.saved-run-open{color:#edf4ef!important}
+.saved-run-open:hover{background:#1e2b24!important}
+.saved-run-action{color:#8ce8ae}
+.saved-run-objective{color:#edf4ef}
+.saved-run-meta{color:#a6b6ab!important}
+.saved-run-state{background:#1b2a21;border-color:#344b3b;color:#c7d8cc}
+.active-run-objective-full{background:#101713;border-color:#2b3a31}
+.active-run-objective-full summary{color:#9bf0bd}
+.page-home>.workspace-card{background:#141b17;border-color:#2b3a31;box-shadow:0 5px 17px #0002}
+.page-home>.workspace-card label{color:#d4dfd7}
+.page-home>#new-objective{border-color:#345641!important;background:radial-gradient(ellipse at 100% 0%,#23402d66,transparent 42%),linear-gradient(145deg,#18221c,#141a16 72%)!important;box-shadow:0 14px 36px #0003!important}
+.page-home>#new-objective:before{background:linear-gradient(#8be9ae,#45b77c)}
+.page-home>#new-objective .composer-heading h2{color:#f0f7f2}
+.composer-private{background:#1b3022;border-color:#35563d;color:#c5e8ce}
+.page-home>#new-objective #run-objective{background:#0d1310}
+.page-home>.onboarding-guide,.saved-conversations,.file-check-card{border-color:#2b3a31;background:#141b17;box-shadow:0 5px 18px #0002}
+.page-home>.onboarding-guide>summary,.saved-conversations>summary,.file-check-card>summary{color:#d4dfd7}
+.page-home>.onboarding-guide>summary:hover,.saved-conversations>summary:hover,.file-check-card>summary:hover{color:#9bf0bd}
+.page-home>.onboarding-guide>#get-started li{background:#101713;border-color:#2b3a31}
+.page-home>.onboarding-guide>#get-started li::before{background:#1b3827;color:#a8efbf}
+.skip-link{background:#7ce3aa;color:#082116;box-shadow:0 5px 20px #0005}
+a:focus-visible,summary:focus-visible,.side-nav a:focus-visible{outline-color:var(--focus)}
+@media(max-width:640px){.app-sidebar{background:#101612}.app-topbar{background:#101612ed}}
 .saved-run-objective{font-size:14px}
 .saved-run-meta{font-size:12px!important}
 .composer-private{font-size:12px}

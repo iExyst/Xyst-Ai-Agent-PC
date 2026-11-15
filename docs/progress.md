@@ -1,5 +1,9 @@
 # Progress
 
+## Give the desktop a polished dark theme (2026-11-14)
+
+Replaced the light application shell with a midnight-forest palette across the workspace, navigation, task composer, settings, runs, and system monitor. Dark inputs, layered panels, green action states, focus rings, readable muted text, and dark status cards now use a consistent surface system. The contrast check caught and fixed the objective placeholder and monitor intro text, and the focused onboarding/contrast plus monitor browser checks pass (2); `npm run build:desktop` passes TypeScript and Vite. The native Windows app was compiled to a separate Cargo target and staged at [`build/native-dark-20261114`](../build/native-dark-20261114/) with the existing bundled engine; hashes are in its manifest. I visually inspected the staged workspace and monitor. Hosted verification and a matching installer build are pending for this theme change. No model inference was used.
+
 ## Make live system-monitor updates screen-reader friendly (2026-11-14)
 
 The monitor samples hardware every 2.5 seconds. Its “Updated…” text was marked as a live status, which could repeatedly interrupt screen-reader users during passive polling. Automatic samples are now silent; selecting “Refresh now” produces one polite completion announcement. The focused Playwright flow passes (1), and `npm run build:desktop` passes TypeScript and Vite production compilation. A native Tauri Windows build also compiled and is staged with the bundled engine at [`build/native-monitor-a11y-20261114`](../build/native-monitor-a11y-20261114/); hashes are in its manifest. This checks one changing desktop status path and does not claim a full screen-reader audit. No model inference was used.
