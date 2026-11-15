@@ -344,6 +344,36 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit b1bd080caeba423309d437f7df6ee564bd5d27dd; "
         "see model-provider-source-audit.md#refusal-detection-and-fallback-middleware"
     ),
+    "zerosignal": (
+        "local ZeroSignal proxy adapter for paid wallet-backed remote inference with catalog-clamped reasoning; "
+        "pinned source review at commit ce1ba1f1603b4f191d3cd1aad284879df51a9f4a; "
+        "see model-provider-source-audit.md#zerosignal-local-proxy-provider"
+    ),
+    "yolo-auto": (
+        "Yolo-Auto cloud provider with plan-filtered discovery and static per-model capability claims; "
+        "pinned source review at commit e81ef7c28cf79e8664cac6634e0e6bafb28cad3a; "
+        "see model-provider-source-audit.md#yolo-auto-cloud-provider"
+    ),
+    "teamorouter": (
+        "two-protocol TeamoRouter cloud profiles with public catalog-derived model/context metadata; "
+        "pinned source review at commit 9260c9a0e7c433b7cbb51bd07128de7f2627c829; "
+        "see model-provider-source-audit.md#teamorouter-cloud-provider"
+    ),
+    "quotum": (
+        "Venice provider using a Quotum seat key, pseudonymous usage meter, and optional paid X search; "
+        "pinned source review at commit b27d42ea995567a66e64b2389b14a665c5a17611; "
+        "see model-provider-source-audit.md#quotum-venice-seat-provider"
+    ),
+    "sabi-metadata": (
+        "Sabi loopback-proxy attribution middleware; adds opaque session/turn headers but does not provide inference; "
+        "pinned source review at commit b59bd21b89fca091bf9ebcfb3082a4191e511da7; "
+        "see model-provider-source-audit.md#sabi-hermes-attribution-middleware"
+    ),
+    "tsubasa": (
+        "hosted OpenAI-compatible provider with explicitly unqualified, unavailable live service at pinned revision; "
+        "pinned source review at commit ce52a9cdfae352a339ddf3ff219c6ec06f552bc3; "
+        "see model-provider-source-audit.md#tsubasa-hosted-provider"
+    ),
     "model-presets": (
         "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
         "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "

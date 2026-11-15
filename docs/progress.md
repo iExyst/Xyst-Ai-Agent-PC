@@ -1,5 +1,29 @@
 # Progress
 
+## Classify the pinned Sabi Hermes middleware (2026-11-15)
+
+Reviewed `sabi-metadata` at catalog-pinned commit `b59bd21b89fca091bf9ebcfb3082a4191e511da7`. Despite its `models` category, it only attaches bounded opaque session/turn attribution headers to a specific local Sabi proxy alias; inference and routing belong to the proxy/upstream. The extension is fail-open and cannot enforce permissions or budgets. Focused test sources were inspected but not run. Ninety-one selected non-platform candidates are source-reviewed; 89/90 model-category entries across 87 repositories are reviewed, with one pending. No proxy, key, test, or inference was used.
+
+## Review the pinned Tsubasa provider declaration (2026-11-15)
+
+Reviewed `tsubasa` at catalog-pinned commit `ce52a9cdfae352a339ddf3ff219c6ec06f552bc3`. The adapter declares two API-key OpenAI-compatible models with 32K contexts and no tools, vision, or reasoning. Its own pinned README says the public service is website-only, `/v1/models` returns 404, and live inference is unavailable; client-side synthetic-key tests do not qualify the service. No provider-specific test suite or license file is present. Ninety selected non-platform candidates are source-reviewed; 88/90 model-category entries across 86 repositories are reviewed, with 2 pending. No key, endpoint, test, or inference was used.
+
+## Review the pinned Quotum Venice seat provider (2026-11-15)
+
+Reviewed `quotum` at catalog-pinned commit `b27d42ea995567a66e64b2389b14a665c5a17611`. Inference prompts, outputs, and the seat key go directly to Venice; Quotum discovery is public and unauthenticated, while the meter receives a stable 16-hex SHA-256 key handle. Catalog labels `private` and `anonymized` are service claims, not proof of local privacy. Optional paid X search is off by default and uses Venice search-capable models. The dashboard reads configured seat or wallet data and can send the meter handle to the configured Quotum host. No provider-local tests exist in the pinned checkout; source only was reviewed. Eighty-nine selected non-platform candidates are source-reviewed; 87/90 model-category entries across 85 repositories are reviewed, with 3 pending. No key, wallet, endpoint, account, test, or inference was used. Live model/provider tests remain deferred to the final LLM-testing phase.
+
+## Review the pinned TeamoRouter cloud provider (2026-11-15)
+
+Reviewed `teamorouter` at catalog-pinned commit `9260c9a0e7c433b7cbb51bd07128de7f2627c829`. It registers separate native-Anthropic and OpenAI-compatible cloud profiles on one API key. A public pricing/catalog endpoint supplies model lists and context windows, filtered using token billing, name prefixes, and 64K context; tool support is inferred by family and the plugin does not calculate response costs. Prompt/tool/output forwarding to TeamoRouter and upstream vendors is disclosed; the OpenAI route adds a fixed source-attribution header. Unit and fake-server integration test sources were inspected only. Eighty-eight non-platform candidate entries are source-reviewed; 86/90 model-category entries across 84 repositories are reviewed, with 4 pending. No key, endpoint, account, test, or inference was used.
+
+## Review the pinned Yolo-Auto cloud provider (2026-11-15)
+
+Reviewed `yolo-auto` at catalog-pinned commit `e81ef7c28cf79e8664cac6634e0e6bafb28cad3a`. It uses the vendor API with API-key auth and plan-filtered live discovery, with two hardcoded offline fallbacks. The per-model capability declarations conflict with source documentation for whether `yolo-small` supports adjustable reasoning. The code has no cost hook despite describing flat-rate plans. Stub-based tests were inspected but not run. Eighty-seven selected non-platform candidates are reviewed; 85 of 90 model-category rows across 83 repositories are reviewed, with 5 pending. No account, key, endpoint, test, or inference was used.
+
+## Review the pinned ZeroSignal provider (2026-11-15)
+
+Reviewed `zerosignal` at catalog-pinned commit `ce1ba1f1603b4f191d3cd1aad284879df51a9f4a`. Hermes talks to a loopback `zs-proxy` by default, but the proxy routes paid wallet-funded inference to a remote network. A placeholder API key is required by Hermes and forwarded to the proxy, which the source says ignores it. The adapter clamps reasoning using proxy-declared catalog metadata; restricted models can clamp an explicit `none` request to a non-none floor, and fallback IDs do not establish availability or price. Tests using local proxy stubs were inspected only. Eighty-six selected non-platform candidates are individually reviewed; 84 of 90 model-category rows across 82 repositories are reviewed, with 6 pending. No proxy, wallet, test, or inference was used.
+
 ## Classify the pinned Protean Model Sync plugin (2026-11-15)
 
 Reviewed `protean-model-sync` at catalog-pinned commit `50d3d096a2beb02a578c28d116a989537f5d19d1`. It is administrative configuration tooling, not inference: human-triggered CLI, local backend, and desktop routes manage provider/model settings across profiles and sessions. Preset writes are explicitly targeted, confirmed, backed up, atomic, and read back, while group-member changes affect that member's profile default. Source review found a plan-to-write concurrency window and caller-supplied rollback files can replace the selected config beyond preset keys. Tests were inspected only. Eighty-five selected non-platform candidates are reviewed; 83 of 90 model-category rows across 81 repositories are reviewed, with 7 pending. No profile was read/written, and no tests or inference were run.

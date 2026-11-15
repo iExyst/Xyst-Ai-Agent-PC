@@ -1,6 +1,6 @@
 # Hermes capability reference matrix
 
-83 optional `models`-category catalog entries have pinned source-only reviews across 81 repositories; 7 of 90 entries remain pending. Reviewed IDs and exact source pins are maintained in [`catalog-inventory.json`](catalog-inventory.json) and [`model-provider-source-audit.md`](model-provider-source-audit.md). These are Phase 9 candidate classifications, not implemented X.A.A. provider parity. Live model/provider tests remain deferred to the final LLM-testing phase.
+89 optional `models`-category catalog entries have pinned source-only reviews across 87 repositories; 1 of 90 entries remains pending. Reviewed IDs and exact source pins are maintained in [`catalog-inventory.json`](catalog-inventory.json) and [`model-provider-source-audit.md`](model-provider-source-audit.md). These are Phase 9 candidate classifications, not implemented X.A.A. provider parity. Live model/provider tests remain deferred to the final LLM-testing phase.
 
 The pinned catalog inventory contains 975 plugin manifests across 976 YAML files; `plugin-catalog/removed.yaml` is separately recorded as a catalog blocklist with one retired entry, not counted as a plugin. Two catalog manifests omit a category, but pinned source review classifies `fusion` as automation and `hermes-memory-wiki` as memory; those source classifications are recorded without rewriting the upstream category metadata. `scripts/audit_catalog_inventory.py --check` verifies the generated inventory against the clean pinned checkout.
 
