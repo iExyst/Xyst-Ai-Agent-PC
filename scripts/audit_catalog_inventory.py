@@ -303,6 +303,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit bfd4510df3cb2218300f3a059414ecbf8e479366; "
         "see model-provider-source-audit.md#modular-cloud-provider"
     ),
+    "nexus-recovery-peer": (
+        "opt-in bounded external second-opinion hook with redacted failure excerpts; pinned source review "
+        "at commit 2d3b15dcc513bab7fc2463d29fb581524a94c8fb; "
+        "see model-provider-source-audit.md#nexus-recovery-peer"
+    ),
     "model-presets": (
         "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
         "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "

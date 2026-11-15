@@ -1,5 +1,9 @@
 # Progress
 
+## Review the pinned Nexus recovery-peer plugin (2026-11-15)
+
+Reviewed `nexus-recovery-peer` at catalog-pinned commit `2d3b15dcc513bab7fc2463d29fb581524a94c8fb`. External review defaults off and requires a configured peer route plus both LLM override capabilities; after repeated identical failures/read-only results or a failed child, it sends a best-effort redacted task/error excerpt through Hermes `ctx.llm`, once per turn. It does not replay tools or verify fixes. Error text may include sensitive paths/content, redaction is not a security boundary, and provider fallback can weaken recipient independence. Seventy-eight selected non-platform entries are now individually source-reviewed; 76/90 model-category entries across 74 source trees are reviewed, with 14 pending. The plugin's tests were inspected but not run. No route, external provider, test, or inference was used.
+
 ## Review the pinned Modular Cloud provider (2026-11-15)
 
 Reviewed the `modular` provider at catalog-pinned commit `bfd4510df3cb2218300f3a059414ecbf8e479366`. It targets the fixed `api.modular.com` API, reads `MODULAR_API_KEY`, and filters the authenticated live catalog to four curated model IDs with per-model reasoning mappings. Tool, vision, and context-window support are catalog/source claims that were not independently reproduced. This sends inference to Modular Cloud and is not an LM Studio path. Seventy-seven selected non-platform catalog entries now have individual source reviews; 75 of 90 model-category entries are reviewed across 73 source trees, with 15 pending. Source, manifest, and license hashes are recorded in the audit. No account, key, request, test, or inference was used.
