@@ -1,5 +1,9 @@
 # Progress
 
+## Redact all configured credentials from exported trajectories (2026-11-15)
+
+The authenticated run export previously included exact-value redaction for only LM Studio, Brave Search, and Telegram, leaving other app credentials and the API bearer outside the explicit secret list. It now includes every app-managed credential profile, configured MCP environment secrets and OAuth tokens, and the active API bearer. Recursive redaction also recognizes sensitive JSON key names and common OpenAI, Anthropic, GitHub, Slack, and Google token forms; `redaction_version` is now 2. Focused API export regressions pass (2); Ruff, formatting, and strict Pyright pass. This improves credential handling only; it does not establish full PII redaction, replay safety, or training-data quality. No model/provider call or inference was made.
+
 ## Refine the dark saved-conversation workspace (2026-11-15)
 
 The saved-chat view now keeps short transcripts content-sized instead of stretching messages across unused vertical space. Its Send message action sits directly below the composer, while optional permissions, attachments, and run limits remain in the expandable section below. This preserves the existing coordinator and approval behavior. `npm run build:desktop` passes TypeScript checking and the Vite production build; hosted source run [43737483705](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43737483705) passes on `4edd0159`, including the full Python suite and recovery checks. Its exact-revision installer run [43738114562](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43738114562) passed all 50 steps without failure. No model inference was used.

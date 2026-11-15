@@ -1455,11 +1455,21 @@ def test_public_run_record_does_not_expose_worker_lease(workspace_tmp_path):
 
 
 def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(workspace_tmp_path):
-    secret = "fixture-secret-value-1234"
+    from xaa.storage.mcp import MCPRegistry, MCPServerSpec
+
+    secrets = {
+        "lm-studio": "fixture-lm-secret-1234",
+        "api-launch": "fixture-launch-secret-1234",
+        "brave-search": "fixture-brave-secret-1234",
+        "openai-compatible": "fixture-openai-secret-1234",
+        "discord-bot": "fixture-discord-secret-1234",
+        "generic-webhook-hmac": "fixture-webhook-secret-1234",
+        "email-mailbox-password": "fixture-mailbox-secret-1234",
+    }
 
     class Credentials:
         def get(self, profile="lm-studio"):
-            return secret if profile == "brave-search" else None
+            return secrets.get(profile)
 
         def set(self, _token, _profile="lm-studio"):
             return None
@@ -1468,6 +1478,16 @@ def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(wor
             return None
 
     store = RunStore(workspace_tmp_path / "trajectory.sqlite3")
+    mcp_server = MCPRegistry(store).create_server(
+        MCPServerSpec(
+            name="trajectory fixture",
+            command="fixture",
+            secret_env=["MCP_API_TOKEN"],
+        )
+    )
+    secrets[f"mcp:{mcp_server.id}:MCP_API_TOKEN"] = "fixture-mcp-env-secret-1234"
+    secrets[f"mcp:{mcp_server.id}:oauth-tokens"] = "fixture-mcp-oauth-secret-1234"
+    secrets[f"mcp:{mcp_server.id}:oauth-client"] = "fixture-mcp-client-secret-1234"
     run = store.create_run(
         objective="Check redacted export",
         acceptance_criteria=["secret absent"],
@@ -1483,7 +1503,12 @@ def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(wor
             {
                 "message": {
                     "role": "assistant",
-                    "content": f"stored {secret}; Bearer abc.def; api_key=inline-secret",
+                    "content": (
+                        f"stored {' '.join(secrets.values())}; {TOKEN}; Bearer abc.def; "
+                        "api_key=inline-secret; client_secret=inline-client-secret; "
+                        "GitHub token ghp_123456789012345678901234567890; "
+                        "Anthropic token sk-ant-api03-123456789012345678901234"
+                    ),
                 }
             },
         )
@@ -1502,17 +1527,38 @@ def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(wor
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert "attachment;" in response.headers["content-disposition"]
-    assert secret.encode() not in response.content
+    for secret in (*secrets.values(), TOKEN, "inline-secret", "inline-client-secret"):
+        assert secret.encode() not in response.content
     exported = response.json()
     assert exported["format"] == "xaa-trajectory"
+    assert exported["redaction_version"] == 2
     assert exported["run"]["id"] == run["id"]
     message_event = next(
         event for event in exported["events"] if event["event_type"] == "model.message"
     )
     event_text = message_event["payload"]["message"]["content"]
     assert "[REDACTED]" in event_text
-    assert "inline-secret" not in event_text
     assert "abc.def" not in event_text
+    assert "inline-client-secret" not in event_text
+    assert "ghp_123456789012345678901234567890" not in event_text
+    assert "sk-ant-api03-123456789012345678901234" not in event_text
+
+    from xaa.storage.trajectory import redact
+
+    assert redact(
+        {
+            "client_secret": "inline-client-secret",
+            "refresh_token": "inline-refresh-secret",
+            "private_key": "inline-private-secret",
+            "ordinary_field": "visible",
+        },
+        (),
+    ) == {
+        "client_secret": "[REDACTED]",
+        "refresh_token": "[REDACTED]",
+        "private_key": "[REDACTED]",
+        "ordinary_field": "visible",
+    }
 
 
 def test_run_trajectory_export_enforces_event_and_byte_limits(workspace_tmp_path, monkeypatch):

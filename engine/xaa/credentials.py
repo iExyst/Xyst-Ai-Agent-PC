@@ -6,6 +6,16 @@ from typing import Protocol, cast
 
 API_LAUNCH_TOKEN_PROFILE = "api-launch"
 API_LAUNCH_URL_PROFILE = "api-launch-url"
+CREDENTIAL_PROFILES_FOR_EXPORT_REDACTION = (
+    "lm-studio",
+    API_LAUNCH_TOKEN_PROFILE,
+    "openai-compatible",
+    "brave-search",
+    "telegram-bot",
+    "discord-bot",
+    "generic-webhook-hmac",
+    "email-mailbox-password",
+)
 
 
 class OSVault(Protocol):

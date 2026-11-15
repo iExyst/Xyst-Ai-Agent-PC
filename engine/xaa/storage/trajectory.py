@@ -10,11 +10,23 @@ from xaa.storage.runs import RunStore
 
 MAX_TRAJECTORY_EVENTS = 10_000
 MAX_TRAJECTORY_BYTES = 10 * 1024 * 1024
-REDACTION_VERSION = 1
+REDACTION_VERSION = 2
 _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
 _NAMED_SECRET = re.compile(
-    r"(?i)(\b(?:api[_-]?key|access[_-]?token|password|secret|authorization)\b\s*[:=]\s*)"
+    r"(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|"
+    r"client[_-]?secret|webhook[_-]?secret|private[_-]?key|password|secret|"
+    r"authorization)\b\s*[:=]\s*)"
     r"(['\"]?)[^\s,;\]\[}\"']+"
+)
+_SECRET_FIELD = re.compile(
+    r"(?i)(?:^|[^a-z0-9])(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"id[_-]?token|client[_-]?secret|webhook[_-]?secret|private[_-]?key|"
+    r"password|secret|authorization)(?:$|[^a-z0-9])"
+)
+_COMMON_API_TOKEN = re.compile(
+    r"(?i)\b(?:sk-(?:proj-|live-|ant-)?[A-Za-z0-9_-]{16,}|"
+    r"gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+    r"xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})\b"
 )
 _TELEGRAM_TOKEN = re.compile(r"(?i)(/bot)[0-9]{5,}:[A-Za-z0-9_-]{20,}")
 
@@ -28,13 +40,17 @@ def redact(value: Any, secrets: tuple[str, ...]) -> Any:
                 result = result.replace(secret, "[REDACTED]")
         result = _BEARER.sub("Bearer [REDACTED]", result)
         result = _NAMED_SECRET.sub(r"\1[REDACTED]", result)
+        result = _COMMON_API_TOKEN.sub("[REDACTED]", result)
         return _TELEGRAM_TOKEN.sub(r"\1[REDACTED]", result)
     if isinstance(value, list):
         items = cast(list[Any], value)
         return [redact(item, secrets) for item in items]
     if isinstance(value, dict):
         mapping = cast(dict[str, Any], value)
-        return {key: redact(item, secrets) for key, item in mapping.items()}
+        return {
+            key: "[REDACTED]" if _SECRET_FIELD.search(key) else redact(item, secrets)
+            for key, item in mapping.items()
+        }
     return value
 
 

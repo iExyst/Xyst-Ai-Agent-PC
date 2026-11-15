@@ -62,7 +62,7 @@ from xaa.channels.discord import (
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
-from xaa.credentials import CredentialStore
+from xaa.credentials import CREDENTIAL_PROFILES_FOR_EXPORT_REDACTION, CredentialStore
 from xaa.extensions.agent_plugins import (
     PluginDataListing,
     PluginDataRemovalResult,
@@ -4222,15 +4222,20 @@ def create_app(
 
     @app.get("/runs/{run_id}/export")
     def export_run_trajectory(run_id: str, _: None = Depends(authenticate)) -> Response:
-        secrets_to_redact: list[str] = []
+        secrets_to_redact: list[str] = [expected]
         if credential_store is not None:
-            for profile in ("lm-studio", "brave-search", "telegram-bot"):
+            for profile in CREDENTIAL_PROFILES_FOR_EXPORT_REDACTION:
                 value = credential_store.get(profile)
                 if value:
                     secrets_to_redact.append(value)
             for server in MCPRegistry(run_store).list_servers():
-                for name in server.secret_env:
-                    value = credential_store.get(f"mcp:{server.id}:{name}")
+                profiles = (
+                    *(f"mcp:{server.id}:{name}" for name in server.secret_env),
+                    f"mcp:{server.id}:oauth-tokens",
+                    f"mcp:{server.id}:oauth-client",
+                )
+                for profile in profiles:
+                    value = credential_store.get(profile)
                     if value:
                         secrets_to_redact.append(value)
         try:
