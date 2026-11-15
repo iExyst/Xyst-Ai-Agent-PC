@@ -1,5 +1,9 @@
 # Progress
 
+## Refine the desktop dark workspace UI (2026-11-15)
+
+Refined the persistent dark desktop shell with consistent line icons for each navigation destination, clearer active-section emphasis, softer depth and hover states, and a restrained mint accent around the objective composer. Kept the existing onboarding, connection, navigation, and run flows unchanged. The production desktop build passed TypeScript checking and Vite bundling; a rendered 1440×1000 view was visually inspected. This is a presentation improvement, not completion of the fresh-user real-model Phase 6 gate or broad Hermes desktop parity. No model inference was run.
+
 ## Verify dark-navigation update in hosted source workflow (2026-11-15)
 
 Hosted source run [43713761830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43713761830) passed on commit `9297f7f24007c24d63941de6e06e12b811c0b99a`, including API contract checks, generated desktop contract consistency, TypeScript checking, and the full Python suite. The installer job was skipped by the feature-branch workflow condition, so the prior hosted package run [43712084557](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43712084557) remains the installed-package evidence. The dark navigation CSS also passed the local Vite production build and rendered visual inspection. The subsequent source-audit count correction is documentation-only.

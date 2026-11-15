@@ -947,3 +947,37 @@ body{
 /* Finish the dark desktop navigation system with an icon for every destination. */
 .side-nav a[href="#system-monitor"]:before{content:"▥"}
 .side-nav a:before{flex:none;text-align:center;font-family:ui-sans-serif,system-ui,sans-serif}
+
+/* Navigation finish: crisp line icons and a quieter, more legible hierarchy. */
+.side-nav a:before{display:none!important;content:none!important}
+.side-nav a{gap:12px;padding-inline:12px}
+.side-icon{width:18px;height:18px;flex:none;color:#8d9eaa;transition:color .16s,transform .16s}
+.side-nav a:hover .side-icon{color:#c8d6d5}
+.side-nav a.active .side-icon{color:#91e8b8}
+.side-nav a.active{box-shadow:inset 2px 0 #84e0b2,0 5px 16px #0002}
+.brand-mark{position:relative;isolation:isolate}
+.brand-mark:after{position:absolute;inset:-4px;z-index:-1;border:1px solid #8de2b233;border-radius:15px;content:""}
+.sidebar-footer{padding-top:16px}
+.sidebar-footer .connection-dot{margin-inline:2px}
+.app-topbar{box-shadow:0 8px 24px #0002}
+.app-topbar>div:first-of-type{min-width:0}
+.app-topbar .eyebrow{margin-bottom:5px}
+.status-pill{box-shadow:inset 0 1px #ffffff08}
+.app-content{isolation:isolate}
+.app-content>section,.app-content>div>section{box-shadow:0 12px 32px #0002,inset 0 1px #ffffff07}
+.app-content>section:hover,.app-content>div>section:hover{box-shadow:0 16px 38px #0003,inset 0 1px #ffffff09}
+.page-home>#new-objective{position:relative;overflow:hidden}
+.page-home>#new-objective:after{position:absolute;top:-125px;right:-78px;width:300px;height:300px;border:1px solid #95e9b80d;border-radius:50%;box-shadow:0 0 0 28px #95e9b806,0 0 0 58px #95e9b804;content:"";pointer-events:none}
+.page-home>#new-objective .composer-heading,.page-home>#new-objective .objective-intro,.page-home>#new-objective #run-objective,.page-home>#new-objective details,.page-home>#new-objective>button,.page-home>#new-objective>p{position:relative;z-index:1}
+.page-home>#new-objective .composer-private{box-shadow:inset 0 1px #ffffff09}
+.page-home>#new-objective #run-objective{transition:border-color .16s,box-shadow .16s,background .16s}
+.page-home>#new-objective #run-objective:focus{background:#0b1410;box-shadow:0 0 0 3px #79dca42b,inset 0 1px 3px #0005}
+.page-home>.workspace-card{border-radius:12px}
+.app-content button:not(.secondary-button){box-shadow:0 5px 16px #55c98720,inset 0 1px #ffffff48}
+.app-content button:not(.secondary-button):hover:not(:disabled){box-shadow:0 8px 22px #55c9872b,inset 0 1px #ffffff5c}
+.app-content button.secondary-button{box-shadow:inset 0 1px #ffffff08}
+.app-content button:disabled{filter:saturate(.45)}
+.app-content details>summary{transition:color .15s}
+.app-content details>summary:hover{color:#a9ecc6}
+.app-content ::selection{background:#39785d;color:#f4fff8}
+@media(max-width:640px){.side-nav a{gap:0;padding-inline:9px}.side-icon{width:19px;height:19px}.brand-mark:after{inset:-3px}.app-topbar{box-shadow:0 5px 18px #0003}}
