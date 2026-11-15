@@ -238,6 +238,16 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 013017d27acd58051c4ad654bb21036d93bdd3ce; "
         "see model-provider-source-audit.md#kiro-native-provider-and-device-auth"
     ),
+    "kimchi-acp-provider": (
+        "autonomous Kimchi coding harness exposed as an ACP external-process provider; pinned source review "
+        "at commit d6ffe62876a44605585eaf5c2e3d5214b9e10cb8; "
+        "see model-provider-source-audit.md#kimchi-acp-coding-harness"
+    ),
+    "kimchi-provider": (
+        "OpenAI-compatible Kimchi API-key provider with a live metadata catalog; pinned source review "
+        "at commit 0fcca81491ce97449d615754c60f89eff7696a93; "
+        "see model-provider-source-audit.md#kimchi-api-provider"
+    ),
     "junie-acp": (
         "autonomous Junie coding agent exposed as an ACP external-process provider; pinned source review "
         "at commit 296ea839b354956fbd22544687a88b944c18dc22; "
@@ -443,7 +453,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; fifty-three selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; fifty-five selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

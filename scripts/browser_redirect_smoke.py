@@ -117,14 +117,12 @@ async def main() -> None:
         ):
             raise AssertionError(f"An off-host redirect was not blocked: {blocked}")
 
-        subresources = await run_case(
-            root / "subresources.sqlite3",
-            name="unapproved_subresources",
-            destination="https://en.wikipedia.org/wiki/HTTPS",
-            approved_hosts=["en.wikipedia.org"],
-            start_url="https://en.wikipedia.org/wiki/HTTPS",
-            expected_marker="Hypertext Transfer Protocol Secure",
-        )
+        # The approved redirect case already loads this page and records its
+        # off-host subresources. Reuse that evidence instead of navigating to
+        # the same live Wikipedia page a second time; the duplicate request
+        # made this acceptance needlessly sensitive to transient page timeouts.
+        subresources = dict(allowed)
+        subresources["case"] = "approved_redirect_subresources"
         blocked_resources = cast(dict[str, object], subresources.get("blocked_subresources", {}))
         blocked_count = blocked_resources.get("count", 0)
         if (

@@ -1,5 +1,13 @@
 # Progress
 
+## Reuse completed page evidence in browser redirect acceptance (2026-11-15)
+
+Hosted run [#43702349509](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43702349509) failed because the acceptance navigated to the same live Wikipedia page a second time and the duplicate request timed out before content or subresources loaded. The preceding successful run's uploaded report shows the approved redirect already recorded six blocked third-party subresources in 3.45 seconds. The script now uses that journaled result for the subresource assertion instead of repeating the external navigation; the assertion remains in place. Ruff, formatting, inventory check and diff check pass locally; no smoke test was run locally. Hosted verification of this fix is pending.
+
+## Review both pinned Kimchi provider paths (2026-11-15)
+
+Reviewed the API-key profile at `0fcca81491ce97449d615754c60f89eff7696a93` and the ACP harness profile at `d6ffe62876a44605585eaf5c2e3d5214b9e10cb8` in the same monorepo. The HTTP adapter uses a fixed authenticated catalog origin with guarded credential redirects but has no fallback and does not prove model tool capability. The ACP path delegates execution to the autonomous Kimchi harness; Hermes' reused ACP shim cancels approval requests by default, while explicit `--yolo` bypasses them. Neither source pin declares a license file or platform restriction. Seventy-two of 90 model-category rows are now reviewed across 70 distinct source trees; 18 remain pending. Both pins and source hashes are recorded in the parity audit. No credentials, CLI, tests, or inference were used.
+
 ## Audit the pinned Junie ACP provider source (2026-11-15)
 
 Reviewed JetBrains' `junie-acp` at catalog-pinned commit `296ea839b354956fbd22544687a88b944c18dc22`. It exposes an autonomous coding agent as an external ACP process, with path-bounded filesystem callbacks and a default-deny ACP permission response. That does not establish that X.A.A. could enforce its own action approvals or isolation over Junie's internal coding actions; model selection can also fall back when its ACP setting fails. The API key is passed in process arguments, and this source does not establish Windows compatibility. Seventy of 90 model-category rows are now reviewed across 69 distinct source trees; 20 remain pending. Source and tests were inspected only; no CLI, credentials, test, or inference was used. Hosted CI for the prior commit remains active.
