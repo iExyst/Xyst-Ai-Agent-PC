@@ -238,6 +238,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 013017d27acd58051c4ad654bb21036d93bdd3ce; "
         "see model-provider-source-audit.md#kiro-native-provider-and-device-auth"
     ),
+    "junie-acp": (
+        "autonomous Junie coding agent exposed as an ACP external-process provider; pinned source review "
+        "at commit 296ea839b354956fbd22544687a88b944c18dc22; "
+        "see model-provider-source-audit.md#junie-acp-autonomous-coding-agent"
+    ),
     "lightningai": (
         "thin OpenAI-compatible remote-provider profile; pinned source review "
         "at commit e4350ca278f8994322fc3b79a55a52e83388b7da; "
@@ -438,7 +443,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; fifty-two selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; fifty-three selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

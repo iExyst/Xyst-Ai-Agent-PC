@@ -1,5 +1,9 @@
 # Progress
 
+## Audit the pinned Junie ACP provider source (2026-11-15)
+
+Reviewed JetBrains' `junie-acp` at catalog-pinned commit `296ea839b354956fbd22544687a88b944c18dc22`. It exposes an autonomous coding agent as an external ACP process, with path-bounded filesystem callbacks and a default-deny ACP permission response. That does not establish that X.A.A. could enforce its own action approvals or isolation over Junie's internal coding actions; model selection can also fall back when its ACP setting fails. The API key is passed in process arguments, and this source does not establish Windows compatibility. Seventy of 90 model-category rows are now reviewed across 69 distinct source trees; 20 remain pending. Source and tests were inspected only; no CLI, credentials, test, or inference was used. Hosted CI for the prior commit remains active.
+
 ## Review the pinned Reka model provider source (2026-11-15)
 
 Reviewed `reka-provider` at catalog-pinned commit `df031f732c9eddf8b39a0fa240b898da4ca2d6ff`. It is a remote OpenAI-compatible API-key profile with a curated six-model allowlist, optional configurable base URL, and Hermes-managed prompt/tool/image transport. The source maps reasoning settings and declares vision/tool capabilities, but those claims were not independently exercised; its configurable origin needs binding and validation before any X.A.A. integration. Sixty-nine of 90 model-category rows are reviewed across 68 source trees; 21 remain pending. No credentials, network endpoint, tests, or inference were used. The prior hosted CI run remains in progress; this catalog update awaits hosted verification.
