@@ -233,6 +233,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 39a6944280c2156f816df8641d3d01d743aec564; "
         "see model-provider-source-audit.md#kfchow-llm-value-router-middleware"
     ),
+    "lightningai": (
+        "thin OpenAI-compatible remote-provider profile; pinned source review "
+        "at commit e4350ca278f8994322fc3b79a55a52e83388b7da; "
+        "see model-provider-source-audit.md#lightning-ai-model-provider-profile"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
@@ -368,7 +373,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; thirty-eight selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; thirty-nine selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

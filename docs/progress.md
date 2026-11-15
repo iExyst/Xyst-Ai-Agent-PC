@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Lightning AI provider profile (2026-11-15)
+
+Reviewed `lightningai` at catalog-pinned commit `e4350ca278f8994322fc3b79a55a52e83388b7da`. It is a thin Hermes profile for an OpenAI-compatible remote endpoint; its optional custom base URL is not origin-validated in the plugin, and network/data behavior is delegated to Hermes core. Fifty-six of 90 model-category rows are reviewed across 55 source trees; 34 remain pending. The pinned review and evidence limits are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, key, account, catalog endpoint, or inference call was used.
+
 ## Review pinned KFChow LLM value-router middleware (2026-11-15)
 
 Reviewed `kfchow-llm-value-router` at catalog-pinned commit `39a6944280c2156f816df8641d3d01d743aec564`. It defaults to shadow mode, but when its vendor key is configured it still sends a capped user-message excerpt to TypeSafe Jev on eligible turns. Live routing is an explicit config change; the paid-lane escalation probe and vendor-origin overrides need strict endpoint checks. The source hashes and behavior review are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-five of 90 model-category rows are reviewed across 54 source trees; 35 remain pending. No plugin, key, account, model service, or inference call was used; live LLM tests remain deferred.
