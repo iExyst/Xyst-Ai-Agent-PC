@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Model Picker middleware (2026-11-15)
+
+Reviewed `model-picker` at catalog-pinned commit `8ba20ad970f68d6adecc958da8992034e89f3481`. It sends recent conversation context to the configured classifier on each unpinned turn, logs a 120-character prompt excerpt locally, and fails open to the cheapest tier; that routing choice cannot replace X.A.A.'s permission checks. The configured timeout and per-message history size do not have hard upper bounds. Sixty-one of 90 model-category rows are reviewed across 60 source trees; 29 remain pending. Findings and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin or model was run; live LLM testing remains deferred.
+
 ## Review pinned Model Leaderboard comparison dashboard (2026-11-15)
 
 Reviewed `model-leaderboard` at catalog-pinned commit `516e2f8d4dd0790f2c486d1fe0b444de5c2b3c10`. It is a comparison dashboard, not an inference provider; it reads public OpenRouter/Hugging Face metadata, and only explicit weight auto-fill uses the host-selected LLM. The benchmark write endpoint accepts arbitrary fields and unbounded numeric scores; route authorization is host-delegated and unverified. Sixty of 90 model-category rows are reviewed across 59 source trees; 30 remain pending. Findings and pinned source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin or endpoint was run; live LLM tests remain deferred.
