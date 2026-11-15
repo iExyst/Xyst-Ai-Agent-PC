@@ -1051,3 +1051,26 @@ body{
 .page-home>#new-objective:has(.conversation-thread) details.advanced-options{margin:10px 0;padding:10px 13px}
 .page-home>#new-objective:has(.conversation-thread)>p:not(.objective-intro){margin:8px 0;font-size:11px}
 @media(max-width:640px){.page-home>#new-objective:has(.conversation-thread){padding:16px!important}.conversation-messages .conversation-message{max-width:94%}.page-home>#new-objective:has(.conversation-thread) #run-objective{height:100px;min-height:100px}}
+
+/* Dark desktop finish: strengthen hierarchy and keep every screen on one calm palette. */
+:root{font-family:"Segoe UI Variable",Inter,"Segoe UI",system-ui,sans-serif;--canvas:#0c1116;--panel:#141b22;--panel-soft:#19232b;--line:#2a3942;--muted:#9aabb4;--text:#e8f0f2;--mint:#9ce8c4;--mint-ink:#10231a;--blue:#a9c3ff}
+body{background:radial-gradient(ellipse at 72% -18%,#1b493548 0,transparent 39%),linear-gradient(145deg,#0c1116,#0d1319 55%,#0c1217);line-height:1.5}
+.app-sidebar{background:linear-gradient(180deg,#111920,#0f161c 78%);border-color:#24313a}
+.brand-lockup strong{font-size:15px;letter-spacing:.015em}
+.app-topbar{background:#111820eF;border-color:#26343d}
+.app-topbar h1{font-size:20px;font-weight:680;letter-spacing:-.035em}
+.app-content{width:min(1080px,100%);padding-top:30px}
+.page-home{gap:14px}
+.page-home>#new-objective{border-radius:17px}
+.page-home>#new-objective .composer-heading h2{letter-spacing:-.04em}
+.page-home>#new-objective #run-objective{resize:vertical}
+.app-content>section,.app-content>div>section{border-radius:13px}
+.app-content button:not(.secondary-button){transition:transform .16s ease,filter .16s ease,box-shadow .16s ease}
+.app-content button.secondary-button{transition:background .16s ease,border-color .16s ease,color .16s ease}
+.app-content :is(input:not([type=checkbox]),select,textarea){transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+.app-content :is(input:not([type=checkbox]),select,textarea):focus{border-color:#72c995;box-shadow:0 0 0 3px #72c99524,inset 0 1px 2px #0003;outline:0}
+.app-content details>summary{padding:5px 1px}
+.app-content ::selection{background:#39785d;color:#f4fff8}
+@media(max-width:900px){.app-content{padding-top:23px}}
+@media(max-width:640px){.app-content{padding-top:15px}.page-home{gap:11px}.app-topbar h1{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.app-content button,.app-content :is(input,select,textarea){transition:none!important}}
