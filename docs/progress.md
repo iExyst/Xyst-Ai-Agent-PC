@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Hermes Muse Code provider (2026-11-15)
+
+Reviewed `hermes-muse-code` at catalog-pinned commit `e33501185e328b5597fd98c6de916495922ec727`. The provider uses Meta's Responses API and a manual device-code flow that caches both the OAuth token and subscription key in plaintext JSON; its permission handling does not establish private Windows ACLs. Each request times out, but response bodies and redirect destinations are not bounded. `META_BASE_URL` can change where the API key is sent. Forty-seven of 90 model-category rows are reviewed across 46 source trees; 43 remain pending, including the still-unavailable AtmoRouter source. No plugin was installed/imported/executed and no Meta account, key, endpoint, or inference was used.
+
 ## Review pinned Hermes Model Switcher (2026-11-15)
 
 Reviewed `hermes-model-switcher` at catalog-pinned commit `d62530d906307154e16ed98bb9b4be10ea6fef56`. It is a Dashboard model-route configuration manager, not an inference provider: it reads host model catalogs and edits selected route slots through explicit previews, profile scoping, durable journals, readback, and guarded undo. Its journal snapshots complete pre-change configs and can therefore contain credentials; private POSIX modes are enforced, but native Windows ACL behavior remains unverified. Hermes' public config writer also cannot rule out every concurrent same-key edit. Forty-six of 90 model-category entries are reviewed across 45 source trees; 44 remain pending. No plugin was installed/imported/executed and no provider, account, or model service was contacted.
