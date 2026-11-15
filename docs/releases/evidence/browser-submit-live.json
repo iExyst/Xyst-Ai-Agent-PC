@@ -1,0 +1,30 @@
+{
+  "checked_at_utc": "2026-11-15T22:42:25.889723+00:00",
+  "browser": "managed Microsoft Edge worker subprocess",
+  "approved_hosts": [
+    "httpbin.org"
+  ],
+  "form_url": "https://httpbin.org/forms/post",
+  "submitter_label": "Submit order",
+  "result": {
+    "status": "ok",
+    "trust": "untrusted_web_content",
+    "submitted": true,
+    "submitted_fields": [
+      "custname",
+      "custemail",
+      "comments"
+    ],
+    "synthetic_marker_echoed": true,
+    "synthetic_email_echoed": true,
+    "response_is_untrusted": true,
+    "journal_tool": "browser.submit",
+    "journal_state": "completed"
+  },
+  "elapsed_ms": 1724,
+  "source_sha256": {
+    "browser.py": "22296ed37bb09ed0480a07214f98bb6145ebbce885affb43f72d166b3d2f1728",
+    "browser_worker.py": "740c36fe2a58ce03ff42a8e7b40302a7c50f5cb0fa438fc9ccc33fbc79c44c1c",
+    "browser_submit_smoke.py": "aeb8bf757fee605f2c870ff2fe04c067be18b92450aa4c39737e5ec735dbc686"
+  }
+}

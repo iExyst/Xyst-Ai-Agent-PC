@@ -122,6 +122,9 @@ def test_browser_contract_bounds_the_model_facing_result() -> None:
     assert BROWSER_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
     assert BROWSER_METADATA["limits"]["option_characters"] == 200
     assert BROWSER_METADATA["limits"]["submitters_per_form"] == 20
+    assert BrowserOutput(status="submission_failed", trust="untrusted_web_content").status == (
+        "submission_failed"
+    )
     output_properties = BROWSER_METADATA["output_schema"]["properties"]
     assert output_properties["url"]["anyOf"][0]["maxLength"] == 2048
     assert output_properties["title"]["anyOf"][0]["maxLength"] == 500
@@ -136,6 +139,13 @@ def test_browser_contract_bounds_the_model_facing_result() -> None:
     )
     assert oversized["status"] == "read_failed"
     assert len(json.dumps(oversized).encode("ascii")) <= MAX_WORKER_BYTES
+    uncertain_submission = _bounded_result(
+        {"status": "ok", "trust": "untrusted_web_content", "content": "x" * MAX_WORKER_BYTES},
+        failure_status="submission_failed",
+        failure_error="The site may have received this submission.",
+    )
+    assert uncertain_submission["status"] == "submission_failed"
+    assert "may have received" in uncertain_submission["error"]
 
 
 def test_browser_worker_receives_only_os_runtime_environment(

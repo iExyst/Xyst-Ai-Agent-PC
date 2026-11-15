@@ -198,7 +198,7 @@ async def _submit_visible_form(
         details = await control.evaluate(
             """element => ({
               tag: element.tagName.toLowerCase(),
-              type: (element.getAttribute('type') || '').toLowerCase(),
+              type: (element.type || '').toLowerCase(),
               disabled: element.disabled === true,
               readOnly: element.readOnly === true,
               multiple: element.multiple === true
