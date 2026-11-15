@@ -57,9 +57,15 @@ def test_appcontainer_startup_frame_preserves_only_os_code() -> None:
         frame = startup_error_frame(error)
 
     message = startup_error_message(frame)
+    bounded_message = startup_error_message(frame, scope="resource-limited")
 
     assert message == "Windows could not start the network-isolated MCP server (Windows error 5)."
+    assert (
+        bounded_message
+        == "Windows could not start the resource-limited MCP server (Windows error 5)."
+    )
     assert path not in message
+    assert path not in bounded_message
 
 
 def test_mcp_manager_preserves_sanitized_resource_limit_diagnostic() -> None:
