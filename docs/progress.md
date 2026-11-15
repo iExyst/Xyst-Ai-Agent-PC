@@ -1,5 +1,9 @@
 # Progress
 
+## Reconcile the installed MCP/OAuth acceptance result (2026-11-15)
+
+The parity matrix still described the installed-stage MCP/OAuth fixture failure from run [43617618493](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43617618493) as awaiting retry. The later installed Windows acceptance [43712084557](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43712084557) passed that flow using manifest-verified app binaries; its retained report confirms OAuth PKCE, vault persistence and clearing, Windows process limits, and loopback denial for an isolated fixture. Corrected the matrix so it records the later passing evidence and keeps the hosted package status accurate.
+
 ## Verify Windows AppContainer command storage enforcement (2026-11-15)
 
 Added real Windows integration acceptances that exceed the AppContainer's 32 MiB workspace ceiling and its 288 MiB combined private-staging ceiling (32 MiB workspace plus a 256 MiB runtime budget). Both overflow probes confirm the transport stops the command and removes its private staging directories. The complete `tests/integration/test_windows_local_command_transport.py` file passes on this Windows host (10 passed, including output, memory, CPU, active-process, workspace-storage, and combined-staging controls). This directly verifies the AppContainer storage-control slice; hosted verification for the added probes is pending, and the shared execution-backend release requirements remain partial. No model inference was run.
