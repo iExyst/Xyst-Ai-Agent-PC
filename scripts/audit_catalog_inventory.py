@@ -18,6 +18,26 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "e322e42578586af1c376b7e836dfce437308682a; "
         "see model-provider-source-audit.md#abstract-provider"
     ),
+    "acedatacloud": (
+        "model-provider; pinned source review at commit "
+        "568763ee21fe081562bb9bcd91e7323f8f81d6ff; "
+        "see model-provider-source-audit.md#ace-data-cloud-provider"
+    ),
+    "aihubmix": (
+        "model-provider; pinned source review at commit "
+        "b55e916362ebd0528c5d8981d12f3b8f7268b847; "
+        "see model-provider-source-audit.md#aihubmix-provider"
+    ),
+    "aistupidlevel": (
+        "model-provider; pinned source review at commit "
+        "ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9; "
+        "see model-provider-source-audit.md#ai-stupid-level-provider"
+    ),
+    "anyapi": (
+        "model-provider; pinned source review at commit "
+        "e5b7b985b5aa56bc585ef1924858978696eb0c3a; "
+        "see model-provider-source-audit.md#anyapi-provider"
+    ),
     "claude-subscription-directsdk": (
         "model-provider; pinned source review at commit "
         "83f0a896b3518c7131181838e340c9a80c79524d; see model-provider-source-audit.md"
@@ -108,7 +128,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; six selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; ten selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

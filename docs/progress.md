@@ -1,5 +1,13 @@
 # Progress
 
+## Classify AI Stupid Level and AnyAPI model providers (2026-11-15)
+
+Reviewed two optional providers at their catalog-pinned commits, including dynamic router/catalog behavior, tool and vision declarations, credential and remote-data boundaries, licenses, source hashes, and Phase 9 dispositions. The model-provider audit now has eight of 90 model-category candidates classified; 82 remain pending. The pinned inventory drift check and static checks pass locally. Hosted verification remains pending because the current workflow started before these edits. No provider code, credential, account, or inference endpoint was used.
+
+## Classify Ace Data Cloud and AIHubMix model providers (2026-11-15)
+
+Reviewed two optional providers at their exact catalog-pinned commits and added SHA-256-bound source findings, transport/model-discovery behavior, remote data and credential boundaries, license, and Phase 9 disposition to the source audit. The generated catalog now identifies six reviewed provider candidates and 84 of 90 model-category candidates remain pending. The pinned inventory drift check, Ruff, format, strict Pyright and `git diff --check` pass locally. The current hosted workflow predates these edits and will not verify them; no plugin was installed or executed, no account or key was used, and no model inference was sent.
+
 ## Classify the pinned Abstract provider candidate (2026-11-15)
 
 Reviewed `abstract-provider` at its exact catalog-pinned repository commit. Its source registers a single OpenAI Responses API provider with a fixed, text-only model list, an `ABSTRACT_API_KEY`, and remote account billing; it is not compatible with X.A.A.'s current Chat Completions adapter. Recorded SHA-256 values and trust/data-flow boundaries in the provider audit, updated the generated catalog classification, and reduced the pending model-category source reviews from 87 to 86. The pinned inventory check is the acceptance; no plugin was installed, no account or key was used, and no inference request was sent.

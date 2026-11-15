@@ -19,6 +19,58 @@ The plugin's README says it only registers a provider; Hermes' own client sends 
 
 The candidate remains planned for Phase 9 and is not implemented. A compatible X.A.A. adapter would require an explicit Responses API transport, a remote-data and account-cost notice, OS-vault credential storage, bounded request/response handling, cancellation and retry semantics, deterministic protocol fixtures, and final live-provider acceptance after the requested LLM-test deferral. No plugin was installed, no key or account was used, and no request was sent to the inference service.
 
+## Ace Data Cloud provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`568763ee21fe081562bb9bcd91e7323f8f81d6ff`](https://github.com/AceDataCloud/AceDataCloudModelProviderHermes/tree/568763ee21fe081562bb9bcd91e7323f8f81d6ff). The Hermes catalog manifest is `plugin-catalog/acedatacloud.yaml`, SHA-256 `06f20708526e28850e1a2d7d3f528fa4db55b572e77a56c729d12f49866ddecf`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/AceDataCloud/AceDataCloudModelProviderHermes/blob/568763ee21fe081562bb9bcd91e7323f8f81d6ff/plugin.yaml) | `d14bd61f2e4b294892d559b8e755720aa4e78e3ce498b0e8f1afa4fc4d725b67` | Declares model-provider plugin version 1.0.2, Hermes `>=0.21.5`, and `ACEDATACLOUD_API_KEY`. |
+| [`__init__.py`](https://github.com/AceDataCloud/AceDataCloudModelProviderHermes/blob/568763ee21fe081562bb9bcd91e7323f8f81d6ff/__init__.py) | `c046b86e0c6838fd1630c06ea256bb1f1ade007f679fc6f3b0c5f36ce6f0724a` | Registers one OpenAI-compatible Chat Completions provider at `https://api.acedata.cloud/openai`; advertises only `gpt-4.1-mini` and `gpt-4.1`, both with tool support, and filters discovered IDs against that fixed allowlist. |
+| [`README.md`](https://github.com/AceDataCloud/AceDataCloudModelProviderHermes/blob/568763ee21fe081562bb9bcd91e7323f8f81d6ff/README.md) | `0149ee4fe697e79c017c84ef057cfa5d4cf54ff4014fe5b254dfb23b213ce4af` | Describes remote account/API-key setup and separate media products. Those media tools are not registered by this provider. Runtime, pricing, and account behavior remain upstream claims. |
+| [`LICENSE`](https://github.com/AceDataCloud/AceDataCloudModelProviderHermes/blob/568763ee21fe081562bb9bcd91e7323f8f81d6ff/LICENSE) | `72d30730d068e067be58878959bac2450f5a05f2b2e3c365cdc13a0181635c3c` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. Its Chat Completions transport is structurally closer to X.A.A.'s current adapter than the Abstract Responses API plugin, but live compatibility and account billing are unverified. Any future adapter still needs explicit remote-data and cost disclosure, protected credential storage, bounded HTTP behavior, cancellation/retry semantics, deterministic fixtures, and live-provider acceptance after the requested LLM-testing deferral. No code was installed or executed and no credential or inference request was used.
+
+## AIHubMix provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`b55e916362ebd0528c5d8981d12f3b8f7268b847`](https://github.com/AIhubmix/hermes-provider-aihubmix/tree/b55e916362ebd0528c5d8981d12f3b8f7268b847), subdirectory `aihubmix`. The Hermes catalog manifest is `plugin-catalog/aihubmix.yaml`, SHA-256 `58f9cf5eaf14f1f415298295653200cc0317ee1dab3957561047d73af1b191d3`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/AIhubmix/hermes-provider-aihubmix/blob/b55e916362ebd0528c5d8981d12f3b8f7268b847/aihubmix/plugin.yaml) | `5adb45872c81435e8928df1b9cddeb3c5981750dfa74567e96e17299672d75ae` | Declares model-provider plugin version 0.1.0. |
+| [`__init__.py`](https://github.com/AIhubmix/hermes-provider-aihubmix/blob/b55e916362ebd0528c5d8981d12f3b8f7268b847/aihubmix/__init__.py) | `d3d6ffaa66bd354fc05c35aef19bcc25041dc0eeeacd0e514d065febc21c37c7` | Registers an OpenAI-compatible Chat Completions provider with `AIHUBMIX_API_KEY` and optional `AIHUBMIX_BASE_URL`. It fetches a remote catalog, filters models advertising tool-calling support, falls back to `/v1/models`, then uses a curated static list if discovery fails. It declares vision support for relayed multimodal requests. |
+| [`README.md`](https://github.com/AIhubmix/hermes-provider-aihubmix/blob/b55e916362ebd0528c5d8981d12f3b8f7268b847/README.md) | `b4ae62a707b0cbffde18b678e06891a3e21c371dab88e1f079d87d48f7ba73d6` | Describes an external aggregator account/API token and broad model catalog; the service relays requests to upstream model vendors. Model selection, tool/vision capability metadata, and compatibility are service declarations, not independently verified behavior. |
+| [`LICENSE`](https://github.com/AIhubmix/hermes-provider-aihubmix/blob/b55e916362ebd0528c5d8981d12f3b8f7268b847/LICENSE) | `7852a493e56bd4bc95cee4388ce7f9d162fa67385057c79e4243cd8222c70aaa` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. Dynamic model discovery and vision are materially different from X.A.A.'s current fixed local model discovery and local-first policy; adoption would require explicit per-run cloud routing and disclosure, provider-specific credential protection, capability checks against the selected upstream route, bounded discovery/inference behavior, and deterministic protocol fixtures before any final live acceptance. No plugin was installed or run and no key, account, or inference service was used.
+
+## AI Stupid Level provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9`](https://github.com/StudioPlatforms/aistupidlevel-sdk/tree/ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9), subdirectory `integrations/hermes/aistupidlevel`. The Hermes catalog manifest is `plugin-catalog/aistupidlevel.yaml`, SHA-256 `ef7fe9d718c50e27078735aae648688230f4d02a9a6e80fe6cf2f12e90d01c65`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/StudioPlatforms/aistupidlevel-sdk/blob/ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9/integrations/hermes/aistupidlevel/plugin.yaml) | `59238c9a232a57ba0847c169afaa7aed06a3aefd3030758f6ec94e3a7db54180` | Declares model-provider plugin version 0.1.0. |
+| [`__init__.py`](https://github.com/StudioPlatforms/aistupidlevel-sdk/blob/ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9/integrations/hermes/aistupidlevel/__init__.py) | `4ebf33f3232625a159a53e25b240f4838e97012954d63adca2d911bd94a5266b` | Registers a Chat Completions router at `https://aistupidlevel.info/v1`, using `ASL_ROUTER_KEY` and optional `ASL_BASE_URL`. Live model IDs are discovered from the authenticated model endpoint; fallback IDs are routing modes. The profile declares text-only input. |
+| [`README.md`](https://github.com/StudioPlatforms/aistupidlevel-sdk/blob/ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9/integrations/hermes/aistupidlevel/README.md) | `26cb7a56d022f0f9df39edd2db6b932651367444e3a780d971f8eaa5272f1aa0` | Describes benchmark-based routing across user-configured vendor keys, with prompts/tool definitions/results and router key sent to AI Stupid Level; it says model charges remain on the user's vendor accounts and prompts are not stored unless logging is enabled. These are upstream claims, not independently verified. |
+| [`LICENSE`](https://github.com/StudioPlatforms/aistupidlevel-sdk/blob/ba908770f2e97b0a85cc1f5a83240cbe94c8dfa9/LICENSE) | `6c2d03f817fd3f260a3e047c7e0401bab74cf65461f7d1a9ac44a6835d2140e5` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. Its routing modes can change the underlying remote model while sharing user-supplied vendor keys, a routing/account behavior X.A.A. does not currently model. A future adapter would need explicit cloud routing, vendor-key handling and usage disclosure, provider-specific secret boundaries, endpoint validation, bounded requests and cancellation, deterministic fixtures, and final live acceptance after the requested LLM-testing deferral. No plugin was installed or executed and no router key, vendor key, account, or inference request was used.
+
+## AnyAPI provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`e5b7b985b5aa56bc585ef1924858978696eb0c3a`](https://github.com/es697/hermes-provider-anyapi/tree/e5b7b985b5aa56bc585ef1924858978696eb0c3a), subdirectory `anyapi`. The Hermes catalog manifest is `plugin-catalog/anyapi.yaml`, SHA-256 `f6a8c58519fb32495b9eef58d1cce2d1d663837b3e79566cab2d8b9a8d6e56bb`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/es697/hermes-provider-anyapi/blob/e5b7b985b5aa56bc585ef1924858978696eb0c3a/anyapi/plugin.yaml) | `3d2c96f3d82ed5d2bbd04b85091817c9a3b00413b73f69ac7a383d01f2c5bd29` | Declares model-provider plugin version 0.1.0. |
+| [`__init__.py`](https://github.com/es697/hermes-provider-anyapi/blob/e5b7b985b5aa56bc585ef1924858978696eb0c3a/anyapi/__init__.py) | `95a800e93f17eceddf0b0abbb0168cca6a3ef16647b3e536e1e36830c4e4f115` | Registers an OpenAI-compatible Chat Completions provider at `https://api.anyapi.ai/v1`, using `ANYAPI_API_KEY` and optional `ANYAPI_BASE_URL`. Catalog discovery filters routes tagged for tool calling; on unavailable/empty filtered results it falls back to the generic model list. The profile declares vision support for relayed multimodal requests. |
+| [`README.md`](https://github.com/es697/hermes-provider-anyapi/blob/e5b7b985b5aa56bc585ef1924858978696eb0c3a/README.md) | `5a218662fc1a1987359dc0226659026cd3a0f4b2dcaaac21a51537d7d6e53763` | Describes an external aggregator account, provider-prefixed dynamic model IDs, network model discovery, and that the plugin itself reads/writes no files or launches commands. Service routing, privacy, billing, and endpoint behavior are not independently verified. |
+| [`LICENSE`](https://github.com/es697/hermes-provider-anyapi/blob/e5b7b985b5aa56bc585ef1924858978696eb0c3a/LICENSE) | `c6ae79419976301d72ee638e5685a04fae27083f3704162a9a8c6b616190d18a` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. Its dynamic cloud model catalog and declared vision support would need explicit per-run remote-data disclosure, route-specific capability checks, protected credentials, endpoint/origin validation, bounded discovery and inference, deterministic fixtures, and final live-provider acceptance after the requested LLM-testing deferral. No plugin was installed or executed and no credential, account, or inference request was used.
+
 ## Claude subscription provider
 
 Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-plugins` commit `83f0a896b3518c7131181838e340c9a80c79524d`, subdirectory `claude-subscription-directsdk`, version 0.3.4. The catalog manifest is `plugin-catalog/claude-subscription-directsdk.yaml` at the Hermes core pin.
@@ -120,6 +172,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. This review classifies four of the 90 `models` category candidates (Abstract, Claude, Groq, and GitHub Copilot); 86 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. This review classifies eight of the 90 `models` category candidates (Abstract, Ace Data Cloud, AIHubMix, AI Stupid Level, AnyAPI, Claude, Groq, and GitHub Copilot); 82 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.
