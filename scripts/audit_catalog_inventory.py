@@ -13,6 +13,11 @@ from audit_execution_inventory import PIN, ROOT, check_reference, digest
 
 OUTPUT = Path("docs/parity/catalog-inventory.json")
 REVIEWED_SOURCE_CLASSIFICATIONS = {
+    "abstract-provider": (
+        "model-provider; pinned source review at commit "
+        "e322e42578586af1c376b7e836dfce437308682a; "
+        "see model-provider-source-audit.md#abstract-provider"
+    ),
     "claude-subscription-directsdk": (
         "model-provider; pinned source review at commit "
         "83f0a896b3518c7131181838e340c9a80c79524d; see model-provider-source-audit.md"
@@ -95,7 +100,7 @@ def inventory() -> dict[str, Any]:
     categories = Counter(item["category"] for item in candidates)
     return {
         "reference_commit": PIN,
-        "audit_date": "2026-11-14",
+        "audit_date": "2026-11-15",
         "catalog_yaml_count": len(manifests),
         "manifest_count": len(candidates),
         "category_counts": dict(sorted(categories.items())),
@@ -103,7 +108,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; five selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; six selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

@@ -1,8 +1,29 @@
 # Pinned optional model-provider source audit
 
-Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-plugins` commit `83f0a896b3518c7131181838e340c9a80c79524d`, subdirectory `claude-subscription-directsdk`, version 0.3.4. The catalog manifest is `plugin-catalog/claude-subscription-directsdk.yaml` at Hermes core commit `1e208b280deb18f01d015b0acdf3ef3552d08039`. This is a source review of one optional provider candidate; it does not implement or validate that provider in X.A.A.
+This document records source-only reviews of selected optional provider candidates at their individual catalog-pinned commits. The catalog itself is pinned to Hermes core commit `1e208b280deb18f01d015b0acdf3ef3552d08039`. These reviews do not implement or validate providers in X.A.A.; live provider and model testing remains deferred to the final LLM-testing phase.
 
-## Reviewed source
+## Abstract provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit `e322e42578586af1c376b7e836dfce437308682a`. Hermes catalog manifest: `plugin-catalog/abstract-provider.yaml`, SHA-256 `e2b5034bd532b86f916b4bcb4dd4d05910925cd96027e102d90bcc78d897d830`. The manifest requires Hermes `>=0.22.2`, declares `ABSTRACT_API_KEY`, and states that it registers a model provider only; the catalog pins the source repository rather than distributing its code.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/abstractpbc/hermes-abstract-provider/blob/e322e42578586af1c376b7e836dfce437308682a/plugin.yaml) | `cf7ac7785e285bf6532f823dac0a0af643223a6509288635222d18655624d5b2` | Declares `kind: model-provider`, version 1.0.0, and the secret `ABSTRACT_API_KEY`. |
+| [`__init__.py`](https://github.com/abstractpbc/hermes-abstract-provider/blob/e322e42578586af1c376b7e836dfce437308682a/__init__.py) | `dd75aee1a7776ddf3704733dfaa480399e9ce47c9099e3b20f18e853878f508a` | Registers one `ProviderProfile` using `codex_responses`, a fixed three-model list, no live model listing, no vision, and a 65,536-token output default. |
+| [`README.md`](https://github.com/abstractpbc/hermes-abstract-provider/blob/e322e42578586af1c376b7e836dfce437308682a/README.md) | `489ec4d1f3feecb7b8b6d7f7ce22c5b3e6e08133a800a9954620559ab82da758` | Describes an OpenAI Responses API endpoint, text-only model set, API key configuration, remote account billing, and a 2 MiB request-body limit. Model names and price values are upstream declarations, not verified service behavior. |
+| [`LICENSE`](https://github.com/abstractpbc/hermes-abstract-provider/blob/e322e42578586af1c376b7e836dfce437308682a/LICENSE) | `109a64add57bc9dc1980fd221ff642398506155977e8a4e7dc200bbe6ebdb13c` | MIT license for the candidate source. |
+
+### Behavior and X.A.A. disposition
+
+The plugin's README says it only registers a provider; Hermes' own client sends prompts, context, and tool definitions to `https://api.abstract.inc/v1` with `ABSTRACT_API_KEY`, and usage is billed to the Abstract account. The plugin selects the OpenAI Responses API `codex_responses` mode rather than Chat Completions, so X.A.A.'s current OpenAI-compatible chat adapter cannot directly represent it. Its static model list avoids treating the service's asynchronous lanes as synchronous completions. This is upstream-declared behavior from the pinned source, not independent endpoint or billing verification.
+
+The candidate remains planned for Phase 9 and is not implemented. A compatible X.A.A. adapter would require an explicit Responses API transport, a remote-data and account-cost notice, OS-vault credential storage, bounded request/response handling, cancellation and retry semantics, deterministic protocol fixtures, and final live-provider acceptance after the requested LLM-test deferral. No plugin was installed, no key or account was used, and no request was sent to the inference service.
+
+## Claude subscription provider
+
+Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-plugins` commit `83f0a896b3518c7131181838e340c9a80c79524d`, subdirectory `claude-subscription-directsdk`, version 0.3.4. The catalog manifest is `plugin-catalog/claude-subscription-directsdk.yaml` at the Hermes core pin.
+
+### Reviewed source
 
 | Pinned source | SHA-256 | Findings |
 | --- | --- | --- |
@@ -15,7 +36,7 @@ Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-p
 | `inert_mcp.py` | `6c5a0f64e4470ae90c6171bd83e2b537f641ff6d06cd76b3d49edba227274cb6` | Exposes the request tool schema to the CLI while refusing to execute tool calls; Hermes remains responsible for tool validation and execution. |
 | `README.md` | `2555d4889077dc20bd8b822875f5f36118b160d1a4d9f8c2899c303b6663183e` | Describes account usage, telemetry defaults, supported proxy behavior, version constraints and upstream self-reported live qualification. These are upstream claims, not independent X.A.A. evidence. |
 
-## Behavior and trust boundaries
+### Behavior and trust boundaries
 
 - The provider runs the user's separately installed and authenticated official Claude Code CLI. Its prompt and tool traffic goes to Anthropic through that CLI; using a subscription does not make the provider local. The manifest identifies the candidate as experimental and requires an external executable. The provider inherits the CLI account's entitlement, limits and potential usage-credit charges; its local list-price estimates are not proof of the actual subscription charge.
 - The core catalog manifest has an empty `platforms` list, while the plugin README claims Linux, macOS and Windows support. Treat that metadata mismatch as unresolved rather than inferring support or lack of support; X.A.A. has not run this provider on any platform.
@@ -26,7 +47,7 @@ Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-p
 - The relay honors standard HTTP CONNECT proxy variables for HTTPS. An unsupported SOCKS or TLS-to-proxy value is warned about and ignored, after which the adapter connects directly; this is a fail-open proxy policy and is unsuitable wherever proxy use is a security requirement. X.A.A. should fail closed when an explicitly required network route is unavailable.
 - The README reports upstream fixture and real-account qualifications, including cancellation and streaming. We inspected those test sources but did not run them, sign in, install the CLI, contact Anthropic, or make a model request. Those claims do not establish X.A.A. compatibility or runtime behavior.
 
-## X.A.A. disposition and limits
+### X.A.A. disposition and limits
 
 The catalog candidate remains `planned`, Phase 9. This audit classifies one entry in the 90-item `models` catalog category; it does not establish that every catalog item is a provider, does not evaluate all model candidates, and does not add a provider to X.A.A. LM Studio remains the default. Any later external-process provider needs an explicit remote-data and account-usage notice, owner-selected account/profile, credential ownership boundary, model capability/health checks, complete cancellation, retry/idempotency semantics, model-free fixture coverage, and a real provider acceptance deferred to the final LLM-testing phase. The upstream provider's permissive proxy fallback must not be copied.
 
@@ -58,7 +79,7 @@ Reviewed 2026-11-14 against the catalog-pinned `AhmetArif0/hermes-groq-provider`
 
 ## X.A.A. disposition and limits
 
-The catalog candidate remains `planned`, Phase 9. This review classifies two of the 90 model-category candidates (Groq and Claude); it does not establish that the rest are providers or evaluate their source. It does not add dynamic provider loading or a Groq adapter to X.A.A. The earlier provider-core audit records why arbitrary plugin imports remain deferred until a provider-code trust model and capability contract exist. Live provider and model testing remains deferred to the final LLM-testing phase as requested.
+The catalog candidate remains `planned`, Phase 9. This review classifies three of the 90 model-category candidates (Abstract, Groq, and Claude); it does not establish that the rest are providers or evaluate their source. It does not add dynamic provider loading or a Groq adapter to X.A.A. The earlier provider-core audit records why arbitrary plugin imports remain deferred until a provider-code trust model and capability contract exist. Live provider and model testing remains deferred to the final LLM-testing phase as requested.
 
 No plugin, test, dependency, executable, account credential, live endpoint, or model was used. This is a pinned-source review only; installed behavior, current vendor model metadata, authentication routing, account entitlement, pricing, and live compatibility remain unverified.
 
@@ -99,6 +120,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. This review classifies three of the 90 `models` category candidates (Claude, Groq, and GitHub Copilot); 87 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. This review classifies four of the 90 `models` category candidates (Abstract, Claude, Groq, and GitHub Copilot); 86 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.

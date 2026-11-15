@@ -1,5 +1,9 @@
 # Progress
 
+## Classify the pinned Abstract provider candidate (2026-11-15)
+
+Reviewed `abstract-provider` at its exact catalog-pinned repository commit. Its source registers a single OpenAI Responses API provider with a fixed, text-only model list, an `ABSTRACT_API_KEY`, and remote account billing; it is not compatible with X.A.A.'s current Chat Completions adapter. Recorded SHA-256 values and trust/data-flow boundaries in the provider audit, updated the generated catalog classification, and reduced the pending model-category source reviews from 87 to 86. The pinned inventory check is the acceptance; no plugin was installed, no account or key was used, and no inference request was sent.
+
 ## Raise the shared chat turn limit (2026-11-14)
 
 Raised desktop shared conversation user turns from 2,000 to 8,192 UTF-8 bytes. The authenticated API enforces the same bound, storage retains a maximum-size escaped turn within its bounded context budget, and the desktop trims older saved context so each run objective remains below the existing 10,000-character API limit. Added storage/API limit coverage and a deterministic browser acceptance for a 3,000-character shared turn; no model inference is used. The focused chat suite passes (12 tests), API contract types are current, Ruff and the desktop TypeScript/production build pass. Hosted Windows source run [43678606867](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43678606867) passed all 47 steps, including the shared-chat Edge acceptance and full Python suite.
