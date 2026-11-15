@@ -3650,3 +3650,7 @@ Manual clean-runner installer workflow [43732834374](https://github.com/iExyst/X
 ## Refine the desktop dark theme (2026-11-15)
 
 A second visual pass keeps the existing graphite and mint palette while tightening the type hierarchy, normalizing screen surfaces, and making keyboard focus on text fields more visible. Responsive spacing and reduced-motion behavior are preserved. `npm run build:desktop` passes, including the TypeScript check and Vite production build. This confirms frontend compilation only; the current clean-runner Windows installer and source workflows are still in progress. No LLM inference was used.
+
+## Audit keyboard reachability across desktop sections (2026-11-15)
+
+Extended the model-free onboarding browser flow to traverse a complete Tab cycle and verify that every visible, enabled keyboard stop is reached across New objective, Integrations, Model setup, System monitor, Settings, Active run, and Saved runs. The check handles the Active run navigation entry appearing during asynchronous UI updates and excludes controls inside collapsed disclosure sections. The focused Playwright flow passes (1), and `npm run build:desktop` passes TypeScript and Vite production compilation. This proves current-state keyboard reachability for those primary sections; screen-reader behavior, expanded disclosure states, and visible focus-indicator coverage for every control remain open. No runtime behavior or model calls changed.

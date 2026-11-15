@@ -56,6 +56,71 @@ async function interactiveNameFailures(page:Page){
     .filter(control=>!control.text));
 }
 
+async function expectCompleteKeyboardTabOrder(page:Page){
+  await page.evaluate(()=>{
+    const selector='a[href],button,input:not([type="hidden"]),select,textarea,summary,[contenteditable="true"],[tabindex]';
+    Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(element=>{
+      if(element.tabIndex<0||!element.getClientRects().length||element.matches(':disabled')||element.closest('[aria-hidden="true"],[inert]'))return false;
+      let ancestor:HTMLElement|null=element;
+      while(ancestor){
+        if(ancestor.matches('details:not([open])')&&!(element.tagName==='SUMMARY'&&element.parentElement===ancestor))return false;
+        ancestor=ancestor.parentElement;
+      }
+      const style=getComputedStyle(element);
+      return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0;
+    }).map((element,index)=>{
+      const label=element.getAttribute('aria-label')||element.textContent?.trim().replace(/\s+/g,' ').slice(0,28)||element.getAttribute('name')||'';
+      const id=`keyboard-focus-${index}-${element.tagName.toLowerCase()}-${label}`;
+      element.dataset.keyboardFocusAudit=id;
+      return id;
+    });
+  });
+  await page.evaluate(()=>{
+    document.body.setAttribute('tabindex','-1');
+    document.body.focus();
+  });
+  const actual:string[]=[];
+  let first:string|undefined;
+  let wrapped=false;
+  for(let index=0;index<100;index+=1){
+    await page.keyboard.press('Tab');
+    const focused=await page.evaluate(()=>{
+      const element=document.activeElement;
+      if(!(element instanceof HTMLElement))return 'no-focus-target';
+      if(element===document.body)return 'audit-start-anchor';
+      if(!element.dataset.keyboardFocusAudit){
+        const label=element.getAttribute('aria-label')||element.textContent?.trim().replace(/\s+/g,' ').slice(0,28)||'';
+        element.dataset.keyboardFocusAudit=`keyboard-focus-late-${element.tagName.toLowerCase()}-${label}`;
+      }
+      return element.dataset.keyboardFocusAudit;
+    });
+    if(focused==='audit-start-anchor')continue;
+    if(first===undefined)first=focused;
+    else if(focused===first){wrapped=true;break;}
+    actual.push(focused);
+  }
+  expect(wrapped).toBe(true);
+  const expected=await page.evaluate(()=>{
+    const selector='a[href],button,input:not([type="hidden"]),select,textarea,summary,[contenteditable="true"],[tabindex]';
+    return Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(element=>{
+      if(element.tabIndex<0||!element.getClientRects().length||element.matches(':disabled')||element.closest('[aria-hidden="true"],[inert]'))return false;
+      let ancestor:HTMLElement|null=element;
+      while(ancestor){
+        if(ancestor.matches('details:not([open])')&&!(element.tagName==='SUMMARY'&&element.parentElement===ancestor))return false;
+        ancestor=ancestor.parentElement;
+      }
+      const style=getComputedStyle(element);
+      return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0;
+    }).map(element=>element.dataset.keyboardFocusAudit??'unvisited-visible-control');
+  });
+  expect(new Set(actual).size).toBe(actual.length);
+  expect([...actual].sort()).toEqual([...expected].sort());
+  await page.evaluate(()=>{
+    document.body.removeAttribute('tabindex');
+    document.querySelectorAll('[data-keyboard-focus-audit]').forEach(element=>delete (element as HTMLElement).dataset.keyboardFocusAudit);
+  });
+}
+
 test('onboarding requires a real tool diagnostic and runs its demonstration in Observe mode',async({page})=>{
   let created:Record<string,unknown>|undefined;
   const run={id:'onboarding-run',objective:'Read project documentation',state:'verifying',acceptance_criteria:[],revision:1,model:'fixture/model',limits:{max_iterations:8,max_seconds:900}};
@@ -112,6 +177,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(setupGuide).toHaveAttribute('open','');
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   const placeholderPairs=await Promise.all([page.getByLabel('Workspace path').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor})),page.locator('#run-objective').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor}))]);
   for(const pair of placeholderPairs)expect(contrastRatio(pair.foreground,pair.background)).toBeGreaterThanOrEqual(4.5);
   await expect(navigation.locator('a.active')).toHaveCount(1);
@@ -127,6 +193,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   const memorySummary=page.locator('#integrations summary').first();
   await memorySummary.focus();
   await page.keyboard.press('Tab');
@@ -145,14 +212,17 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByLabel('Local model')).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   await navigation.getByRole('link',{name:'System monitor'}).click();
   await expect(page.getByRole('heading',{level:1,name:'System monitor'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   await navigation.getByRole('link',{name:'Settings'}).click();
   await expect(page.getByRole('heading',{level:1,name:'Settings'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   await navigation.getByRole('link',{name:'Model setup'}).click();
   await expect(page.getByRole('heading',{level:1,name:'Model setup'})).toBeVisible();
   const demo=page.getByRole('button',{name:'Start read-only onboarding demonstration'});
@@ -175,6 +245,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Active run'})).toHaveAttribute('aria-current','page');
   await navigation.getByRole('link',{name:'Saved runs'}).click();
@@ -183,6 +254,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(navigation.getByRole('link',{name:'Active run'})).not.toHaveAttribute('aria-current','page');
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
   expect(created).toMatchObject({workspace:'C:\\fixture-project',mode:'observe',command_grant:null});
   expect(created?.objective).toContain('Do not modify files or run commands');
 });
