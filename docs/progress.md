@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Jev model-router service (2026-11-15)
+
+Reviewed `jev-model-router` at catalog-pinned commit `b977dc3ef07738aab005c433d08c1da3fa949e8d`. This is an MCP/HTTP model-selection service, not a Hermes model-provider adapter. Its local heuristic has hard capability and budget filters, but the optional remote path sends task text and model metadata to both a JEV endpoint and a separate gateway; custom credentialed origins are not restricted, response bodies are unbounded, HTTP auth is optional even on a public bind, and MCP frame sizes are unbounded. Details and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-four of 90 model-category rows are reviewed across 53 source trees; 36 remain pending. The pinned repository has no test directory. No package, key, account, endpoint, or model was used; real LLM testing remains deferred.
+
 ## Review pinned Jev effort router middleware (2026-11-15)
 
 Reviewed `jev-effort-router` at catalog-pinned commit `6fd9f2ec1c53cb99b5e6c7043c25bbd37938d4a5`. It routes Ollama:Cloud models and reasoning effort through a paid OpenRouter decision call by default once per user turn, sending the current message and bounded recent conversation context. The manifest does not expose the code-supported endpoint override, which has no origin validation before sending the bearer key. The source review and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-three of 90 model-category rows are reviewed across 52 source trees; 37 remain pending. No plugin, key, account, API request, test suite, or model was used; live LLM testing remains deferred.
