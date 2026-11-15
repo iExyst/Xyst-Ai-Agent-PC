@@ -1,8 +1,12 @@
 # Progress
 
+## Review ClinePass provider (2026-11-15)
+
+Reviewed the catalog-pinned ClinePass adapter, manifest, packaging metadata, README, MIT license, and PowerShell installer. Its discovery fetches Cline's public `clinePass` and `free` catalogs without sending an API key, preserves gateway IDs, and falls back to a curated pass-model list; inference is routed to the configured Cline API endpoint with `CLINE_API_KEY`. The installer clones the default branch and removes an existing plugin destination, so it is not used as an X.A.A. installation path. Twenty-nine of 90 model-category entries are now reviewed across 28 distinct source trees; 61 remain pending. No source, key, account, API endpoint, or inference service was installed or used.
+
 ## Classify duplicate BharatCode catalog entry (2026-11-15)
 
-Verified that `bharatcode-provider` and the already reviewed `bharatcode` entry resolve to the same catalog manifest hash, pinned commit, provider file, README and license bytes; this is a second catalog row for the same source tree. The catalog audit now covers 28 of 90 model-category entries, representing 27 distinct reviewed source trees, with 62 entries pending. The pinned AtmoRouter repository and commit returned GitHub 404 responses and remain unclassified; no source was inferred.
+Verified that `bharatcode-provider` and the already reviewed `bharatcode` entry resolve to the same catalog manifest hash, pinned commit, provider file, README and license bytes; this is a second catalog row for the same source tree. At that checkpoint, 28 of 90 model-category entries represented 27 distinct reviewed source trees, with 62 entries pending. The pinned AtmoRouter repository and commit returned GitHub 404 responses and remain unclassified; no source was inferred.
 
 ## Review AnyRouter provider (2026-11-15)
 

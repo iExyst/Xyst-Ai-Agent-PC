@@ -133,6 +133,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "f4cc1d1f2977963173b23b9ac6a19c3ca8851050; "
         "see model-provider-source-audit.md#bharatcode"
     ),
+    "clinepass": (
+        "model-provider; pinned source review at commit "
+        "3853e895482d3171ff3a8144344b74cfa3a7dd67; "
+        "see model-provider-source-audit.md#clinepass-provider"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "
