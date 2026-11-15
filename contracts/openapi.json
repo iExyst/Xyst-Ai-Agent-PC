@@ -258,7 +258,7 @@
             "type": "string"
           },
           "user_message": {
-            "maxLength": 2000,
+            "maxLength": 8192,
             "minLength": 1,
             "title": "User Message",
             "type": "string"
