@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Liquid Inference auction provider (2026-11-15)
+
+Reviewed `liquid-inference-provider` at catalog-pinned commit `acd120f007367c1f422d3cd6ffe643f916f0b5f7`. The thin adapter sets a default USD 1 per-request header cap, but it can be changed and is not aggregate run-budget enforcement; its configurable credential endpoint has no origin check. Its local profile tests were inspected but not executed, and do not cover exchange accounting or live compatibility. Fifty-eight of 90 model-category rows are reviewed across 57 source trees; 32 remain pending. See [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No key, account, endpoint, or model was used; live LLM tests remain deferred.
+
 ## Review pinned Lightning AI rate-limit middleware (2026-11-15)
 
 Reviewed `lightningai-rate-limit` at catalog-pinned commit `dc7911a946f0b209a81cf680c168382177bb13bf`. It is a per-process 15-per-minute execution middleware with non-cancellable sleeps up to the next window; its quota claim is not independently verified, and its registration silently ignores failures. Fifty-seven of 90 model-category rows are reviewed across 56 source trees; 33 remain pending. Findings and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, provider account, endpoint, model, or live request was used.

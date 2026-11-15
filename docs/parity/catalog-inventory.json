@@ -8571,7 +8571,7 @@
       "required_environment_names": [
         "LIQUID_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "auction-based remote inference provider profile; pinned source review at commit acd120f007367c1f422d3cd6ffe643f916f0b5f7; see model-provider-source-audit.md#liquid-inference-auction-provider",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; forty selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; forty-one selected non-platform candidates have individual source reviews, while the rest remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."
