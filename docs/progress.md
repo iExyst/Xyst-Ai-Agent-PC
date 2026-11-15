@@ -1,5 +1,9 @@
 # Progress
 
+## Refine the dark saved-conversation workspace (2026-11-15)
+
+The saved-chat view now keeps short transcripts content-sized instead of stretching messages across unused vertical space. Its Send message action sits directly below the composer, while optional permissions, attachments, and run limits remain in the expandable section below. This preserves the existing coordinator and approval behavior. `npm run build:desktop` passes TypeScript checking and the Vite production build; hosted verification is pending. No model inference was used.
+
 ## Diagnose the frozen browser check on the polished desktop package (2026-11-15)
 
 Installer run [43735410050](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43735410050) passed the native UI, credential, restart, preference, specialist, and reviewed workspace-write checks, then failed at step 37: the packaged browser worker returned a valid `{ok:false,error}` response after the 5-second page-body read timed out for `https://example.com/`. The diagnostics had duplicated a response model that incorrectly required a success-only `result` field, masking the worker error. Both frozen and installed diagnostics now reuse `BrowserWorkerResponse`; focused tests pass (2), Ruff passes, and strict Pyright reports zero errors. The corrected frozen diagnostic passes locally with the exact packaged engine SHA-256 `249240f299e22ab9a334aa90d505c9b5fff12a3b58a9d081eee7b2d2daaa6470`, confirming the Example Domain title/screenshot and process-tree cancellation ([evidence](releases/evidence/browser-frozen-live.json)). This supports an intermittent hosted network/read failure, not a theme regression. The updated harness still needs a fresh hosted source and installer run. No LLM inference was used.

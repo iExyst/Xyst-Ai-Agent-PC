@@ -1052,6 +1052,15 @@ body{
 .page-home>#new-objective:has(.conversation-thread)>p:not(.objective-intro){margin:8px 0;font-size:11px}
 @media(max-width:640px){.page-home>#new-objective:has(.conversation-thread){padding:16px!important}.conversation-messages .conversation-message{max-width:94%}.page-home>#new-objective:has(.conversation-thread) #run-objective{height:100px;min-height:100px}}
 
+/* Keep the saved-chat transcript compact and put its primary action beside the composer. */
+.conversation-messages{align-content:start;grid-auto-rows:max-content}
+.page-home>#new-objective:has(.conversation-thread){display:flex;flex-direction:column}
+.page-home>#new-objective:has(.conversation-thread) #run-objective{order:3}
+.page-home>#new-objective:has(.conversation-thread)>button{order:4;align-self:flex-end;min-width:142px;margin-top:2px;padding:10px 17px;border-radius:9px}
+.page-home>#new-objective:has(.conversation-thread)>details.advanced-options{order:5;width:100%}
+.page-home>#new-objective:has(.conversation-thread)>p:not(.objective-intro){order:6}
+@media(max-width:640px){.page-home>#new-objective:has(.conversation-thread)>button{align-self:stretch}}
+
 /* Dark desktop finish: strengthen hierarchy and keep every screen on one calm palette. */
 :root{font-family:"Segoe UI Variable",Inter,"Segoe UI",system-ui,sans-serif;--canvas:#0c1116;--panel:#141b22;--panel-soft:#19232b;--line:#2a3942;--muted:#9aabb4;--text:#e8f0f2;--mint:#9ce8c4;--mint-ink:#10231a;--blue:#a9c3ff}
 body{background:radial-gradient(ellipse at 72% -18%,#1b493548 0,transparent 39%),linear-gradient(145deg,#0c1116,#0d1319 55%,#0c1217);line-height:1.5}
