@@ -22,6 +22,7 @@ from xaa.storage.schedules import (
 
 logger = logging.getLogger(__name__)
 MISSED_GRACE = timedelta(seconds=60)
+MAX_DST_CATCHUP_LOOKBACK = 8
 
 
 def _occurrence_at(start: datetime, frequency: str, index: int) -> datetime:
@@ -111,17 +112,35 @@ class ScheduleService:
                     continue
                 occurrence, instant, count = due
                 frequency = recurrence["frequency"]
-                next_at = advance_local(occurrence, frequency) if frequency != "once" else None
+                policy = str(schedule["missed_run_policy"])
                 if instant is None:
-                    outcome: OccurrenceOutcome = "dst_skipped"
+                    # A spring-forward gap can be the newest due wall time after
+                    # downtime. Under run_once, still catch up one recent valid
+                    # occurrence, then let the next poll record the gap as skipped.
+                    if policy == "run_once" and count > 1:
+                        start = parse_local_time(str(recurrence["next_at"]))
+                        earliest = max(0, count - 1 - MAX_DST_CATCHUP_LOOKBACK)
+                        for index in range(count - 2, earliest - 1, -1):
+                            candidate = _occurrence_at(start, frequency, index)
+                            candidate_instant = local_instant(
+                                candidate,
+                                str(schedule["timezone"]),
+                            )
+                            if candidate_instant is not None:
+                                occurrence, instant = candidate, candidate_instant
+                                break
+                    if instant is None:
+                        outcome: OccurrenceOutcome = "dst_skipped"
+                    else:
+                        outcome = "run"
                 else:
                     late_by = current - instant
-                    policy = str(schedule["missed_run_policy"])
                     outcome = (
                         "missed"
                         if policy == "skip" and (late_by > MISSED_GRACE or count > 1)
                         else "run"
                     )
+                next_at = advance_local(occurrence, frequency) if frequency != "once" else None
                 occurrence_id = f"{schedule['id']}:{occurrence.isoformat(timespec='minutes')}"
                 run_id = self.schedules.claim_occurrence(
                     connection,

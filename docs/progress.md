@@ -1,5 +1,9 @@
 # Progress
 
+## Preserve one valid catch-up occurrence across a DST gap (2026-11-15)
+
+`ScheduleService` previously recorded the newest due nonexistent spring-forward wall time as `dst_skipped` even under `run_once`, which could discard an earlier valid occurrence from the same downtime window. It now searches a bounded window of up to eight earlier due occurrences, claims the most recent valid one once, then records the gap as skipped on the next poll. Added a regression covering both claims and recurrence advancement. The focused schedule suite passes (17); Ruff and formatting pass, and Pyright reports zero errors for the scheduler service. The full Phase 8 live delivery acceptance remains open; no Telegram account, external message, model, or LLM request was used.
+
 ## Review the pinned OpenCode Zen free-model provider (2026-11-15)
 
 Reviewed `oc-free-provider` at catalog-pinned commit `ae705c692dd83c5eb0e871053722838af39e213e`. It directly posts chat/tool traffic to OpenCode Zen without a user key, intersects a live model list with models.dev zero-cost/tool metadata, caches the last successful intersection, and translates tool names and streamed calls between OpenCode and Hermes. The README explicitly calls this unofficial/unsupported and warns that prompts, schemas, results, and conversation content leave the machine under OpenCode/provider terms. Redirects are blocked, but urllib's default environment proxy handling remains, metadata reads and streams lack explicit byte/event caps, and bundled fallback IDs are not live entitlement evidence. Seventy-nine selected non-platform entries are now source-reviewed; 77/90 model-category entries across 75 repositories are reviewed, with 13 pending. Provider tests were inspected, not run; no endpoint, account, test, or inference was used.

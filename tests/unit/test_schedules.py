@@ -265,6 +265,47 @@ def test_downtime_before_spring_forward_does_not_consume_future_occurrence(
     assert states == {"2025-03-08T02:30": "missed", "2025-03-09T02:30": "dst_skipped"}
 
 
+def test_run_once_catches_up_before_latest_due_dst_gap(workspace_tmp_path: Path) -> None:
+    store = RunStore(workspace_tmp_path / "dst-run-once.sqlite3")
+    schedule = ScheduleStore(store).create(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2025-03-08T02:30"),
+        frequency="daily",
+        timezone="America/New_York",
+        missed_run_policy="run_once",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    submitted: list[str] = []
+    service = ScheduleService(store, submitted.append)
+    spring_forward_after_gap = datetime(2025, 3, 9, 7, 0, tzinfo=UTC)
+
+    recovered = service.tick(spring_forward_after_gap)
+    assert len(recovered) == 1
+    saved = ScheduleStore(store).get(schedule["id"])
+    assert saved is not None
+    assert saved["executions"][0]["state"] == "queued"
+    assert saved["executions"][0]["occurrence_id"].endswith("2025-03-08T02:30")
+    assert saved["recurrence"]["next_at"] == "2025-03-09T02:30"
+    assert submitted == recovered
+
+    assert service.tick(spring_forward_after_gap) == []
+    after_gap = ScheduleStore(store).get(schedule["id"])
+    assert after_gap is not None
+    states = {
+        execution["occurrence_id"].split(":", 1)[1]: execution["state"]
+        for execution in after_gap["executions"]
+    }
+    assert states == {
+        "2025-03-08T02:30": "queued",
+        "2025-03-09T02:30": "dst_skipped",
+    }
+    assert after_gap["recurrence"]["next_at"] == "2025-03-10T02:30"
+
+
 def test_run_once_uses_latest_missed_occurrence_and_overlap_is_skipped(
     workspace_tmp_path: Path,
 ) -> None:
