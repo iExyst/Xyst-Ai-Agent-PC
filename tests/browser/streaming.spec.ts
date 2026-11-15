@@ -8,6 +8,7 @@ async function selectFixtureModel(page: import('@playwright/test').Page){
 
 for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes into a saved candidate without repeating partial text':'partial streamed text is displayed without becoming a final candidate',async({page})=>{
   const run={id:'stream-run',objective:'Stream a response',state:'running',revision:2,acceptance_criteria:[]};
+  let runState='running';
   const cursors:string[]=[];
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request();
@@ -20,11 +21,14 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path==='/runs/stream-run')return route.fulfill({json:{...run,state:runState},headers});
     if(path.endsWith('/events/stream')){
       cursors.push(request.headers()['last-event-id']??'');
-      const partial=`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.delta',payload:{inference_id:'attempt',text:'Unfinished streamed text'},created_at:'2026-11-03T00:00:00Z'})}\n\n`;
+      const stateChanged=`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'run.state_changed',payload:{to:'paused'},created_at:'2026-11-03T00:00:00Z'})}\n\n`;
+      const partial=`id: ${reconnect?'1':'2'}\nevent: run_event\ndata: ${JSON.stringify({sequence:reconnect?1:2,event_type:'model.delta',payload:{inference_id:'attempt',text:'Unfinished streamed text'},created_at:'2026-11-03T00:00:00Z'})}\n\n`;
       const final=`id: 2\nevent: run_event\ndata: ${JSON.stringify({sequence:2,event_type:'model.message',payload:{message:{content:'Recovered saved answer'}},created_at:'2026-11-03T00:00:01Z'})}\n\n`;
-      return route.fulfill({headers,contentType:'text/event-stream',body:partial+(reconnect?(cursors.length===1?'id: 2\nevent: run_event\ndata: {':final+'event: done\ndata: {}\n\n'):'event: done\ndata: {}\n\n')});
+      if(!reconnect)runState='paused';
+      return route.fulfill({headers,contentType:'text/event-stream',body:(reconnect?'':stateChanged)+partial+(reconnect?(cursors.length===1?'id: 2\nevent: run_event\ndata: {':final+'event: done\ndata: {}\n\n'):'event: done\ndata: {}\n\n')});
     }
     return route.fulfill({json:run,headers});
   });
@@ -35,13 +39,19 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
+  const runStatus=page.getByRole('status',{name:'Run status'});
+  const activity=page.getByRole('list',{name:'Run activity history'});
+  await expect(activity).toHaveAttribute('aria-live','off');
   if(reconnect){
+    await expect(runStatus).toHaveText('Run status: Running');
     await expect(page.getByRole('heading',{name:'Candidate answer',exact:true})).toBeVisible();
     await expect(page.getByText('Recovered saved answer',{exact:true})).toBeVisible();
     await expect(page.getByRole('heading',{name:'Partial response',exact:true})).toHaveCount(0);
     expect(cursors).toEqual(['0','1']);
     return;
   }
+  await expect(runStatus).toHaveText('Run status: Paused');
+  await expect(activity).toContainText('Run is paused');
   await expect(page.getByRole('heading',{name:'Partial response',exact:true})).toBeVisible();
   await expect(page.getByText('Unfinished streamed text',{exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Candidate answer',exact:true})).toHaveCount(0);
