@@ -139,6 +139,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByRole('button', { name: 'Start objective' }).click();
   await navigateMainSection(page,'New objective');
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
+  await expect(browserReadGrant).not.toBeChecked();
+  await expect(browserSubmissionGrant).not.toBeChecked();
   await navigateMainSection(page,'Active run');
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('3 iterations · 60 seconds');

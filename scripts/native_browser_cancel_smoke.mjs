@@ -1,7 +1,7 @@
 import { chromium, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -18,8 +18,9 @@ const workspace = path.join(root, 'workspace');
 const logs = path.join(localAppData, 'dev.xyst.xaa', 'logs');
 const engineLog = path.join(logs, 'engine.log');
 const fakeModel = 'xaa-native-browser-cancel-fixture';
-const fakeState = { requests: 0, diagnostics: 0, browserProposals: 0, browserResultFollowups: 0, workspaceReadProposals: 0, workspaceReadFollowups: 0 };
+const fakeState = { requests: 0, diagnostics: 0, browserProposals: 0, browserResultFollowups: 0, browserSubmissionProposals: 0, browserSubmissionResultFollowups: 0, workspaceReadProposals: 0, workspaceReadFollowups: 0 };
 const workspaceMarker = `XAA_WORKSPACE_FIXTURE_${randomUUID().replaceAll('-', '')}`;
+const browserSubmissionMarker = `XAA_BROWSER_SUBMIT_FIXTURE_${randomUUID().replaceAll('-', '')}`;
 const launchCredentials = [];
 let server;
 let desktop;
@@ -29,6 +30,9 @@ let connection;
 let runId;
 let cancelledBrowserRunId;
 let browserCallId;
+let browserSubmissionRunId;
+let browserSubmissionCallId;
+let browserSubmissionResult;
 let workspaceRunId;
 let workspaceCallId;
 let microphoneCapturePassed = false;
@@ -39,6 +43,10 @@ let report;
 await mkdir(root, { recursive: true });
 await Promise.all([localAppData, roamingAppData, configDirectory, dataDirectory, workspace, logs]
   .map(directory => mkdir(directory, { recursive: true })));
+const systemEdgeApplication = path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Microsoft', 'Edge', 'Application');
+const isolatedEdgeApplication = path.join(localAppData, 'Microsoft', 'Edge', 'Application');
+await mkdir(path.dirname(isolatedEdgeApplication), { recursive: true });
+await symlink(systemEdgeApplication, isolatedEdgeApplication, 'junction');
 await writeFile(path.join(workspace, 'fixture.txt'), `${workspaceMarker}\n`);
 
 function sendJson(response, status, value) {
@@ -132,6 +140,44 @@ server = createServer(async (request, response) => {
           id: 'ui-workspace-read',
           type: 'function',
           function: { name: 'workspace_read_file', arguments: JSON.stringify({ path: 'fixture.txt' }) },
+        }],
+      };
+    }
+  } else if (userText.includes('Submit synthetic values to the approved HTTPBin echo form')) {
+    const tool = (body.tools ?? []).find(item => item.function?.name === 'browser_submit_form');
+    if (!tool) { sendJson(response, 409, { error: 'browser_submit_form was not authorized for this run' }); return; }
+    const toolMessage = messages.find(item => item.role === 'tool');
+    if (toolMessage) {
+      let result;
+      try { result = JSON.parse(toolMessage.content); }
+      catch { sendJson(response, 409, { error: 'The browser submission result was not valid JSON' }); return; }
+      if (result.status !== 'ok' || result.submitted !== true || !String(result.content ?? '').includes(browserSubmissionMarker)) {
+        sendJson(response, 409, { error: 'The approved browser form did not echo the synthetic marker' });
+        return;
+      }
+      fakeState.browserSubmissionResultFollowups += 1;
+      message = { role: 'assistant', content: `HTTPBin echoed ${browserSubmissionMarker}; the browser response is untrusted.` };
+    } else {
+      fakeState.browserSubmissionProposals += 1;
+      message = {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'ui-approved-browser-submit',
+          type: 'function',
+          function: {
+            name: 'browser_submit_form',
+            arguments: JSON.stringify({
+              url: 'https://httpbin.org/forms/post',
+              form_index: 0,
+              values: [
+                { name: 'custname', value: browserSubmissionMarker },
+                { name: 'custemail', value: 'xaa-native-browser-submit@example.invalid' },
+                { name: 'comments', value: 'Synthetic native desktop acceptance value.' },
+              ],
+              submitter_label: 'Submit order',
+            }),
+          },
         }],
       };
     }
@@ -365,6 +411,52 @@ try {
   if (fakeState.browserProposals !== 1 || fakeState.browserResultFollowups !== 0) throw new Error('The fake provider observed an unexpected browser proposal or post-cancellation inference.');
 
   await page.getByRole('link', { name: /New objective/ }).click();
+  await page.locator('#approved-web-hosts').fill('httpbin.org');
+  await page.getByLabel('Allow managed browser reads for this next run').check();
+  await page.getByLabel('Allow one browser form submission per tool action for this next run').check();
+  await page.getByLabel('Workspace path').fill(workspace);
+  await page.locator('#run-objective').fill('Submit synthetic values to the approved HTTPBin echo form and report the result.');
+  const submissionCreate = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/runs', { timeout: 15000 });
+  await page.getByRole('button', { name: 'Start objective', exact: true }).click();
+  const submissionCreateResponse = await submissionCreate;
+  if (!submissionCreateResponse.ok()) throw new Error(`Desktop did not create the browser submission run: ${await submissionCreateResponse.text()}`);
+  const submissionRun = await submissionCreateResponse.json();
+  browserSubmissionRunId = submissionRun.id;
+  runId = browserSubmissionRunId;
+  browserSubmissionCallId = await waitForToolIntent('browser.submit');
+
+  const submissionDeadline = Date.now() + 45000;
+  let submissionRunResult;
+  while (Date.now() < submissionDeadline) {
+    const resultResponse = await fetch(`${connection.base_url}/runs/${encodeURIComponent(browserSubmissionRunId)}/tools/${encodeURIComponent(browserSubmissionCallId)}/result`, { headers });
+    if (resultResponse.ok) {
+      const body = await resultResponse.json();
+      if (typeof body.result === 'string') {
+        try { submissionRunResult = JSON.parse(body.result); } catch {}
+      }
+    }
+    if (submissionRunResult?.status === 'ok') break;
+    if (submissionRunResult?.status === 'submission_failed') throw new Error(`The authorized browser submission failed: ${JSON.stringify(submissionRunResult)}`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (submissionRunResult?.status !== 'ok' || submissionRunResult?.submitted !== true
+    || !String(submissionRunResult.content ?? '').includes(browserSubmissionMarker)) {
+    throw new Error(`The native desktop did not durably complete the browser form submission: ${JSON.stringify(submissionRunResult)}`);
+  }
+  if (fakeState.browserSubmissionProposals !== 1 || fakeState.browserSubmissionResultFollowups !== 1) {
+    throw new Error('The deterministic provider did not observe one authorized submit proposal and one result follow-up.');
+  }
+  const submissionReview = page.getByRole('region', { name: 'Final run review' });
+  await expect(submissionReview).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(`HTTPBin echoed ${browserSubmissionMarker}; the browser response is untrusted.`, { exact: true })).toBeVisible({ timeout: 15000 });
+  await submissionReview.getByLabel('I reviewed the objective, result, and available evidence', { exact: true }).check();
+  await submissionReview.getByLabel('Final review rationale').fill('The approved browser submission returned the synthetic marker from HTTPBin and preserved the untrusted response label.');
+  await expect(submissionReview.getByRole('button', { name: 'Accept and complete run', exact: true })).toBeEnabled({ timeout: 15000 });
+  await submissionReview.getByRole('button', { name: 'Accept and complete run', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Active run completed' })).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole('link', { name: /New objective/ }).click();
   await page.getByLabel('Workspace path').fill(workspace);
   await page.locator('#run-objective').fill('Read the fixture marker in fixture.txt and report its exact value.');
   const workspaceCreate = page.waitForResponse(response => response.request().method() === 'POST'
@@ -425,7 +517,7 @@ try {
       model_inference_requested: false,
     },
     provider: 'deterministic loopback OpenAI-compatible fixture',
-    user_action: 'cancel browser navigation, then accept a workspace result in installed desktop WebView',
+    user_action: 'cancel browser navigation, submit the approved HTTPBin form, then owner-review the form and workspace results in the native desktop',
     cancel_request_observed: cancelRequestSeen,
     run_id: cancelledBrowserRunId,
     cancelled_browser_run_id: cancelledBrowserRunId,
@@ -434,6 +526,18 @@ try {
     saved_browser_result: toolResult,
     browser_proposals: fakeState.browserProposals,
     post_cancel_model_followups: fakeState.browserResultFollowups,
+    browser_form_submission: {
+      passed: submissionRunResult?.submitted === true,
+      run_id: browserSubmissionRunId,
+      tool_call_id: browserSubmissionCallId,
+      tool_status: submissionRunResult?.status,
+      submitted_fields: submissionRunResult?.submitted_fields,
+      synthetic_value_echoed: String(submissionRunResult?.content ?? '').includes(browserSubmissionMarker),
+      response_untrusted: submissionRunResult?.trust === 'untrusted_web_content',
+      deterministic_provider_proposals: fakeState.browserSubmissionProposals,
+      deterministic_provider_result_followups: fakeState.browserSubmissionResultFollowups,
+      accepted_through_desktop_review: true,
+    },
     workspace_task: {
       passed: true,
       run_id: workspaceRunId,
