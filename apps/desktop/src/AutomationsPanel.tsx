@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react';
 import type {EngineClient,Schedule} from './api/client.ts';
+import {InlineConfirmation} from './InlineConfirmation.tsx';
 
 function localDateTime(value:Date) {
   const pad=(part:number)=>String(part).padStart(2,'0');
@@ -154,11 +155,11 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
             <button type="button" disabled={busy||execution.delivery_attempt_count===null||execution.delivery_attempt_count>=3} onClick={()=>setScheduleReconcileChoice({scheduleId:item.id,executionId:execution.id,resolution:'retry'})}>I checked; retry scheduled message</button>
           </div>
           {execution.delivery_attempt_count!==null&&execution.delivery_attempt_count>=3&&<p>The three-attempt limit has been reached; retry is unavailable.</p>}
-          {scheduleReconcileChoice?.scheduleId===item.id&&scheduleReconcileChoice.executionId===execution.id&&<div role="alertdialog" aria-label="Confirm scheduled Telegram delivery reconciliation">
+          {scheduleReconcileChoice?.scheduleId===item.id&&scheduleReconcileChoice.executionId===execution.id&&<InlineConfirmation label="Confirm scheduled Telegram delivery reconciliation">
             <p>{scheduleReconcileChoice.resolution==='retry'?'Retrying may send a duplicate if Telegram accepted the first message.':'This records that you found the scheduled message in Telegram.'} Confirm that you checked the destination chat.</p>
             <button type="button" disabled={busy} onClick={()=>void reconcileScheduleDelivery()}>Confirm {scheduleReconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
             <button type="button" disabled={busy} onClick={()=>setScheduleReconcileChoice(undefined)}>Cancel</button>
-          </div>}
+          </InlineConfirmation>}
         </>}
       </li>)}</ul></details>}
     </li>)}</ul>}

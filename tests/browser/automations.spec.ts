@@ -69,6 +69,7 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await expect(panel.getByText(/send attempts 2\/3 · retry after 2026-11-05T12:00:10\+00:00/)).toBeVisible();
   await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
   await panel.getByRole('button',{name:'I checked; retry scheduled message',exact:true}).click();
+  await expect(panel.getByRole('group',{name:'Confirm scheduled Telegram delivery reconciliation'})).toBeFocused();
   await panel.getByRole('button',{name:'Confirm retry',exact:true}).click();
   await expect(panel.getByText(/Telegram delivery pending/)).toBeVisible();
   await panel.getByRole('button',{name:'Change Telegram recipients',exact:true}).click();

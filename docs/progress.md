@@ -1,5 +1,9 @@
 # Progress
 
+## Give inline confirmations consistent keyboard and screen-reader focus (2026-11-15)
+
+Replaced nonmodal `alertdialog` semantics on channel identity and delivery confirmations with named, focusable groups that receive focus when shown. Applied the same behavior to channel-link revocation and scheduled Telegram delivery reconciliation, with a visible focus indicator and dark confirmation styling. The focused model-free Playwright channel and automation flows pass (2), including focus assertions for merge, unlink, revocation, and uncertain-delivery decisions. `npm run build:desktop` passes TypeScript and production bundling. This addresses these inline prompts only; broad screen-reader and dynamic-state review remains open. No live model or provider calls were made.
+
 ## Polish the desktop with a consistent dark interface (2026-11-15)
 
 Unified the last-applied desktop theme across navigation, workspace cards, status badges, forms, file controls, alerts, and recovery surfaces. The graphite palette and mint accent now remain consistent through secondary screens, with clearer selected navigation, keyboard focus, disabled states, and mobile colors. Existing workflows and permission controls are unchanged. `npm run build:desktop` passes TypeScript checking and the Vite production build. Hosted source workflow [43742212004](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43742212004) passed, and exact-commit Windows installer workflow [43742222949](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43742222949) passed all 47 executed steps with no failures. Its unsigned installer manifest and acceptance reports are retained locally in [`.acceptance/hosted-installer-43742222949/`](../.acceptance/hosted-installer-43742222949/). No live model/provider calls were made.
