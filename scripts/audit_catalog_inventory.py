@@ -28,6 +28,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "466fafb9b6e8099735d79ed32f97005a477ba144; "
         "see model-provider-source-audit.md#antigravity-oauth"
     ),
+    "antigravity-subscription-directsdk": (
+        "model-provider via external agy CLI; pinned source review at commit "
+        "0d5a3160f69f0c3302e3f49d9d2820093a544116; "
+        "see model-provider-source-audit.md#antigravity-subscription-directsdk"
+    ),
     "acedatacloud": (
         "model-provider; pinned source review at commit "
         "568763ee21fe081562bb9bcd91e7323f8f81d6ff; "
