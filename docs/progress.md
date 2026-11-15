@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Cursor SDK provider (2026-11-15)
+
+Reviewed `cursor-provider` at catalog-pinned commit `bf7d61fb1e37fa78ec58de7683ec436dff5b71bf`. It uses Cursor's official proprietary `cursor-sdk` 1.x with a user `CURSOR_API_KEY`, sending conversation content, tool schemas/results, and bounded HTTPS/data images to Cursor. The adapter disables Cursor built-in tools and MCP, returns only allowlisted Hermes tool calls through Hermes' own approval loop, bounds run deadlines, and maintains account/model/conversation-scoped SDK sessions. It does not enable Cursor's optional local sandbox; the SDK bridge is proprietary and private workspace ACLs were not verified on Windows. Cursor retains its own server-side conversation/cache state after local handles close. Forty-two of 90 model-category candidates are reviewed across 41 source trees; 48 remain pending. No plugin, SDK, key, account, endpoint, or inference was used.
+
 ## Review Command Code OAuth-named provider (2026-11-15)
 
 Reviewed the pinned Command Code provider, which is named “OAuth” but imports a static API key from the CLI or a browser hand-off; it does not implement an OAuth exchange or refresh grant. It stores the key in Hermes' credential pool and sends it to `/alpha/generate`, account identity/billing probes, and the account-scoped model catalog. The loopback browser flow uses a random state, binds before displaying the URL, caps callbacks at 64 KiB, and does not put the key in the redirect URL. Optional `COMMANDCODE_CLI_TOKEN` and custom relay URLs need explicit secret and origin controls; the code blocks OpenRouter specifically but allows other configured origins. Catalog/identity reads have timeouts but no response-size cap. Forty-one of 90 model-category entries are reviewed across 40 source trees; 49 remain pending. No Command Code CLI, account, key, catalog, or inference service was used.
