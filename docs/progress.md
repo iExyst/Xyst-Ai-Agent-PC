@@ -1,5 +1,9 @@
 # Progress
 
+## Give desktop engine failures actionable explanations (2026-11-14)
+
+The shared desktop API client now translates common authentication, stale-item, timeout, request-validation, rate-limit, unavailable-engine and server failures into plain-language next steps. Connection failures no longer expose the browser's raw “Failed to fetch” text. All 19 `npm run test:client` checks pass, including five representative HTTP statuses and a simulated loopback connection failure; `npm run build:desktop` and native Tauri compilation passed. The refreshed program is staged in [`build/native-design-20261114`](../build/native-design-20261114/), with the updated desktop hash recorded in its manifest. This is common engine-error coverage, not a full wording audit across every tool/provider error. No model inference was used.
+
 ## Verify desktop text contrast after the theme refresh (2026-11-14)
 
 Extended the model-free onboarding browser flow to check contrast and accessible names across its covered workspace, runs, integrations, model setup, system monitor, and settings surfaces. It caught two theme regressions: small muted labels and the workspace placeholder were below 4.5:1. Darkened the shared muted labels and set placeholder opacity explicitly. The keyboard/navigation/contrast/name flow passes (1), as do TypeScript and the production Vite build. Recompiled the Tauri Windows app and refreshed [`build/native-design-20261114`](../build/native-design-20261114/) with the corrected styles; the manifest records the updated desktop hash. No model inference was used. Full screen-reader behavior and broader dynamic-state coverage remain open.

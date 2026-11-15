@@ -53,7 +53,26 @@ export type SystemResourceSnapshot = components['schemas']['SystemResourceSnapsh
 
 export class EngineRequestError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) { super(message); this.status = status; }
+  readonly technicalMessage: string;
+  constructor(status: number, message: string) {
+    super(/^Engine request failed/.test(message) ? engineStatusMessage(status) : message);
+    this.name = 'EngineRequestError';
+    this.status = status;
+    this.technicalMessage = message;
+  }
+}
+
+function engineStatusMessage(status: number): string {
+  if (status === 401 || status === 403) return 'X.A.A. could not authenticate with its local engine. Restart the desktop app and reconnect.';
+  if (status === 404) return 'That item is no longer available. Refresh the list and try again.';
+  if (status === 408 || status === 504) return 'The local engine took too long to respond. Check its status and try again.';
+  if (status === 409) return 'The saved state changed before this action completed. Refresh it and review the latest version.';
+  if (status === 413) return 'The request or attachment is too large. Reduce it and try again.';
+  if (status === 422) return 'The engine could not accept this request. Check the fields and permissions, then try again.';
+  if (status === 429) return 'The local engine is busy or a run limit was reached. Wait for the active task to finish, then try again.';
+  if (status === 502 || status === 503) return 'The local engine is unavailable. Check that it is running, then try again.';
+  if (status >= 500) return 'The local engine encountered an error. Check its log for details, then try again.';
+  return 'The engine could not complete this request. Review the current state and try again.';
 }
 
 export class EngineClient {
@@ -78,7 +97,13 @@ export class EngineClient {
     const headers = new Headers(init.headers);
     headers.set('Authorization', `Bearer ${this.#token}`);
     if (init.body) headers.set('Content-Type', 'application/json');
-    const response = await this.#fetch(new URL(path, this.#base), { ...init, headers, redirect: 'error' });
+    let response: Response;
+    try {
+      response = await this.#fetch(new URL(path, this.#base), { ...init, headers, redirect: 'error' });
+    } catch (failure) {
+      if (init.signal?.aborted || (failure instanceof Error && failure.name === 'AbortError')) throw failure;
+      throw new Error('X.A.A. could not reach its local engine. Check that the desktop app is running, then try again.');
+    }
     if (!response.ok) {
       throw new EngineRequestError(response.status, `Engine request failed (${response.status}).`);
     }

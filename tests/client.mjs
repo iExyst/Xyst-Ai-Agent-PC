@@ -57,6 +57,28 @@ test('authentication and event sequence failures never reconnect', async () => {
   }
 });
 
+test('engine HTTP failures explain a useful next step', async () => {
+  const cases = [
+    [401, /authenticate with its local engine/],
+    [404, /no longer available/],
+    [409, /saved state changed/],
+    [422, /check the fields and permissions/i],
+    [503, /check that it is running/i],
+  ];
+  for (const [status, message] of cases) {
+    const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () => new Response('', {status}));
+    await assert.rejects(client.systemResources(), error => {
+      assert.match(error.message, message);
+      return true;
+    });
+  }
+});
+
+test('engine connection failures do not leak raw browser network errors', async () => {
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(client.systemResources(), {message:/could not reach its local engine.*desktop app is running/});
+});
+
 test('cancelling reconnect backoff stops further requests', async () => {
   const controller = new AbortController();
   let attempts = 0;
