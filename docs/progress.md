@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned LowRouter provider profile (2026-11-15)
+
+Reviewed `lowrouter` at catalog-pinned commit `93a8353d495443d8157c423979ac9df2a8589db6`. It filters the live model catalog for tool-capable routes, but the provider forwards prompts, tool schemas, and results to whichever downstream host serves the selected route. Its account balance is reported in EUR, while Hermes' USD run-cost total remains unknown. Fifty-nine of 90 model-category rows are reviewed across 58 source trees; 31 remain pending. Source findings are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No account, key, catalog, balance, or inference call was used; LLM tests remain deferred.
+
 ## Review pinned Liquid Inference auction provider (2026-11-15)
 
 Reviewed `liquid-inference-provider` at catalog-pinned commit `acd120f007367c1f422d3cd6ffe643f916f0b5f7`. The thin adapter sets a default USD 1 per-request header cap, but it can be changed and is not aggregate run-budget enforcement; its configurable credential endpoint has no origin check. Its local profile tests were inspected but not executed, and do not cover exchange accounting or live compatibility. Fifty-eight of 90 model-category rows are reviewed across 57 source trees; 32 remain pending. See [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No key, account, endpoint, or model was used; live LLM tests remain deferred.
