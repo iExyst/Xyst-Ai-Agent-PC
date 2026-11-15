@@ -4292,7 +4292,7 @@
       "required_environment_names": [
         "GROQ_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider; pinned source review at commit b5be0388c2b4cae8ed6a30c7371aaa1330731ee8; see model-provider-source-audit.md#groq-provider",
       "status": "planned",
       "phase": 9
     },

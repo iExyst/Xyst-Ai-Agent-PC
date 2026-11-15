@@ -155,3 +155,29 @@ a:focus-visible,summary:focus-visible{outline:3px solid var(--blue);outline-offs
 .page-home>.onboarding-guide>#get-started li{font-size:12px}
 .page-home>.saved-conversations,.page-home>.file-check-card{order:3;margin-top:0}
 @media(max-width:640px){.app-content{gap:9px}.app-content>.welcome-card{min-height:0;padding:20px}.app-content>.welcome-card h2{font-size:21px}.page-home>#new-objective{padding:17px}.page-home>.workspace-card{align-items:stretch}.page-home>.onboarding-guide>summary{padding:12px}}
+
+/* Native desktop density: keep the task, recovery action and workspace visible
+   together at common window sizes instead of making the home feel like a long form. */
+.app-topbar{height:68px;padding-inline:28px}
+.app-content{padding:18px 28px 34px;gap:10px}
+.app-alert{margin:0 0 10px;padding:9px 13px;border-radius:9px}
+.app-alert p{margin:0;font-size:11px}
+.app-content>section.recovery-card{margin:0 0 10px;padding:14px 18px;gap:18px;border-radius:11px;box-shadow:0 3px 12px #18223008}
+.app-content .recovery-card .eyebrow{font-size:9px;margin:0 0 4px}
+.app-content .recovery-card h2{font-size:15px;margin:0 0 4px}
+.app-content .recovery-card p:not(.eyebrow){font-size:11px;line-height:1.45}
+.recovery-card button{padding:9px 12px;font-size:11px}
+.page-home{gap:10px}
+.page-home>.workspace-card{padding:9px 13px}
+.page-home>.workspace-card label{display:grid;grid-template-columns:105px minmax(0,1fr);align-items:center;gap:10px;white-space:nowrap}
+.page-home>.workspace-card label input{min-width:0;max-width:none;margin:0!important}
+.page-home>.workspace-card .secondary-button{height:34px;padding:8px 12px;font-size:11px}
+.page-home>#new-objective{padding:18px 21px;border-radius:13px}
+.page-home>#new-objective .composer-heading h2{font-size:20px!important}
+.page-home>#new-objective .objective-intro{margin:5px 0 10px;font-size:12px}
+.page-home>#new-objective #run-objective{height:112px;min-height:112px;padding:12px 14px!important;font-size:13px!important}
+.page-home>#new-objective details.advanced-options{margin:12px 0;padding:10px 13px}
+.page-home>#new-objective>p:not(.objective-intro){margin:8px 0;color:#667085;font-size:11px}
+.page-home>#new-objective>button:not(.secondary-button){padding:10px 17px}
+@media(max-width:900px){.app-topbar{padding-inline:20px}.app-content{padding:16px 20px 30px}}
+@media(max-width:640px){.app-topbar{height:62px;padding-inline:14px}.app-content{padding:13px 13px 26px}.page-home>.workspace-card label{display:block;white-space:normal}.page-home>.workspace-card label input{margin-top:5px!important}.app-content>section.recovery-card{padding:13px 15px}}

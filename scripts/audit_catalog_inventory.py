@@ -16,7 +16,12 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
     "claude-subscription-directsdk": (
         "model-provider; pinned source review at commit "
         "83f0a896b3518c7131181838e340c9a80c79524d; see model-provider-source-audit.md"
-    )
+    ),
+    "groq-provider": (
+        "model-provider; pinned source review at commit "
+        "b5be0388c2b4cae8ed6a30c7371aaa1330731ee8; "
+        "see model-provider-source-audit.md#groq-provider"
+    ),
 }
 
 
