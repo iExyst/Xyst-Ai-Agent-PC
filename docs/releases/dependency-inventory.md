@@ -1,6 +1,6 @@
 # Locked dependency and license metadata inventory
 
-Snapshot date: 2026-11-14. This is an inventory of the current lockfiles and build environment, not a legal opinion or a complete third-party notice bundle.
+Snapshot date: 2026-11-15. This is an inventory of the current lockfiles and build environment, not a legal opinion or a complete third-party notice bundle.
 
 ## Scope and collection
 
@@ -578,7 +578,7 @@ License expressions below are copied from package metadata without normalization
 | Rust/Cargo | wry | 0.57.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/wry |
 | Rust/Cargo | x11 | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |
 | Rust/Cargo | x11-dl | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |
-| Rust/Cargo | xaa-desktop | 0.1.1 | NO LICENSE METADATA | — |
+| Rust/Cargo | xaa-desktop | 0.1.1 | MIT | — |
 | Rust/Cargo | yoke | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | Rust/Cargo | yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | Rust/Cargo | zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |

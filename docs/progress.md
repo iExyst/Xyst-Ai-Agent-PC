@@ -1,5 +1,9 @@
 # Progress
 
+## Correct the Rust license inventory for X.A.A.'s desktop crate (2026-11-15)
+
+`cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked --no-deps` confirms `xaa-desktop 0.1.1` declares MIT. The release inventory had incorrectly listed the application's own crate as `NO LICENSE METADATA`; corrected it to MIT and advanced the snapshot date. The root license, `pyproject.toml`, Cargo crate, and npm workspace now agree on the project's MIT license. This does not close third-party text/copyright review or release approval.
+
 ## Reverify daily schedule recovery across the spring-forward gap (2026-11-15)
 
 Rechecked the reported `run_once` DST regression against the current scheduler. It already searches back to the latest resolvable local occurrence when the newest due wall time is nonexistent, claims that occurrence once, then records the gap as `dst_skipped` on the next poll. The full `tests/unit/test_schedules.py` suite passes (17 tests), including catch-up after the gap, downtime ending before the gap, and skip/advance behavior. Corrected the Hermes matrix: DST catch-up is deterministic and locally verified; real external clock-transition and live delivery acceptance remain open.
