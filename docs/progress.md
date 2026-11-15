@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Lightning AI rate-limit middleware (2026-11-15)
+
+Reviewed `lightningai-rate-limit` at catalog-pinned commit `dc7911a946f0b209a81cf680c168382177bb13bf`. It is a per-process 15-per-minute execution middleware with non-cancellable sleeps up to the next window; its quota claim is not independently verified, and its registration silently ignores failures. Fifty-seven of 90 model-category rows are reviewed across 56 source trees; 33 remain pending. Findings and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, provider account, endpoint, model, or live request was used.
+
 ## Review pinned Lightning AI provider profile (2026-11-15)
 
 Reviewed `lightningai` at catalog-pinned commit `e4350ca278f8994322fc3b79a55a52e83388b7da`. It is a thin Hermes profile for an OpenAI-compatible remote endpoint; its optional custom base URL is not origin-validated in the plugin, and network/data behavior is delegated to Hermes core. Fifty-six of 90 model-category rows are reviewed across 55 source trees; 34 remain pending. The pinned review and evidence limits are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, key, account, catalog endpoint, or inference call was used.
