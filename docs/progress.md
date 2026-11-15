@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Model Leaderboard comparison dashboard (2026-11-15)
+
+Reviewed `model-leaderboard` at catalog-pinned commit `516e2f8d4dd0790f2c486d1fe0b444de5c2b3c10`. It is a comparison dashboard, not an inference provider; it reads public OpenRouter/Hugging Face metadata, and only explicit weight auto-fill uses the host-selected LLM. The benchmark write endpoint accepts arbitrary fields and unbounded numeric scores; route authorization is host-delegated and unverified. Sixty of 90 model-category rows are reviewed across 59 source trees; 30 remain pending. Findings and pinned source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin or endpoint was run; live LLM tests remain deferred.
+
 ## Review pinned LowRouter provider profile (2026-11-15)
 
 Reviewed `lowrouter` at catalog-pinned commit `93a8353d495443d8157c423979ac9df2a8589db6`. It filters the live model catalog for tool-capable routes, but the provider forwards prompts, tool schemas, and results to whichever downstream host serves the selected route. Its account balance is reported in EUR, while Hermes' USD run-cost total remains unknown. Fifty-nine of 90 model-category rows are reviewed across 58 source trees; 31 remain pending. Source findings are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No account, key, catalog, balance, or inference call was used; LLM tests remain deferred.
