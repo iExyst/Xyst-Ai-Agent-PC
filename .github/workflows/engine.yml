@@ -353,6 +353,44 @@ jobs:
             Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
           }
         timeout-minutes: 5
+      - name: Verify fresh-profile native onboarding with a deterministic provider
+        shell: pwsh
+        env:
+          XAA_NATIVE_DEBUG_PORT: '19227'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $debugPort = [int]$env:XAA_NATIVE_DEBUG_PORT
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $elevated = ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          $policyPath = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          $policyCreated = $false
+          $valueCreated = $false
+          try {
+            if ($elevated) {
+              $existing = Get-Item -LiteralPath $policyPath -ErrorAction SilentlyContinue
+              if ($existing -and $existing.GetValueNames() -contains 'xaa-desktop.exe') { throw 'Refusing to replace existing app debugging configuration.' }
+              if (-not $existing) { New-Item -Path $policyPath -Force | Out-Null; $policyCreated = $true }
+              New-ItemProperty -LiteralPath $policyPath -Name 'xaa-desktop.exe' -Value "--remote-debugging-port=$debugPort" -PropertyType String | Out-Null
+              $valueCreated = $true
+            }
+            node scripts/native_restart_smoke.mjs build/native-release/xaa-desktop.exe --onboarding
+            if ($LASTEXITCODE -ne 0) { throw "Native onboarding acceptance exited with code $LASTEXITCODE." }
+          } finally {
+            if ($valueCreated) { Remove-ItemProperty -LiteralPath $policyPath -Name 'xaa-desktop.exe' }
+            if ($policyCreated -and (Test-Path -LiteralPath $policyPath)) {
+              $remainingValues = (Get-Item -LiteralPath $policyPath).GetValueNames()
+              if ($remainingValues.Count -eq 0) { Remove-Item -LiteralPath $policyPath }
+            }
+            Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue
+          }
+        timeout-minutes: 5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-onboarding-${{ github.run_id }}
+          path: .acceptance/native-onboarding-*/
+          if-no-files-found: warn
+          include-hidden-files: true
       - name: Verify preference and sourced-knowledge controls in native Tauri desktop
         shell: pwsh
         run: |
@@ -536,6 +574,8 @@ jobs:
             .acceptance/**/engine.log
             .acceptance/**/engine-startup.log
             .acceptance/**/oauth-fixture.log
+            .acceptance/**/before-final-review.png
+            .acceptance/**/after-final-review.png
             .acceptance/**/failure.png
           include-hidden-files: true
           if-no-files-found: error

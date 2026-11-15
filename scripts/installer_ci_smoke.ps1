@@ -249,6 +249,17 @@ try {
         }
         $xaaReport.installed_streamed_output_restart = $xaaStreamRestartAcceptance
 
+        # Verify the complete fresh-profile onboarding path against the binaries
+        # installed by this package, using a deterministic loopback model fixture.
+        $xaaOnboardingOutput = & node scripts/native_restart_smoke.mjs $xaaDesktop --onboarding
+        $xaaOnboardingExitCode = $LASTEXITCODE
+        if ($xaaOnboardingExitCode -ne 0) { throw 'Installed fresh-profile onboarding acceptance failed.' }
+        $xaaOnboardingAcceptance = Get-Content -LiteralPath 'build/installer/native-onboarding-acceptance.json' -Raw | ConvertFrom-Json
+        if (-not $xaaOnboardingAcceptance.passed -or $xaaOnboardingAcceptance.live_model_inference -or -not $xaaOnboardingAcceptance.initial_profile_empty -or -not $xaaOnboardingAcceptance.harmless_tool_round_trip -or $xaaOnboardingAcceptance.onboarding_read_tool -ne 'workspace.read_file' -or -not $xaaOnboardingAcceptance.exact_read_evidence -or $xaaOnboardingAcceptance.observe_mode -ne 'observe' -or $xaaOnboardingAcceptance.command_grant -or -not $xaaOnboardingAcceptance.owner_final_review -or $xaaOnboardingAcceptance.final_run_state -ne 'completed' -or -not $xaaOnboardingAcceptance.workspace_unchanged -or -not $xaaOnboardingAcceptance.launch_credentials_cleaned -or $xaaOnboardingAcceptance.desktop_sha256 -ne $xaaDesktopHash -or $xaaOnboardingAcceptance.engine_sha256 -ne $xaaEngineHash) {
+            throw 'Installed fresh-profile onboarding evidence was incomplete or did not use the installed binaries.'
+        }
+        $xaaReport.installed_native_onboarding = $xaaOnboardingAcceptance
+
         # Exercise MCP configuration, process limits and AppContainer isolation using the
         # actual binaries installed by the unsigned package, not the build stage.
         $xaaMcpDebugPort = 19228
@@ -323,7 +334,7 @@ try {
     if (Test-Path -LiteralPath $xaaDesktopSettings) {
         try { $xaaReport.desktop_settings_preserved = (Get-Content -LiteralPath $xaaDesktopSettings -Raw | ConvertFrom-Json).close_behavior -eq 'exit_on_close' } catch { $xaaReport.desktop_settings_preserved = $false }
     }
-    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_scheduled_write_acceptance.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_mcp_process_limits.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
+    $xaaReport.passed = $xaaReport.default_per_user_install_directory_verified -and $xaaReport.installed_boot_verified -and $xaaReport.native_schedule_restart.passed -and $xaaReport.installed_scheduled_write_acceptance.passed -and $xaaReport.installed_streamed_output_restart.passed -and $xaaReport.installed_native_onboarding.passed -and $xaaReport.installed_desktop_browser_cancellation.passed -and $xaaReport.installed_mcp_process_limits.passed -and $xaaReport.installed_acp_cli_verified -and $xaaReport.installed_skill_readiness_acceptance.graceful_shutdown -and -not $xaaReport.installed_skill_readiness_acceptance.model_inference_requested -and $xaaReport.installed_browser_acceptance.result.status -eq 'ok' -and $xaaReport.installed_release_notices_verified -and $xaaReport.installed_backup_restore_verified -and $xaaReport.startup_entry_preserved_through_upgrade -and $xaaReport.startup_entry_removed_on_uninstall -and $xaaReport.binaries_removed -and $xaaReport.user_data_preserved -and $xaaReport.desktop_settings_preserved -and $xaaReport.uninstaller_exit_code -eq 0 -and ((-not $xaaPriorInstaller) -or ($xaaReport.upgrade_verified -and $xaaReport.prior_install_verified -and $xaaReport.upgrade_data_verified -and $xaaReport.startup_entry_seeded_before_upgrade))
     $xaaReport | ConvertTo-Json | Set-Content -LiteralPath 'build/installer/install-smoke.json' -Encoding utf8
     if ($xaaReport.startup_entry_seeded_before_upgrade -or $xaaReport.startup_entry_seeded_after_install) {
         $xaaStartupKeyForCleanup = Get-Item -LiteralPath $xaaStartupRegistryPath -ErrorAction SilentlyContinue

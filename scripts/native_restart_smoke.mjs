@@ -7,10 +7,13 @@ import path from 'node:path';
 
 if (process.platform !== 'win32') throw new Error('Native restart acceptance requires Windows.');
 
-const desktopExecutable = path.resolve(process.argv[2] ?? 'build/native-dev/xaa-desktop.exe');
+const desktopExecutable = path.resolve(process.argv.slice(2).find(argument => !argument.startsWith('--')) ?? 'build/native-dev/xaa-desktop.exe');
 const liveSpecialistMode = process.argv.includes('--live-specialist');
 const specialistMode = process.argv.includes('--specialist') || liveSpecialistMode;
-const root = path.resolve('.acceptance', `${liveSpecialistMode ? 'native-live-specialist-restart' : specialistMode ? 'native-specialist-restart' : 'native-restart'}-${randomUUID()}`);
+const onboardingMode = process.argv.includes('--onboarding');
+if (onboardingMode && specialistMode) throw new Error('Native onboarding acceptance cannot be combined with specialist recovery modes.');
+const acceptanceName = onboardingMode ? 'native-onboarding-acceptance.json' : liveSpecialistMode ? 'native-live-specialist-restart-acceptance.json' : specialistMode ? 'native-specialist-restart-acceptance.json' : 'native-restart-acceptance.json';
+const root = path.resolve('.acceptance', `${onboardingMode ? 'native-onboarding' : liveSpecialistMode ? 'native-live-specialist-restart' : specialistMode ? 'native-specialist-restart' : 'native-restart'}-${randomUUID()}`);
 const profile = path.join(root, 'profile');
 const localAppData = path.join(profile, 'localappdata');
 const appData = path.join(profile, 'appdata');
@@ -18,7 +21,9 @@ const logDirectory = path.join(localAppData, 'dev.xyst.xaa', 'logs');
 const database = path.join(root, 'XAA', 'xaa.sqlite3');
 const fixtureWorkspace = path.join(root, 'workspace');
 const engineLog = path.join(logDirectory, 'engine.log');
-const fakeModel = liveSpecialistMode ? (process.env.XAA_NATIVE_LIVE_MODEL ?? 'qwen3-0.6b') : 'xaa-native-restart-fixture';
+const fakeModel = liveSpecialistMode ? (process.env.XAA_NATIVE_LIVE_MODEL ?? 'qwen3-0.6b') : onboardingMode ? 'xaa-native-onboarding-fixture' : 'xaa-native-restart-fixture';
+const onboardingProjectIdentity = `Aurora Ledger ${randomUUID().slice(0, 8)}`;
+const onboardingMarker = `NATIVE-ONBOARDING-${randomUUID()}`;
 const fakeState = {
   runStarted: false,
   allowRunResponse: false,
@@ -38,6 +43,8 @@ const fakeState = {
   liveResumeAllowed: false,
   liveResultFollowups: 0,
   liveSavedResultResumePrompts: 0,
+  onboardingReadProposals: 0,
+  onboardingResultFollowups: 0,
 };
 const liveProviderEndpoint = 'http://127.0.0.1:1234';
 let diagnosticsNonce;
@@ -50,6 +57,7 @@ const specialistInstructions = liveSpecialistMode
 
 await Promise.all([root, localAppData, appData, logDirectory, fixtureWorkspace].map(directory => mkdir(directory, { recursive: true })));
 await writeFile(path.join(fixtureWorkspace, 'fixture.txt'), specialistMode ? specialistNonce : 'native restart fixture remains unchanged\n');
+if (onboardingMode) await writeFile(path.join(fixtureWorkspace, 'README.md'), `# ${onboardingProjectIdentity}\n\n${onboardingMarker}\n\nA desktop ledger for community gardens.\n\n## Setup\nRun the packaged desktop application and open the selected workspace.\n`);
 
 function reply(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -174,6 +182,44 @@ const modelServer = createServer(async (request, response) => {
         function: { name: 'xaa_echo', arguments: JSON.stringify({ value: diagnosticsNonce }) },
       }],
     });
+    return;
+  }
+  if (onboardingMode) {
+    const toolNames = (body.tools ?? []).map(tool => tool.function?.name);
+    if (!toolNames.includes('workspace_read_file')) {
+      reply(response, 409, { error: 'onboarding request omitted the read-only workspace tool' });
+      return;
+    }
+    if (messages.some(message => message.role === 'tool')) {
+      const toolResults = messages.filter(message => message.role === 'tool').map(message => String(message.content));
+      if (!toolResults.some(result => result.includes(onboardingMarker))) {
+        reply(response, 409, { error: 'onboarding follow-up omitted the exact README tool result' });
+        return;
+      }
+      fakeState.onboardingResultFollowups += 1;
+      if (fakeState.onboardingResultFollowups !== 1) {
+        reply(response, 409, { error: 'onboarding requested an unexpected repeated model follow-up' });
+        return;
+      }
+      const answer = `${onboardingProjectIdentity} is a desktop ledger for community gardens. The README says to run the packaged desktop application and open the selected workspace. The project marker is ${onboardingMarker}. A useful next step is to add a test for ledger entry validation. Source: README.md.`;
+      if (body.stream === true) streamedCompletion(response, answer);
+      else chatCompletion(response, { role: 'assistant', content: answer });
+      return;
+    }
+    fakeState.onboardingReadProposals += 1;
+    if (fakeState.onboardingReadProposals !== 1) {
+      reply(response, 409, { error: 'onboarding proposed more than one workspace read' });
+      return;
+    }
+    if (body.stream === true) {
+      streamedToolCall(response, 'native-onboarding-readme-once', 'workspace_read_file', JSON.stringify({ path: 'README.md' }));
+    } else {
+      chatCompletion(response, {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'native-onboarding-readme-once', type: 'function', function: { name: 'workspace_read_file', arguments: JSON.stringify({ path: 'README.md' }) } }],
+      });
+    }
     return;
   }
   if (!specialistMode && userText.includes('Current user turn:\nContinue it')) {
@@ -363,7 +409,105 @@ function cleanTestLaunchCredentials() {
   }
 }
 
+async function runNativeOnboarding() {
+  const page = first.page;
+  const headers = first.headers;
+  const runsBefore = await (await fetch(`${first.connection.base_url}/runs`, { headers })).json();
+  if (runsBefore.items?.length !== 0) throw new Error('The isolated onboarding profile was not clean before first launch.');
+  const initial = await (await fetch(`${first.connection.base_url}/providers/lm-studio/config`, { headers })).json();
+  if (initial.endpoint !== 'http://127.0.0.1:1234' || initial.selected_model !== null) {
+    throw new Error(`Fresh onboarding profile did not use the default endpoint and no model: ${JSON.stringify(initial)}`);
+  }
+
+  await page.getByRole('link', { name: 'Model setup' }).click();
+  await page.getByLabel('LM Studio server address').fill(providerEndpoint);
+  await page.getByRole('button', { name: 'Save address and connect', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Connected. Found 1 model.' })).toBeVisible({ timeout: 20000 });
+  const discovered = await (await fetch(`${first.connection.base_url}/models`, { headers })).json();
+  if (discovered.length !== 1 || discovered[0].id !== fakeModel) throw new Error(`Native onboarding discovered an unexpected model inventory: ${JSON.stringify(discovered)}`);
+  await page.getByLabel('Local model or compatible provider model').selectOption(fakeModel);
+  await expect.poll(async () => (await (await fetch(`${first.connection.base_url}/providers/lm-studio/config`, { headers })).json()).selected_model, { timeout: 10000 }).toBe(fakeModel);
+  await page.getByRole('button', { name: 'Run harmless tool-use diagnostic', exact: true }).click();
+  await expect(page.getByText('The selected model completed a validated harmless tool round trip.', { exact: true })).toBeVisible({ timeout: 20000 });
+  if (fakeState.diagnostics !== 1 || fakeState.accepts !== 2) throw new Error(`The harmless model diagnostic did not complete exactly one tool round trip: ${JSON.stringify(fakeState)}`);
+
+  await page.getByRole('link', { name: 'New objective' }).click();
+  await page.getByLabel('Workspace path').fill(fixtureWorkspace);
+  let demoRequest;
+  page.on('request', request => {
+    if (request.url() === `${first.connection.base_url}/runs` && request.method() === 'POST') demoRequest = request.postDataJSON();
+  });
+  await page.getByRole('button', { name: 'Start read-only onboarding demonstration', exact: true }).click();
+  const runDeadline = Date.now() + 60000;
+  let savedRun;
+  while (Date.now() < runDeadline) {
+    const history = await (await fetch(`${first.connection.base_url}/runs?limit=10`, { headers })).json();
+    savedRun = history.items?.find(item => item.workspace === fixtureWorkspace && item.objective?.includes('Do not modify files or run commands'));
+    if (savedRun && ['verifying', 'completed', 'failed', 'blocked'].includes(savedRun.state)) break;
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  if (!savedRun || savedRun.state !== 'verifying') {
+    const alerts = await page.getByRole('alert').allTextContents();
+    throw new Error(`The native read-only demonstration did not reach final review: ${JSON.stringify({ state: savedRun?.state, alerts, provider: fakeState })}`);
+  }
+  if (demoRequest?.mode !== 'observe' || demoRequest?.command_grant !== null || demoRequest?.workspace !== fixtureWorkspace
+    || demoRequest?.objective !== savedRun.objective) throw new Error(`The demonstration did not preserve its read-only scope: ${JSON.stringify(demoRequest)}`);
+
+  const events = await (await fetch(`${first.connection.base_url}/runs/${encodeURIComponent(savedRun.id)}/events`, { headers })).json();
+  const intents = events.filter(event => event.event_type === 'tool.intended');
+  const readIntent = intents.find(event => event.payload.tool === 'workspace.read_file');
+  const readResult = readIntent && events.find(event => event.event_type === 'tool.completed' && event.payload.call_id === readIntent.payload.call_id);
+  const answers = events.filter(event => event.event_type === 'model.message').map(event => event.payload.message?.content).filter(value => typeof value === 'string');
+  const originalReadme = `# ${onboardingProjectIdentity}\n\n${onboardingMarker}\n\nA desktop ledger for community gardens.\n\n## Setup\nRun the packaged desktop application and open the selected workspace.\n`;
+  const unchanged = await readFile(path.join(fixtureWorkspace, 'README.md'), 'utf8') === originalReadme;
+  if (!readIntent || !readResult
+    || !answers.some(answer => answer.includes(onboardingProjectIdentity) && answer.includes(onboardingMarker))
+    || intents.length !== 1 || fakeState.onboardingReadProposals !== 1 || fakeState.onboardingResultFollowups !== 1 || !unchanged) {
+    throw new Error(`The native onboarding result did not prove one exact read-only workspace task: ${JSON.stringify({ intents: intents.map(event => event.payload.tool), answerCount: answers.length, provider: fakeState, unchanged })}`);
+  }
+
+  await page.screenshot({ path: path.join(root, 'before-final-review.png'), fullPage: true });
+  await page.getByLabel('I reviewed the objective, result, and available evidence').check();
+  await page.getByLabel('Final review rationale').fill('Verified the README project identity, setup instructions, exact file evidence, and unchanged workspace.');
+  await page.getByRole('button', { name: 'Accept and complete run', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Active run completed' })).toBeVisible({ timeout: 20000 });
+  const completed = await (await fetch(`${first.connection.base_url}/runs/${encodeURIComponent(savedRun.id)}`, { headers })).json();
+  if (completed.state !== 'completed') throw new Error(`The owner-reviewed native onboarding run did not complete: ${completed.state}`);
+  await page.screenshot({ path: path.join(root, 'after-final-review.png'), fullPage: true });
+
+  const result = {
+    passed: true,
+    scenario: 'fresh Windows Tauri profile connects through the desktop UI, completes the harmless diagnostic, reads a real workspace file with owner review, and reaches completed',
+    provider: 'deterministic local OpenAI-compatible fixture; no live LM Studio or external provider inference',
+    live_model_inference: false,
+    initial_profile_empty: true,
+    default_endpoint: initial.endpoint,
+    configured_endpoint: providerEndpoint,
+    discovered_model: fakeModel,
+    harmless_tool_round_trip: true,
+    onboarding_read_tool: readIntent.payload.tool,
+    exact_read_evidence: true,
+    observe_mode: demoRequest.mode,
+    command_grant: demoRequest.command_grant,
+    owner_final_review: true,
+    final_run_state: completed.state,
+    workspace_unchanged: unchanged,
+    desktop_sha256: createHash('sha256').update(await readFile(desktopExecutable)).digest('hex'),
+    engine_sha256: createHash('sha256').update(await readFile(path.join(path.dirname(desktopExecutable), 'xaa-engine.exe'))).digest('hex'),
+    launch_credentials_cleaned: false,
+  };
+  await writeFile(path.join(root, 'report.json'), JSON.stringify(result, null, 2));
+  await mkdir('build/installer', { recursive: true });
+  await writeFile(path.join('build/installer', acceptanceName), JSON.stringify(result, null, 2));
+  console.log(JSON.stringify({ ...result, evidence: root }, null, 2));
+  return result;
+}
+
 try {
+  if (onboardingMode) {
+    first = await startDesktop('Onboarding');
+    report = await runNativeOnboarding();
+  } else {
   first = await startDesktop('First');
   const configResponse = await fetch(`${first.connection.base_url}/providers/lm-studio/config`, {
     method: 'PUT', headers: { ...first.headers, 'Content-Type': 'application/json' },
@@ -525,7 +669,7 @@ try {
     };
     await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
     await mkdir('build/installer', { recursive: true });
-    await writeFile(`build/installer/${liveSpecialistMode ? 'native-live-specialist-restart' : 'native-specialist-restart'}-acceptance.json`, JSON.stringify(report, null, 2));
+    await writeFile(path.join('build/installer', acceptanceName), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
   } else {
   const fixtureReadme = path.join(fixtureWorkspace, 'fixture.txt');
@@ -694,8 +838,9 @@ try {
   };
   await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
   await mkdir('build/installer', { recursive: true });
-  await writeFile('build/installer/native-restart-acceptance.json', JSON.stringify(report, null, 2));
+  await writeFile(path.join('build/installer', acceptanceName), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
+  }
   }
 } catch (error) {
   const detail = { passed: false, error: String(error), root, provider_requests: fakeState.accepts, diagnostic_requests: fakeState.diagnostics, live_result_followups: fakeState.liveResultFollowups, live_result_blocked: fakeState.liveResultBlocked, role_prompt_checks: fakeState.rolePromptChecks };
@@ -712,7 +857,7 @@ try {
     report.launch_credentials_cleaned = credentialsCleaned;
     const serialized = JSON.stringify(report, null, 2);
     await writeFile(path.join(root, 'report.json'), serialized);
-    await writeFile(`build/installer/${liveSpecialistMode ? 'native-live-specialist-restart' : specialistMode ? 'native-specialist-restart' : 'native-restart'}-acceptance.json`, serialized);
+    await writeFile(path.join('build/installer', acceptanceName), serialized);
   }
   if (!credentialsCleaned) throw new Error('The native restart acceptance could not clean its own API launch credential pair.');
   await new Promise(resolve => modelServer.close(resolve));
