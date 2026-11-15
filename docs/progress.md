@@ -1,5 +1,9 @@
 # Progress
 
+## Rebuild and accept the refreshed Windows installer (2026-11-14)
+
+Manual installer workflow [43664182503, attempt 2](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43664182503) passed all 47 Windows installer job steps on source commit `354ec1c00d78908bb843688ef7f034a5591d8c2e`. It rebuilt version 0.1.1 and passed frozen AppContainer readiness/execution, native restart and specialist recovery, task-scoped worker checks, upgrade from the published 0.1.0 baseline, installed boot, standard-user install, uninstall, and explicit application-data removal. Attempt 1 hit a transient `backend_probe_failed` during hosted AppContainer readiness; the same source passed on retry. The tested unsigned installer is saved under `build/installer-acceptance-43664182503/build/installer/`; its SHA-256 is `05d4f601d593e9749019716223e827d8c4526a7a69f9e8260c94e54220cce8f0`. The desktop and engine hashes are in that build's manifest. This covers hosted clean-VM packaging lifecycle, not real-model onboarding or broader Hermes parity. No model inference was used.
+
 ## Confirm hosted verification after the desktop refresh (2026-11-14)
 
 Hosted workflow [43662780827](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43662780827) passed on commit `182470d07a95e2e40544aabf3c6122201702a5d7`, including the managed Edge scenarios, pinned Hermes inventories, Python checks, desktop/browser checks, and full engine suite. The first attempt had a transient timeout in an external Edge navigation; the failed-job retry passed. This validates the current source workflow; it does not constitute clean-machine installer acceptance or real LM Studio model testing. LLM testing remains deferred to the final phase.
