@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+### Browser form submission
+
+The engine now has a separately approved `browser.submit` action for one visible POST form, constrained to the current approved hostname and visible editable text-like controls. Run-level grant persistence, API rejection without browser read approval, one-use document-POST routing, cancellation journaling, and desktop permission disclosure are covered by focused tests and build/static checks. The ordinary browser-read grant does not enable submission; the feature is not delegated or automatically retried. No live website submission acceptance has run, so this remains partial Phase 7 capability evidence rather than full browser/Hermes parity.
+
 Exact-revision hosted installer run [43766428450](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43766428450) passes 49 executed Windows installer steps for commit `71c1629f`, including installed-package lifecycle, native memory, backup/restore, recovery, browser cancellation, and task command scope acceptances. The current unsigned installer manifest and reports are retained in [`.acceptance/hosted-installer-43766428450/`](../.acceptance/hosted-installer-43766428450/). This does not establish signed release, cross-version/hardware compatibility, live-model acceptance, or Hermes parity.
 
 The native memory acceptance now follows the dedicated Memory destination; a fresh staged release run verifies preference and sourced-knowledge create/edit/search/delete, source-reference persistence, and removal from retrieval/export. Local report: [native memory acceptance](../.acceptance/native-memory-panel-b4efa41d-b37e-4461-9436-94829af0001d/report.json). Hosted installer run [43765675406](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43765675406) exposed the stale route selector and failed before this harness correction; hosted rerun is pending.

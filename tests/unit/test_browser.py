@@ -16,9 +16,11 @@ from xaa.runtime import browser as browser_runtime
 from xaa.runtime import browser_worker
 from xaa.runtime.browser import (
     BROWSER_METADATA,
+    BROWSER_SUBMIT_METADATA,
     MAX_WORKER_BYTES,
     BrowserArguments,
     BrowserOutput,
+    BrowserSubmitArguments,
     _bounded_result,
     _execute_worker,
     browser_worker_environment,
@@ -87,6 +89,32 @@ def test_browser_form_inspection_is_opt_in_and_output_contains_metadata_only() -
     }
     with pytest.raises(ValueError, match="extra"):
         BrowserOutput.model_validate(unsafe)
+
+
+def test_browser_submission_contract_is_bounded_and_has_separate_write_permission() -> None:
+    valid = BrowserSubmitArguments(
+        url="https://docs.example.com/contact",
+        form_index=0,
+        values=[{"name": "message", "value": "hello"}],
+        submitter_label="Send",
+    )
+    assert valid.values[0].value == "hello"
+    assert BROWSER_SUBMIT_METADATA["name"] == "browser.submit"
+    assert BROWSER_SUBMIT_METADATA["permissions"] == ["web.browser.submit"]
+    with pytest.raises(ValueError, match="unique"):
+        BrowserSubmitArguments(
+            url="https://docs.example.com/contact",
+            form_index=0,
+            values=[{"name": "a", "value": "one"}, {"name": "a", "value": "two"}],
+            submitter_label="Send",
+        )
+    with pytest.raises(ValueError, match="32 KiB"):
+        BrowserSubmitArguments(
+            url="https://docs.example.com/contact",
+            form_index=0,
+            values=[{"name": f"a{index}", "value": "x" * 4096} for index in range(9)],
+            submitter_label="Send",
+        )
 
 
 def test_browser_contract_bounds_the_model_facing_result() -> None:
@@ -347,6 +375,58 @@ async def test_browser_route_guard_applies_to_redirect_and_subresource_requests(
         assert blocked_subresources == {}
 
 
+@pytest.mark.asyncio
+async def test_browser_route_guard_allows_exactly_one_armed_same_url_document_post() -> None:
+    class FakeFrame:
+        parent_frame = None
+
+    main_frame = FakeFrame()
+    url = "https://docs.example.com/contact"
+
+    class FakeRequest:
+        def __init__(self, resource_type: str = "document", navigation: bool = True) -> None:
+            self.method = "POST"
+            self.resource_type = resource_type
+            self.frame = main_frame
+            self.url = url
+            self._navigation = navigation
+
+        def is_navigation_request(self) -> bool:
+            return self._navigation
+
+    class FakeRoute:
+        def __init__(self, request: FakeRequest) -> None:
+            self.request = request
+            self.action: tuple[str, str | None] | None = None
+
+        async def abort(self, error_code: str) -> None:
+            self.action = ("abort", error_code)
+
+        async def continue_(self) -> None:
+            self.action = ("continue", None)
+
+    state: dict[str, Any] = {"armed": True, "used": False, "target_url": url}
+    first = FakeRoute(FakeRequest())
+    await browser_worker.guard_browser_route(
+        first, {"docs.example.com"}, main_frame=main_frame, submission_state=state
+    )
+    assert first.action == ("continue", None)
+    assert state["used"] is True
+
+    replay = FakeRoute(FakeRequest())
+    await browser_worker.guard_browser_route(
+        replay, {"docs.example.com"}, main_frame=main_frame, submission_state=state
+    )
+    assert replay.action == ("abort", "blockedbyclient")
+
+    xhr_state = {"armed": True, "used": False, "target_url": url}
+    xhr = FakeRoute(FakeRequest(resource_type="xhr", navigation=False))
+    await browser_worker.guard_browser_route(
+        xhr, {"docs.example.com"}, main_frame=main_frame, submission_state=xhr_state
+    )
+    assert xhr.action == ("abort", "blockedbyclient")
+
+
 @pytest.mark.parametrize("is_main_frame", [True, False])
 @pytest.mark.asyncio
 async def test_browser_route_guard_reports_blocked_child_frames_separately_from_main_navigation(
@@ -481,9 +561,17 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     )
     names = {tool["function"]["name"] for tool in coordinator._tools(run["id"], run)}
     assert "browser_run" not in names
+    assert "browser_submit_form" not in names
     browser_run = dict(run, approved_browser=True)
     exposed = {
         tool["function"]["name"]: tool["function"]["parameters"]
         for tool in coordinator._tools(run["id"], browser_run)
     }
     assert exposed["browser_run"] == BROWSER_METADATA["input_schema"]
+    assert "browser_submit_form" not in exposed
+    submission_run = dict(browser_run, approved_browser_submission=True)
+    submission_tools = {
+        tool["function"]["name"]: tool["function"]["parameters"]
+        for tool in coordinator._tools(run["id"], submission_run)
+    }
+    assert submission_tools["browser_submit_form"] == BROWSER_SUBMIT_METADATA["input_schema"]

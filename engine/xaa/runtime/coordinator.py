@@ -25,7 +25,14 @@ from xaa.providers.lm_studio import (
 )
 from xaa.providers.router import ProviderRouter
 from xaa.providers.streaming import StreamAssemblyError
-from xaa.runtime.browser import BROWSER_METADATA, BROWSER_TOOL, run_approved_browser
+from xaa.runtime.browser import (
+    BROWSER_METADATA,
+    BROWSER_SUBMIT_METADATA,
+    BROWSER_SUBMIT_TOOL,
+    BROWSER_TOOL,
+    run_approved_browser,
+    run_approved_browser_submission,
+)
 from xaa.runtime.command_contracts import CommandArguments, command_tool_description
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.command_transport_factory import discover_command_transport
@@ -1062,6 +1069,24 @@ class Coordinator:
                 run["approved_web_hosts"],
                 deadline=deadline,
             )
+        if name == "browser_submit_form":
+            if (
+                not run.get("approved_browser_submission")
+                or not run.get("approved_browser")
+                or not run.get("approved_web_hosts")
+            ):
+                raise PermissionError(
+                    "This run has no user-approved browser form-submission permission and hostnames."
+                )
+            return await run_approved_browser_submission(
+                self.store,
+                run_id,
+                token,
+                call["id"],
+                arguments,
+                run["approved_web_hosts"],
+                deadline=deadline,
+            )
         if name == "plan_save":
             return self._propose_plan(run_id, token, call["id"], function["arguments"], tools)
         if name == "plan_run_ready":
@@ -1645,6 +1670,15 @@ class Coordinator:
                 " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
             )
             tools.append(browser_tool)
+        if run.get("approved_browser_submission") and approved_web_hosts:
+            submit_tool = json.loads(json.dumps(BROWSER_SUBMIT_TOOL))
+            submit_tool["function"]["parameters"] = BROWSER_SUBMIT_METADATA["input_schema"]
+            submit_tool["function"]["description"] += (
+                " This run explicitly permits one POST form action per tool call on the current page hostname. Approved exact hostnames: "
+                + ", ".join(approved_web_hosts)
+                + "."
+            )
+            tools.append(submit_tool)
         tools.append(
             {
                 "type": "function",
@@ -1673,7 +1707,8 @@ class Coordinator:
             tools = [
                 tool
                 for tool in tools
-                if tool["function"]["name"] not in {"web_search", "web_fetch", "browser_run"}
+                if tool["function"]["name"]
+                not in {"web_search", "web_fetch", "browser_run", "browser_submit_form"}
             ]
         if self.mcp_manager is not None:
             tools.extend(self.mcp_manager.tools_for_run(set(run.get("approved_mcp_tools", []))))

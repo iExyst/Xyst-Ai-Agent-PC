@@ -729,6 +729,11 @@
             "title": "Approved Browser",
             "type": "boolean"
           },
+          "approved_browser_submission": {
+            "default": false,
+            "title": "Approved Browser Submission",
+            "type": "boolean"
+          },
           "approved_mcp_sampling_servers": {
             "items": {
               "type": "string"
@@ -4683,6 +4688,11 @@
           "approved_browser": {
             "default": false,
             "title": "Approved Browser",
+            "type": "boolean"
+          },
+          "approved_browser_submission": {
+            "default": false,
+            "title": "Approved Browser Submission",
             "type": "boolean"
           },
           "approved_mcp_sampling_servers": {

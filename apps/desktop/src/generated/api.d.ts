@@ -2618,6 +2618,11 @@ export interface components {
              * @default false
              */
             approved_browser: boolean;
+            /**
+             * Approved Browser Submission
+             * @default false
+             */
+            approved_browser_submission: boolean;
             /** Approved Mcp Sampling Servers */
             approved_mcp_sampling_servers?: string[];
             /** Approved Mcp Tools */
@@ -3994,6 +3999,11 @@ export interface components {
              * @default false
              */
             approved_browser: boolean;
+            /**
+             * Approved Browser Submission
+             * @default false
+             */
+            approved_browser_submission: boolean;
             /** Approved Mcp Sampling Servers */
             approved_mcp_sampling_servers?: string[];
             /** Approved Mcp Tools */

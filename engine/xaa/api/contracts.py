@@ -39,6 +39,7 @@ class RunRecord(BaseModel):
     approved_web_hosts: list[str] = Field(default_factory=list)
     approved_web_search: bool = False
     approved_browser: bool = False
+    approved_browser_submission: bool = False
     allow_procedure_drafting: bool = False
     allow_procedure_revision: bool = False
     allow_procedure_resource_revision: bool = False

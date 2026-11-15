@@ -1029,6 +1029,7 @@ class RunStore:
         approved_web_hosts: list[str] | None = None,
         approved_web_search: bool = False,
         approved_browser: bool = False,
+        approved_browser_submission: bool = False,
         approved_mcp_tools: list[str] | None = None,
         approved_mcp_sampling_servers: list[str] | None = None,
         allow_procedure_drafting: bool = False,
@@ -1049,6 +1050,10 @@ class RunStore:
             allow_procedure_resource_revision or allow_procedure_resource_removal
         ):
             raise ValueError("Choose only one procedure edit permission for a run.")
+        if approved_browser_submission and (not approved_browser or not approved_web_hosts):
+            raise ValueError(
+                "Browser form submission requires browser access and an approved host list."
+            )
         if (
             procedure_python_environment_digest is not None
             and re.fullmatch(r"[a-f0-9]{64}", procedure_python_environment_digest) is None
@@ -1474,7 +1479,12 @@ class RunStore:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
             if granted_command is not None:
                 self.record_event(connection, run_id, "execution.granted", granted_command)
-            if approved_web_hosts or approved_web_search or approved_browser:
+            if (
+                approved_web_hosts
+                or approved_web_search
+                or approved_browser
+                or approved_browser_submission
+            ):
                 self.record_event(
                     connection,
                     run_id,
@@ -1483,6 +1493,7 @@ class RunStore:
                         "hosts": approved_web_hosts,
                         "search": approved_web_search,
                         "browser": approved_browser,
+                        "browser_submission": approved_browser_submission,
                         "actor": "local_user",
                     },
                 )
@@ -1725,6 +1736,11 @@ class RunStore:
         )
         record["approved_browser"] = (
             bool(json.loads(web_grants[0][0]).get("browser", False))
+            if len(web_grants) == 1
+            else False
+        )
+        record["approved_browser_submission"] = (
+            bool(json.loads(web_grants[0][0]).get("browser_submission", False))
             if len(web_grants) == 1
             else False
         )

@@ -8,8 +8,8 @@ import ipaddress
 import json
 import socket
 import sys
-from typing import Any
-from urllib.parse import urlsplit
+from typing import Any, cast
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from playwright.async_api import Error as PlaywrightError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -24,6 +24,19 @@ MAX_PROXY_BYTES = 2 * 1024 * 1024
 MAX_PROXY_CONNECTIONS = 32
 
 
+class BrowserFormValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=200)
+    value: str = Field(max_length=4096)
+
+
+class BrowserFormSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    form_index: int = Field(ge=0, lt=20)
+    values: list[BrowserFormValue] = Field(min_length=1, max_length=20)
+    submitter_label: str = Field(min_length=1, max_length=200)
+
+
 class BrowserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     url: str = Field(min_length=9, max_length=2048)
@@ -31,6 +44,7 @@ class BrowserRequest(BaseModel):
     links: list[str] = Field(default_factory=list, max_length=5)
     screenshot: bool = False
     inspect_forms: bool = False
+    submission: BrowserFormSubmission | None = None
 
     @field_validator("approved_hosts")
     @classmethod
@@ -62,9 +76,32 @@ async def guard_browser_route(
     *,
     main_frame: Any | None = None,
     blocked_main_navigations: dict[str, int] | None = None,
+    submission_state: dict[str, Any] | None = None,
 ) -> None:
     try:
-        if route.request.method not in {"GET", "HEAD"}:
+        method = route.request.method
+        permitted_submission = False
+        if method == "POST" and submission_state is not None:
+            request_frame = getattr(route.request, "frame", None)
+            is_top_level_navigation = main_frame is not None and (
+                request_frame is main_frame
+                or (
+                    request_frame is not None
+                    and route.request.is_navigation_request()
+                    and request_frame.parent_frame is None
+                )
+            )
+            permitted_submission = (
+                submission_state.get("armed") is True
+                and submission_state.get("used") is False
+                and is_top_level_navigation
+                and getattr(route.request, "resource_type", None) == "document"
+                and route.request.is_navigation_request()
+                and route.request.url == submission_state.get("target_url")
+            )
+            if permitted_submission:
+                submission_state["used"] = True
+        if method not in {"GET", "HEAD"} and not permitted_submission:
             raise PermissionError("Browser requests that can submit data are blocked.")
         validate_web_target(route.request.url, hosts)
     except (ValueError, PermissionError):
@@ -104,6 +141,134 @@ def close_unexpected_page(main_page: Any, opened_page: Any) -> asyncio.Task[None
     if opened_page is main_page:
         return None
     return asyncio.create_task(opened_page.close())
+
+
+async def _submit_visible_form(
+    page: Any,
+    submission: BrowserFormSubmission,
+    hosts: set[str],
+    submission_state: dict[str, Any],
+) -> list[str]:
+    forms = page.locator("form")
+    visible_forms: list[Any] = []
+    for index in range(await forms.count()):
+        form = forms.nth(index)
+        if await form.is_visible():
+            visible_forms.append(form)
+            if len(visible_forms) >= 20:
+                break
+    if submission.form_index >= len(visible_forms):
+        raise ValueError("The requested visible form does not exist.")
+    form = visible_forms[submission.form_index]
+    if await form.evaluate("form => form.method.toLowerCase()") != "post":
+        raise PermissionError("Only POST forms can be submitted.")
+    target = (await form.get_attribute("target") or "").strip().lower()
+    if target not in {"", "_self"}:
+        raise PermissionError("Forms targeting another window are blocked.")
+    enctype = await form.evaluate("form => form.enctype.toLowerCase()")
+    if enctype != "application/x-www-form-urlencoded":
+        raise PermissionError("Only URL-encoded form submissions are supported.")
+    if await form.locator('input[type="file"]').count():
+        raise PermissionError("Forms containing file inputs cannot be submitted.")
+
+    action_attribute = await form.get_attribute("action")
+    page_url = cast(str, page.url)
+    action_url: str = urljoin(page_url, action_attribute or page_url)
+    action_parts = urlsplit(action_url)
+    action_url = urlunsplit(
+        (
+            action_parts.scheme,
+            action_parts.netloc,
+            action_parts.path,
+            action_parts.query,
+            "",
+        )
+    )
+    validate_url(action_url, hosts)
+    page_host = (urlsplit(page_url).hostname or "").lower().rstrip(".")
+    action_host: str = (action_parts.hostname or "").lower().rstrip(".")
+    if not page_host or action_host != page_host:
+        raise PermissionError("Form submission must stay on the current page hostname.")
+
+    for item in submission.values:
+        escaped_name = item.name.replace("\\", "\\\\").replace('"', '\\"')
+        control = form.locator(f'[name="{escaped_name}"]')
+        if await control.count() != 1 or not await control.is_visible():
+            raise ValueError("Each supplied field name must match one visible form control.")
+        details = await control.evaluate(
+            """element => ({
+              tag: element.tagName.toLowerCase(),
+              type: (element.getAttribute('type') || '').toLowerCase(),
+              disabled: element.disabled === true,
+              readOnly: element.readOnly === true,
+              multiple: element.multiple === true
+            })"""
+        )
+        if details["disabled"] or details["readOnly"]:
+            raise PermissionError("Disabled and read-only form fields cannot be filled.")
+        if details["tag"] == "textarea":
+            await control.fill(item.value, timeout=5000)
+        elif details["tag"] == "select":
+            if details["multiple"]:
+                raise PermissionError("Multiple-choice fields cannot be submitted.")
+            await control.select_option(label=item.value, timeout=5000)
+        elif details["tag"] == "input" and details["type"] in {
+            "text",
+            "email",
+            "search",
+            "tel",
+            "url",
+            "number",
+            "date",
+            "time",
+            "month",
+            "week",
+            "datetime-local",
+        }:
+            await control.fill(item.value, timeout=5000)
+        else:
+            raise PermissionError("This form control type is not allowed for submission.")
+
+    selectors = 'button, input[type="submit"], input[type="image"]'
+    submitters = form.locator(selectors)
+    matching: list[Any] = []
+    for index in range(await submitters.count()):
+        candidate = submitters.nth(index)
+        if not await candidate.is_visible() or await candidate.is_disabled():
+            continue
+        overrides = await candidate.evaluate(
+            """element => ({
+              formAction: element.getAttribute('formaction'),
+              formMethod: (element.getAttribute('formmethod') || '').toLowerCase(),
+              formTarget: (element.getAttribute('formtarget') || '').toLowerCase(),
+              type: (element.getAttribute('type') || (element.tagName.toLowerCase() === 'button' ? 'submit' : '')).toLowerCase(),
+              labels: Array.from(element.labels || []).map(label => (label.innerText || '').trim()).filter(Boolean).join(' '),
+              text: element.tagName.toLowerCase() === 'button' ? (element.innerText || '').trim() : '',
+              value: element.value || '',
+              ariaLabel: element.getAttribute('aria-label') || ''
+            })"""
+        )
+        label = (
+            overrides["labels"] or overrides["ariaLabel"] or overrides["text"] or overrides["value"]
+        )
+        if (
+            overrides["type"] in {"submit", "image"}
+            and not overrides["formAction"]
+            and overrides["formMethod"] in {"", "post"}
+            and overrides["formTarget"] in {"", "_self"}
+            and label.strip() == submission.submitter_label
+        ):
+            matching.append(candidate)
+    if len(matching) != 1:
+        raise ValueError("The submitter label must identify exactly one visible form submitter.")
+
+    submission_state["target_url"] = action_url
+    submission_state["armed"] = True
+    async with page.expect_navigation(wait_until="domcontentloaded", timeout=10000):
+        await matching[0].click(timeout=8000)
+    if submission_state.get("used") is not True:
+        raise PermissionError("The form did not make its one permitted POST navigation.")
+    return [item.name for item in submission.values]
 
 
 async def resolve_public(host: str) -> list[str]:
@@ -213,6 +378,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
     blocked_subresources: dict[str, int] = {}
     blocked_main_navigations = {"count": 0}
     blocked_main_hosts: list[str] = []
+    submission_state: dict[str, Any] = {"armed": False, "used": False, "target_url": None}
     server = await asyncio.start_server(
         lambda reader, writer: _proxy_client(reader, writer, hosts, budget, forwarded_hosts),
         "127.0.0.1",
@@ -263,6 +429,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             blocked_subresources,
                             main_frame=page.main_frame,
                             blocked_main_navigations=blocked_main_navigations,
+                            submission_state=submission_state,
                         ),
                     )
                     context.on("page", lambda opened: close_unexpected_page(page, opened))
@@ -290,12 +457,19 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         raise PermissionError(
                             "Browser blocked a top-level navigation outside the approved host list."
                         )
+                    submitted_fields: list[str] | None = None
+                    if request.submission is not None:
+                        submitted_fields = await _submit_visible_form(
+                            page, request.submission, hosts, submission_state
+                        )
                     text = (await page.locator("body").inner_text(timeout=5000))[:MAX_PAGE_TEXT]
                     result: dict[str, Any] = {
                         "url": urlsplit(page.url)._replace(query="", fragment="").geturl(),
                         "title": (await page.title())[:500],
                         "content": text,
                         "truncated": len(text) >= MAX_PAGE_TEXT,
+                        "submitted": submitted_fields is not None,
+                        "submitted_fields": submitted_fields,
                         "trust": "untrusted_web_content",
                         "blocked_subresources": {
                             "count": sum(blocked_subresources.values()),

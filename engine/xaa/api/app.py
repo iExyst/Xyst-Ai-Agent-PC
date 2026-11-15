@@ -208,6 +208,7 @@ class CreateRunRequest(BaseModel):
     approved_web_hosts: list[str] = Field(default_factory=list, max_length=10)
     approved_web_search: bool = False
     approved_browser: bool = False
+    approved_browser_submission: bool = False
     allow_procedure_drafting: bool = False
     allow_procedure_revision: bool = False
     allow_procedure_resource_revision: bool = False
@@ -4004,6 +4005,7 @@ def create_app(
                 approved_web_hosts=payload.approved_web_hosts,
                 approved_web_search=payload.approved_web_search,
                 approved_browser=payload.approved_browser,
+                approved_browser_submission=payload.approved_browser_submission,
                 allow_procedure_drafting=payload.allow_procedure_drafting,
                 allow_procedure_revision=payload.allow_procedure_revision,
                 allow_procedure_resource_revision=payload.allow_procedure_resource_revision,

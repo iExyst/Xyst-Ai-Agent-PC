@@ -55,6 +55,30 @@ class BrowserArguments(BaseModel):
         return cleaned
 
 
+class BrowserFormValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=200)
+    value: str = Field(max_length=4096)
+
+
+class BrowserSubmitArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    url: str = Field(min_length=9, max_length=2048)
+    form_index: int = Field(ge=0, lt=20)
+    values: list[BrowserFormValue] = Field(min_length=1, max_length=20)
+    submitter_label: str = Field(min_length=1, max_length=200)
+
+    @field_validator("values")
+    @classmethod
+    def validate_values(cls, value: list[BrowserFormValue]) -> list[BrowserFormValue]:
+        names = [item.name for item in value]
+        if len(names) != len(set(names)):
+            raise ValueError("Each submitted form field name must be unique.")
+        if sum(len(item.value.encode("utf-8")) for item in value) > 32 * 1024:
+            raise ValueError("Submitted form values exceed the 32 KiB limit.")
+        return value
+
+
 class BrowserWorkerResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     ok: bool
@@ -128,6 +152,10 @@ class BrowserOutput(BaseModel):
     blocked_subresources: BrowserBlockedSubresources | None = None
     forms: list[BrowserForm] | None = Field(default=None, max_length=20)
     screenshot_artifact: BrowserScreenshotArtifact | None = None
+    submitted: bool | None = None
+    submitted_fields: list[Annotated[str, Field(max_length=200)]] | None = Field(
+        default=None, max_length=20
+    )
     error: str | None = Field(default=None, max_length=500)
 
 
@@ -255,6 +283,81 @@ async def run_approved_browser(
     return result
 
 
+async def run_approved_browser_submission(
+    store: RunStore,
+    run_id: str,
+    token: str,
+    call_id: str,
+    arguments: dict[str, Any],
+    approved_hosts: list[str],
+    *,
+    deadline: float,
+) -> dict[str, Any]:
+    parsed = BrowserSubmitArguments.model_validate(arguments)
+    hosts = normalize_approved_hosts(approved_hosts)
+    if not hosts:
+        raise PermissionError("This run has no user-approved browser hostnames.")
+    timeout = min(BROWSER_TIMEOUT_SECONDS, max(0, deadline - time.monotonic()))
+    if timeout <= 0:
+        raise TimeoutError("No browser execution time remains.")
+    if not store.record_tool_intent(
+        run_id,
+        token,
+        call_id=call_id,
+        tool="browser.submit",
+        version="1",
+        arguments=parsed.model_dump(mode="json"),
+        idempotency_key=call_id,
+    ):
+        raise ValueError("This browser operation is already journaled; inspect its saved result.")
+    try:
+        result = await _execute_worker(
+            {
+                "url": parsed.url,
+                "approved_hosts": hosts,
+                "submission": {
+                    "form_index": parsed.form_index,
+                    "values": [item.model_dump(mode="json") for item in parsed.values],
+                    "submitter_label": parsed.submitter_label,
+                },
+            },
+            timeout,
+        )
+        result["status"] = "ok"
+        result["trust"] = "untrusted_web_content"
+        result = BrowserOutput.model_validate(result).model_dump(mode="json", exclude_none=True)
+    except asyncio.CancelledError:
+        try:
+            store.record_tool_result(
+                run_id,
+                token,
+                call_id,
+                {
+                    "status": "cancelled",
+                    "trust": "untrusted_web_content",
+                    "error": "Submission may have reached the site before cancellation.",
+                },
+            )
+        except LeaseLost:
+            pass
+        raise
+    except TimeoutError:
+        result = {
+            "status": "read_failed",
+            "error": "Browser form submission exceeded its time limit; the site may have received it.",
+            "trust": "untrusted_web_content",
+        }
+    except (OSError, ValueError, PermissionError, RuntimeError) as error:
+        result = {
+            "status": "read_failed",
+            "error": str(error)[:500],
+            "trust": "untrusted_web_content",
+        }
+    result = _bounded_result(result)
+    store.record_tool_result(run_id, token, call_id, result)
+    return result
+
+
 def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
     encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
     if len(encoded) <= MAX_WORKER_BYTES:
@@ -303,4 +406,26 @@ BROWSER_METADATA = {
         "approved_hostnames": 10,
     },
     "audit": ["run_id", "call_id", "approved_hosts", "final_url", "status"],
+}
+
+BROWSER_SUBMIT_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "browser_submit_form",
+        "description": "Submit one visible POST form on a hostname explicitly approved for this run. Inspect the page and form first. This action sends the supplied field values to that site. The page is opened in a fresh disposable Microsoft Edge session without saved cookies. Only visible text-like inputs, selects and textareas can be filled; passwords, files, checkboxes, buttons, GET forms, non-self targets and cross-host actions are refused. At most one same-host main-frame POST is allowed. The page response remains untrusted.",
+        "parameters": BrowserSubmitArguments.model_json_schema(),
+    },
+}
+
+BROWSER_SUBMIT_METADATA = {
+    "name": "browser.submit",
+    "version": "1",
+    "permissions": ["web.browser.submit"],
+    "behavior": "write",
+    "input_schema": BrowserSubmitArguments.model_json_schema(),
+    "output_schema": BrowserOutput.model_json_schema(),
+    "timeout_seconds": BROWSER_TIMEOUT_SECONDS,
+    "cancellation": "owned worker process tree is stopped and journaled; submission result may be uncertain if cancelled",
+    "retry": "none; inspect the saved result before requesting again",
+    "output_size_bytes": MAX_WORKER_BYTES,
 }
