@@ -1,8 +1,12 @@
 # Progress
 
+## Review the pinned GitHub Copilot provider candidate (2026-11-14)
+
+Completed a static review of `NousResearch/hermes-labs-plugins/github-copilot` at its exact catalog pin `346cfe972f72b6a966e84c1004cf8742554b193d`. The source review records both account API and CLI/ACP paths, the explicit activation gate, GitHub token exchange and persisted short-lived token cache, endpoint/credential boundaries, and the remaining account-policy/runtime unknowns in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). The inventory now has three classified candidates out of 90 in the `models` category; this provider remains planned for Phase 9. No login, CLI launch, source execution, credential, live endpoint, or model request was used. LLM testing remains deferred to the final phase.
+
 ## Stabilize the locked-wheel storage fixture after hosted CI (2026-11-14)
 
-Hosted Engine checks [43658380329](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43658380329) passed browser, catalog inventory, lint, typing, contract, and desktop checks, then failed one existing Python fixture after 1,372 passed and 20 skipped. `idna_wheel()` embedded the current ZIP timestamp, so separate generations could differ when the two-second timestamp boundary fell between creation of the lock and the artifact. Fixed the fixture to use a stable timestamp. All five tests in `tests/unit/test_procedure_dependency_storage.py` pass locally; Ruff check and format also pass. Hosted validation of the fix is pending. No runtime behavior or model path changed.
+Hosted Engine checks [43658380329](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43658380329) passed browser, catalog inventory, lint, typing, contract, and desktop checks, then failed one existing Python fixture after 1,372 passed and 20 skipped. `idna_wheel()` embedded the current ZIP timestamp, so separate generations could differ when the two-second timestamp boundary fell between creation of the lock and the artifact. Fixed the fixture to use a stable timestamp. All five tests in `tests/unit/test_procedure_dependency_storage.py` pass locally; Ruff check and format also pass. Hosted rerun [43659593429](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43659593429) passed with 1,373 Python tests and 20 skips, plus pinned catalog, lint, typing, contract, browser and recovery checks; the installer job was skipped for the source-only change. No runtime behavior or model path changed.
 
 ## Review the pinned Groq provider candidate (2026-11-14)
 

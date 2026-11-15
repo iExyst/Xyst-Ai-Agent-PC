@@ -22,6 +22,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "b5be0388c2b4cae8ed6a30c7371aaa1330731ee8; "
         "see model-provider-source-audit.md#groq-provider"
     ),
+    "github-copilot": (
+        "model-provider; pinned source review at commit "
+        "346cfe972f72b6a966e84c1004cf8742554b193d; "
+        "see model-provider-source-audit.md#github-copilot"
+    ),
 }
 
 

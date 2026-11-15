@@ -61,3 +61,44 @@ Reviewed 2026-11-14 against the catalog-pinned `AhmetArif0/hermes-groq-provider`
 The catalog candidate remains `planned`, Phase 9. This review classifies two of the 90 model-category candidates (Groq and Claude); it does not establish that the rest are providers or evaluate their source. It does not add dynamic provider loading or a Groq adapter to X.A.A. The earlier provider-core audit records why arbitrary plugin imports remain deferred until a provider-code trust model and capability contract exist. Live provider and model testing remains deferred to the final LLM-testing phase as requested.
 
 No plugin, test, dependency, executable, account credential, live endpoint, or model was used. This is a pinned-source review only; installed behavior, current vendor model metadata, authentication routing, account entitlement, pricing, and live compatibility remain unverified.
+
+## GitHub Copilot providers
+
+Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins` commit [`346cfe972f72b6a966e84c1004cf8742554b193d`](https://github.com/NousResearch/hermes-labs-plugins/tree/346cfe972f72b6a966e84c1004cf8742554b193d/github-copilot), subdirectory `github-copilot`. The catalog manifest SHA-256 is `f42aa525e9e290c3de293baac29d081df1dd3f5f170962f1eec59a43fb8164f8`. The exact checkout is preserved at `../../.acceptance/github-copilot-source-346cfe972f72/`; it was read statically only.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `plugin.yaml` | `90232abebfe858bf0d7870387168c9a6333ee1508ac25354a91096bc2aecff5e` | Declares the MIT `github-copilot` model-provider plugin, version 1.0.0. |
+| `__init__.py` | `d3035a5640a5d9cf384a18b303fdd7784a4e248bb158b66de966704ddc517b0f` | Registers two providers only when the host Hermes core no longer bundles Copilot and exposes the generic provider seams this plugin needs; otherwise it stays inert. |
+| `copilot/activation.py` | `630c457f687248fcf7ab7ee05927a0071bbce618b3053363286351fecb77e461` | Gates GitHub token exchange/catalog calls on explicit Copilot configuration, a Copilot-specific token, a Copilot auth-pool row, or a user-started flow. `GH_TOKEN`/`GITHUB_TOKEN` alone do not opt the user in. |
+| `copilot/credentials.py` | `d38b10d4ca26a686548d060a87c9ead26936e592fd88f30a3d8674145f8cd13e` | Resolves secrets through Hermes, performs GitHub device-code and short-lived Copilot-token exchange, refreshes credentials, and persists an exchanged token cache in Hermes home with mode 0600. |
+| `copilot/catalog.py` | `7869a1678e506aa73996b0cff27a0915745685af3b18d1e12bab6222c4ca0381` | Queries account model metadata from GitHub Copilot and filters advertised endpoints/capabilities; caches account-specific results. |
+| `copilot/setup.py` | `1a2248f42c048b7cb1e8338d662f0e0ede1bc6a65e9b2f0af444a7d692bf2d27` | Provides device-code/manual-token setup, account selection, model picker and model-selection persistence through Hermes setup APIs. |
+| `copilot/wire.py` | `af9c82ec088a551038062368fbd4849f8fc2151bca71312d32a6d1d26982396e` | Selects Copilot wire modes and editor/request headers based on model and hostname. |
+| `copilot/responses.py` | `f042ccc809603da8c94a4a081eba21ea5b2a8fae0cd1edb2774724346d8567be` | Declares reasoning and message-carrier behavior for the Responses route and replays opaque reasoning carriers only to Copilot hosts. |
+| `copilot/helpers.py` | `5deed06bc3d9d1018ff47cbf33ead48f84394efa2573c2ff36af20d5a6972244` | Parses hosts by hostname boundary and removes bearer authorization on cross-origin catalog redirects. |
+| `copilot_acp/__init__.py` | `09648689e90acdca1d79108e2db4d3c41cd642127beeaf11e3be618f5ade404e` | Declares a separate `copilot-acp` external-process provider. Catalog lookup starts a short-lived ACP session and obtains enabled model IDs from the installed CLI. |
+| `copilot_acp/client.py` | `335ee1365e4051ca4788c566758acb208bd27407fdf0970a7145573154dbb0fc` | Adapts Copilot-specific errors and model metadata around Hermes' generic ACP subprocess client; command and arguments may be overridden through environment variables. |
+| `copilot_acp/catalog.py` | `77fc215ac5496766b8dfc3e9d4e34bd3e922df7afa415f14a655505d3ceb1f18` | Memoizes successful and failed ACP model-session probes for five minutes and thirty seconds, respectively. |
+| `copilot_acp/setup.py` | `9972d25e1d9da5c943374542930446bb43c71adac349cb3fa0cb8ead779bfcc9` | Describes the external CLI command, auth ownership and model-selection setup flow. |
+| `README.md` | `61a05108b3181b5f71276ded7d9c34ee51fa9a4350f47f8e4467a1d51181ebf6` | Discloses the two providers, GitHub/Copilot endpoints, credentials and data paths, account attribution headers, and that ACP delegates to the installed Copilot CLI. These are maintainer declarations, not independent runtime evidence. |
+| `LICENSE` | `a23b5098f8cf7d1570221373b7a9e5385920f1caa14f6f1e045eb7cb81053ed5` | MIT license. This applies to this candidate only. |
+| `tests/test_activation_gate.py` | `754b3c4b82cf34e4a7ceb963ace16c5f8ddc112538201f27ccca8912d69e0181` | Records calls to assert shared GitHub tokens alone do not trigger Copilot traffic. |
+| `tests/test_rule11_no_cli_credentials.py` | `f5fbe4db5dcabd927f38b760c3d29a4660352090b41c62c4dcaf01053c4d540e` | Asserts the plugin does not read `gh`/Copilot CLI token files or spawn `gh`. |
+| `tests/test_copilot_token_exchange.py` | `5636c8c367076bcfbc6ed90a9da49aeba1a9effe8200ce0547a3318755339432` | Mocks HTTP and time for token exchange, cache, retry, and error handling. |
+| `tests/test_copilot_acp_client.py` | `65dd34c6fc32aa3d563b93b7a55d11b8d06d3b49bdb2e979bd22d4859b76a148` | Uses fake ACP protocol responses and checks local file-operation boundaries in the client seam. |
+
+## Behavior and trust boundaries
+
+- The candidate is two distinct routes. `copilot` sends inference to GitHub Copilot or the account-specific plan host; `copilot-acp` starts the user's installed `copilot --acp --stdio` CLI and delegates the conversation through ACP. Neither route is local inference.
+- For `copilot`, device-code login obtains a GitHub token. Hermes-managed env/auth-pool credentials are exchanged at `api.github.com` for a short-lived Copilot token; model discovery and inference send account data to GitHub Copilot endpoints. The token exchange result and account API base URL are persisted in `$HERMES_HOME/.copilot_jwt.json` with a requested `0600` mode. Windows ACL behavior, cache removal and backup/export handling were not tested here.
+- GitHub's shared `GH_TOKEN` or `GITHUB_TOKEN` is not sufficient by itself to authorize background GitHub contact. The reviewed activation code first requires a Copilot selection, a Copilot-specific setting or an explicit Copilot flow. This is a useful opt-in pattern for X.A.A. external providers; it does not prove that every host call site obeys the gate.
+- `COPILOT_API_BASE_URL` can override the provider endpoint, and enterprise endpoint information may come from the exchange response/token. The chosen endpoint receives inference requests and the exchanged credential. X.A.A. would need explicit endpoint display, origin validation and credential separation before offering this path.
+- The ACP profile deliberately does not read the Copilot CLI's private token files; the CLI owns its login. However, the CLI is an external executable selected by `PATH` or override variables, can use its own account settings, and receives conversation content. A source review cannot establish which tools, files or network requests a particular installed CLI build will access.
+- The README's provider behavior, supported model catalog, billing attribution, eligibility, and compatibility are upstream claims. Test sources use mocks/fixtures for token exchange, activation, and ACP behavior; they do not establish current GitHub policy, subscription entitlement, charge behavior, current endpoint compatibility, or clean-machine Windows credential storage.
+
+## X.A.A. disposition and limits
+
+The candidate remains `planned`, Phase 9. This review classifies three of the 90 `models` category candidates (Claude, Groq, and GitHub Copilot); 87 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+
+No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.
