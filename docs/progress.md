@@ -1,5 +1,9 @@
 # Progress
 
+## Confirm hosted verification after the desktop refresh (2026-11-14)
+
+Hosted workflow [43662780827](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43662780827) passed on commit `182470d07a95e2e40544aabf3c6122201702a5d7`, including the managed Edge scenarios, pinned Hermes inventories, Python checks, desktop/browser checks, and full engine suite. The first attempt had a transient timeout in an external Edge navigation; the failed-job retry passed. This validates the current source workflow; it does not constitute clean-machine installer acceptance or real LM Studio model testing. LLM testing remains deferred to the final phase.
+
 ## Give desktop engine failures actionable explanations (2026-11-14)
 
 The shared desktop API client now translates common authentication, stale-item, timeout, request-validation, rate-limit, unavailable-engine and server failures into plain-language next steps. Connection failures no longer expose the browser's raw “Failed to fetch” text. All 19 `npm run test:client` checks pass, including five representative HTTP statuses and a simulated loopback connection failure; `npm run build:desktop` and native Tauri compilation passed. The refreshed program is staged in [`build/native-design-20261114`](../build/native-design-20261114/), with the updated desktop hash recorded in its manifest. This is common engine-error coverage, not a full wording audit across every tool/provider error. No model inference was used.
