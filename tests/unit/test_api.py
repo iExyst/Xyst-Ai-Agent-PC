@@ -1531,7 +1531,7 @@ def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(wor
         assert secret.encode() not in response.content
     exported = response.json()
     assert exported["format"] == "xaa-trajectory"
-    assert exported["redaction_version"] == 2
+    assert exported["redaction_version"] == 3
     assert exported["run"]["id"] == run["id"]
     message_event = next(
         event for event in exported["events"] if event["event_type"] == "model.message"
@@ -1559,6 +1559,49 @@ def test_run_trajectory_export_is_authenticated_provenance_rich_and_redacted(wor
         "private_key": "[REDACTED]",
         "ordinary_field": "visible",
     }
+
+
+def test_trajectory_redaction_covers_auth_headers_webhooks_jwts_and_aws_markers():
+    from xaa.storage.trajectory import redact
+
+    values = {
+        "headers": (
+            "Authorization: Basic dXNlcjpwYXNz\nSet-Cookie: session=private-value; HttpOnly"
+        ),
+        "links": (
+            "https://alice:password@example.test/private "
+            "https://discord.com/api/webhooks/123456789012345678/"
+            "abcdefghijklmnopqrstuvwx "
+            "https://hooks.slack.com/services/T123456/B123456/"
+            "abcdefghijklmnopqrstuvwx"
+        ),
+        "jwt": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZWNyZXQifQ.signature123456",
+        "aws": "AKIA1234567890ABCDEF",
+        "fields": {
+            "token": "opaque-token",
+            "credential": "opaque-credential",
+            "credentials": "opaque-credentials",
+            "cookie": "opaque-cookie",
+            "token_count": 18,
+        },
+    }
+
+    result = redact(values, ())
+    serialized = json.dumps(result)
+    for secret in (
+        "dXNlcjpwYXNz",
+        "session=private-value",
+        "alice:password",
+        "abcdefghijklmnopqrstuvwx",
+        "eyJhbGciOiJIUzI1NiJ9",
+        "AKIA1234567890ABCDEF",
+        "opaque-token",
+        "opaque-credential",
+        "opaque-credentials",
+        "opaque-cookie",
+    ):
+        assert secret not in serialized
+    assert result["fields"]["token_count"] == 18
 
 
 def test_run_trajectory_export_enforces_event_and_byte_limits(workspace_tmp_path, monkeypatch):

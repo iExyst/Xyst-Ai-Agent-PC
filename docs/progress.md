@@ -1,5 +1,13 @@
 # Progress
 
+## Polish the desktop with a consistent dark interface (2026-11-15)
+
+Unified the last-applied desktop theme across navigation, workspace cards, status badges, forms, file controls, alerts, and recovery surfaces. The graphite palette and mint accent now remain consistent through secondary screens, with clearer selected navigation, keyboard focus, disabled states, and mobile colors. Existing workflows and permission controls are unchanged. `npm run build:desktop` passes TypeScript checking and the Vite production build. No live model/provider calls were made.
+
+## Expand trajectory secret-pattern redaction (2026-11-15)
+
+Extended exported trajectory redaction to cover Basic and other Authorization header values, cookie header lines, URL userinfo, Discord and Slack webhook URLs, JWTs, and AWS access-key IDs. Sensitive object keys now include token and credential fields while preserving ordinary `token_count`; `redaction_version` is 3. Focused API export and pattern checks pass (3 total); the bounded batch suite passes (11), full Ruff lint/format and strict Pyright checks pass, and the desktop TypeScript/Vite production build passes. Hosted source and installer runs cited below verified redaction version 2; version 3 still needs hosted verification. This is a stronger secret-pattern filter, not a guarantee of full PII removal. No live model/provider calls were made.
+
 ## Redact all configured credentials from exported trajectories (2026-11-15)
 
 The authenticated run export previously included exact-value redaction for only LM Studio, Brave Search, and Telegram, leaving other app credentials and the API bearer outside the explicit secret list. It now includes every app-managed credential profile, configured MCP environment secrets and OAuth tokens, and the active API bearer. Recursive redaction also recognizes sensitive JSON key names and common OpenAI, Anthropic, GitHub, Slack, and Google token forms; `redaction_version` is now 2. Focused API export regressions pass (2); the batch suite passes (11); Ruff, formatting, and strict Pyright pass. Hosted source run [43740040338](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43740040338) passed on `3afe081d`, and exact-revision installer run [43740056282](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43740056282) passed all 50 steps. This improves credential handling only; it does not establish full PII redaction, replay safety, or training-data quality. No model/provider call or inference was made.
