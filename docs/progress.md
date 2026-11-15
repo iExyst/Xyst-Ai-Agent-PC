@@ -1,5 +1,9 @@
 # Progress
 
+## Start the live task-workspace diagnostic inside planning and preserve parent time (2026-11-15)
+
+Hosted Windows run [43762413140](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43762413140) exposed that the task-workspace diagnostic saved two 300-second specialist reservations while its parent was still queued with a 600-second limit. The new remaining-time check correctly counted elapsed time from run creation and rejected the plan. The diagnostic now transitions to `planning` before saving its graph and uses a 900-second parent budget, leaving 300 seconds for parent verification/finalization. The failed CI retry also cleared the preceding public Edge navigation timeout. Focused routing, plan API, task graph, and claim tests pass (28); hosted full-suite verification is pending. No live model inference was performed.
+
 ## Keep the execution check alive across desktop navigation and refresh one-run grants on expiry (2026-11-15)
 
 Kept the command sandbox panel mounted while navigating between desktop destinations, so its verified readiness result and expiration state survive opening Settings or returning to Integrations. A pending one-run isolated-command grant is now revoked at the readiness deadline and the control remains disabled until a fresh check succeeds. Updated browser routes for the dedicated Memory, Skills, and Automations pages and for MCP cleanup after candidate import. The focused objective, MCP, execution, and onboarding flows pass (4); the full model-free browser suite passes with 39 passed and 3 live/dependency-gated skips at two workers. A four-worker run had one 30-second page-start timeout, which passed on isolated rerun. `npm run build:desktop` and `git diff --check` pass. No live model/provider calls were made.

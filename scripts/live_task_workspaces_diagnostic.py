@@ -191,7 +191,7 @@ async def diagnose(
             mode="workspace",
             model=instance,
             max_iterations=16,
-            max_seconds=600,
+            max_seconds=900,
             max_output_tokens=max_output_tokens,
             command_grant=grant,
         )["id"]
@@ -200,6 +200,7 @@ async def diagnose(
         assert acquired is not None
         parent = acquired
         tasks = TaskStore(store)
+        store.transition(run_id, RunState.PLANNING, owner=parent)
         tasks.save_plan(
             run_id,
             parent,
@@ -234,7 +235,6 @@ async def diagnose(
             raise RuntimeError("Specialist routes do not match the selected loaded instance.")
         report["task_model_routes"] = task_routes
         stage = "parent_tool_diagnostic"
-        store.transition(run_id, RunState.PLANNING, owner=parent)
         await Coordinator(store, provider).diagnose_run_tools(run_id, parent, instance)
         store.transition(run_id, RunState.RUNNING, owner=parent)
         stage = "specialist_execution"
