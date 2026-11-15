@@ -27,6 +27,16 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "346cfe972f72b6a966e84c1004cf8742554b193d; "
         "see model-provider-source-audit.md#github-copilot"
     ),
+    "fusion": (
+        "automation; pinned plugin.yaml and README review at commit "
+        "edab6a6d17838d4d9a1525a2a7d3500c62694e17; "
+        "multi-harness model-fusion planner and executor"
+    ),
+    "hermes-memory-wiki": (
+        "memory; pinned plugin.yaml and README review at commit "
+        "54afaf5014db23346148436c4883eb64095e8060; "
+        "read-only session-history and persistent-memory dashboard"
+    ),
 }
 
 
@@ -93,7 +103,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; five selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",
