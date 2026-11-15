@@ -151,6 +151,11 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('shared history from telegram');
   await panel.getByRole('button',{name:'Unlink these accounts'}).click();
   await expect(panel.getByRole('group',{name:'Confirm unlink accounts'})).toBeFocused();
+  await panel.getByRole('button',{name:'Cancel',exact:true}).click();
+  const unlinkButton=panel.getByRole('button',{name:'Unlink these accounts'});
+  await expect(unlinkButton).toBeFocused();
+  await unlinkButton.click();
+  await expect(panel.getByRole('group',{name:'Confirm unlink accounts'})).toBeFocused();
   await panel.getByRole('button',{name:'Confirm unlink'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toHaveCount(0);
   await panel.getByLabel('Discord bot token',{exact:true}).fill('discord-test-secret');
