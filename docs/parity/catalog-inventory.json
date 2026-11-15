@@ -1,7 +1,8 @@
 {
   "reference_commit": "1e208b280deb18f01d015b0acdf3ef3552d08039",
   "audit_date": "2026-11-14",
-  "manifest_count": 976,
+  "catalog_yaml_count": 976,
+  "manifest_count": 975,
   "category_counts": {
     "automation": 56,
     "desktop": 215,
@@ -10,7 +11,7 @@
     "models": 90,
     "platform": 49,
     "tools": 349,
-    "unspecified": 3,
+    "unspecified": 2,
     "voice": 26,
     "web": 50
   },
@@ -11913,21 +11914,6 @@
       "phase": 9
     },
     {
-      "id": "removed",
-      "manifest": "plugin-catalog/removed.yaml",
-      "sha256": "ebf2ba996a9ce54ca37bb8e41da3cbe5b1dbef3ef4178d996c564d9b7263b4c0",
-      "name": null,
-      "category": "unspecified",
-      "repository": null,
-      "reference_commit": null,
-      "subdirectory": "",
-      "version": "",
-      "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
-      "status": "planned",
-      "phase": 9
-    },
-    {
       "id": "render-platform",
       "manifest": "plugin-catalog/render-platform.yaml",
       "sha256": "f74d83d9d859d62c5c1fadb9600683b64f69b8a33c43e087e5f6d148f5f78705",
@@ -15158,6 +15144,19 @@
       "discovery_classification": "non-platform catalog candidate; source classification pending",
       "status": "planned",
       "phase": 9
+    }
+  ],
+  "catalog_controls": [
+    {
+      "manifest": "plugin-catalog/removed.yaml",
+      "sha256": "ebf2ba996a9ce54ca37bb8e41da3cbe5b1dbef3ef4178d996c564d9b7263b4c0",
+      "removed_entries": [
+        {
+          "name": "or-picker",
+          "reason": "Folded into openrouter-picker. Installing the provider alone left the picker broken. Install openrouter-picker.",
+          "date": "2026-09-28"
+        }
+      ]
     }
   ],
   "limitations": [

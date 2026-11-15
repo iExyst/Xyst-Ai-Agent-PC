@@ -34,12 +34,27 @@ def inventory() -> dict[str, Any]:
     check_reference()
     candidates: list[dict[str, Any]] = []
     manifests = sorted((ROOT / "plugin-catalog").rglob("*.yaml"))
+    catalog_controls: list[dict[str, Any]] = []
     for path in manifests:
         relative = path.relative_to(ROOT).as_posix()
         data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise TypeError(f"Catalog manifest is not a mapping: {relative}")
         manifest = cast(dict[str, Any], data)
+        # This file is a catalog blocklist, not a plugin manifest. Keep its
+        # removed entries in the audit output without inflating candidate counts.
+        if relative == "plugin-catalog/removed.yaml":
+            removed = manifest.get("removed", [])
+            if not isinstance(removed, list):
+                raise TypeError(f"Catalog removal list is not a list: {relative}")
+            catalog_controls.append(
+                {
+                    "manifest": relative,
+                    "sha256": digest(path),
+                    "removed_entries": removed,
+                }
+            )
+            continue
         capabilities = manifest.get("capabilities")
         capabilities = cast(dict[str, Any], capabilities) if isinstance(capabilities, dict) else {}
         category = manifest.get("category")
@@ -71,9 +86,11 @@ def inventory() -> dict[str, Any]:
     return {
         "reference_commit": PIN,
         "audit_date": "2026-11-14",
+        "catalog_yaml_count": len(manifests),
         "manifest_count": len(candidates),
         "category_counts": dict(sorted(categories.items())),
         "catalog_manifests": candidates,
+        "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
             "The platform category has a pinned source classification sweep; selected non-platform candidates have individual source reviews, while the rest remain pending.",
@@ -98,7 +115,10 @@ def main() -> None:
     else:
         OUTPUT.write_text(encoded, encoding="utf-8")
     print(
-        f"Catalog audit: {data['manifest_count']} manifests; categories: {data['category_counts']}."
+        f"Catalog audit: {data['manifest_count']} plugin manifests across "
+        f"{data['catalog_yaml_count']} YAML files; "
+        f"{len(data['catalog_controls'])} catalog controls; "
+        f"categories: {data['category_counts']}."
     )
 
 
