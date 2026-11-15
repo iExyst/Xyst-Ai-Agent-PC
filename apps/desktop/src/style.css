@@ -943,3 +943,7 @@ body{
   .page-home>#new-objective #run-objective{height:142px;min-height:142px}
 }
 @media(prefers-reduced-motion:reduce){.side-nav a,.app-content>section,.app-content>div>section{transition:none!important}}
+
+/* Finish the dark desktop navigation system with an icon for every destination. */
+.side-nav a[href="#system-monitor"]:before{content:"▥"}
+.side-nav a:before{flex:none;text-align:center;font-family:ui-sans-serif,system-ui,sans-serif}
