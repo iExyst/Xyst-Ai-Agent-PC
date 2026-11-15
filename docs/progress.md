@@ -1,5 +1,9 @@
 # Progress
 
+## Audit pinned programmatic interfaces and training utilities (2026-11-14)
+
+Reviewed the pinned Hermes ACP entry point and direct/gateway session methods, classified `hermes_platform` as local host/application-resolution support, and traced the evaluation sampling and trajectory-compression path. Recorded exact source hashes and limited claims in [the source audit](parity/programmatic-interface-source-audit.md), linked from the parity matrix. This is source inspection only; provider-specific fine-tuning, comparative benchmarks and full SDK protocol acceptance remain open. No model inference was performed.
+
 ## Classify uncategorized catalog entries from pinned plugin sources (2026-11-14)
 
 Reviewed the two catalog entries with no category field at their exact pinned commits. The `fusion` manifest identifies an automation plugin that builds and executes multi-harness model-routing plans ([source](https://github.com/BoredSexyJordan/hermes-fusion/blob/edab6a6d17838d4d9a1525a2a7d3500c62694e17/plugin.yaml)); `hermes-memory-wiki` identifies a read-only session-history and persistent-memory dashboard ([source](https://github.com/NousResearch/hermes-official-plugins/blob/54afaf5014db23346148436c4883eb64095e8060/memory-wiki/plugin.yaml)). The audit records their source-derived classifications as automation and memory while preserving the original catalog metadata as unspecified. The other catalog candidates and their runtime capabilities still need review. No plugin code was installed or run, and no model inference was used.
