@@ -143,6 +143,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 42240b168488c820883b0d989456acf0a8a06ba8; "
         "see model-provider-source-audit.md#cliproxyapi-provider"
     ),
+    "codex-truly": (
+        "Codex subscription context-window override, quota-consuming live probe, and image-generation controller; "
+        "pinned source review at commit 1913d2a0a4b2dd3e4283af5c78241de4d3a2995e; "
+        "see model-provider-source-audit.md#codex-truly"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
