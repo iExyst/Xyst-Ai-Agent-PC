@@ -3526,3 +3526,7 @@ Added a correctly integrity-hashed gzip tarball whose compressed size is below 1
 ## Expand npm archive rejection coverage in both isolated workers (2026-11-14)
 
 The Windows source/frozen worker matrix now checks traversal, absolute and backslash paths, symbolic and hard links, FIFO entries, duplicate members, missing package metadata, truncated gzip data, bad gzip checksums, and aggregate expansion above 256 MiB. All 26 source/frozen cases pass locally: [JUnit report](../.acceptance/npm-hostile-archive-matrix-20261114/report.xml). Hosted run [43583296231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43583296231) passed the complete source job, including the Python suite and these worker cases. Model-mediated procedure execution remains deferred until the end.
+
+## Stabilize specialist integration browser acceptance (2026-11-15)
+
+Hosted run [43710067334](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43710067334) exposed a timing race in the browser test: it read its mocked review-request flag immediately after clicking, before the asynchronous request handler necessarily ran. The integration UI itself returned the task as completed. The assertion now waits for the request to arrive before checking the completion state. The same six browser cases used by the Windows workflow pass locally, as do all three specialist-review cases and the desktop production build/typecheck. Hosted confirmation is pending; this test-only repair does not change the Hermes feature status or phase estimates.

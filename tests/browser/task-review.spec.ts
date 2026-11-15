@@ -123,6 +123,7 @@ for(const choice of ['current','proposed'] as const){
     await page.getByLabel('Review rationale',{exact:true}).fill('I inspected the current and proposed versions.');
     await expect(integrate).toBeEnabled();
     await integrate.click();
+    await expect.poll(()=>reviewed).toBe(true);
     expect(reviewed).toBe(true);
     await expect(page.getByRole('article',{name:'Task edit'})).toContainText('completed');
   });
