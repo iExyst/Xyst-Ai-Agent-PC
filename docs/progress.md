@@ -1,5 +1,9 @@
 # Progress
 
+## Review the pinned Kiro ACP provider (2026-11-15)
+
+Reviewed `kiro-acp` at catalog-pinned commit `02c4dd06585436751145961658a22b773f23a0ef`. It wraps the Kiro CLI using Hermes' ACP shim; auth remains in Kiro's own login, while the core shim supplies cwd-scoped file callbacks and cancels ACP permission requests. The separate model-discovery probe is weaker: it inherits the engine's full environment, uses `/tmp` as its requested cwd, and a blocking stdout read can exceed the nominal timeout. Seventy-three of 90 model-category entries are now source-reviewed across 71 source trees; 17 remain pending. No Kiro command, credentials, test or model was used.
+
 ## Reuse completed page evidence in browser redirect acceptance (2026-11-15)
 
 Hosted run [#43702349509](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43702349509) failed because the acceptance navigated to the same live Wikipedia page a second time and the duplicate request timed out before content or subresources loaded. The preceding successful run's uploaded report shows the approved redirect already recorded six blocked third-party subresources in 3.45 seconds. The script now uses that journaled result for the subresource assertion instead of repeating the external navigation; the assertion remains in place. Ruff, formatting, inventory check and diff check pass locally; no smoke test was run locally. Hosted verification of this fix is pending.
