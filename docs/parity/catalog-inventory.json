@@ -10343,7 +10343,7 @@
       "subdirectory": "",
       "version": "0.3.0",
       "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "Linux-scoped OpenCode CLI ACP bridge with Hermes-owned tools and curated model selection; pinned source review at commit edc25305e325754b450e41daf41c6ba5c028324f; see model-provider-source-audit.md#opencode-free-acp-provider",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; 79 selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; 80 selected non-platform candidates have individual source reviews, while the rest remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."

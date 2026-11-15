@@ -1,5 +1,13 @@
 # Progress
 
+## Apply a consistent dark palette across the desktop workspace (2026-11-15)
+
+Corrected the active desktop palette so later light-mode overrides no longer make the app render light. Navigation, task composer, onboarding, saved runs, forms, recovery, and system monitor now share a graphite surface palette, mint primary action, higher-contrast text, and dark native controls. `npm run build:desktop` passes TypeScript and production bundling; `git diff --check` is clean. The native app was not launched for a visual screenshot in this pass.
+
+## Review the pinned OpenCode Free ACP provider (2026-11-15)
+
+Reviewed `opencode-free-acp` at catalog-pinned commit `edc25305e325754b450e41daf41c6ba5c028324f`. It launches the separately installed OpenCode CLI over stdio ACP, forwards conversation and Hermes tool data to OpenCode/the selected model, and exposes only curated model IDs after verifying both Build mode and exact model selection before sending prompts. ACP-native permissions/file/terminal operations are refused; Hermes owns and executes explicit validated tool envelopes. The child inherits the normal user HOME/config/login, so local CLI plugins/hooks and terms remain in scope; this is not an OS sandbox. Catalog support is Linux only, live-tested only on Linux/two models, with buffering and unknown usage. Seventy-eight of 90 model-category rows are source-reviewed across 76 repositories; 12 remain pending. Source tests were inspected only; no CLI, credentials, test, account, or inference was used.
+
 ## Preserve one valid catch-up occurrence across a DST gap (2026-11-15)
 
 `ScheduleService` previously recorded the newest due nonexistent spring-forward wall time as `dst_skipped` even under `run_once`, which could discard an earlier valid occurrence from the same downtime window. It now searches a bounded window of up to eight earlier due occurrences, claims the most recent valid one once, then records the gap as skipped on the next poll. Added a regression covering both claims and recurrence advancement. The focused schedule suite passes (17); Ruff and formatting pass, and Pyright reports zero errors for the scheduler service. The full Phase 8 live delivery acceptance remains open; no Telegram account, external message, model, or LLM request was used.

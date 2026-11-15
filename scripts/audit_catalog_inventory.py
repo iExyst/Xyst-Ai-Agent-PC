@@ -313,6 +313,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit ae705c692dd83c5eb0e871053722838af39e213e; "
         "see model-provider-source-audit.md#opencode-zen-free-model-provider"
     ),
+    "opencode-free-acp": (
+        "Linux-scoped OpenCode CLI ACP bridge with Hermes-owned tools and curated model selection; "
+        "pinned source review at commit edc25305e325754b450e41daf41c6ba5c028324f; "
+        "see model-provider-source-audit.md#opencode-free-acp-provider"
+    ),
     "model-presets": (
         "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
         "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "
