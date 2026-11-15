@@ -631,9 +631,9 @@ try {
   const conversations = second.page.getByRole('region', { name: 'Shared conversation sessions' });
   await conversations.getByRole('button', { name: 'Load shared conversations' }).click();
   await conversations.getByLabel('Saved terminal and desktop sessions').selectOption(chatSessionId);
-  await expect(conversations.getByRole('list', { name: 'Saved conversation turns' }).getByText('Earlier reply', { exact: true })).toBeVisible();
+  await expect(second.page.getByRole('list', { name: 'Conversation messages' }).getByText('Earlier reply', { exact: true })).toBeVisible();
   await second.page.getByLabel('Objective', { exact: true }).fill('Continue it');
-  await second.page.getByRole('button', { name: 'Start objective', exact: true }).click();
+  await second.page.getByRole('button', { name: 'Send message', exact: true }).click();
   await second.page.screenshot({ path: path.join(root, 'after-chat-submit.png'), fullPage: true });
   await expect.poll(() => fakeState.chatContextVerified).toBe(true);
   const chatContinuationDeadline = Date.now() + 30000;

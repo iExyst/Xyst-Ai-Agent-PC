@@ -216,7 +216,8 @@ try {
   );
   if (!titleUpdate.ok()) throw new Error('The native desktop title update request failed.');
   await expect(conversations.getByRole('button', { name: 'Save title' })).toBeDisabled();
-  await expect(conversations.getByText('Native chat acceptance', { exact: true })).toBeVisible();
+  await expect(conversations.getByLabel('Conversation title')).toHaveValue('Native chat acceptance');
+  await expect(page.getByRole('heading', { name: 'Native chat acceptance', exact: true })).toBeVisible();
   await expect(conversations.getByRole('alert')).toHaveCount(0);
   const renamedChat = await (await fetch(`${connection.base_url}/chat/sessions/${sharedChatSessionId}`, { headers })).json();
   if (renamedChat.title !== 'Native chat acceptance') throw new Error('The native desktop did not persist the conversation title.');
