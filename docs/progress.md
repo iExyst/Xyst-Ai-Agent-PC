@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned KFChow LLM value-router middleware (2026-11-15)
+
+Reviewed `kfchow-llm-value-router` at catalog-pinned commit `39a6944280c2156f816df8641d3d01d743aec564`. It defaults to shadow mode, but when its vendor key is configured it still sends a capped user-message excerpt to TypeSafe Jev on eligible turns. Live routing is an explicit config change; the paid-lane escalation probe and vendor-origin overrides need strict endpoint checks. The source hashes and behavior review are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-five of 90 model-category rows are reviewed across 54 source trees; 35 remain pending. No plugin, key, account, model service, or inference call was used; live LLM tests remain deferred.
+
 ## Review pinned Jev model-router service (2026-11-15)
 
 Reviewed `jev-model-router` at catalog-pinned commit `b977dc3ef07738aab005c433d08c1da3fa949e8d`. This is an MCP/HTTP model-selection service, not a Hermes model-provider adapter. Its local heuristic has hard capability and budget filters, but the optional remote path sends task text and model metadata to both a JEV endpoint and a separate gateway; custom credentialed origins are not restricted, response bodies are unbounded, HTTP auth is optional even on a public bind, and MCP frame sizes are unbounded. Details and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-four of 90 model-category rows are reviewed across 53 source trees; 36 remain pending. The pinned repository has no test directory. No package, key, account, endpoint, or model was used; real LLM testing remains deferred.
