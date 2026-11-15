@@ -380,9 +380,12 @@ async def bounded_stdio_client(
                     await _drain_stdout(process)
         except anyio.ClosedResourceError:
             pass
-        except (anyio.BrokenResourceError, ConnectionError):
+        except (anyio.BrokenResourceError, ConnectionError) as exc:
             if not shutting_down:
-                logger.exception("Reading from the MCP server's stdout failed mid-session")
+                logger.warning(
+                    "Reading from the MCP server's stdout failed mid-session (%s)",
+                    type(exc).__name__,
+                )
 
     async def stdin_writer() -> None:
         assert process.stdin, "Opened process is missing stdin"

@@ -27,18 +27,18 @@ class RunSupervisor:
         while True:
             try:
                 recoverable = self.coordinator.store.recover_abandoned_runs()
-            except Exception:
-                logger.exception("Run ownership recovery scan failed")
+            except Exception:  # noqa: BLE001 - one recovery failure must not stop the supervisor.
+                logger.error("Run ownership recovery scan failed")
                 recoverable = []
             for run_id in recoverable:
                 try:
                     self.submit(run_id)
-                except Exception:
-                    logger.exception("Could not dispatch recovered run %s", run_id)
+                except Exception:  # noqa: BLE001 - isolate each recovered run dispatch.
+                    logger.error("Could not dispatch recovered run %s", run_id)
             try:
                 await commands.run_once()
-            except Exception:
-                logger.exception("Stopped command recovery scan failed")
+            except Exception:  # noqa: BLE001 - retry command reconciliation on the next poll.
+                logger.error("Stopped command recovery scan failed")
             await asyncio.sleep(RECOVERY_INTERVAL_SECONDS)
 
     def submit(self, run_id: str) -> None:

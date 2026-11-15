@@ -250,6 +250,8 @@ async def test_windows_readiness_allows_cold_frozen_engine_startup(monkeypatch):
 
 async def test_windows_readiness_logs_sanitized_probe_mismatch(monkeypatch, caplog):
     profile = "a" * 64
+    diagnostic_secret = "fixture-readiness-secret-1234"
+    pattern_secret = "fixture-pattern-secret-5678"
     monkeypatch.setattr(module, "SUPPORTED", True)
     monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: profile)
     monkeypatch.setattr(module, "windows_local_profile_fingerprint_components", dict)
@@ -273,14 +275,16 @@ async def test_windows_readiness_logs_sanitized_probe_mismatch(monkeypatch, capl
                 "output_complete": True,
                 "workspace_changes_persisted": False,
                 "stdout_b64": base64.b64encode(json.dumps(output).encode()).decode(),
-                "stderr_b64": "",
+                "stderr_b64": base64.b64encode(
+                    f"Bearer {diagnostic_secret}; api_key={pattern_secret}".encode()
+                ).decode(),
             }
 
     async def discover(*, deadline):
         return ProbeTransport()
 
     monkeypatch.setattr(module.WindowsLocalTransport, "discover", discover)
-    result = await ExecutionReadiness().check(
+    result = await ExecutionReadiness(secrets=(diagnostic_secret,)).check(
         ReadinessRequest(
             backend="windows-appcontainer-v1",
             distribution="Windows-Local",
@@ -296,6 +300,10 @@ async def test_windows_readiness_logs_sanitized_probe_mismatch(monkeypatch, capl
     assert "'network_denied': False" in warning
     assert f"expected_profile={profile}; observed_profile={profile}" in warning
     assert "'nonce':" not in warning
+    assert "Bearer [REDACTED]" in warning
+    assert "api_key=[REDACTED]" in warning
+    assert diagnostic_secret not in warning
+    assert pattern_secret not in warning
 
 
 def test_windows_readiness_probe_selects_frozen_engine_dispatch():

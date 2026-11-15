@@ -57,10 +57,9 @@ def main() -> None:
         shared_profiles.append((API_LAUNCH_TOKEN_PROFILE, token))
         credential_store.set(api_url, API_LAUNCH_URL_PROFILE)
         shared_profiles.append((API_LAUNCH_URL_PROFILE, api_url))
-    except Exception:
+    except Exception:  # noqa: BLE001 - keep the loopback engine available if the OS vault is unavailable.
         logging.getLogger(__name__).warning(
-            "ACP API token handoff is unavailable because Windows Credential Manager could not be updated.",
-            exc_info=True,
+            "ACP API token handoff is unavailable because Windows Credential Manager could not be updated."
         )
     try:
         server.run()
@@ -69,10 +68,9 @@ def main() -> None:
             try:
                 if credential_store.get(profile) == value:
                     credential_store.delete(profile)
-            except Exception:
+            except Exception:  # noqa: BLE001 - attempt remaining temporary credential cleanup.
                 logging.getLogger(__name__).warning(
-                    "Could not remove a temporary ACP API connection value from Windows Credential Manager.",
-                    exc_info=True,
+                    "Could not remove a temporary ACP API connection value from Windows Credential Manager."
                 )
 
 

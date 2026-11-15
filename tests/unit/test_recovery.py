@@ -89,7 +89,7 @@ async def test_supervisor_recovery_survives_transient_store_and_command_errors(
         nonlocal store_attempts
         store_attempts += 1
         if store_attempts == 1:
-            raise sqlite3.OperationalError("temporary database read failure")
+            raise sqlite3.OperationalError("Bearer fixture-recovery-secret-1234")
         return store_recover()
 
     monkeypatch.setattr(store, "recover_abandoned_runs", flaky_store_recovery)
@@ -118,7 +118,7 @@ async def test_supervisor_recovery_survives_transient_store_and_command_errors(
             nonlocal command_attempts
             command_attempts += 1
             if command_attempts == 1:
-                raise RuntimeError("temporary command recovery failure")
+                raise RuntimeError("api_key=fixture-command-secret-5678")
             command_recovered.set()
             return 0
 
@@ -135,5 +135,7 @@ async def test_supervisor_recovery_survives_transient_store_and_command_errors(
         assert supervisor.recovery_task is not None and not supervisor.recovery_task.done()
         assert "Run ownership recovery scan failed" in caplog.text
         assert "Stopped command recovery scan failed" in caplog.text
+        assert "fixture-recovery-secret-1234" not in caplog.text
+        assert "fixture-command-secret-5678" not in caplog.text
     finally:
         await supervisor.close()

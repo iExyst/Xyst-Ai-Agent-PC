@@ -850,7 +850,7 @@ def create_app(
     expected = api_token.get_secret_value()
     if isinstance(provider, LMStudioProvider):
         provider = ProviderRouter(provider)
-    execution_readiness = ExecutionReadiness()
+    execution_readiness = ExecutionReadiness(secrets=(expected,))
     if len(expected) < 32:
         raise ValueError("XAA API token must contain at least 32 characters.")
 

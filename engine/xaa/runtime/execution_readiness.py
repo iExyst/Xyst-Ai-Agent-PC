@@ -19,6 +19,7 @@ from packaging.tags import parse_tag
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from xaa.redaction import redact_text
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.windows_local_probe import (
@@ -266,9 +267,10 @@ class SkillNodeRuntimeReadinessResult(BaseModel):
 
 
 class ExecutionReadiness:
-    def __init__(self) -> None:
+    def __init__(self, *, secrets: tuple[str, ...] = ()) -> None:
         self.lock = asyncio.Lock()
         self.cache: dict[tuple[str, str], tuple[float, ReadinessResult]] = {}
+        self.secrets = tuple(secret for secret in secrets if len(secret) >= 4)
 
     def require_grant(self, grant: CommandGrant) -> None:
         """Accept only a current successful server-observed check, never client claims."""
@@ -957,7 +959,9 @@ class ExecutionReadiness:
                     output = json.loads(base64.b64decode(result["stdout_b64"], validate=True))
                 except (json.JSONDecodeError, ValueError):
                     stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
-                    stderr_excerpt = stderr.decode("utf-8", errors="replace")[:240]
+                    stderr_excerpt = redact_text(
+                        stderr.decode("utf-8", errors="replace"), self.secrets
+                    )[:240]
                     local_data = os.environ.get("LOCALAPPDATA", "")
                     if local_data:
                         stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
@@ -1013,7 +1017,9 @@ class ExecutionReadiness:
                 ready = all(result_matches.values())
                 if not ready:
                     stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
-                    stderr_excerpt = stderr.decode("utf-8", errors="replace")[:240]
+                    stderr_excerpt = redact_text(
+                        stderr.decode("utf-8", errors="replace"), self.secrets
+                    )[:240]
                     local_data = os.environ.get("LOCALAPPDATA", "")
                     if local_data:
                         stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
@@ -1040,7 +1046,7 @@ class ExecutionReadiness:
             except (OSError, RuntimeError, ValueError, KeyError, TypeError, TimeoutError) as exc:
                 failed_path = getattr(exc, "filename", None)
                 failed_name = Path(failed_path).name if isinstance(failed_path, str) else None
-                error_detail = str(exc)[:240]
+                error_detail = redact_text(str(exc), self.secrets)[:240]
                 local_data = os.environ.get("LOCALAPPDATA", "")
                 if local_data:
                     error_detail = error_detail.replace(local_data, "<local-app-data>")
