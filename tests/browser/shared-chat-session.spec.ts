@@ -70,7 +70,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await expect(page.getByText('Research notes',{exact:true})).toBeVisible();
   const longTurn='A'.repeat(3000);
   await page.getByLabel('Objective',{exact:true}).fill(longTurn);
-  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await page.getByRole('button',{name:'Send message',exact:true}).click();
 
   await expect.poll(()=>submittedObjective).toContain('Prior turns:\n[["user","Earlier question"],["assistant","Earlier reply"]]');
   await expect.poll(()=>savedUserMessage).toBe(longTurn);

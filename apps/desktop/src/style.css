@@ -1031,3 +1031,23 @@ body{
 .conversation-messages .conversation-message.assistant{justify-self:start;border-bottom-left-radius:4px}
 .conversation-empty{margin:0;color:#a8b5af!important}
 @media(max-width:640px){.app-content section.conversation-thread{padding:14px}.conversation-messages .conversation-message{max-width:96%}.conversation-thread-heading{align-items:flex-start;flex-direction:column}.conversation-thread-heading>span{text-align:left}}
+
+/* Make saved conversations feel like a focused chat surface inside the agent. */
+.page-home>#new-objective:has(.conversation-thread){
+  padding:20px 22px 18px;
+  background:radial-gradient(ellipse at 94% 0%,#244b3738,transparent 36%),linear-gradient(145deg,#18231f,#141c1b 58%,#141b22)!important;
+}
+.page-home>#new-objective:has(.conversation-thread) .composer-heading{margin-bottom:8px}
+.page-home>#new-objective:has(.conversation-thread) .composer-heading h2{font-size:21px!important}
+.page-home>#new-objective:has(.conversation-thread) .conversation-thread{gap:10px;margin:12px 0 10px;padding:14px 16px;border-color:#2d4439;background:linear-gradient(155deg,#101816,#11181d 75%);}
+.conversation-thread-heading{padding-bottom:9px}
+.conversation-thread-heading>span{padding:6px 9px;border:1px solid #2b4036;border-radius:999px;background:#17231e;font-size:10px}
+.conversation-messages{gap:10px;max-height:280px;padding:4px 8px 6px;background:linear-gradient(180deg,#0e1514,#10171b);border:1px solid #202e2a;border-radius:10px;scrollbar-width:thin}
+.conversation-messages .conversation-message{max-width:min(78%,680px);padding:10px 14px;border-color:#303b43;background:linear-gradient(145deg,#1a222a,#171e25);box-shadow:0 4px 12px #0002}
+.conversation-messages .conversation-message.user{border-color:#335746;background:linear-gradient(145deg,#1c382b,#192d26)}
+.conversation-message>span{font-size:9px;letter-spacing:.09em;text-transform:uppercase}
+.page-home>#new-objective:has(.conversation-thread) .objective-intro{margin:9px 0 8px;font-size:12px}
+.page-home>#new-objective:has(.conversation-thread) #run-objective{height:108px;min-height:108px;padding:12px 14px!important;border-color:#354840;background:#0d1512;font-size:13px!important}
+.page-home>#new-objective:has(.conversation-thread) details.advanced-options{margin:10px 0;padding:10px 13px}
+.page-home>#new-objective:has(.conversation-thread)>p:not(.objective-intro){margin:8px 0;font-size:11px}
+@media(max-width:640px){.page-home>#new-objective:has(.conversation-thread){padding:16px!important}.conversation-messages .conversation-message{max-width:94%}.page-home>#new-objective:has(.conversation-thread) #run-objective{height:100px;min-height:100px}}
