@@ -1,8 +1,12 @@
 # Progress
 
+## Review Hermes Adaptive Effort middleware (2026-11-15)
+
+Classified this catalog candidate as a standalone `llm_request` middleware, not a provider adapter. Its default mode is off; when an operator opts in, it may send up to 4,000 task characters to a selected scorer, with earlier dialogue and target-model details separately opt-in. It can use remote scorer APIs or a custom endpoint and has a local-only option; the pinned README still says v0.3.0 while the manifest says 0.4.0, and it explicitly says live effort acceptance is partial. Thirty-three of 90 model-category candidates are now reviewed across 32 distinct source trees; 57 remain pending. No scorer, key, account, or model endpoint was used.
+
 ## Review Gondola model provider (2026-11-15)
 
-Reviewed the pinned provider, which routes OpenAI-compatible inference to a USDC-settled marketplace and attaches `GONDOLA_API_KEY` to live model discovery. The source keeps a process-global catalog cache that is not keyed by base URL or expired, and reads the response without a size cap; this can serve the wrong model list after an endpoint change and needs explicit bounds in any X.A.A. adapter. Thirty-two of 90 model-category entries are now reviewed across 31 distinct source trees; 58 remain pending. No source, account, wallet, key, catalog request, or inference endpoint was used.
+Reviewed the pinned provider, which routes OpenAI-compatible inference to a USDC-settled marketplace and attaches `GONDOLA_API_KEY` to live model discovery. The source keeps a process-global catalog cache that is not keyed by base URL or expired, and reads the response without a size cap; this can serve the wrong model list after an endpoint change and needs explicit bounds in any X.A.A. adapter. At that checkpoint, 32 of 90 model-category entries were reviewed across 31 distinct source trees, with 58 pending. No source, account, wallet, key, catalog request, or inference endpoint was used.
 
 ## Review EmpirioLabs model provider (2026-11-15)
 

@@ -153,6 +153,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "ad3f352b6a9814f1b550c819bee5ef2fb92a1851; "
         "see model-provider-source-audit.md#gondola-provider"
     ),
+    "hermes-adaptive-effort": (
+        "standalone plugin; pinned source review of opt-in reasoning-effort middleware "
+        "at commit c84f1389670cdd5ec4607b13bd32c4809878c415; "
+        "see model-provider-source-audit.md#hermes-adaptive-effort"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "

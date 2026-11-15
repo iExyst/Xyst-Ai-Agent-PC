@@ -4535,7 +4535,7 @@
       "subdirectory": "",
       "version": "0.4.0",
       "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "standalone plugin; pinned source review of opt-in reasoning-effort middleware at commit c84f1389670cdd5ec4607b13bd32c4809878c415; see model-provider-source-audit.md#hermes-adaptive-effort",
       "status": "planned",
       "phase": 9
     },
