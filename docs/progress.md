@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Hermes Session Warmer middleware (2026-11-15)
+
+Reviewed `hermes-session-warmer` at catalog-pinned commit `eba7be111c44e4ac6b702cdcb341c8d71da1c57e`. It is opt-in LLM middleware, not a provider: it retains bounded conversation snapshots in memory and periodically resends them to an explicitly configured endpoint, creating potentially billable calls without a dollar cap or guaranteed cache benefit. Forty-nine of 90 model-category rows are reviewed across 48 source trees; 41 remain pending. No plugin was installed/imported/executed and no conversation, credential, provider endpoint, or model was used.
+
 ## Review pinned Hermes Opper provider (2026-11-15)
 
 Reviewed `hermes-opper` at catalog-pinned commit `2e15f465b4c2a107fd0230611ebc1e5a7586a196`. It registers an OpenAI-compatible Opper gateway with live discovery and an auxiliary model that can create extra remote calls. Its configurable base URL needs origin controls, and the upstream EU routing and billing claims were not independently checked. Forty-eight of 90 model-category rows are reviewed across 47 source trees; 42 remain pending. No plugin, key, account, catalog request, or inference was used.

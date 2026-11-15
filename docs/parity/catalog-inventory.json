@@ -6150,7 +6150,7 @@
       "subdirectory": "",
       "version": "0.1.0",
       "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "opt-in bounded idle-prompt-warming LLM middleware, not a provider; pinned source review at commit eba7be111c44e4ac6b702cdcb341c8d71da1c57e; see model-provider-source-audit.md#hermes-session-warmer",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; thirty selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; thirty-one selected non-platform candidates have individual source reviews, while the rest remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."
