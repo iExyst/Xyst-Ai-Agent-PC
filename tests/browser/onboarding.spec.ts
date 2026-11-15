@@ -173,12 +173,16 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await page.keyboard.press('Enter');
   await expect(page.locator('#active-run')).toBeInViewport();
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Active run'})).toHaveAttribute('aria-current','page');
   await navigation.getByRole('link',{name:'Saved runs'}).click();
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Saved runs'})).toHaveAttribute('aria-current','page');
   await expect(navigation.getByRole('link',{name:'Active run'})).not.toHaveAttribute('aria-current','page');
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   expect(created).toMatchObject({workspace:'C:\\fixture-project',mode:'observe',command_grant:null});
   expect(created?.objective).toContain('Do not modify files or run commands');
 });

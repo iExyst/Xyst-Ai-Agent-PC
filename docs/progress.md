@@ -2,7 +2,7 @@
 
 ## Verify desktop text contrast after the theme refresh (2026-11-14)
 
-Extended the model-free onboarding browser flow to check contrast and accessible names across its covered workspace, integrations, model setup, system monitor, and settings surfaces. It caught two theme regressions: small muted labels and the workspace placeholder were below 4.5:1. Darkened the shared muted labels and set placeholder opacity explicitly. The keyboard/navigation/contrast/name flow passes (1), as do TypeScript and the production Vite build. Recompiled the Tauri Windows app and refreshed [`build/native-design-20261114`](../build/native-design-20261114/) with the corrected styles; the manifest records the updated desktop hash. No model inference was used. Full screen-reader behavior and broader dynamic-state coverage remain open.
+Extended the model-free onboarding browser flow to check contrast and accessible names across its covered workspace, runs, integrations, model setup, system monitor, and settings surfaces. It caught two theme regressions: small muted labels and the workspace placeholder were below 4.5:1. Darkened the shared muted labels and set placeholder opacity explicitly. The keyboard/navigation/contrast/name flow passes (1), as do TypeScript and the production Vite build. Recompiled the Tauri Windows app and refreshed [`build/native-design-20261114`](../build/native-design-20261114/) with the corrected styles; the manifest records the updated desktop hash. No model inference was used. Full screen-reader behavior and broader dynamic-state coverage remain open.
 
 ## Refresh the Windows desktop visual design (2026-11-14)
 
