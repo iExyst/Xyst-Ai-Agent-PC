@@ -1,19 +1,19 @@
 {
-  "checked_at_utc": "2026-11-08T22:42:04.735054+00:00",
-  "frozen_engine_sha256": "5e3427e8d184acf335b1bdee5170e804a8ae13dca2cc1e601f615184b21bdebf",
+  "checked_at_utc": "2026-11-15T16:39:25.539599+00:00",
+  "frozen_engine_sha256": "249240f299e22ab9a334aa90d505c9b5fff12a3b58a9d081eee7b2d2daaa6470",
   "browser": "Microsoft Edge via packaged Playwright worker",
   "result": {
     "status": "ok",
     "title": "Example Domain",
     "trust": "untrusted_web_content",
     "content_characters": 917,
-    "screenshot_bytes": 45368,
-    "screenshot_sha256": "b1b3ed9e15bdab1237f3b29268f1937bde2a4e506ceb5f4735aa01359eadc846"
+    "screenshot_bytes": 45560,
+    "screenshot_sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240"
   },
   "cancellation": {
     "url": "https://httpbin.org/delay/10",
     "process_tree_terminated": true,
     "exit_code": 1,
-    "cleanup_elapsed_ms": 473
+    "cleanup_elapsed_ms": 141
   }
 }

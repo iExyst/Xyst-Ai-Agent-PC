@@ -8,16 +8,8 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict
-
-
-class WorkerResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    ok: bool
-    result: dict[str, Any]
-    error: str | None = None
+from xaa.runtime.browser import BrowserWorkerResponse as WorkerResult
 
 
 def main() -> None:
@@ -43,6 +35,8 @@ def main() -> None:
     if not response.ok:
         raise RuntimeError(response.error or "Frozen browser worker failed.")
     result = response.result
+    if not result or "title" not in result:
+        raise RuntimeError("Frozen browser worker reported success without page evidence.")
     screenshot = base64.b64decode(result.pop("screenshot_png"), validate=True)
     if result.get("title") != "Example Domain" or not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
         raise RuntimeError("Frozen browser worker returned invalid page or screenshot evidence.")

@@ -13,15 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
-
-
-class WorkerResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    ok: bool
-    result: dict[str, Any]
-    error: str | None = None
+from xaa.runtime.browser import BrowserWorkerResponse as WorkerResult
 
 
 def main() -> None:
@@ -50,6 +42,8 @@ def main() -> None:
     if not response.ok:
         raise RuntimeError(response.error or "Installed browser worker failed.")
     result = response.result
+    if not result or "title" not in result:
+        raise RuntimeError("Installed browser worker reported success without page evidence.")
     screenshot_value = result.pop("screenshot_png", None)
     if not isinstance(screenshot_value, str):
         raise TypeError("Installed browser worker returned no screenshot.")
