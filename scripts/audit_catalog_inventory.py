@@ -138,6 +138,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "3853e895482d3171ff3a8144344b74cfa3a7dd67; "
         "see model-provider-source-audit.md#clinepass-provider"
     ),
+    "cloudgpu-provider": (
+        "model-provider; pinned source review at commit "
+        "8094603d776e185cfe362618d353841e6b453189; "
+        "see model-provider-source-audit.md#cloudgpu-provider"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "

@@ -1,8 +1,12 @@
 # Progress
 
+## Review CloudGPU provider (2026-11-15)
+
+Reviewed the pinned CloudGPU adapter and its catalog manifest, README, and MIT license. The adapter registers a single standard OpenAI-compatible profile with a live model-list path, static fallback models, `CLOUDGPU_API_KEY`, and optional `CLOUDGPU_BASE_URL`; the README states that prompts, tool schemas, and the key go to the remote CloudGPU gateway. Thirty of 90 model-category entries are now reviewed across 29 distinct source trees; 60 remain pending. No source, account, key, live catalog, or inference endpoint was used.
+
 ## Review ClinePass provider (2026-11-15)
 
-Reviewed the catalog-pinned ClinePass adapter, manifest, packaging metadata, README, MIT license, and PowerShell installer. Its discovery fetches Cline's public `clinePass` and `free` catalogs without sending an API key, preserves gateway IDs, and falls back to a curated pass-model list; inference is routed to the configured Cline API endpoint with `CLINE_API_KEY`. The installer clones the default branch and removes an existing plugin destination, so it is not used as an X.A.A. installation path. Twenty-nine of 90 model-category entries are now reviewed across 28 distinct source trees; 61 remain pending. No source, key, account, API endpoint, or inference service was installed or used.
+Reviewed the catalog-pinned ClinePass adapter, manifest, packaging metadata, README, MIT license, and PowerShell installer. Its discovery fetches Cline's public `clinePass` and `free` catalogs without sending an API key, preserves gateway IDs, and falls back to a curated pass-model list; inference is routed to the configured Cline API endpoint with `CLINE_API_KEY`. The installer clones the default branch and removes an existing plugin destination, so it is not used as an X.A.A. installation path. At that checkpoint, 29 of 90 model-category entries were reviewed across 28 distinct source trees, with 61 pending. No source, key, account, API endpoint, or inference service was installed or used.
 
 ## Classify duplicate BharatCode catalog entry (2026-11-15)
 

@@ -2108,7 +2108,7 @@
       "required_environment_names": [
         "CLOUDGPU_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider; pinned source review at commit 8094603d776e185cfe362618d353841e6b453189; see model-provider-source-audit.md#cloudgpu-provider",
       "status": "planned",
       "phase": 9
     },
