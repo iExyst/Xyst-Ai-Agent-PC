@@ -158,6 +158,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit c84f1389670cdd5ec4607b13bd32c4809878c415; "
         "see model-provider-source-audit.md#hermes-adaptive-effort"
     ),
+    "hermes-council": (
+        "standalone multi-model deliberation plugin and virtual provider; pinned source review "
+        "at commit 18a66633acc045c251063721a1cf26f9a46d29de; "
+        "see model-provider-source-audit.md#hermes-council"
+    ),
     "grok-acp": (
         "external-process model provider; pinned source review at commit "
         "2851d6667be7f1a9044fee5006a382699d942c6f; "

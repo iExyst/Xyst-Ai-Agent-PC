@@ -1,8 +1,12 @@
 # Progress
 
+## Review Hermes Council plugin (2026-11-15)
+
+Classified the pinned candidate as a standalone multi-model deliberation tool plus virtual model-menu provider. Four configured seats can answer in parallel, peer-review or use a judge, then send the chairman a synthesis request; up to nine model calls can be made for a four-seat deliberation. It borrows configured provider credentials, writes question/answer JSON under the Hermes home, and imports Hermes' internal MoA runtime helpers. The pinned repository has no LICENSE/COPYING file, so redistribution rights are not established. Thirty-five of 90 model-category catalog entries are now reviewed across 34 distinct source trees; 55 remain pending. No plugin, model, account, or inference request was used.
+
 ## Review Grok ACP provider (2026-11-15)
 
-Reviewed the pinned external-process adapter and its supporting CLI client. It uses the logged-in `grok` CLI account, not an API key; its inherited ACP file bridge is gated, but the CLI's own shell tool runs inside the child and source-reported Grok 1.0.41 ignored permission/deny controls. That prevents treating the adapter as permission-contained for X.A.A. without a sandbox that controls the subprocess itself. Thirty-four of 90 model-category entries are now reviewed across 33 distinct source trees; 56 remain pending. No CLI, account, credential, installer, or inference endpoint was used.
+Reviewed the pinned external-process adapter and its supporting CLI client. It uses the logged-in `grok` CLI account, not an API key; its inherited ACP file bridge is gated, but the CLI's own shell tool runs inside the child and source-reported Grok 1.0.41 ignored permission/deny controls. That prevents treating the adapter as permission-contained for X.A.A. without a sandbox that controls the subprocess itself. At that checkpoint, 34 of 90 model-category entries were reviewed across 33 distinct source trees, with 56 pending. No CLI, account, credential, installer, or inference endpoint was used.
 
 ## Review Hermes Adaptive Effort middleware (2026-11-15)
 
