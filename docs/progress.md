@@ -1,5 +1,9 @@
 # Progress
 
+## Review the pinned OpenCode Zen free-model provider (2026-11-15)
+
+Reviewed `oc-free-provider` at catalog-pinned commit `ae705c692dd83c5eb0e871053722838af39e213e`. It directly posts chat/tool traffic to OpenCode Zen without a user key, intersects a live model list with models.dev zero-cost/tool metadata, caches the last successful intersection, and translates tool names and streamed calls between OpenCode and Hermes. The README explicitly calls this unofficial/unsupported and warns that prompts, schemas, results, and conversation content leave the machine under OpenCode/provider terms. Redirects are blocked, but urllib's default environment proxy handling remains, metadata reads and streams lack explicit byte/event caps, and bundled fallback IDs are not live entitlement evidence. Seventy-nine selected non-platform entries are now source-reviewed; 77/90 model-category entries across 75 repositories are reviewed, with 13 pending. Provider tests were inspected, not run; no endpoint, account, test, or inference was used.
+
 ## Review the pinned Nexus recovery-peer plugin (2026-11-15)
 
 Reviewed `nexus-recovery-peer` at catalog-pinned commit `2d3b15dcc513bab7fc2463d29fb581524a94c8fb`. External review defaults off and requires a configured peer route plus both LLM override capabilities; after repeated identical failures/read-only results or a failed child, it sends a best-effort redacted task/error excerpt through Hermes `ctx.llm`, once per turn. It does not replay tools or verify fixes. Error text may include sensitive paths/content, redaction is not a security boundary, and provider fallback can weaken recipient independence. Seventy-eight selected non-platform entries are now individually source-reviewed; 76/90 model-category entries across 74 source trees are reviewed, with 14 pending. The plugin's tests were inspected but not run. No route, external provider, test, or inference was used.

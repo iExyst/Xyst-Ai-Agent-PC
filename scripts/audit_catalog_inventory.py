@@ -308,6 +308,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 2d3b15dcc513bab7fc2463d29fb581524a94c8fb; "
         "see model-provider-source-audit.md#nexus-recovery-peer"
     ),
+    "oc-free-provider": (
+        "unofficial OpenCode Zen direct transport with live free-model filter and tool-schema translation; "
+        "pinned source review at commit ae705c692dd83c5eb0e871053722838af39e213e; "
+        "see model-provider-source-audit.md#opencode-zen-free-model-provider"
+    ),
     "model-presets": (
         "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
         "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "
