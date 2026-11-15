@@ -1,6 +1,6 @@
 # Pinned optional model-provider source audit
 
-This document records source-only reviews of selected optional provider candidates at their individual catalog-pinned commits. The catalog itself is pinned to Hermes core commit `1e208b280deb18f01d015b0acdf3ef3552d08039`. These reviews do not implement or validate providers in X.A.A.; live provider and model testing remains deferred to the final LLM-testing phase.
+This document records source-only reviews of selected optional `models`-category candidates at their individual catalog-pinned commits. The catalog itself is pinned to Hermes core commit `1e208b280deb18f01d015b0acdf3ef3552d08039`. These reviews do not implement or validate providers in X.A.A.; live provider and model testing remains deferred to the final LLM-testing phase.
 
 ## Abstract provider
 
@@ -70,6 +70,151 @@ Reviewed 2026-11-15 at the catalog-pinned repository commit [`e5b7b985b5aa56bc58
 | [`LICENSE`](https://github.com/es697/hermes-provider-anyapi/blob/e5b7b985b5aa56bc585ef1924858978696eb0c3a/LICENSE) | `c6ae79419976301d72ee638e5685a04fae27083f3704162a9a8c6b616190d18a` | MIT license for the candidate source. |
 
 The candidate remains planned for Phase 9 and is not implemented. Its dynamic cloud model catalog and declared vision support would need explicit per-run remote-data disclosure, route-specific capability checks, protected credentials, endpoint/origin validation, bounded discovery and inference, deterministic fixtures, and final live-provider acceptance after the requested LLM-testing deferral. No plugin was installed or executed and no credential, account, or inference request was used.
+
+## Adaptive Inference routing middleware
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`d6f4e201ba28602189872746922e527c58ed0cbd`](https://github.com/midhatn/adaptive-inference/tree/d6f4e201ba28602189872746922e527c58ed0cbd), subdirectory `plugins/hermes`. The Hermes catalog manifest is `plugin-catalog/adaptive-inference-routing.yaml`, SHA-256 `b665ab2f5c27d361541d35c055cb9c0008cc3e35e5ac61fe38709b79b75d079b`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/midhatn/adaptive-inference/blob/d6f4e201ba28602189872746922e527c58ed0cbd/plugins/hermes/plugin.yaml) | `d2f2dcee2463eb4b02d8a15c1712fc4cbf37c47fe174544c8af282ba9c3a60ea` | Declares opt-in request middleware and lifecycle hooks, no tools, environment variables, Python dependencies, provider registration or credential handling; disabled by default. |
+| [`__init__.py`](https://github.com/midhatn/adaptive-inference/blob/d6f4e201ba28602189872746922e527c58ed0cbd/plugins/hermes/__init__.py) | `2a65d81edb39bb13623081ae761ab9bd086d43e6db3717bcc9b9bc3c1fbc05aa` | Tracks up to 2,048 host-announced child session aliases in memory. For an exactly matched configured endpoint and Chat Completions request, it may add `X-Adaptive-Class: background`; it does not change endpoint, prompts, model, tools, credentials, or dispatch. |
+| [`README.md`](https://github.com/midhatn/adaptive-inference/blob/d6f4e201ba28602189872746922e527c58ed0cbd/plugins/hermes/README.md) | `4cedc6b9c0e891a94f6868218506ca2a1a50f2b24683fee9fa05b770b0a0f666` | Describes opt-in delegated/cron/dedicated-profile classification through an already configured gateway. Ordinary interactive requests remain unchanged. Cron marking depends on a newer public SDK capability; auxiliary calls require explicit endpoint configuration. |
+| [`LICENSE`](https://github.com/midhatn/adaptive-inference/blob/d6f4e201ba28602189872746922e527c58ed0cbd/plugins/hermes/LICENSE) | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | Apache-2.0 license for the candidate plugin source. |
+
+This is a model-category scheduling middleware candidate, not a provider adapter. It remains planned for Phase 9 and is not implemented. The plugin's middleware itself makes no service call; when enabled, the already configured gateway receives the same request with a classification header, so that existing gateway's queueing and resource behavior govern outcomes. X.A.A. would need an explicit supported background-routing contract and tests against its own run/worker identities before adopting comparable behavior. The upstream tests were not executed and no gateway or inference endpoint was contacted.
+
+## Aixy inference and MCP setup command
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`38422435bb065bd6649f9d1288506b57790ab0eb`](https://github.com/aixy-tech/aixy-hermes-plugin/tree/38422435bb065bd6649f9d1288506b57790ab0eb). The Hermes catalog manifest is `plugin-catalog/aixy.yaml`, SHA-256 `505151daf10daaa7f5034081904e4edd46fb7d252d2ec45542c59ccf0ccb0b0c`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/aixy-tech/aixy-hermes-plugin/blob/38422435bb065bd6649f9d1288506b57790ab0eb/plugin.yaml) | `29b1931e42e7c5626ff1d0fca900c1cb33adbf09725630ea8ccb5ea39fae0c3b` | Declares a standalone setup plugin, version 0.1.2, Hermes `>=0.22.5`, with an optional `AIXY_API_KEY` secret. |
+| [`__init__.py`](https://github.com/aixy-tech/aixy-hermes-plugin/blob/38422435bb065bd6649f9d1288506b57790ab0eb/__init__.py) | `c9aa00ff980767f10dc65a0e3fa7f02703b777aa98ae2d2113e36ea2a58da846` | Import only registers the explicit `hermes aixy` CLI command; it does not read credentials, alter configuration, or contact a service. |
+| [`aixy_setup.py`](https://github.com/aixy-tech/aixy-hermes-plugin/blob/38422435bb065bd6649f9d1288506b57790ab0eb/aixy_setup.py) | `a034ce98582e24235b158b65958076120f16bd6326973c125449e9e3aabe5685` | Interactive setup validates HTTPS/loopback URLs, blocks catalog redirects, caps model-catalog reads at 4 MiB, and saves keys through Hermes' secret writer. It updates the selected Hermes profile only after explicit confirmation and sends no generation request. Optional MCP setup invokes Hermes' own `mcp add` OAuth flow in a child process; it is separately selectable. |
+| [`README.md`](https://github.com/aixy-tech/aixy-hermes-plugin/blob/38422435bb065bd6649f9d1288506b57790ab0eb/README.md) | `4f4ccc20a5454a475bc5bb8e560e8dc1e70348b7f2743ddc53b40c4c00098496` | Describes configuration of an external Aixy inference gateway, session-affinity header, and optional OAuth-connected MCP tools; no separate telemetry/background service is declared. |
+| [`LICENSE`](https://github.com/aixy-tech/aixy-hermes-plugin/blob/38422435bb065bd6649f9d1288506b57790ab0eb/LICENSE) | `11e962f173d524d439db6a52f27246965e8cab709848081df6468318e384477f` | MIT license for the candidate source. |
+
+This is a setup workflow, not an inference provider implementation or model adapter. It remains planned for Phase 9 and is not implemented. The model-catalog request transmits a project key to the explicitly entered remote endpoint; inference later uses that saved endpoint. The optional MCP flow can perform browser OAuth and write MCP configuration/credentials through Hermes. X.A.A. would need owner-directed endpoint and account consent, OS-protected credentials, clear separation between setup and inference, and its own isolated MCP OAuth/setup lifecycle. No setup command, account, key, OAuth flow, catalog endpoint, or inference request was used here.
+
+## Cloudflare Workers AI provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`f6821d058d504ee6324b0d3217564b93124c09f9`](https://github.com/AhmetArif0/hermes-cloudflare-workers-ai-provider/tree/f6821d058d504ee6324b0d3217564b93124c09f9), subdirectory `cloudflare-workers-ai-provider`. The Hermes catalog manifest is `plugin-catalog/cloudflare-workers-ai-provider.yaml`, SHA-256 `199e4baa94591b74f27ca5c5fef00eb380012d40fd144f1b6e4ec1c9b7653e05`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/AhmetArif0/hermes-cloudflare-workers-ai-provider/blob/f6821d058d504ee6324b0d3217564b93124c09f9/cloudflare-workers-ai-provider/plugin.yaml) | `0b01c4a465b53a06c1fef54dc12f88e0389045dcaf1117f1b64f04bcb6881ab9` | Declares model-provider plugin version 1.0.0, Hermes `>=0.21.5`, and distinct account-scoped base-URL and API-token variables. |
+| [`__init__.py`](https://github.com/AhmetArif0/hermes-cloudflare-workers-ai-provider/blob/f6821d058d504ee6324b0d3217564b93124c09f9/cloudflare-workers-ai-provider/__init__.py) | `fd0054e1c251c60cd8c47963f6b32ca38f233d5fc528874bc839268145c25792` | Registers an OpenAI-compatible provider with a fixed 16-model catalog, context and vision/reasoning metadata, model-specific reasoning-effort mapping, and paid-plan error classification. It disables generic live-model and health probes because the source says Cloudflare's compatible `/models` route returns 405. |
+| [`README.md`](https://github.com/AhmetArif0/hermes-cloudflare-workers-ai-provider/blob/f6821d058d504ee6324b0d3217564b93124c09f9/cloudflare-workers-ai-provider/README.md) | `5e95eb7197622a7a09d4ccda1444bd301c010dca4c057532b8d52e344775e22a` | Describes account-ID-bound Workers AI endpoints and a Cloudflare token. Live model capabilities, plan eligibility, and paid/free behavior in the README are maintainer-reported observations, not independently verified here. |
+| [`LICENSE`](https://github.com/AhmetArif0/hermes-cloudflare-workers-ai-provider/blob/f6821d058d504ee6324b0d3217564b93124c09f9/LICENSE) | `90640ae33c9eb935814e391d0e9b1b2b1035100217faf170d89b84b5dfe1a87b` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It sends inference to the user's Cloudflare account and has a catalog frozen to the reviewed source revision rather than live provider discovery. X.A.A. would need explicit remote-data/account disclosure, separate credentials and endpoint validation, capability-aware selection, protocol fixtures for reasoning and plan errors, bounded requests, and final live acceptance after the requested LLM-testing deferral. No source was installed or executed and no Cloudflare account, token, or model endpoint was used.
+
+## Chutes provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`d1165cdd5c65a1179c559e9169a428adb9a36b42`](https://github.com/TheStreamCode/hermes-chutes-provider/tree/d1165cdd5c65a1179c559e9169a428adb9a36b42). The Hermes catalog manifest is `plugin-catalog/chutes-provider.yaml`, SHA-256 `67c30fda3e20e3a2a13b61aa670d5ebc59c63f38832f0077ed93cdff79bfc8a6`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/TheStreamCode/hermes-chutes-provider/blob/d1165cdd5c65a1179c559e9169a428adb9a36b42/plugin.yaml) | `653d3da34f8d090ef25a673ecff8b2db664be1ffc821063b10c3ee1008a0376d` | Declares model-provider plugin version 0.1.5 and required secret `CHUTES_API_KEY`. |
+| [`__init__.py`](https://github.com/TheStreamCode/hermes-chutes-provider/blob/d1165cdd5c65a1179c559e9169a428adb9a36b42/__init__.py) | `9f254a990ff7d8bf4960c9a20a97d5aec7865115d2be9ad9490e9804e3ca02c4` | Imports the directory provider and registers its profile. |
+| [`hermes_chutes_provider/__init__.py`](https://github.com/TheStreamCode/hermes-chutes-provider/blob/d1165cdd5c65a1179c559e9169a428adb9a36b42/hermes_chutes_provider/__init__.py) | `a813f50d40c0f0abb6199fef9f0d7db9aa10bdb9d0483930ff32b9094c55fcf8` | Registers an OpenAI-compatible Chat Completions provider at `https://llm.chutes.ai/v1`, with optional `CHUTES_BASE_URL`. It reads a bounded live catalog, keeps entries advertising tool support, and exposes two routing aliases when discovery is unavailable. |
+| [`README.md`](https://github.com/TheStreamCode/hermes-chutes-provider/blob/d1165cdd5c65a1179c559e9169a428adb9a36b42/README.md) | `1fd279446243a4cffb056404f3f3e919010b985c95ce93a2eabeb699d2deba56` | Describes the remote Chutes API, bearer-key setup, live model list and aliases; pricing/account behavior and current catalog compatibility are not independently verified. |
+| [`LICENSE`](https://github.com/TheStreamCode/hermes-chutes-provider/blob/d1165cdd5c65a1179c559e9169a428adb9a36b42/LICENSE) | `fea0160be3242f61e4869634f452efde0d966570db83d6ed338d47c664268c21` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It sends inference and model-discovery traffic to a remote Chutes endpoint; the catalog has dynamic capability filtering with alias fallback rather than a fixed list. X.A.A. would need explicit cloud routing, protected credentials, bounded live discovery, route-capability checks, and deterministic protocol fixtures before final live acceptance after the requested LLM-testing deferral. No plugin, key, account, or endpoint was used.
+
+## CoreWeave provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`799027698ca0171c8912df076649a67a25266c20`](https://github.com/coreweave/serverless-inference-for-hermes/tree/799027698ca0171c8912df076649a67a25266c20). The Hermes catalog manifest is `plugin-catalog/coreweave.yaml`, SHA-256 `44aef05f7e2fe8a19dd950b961bdac760e3687e20e21cf39788c0c8bef3fe5d2`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/coreweave/serverless-inference-for-hermes/blob/799027698ca0171c8912df076649a67a25266c20/plugin.yaml) | `0f606eafcf4cf0c8e5b60984d0557f56a9e039d465af65e2cb41f4da854c65de` | Declares model-provider plugin version 0.1.0; SPDX declares MIT. |
+| [`__init__.py`](https://github.com/coreweave/serverless-inference-for-hermes/blob/799027698ca0171c8912df076649a67a25266c20/__init__.py) | `5d197d2ed2a3fca343bb7e668607f5af9f57302832610f9e6461651952a1f9c1` | Registers an OpenAI-compatible Chat Completions profile at `https://api.inference.wandb.ai/v1` using `COREWEAVE_API_KEY`; it adds no transport, catalog fallback, model list, or runtime dependency. |
+| [`README.md`](https://github.com/coreweave/serverless-inference-for-hermes/blob/799027698ca0171c8912df076649a67a25266c20/README.md) | `a2c02ee27d88ff66e615853410e52e3c678254355994720927a95a04c4055b87` | Describes Hermes-managed live model discovery and remote prompt/tool-result delivery. Its authenticated live smoke report is maintainer evidence, not X.A.A. verification. |
+| [`LICENSES/MIT.txt`](https://github.com/coreweave/serverless-inference-for-hermes/blob/799027698ca0171c8912df076649a67a25266c20/LICENSES/MIT.txt) | `3e42152985770ce2d26eccab29e2da8c1feb87467e60b109972ab9f130c9742f` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It uses a remote W&B-hosted inference endpoint and per-account model discovery. X.A.A. would need explicit cloud-data and account disclosure, protected credentials, endpoint validation, live model capability handling, bounded transport behavior, and final acceptance after the requested LLM-testing deferral. No plugin, key, account, discovery request, or inference request was used.
+
+## ngrok AI Gateway provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`27baaa0e85e09581f05084fc318a0755774162e1`](https://github.com/ngrok/hermes-ngrok/tree/27baaa0e85e09581f05084fc318a0755774162e1), subdirectory `model-providers/ngrok`. The Hermes catalog manifest is `plugin-catalog/ngrok-ai-gateway.yaml`, SHA-256 `447d50c4a4490de02fea385b538c3b86560aaae8fc3d51918c74417f489efc71`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/ngrok/hermes-ngrok/blob/27baaa0e85e09581f05084fc318a0755774162e1/model-providers/ngrok/plugin.yaml) | `10fd3e8f01b33bd3263a32ea70a88bf44b93f2e7869a9810a02b1345ae5a23cb` | Declares model-provider plugin version 1.0.0, Hermes `>=0.21.6`, and secret `NGROK_AI_GATEWAY_KEY`. |
+| [`__init__.py`](https://github.com/ngrok/hermes-ngrok/blob/27baaa0e85e09581f05084fc318a0755774162e1/model-providers/ngrok/__init__.py) | `d8bdf82b298cd59cb9ed9af87f5b182e2c4df532af5cd72420d430d04104ebad` | Registers an OpenAI-compatible gateway profile at `https://gateway.ngrok.ai/v1` with live account-specific model discovery, no static fallback models, a user-agent header, and explicit mapping for selected model-not-found, entitlement, billing, rate-limit, and retry errors. Supports `NGROK_AI_GATEWAY_BASE_URL`. |
+| [`README.md`](https://github.com/ngrok/hermes-ngrok/blob/27baaa0e85e09581f05084fc318a0755774162e1/model-providers/ngrok/README.md) | `d7fcbb4d708de0ffbbaeb571722737c2272621177a57f487f63643e4a13a944a` | Discloses that chat and model-list requests, with the access key, go to the gateway; routing/failover uses that account's configuration. |
+| [`LICENSE`](https://github.com/ngrok/hermes-ngrok/blob/27baaa0e85e09581f05084fc318a0755774162e1/LICENSE) | `e4f4a8ca6594edda418eccb7d1e0aac152e2ac8c29645fbc8ffab744bbd98ad5` | MIT license for the repository candidate. |
+
+The candidate remains planned for Phase 9 and is not implemented. It exposes an account-configured remote gateway, live model discovery, provider failover, and account-credit states that X.A.A. does not currently model. Adoption would require explicit remote routing and cost disclosure, protected credentials, endpoint-origin restrictions, account-scoped model capabilities, bounded request handling, fixture coverage for failover decisions, and final live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or inference endpoint was used.
+
+## Together AI provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`d5267d5d1e1bf98097b13546a739bd8dab8db7ec`](https://github.com/pepijndevos/hermes-together-provider/tree/d5267d5d1e1bf98097b13546a739bd8dab8db7ec). The Hermes catalog manifest is `plugin-catalog/together.yaml`, SHA-256 `9df6a82377803a5a1bbe58650e21f76663de145ed77d9beb6228253a46b5ac71`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/pepijndevos/hermes-together-provider/blob/d5267d5d1e1bf98097b13546a739bd8dab8db7ec/plugin.yaml) | `ae2fb6475ff37e39a3f36c50d5aee220dd5de312a40156660739cb7b8432848e` | Declares model-provider plugin version 1.0.0, MIT, and `TOGETHER_API_KEY`. |
+| [`__init__.py`](https://github.com/pepijndevos/hermes-together-provider/blob/d5267d5d1e1bf98097b13546a739bd8dab8db7ec/__init__.py) | `8107aa70266b8ff2e91ee9dc64b5daaf58ea4d9fc13782c70122dd817a12c82c` | Registers OpenAI-compatible Chat Completions at `https://api.together.xyz/v1`, with API-key auth, configurable `TOGETHER_BASE_URL`, dynamic model discovery and a five-model fallback list. An override handles Together's bare-list model response for model validation. |
+| [`README.md`](https://github.com/pepijndevos/hermes-together-provider/blob/d5267d5d1e1bf98097b13546a739bd8dab8db7ec/README.md) | `3823b5dbaee1fed73807176ea4ec803c61039d3fe8ca08fd22f19d1ed0ae74a3` | Describes remote chat and model-list calls using the provided key; the plugin itself delegates credential resolution to Hermes and adds no separate transport or telemetry. |
+| [`LICENSE`](https://github.com/pepijndevos/hermes-together-provider/blob/d5267d5d1e1bf98097b13546a739bd8dab8db7ec/LICENSE) | `78f5e22fe1359085da4dd85de0e79b0e80dd9247c36dcfc83f38738a85f77dda` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. The provider uses remote inference and dynamic model discovery, with a static fallback that can differ from current account availability. X.A.A. would need explicit cloud routing, protected credentials, model capability and availability handling, bounded transport, and deterministic tests before final live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or model request was used.
+
+## Telnyx provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c`](https://github.com/team-telnyx/hermes-inference-provider/tree/f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c). The Hermes catalog manifest is `plugin-catalog/telnyx-provider.yaml`, SHA-256 `0cef7c1536adf15b5670328ef6aab53e99cbf7cb0d3b3e6f293d706870d40bad`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/team-telnyx/hermes-inference-provider/blob/f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c/plugin.yaml) | `da9d4077dad3751d15113d4029f00bac1274b01a85aa431184b34ce6206eaf5a` | Declares provider plugin version 0.1.0, Hermes `>=0.21.4`, and secret `TELNYX_API_KEY`. |
+| [`__init__.py`](https://github.com/team-telnyx/hermes-inference-provider/blob/f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c/__init__.py) | `c176b3b23a4b32342d0597cd93a8e90da7c67d63e519459849100e1cd1395adb` | Registers Chat Completions at `https://api.telnyx.com/v2/ai/openai`. It filters live authenticated catalog rows to text-generation tasks, uses a four-model fallback, and leaves the default output-token cap unset because the source reports a tool-call compatibility error when the cap is combined with tools. |
+| [`README.md`](https://github.com/team-telnyx/hermes-inference-provider/blob/f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c/README.md) | `91b6ee8c4f4cb1e690c5c18b0e200be761c9a8d2f3b2f9b4123f1ba22f5c68c9` | Describes authenticated live model discovery, hosted and proxied routes, fallback models, and pricing tagged per million tokens. Provider compatibility and pricing are upstream declarations, not independent verification. |
+| [`LICENSE`](https://github.com/team-telnyx/hermes-inference-provider/blob/f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c/LICENSE) | `4ccfec7b1135a4ac670adb72199bfe9de9ca1933d5192b63b62e9fa91089eabf` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It combines remote hosted and proxied model routes with live pricing/model metadata, and the source documents provider-specific output-cap/tool-call constraints. X.A.A. would need explicit remote routing and cost disclosure, protected credentials, safe catalog pricing normalization, model/route capability checks, and deterministic coverage of those request constraints before final live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or inference endpoint was used.
+
+## Runcrate provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`c0023f37820e05147f1dcd1cb8ebd712e6b122e2`](https://github.com/runcrateai/hermes-runcrate/tree/c0023f37820e05147f1dcd1cb8ebd712e6b122e2), subdirectory `model-providers/runcrate`. The Hermes catalog manifest is `plugin-catalog/runcrate-provider.yaml`, SHA-256 `95fb0eb886b516351a770ac84eac1c1c91821cbf81e114990c303e74683cfe1d`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/runcrateai/hermes-runcrate/blob/c0023f37820e05147f1dcd1cb8ebd712e6b122e2/model-providers/runcrate/plugin.yaml) | `e48764d3addcd0c68f84d86133c971cf845f9e4de257010b776f2052e4a56601` | Declares model-provider plugin version 1.0.0, Hermes `>=0.21.5`, and secret `RUNCRATE_API_KEY`. |
+| [`__init__.py`](https://github.com/runcrateai/hermes-runcrate/blob/c0023f37820e05147f1dcd1cb8ebd712e6b122e2/model-providers/runcrate/__init__.py) | `07697b676abb0ff723aa63c883d36ef7b021186eec6ea8806eb150abf81890ae` | Registers OpenAI-compatible Chat Completions at `https://api.runcrate.ai/v1`, dynamic model listing, six fallback IDs, optional `RUNCRATE_BASE_URL`, and a reasoning-effort mapping. |
+| [`README.md`](https://github.com/runcrateai/hermes-runcrate/blob/c0023f37820e05147f1dcd1cb8ebd712e6b122e2/README.md) | `2e0ac1718b2aa3569791feaa1990c3bc94ece962f7ccd48fac069a712836ebb3` | Describes account API-key setup and says free requests may be served by third-party model providers that handle prompts and outputs under their own terms; other catalog models are billed from a prepaid balance. These are upstream service declarations. |
+| [`LICENSE`](https://github.com/runcrateai/hermes-runcrate/blob/c0023f37820e05147f1dcd1cb8ebd712e6b122e2/LICENSE) | `1660e92e87c38f49859e3cfc81fd69db6d22cb88a6abb2e420b319ea3874c082` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. In addition to explicit cloud routing and cost disclosure, any future integration must clearly disclose possible third-party inference routing, protect credentials, check current model capability/availability, bound transport behavior, and test reasoning parameter handling before final live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or inference call was used.
+
+## RuAPI dual-protocol provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`fbefc615d447729ccf85aec05e0ea27ecc6f3bd9`](https://github.com/RuAPI-ai/hermes-provider-ruapi/tree/fbefc615d447729ccf85aec05e0ea27ecc6f3bd9), subdirectory `ruapi`. The Hermes catalog manifest is `plugin-catalog/ruapi.yaml`, SHA-256 `0658ad3fa949a6957bdcce8431b2c235c3b131a3d76bea51098ef2df24b5861b`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/RuAPI-ai/hermes-provider-ruapi/blob/fbefc615d447729ccf85aec05e0ea27ecc6f3bd9/ruapi/plugin.yaml) | `f3395fd2692f803ec3a955de342a9958d8f1bdda3bb8c3691c66f3b615e1e87e` | Declares two RuAPI model profiles through one MIT plugin, Hermes `>=0.21.5`, and secret `RUAPI_API_KEY`. |
+| [`__init__.py`](https://github.com/RuAPI-ai/hermes-provider-ruapi/blob/fbefc615d447729ccf85aec05e0ea27ecc6f3bd9/ruapi/__init__.py) | `4208f09792f1155a89a0206ece1031012660895dc66ab02d11342dc80ac65a9b` | Registers Claude models over native Anthropic Messages and other chat models over OpenAI-compatible Chat Completions. Hermes fetches one authenticated model list; the plugin filters it into provider-specific lists and declares selected model context/vision capabilities. |
+| [`README.md`](https://github.com/RuAPI-ai/hermes-provider-ruapi/blob/fbefc615d447729ccf85aec05e0ea27ecc6f3bd9/ruapi/README.md) | `031281788593f105aa302a66879e1dfde63b04a946e75fb0a014edbd207af294` | Describes pay-as-you-go credit top-ups using USDT, remote account model availability and pricing, and both API protocols. These are service declarations, not account or billing verification. |
+| [`LICENSE`](https://github.com/RuAPI-ai/hermes-provider-ruapi/blob/fbefc615d447729ccf85aec05e0ea27ecc6f3bd9/LICENSE) | `73fa2ea70da7595d5f3d8f8e6f53b7a07062fd7b4e4f58550a75abe03e62f658` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It needs both Anthropic Messages and OpenAI Chat Completions transport semantics, plus one account key and remote billing/data disclosure. X.A.A.'s current provider surface would need protocol-specific adapters, capability checks, credential isolation, cost disclosure, bounded request behavior, deterministic fixtures, and final live acceptance after the requested LLM-testing deferral. No account, key, model list request or inference request was used.
+
+## Safe AI Labs provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc`](https://github.com/nevertrust-ai/hermes-safeailabs-provider/tree/3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc). The Hermes catalog manifest is `plugin-catalog/safeailabs-provider.yaml`, SHA-256 `fb6f31d44a9c6a07f48fd261cd7f3b448a294df3f8d31326f38e8d691629dc17`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/nevertrust-ai/hermes-safeailabs-provider/blob/3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc/plugin.yaml) | `61a086ae9013edbf0cde99732081d1e946b8192eb0986f628e280d721f153a20` | Declares model-provider version 1.0.0, Hermes `>=0.22.0`, and secret `SAFE_AI_KEY`. |
+| [`__init__.py`](https://github.com/nevertrust-ai/hermes-safeailabs-provider/blob/3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc/__init__.py) | `c7c1a0830812891e29e210219eb2a5b61ef9bb7775b1ef76e8b66822de975216` | Registers one region-configurable OpenAI-compatible provider, with a single model ID and declared 1,048,576-token context plus tool, reasoning and vision flags; it declares no output token cap. |
+| [`README.md`](https://github.com/nevertrust-ai/hermes-safeailabs-provider/blob/3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc/README.md) | `656a1aa4357e7abd01160776529caec330f197395e7fc16a06ae6f6d9f82f2ce` | Describes regional endpoints, remote key/model-list/chat requests, and warns that plan-based token-rate delays can exceed Hermes' 180-second first-token timeout for very large prompts. These model limits and plan timings are upstream claims. |
+| [`LICENSE`](https://github.com/nevertrust-ai/hermes-safeailabs-provider/blob/3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc/LICENSE) | `41358d9727e029505a2ebbf1960471897c44d91d7f29e73169f316ca4864e3d7` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. Its single model, regional endpoint choices, declared million-token context, remote account key, and documented long time-to-first-token behavior all need explicit validation in X.A.A. Capability declarations and streaming timeout handling must be checked against the selected plan before live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or model request was used.
 
 ## Claude subscription provider
 
@@ -172,6 +317,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. This review classifies eight of the 90 `models` category candidates (Abstract, Ace Data Cloud, AIHubMix, AI Stupid Level, AnyAPI, Claude, Groq, and GitHub Copilot); 82 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. These reviews classify nineteen of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Groq, GitHub Copilot, ngrok AI Gateway, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 71 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.

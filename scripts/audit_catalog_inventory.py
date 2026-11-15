@@ -38,6 +38,61 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "e5b7b985b5aa56bc585ef1924858978696eb0c3a; "
         "see model-provider-source-audit.md#anyapi-provider"
     ),
+    "adaptive-inference-routing": (
+        "model-category middleware; pinned source review at commit "
+        "d6f4e201ba28602189872746922e527c58ed0cbd; "
+        "see model-provider-source-audit.md#adaptive-inference-routing"
+    ),
+    "aixy": (
+        "standalone inference/MCP setup CLI; pinned source review at commit "
+        "38422435bb065bd6649f9d1288506b57790ab0eb; "
+        "see model-provider-source-audit.md#aixy-setup"
+    ),
+    "cloudflare-workers-ai-provider": (
+        "model-provider; pinned source review at commit "
+        "f6821d058d504ee6324b0d3217564b93124c09f9; "
+        "see model-provider-source-audit.md#cloudflare-workers-ai"
+    ),
+    "chutes-provider": (
+        "model-provider; pinned source review at commit "
+        "d1165cdd5c65a1179c559e9169a428adb9a36b42; "
+        "see model-provider-source-audit.md#chutes"
+    ),
+    "coreweave": (
+        "model-provider; pinned source review at commit "
+        "799027698ca0171c8912df076649a67a25266c20; "
+        "see model-provider-source-audit.md#coreweave"
+    ),
+    "ngrok-ai-gateway": (
+        "model-provider; pinned source review at commit "
+        "27baaa0e85e09581f05084fc318a0755774162e1; "
+        "see model-provider-source-audit.md#ngrok-ai-gateway"
+    ),
+    "together": (
+        "model-provider; pinned source review at commit "
+        "d5267d5d1e1bf98097b13546a739bd8dab8db7ec; "
+        "see model-provider-source-audit.md#together"
+    ),
+    "telnyx-provider": (
+        "model-provider; pinned source review at commit "
+        "f53c20e80f84b4a880a7f2b4f1ed2f8b3fa1d11c; "
+        "see model-provider-source-audit.md#telnyx"
+    ),
+    "runcrate-provider": (
+        "model-provider; pinned source review at commit "
+        "c0023f37820e05147f1dcd1cb8ebd712e6b122e2; "
+        "see model-provider-source-audit.md#runcrate"
+    ),
+    "ruapi": (
+        "dual-protocol model-provider plugin; pinned source review at commit "
+        "fbefc615d447729ccf85aec05e0ea27ecc6f3bd9; "
+        "see model-provider-source-audit.md#ruapi"
+    ),
+    "safeailabs-provider": (
+        "model-provider; pinned source review at commit "
+        "3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc; "
+        "see model-provider-source-audit.md#safe-ai-labs"
+    ),
     "claude-subscription-directsdk": (
         "model-provider; pinned source review at commit "
         "83f0a896b3518c7131181838e340c9a80c79524d; see model-provider-source-audit.md"
@@ -128,7 +183,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; ten selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; twenty-one selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

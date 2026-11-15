@@ -1,5 +1,25 @@
 # Progress
 
+## Classify Runcrate, RuAPI and Safe AI Labs providers (2026-11-15)
+
+Reviewed three catalog-pinned providers. The audit records Runcrate's disclosed third-party model routing for some free requests, RuAPI's separate Anthropic Messages and OpenAI-compatible provider profiles, and Safe AI Labs' region-specific single-model configuration and long first-token timeout caveat. Nineteen of 90 model-category candidates now have source reviews; 71 remain pending. No source code, account, key, catalog request or inference endpoint was used.
+
+## Classify Together AI and Telnyx providers (2026-11-15)
+
+Reviewed both pinned provider commits. The audit records Together's bare-list dynamic catalog handling and fallback models, and Telnyx's authenticated task-filtered catalog, fallback set, per-million pricing metadata, and tool/output-cap constraint. Sixteen of 90 model-category candidates now have pinned source reviews; 74 remain pending. No plugin, credential, account, catalog service, or inference endpoint was used.
+
+## Classify CoreWeave and ngrok AI Gateway providers (2026-11-15)
+
+Reviewed both providers at catalog-pinned commits. Recorded CoreWeave's W&B-hosted compatible endpoint, Hermes live discovery, and no-fallback behavior; recorded ngrok's account-specific live catalog, gateway routing and selected auth/entitlement/billing/failover classifications. Fourteen of 90 model-category candidates now have source reviews; 76 remain pending. This is source-only evidence; no remote account, credential, model-list request, or inference was used.
+
+## Classify Cloudflare Workers AI and Chutes providers (2026-11-15)
+
+Reviewed both providers at their catalog-pinned commits. The audit records Cloudflare's fixed account-bound model/capability catalog and plan-error mapping, and Chutes' bounded live catalog, tool-capability filtering, remote key/endpoint and fallback aliases. Twelve of 90 model-category candidates now have source-only reviews; 78 remain pending. These candidates remain planned and remote inference stays unimplemented. No plugin, token, account, catalog service or inference endpoint was used.
+
+## Classify Adaptive Inference middleware and Aixy setup (2026-11-15)
+
+Reviewed two more pinned `models`-category candidates and documented that they are not provider adapters: Adaptive Inference is opt-in request middleware that labels eligible work for an already configured gateway, while Aixy is an interactive remote-inference setup command with a separately optional Hermes MCP OAuth flow. Captured pinned hashes, source-declared side effects, credentials, compatibility and X.A.A. disposition. Ten of 90 model-category candidates now have source reviews; 80 remain pending. No plugin, setup command, gateway, credential, account or OAuth flow was run.
+
 ## Classify AI Stupid Level and AnyAPI model providers (2026-11-15)
 
 Reviewed two optional providers at their catalog-pinned commits, including dynamic router/catalog behavior, tool and vision declarations, credential and remote-data boundaries, licenses, source hashes, and Phase 9 dispositions. The model-provider audit now has eight of 90 model-category candidates classified; 82 remain pending. The pinned inventory drift check and static checks pass locally. Hosted verification remains pending because the current workflow started before these edits. No provider code, credential, account, or inference endpoint was used.
