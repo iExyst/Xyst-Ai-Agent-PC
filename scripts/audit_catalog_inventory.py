@@ -163,6 +163,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 18a66633acc045c251063721a1cf26f9a46d29de; "
         "see model-provider-source-audit.md#hermes-council"
     ),
+    "hermes-experientiallabs": (
+        "OpenAI-compatible multi-model provider with account-usage hook; pinned source review "
+        "at commit 0d26c3eac2965105a507f6ed90e046bf6f981056; "
+        "see model-provider-source-audit.md#experiential-labs-provider"
+    ),
     "grok-acp": (
         "external-process model provider; pinned source review at commit "
         "2851d6667be7f1a9044fee5006a382699d942c6f; "

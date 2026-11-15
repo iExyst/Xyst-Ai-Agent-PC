@@ -1,8 +1,12 @@
 # Progress
 
+## Review Experiential Labs provider (2026-11-15)
+
+Reviewed the pinned multi-model gateway provider and its account-usage helper. Chat/model discovery use the OpenAI-compatible gateway and an optional base URL; the usage view makes separate authenticated balance/key-cap requests, and the error hook marks only two exact gateway guardrail signatures retryable. The usage endpoint override and redirect handling need strict origin controls before X.A.A. forwards a credential. Thirty-six of 90 model-category entries are now reviewed across 35 distinct source trees; 54 remain pending. No key, account, model catalog, usage endpoint, or inference request was used.
+
 ## Review Hermes Council plugin (2026-11-15)
 
-Classified the pinned candidate as a standalone multi-model deliberation tool plus virtual model-menu provider. Four configured seats can answer in parallel, peer-review or use a judge, then send the chairman a synthesis request; up to nine model calls can be made for a four-seat deliberation. It borrows configured provider credentials, writes question/answer JSON under the Hermes home, and imports Hermes' internal MoA runtime helpers. The pinned repository has no LICENSE/COPYING file, so redistribution rights are not established. Thirty-five of 90 model-category catalog entries are now reviewed across 34 distinct source trees; 55 remain pending. No plugin, model, account, or inference request was used.
+Classified the pinned candidate as a standalone multi-model deliberation tool plus virtual model-menu provider. Four configured seats can answer in parallel, peer-review or use a judge, then send the chairman a synthesis request; up to nine model calls can be made for a four-seat deliberation. It borrows configured provider credentials, writes question/answer JSON under the Hermes home, and imports Hermes' internal MoA runtime helpers. The pinned repository has no LICENSE/COPYING file, so redistribution rights are not established. At that checkpoint, 35 of 90 model-category catalog entries were reviewed across 34 distinct source trees, with 55 pending. No plugin, model, account, or inference request was used.
 
 ## Review Grok ACP provider (2026-11-15)
 
