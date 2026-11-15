@@ -163,6 +163,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit bf7d61fb1e37fa78ec58de7683ec436dff5b71bf; "
         "see model-provider-source-audit.md#cursor-provider"
     ),
+    "cursor-sdk": (
+        "experimental Cursor Agent SDK provider; pinned source review "
+        "at commit 0e546bc079ab23451a52a12ca02e8a55af34e217; "
+        "see model-provider-source-audit.md#cursor-sdk"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "

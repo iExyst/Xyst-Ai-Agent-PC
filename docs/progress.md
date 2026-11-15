@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned experimental Cursor SDK provider (2026-11-15)
+
+Reviewed `cursor-sdk` at catalog-pinned commit `0e546bc079ab23451a52a12ca02e8a55af34e217`. The candidate requires macOS or Linux, Node 22.13+, Git, an explicit Cursor key, and a manual install of pinned `@cursor/sdk` 1.0.37; it explicitly does not support Windows. It sends the full conversation, instructions and Hermes tool schemas to Cursor, buffers responses before emitting any stream chunks, and relies on a fail-closed project hook plus run cancellation to reject native tools. It leaves conversation and SDK state under the plugin's `runtime/` directory. It uses a bundled static model snapshot and cannot enforce an included-only spend cap. Forty-three of 90 model-category candidates are source-reviewed across 42 trees; 47 remain pending. No plugin, npm dependency, key, account, or inference was used.
+
 ## Review pinned Cursor SDK provider (2026-11-15)
 
 Reviewed `cursor-provider` at catalog-pinned commit `bf7d61fb1e37fa78ec58de7683ec436dff5b71bf`. It uses Cursor's official proprietary `cursor-sdk` 1.x with a user `CURSOR_API_KEY`, sending conversation content, tool schemas/results, and bounded HTTPS/data images to Cursor. The adapter disables Cursor built-in tools and MCP, returns only allowlisted Hermes tool calls through Hermes' own approval loop, bounds run deadlines, and maintains account/model/conversation-scoped SDK sessions. It does not enable Cursor's optional local sandbox; the SDK bridge is proprietary and private workspace ACLs were not verified on Windows. Cursor retains its own server-side conversation/cache state after local handles close. Forty-two of 90 model-category candidates are reviewed across 41 source trees; 48 remain pending. No plugin, SDK, key, account, endpoint, or inference was used.
