@@ -1,5 +1,9 @@
 # Progress
 
+## Verify dark-navigation update in hosted source workflow (2026-11-15)
+
+Hosted source run [43713761830](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43713761830) passed on commit `9297f7f24007c24d63941de6e06e12b811c0b99a`, including API contract checks, generated desktop contract consistency, TypeScript checking, and the full Python suite. The installer job was skipped by the feature-branch workflow condition, so the prior hosted package run [43712084557](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43712084557) remains the installed-package evidence. The dark navigation CSS also passed the local Vite production build and rendered visual inspection. The subsequent source-audit count correction is documentation-only.
+
 ## Correct the Rust license inventory for X.A.A.'s desktop crate (2026-11-15)
 
 `cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked --no-deps` confirms `xaa-desktop 0.1.1` declares MIT. The release inventory had incorrectly listed the application's own crate as `NO LICENSE METADATA`; corrected it to MIT and advanced the snapshot date. The root license, `pyproject.toml`, Cargo crate, and npm workspace now agree on the project's MIT license. The release coverage checker now verifies those first-party manifest/table/root-license values, with regression tests for matching and mismatching metadata. All five focused release-coverage tests, Ruff, and the coverage command pass locally. This does not close third-party text/copyright review or release approval.
