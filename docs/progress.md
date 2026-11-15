@@ -1,5 +1,9 @@
 # Progress
 
+## Review Antigravity agy CLI provider (2026-11-15)
+
+Reviewed the pinned external-process adapter, including its Hermes-owned tool relay, CLI-owned account, private request workspace, process prewarming, trace data and platform limits. It declares Linux/macOS only, so it is not currently a Windows candidate. Twenty-four of 90 model-category candidates now have source reviews; 66 remain pending. No CLI, plugin, account, quota probe or inference was used.
+
 ## Classify BharatCode and Hashference providers (2026-11-15)
 
 Reviewed the pinned BharatCode and Hashference provider sources, including catalog behavior, fallback metadata, credentials, and upstream claims about student access and balance funding. These are source-only findings; no plugin, account, payment flow, catalog request, key or inference was used. Twenty-three of 90 model-category candidates now have source reviews; 67 remain pending.

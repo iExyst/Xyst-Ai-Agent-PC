@@ -300,6 +300,23 @@ Reviewed 2026-11-14 against the catalog-pinned `AhmetArif0/hermes-groq-provider`
 - The plugin declares no tools or local execution surface. Using it sends prompts and conversation content to a remote inference service, and use is subject to the owner's Groq account, limits, and charges. The README's rate-limit and plan recommendations are maintainer observations from 2026-09-29, not current X.A.A. guarantees.
 - The workflow source defines cross-platform unit and Hermes fake-provider integration jobs, but no workflow result was inspected. Its fixtures do not prove current live API/model compatibility.
 
+## Antigravity agy CLI provider
+
+Reviewed 2026-11-15 at catalog-pinned repository commit [`f85003d3ce0de3844e2d5c23174d630ff3586e5d`](https://github.com/Realtyxxx/hermes-plugin-antigravity-agy/tree/f85003d3ce0de3844e2d5c23174d630ff3586e5d). Catalog manifest SHA-256 `e300851666b7180e13b1fcd3bcd172d1f68024c3191c610073705a807f4ca15c`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `plugin.yaml` | `a5d6afa5e9ff379912175f645d998e0a4f1d665f938a1939c97341af9109cf31` | Declares a model-provider with no environment credentials, but requires the separately installed `agy` CLI; explicitly limits the plugin to Linux and macOS. |
+| `__init__.py` | `ca097a1b322a32731d6868a76150b901dbc082a17b223236f7085b00dbb42ed3` | Registers an external-process provider at `process://antigravity-agy`, uses the signed-in CLI's model picker and fallback catalog, and does not advertise a health check. |
+| `transport.py` | `39ed07fedf766a99a438fa1ff9dca2ea76cc0e70df15e6db5c2e2ec73d8668e6` | Creates a private per-request agent workspace, disables the CLI agent's default components and inherited MCP, passes only a tool inventory, streams results, and terminates the process when relaying one Hermes tool call back for Hermes execution. It errors on a non-Hermes tool step. Text-only input is supported. Optional raw NDJSON tracing contains conversation data. |
+| `inert_mcp.py` | `76ab52088402988c9ef79dd8a958e467b7ad35b584ecc5483a292f9fc7f02aa6` | Advertises the supplied Hermes tool manifest and records calls without executing or answering them. |
+| `agy_setup.py` | `105750528c35ccb9eb77f9a58ca427e7df546d77993ae3d144a2ff2ee328348e` | Uses `agy -p=/quota` and `agy models` in a neutral temporary working directory for status and model discovery; authentication remains inside the CLI. |
+| `model_catalog.py` | `04f7e16219d458b72d1bbd4146c3563762f920c76e5fcaf1ae81dc36b36ebfe3` | Provides model aliases and fallback metadata, declares context lengths as estimates, and omits vision capability. |
+| `README.md` | `48124c325de129c752b25829d43ab36f6d9e675447790fd606dda7d77e1178e8` | Discloses Google subscription use, account terms, trace data, CLI-owned conversation records, prewarming processes, and limitations. Its default two prewarmed processes add memory overhead, reported upstream as about 416 MB per idle process. |
+| `LICENSE` | `a1ef5185c31b5e28a1d98e468ce3f7e32a8f61cf1f768f183c6d1a989cde7d47` | MIT license for this candidate source. |
+
+This candidate remains planned for Phase 9 and is not Windows-compatible according to its manifest. The CLI uses the account already signed into `agy`, and receives conversation content. X.A.A. would need explicit external-process and account consent, process lifecycle/isolation, data-retention disclosure and acceptance covering tool-call relay and cancellation before considering a port. No CLI, plugin, account, key, quota probe or inference was used.
+
 ## BharatCode provider
 
 Reviewed 2026-11-15 at catalog-pinned commit [`f4cc1d1f2977963173b23b9ac6a19c3ca8851050`](https://github.com/BharatCodeAI/hermes-bharatcode/tree/f4cc1d1f2977963173b23b9ac6a19c3ca8851050), subdirectory `model-providers/bharatcode`. Catalog manifest `plugin-catalog/bharatcode.yaml`, SHA-256 `e578557a9a3532a1a00aad0bbaed848b2fdc749f597237b308859540a27364b7`.
@@ -369,6 +386,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. These reviews classify twenty-three of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 67 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. These reviews classify twenty-four of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, Antigravity agy, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 66 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.

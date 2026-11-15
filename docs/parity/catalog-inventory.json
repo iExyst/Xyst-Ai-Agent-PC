@@ -830,7 +830,7 @@
       "subdirectory": "",
       "version": "0.1.0",
       "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider via external agy CLI; pinned source review at commit f85003d3ce0de3844e2d5c23174d630ff3586e5d; see model-provider-source-audit.md#antigravity-agy",
       "status": "planned",
       "phase": 9
     },
