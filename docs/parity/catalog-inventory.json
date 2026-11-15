@@ -2600,7 +2600,7 @@
       "subdirectory": "",
       "version": "0.1.2",
       "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "external-process Cursor subscription model provider via agent ACP; pinned source review at commit d5b6146c4e6dcfca110fbcf736d8b51823bc8e64; see model-provider-source-audit.md#cursor-acp",
       "status": "planned",
       "phase": 9
     },

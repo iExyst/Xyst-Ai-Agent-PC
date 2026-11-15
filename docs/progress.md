@@ -1,5 +1,9 @@
 # Progress
 
+## Review Cursor ACP provider (2026-11-15)
+
+Reviewed the pinned external-process provider and installer. It starts the signed-in Cursor CLI `agent acp`, sends conversation content and Hermes tool schemas to Cursor, translates returned tool-call blocks back through Hermes, and reports no token usage. Its manifest supports only Linux/macOS, not X.A.A.'s Windows-first target; the catalog says 0.1.2 while its plugin manifest says 0.1.0. The deny policy is the claimed fence for Cursor-native tools, but it omits Edit/Grep/Glob/todo despite the prompt saying those tools are unavailable; the live fence test probes Read only. The environment can override the CLI and workspace path, which is also modified with `.cursor/cli.json`. Forty of 90 model-category entries are now reviewed across 39 source trees; 50 remain pending. No CLI, account, package install, or model was run.
+
 ## Review Codex Truly subscription utility (2026-11-15)
 
 Classified the pinned extension as a Codex-subscription context-window config tool, live quota probe, and image-generation controller rather than a general provider adapter. It makes credentialed calls through Hermes to `chatgpt.com`, never reads the token itself, and declares `requires_auth: openai-codex`; `apply`/`revert` write scoped config, while `probe` submits accepted high-token requests billed against the subscription. Its tool description says to probe only when asked, but the action is still exposed directly to the agent without code-enforced user confirmation. The manifest requires Hermes >=0.21.7 while README says >=0.21.5. The upstream suite includes credential and live-backend paths; none were run. Thirty-nine of 90 model-category entries are now reviewed across 38 distinct source trees; 51 remain pending. No Codex session, image generation, probe, credential or inference call was used.
