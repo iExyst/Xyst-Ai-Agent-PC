@@ -42,6 +42,8 @@ def main() -> None:
             "sandbox_profile.py",
             "execution_receipts.py",
             "cgroup_gate.py",
+            "procedure_environment_manager.py",
+            "node_environment_manager.py",
         )
     ]
     paths = [
@@ -56,7 +58,7 @@ def main() -> None:
         .strip()
         for path in modules
     ]
-    invocation = [*prefix, "/usr/bin/python3", "-I", *paths[:4]]
+    invocation = [*prefix, "/usr/bin/python3", "-I", *paths]
     results: dict[str, Any] = {}
     receipt_code = """
 import json,pathlib,runpy,sys,tempfile
@@ -136,6 +138,26 @@ print(json.dumps(checks))
             "snapshot_b64": base64.b64encode(snapshot.to_bytes()).decode("ascii"),
         }
 
+    def decode_frames(raw: bytes, label: str) -> tuple[dict[str, Any], dict[str, bytearray]]:
+        frames = [json.loads(line) for line in raw.splitlines() if line]
+        streamed = {"stdout": bytearray(), "stderr": bytearray()}
+        results_frame: list[dict[str, Any]] = []
+        for frame in frames:
+            if frame.get("type") == "output" and frame.get("stream") in streamed:
+                chunk = base64.b64decode(frame["chunk_b64"], validate=True)
+                streamed[frame["stream"]].extend(chunk)
+            elif frame.get("type") == "result" and isinstance(frame.get("result"), dict):
+                results_frame.append(frame["result"])
+            else:
+                raise RuntimeError(
+                    f"Manager sent an invalid protocol frame for {label}; inspect {root}"
+                )
+        if len(results_frame) != 1:
+            raise RuntimeError(
+                f"Manager omitted its unique result frame for {label}; inspect {root}"
+            )
+        return results_frame[0], streamed
+
     def execute(label: str, payload: dict[str, Any]) -> dict[str, Any]:
         (root / f"{label}.request.json").write_text(
             json.dumps(
@@ -154,10 +176,14 @@ print(json.dumps(checks))
         (root / f"{label}.manager-stderr.log").write_bytes(response.stderr)
         if response.returncode != 0:
             raise RuntimeError(f"Manager failed for {label}; inspect {root}")
-        result = json.loads(response.stdout)
+        result, streamed = decode_frames(response.stdout, label)
         assert result["cleanup_confirmed"]
         for stream in ("stdout", "stderr"):
             data = base64.b64decode(result.pop(stream + "_b64"), validate=True)
+            if data != bytes(streamed[stream]):
+                raise RuntimeError(
+                    f"Streamed {stream} differs from the durable result for {label}."
+                )
             (root / f"{label}.{stream}.log").write_bytes(data)
             result[stream + "_bytes"] = len(data)
             result[stream + "_sha256"] = hashlib.sha256(data).hexdigest()
@@ -340,7 +366,11 @@ finally:
         assert json.loads(cleanup.stdout)["unit_stopped"]
         process.wait(timeout=10)
         assert process.stdout is not None and process.stderr is not None
-        cancelled = json.loads(process.stdout.read())
+        cancelled, streamed = decode_frames(process.stdout.read(), "cancel")
+        for stream in ("stdout", "stderr"):
+            assert bytes(streamed[stream]) == base64.b64decode(
+                cancelled[stream + "_b64"], validate=True
+            )
         (root / "cancel.result.json").write_text(json.dumps(cancelled, indent=2), encoding="utf-8")
         (root / "cancel.manager-stderr.log").write_bytes(process.stderr.read())
         assert (
@@ -460,7 +490,14 @@ finally:
             assert child.returncode is not None
             codes.append(child.returncode)
             if child.returncode == 0:
-                assert json.loads(out)["succeeded"]
+                concurrent_result, concurrent_streams = decode_frames(out, f"concurrent-{index}")
+                assert concurrent_result["succeeded"]
+                assert concurrent_streams["stdout"] == base64.b64decode(
+                    concurrent_result["stdout_b64"], validate=True
+                )
+                assert concurrent_streams["stderr"] == base64.b64decode(
+                    concurrent_result["stderr_b64"], validate=True
+                )
             else:
                 assert b"identity was already used" in err or b"identity is closed" in err
         assert codes.count(0) == 1

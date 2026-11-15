@@ -1,16 +1,22 @@
 # Progress
 
+## Refresh the WSL executor acceptance for current manager IPC (2026-11-15)
+
+The real Ubuntu-24.04 executor diagnostic had fallen behind the manager interface: it passed only the older five-resource launch and decoded a single JSON object, while the current manager needs seven resources and emits bounded output/result frames. Updated the diagnostic to use the complete resource list and verify streamed stdout/stderr byte-for-byte against the final receipt, including cancellation and concurrent launch cases. The live WSL acceptance now passes: fixture repair and validation, unchanged source project, 32 MiB workspace/scratch refusal, 128 MiB memory OOM, 1 MiB output flood stop, one-second timeout, task limit, network/syscall denials, cancellation, replay and prelaunch-stop refusal, one-winner concurrent claim, and manager-crash reconciliation with cleanup. Evidence: [`report.json`](../.acceptance/8e28cee7-86d1-4395-9c84-0ce75f8ff2c4/report.json). The acceptance's patch actor is a deterministic diagnostic, not a model. Ruff, formatting, and strict Pyright pass for the updated script. The WSL backend remains partial pending broad release/backend parity; no model inference was used.
+
 ## Reconcile the installed MCP/OAuth acceptance result (2026-11-15)
 
 The parity matrix still described the installed-stage MCP/OAuth fixture failure from run [43617618493](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43617618493) as awaiting retry. The later installed Windows acceptance [43712084557](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43712084557) passed that flow using manifest-verified app binaries; its retained report confirms OAuth PKCE, vault persistence and clearing, Windows process limits, and loopback denial for an isolated fixture. Corrected the matrix so it records the later passing evidence and keeps the hosted package status accurate.
 
 ## Verify Windows AppContainer command storage enforcement (2026-11-15)
 
-Added real Windows integration acceptances that exceed the AppContainer's 32 MiB workspace ceiling and its 288 MiB combined private-staging ceiling (32 MiB workspace plus a 256 MiB runtime budget). Both overflow probes confirm the transport stops the command and removes its private staging directories. The complete `tests/integration/test_windows_local_command_transport.py` file passes on this Windows host (10 passed, including output, memory, CPU, active-process, workspace-storage, and combined-staging controls). This directly verifies the AppContainer storage-control slice; hosted verification for the added probes is pending, and the shared execution-backend release requirements remain partial. No model inference was run.
+Added real Windows integration acceptances that exceed the AppContainer's 32 MiB workspace ceiling and its 288 MiB combined private-staging ceiling (32 MiB workspace plus a 256 MiB runtime budget). Both overflow probes confirm the transport stops the command and removes its private staging directories. The complete `tests/integration/test_windows_local_command_transport.py` file passes on this Windows host (10 passed, including output, memory, CPU, active-process, workspace-storage, and combined-staging controls). Hosted Windows source run [43717110122](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43717110122) passed on commit `11428617f5c204d18d0d58c39ec4b50829408531`, including the full Python suite and this integration file; its installer job was skipped by the feature-branch condition. This directly verifies the AppContainer storage-control slice, while shared execution-backend release requirements remain partial. No model inference was run.
 
 ## Refine the desktop dark workspace UI (2026-11-15)
 
 Refined the persistent dark desktop shell with consistent line icons for each navigation destination, clearer active-section emphasis, softer depth and hover states, and a restrained mint accent around the objective composer. Kept the existing onboarding, connection, navigation, and run flows unchanged. The production desktop build passed TypeScript checking and Vite bundling; a rendered 1440×1000 view was visually inspected. This is a presentation improvement, not completion of the fresh-user real-model Phase 6 gate or broad Hermes desktop parity. No model inference was run.
+
+Follow-up visual polish adds a low-contrast workspace grid and ambient graphite lighting, sharper active-navigation treatment, and stronger connection-panel focus feedback. Reduced-motion preferences are respected. The production desktop build passes with the updated theme.
 
 ## Verify dark-navigation update in hosted source workflow (2026-11-15)
 

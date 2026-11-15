@@ -618,6 +618,27 @@ body{
    keyboard focus, and motion preferences follow the same visual system. */
 :root{color-scheme:dark}
 body{scrollbar-color:#35483a #101612}
+
+/* Add a little depth to the graphite workspace without competing with task
+   content. The faint grid helps the landing screen feel like a real desktop
+   workspace, while the masked edges keep it quiet behind dense settings pages. */
+body{position:relative;background-color:#0b1014;background-image:radial-gradient(ellipse at 72% 4%,#1835264a 0,transparent 35%),radial-gradient(ellipse at 12% 60%,#17243335 0,transparent 42%)}
+body:before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(#a8d5b308 1px,transparent 1px),linear-gradient(90deg,#a8d5b308 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,#000 0%,transparent 85%);opacity:.38}
+.app-shell{position:relative;z-index:1;background:transparent}
+.app-sidebar{background:linear-gradient(180deg,#111820f7,#0e141bf7);backdrop-filter:blur(18px)}
+.app-topbar{background:#111820e8;backdrop-filter:blur(18px)}
+.side-nav a{position:relative;overflow:hidden}
+.side-nav a.active{box-shadow:inset 0 1px #ffffff0a,0 5px 18px #0002}
+.side-nav a.active:after{content:"";position:absolute;left:0;top:9px;bottom:9px;width:2px;border-radius:0 3px 3px 0;background:#83e0b1;box-shadow:0 0 12px #83e0b180}
+.app-content>.engine-connect-card{border-color:#3b5945;background:radial-gradient(ellipse at 8% 5%,#31583a73 0,transparent 40%),radial-gradient(ellipse at 95% 95%,#1c4a3447 0,transparent 45%),linear-gradient(140deg,#17221b 0%,#121a15 62%,#101713 100%);box-shadow:0 34px 100px #0006,inset 0 1px #ffffff0c}
+.engine-connect-panel{box-shadow:0 18px 48px #0004,inset 0 1px #ffffff0b;transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}
+.engine-connect-panel:focus-within{border-color:#54795c;box-shadow:0 18px 48px #0004,0 0 0 3px #83e0b112,inset 0 1px #ffffff0b}
+.engine-connect-submit button:not(:disabled){box-shadow:0 6px 20px #7ce3aa20}
+.engine-connect-footer{transition:background .18s ease,border-color .18s ease}
+.engine-connect-footer:hover{background:#142019e8;border-color:#39533f}
+.app-content>section,.app-content>div>section{box-shadow:0 12px 30px #00025,inset 0 1px #ffffff04}
+::selection{color:#0d1b13;background:#9ce8c4}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 .app-content select option{background:#141b17;color:#edf4ef}
 .app-content input[type=file]::file-selector-button{
   margin-right:12px;padding:8px 11px;border:1px solid #405447;border-radius:7px;
