@@ -80,24 +80,28 @@ async function expectCompleteKeyboardTabOrder(page:Page){
     document.body.focus();
   });
   const actual:string[]=[];
+  const focusIndicatorFailures:string[]=[];
   let first:string|undefined;
   let wrapped=false;
   for(let index=0;index<100;index+=1){
     await page.keyboard.press('Tab');
     const focused=await page.evaluate(()=>{
       const element=document.activeElement;
-      if(!(element instanceof HTMLElement))return 'no-focus-target';
-      if(element===document.body)return 'audit-start-anchor';
+      if(!(element instanceof HTMLElement))return {id:'no-focus-target',visibleIndicator:false};
+      if(element===document.body)return {id:'audit-start-anchor',visibleIndicator:true};
       if(!element.dataset.keyboardFocusAudit){
         const label=element.getAttribute('aria-label')||element.textContent?.trim().replace(/\s+/g,' ').slice(0,28)||'';
         element.dataset.keyboardFocusAudit=`keyboard-focus-late-${element.tagName.toLowerCase()}-${label}`;
       }
-      return element.dataset.keyboardFocusAudit;
+      const style=getComputedStyle(element);
+      const outline=style.outlineStyle!=='none'&&parseFloat(style.outlineWidth)>=3;
+      return {id:element.dataset.keyboardFocusAudit,visibleIndicator:outline||style.boxShadow!=='none'};
     });
-    if(focused==='audit-start-anchor')continue;
-    if(first===undefined)first=focused;
-    else if(focused===first){wrapped=true;break;}
-    actual.push(focused);
+    if(focused.id==='audit-start-anchor')continue;
+    if(first===undefined)first=focused.id;
+    else if(focused.id===first){wrapped=true;break;}
+    if(!focused.visibleIndicator)focusIndicatorFailures.push(focused.id);
+    actual.push(focused.id);
   }
   expect(wrapped).toBe(true);
   const expected=await page.evaluate(()=>{
@@ -115,6 +119,7 @@ async function expectCompleteKeyboardTabOrder(page:Page){
   });
   expect(new Set(actual).size).toBe(actual.length);
   expect([...actual].sort()).toEqual([...expected].sort());
+  expect(focusIndicatorFailures).toEqual([]);
   await page.evaluate(()=>{
     document.body.removeAttribute('tabindex');
     document.querySelectorAll('[data-keyboard-focus-audit]').forEach(element=>delete (element as HTMLElement).dataset.keyboardFocusAudit);
