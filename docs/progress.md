@@ -1,5 +1,9 @@
 # Progress
 
+## Verify Windows AppContainer command storage enforcement (2026-11-15)
+
+Added real Windows integration acceptances that exceed the AppContainer's 32 MiB workspace ceiling and its 288 MiB combined private-staging ceiling (32 MiB workspace plus a 256 MiB runtime budget). Both overflow probes confirm the transport stops the command and removes its private staging directories. The complete `tests/integration/test_windows_local_command_transport.py` file passes on this Windows host (10 passed, including output, memory, CPU, active-process, workspace-storage, and combined-staging controls). This directly verifies the AppContainer storage-control slice; hosted verification for the added probes is pending, and the shared execution-backend release requirements remain partial. No model inference was run.
+
 ## Refine the desktop dark workspace UI (2026-11-15)
 
 Refined the persistent dark desktop shell with consistent line icons for each navigation destination, clearer active-section emphasis, softer depth and hover states, and a restrained mint accent around the objective composer. Kept the existing onboarding, connection, navigation, and run flows unchanged. The production desktop build passed TypeScript checking and Vite bundling; a rendered 1440×1000 view was visually inspected. This is a presentation improvement, not completion of the fresh-user real-model Phase 6 gate or broad Hermes desktop parity. No model inference was run.

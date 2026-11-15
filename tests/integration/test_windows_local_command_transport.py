@@ -21,8 +21,12 @@ from xaa.runtime.execution_readiness import (
 )
 from xaa.runtime.mcp_appcontainer import process_identity
 from xaa.runtime.windows_local_transport import (
+    MAX_PRIVATE_COMMAND_BYTES,
+    MAX_PRIVATE_RUNTIME_BYTES,
+    MAX_PRIVATE_WORKSPACE_BYTES,
     WINDOWS_LOCAL_DISTRIBUTION,
     WindowsLocalTransport,
+    _private_root,
     profile_fingerprint,
 )
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
@@ -230,6 +234,75 @@ async def test_local_command_output_limit_stops_owned_process_tree(
         await asyncio.sleep(0.05)
     assert process_identity(child_pid)[0] is False
     assert intent.execution_id not in transport._active
+
+
+@pytest.mark.asyncio
+async def test_local_command_enforces_private_workspace_storage_limit(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"storage limit fixture"),), (), ())
+    program = (
+        "import time\n"
+        "chunk=b'x'*(1024*1024)\n"
+        "with open('workspace-growth.bin','wb') as output:\n"
+        " for _ in range(48):\n"
+        "  output.write(chunk);output.flush();time.sleep(.02)\n"
+        "time.sleep(60)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program],
+        max_seconds=20,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    staging_root = _private_root()
+
+    with pytest.raises(ValueError, match="Windows command private storage exceeded its size limit"):
+        await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
+
+    assert intent.execution_id not in transport._active
+    assert MAX_PRIVATE_WORKSPACE_BYTES == 32 * 1024 * 1024
+    assert not list(staging_root.glob(f"{intent.execution_id}-*"))
+
+
+@pytest.mark.asyncio
+async def test_local_command_enforces_combined_private_staging_storage_limit(
+    workspace_tmp_path: Path,
+) -> None:
+    transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
+    snapshot = WorkspaceSnapshot((SnapshotFile("fixture.txt", b"runtime storage fixture"),), (), ())
+    program = (
+        "import os,tempfile,time\n"
+        "chunk=b'x'*(1024*1024)\n"
+        "target=os.path.join(tempfile.gettempdir(),'runtime-growth.bin')\n"
+        "with open(target,'wb') as output:\n"
+        " for _ in range(288):\n"
+        "  output.write(chunk);output.flush();time.sleep(.02)\n"
+        "time.sleep(60)\n"
+    )
+    intent = CommandIntent(
+        argv=[sys.executable, "-I", "-c", program],
+        max_seconds=20,
+        execution_id=uuid4().hex,
+        backend="windows-appcontainer-v1",
+        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+        profile_sha256=profile_fingerprint(),
+        workspace=str(workspace_tmp_path),
+    )
+    staging_root = _private_root()
+
+    with pytest.raises(ValueError, match="Windows command private storage exceeded its size limit"):
+        await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
+
+    assert intent.execution_id not in transport._active
+    assert MAX_PRIVATE_RUNTIME_BYTES == 256 * 1024 * 1024
+    assert MAX_PRIVATE_COMMAND_BYTES == MAX_PRIVATE_WORKSPACE_BYTES + MAX_PRIVATE_RUNTIME_BYTES
+    assert MAX_PRIVATE_COMMAND_BYTES == 288 * 1024 * 1024
+    assert not list(staging_root.glob(f"{intent.execution_id}-*"))
 
 
 @pytest.mark.asyncio
