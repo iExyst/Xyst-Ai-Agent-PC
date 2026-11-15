@@ -263,6 +263,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit 8ba20ad970f68d6adecc958da8992034e89f3481; "
         "see model-provider-source-audit.md#model-picker-model-routing-middleware"
     ),
+    "model-router": (
+        "profile-scoped agent orchestration with configured Heavy/Light model roles; "
+        "pinned source review at commit e207667489ac8a796d53f875126d6ee227201112; "
+        "see model-provider-source-audit.md#model-router-agent-orchestration"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
@@ -398,7 +403,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; forty-four selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; forty-five selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

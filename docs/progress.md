@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Model Router orchestration plugin (2026-11-15)
+
+Reviewed `model-router` at catalog-pinned commit `e207667489ac8a796d53f875126d6ee227201112`. It launches normal Hermes child jobs under the selected profile's tool policy and stores prompts/results in local plugin data; it is not a sandbox or provider adapter. Heavy/Light labels permit the same model, and requested route flags do not prove actual model identity. The prompt schema has no maximum length, and a per-job timeout of zero disables this plugin's total limit. Sixty-two of 90 model-category rows are reviewed across 61 source trees; 28 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No profile, plugin, or model was run; live LLM tests remain deferred.
+
 ## Review pinned Model Picker middleware (2026-11-15)
 
 Reviewed `model-picker` at catalog-pinned commit `8ba20ad970f68d6adecc958da8992034e89f3481`. It sends recent conversation context to the configured classifier on each unpinned turn, logs a 120-character prompt excerpt locally, and fails open to the cheapest tier; that routing choice cannot replace X.A.A.'s permission checks. The configured timeout and per-message history size do not have hard upper bounds. Sixty-one of 90 model-category rows are reviewed across 60 source trees; 29 remain pending. Findings and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin or model was run; live LLM testing remains deferred.
