@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Hermes Model Switcher (2026-11-15)
+
+Reviewed `hermes-model-switcher` at catalog-pinned commit `d62530d906307154e16ed98bb9b4be10ea6fef56`. It is a Dashboard model-route configuration manager, not an inference provider: it reads host model catalogs and edits selected route slots through explicit previews, profile scoping, durable journals, readback, and guarded undo. Its journal snapshots complete pre-change configs and can therefore contain credentials; private POSIX modes are enforced, but native Windows ACL behavior remains unverified. Hermes' public config writer also cannot rule out every concurrent same-key edit. Forty-six of 90 model-category entries are reviewed across 45 source trees; 44 remain pending. No plugin was installed/imported/executed and no provider, account, or model service was contacted.
+
 ## Review pinned KAME rotation/provider pair (2026-11-15)
 
 Reviewed `hermes-kame-api-rotation` at commit `e8c01131c3ef771173fc40b54f6608b36f2afc42` and `hermes-kame-provider` at `5e4a12f249f679ae5dcbf0d22e4ffbfeba4e5e2b`. The companion re-registers eligible Hermes API-key provider profiles and delegates client creation to the rotation plugin while retaining the configured provider endpoints. KAME defaults to adaptive hedging and permits quota-probe races that can create additional billable requests; the configured request budget is not a hard money cap. Chat total wait defaults to unbounded. Key-import commands keep five plaintext `auth.json` backups; code opens a backup as `0600` then copies the source metadata, so wider source permissions may carry over, and Windows ACLs were not verified. Forty-five of 90 model-category catalog entries are reviewed across 44 source trees; 45 remain pending. No plugin was installed/imported/executed; no account, key, endpoint, or inference was used.
