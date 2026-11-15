@@ -1,5 +1,9 @@
 # Progress
 
+## Make live system-monitor updates screen-reader friendly (2026-11-14)
+
+The monitor samples hardware every 2.5 seconds. Its “Updated…” text was marked as a live status, which could repeatedly interrupt screen-reader users during passive polling. Automatic samples are now silent; selecting “Refresh now” produces one polite completion announcement. The focused Playwright flow passes (1), and `npm run build:desktop` passes TypeScript and Vite production compilation. A native Tauri Windows build also compiled and is staged with the bundled engine at [`build/native-monitor-a11y-20261114`](../build/native-monitor-a11y-20261114/); hashes are in its manifest. This checks one changing desktop status path and does not claim a full screen-reader audit. No model inference was used.
+
 ## Rebuild and accept the refreshed Windows installer (2026-11-14)
 
 Manual installer workflow [43664182503, attempt 2](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43664182503) passed all 47 Windows installer job steps on source commit `354ec1c00d78908bb843688ef7f034a5591d8c2e`. It rebuilt version 0.1.1 and passed frozen AppContainer readiness/execution, native restart and specialist recovery, task-scoped worker checks, upgrade from the published 0.1.0 baseline, installed boot, standard-user install, uninstall, and explicit application-data removal. Attempt 1 hit a transient `backend_probe_failed` during hosted AppContainer readiness; the same source passed on retry. The tested unsigned installer is saved under `build/installer-acceptance-43664182503/build/installer/`; its SHA-256 is `05d4f601d593e9749019716223e827d8c4526a7a69f9e8260c94e54220cce8f0`. The desktop and engine hashes are in that build's manifest. This covers hosted clean-VM packaging lifecycle, not real-model onboarding or broader Hermes parity. No model inference was used.

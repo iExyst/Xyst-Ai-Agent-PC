@@ -24,9 +24,14 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
   const [snapshot,setSnapshot]=useState<SystemResourceSnapshot>();
   const [error,setError]=useState('');
   const [refreshing,setRefreshing]=useState(false);
-  const refresh=useCallback(async()=>{
+  const [refreshNotice,setRefreshNotice]=useState('');
+  const refresh=useCallback(async(announce=false)=>{
     setRefreshing(true);
-    try{setSnapshot(await client.systemResources());setError('');}
+    try{
+      const next=await client.systemResources();
+      setSnapshot(next);setError('');
+      setRefreshNotice(announce?`System monitor updated ${new Date(next.sampled_at).toLocaleTimeString()}.`:'');
+    }
     catch(failure){setError(String(failure));}
     finally{setRefreshing(false);}
   },[client]);
@@ -40,7 +45,7 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
   const diskPercent=snapshot&&snapshot.disk_total_bytes!==null&&snapshot.disk_free_bytes!==null&&snapshot.disk_total_bytes>0
     ?Math.round((snapshot.disk_total_bytes-snapshot.disk_free_bytes)*100/snapshot.disk_total_bytes*10)/10:null;
   return <div className="system-monitor">
-    <section className="system-monitor-intro"><div><p className="eyebrow">LOCAL HARDWARE</p><h2>System monitor</h2><p>Live host capacity and local inference queue estimates. Measurements stay on this computer.</p></div><button type="button" className="secondary-button" onClick={()=>void refresh()} disabled={refreshing}>{refreshing?'Refreshing…':'Refresh now'}</button></section>
+    <section className="system-monitor-intro"><div><p className="eyebrow">LOCAL HARDWARE</p><h2>System monitor</h2><p>Live host capacity and local inference queue estimates. Measurements stay on this computer.</p></div><button type="button" className="secondary-button" onClick={()=>void refresh(true)} disabled={refreshing}>{refreshing?'Refreshing…':'Refresh now'}</button></section>
     {snapshot&&<>
       <div className="system-resource-grid">
         <ResourceCard title="Processor" value={snapshot.cpu_percent===null?'Measuring…':`${snapshot.cpu_percent.toFixed(1)}%`} detail={`${snapshot.logical_processors} logical processors`} percent={snapshot.cpu_percent}/>
@@ -50,7 +55,7 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
         <section className="system-resource-card" aria-label="Inference queue"><div className="system-resource-heading"><h2>Inference queue</h2><strong>{snapshot.queue_active?'Working':'Idle'}</strong></div><p>{snapshot.queue_waiting} waiting · {snapshot.queue_reserved_tokens.toLocaleString()} estimated tokens reserved</p><p>Capacity: {snapshot.queue_max_pending} waiting requests · {snapshot.queue_max_reserved_tokens.toLocaleString()} estimated tokens</p></section>
       </div>
       <p className="system-monitor-note">GPU readings are reported when NVIDIA driver telemetry is available. A missing GPU card means that telemetry isn’t available; it does not mean this computer has no accelerator. Queue tokens are payload estimates and do not predict model VRAM requirements.</p>
-      <p className="system-monitor-updated" role="status">Updated {new Date(snapshot.sampled_at).toLocaleTimeString()}</p>
+      {refreshNotice&&<p className="system-monitor-updated" role="status">{refreshNotice}</p>}
     </>}
     {!snapshot&&!error&&<p role="status">Waiting for the first resource sample…</p>}
     {error&&<p role="alert">Could not read local resource information: {error}</p>}
