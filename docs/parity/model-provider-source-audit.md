@@ -216,6 +216,32 @@ Reviewed 2026-11-15 at the catalog-pinned repository commit [`3fa82ed3b8fc2aa52e
 
 The candidate remains planned for Phase 9 and is not implemented. Its single model, regional endpoint choices, declared million-token context, remote account key, and documented long time-to-first-token behavior all need explicit validation in X.A.A. Capability declarations and streaming timeout handling must be checked against the selected plan before live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or model request was used.
 
+## Fortytwo provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`91c8f521ab357530c91a9660bd8f2db37571c1c8`](https://github.com/Fortytwo-Network/fortytwo-hermes/tree/91c8f521ab357530c91a9660bd8f2db37571c1c8). The Hermes catalog manifest is `plugin-catalog/fortytwo-provider.yaml`, SHA-256 `0421114592af7dc84fb3b1f75fd75dab2caa5133acd2c054761c37df2638ab77`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/Fortytwo-Network/fortytwo-hermes/blob/91c8f521ab357530c91a9660bd8f2db37571c1c8/plugin.yaml) | `6490c7a51b6471017d0b8aeb1dde934d631e183204165980d4956bf5c2aa450a` | Declares model-provider version 1.0.0, Hermes `>=0.22.5`, and `FORTYTWO_API_KEY`. |
+| [`__init__.py`](https://github.com/Fortytwo-Network/fortytwo-hermes/blob/91c8f521ab357530c91a9660bd8f2db37571c1c8/__init__.py) | `f007748ec8df832eb6237d42fff4fadb63cd8b37ff695b89f7c280a2d6e4b50d` | Registers a single OpenAI-compatible model at `https://api.fortytwo.network/v1`; declares streaming, tool, vision, reasoning and 262,144-token context support, and maps reasoning effort to the provider's four accepted values. Adds `HTTP-Referer` and `X-Title` attribution headers. |
+| [`README.md`](https://github.com/Fortytwo-Network/fortytwo-hermes/blob/91c8f521ab357530c91a9660bd8f2db37571c1c8/README.md) | `6c0dda41e562bac8622e0a987a0504ba6a672b24b834b95b5b22aebbe34fb62f` | Discloses that prompts, images and tool results go to the remote API with the configured key. It declares no separate telemetry endpoint, while backend attribution reporting remains unresolved upstream. |
+| [`LICENSE`](https://github.com/Fortytwo-Network/fortytwo-hermes/blob/91c8f521ab357530c91a9660bd8f2db37571c1c8/LICENSE) | `7c4271aa74d663f6af3923cd28d767b518a7657e4ba5e6132de956a8821ce175` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It is a remote, single-model route with declared vision and reasoning capabilities and attribution headers. X.A.A. would need explicit cloud/data consent, protected credentials, capability validation, model-specific reasoning support, and clear handling of request attribution before final live acceptance after the requested LLM-testing deferral. No plugin, key, account, or inference endpoint was used.
+
+## Requesty managed gateway provider
+
+Reviewed 2026-11-15 at the catalog-pinned repository commit [`aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d`](https://github.com/requestyai/hermes-provider-requesty/tree/aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d), subdirectory `requesty`. The Hermes catalog manifest is `plugin-catalog/requesty.yaml`, SHA-256 `353e6754d2a012ace10623cbf72990faa515bcba43e886cb5ab115242bcbf009`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/requestyai/hermes-provider-requesty/blob/aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d/requesty/plugin.yaml) | `ab3841f1570ffd849dcf6aeaace3244a9d11443e6e16f4a1c0a67aa09b9a5124` | Declares model-provider version 0.1.0, Hermes `>=0.21.6`, and secret `REQUESTY_API_KEY`. |
+| [`__init__.py`](https://github.com/requestyai/hermes-provider-requesty/blob/aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d/requesty/__init__.py) | `bd4230ef412e35e404361c8854caba67d2fc549b99d88bd86cb03c50263dfa39` | Registers OpenAI-compatible Chat Completions through Requesty's managed gateway. It reads two public catalogs without credentials, caches policy/model metadata, warms the cache on a daemon thread, maps reasoning settings, adds the Hermes session ID as `requesty.trace_id`, and estimates cost from catalog pricing. It supports a base-URL override and declares vision. |
+| [`README.md`](https://github.com/requestyai/hermes-provider-requesty/blob/aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d/README.md) | `e00e84a0819789f9c61a07f80501b333780d767e2a34d2d2078e3e5f508ff1e1` | Discloses that prompts, tool calls, the API key and session trace ID go to the selected Requesty endpoint; catalog requests are public and unauthenticated. Managed routes may include regional routing and failover, according to the provider's service docs. |
+| [`LICENSE`](https://github.com/requestyai/hermes-provider-requesty/blob/aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d/LICENSE) | `34b714518901a68355338cbc77a32c0ff1a4c96489a78389c1a4759fbf6c6409` | MIT license for the candidate source. |
+
+The candidate remains planned for Phase 9 and is not implemented. It adds server-side managed routing/failover, catalog-based cost estimates, a background catalog-refresh thread, and deliberate session tracing, all against a remote gateway. X.A.A. would need explicit routing/region and session-data consent, protected credentials, cost estimates clearly separated from billed charges, bounded discovery and lifecycle, and deterministic routing fixtures before final live acceptance after the requested LLM-testing deferral. No plugin, key, account, catalog request, or inference request was used.
+
 ## Claude subscription provider
 
 Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-plugins` commit `83f0a896b3518c7131181838e340c9a80c79524d`, subdirectory `claude-subscription-directsdk`, version 0.3.4. The catalog manifest is `plugin-catalog/claude-subscription-directsdk.yaml` at the Hermes core pin.
@@ -274,6 +300,32 @@ Reviewed 2026-11-14 against the catalog-pinned `AhmetArif0/hermes-groq-provider`
 - The plugin declares no tools or local execution surface. Using it sends prompts and conversation content to a remote inference service, and use is subject to the owner's Groq account, limits, and charges. The README's rate-limit and plan recommendations are maintainer observations from 2026-09-29, not current X.A.A. guarantees.
 - The workflow source defines cross-platform unit and Hermes fake-provider integration jobs, but no workflow result was inspected. Its fixtures do not prove current live API/model compatibility.
 
+## BharatCode provider
+
+Reviewed 2026-11-15 at catalog-pinned commit [`f4cc1d1f2977963173b23b9ac6a19c3ca8851050`](https://github.com/BharatCodeAI/hermes-bharatcode/tree/f4cc1d1f2977963173b23b9ac6a19c3ca8851050), subdirectory `model-providers/bharatcode`. Catalog manifest `plugin-catalog/bharatcode.yaml`, SHA-256 `e578557a9a3532a1a00aad0bbaed848b2fdc749f597237b308859540a27364b7`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `plugin.yaml` | `75aa828ca2664a3728a72dd26e3e3c288b4e512ebbe0124f0b4ecd913d723d8c` | Declares a model-provider using `BHARATCODE_API_KEY`. |
+| `__init__.py` | `31faa5b7cce5e67f9b09492e92af37b70881d9637adf3bd6b61f7dfe0c7679f1` | Uses an OpenAI-compatible API at `https://bharatcode.ai/api/model/v1`, a live model catalog and two fallback models; the fallback metadata declares vision and a 32,768-token output limit. |
+| `README.md` | `046224ca5aedd3d1ed01cced6f16e717a6c440590e35b663395a9ea664e678aa` | Claims a student free tier for `.ac.in` and `.edu.in` addresses; eligibility and current offer were not verified. |
+| `LICENSE` | `abd61cb3ec385ae9689cbf69f062dbaa78145d3d148ddd8a920f9d693ca66ec8` | MIT license for this candidate source. |
+
+The candidate remains planned for Phase 9. Its API key, prompts and outputs would go to the remote BharatCode endpoint. No plugin code, account, key, catalog endpoint or inference was used.
+
+## Hashference provider
+
+Reviewed 2026-11-15 at catalog-pinned commit [`82700f5377a46f0e7bd482c907ed04090b6305be`](https://github.com/hashference/hashference-hermes-provider/tree/82700f5377a46f0e7bd482c907ed04090b6305be), subdirectory `hashference-provider`. Catalog manifest `plugin-catalog/hashference-provider.yaml`, SHA-256 `7c4a05a4ee92b78521bb3a3888df055122cd86a27cd547e4f51aae07d9b80bf4`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `plugin.yaml` | `8c9da0a7aa756f272f89a420bdecc03cfd6db12fa005bef3680e57925c2e7c52` | Declares a model-provider with a public model list; separate payment/MCP setup is not part of this provider plugin. |
+| `__init__.py` | `8ed252d777564896bdb5a6d8c4458932426a4fba8a002a9970f67d679f96a319` | Queries the public catalog with a ten-minute cache, filters models without tool support and contexts below the configured minimum, applies declared input/output limits, and retains curated fallback models at `https://hashference.com/v1`. |
+| `README.md` | `0deb980adddf5df6892ef4f5795fc322f158aada4e6dec221a0b629214968634` | Describes balance funding through mining, QUAI/Qi or staking and an optional separate CLI/MCP/payment flow; these are upstream claims and not provider-plugin behavior. |
+| `LICENSE` | `d50887bafcd4e92b13e160d7bea37b8b969ebace3cd882ddad4fb800ed745d93` | License file at the pinned source. |
+
+The candidate remains planned for Phase 9. No plugin code, account, payment flow, catalog request, key or inference was used.
+
 ## X.A.A. disposition and limits
 
 The catalog candidate remains `planned`, Phase 9. This review classifies three of the 90 model-category candidates (Abstract, Groq, and Claude); it does not establish that the rest are providers or evaluate their source. It does not add dynamic provider loading or a Groq adapter to X.A.A. The earlier provider-core audit records why arbitrary plugin imports remain deferred until a provider-code trust model and capability contract exist. Live provider and model testing remains deferred to the final LLM-testing phase as requested.
@@ -317,6 +369,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. These reviews classify nineteen of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Groq, GitHub Copilot, ngrok AI Gateway, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 71 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. These reviews classify twenty-three of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 67 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.

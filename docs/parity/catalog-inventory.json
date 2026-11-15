@@ -3707,7 +3707,7 @@
       "required_environment_names": [
         "FORTYTWO_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider; pinned source review at commit 91c8f521ab357530c91a9660bd8f2db37571c1c8; see model-provider-source-audit.md#fortytwo",
       "status": "planned",
       "phase": 9
     },
@@ -4400,7 +4400,7 @@
       "required_environment_names": [
         "HASHFERENCE_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider; pinned source review at commit 82700f5377a46f0e7bd482c907ed04090b6305be; see model-provider-source-audit.md#hashference",
       "status": "planned",
       "phase": 9
     },
@@ -11975,7 +11975,7 @@
       "required_environment_names": [
         "REQUESTY_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider; pinned source review at commit aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d; see model-provider-source-audit.md#requesty",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; twenty-one selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; twenty-five selected non-platform candidates have individual source reviews, while the rest remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."

@@ -440,7 +440,22 @@ function App() {
       <main id="main-content" className="app-content" tabIndex={-1}>
         {error&&<div className="app-alert" role="alert"><p>{error}</p></div>}
         {client&&page==='home'&&run?.state==='blocked'&&<section className="recovery-card" aria-labelledby="recovery-title"><div><p className="eyebrow">RECOVERY AVAILABLE</p><h2 id="recovery-title">A saved run needs your review</h2><p>This run is blocked and has not been resumed. Review its latest activity and any pending recovery steps before deciding what to do.</p></div><button type="button" onClick={()=>navigateTo('runs','active-run')}>Review saved run</button></section>}
-    {!client ? <section><h2>Connect to the engine</h2><p>Start the local engine, then enter its API token. The token stays in this window’s memory.</p><label>Engine token<input type="password" value={token} onChange={event => setToken(event.target.value)} /></label><button onClick={connect} disabled={busy || token.length < 32}>Connect</button></section> : <>
+    {!client ? <section className="engine-connect-card" aria-labelledby="engine-connect-title">
+      <div className="engine-connect-hero">
+        <span className="engine-connect-kicker"><span className="connection-dot"/> LOCAL RUNTIME</span>
+        <h2 id="engine-connect-title">Your workspace starts here.</h2>
+        <p>Connect this window to X.A.A.’s local engine to manage tasks, files, tools, and saved runs from one place.</p>
+        <div className="engine-connect-assurance"><span aria-hidden="true">⌂</span><span><strong>On-device by default</strong><small>Cloud providers are used only when you configure them.</small></span></div>
+      </div>
+      <div className="engine-connect-panel">
+        <div className="engine-connect-panel-heading"><div><span className="engine-connect-step">01 / CONNECTION</span><h3>Connect your engine</h3></div><span className="engine-connect-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3"/></svg></span></div>
+        <p>The local service listens on this device. Enter its API token to open your workspace.</p>
+        <label htmlFor="engine-token">Engine API token<input id="engine-token" type="password" autoComplete="off" spellCheck={false} value={token} onChange={event => setToken(event.target.value)} onKeyDown={event => {if(event.key==='Enter'&&!busy&&token.length>=32)void connect();}} aria-describedby="engine-token-note" /></label>
+        <div className="engine-connect-submit"><button onClick={connect} disabled={busy || token.length < 32}>{busy?'Connecting…':'Connect to X.A.A.'}</button><small id="engine-token-note">The token stays in this window’s memory and clears after connection.</small></div>
+      </div>
+      <div className="engine-connect-footer"><span className="engine-connect-footer-icon" aria-hidden="true">↗</span><p><strong>Next up: choose a model</strong><span>Once connected, open Model setup to select an LM Studio model and complete onboarding.</span></p><span className="engine-connect-footer-index">02</span>
+      </div>
+    </section> : <>
       {page==='models'&&<div id="model-setup" className="anchor-target"><ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/></div>}
       {page==='monitor'&&<div id="system-monitor" className="anchor-target"><SystemMonitorPanel client={client}/></div>}
       <div className="page-integrations" style={{display:page==='integrations'?'contents':'none'}}><div id="integrations" className="anchor-target"><section><details><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>

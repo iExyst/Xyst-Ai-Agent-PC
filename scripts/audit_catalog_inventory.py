@@ -93,6 +93,26 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "3fa82ed3b8fc2aa52e96afeabdfbe19fa6a043fc; "
         "see model-provider-source-audit.md#safe-ai-labs"
     ),
+    "fortytwo-provider": (
+        "model-provider; pinned source review at commit "
+        "91c8f521ab357530c91a9660bd8f2db37571c1c8; "
+        "see model-provider-source-audit.md#fortytwo"
+    ),
+    "requesty": (
+        "model-provider; pinned source review at commit "
+        "aa4e37d7f09dfc1e98b915d740d09e8b1b44c98d; "
+        "see model-provider-source-audit.md#requesty"
+    ),
+    "bharatcode": (
+        "model-provider; pinned source review at commit "
+        "f4cc1d1f2977963173b23b9ac6a19c3ca8851050; "
+        "see model-provider-source-audit.md#bharatcode"
+    ),
+    "hashference-provider": (
+        "model-provider; pinned source review at commit "
+        "82700f5377a46f0e7bd482c907ed04090b6305be; "
+        "see model-provider-source-audit.md#hashference"
+    ),
     "claude-subscription-directsdk": (
         "model-provider; pinned source review at commit "
         "83f0a896b3518c7131181838e340c9a80c79524d; see model-provider-source-audit.md"
@@ -183,7 +203,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; twenty-one selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; twenty-five selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

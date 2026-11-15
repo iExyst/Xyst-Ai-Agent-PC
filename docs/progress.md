@@ -1,5 +1,13 @@
 # Progress
 
+## Classify BharatCode and Hashference providers (2026-11-15)
+
+Reviewed the pinned BharatCode and Hashference provider sources, including catalog behavior, fallback metadata, credentials, and upstream claims about student access and balance funding. These are source-only findings; no plugin, account, payment flow, catalog request, key or inference was used. Twenty-three of 90 model-category candidates now have source reviews; 67 remain pending.
+
+## Classify Fortytwo and Requesty providers (2026-11-15)
+
+Reviewed both pinned providers. The audit records Fortytwo's single vision-capable model, reasoning mapping and attribution headers, plus Requesty's public managed/model catalogs, background cache refresh, session trace ID, managed routing and catalog-based cost estimate. Twenty-one of 90 model-category candidates now have source reviews; 69 remain pending. No plugin, key, account, catalog request, or inference endpoint was used.
+
 ## Classify Runcrate, RuAPI and Safe AI Labs providers (2026-11-15)
 
 Reviewed three catalog-pinned providers. The audit records Runcrate's disclosed third-party model routing for some free requests, RuAPI's separate Anthropic Messages and OpenAI-compatible provider profiles, and Safe AI Labs' region-specific single-model configuration and long first-token timeout caveat. Nineteen of 90 model-category candidates now have source reviews; 71 remain pending. No source code, account, key, catalog request or inference endpoint was used.
