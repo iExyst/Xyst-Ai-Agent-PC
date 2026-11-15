@@ -173,6 +173,16 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 06a53646587c33174a0fbfbb3713eca90bbb8586; "
         "see model-provider-source-audit.md#hermes-jev-routing"
     ),
+    "hermes-kame-api-rotation": (
+        "API-key rotation and rate-limit recovery plugin; pinned source review "
+        "at commit e8c01131c3ef771173fc40b54f6608b36f2afc42; "
+        "see model-provider-source-audit.md#hermes-kame-api-rotation"
+    ),
+    "hermes-kame-provider": (
+        "companion model-provider registration for KAME API rotation; pinned source review "
+        "at commit 5e4a12f249f679ae5dcbf0d22e4ffbfeba4e5e2b; "
+        "see model-provider-source-audit.md#hermes-kame-provider"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
@@ -308,7 +318,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; twenty-five selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; twenty-seven selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

@@ -1,5 +1,11 @@
 # Progress
 
+## Review pinned KAME rotation/provider pair (2026-11-15)
+
+Reviewed `hermes-kame-api-rotation` at commit `e8c01131c3ef771173fc40b54f6608b36f2afc42` and `hermes-kame-provider` at `5e4a12f249f679ae5dcbf0d22e4ffbfeba4e5e2b`. The companion re-registers eligible Hermes API-key provider profiles and delegates client creation to the rotation plugin while retaining the configured provider endpoints. KAME defaults to adaptive hedging and permits quota-probe races that can create additional billable requests; the configured request budget is not a hard money cap. Chat total wait defaults to unbounded. Key-import commands keep five plaintext `auth.json` backups; code opens a backup as `0600` then copies the source metadata, so wider source permissions may carry over, and Windows ACLs were not verified. Forty-five of 90 model-category catalog entries are reviewed across 44 source trees; 45 remain pending. No plugin was installed/imported/executed; no account, key, endpoint, or inference was used.
+
+The dark desktop theme is already present. The latest stylesheet pass also applies it to native select/file controls, strengthens keyboard focus, and honors reduced-motion preferences. The TypeScript check, production desktop build, and Tauri native development build pass; the native bundle was staged at `build/native-dev/xaa-desktop.exe`. The running desktop workspace was visually inspected.
+
 ## Review pinned Jev routing middleware (2026-11-15)
 
 Reviewed `hermes-jev-routing` at catalog-pinned commit `06a53646587c33174a0fbfbb3713eca90bbb8586`. When enabled with a configured routing JSON, it sends the current request, up to 4,000 characters of recent conversation, working-directory/model/context estimates, and spend snapshot to TypeSafe, including in default shadow mode. The custom endpoint is configurable; the source has a request timeout but no response-size cap or endpoint host allowlist. Actual model spend is only estimated from provider-reported cost or a manually supplied rate card; unknown models do not trigger a hard budget gate. It cannot list live model availability or quota, switch the already-bound provider request, or guarantee equal system-prompt priority. Forty-four of 90 model-category catalog entries are reviewed across 43 source trees; 46 remain pending. No plugin, account, API key, or inference request was used.
