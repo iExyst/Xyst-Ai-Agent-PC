@@ -27,15 +27,14 @@ SOURCE_SHA256 = "b" * 64
 def idna_wheel() -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
-        archive.writestr(
-            "idna-3.10.dist-info/METADATA",
-            "Metadata-Version: 2.3\nName: idna\nVersion: 3.10\n\n",
-        )
-        archive.writestr(
-            "idna-3.10.dist-info/WHEEL",
-            "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
-        )
-        archive.writestr("idna/__init__.py", "")
+        entries = {
+            "idna-3.10.dist-info/METADATA": "Metadata-Version: 2.3\nName: idna\nVersion: 3.10\n\n",
+            "idna-3.10.dist-info/WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
+            "idna/__init__.py": "",
+        }
+        for name, content in entries.items():
+            info = zipfile.ZipInfo(name, date_time=(2024, 1, 1, 0, 0, 0))
+            archive.writestr(info, content)
     return output.getvalue()
 
 

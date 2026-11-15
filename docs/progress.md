@@ -1,5 +1,9 @@
 # Progress
 
+## Stabilize the locked-wheel storage fixture after hosted CI (2026-11-14)
+
+Hosted Engine checks [43658380329](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43658380329) passed browser, catalog inventory, lint, typing, contract, and desktop checks, then failed one existing Python fixture after 1,372 passed and 20 skipped. `idna_wheel()` embedded the current ZIP timestamp, so separate generations could differ when the two-second timestamp boundary fell between creation of the lock and the artifact. Fixed the fixture to use a stable timestamp. All five tests in `tests/unit/test_procedure_dependency_storage.py` pass locally; Ruff check and format also pass. Hosted validation of the fix is pending. No runtime behavior or model path changed.
+
 ## Review the pinned Groq provider candidate (2026-11-14)
 
 Completed a static review of `AhmetArif0/hermes-groq-provider` at its exact catalog pin `b5be0388c2b4cae8ed6a30c7371aaa1330731ee8`. SHA-256-bound source findings, remote credential/data routing, its model-ID blacklist risk, test-fixture scope, and the Phase 9 disposition are recorded in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). `scripts/audit_catalog_inventory.py` now marks this second source-reviewed entry in the 90-candidate `models` category; the generated inventory and drift check both pass across 976 pinned manifests. The candidate remains planned; X.A.A. provider loading and remote Groq use were not implemented. No external code or tests were executed, no credential or account was used, and no live model request was made. This keeps LLM testing deferred to the final phase.
