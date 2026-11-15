@@ -12,11 +12,41 @@ function formatBytes(bytes:number|null):string {
   return `${value.toFixed(unit===0?0:1)} ${units[unit]}`;
 }
 
-function ResourceCard({title,value,detail,percent}:{title:string;value:string;detail:string;percent:number|null}) {
+function trendY(value:number):number {
+  const bounded=Math.max(0,Math.min(100,value));
+  return 27-bounded/100*24;
+}
+
+function trendPoints(samples:number[]):string {
+  const values=samples.filter(value=>Number.isFinite(value)).slice(-60);
+  return values.map((value,index)=>{
+    const x=values.length===1?100:index/(values.length-1)*100;
+    return `${x.toFixed(1)},${trendY(value).toFixed(1)}`;
+  }).join(' ');
+}
+
+function TrendTrace({title,values}:{title:string;values:number[]}) {
+  const samples=values.filter(value=>Number.isFinite(value)).slice(-60);
+  if(samples.length===0)return null;
+  const points=trendPoints(samples);
+  return <div className="system-resource-trend">
+    <span className="system-resource-trend-label">RECENT</span>
+    <svg role="img" aria-label={`${title} trend across ${samples.length} recent local samples`} viewBox="0 0 100 30" preserveAspectRatio="none">
+      <path className="system-resource-trend-grid" d="M0 9H100M0 20H100"/>
+      {samples.length===1
+        ?<circle className="system-resource-trend-dot" cx="100" cy={trendY(samples[0]!)} r="2.2"/>
+        :<polyline className="system-resource-trend-line" points={points}/>}
+    </svg>
+    <span className="system-resource-trend-count">{samples.length}</span>
+  </div>;
+}
+
+function ResourceCard({title,value,detail,percent,trend}:{title:string;value:string;detail:string;percent:number|null;trend?:number[]}) {
   return <section className="system-resource-card" aria-label={title}>
     <div className="system-resource-heading"><h2>{title}</h2><strong>{value}</strong></div>
     {percent!==null&&<meter min={0} max={100} value={percent} aria-label={`${title} usage`}>{percent}%</meter>}
     <p>{detail}</p>
+    {trend&&<TrendTrace title={title} values={trend}/>}
   </section>;
 }
 
@@ -25,11 +55,13 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
   const [error,setError]=useState('');
   const [refreshing,setRefreshing]=useState(false);
   const [refreshNotice,setRefreshNotice]=useState('');
+  const [history,setHistory]=useState<SystemResourceSnapshot[]>([]);
   const refresh=useCallback(async(announce=false)=>{
     setRefreshing(true);
     try{
       const next=await client.systemResources();
       setSnapshot(next);setError('');
+      setHistory(current=>[...current,next].sort((left,right)=>Date.parse(left.sampled_at)-Date.parse(right.sampled_at)).slice(-60));
       setRefreshNotice(announce?`System monitor updated ${new Date(next.sampled_at).toLocaleTimeString()}.`:'');
     }
     catch(failure){setError(String(failure));}
@@ -44,14 +76,16 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
   const memoryPercent=snapshot?.memory_used_percent??null;
   const diskPercent=snapshot&&snapshot.disk_total_bytes!==null&&snapshot.disk_free_bytes!==null&&snapshot.disk_total_bytes>0
     ?Math.round((snapshot.disk_total_bytes-snapshot.disk_free_bytes)*100/snapshot.disk_total_bytes*10)/10:null;
+  const diskTrend=history.map(sample=>sample.disk_total_bytes!==null&&sample.disk_free_bytes!==null&&sample.disk_total_bytes>0
+    ?(sample.disk_total_bytes-sample.disk_free_bytes)*100/sample.disk_total_bytes:Number.NaN);
   return <div className="system-monitor">
     <section className="system-monitor-intro"><div><p className="eyebrow">LOCAL HARDWARE</p><h2>System monitor</h2><p>Live host capacity and local inference queue estimates. Measurements stay on this computer.</p></div><button type="button" className="secondary-button" onClick={()=>void refresh(true)} disabled={refreshing}>{refreshing?'Refreshing…':'Refresh now'}</button></section>
     {snapshot&&<>
       <div className="system-resource-grid">
-        <ResourceCard title="Processor" value={snapshot.cpu_percent===null?'Measuring…':`${snapshot.cpu_percent.toFixed(1)}%`} detail={`${snapshot.logical_processors} logical processors`} percent={snapshot.cpu_percent}/>
-        <ResourceCard title="Memory" value={memoryPercent===null?'Unavailable':`${memoryPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.memory_available_bytes)} available of ${formatBytes(snapshot.memory_total_bytes)}`} percent={memoryPercent}/>
-        <ResourceCard title="Profile drive" value={diskPercent===null?'Unavailable':`${diskPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.disk_free_bytes)} free of ${formatBytes(snapshot.disk_total_bytes)}`} percent={diskPercent}/>
-        {snapshot.gpu_devices.map((gpu,index)=><ResourceCard key={`${gpu.name}-${index}`} title={gpu.name} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} VRAM free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent}/>) }
+        <ResourceCard title="Processor" value={snapshot.cpu_percent===null?'Measuring…':`${snapshot.cpu_percent.toFixed(1)}%`} detail={`${snapshot.logical_processors} logical processors`} percent={snapshot.cpu_percent} trend={history.map(sample=>sample.cpu_percent??Number.NaN)}/>
+        <ResourceCard title="Memory" value={memoryPercent===null?'Unavailable':`${memoryPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.memory_available_bytes)} available of ${formatBytes(snapshot.memory_total_bytes)}`} percent={memoryPercent} trend={history.map(sample=>sample.memory_used_percent??Number.NaN)}/>
+        <ResourceCard title="Profile drive" value={diskPercent===null?'Unavailable':`${diskPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.disk_free_bytes)} free of ${formatBytes(snapshot.disk_total_bytes)}`} percent={diskPercent} trend={diskTrend}/>
+        {snapshot.gpu_devices.map((gpu,index)=><ResourceCard key={`${gpu.name}-${index}`} title={gpu.name} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} VRAM free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent} trend={history.map(sample=>sample.gpu_devices.find(item=>item.name===gpu.name)?.utilization_percent??Number.NaN)}/>)}
         <section className="system-resource-card" aria-label="Inference queue"><div className="system-resource-heading"><h2>Inference queue</h2><strong>{snapshot.queue_active?'Working':'Idle'}</strong></div><p>{snapshot.queue_waiting} waiting · {snapshot.queue_reserved_tokens.toLocaleString()} estimated tokens reserved</p><p>Capacity: {snapshot.queue_max_pending} waiting requests · {snapshot.queue_max_reserved_tokens.toLocaleString()} estimated tokens</p></section>
       </div>
       <p className="system-monitor-note">GPU readings are reported when NVIDIA driver telemetry is available. A missing GPU card means that telemetry isn’t available; it does not mean this computer has no accelerator. Queue tokens are payload estimates and do not predict model VRAM requirements.</p>

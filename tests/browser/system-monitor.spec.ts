@@ -32,5 +32,9 @@ test('system monitor shows local capacity and inference queue without exposing r
   await expect(page.locator('.system-monitor-updated')).toHaveCount(0);
   await page.getByRole('button',{name:'Refresh now'}).click();
   await expect(page.getByRole('status')).toContainText('System monitor updated');
+  await expect(page.getByRole('img',{name:'Processor trend across 2 recent local samples'})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Memory trend across 2 recent local samples'})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Profile drive trend across 2 recent local samples'})).toBeVisible();
+  await expect(page.getByRole('img',{name:'NVIDIA GeForce RTX 5080 trend across 2 recent local samples'})).toBeVisible();
   expect(samples).toBe(2);
 });
