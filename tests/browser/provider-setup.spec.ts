@@ -9,6 +9,9 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   let compatibleSelectedModel:string|null=null;
   let compatibleCredentialConfigured=false;
   let diagnostics=0;
+  let releaseInitialConfig!:()=>void;
+  let holdInitialConfig=true;
+  const initialConfigGate=new Promise<void>(resolve=>{releaseInitialConfig=resolve;});
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const req=route.request();const path=new URL(req.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,PUT,DELETE,OPTIONS'};
@@ -17,7 +20,10 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model',context_length:8192,size_bytes:2500000000,loaded:false,capabilities:{vision:false,trained_for_tool_use:true}},...(compatibleEndpoint?[{id:'openai-compatible::remote-model',capabilities:{vision:false,trained_for_tool_use:false}}]:[])],headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'},{id:'openai-compatible',status:compatibleEndpoint?'connected':'not_configured'}],headers});
-    if(path==='/providers/lm-studio/config'&&req.method()==='GET')return route.fulfill({json:{endpoint,selected_model:selectedModel},headers});
+    if(path==='/providers/lm-studio/config'&&req.method()==='GET'){
+      if(holdInitialConfig){holdInitialConfig=false;await initialConfigGate;}
+      return route.fulfill({json:{endpoint,selected_model:selectedModel},headers});
+    }
     if(path==='/providers/openai-compatible/config'&&req.method()==='GET')return route.fulfill({json:{endpoint:compatibleEndpoint,selected_model:compatibleSelectedModel},headers});
     if(path==='/providers/openai-compatible/config'&&req.method()==='PUT'){
       compatibleEndpoint=req.postDataJSON().endpoint;compatibleSelectedModel=null;
@@ -62,6 +68,10 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await navigateMainSection(page,'Model setup');
+  const lmStudioEndpoint=page.getByLabel('LM Studio server address');
+  await expect(lmStudioEndpoint).toBeDisabled();
+  releaseInitialConfig();
+  await expect(lmStudioEndpoint).toBeEnabled();
   await expect(page.getByRole('status').filter({hasText:'LM Studio is connected'})).toBeVisible();
   await expect(page.getByRole('option',{name:'fixture/model',exact:true})).toHaveCount(1);
   await page.getByLabel('Optional LM Studio API token').fill('test-api-token');
@@ -70,7 +80,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect(page.getByLabel('Optional LM Studio API token')).toHaveValue('');
   await page.getByRole('button',{name:'Clear saved API token'}).click();
   await expect(page.getByText('No API token is saved. The token is never shown after saving.')).toBeVisible();
-  await page.getByLabel('LM Studio server address').fill('http://localhost:1234');
+  await lmStudioEndpoint.fill('http://localhost:1234');
   await page.getByRole('button',{name:'Save address and connect'}).click();
   await expect.poll(()=>endpoint).toBe('http://127.0.0.1:1234');
   await page.getByLabel('Local model or compatible provider model').selectOption('fixture/model');

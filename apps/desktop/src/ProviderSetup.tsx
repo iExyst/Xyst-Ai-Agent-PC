@@ -16,7 +16,7 @@ type Props = {
 export function ProviderSetup({client,models,model,onModelsChanged,onModelChanged,onDiagnosticPassed}:Props) {
   const [endpoint,setEndpoint]=useState('http://127.0.0.1:1234');
   const [status,setStatus]=useState('Checking the local model server…');
-  const [busy,setBusy]=useState(false);
+  const [busy,setBusy]=useState(true);
   const [error,setError]=useState('');
   const [diagnostic,setDiagnostic]=useState<'passed'|'failed'|'unknown'>('unknown');
   const [credential,setCredential]=useState('');
@@ -58,6 +58,8 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
         }
       } catch {
         if(live)setStatus('Could not reach LM Studio. Start its Local Server in LM Studio, then retry.');
+      } finally {
+        if(live)setBusy(false);
       }
     })();
     return()=>{live=false;};

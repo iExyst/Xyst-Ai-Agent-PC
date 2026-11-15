@@ -499,7 +499,6 @@ async function runNativeOnboarding() {
   await writeFile(path.join(root, 'report.json'), JSON.stringify(result, null, 2));
   await mkdir('build/installer', { recursive: true });
   await writeFile(path.join('build/installer', acceptanceName), JSON.stringify(result, null, 2));
-  console.log(JSON.stringify({ ...result, evidence: root }, null, 2));
   return result;
 }
 
@@ -670,7 +669,6 @@ try {
     await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
     await mkdir('build/installer', { recursive: true });
     await writeFile(path.join('build/installer', acceptanceName), JSON.stringify(report, null, 2));
-    console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
   } else {
   const fixtureReadme = path.join(fixtureWorkspace, 'fixture.txt');
   const createResponse = await fetch(`${first.connection.base_url}/runs`, {
@@ -839,7 +837,6 @@ try {
   await writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
   await mkdir('build/installer', { recursive: true });
   await writeFile(path.join('build/installer', acceptanceName), JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
   }
   }
 } catch (error) {
@@ -859,6 +856,7 @@ try {
     await writeFile(path.join(root, 'report.json'), serialized);
     await writeFile(path.join('build/installer', acceptanceName), serialized);
   }
+  if (report) console.log(JSON.stringify({ ...report, evidence: root }, null, 2));
   if (!credentialsCleaned) throw new Error('The native restart acceptance could not clean its own API launch credential pair.');
   await new Promise(resolve => modelServer.close(resolve));
 }
