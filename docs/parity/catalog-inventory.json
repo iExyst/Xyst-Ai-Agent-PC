@@ -8213,7 +8213,7 @@
       "subdirectory": "provider",
       "version": "1.0.1",
       "required_environment_names": [],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "native Kiro streaming provider with AWS IAM Identity Center device-code OAuth; pinned source review at commit 013017d27acd58051c4ad654bb21036d93bdd3ce; see model-provider-source-audit.md#kiro-native-provider-and-device-auth",
       "status": "planned",
       "phase": 9
     },
@@ -9820,7 +9820,7 @@
       "required_environment_names": [
         "NETMIND_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "OpenAI-compatible remote model provider with a static 31-model catalog; pinned source review at commit 00ab432e251fc04b983382a7b339f54d96e4b29d; see model-provider-source-audit.md#netmind-static-catalog-provider",
       "status": "planned",
       "phase": 9
     },
@@ -10144,7 +10144,7 @@
       "required_environment_names": [
         "OBSCURIFY_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "remote OpenAI-compatible provider with public dynamic model catalog; pinned source review at commit 72ce6f5cf6d297c01d23198a84c21b561fa0698c; see model-provider-source-audit.md#obscurify-public-catalog-provider",
       "status": "planned",
       "phase": 9
     },
@@ -13210,7 +13210,7 @@
       "required_environment_names": [
         "SURP_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "paid marketplace-routing tool suite with per-tool approval hook, not a provider adapter; pinned source review at commit fdbd49f8a4577199f0870d0bf9e15b795467977c; see model-provider-source-audit.md#surp-paid-marketplace-routing-tools",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; forty-six selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; fifty selected non-platform candidates have individual source reviews, while the rest remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."

@@ -1,5 +1,25 @@
 # Progress
 
+## Review pinned Surp paid marketplace routing tools (2026-11-15)
+
+Reviewed `surp-hermes-x402-llm` at catalog-pinned commit `fdbd49f8a4577199f0870d0bf9e15b795467977c`. It is a 12-tool marketplace/routing plugin, not a provider adapter; paid `surp_chat` prompts go to the individual developer's gateway and may be forwarded to sellers that are untrusted by default. The approval hook depends on Hermes' global approval mode, saved trusted-only/secret-masking preferences can be overridden by model-supplied per-call fields, and the spend ceiling is a local quote check rather than a gateway-enforced or aggregate cap. Sixty-seven of 90 model-category rows are reviewed across 66 source trees; 23 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, payment, key, endpoint, test, or inference was used; live LLM testing remains deferred. Hosted run [#998](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43699613383) passed on prior source SHA `96a401a3`; this local batch awaits its own hosted verification.
+
+## Review pinned Obscurify public model catalog provider (2026-11-15)
+
+Reviewed `obscurify-provider` at catalog-pinned commit `72ce6f5cf6d297c01d23198a84c21b561fa0698c`. It fetches an unauthenticated public catalog, then sends chat requests through Hermes to Obscurify’s remote OpenAI-compatible endpoint using `OBSCURIFY_API_KEY`; its zero-retention and account/privacy claims are vendor disclosures, not source-verifiable guarantees. The dynamic filter admits entries with missing context metadata, does not filter for tool support, and can repeat failed cold catalog requests. Sixty-six of 90 model-category rows are reviewed across 65 source trees; 24 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, endpoint, key, account, test, or inference was used; live LLM testing remains deferred.
+
+## Review pinned Kiro native provider and device authorization (2026-11-15)
+
+Reviewed `kiro-provider` at catalog-pinned commit `013017d27acd58051c4ad654bb21036d93bdd3ce`. The native streaming adapter performs AWS IAM Identity Center device-code OAuth and stores access/refresh tokens plus the generated client secret in Hermes' profile credential pool. It talks directly to Kiro's undocumented runtime API, translates Kiro tool-use events, and has live catalog/usage paths with static model fallbacks. Sixty-five of 90 model-category rows are reviewed across 64 source trees; 25 remain pending. Findings, Windows concurrency caveats, and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, test, credential, AWS registration, endpoint, or model was used; live LLM testing remains deferred.
+
+## Review pinned NetMind static-catalog provider (2026-11-15)
+
+Reviewed `netmind-provider` at catalog-pinned commit `00ab432e251fc04b983382a7b339f54d96e4b29d`. It registers an OpenAI-compatible remote profile with `NETMIND_API_KEY`, a fixed API endpoint, and 31 bundled model entries; live model discovery and health checks are explicitly disabled. Static capability/context metadata and model availability are not independently verified, and the README says live smoke requests can be billable and transmit prompts, context, and tool definitions. Sixty-four of 90 model-category rows are reviewed across 63 source trees; 26 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, test, key, endpoint, account, or model was run; live LLM tests remain deferred.
+
+## Refine the desktop workspace with a cohesive dark interface (2026-11-15)
+
+Unified the desktop surfaces around a graphite-and-mint palette, improved sidebar and topbar hierarchy, refined card, form, focus and hover states, and moved the objective composer ahead of workspace setup on the home screen. Responsive sizing, keyboard focus, and reduced-motion behavior remain supported. Desktop TypeScript checking, the Vite production build, and the native Tauri build pass. Opened a separate native preview and visually reviewed its home workspace. This is a visual refinement; agent behavior and live model inference were not changed.
+
 ## Review pinned Model Presets gateway alias plugin (2026-11-15)
 
 Reviewed `model-presets` at catalog-pinned commit `27eec57bc17d92d931a025ed333b330dd17636e5`. It rewrites exact `/model` aliases only in the Hermes messaging gateway, then delegates selection to Hermes; it does not provide Desktop support or a model adapter. A user can explicitly override provider or choose global scope, so X.A.A. must keep provider locality and scope visible in its own selector. Sixty-three of 90 model-category rows are reviewed across 62 source trees; 27 remain pending. Findings and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No gateway, plugin, provider, or model was run; live LLM tests remain deferred.

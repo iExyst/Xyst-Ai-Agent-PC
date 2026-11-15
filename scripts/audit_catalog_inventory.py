@@ -233,6 +233,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 39a6944280c2156f816df8641d3d01d743aec564; "
         "see model-provider-source-audit.md#kfchow-llm-value-router-middleware"
     ),
+    "kiro-provider": (
+        "native Kiro streaming provider with AWS IAM Identity Center device-code OAuth; pinned source review "
+        "at commit 013017d27acd58051c4ad654bb21036d93bdd3ce; "
+        "see model-provider-source-audit.md#kiro-native-provider-and-device-auth"
+    ),
     "lightningai": (
         "thin OpenAI-compatible remote-provider profile; pinned source review "
         "at commit e4350ca278f8994322fc3b79a55a52e83388b7da; "
@@ -272,6 +277,21 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
         "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "
         "see model-provider-source-audit.md#model-presets-gateway-alias-plugin"
+    ),
+    "obscurify-provider": (
+        "remote OpenAI-compatible provider with public dynamic model catalog; pinned source review "
+        "at commit 72ce6f5cf6d297c01d23198a84c21b561fa0698c; "
+        "see model-provider-source-audit.md#obscurify-public-catalog-provider"
+    ),
+    "surp-hermes-x402-llm": (
+        "paid marketplace-routing tool suite with per-tool approval hook, not a provider adapter; pinned source review "
+        "at commit fdbd49f8a4577199f0870d0bf9e15b795467977c; "
+        "see model-provider-source-audit.md#surp-paid-marketplace-routing-tools"
+    ),
+    "netmind-provider": (
+        "OpenAI-compatible remote model provider with a static 31-model catalog; "
+        "pinned source review at commit 00ab432e251fc04b983382a7b339f54d96e4b29d; "
+        "see model-provider-source-audit.md#netmind-static-catalog-provider"
     ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
@@ -408,7 +428,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; forty-six selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; fifty selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",
