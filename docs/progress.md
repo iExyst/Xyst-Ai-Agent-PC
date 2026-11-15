@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Model Presets gateway alias plugin (2026-11-15)
+
+Reviewed `model-presets` at catalog-pinned commit `27eec57bc17d92d931a025ed333b330dd17636e5`. It rewrites exact `/model` aliases only in the Hermes messaging gateway, then delegates selection to Hermes; it does not provide Desktop support or a model adapter. A user can explicitly override provider or choose global scope, so X.A.A. must keep provider locality and scope visible in its own selector. Sixty-three of 90 model-category rows are reviewed across 62 source trees; 27 remain pending. Findings and source hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No gateway, plugin, provider, or model was run; live LLM tests remain deferred.
+
 ## Review pinned Model Router orchestration plugin (2026-11-15)
 
 Reviewed `model-router` at catalog-pinned commit `e207667489ac8a796d53f875126d6ee227201112`. It launches normal Hermes child jobs under the selected profile's tool policy and stores prompts/results in local plugin data; it is not a sandbox or provider adapter. Heavy/Light labels permit the same model, and requested route flags do not prove actual model identity. The prompt schema has no maximum length, and a per-job timeout of zero disables this plugin's total limit. Sixty-two of 90 model-category rows are reviewed across 61 source trees; 28 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No profile, plugin, or model was run; live LLM tests remain deferred.

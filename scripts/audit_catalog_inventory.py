@@ -268,6 +268,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit e207667489ac8a796d53f875126d6ee227201112; "
         "see model-provider-source-audit.md#model-router-agent-orchestration"
     ),
+    "model-presets": (
+        "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
+        "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "
+        "see model-provider-source-audit.md#model-presets-gateway-alias-plugin"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
@@ -403,7 +408,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; forty-five selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; forty-six selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",
