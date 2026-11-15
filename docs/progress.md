@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Jev routing middleware (2026-11-15)
+
+Reviewed `hermes-jev-routing` at catalog-pinned commit `06a53646587c33174a0fbfbb3713eca90bbb8586`. When enabled with a configured routing JSON, it sends the current request, up to 4,000 characters of recent conversation, working-directory/model/context estimates, and spend snapshot to TypeSafe, including in default shadow mode. The custom endpoint is configurable; the source has a request timeout but no response-size cap or endpoint host allowlist. Actual model spend is only estimated from provider-reported cost or a manually supplied rate card; unknown models do not trigger a hard budget gate. It cannot list live model availability or quota, switch the already-bound provider request, or guarantee equal system-prompt priority. Forty-four of 90 model-category catalog entries are reviewed across 43 source trees; 46 remain pending. No plugin, account, API key, or inference request was used.
+
 ## Review pinned experimental Cursor SDK provider (2026-11-15)
 
 Reviewed `cursor-sdk` at catalog-pinned commit `0e546bc079ab23451a52a12ca02e8a55af34e217`. The candidate requires macOS or Linux, Node 22.13+, Git, an explicit Cursor key, and a manual install of pinned `@cursor/sdk` 1.0.37; it explicitly does not support Windows. It sends the full conversation, instructions and Hermes tool schemas to Cursor, buffers responses before emitting any stream chunks, and relies on a fail-closed project hook plus run cancellation to reject native tools. It leaves conversation and SDK state under the plugin's `runtime/` directory. It uses a bundled static model snapshot and cannot enforce an included-only spend cap. Forty-three of 90 model-category candidates are source-reviewed across 42 trees; 47 remain pending. No plugin, npm dependency, key, account, or inference was used.

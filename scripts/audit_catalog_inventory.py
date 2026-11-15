@@ -168,6 +168,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 0e546bc079ab23451a52a12ca02e8a55af34e217; "
         "see model-provider-source-audit.md#cursor-sdk"
     ),
+    "hermes-jev-routing": (
+        "per-turn external model-routing middleware; pinned source review "
+        "at commit 06a53646587c33174a0fbfbb3713eca90bbb8586; "
+        "see model-provider-source-audit.md#hermes-jev-routing"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
