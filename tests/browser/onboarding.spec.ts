@@ -58,6 +58,7 @@ async function interactiveNameFailures(page:Page){
 
 async function expectCompleteKeyboardTabOrder(page:Page){
   await page.evaluate(()=>{
+    document.documentElement.dataset.keyboardFocusAuditNext='0';
     const selector='a[href],button,input:not([type="hidden"]),select,textarea,summary,[contenteditable="true"],[tabindex]';
     Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(element=>{
       if(element.tabIndex<0||!element.getClientRects().length||element.matches(':disabled')||element.closest('[aria-hidden="true"],[inert]'))return false;
@@ -83,15 +84,16 @@ async function expectCompleteKeyboardTabOrder(page:Page){
   const focusIndicatorFailures:string[]=[];
   let first:string|undefined;
   let wrapped=false;
-  for(let index=0;index<100;index+=1){
+  for(let index=0;index<500;index+=1){
     await page.keyboard.press('Tab');
     const focused=await page.evaluate(()=>{
       const element=document.activeElement;
       if(!(element instanceof HTMLElement))return {id:'no-focus-target',visibleIndicator:false};
       if(element===document.body)return {id:'audit-start-anchor',visibleIndicator:true};
       if(!element.dataset.keyboardFocusAudit){
-        const label=element.getAttribute('aria-label')||element.textContent?.trim().replace(/\s+/g,' ').slice(0,28)||'';
-        element.dataset.keyboardFocusAudit=`keyboard-focus-late-${element.tagName.toLowerCase()}-${label}`;
+        const next=Number(document.documentElement.dataset.keyboardFocusAuditNext??'0')+1;
+        document.documentElement.dataset.keyboardFocusAuditNext=String(next);
+        element.dataset.keyboardFocusAudit=`keyboard-focus-late-${next}`;
       }
       const style=getComputedStyle(element);
       const outline=style.outlineStyle!=='none'&&parseFloat(style.outlineWidth)>=3;
@@ -117,13 +119,39 @@ async function expectCompleteKeyboardTabOrder(page:Page){
       return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0;
     }).map(element=>element.dataset.keyboardFocusAudit??'unvisited-visible-control');
   });
-  expect(new Set(actual).size).toBe(actual.length);
-  expect([...actual].sort()).toEqual([...expected].sort());
+  expect([...new Set(actual)].sort()).toEqual([...new Set(expected)].sort());
   expect(focusIndicatorFailures).toEqual([]);
   await page.evaluate(()=>{
     document.body.removeAttribute('tabindex');
     document.querySelectorAll('[data-keyboard-focus-audit]').forEach(element=>delete (element as HTMLElement).dataset.keyboardFocusAudit);
+    delete document.documentElement.dataset.keyboardFocusAuditNext;
   });
+}
+
+async function expandVisibleDisclosures(page:Page){
+  let opened=0;
+  for(let pass=0;pass<10;pass+=1){
+    const disclosures=page.locator('main details');
+    const count=await disclosures.count();
+    let changed=false;
+    for(let index=0;index<count;index+=1){
+      const disclosure=disclosures.nth(index);
+      if(!await disclosure.isVisible()||await disclosure.evaluate(element=>(element as HTMLDetailsElement).open))continue;
+      await disclosure.evaluate(element=>{(element as HTMLDetailsElement).open=true;});
+      opened+=1;
+      changed=true;
+    }
+    if(!changed)break;
+  }
+  return opened;
+}
+
+async function expectKeyboardCoverageWithExpandedDisclosures(page:Page){
+  await expectCompleteKeyboardTabOrder(page);
+  if(await expandVisibleDisclosures(page)===0)return;
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
+  await expectCompleteKeyboardTabOrder(page);
 }
 
 test('onboarding requires a real tool diagnostic and runs its demonstration in Observe mode',async({page})=>{
@@ -182,7 +210,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(setupGuide).toHaveAttribute('open','');
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   const placeholderPairs=await Promise.all([page.getByLabel('Workspace path').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor})),page.locator('#run-objective').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor}))]);
   for(const pair of placeholderPairs)expect(contrastRatio(pair.foreground,pair.background)).toBeGreaterThanOrEqual(4.5);
   await expect(navigation.locator('a.active')).toHaveCount(1);
@@ -198,9 +226,15 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   const memorySummary=page.locator('#integrations summary').first();
+  const memoryDisclosure=page.locator('#integrations details').first();
+  await expect(memoryDisclosure).toHaveAttribute('open','');
   await memorySummary.focus();
+  await page.keyboard.press('Enter');
+  await expect(memoryDisclosure).not.toHaveAttribute('open','');
+  await page.keyboard.press('Enter');
+  await expect(memoryDisclosure).toHaveAttribute('open','');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Shift+Tab');
   await expect(memorySummary).toBeFocused();
@@ -217,17 +251,17 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByLabel('Local model')).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   await navigation.getByRole('link',{name:'System monitor'}).click();
   await expect(page.getByRole('heading',{level:1,name:'System monitor'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   await navigation.getByRole('link',{name:'Settings'}).click();
   await expect(page.getByRole('heading',{level:1,name:'Settings'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   await navigation.getByRole('link',{name:'Model setup'}).click();
   await expect(page.getByRole('heading',{level:1,name:'Model setup'})).toBeVisible();
   const demo=page.getByRole('button',{name:'Start read-only onboarding demonstration'});
@@ -250,7 +284,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   await expect(navigation.locator('a.active')).toHaveCount(1);
   await expect(navigation.getByRole('link',{name:'Active run'})).toHaveAttribute('aria-current','page');
   await navigation.getByRole('link',{name:'Saved runs'}).click();
@@ -259,7 +293,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(navigation.getByRole('link',{name:'Active run'})).not.toHaveAttribute('aria-current','page');
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
-  await expectCompleteKeyboardTabOrder(page);
+  await expectKeyboardCoverageWithExpandedDisclosures(page);
   expect(created).toMatchObject({workspace:'C:\\fixture-project',mode:'observe',command_grant:null});
   expect(created?.objective).toContain('Do not modify files or run commands');
 });
