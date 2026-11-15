@@ -1275,7 +1275,7 @@
       "required_environment_names": [
         "BHARATCODE_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider; duplicate pinned BharatCode source review at commit f4cc1d1f2977963173b23b9ac6a19c3ca8851050; see model-provider-source-audit.md#bharatcode",
       "status": "planned",
       "phase": 9
     },

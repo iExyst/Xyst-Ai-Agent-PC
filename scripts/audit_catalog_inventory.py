@@ -128,6 +128,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "f4cc1d1f2977963173b23b9ac6a19c3ca8851050; "
         "see model-provider-source-audit.md#bharatcode"
     ),
+    "bharatcode-provider": (
+        "model-provider; duplicate pinned BharatCode source review at commit "
+        "f4cc1d1f2977963173b23b9ac6a19c3ca8851050; "
+        "see model-provider-source-audit.md#bharatcode"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "

@@ -1,5 +1,9 @@
 # Progress
 
+## Classify duplicate BharatCode catalog entry (2026-11-15)
+
+Verified that `bharatcode-provider` and the already reviewed `bharatcode` entry resolve to the same catalog manifest hash, pinned commit, provider file, README and license bytes; this is a second catalog row for the same source tree. The catalog audit now covers 28 of 90 model-category entries, representing 27 distinct reviewed source trees, with 62 entries pending. The pinned AtmoRouter repository and commit returned GitHub 404 responses and remain unclassified; no source was inferred.
+
 ## Review AnyRouter provider (2026-11-15)
 
 Reviewed the pinned gateway adapter's tool-capability catalog filtering, process-wide cache, custom endpoint fallback, session/provider routing preferences, reasoning passthrough and opt-in attribution headers. Twenty-seven of 90 model-category candidates now have source reviews; 63 remain pending. No key, catalog request or inference was used.
