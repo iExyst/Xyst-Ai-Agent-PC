@@ -213,6 +213,16 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 68427cf7770b393b6b4b694722d24431058fbd3f; "
         "see model-provider-source-audit.md#hopper"
     ),
+    "jev-approvals": (
+        "smart-approval-only Jev decision provider with a deterministic policy layer; pinned source review "
+        "at commit 28be98a19539b29768398fb400f4c62f41337c26; "
+        "see model-provider-source-audit.md#jev-approvals"
+    ),
+    "jev-effort-router": (
+        "Ollama:Cloud-only model/effort routing middleware; pinned source review "
+        "at commit 6fd9f2ec1c53cb99b5e6c7043c25bbd37938d4a5; "
+        "see model-provider-source-audit.md#jev-effort-router"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
@@ -348,7 +358,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; thirty-four selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; thirty-six selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

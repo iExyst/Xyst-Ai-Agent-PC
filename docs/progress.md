@@ -1,5 +1,13 @@
 # Progress
 
+## Review pinned Jev effort router middleware (2026-11-15)
+
+Reviewed `jev-effort-router` at catalog-pinned commit `6fd9f2ec1c53cb99b5e6c7043c25bbd37938d4a5`. It routes Ollama:Cloud models and reasoning effort through a paid OpenRouter decision call by default once per user turn, sending the current message and bounded recent conversation context. The manifest does not expose the code-supported endpoint override, which has no origin validation before sending the bearer key. The source review and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-three of 90 model-category rows are reviewed across 52 source trees; 37 remain pending. No plugin, key, account, API request, test suite, or model was used; live LLM testing remains deferred.
+
+## Review pinned Jev approvals decision provider (2026-11-15)
+
+Reviewed `jev-approvals` at catalog-pinned commit `28be98a19539b29768398fb400f4c62f41337c26`. It returns model-assisted smart-approval verdicts with a deterministic threshold layer, but a model-reported policy match can promote a verdict to approval; X.A.A. must retain hard permission enforcement in application code. The model-list request sends a TypeSafe bearer key through an unbounded response reader without the decision endpoint's same-origin redirect checks. The source review and limitations are recorded in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). Fifty-two of 90 model-category rows are reviewed across 51 source trees; 38 remain pending. No plugin, account, credential, endpoint, test suite, or live decision was used.
+
 ## Review pinned Hopper model-list provider (2026-11-15)
 
 Reviewed `hopper` at catalog-pinned commit `68427cf7770b393b6b4b694722d24431058fbd3f`. It wraps Hermes' OpenRouter profile and supplies a user-managed local model list; model IDs, pricing, availability, and the README's data-handling claims are not validated by the plugin. Fifty-one of 90 model-category rows are reviewed across 50 source trees; 39 remain pending. No plugin, key, account, model catalog endpoint, or inference was used.
