@@ -1,5 +1,9 @@
 # Progress
 
+## Refine the dark desktop onboarding guide (2026-11-15)
+
+Inspected the current native desktop window and refined the three-step setup guide so its inline “Model setup” action no longer crowds the instruction text. Improved step-card spacing, readability, and narrow-window stacking while preserving the existing dark graphite and mint theme. `npm run build:desktop` passed TypeScript checking and the Vite production build. This is a visual polish slice; it does not change onboarding behavior or close a release gate. No tests or model inference were run.
+
 ## Review the pinned Mistral Vibe provider (2026-11-15)
 
 Reviewed the unofficial `mistral-vibe` provider at pinned commit `c0d7bc8d11306e18499c84dd94cc3581de550e55`. Its PKCE flow binds to fixed Mistral console origins and stores the returned key in Hermes' dedicated credential pool; the source explicitly does not claim that local storage is encrypted or that Vibe requests are covered by subscription quota. The inference client binds the API origin and rejects route/credential overrides, while the catalog response has no explicit byte cap and local logout cannot revoke the remote key. Seventy-four of 90 model-category rows are now source-reviewed across 72 distinct source trees; 16 remain pending. Tests were inspected only; no login, credential, request, test, or inference was used.

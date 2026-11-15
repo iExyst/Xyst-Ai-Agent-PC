@@ -844,6 +844,11 @@ body{
 .app-content fieldset{border-color:#34434e;border-radius:10px}
 .app-content legend{color:#c8d5dc}
 .app-content input[type=checkbox]{accent-color:#84e0b2}
+.page-home>.onboarding-guide>#get-started ol{gap:11px}
+.page-home>.onboarding-guide>#get-started li{min-height:64px;font-size:12px;line-height:1.5}
+.page-home>.onboarding-guide>#get-started li button{margin:0 2px!important;padding:5px 9px!important;border-radius:7px;font-size:10px!important;line-height:1.25;vertical-align:baseline;box-shadow:none}
+.page-home>.onboarding-guide>#get-started li button:hover:not(:disabled){box-shadow:0 3px 10px #55c98720}
+@media(max-width:760px){.page-home>.onboarding-guide>#get-started ol{grid-template-columns:1fr;gap:7px}}
 @media(max-width:900px){.app-sidebar{width:210px}.app-frame{margin-left:210px}.app-content{padding:24px 24px 42px}}
 @media(max-width:640px){
   .app-sidebar{width:auto;height:auto;padding:9px 12px;background:#10181e}
