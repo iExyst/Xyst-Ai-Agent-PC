@@ -212,9 +212,9 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
             <span>{members.map(binding=>`${binding.channel}: ${binding.external_identity}${binding.authorized?'':' (not currently authorized)'}`).join(' ↔ ')} · shared history from {members[0]?.session_channel}</span>
             {additions.length>0&&<div><label htmlFor={`identity-add-${linkId}`}>{addLabel}</label><select id={`identity-add-${linkId}`} value={identityAddSelections[linkId]??''} onChange={event=>setIdentityAddSelections(current=>({...current,[linkId]:event.target.value}))} disabled={busy}><option value="">Choose another channel account</option>{additions.map(binding=><option key={binding.id} value={binding.id}>{binding.channel} · {binding.external_identity} · account {binding.account_id}</option>)}</select><button type="button" onClick={()=>void addChannelIdentity(linkId)} disabled={busy||!identityAddSelections[linkId]}>Add account to linked conversation</button></div>}
             {mergeSources.length>0&&<div><label htmlFor={`identity-merge-${linkId}`}>Other identity group to add to this group's history</label><select id={`identity-merge-${linkId}`} value={identityMergeSelections[linkId]??''} onChange={event=>setIdentityMergeSelections(current=>({...current,[linkId]:event.target.value}))} disabled={busy}><option value="">Choose another identity group</option>{mergeSources.map(([sourceId,sourceMembers])=><option key={sourceId} value={sourceId}>{sourceMembers.map(binding=>`${binding.channel}: ${binding.external_identity}`).join(' ↔ ')}</option>)}</select><button type="button" onClick={()=>setConfirmIdentityMerge({targetLinkId:linkId,sourceLinkId:identityMergeSelections[linkId]??''})} disabled={busy||!identityMergeSelections[linkId]} aria-expanded={confirmIdentityMerge?.targetLinkId===linkId} aria-controls={`identity-merge-confirmation-${linkId}`}>Merge into this group's history</button></div>}
-            {confirmIdentityMerge?.targetLinkId===linkId&&<InlineConfirmation id={`identity-merge-confirmation-${linkId}`} label="Confirm identity group merge"><p>This group’s selected history will stay active. The other group’s members will continue in it, and that group’s earlier session will remain in local session history without being combined. Both groups must still be authorized.</p><button type="button" onClick={()=>void mergeChannelIdentities()} disabled={busy}>Confirm merge into this history</button><button type="button" onClick={()=>setConfirmIdentityMerge(undefined)} disabled={busy}>Cancel</button></InlineConfirmation>}
+            <InlineConfirmation id={`identity-merge-confirmation-${linkId}`} open={confirmIdentityMerge?.targetLinkId===linkId} label="Confirm identity group merge"><p>This group’s selected history will stay active. The other group’s members will continue in it, and that group’s earlier session will remain in local session history without being combined. Both groups must still be authorized.</p><button type="button" onClick={()=>void mergeChannelIdentities()} disabled={busy}>Confirm merge into this history</button><button type="button" onClick={()=>setConfirmIdentityMerge(undefined)} disabled={busy}>Cancel</button></InlineConfirmation>
             <button type="button" onClick={()=>setConfirmIdentityRevoke(linkId)} disabled={busy||confirmIdentityRevoke===linkId} aria-expanded={confirmIdentityRevoke===linkId} aria-controls={`identity-unlink-confirmation-${linkId}`}>Unlink these accounts</button>
-            {confirmIdentityRevoke===linkId&&<InlineConfirmation id={`identity-unlink-confirmation-${linkId}`} label="Confirm unlink accounts"><p>All linked accounts will get separate new conversations. The shared session remains in local history.</p><button type="button" onClick={()=>void unlinkChannelIdentities(linkId)} disabled={busy}>Confirm unlink</button><button type="button" onClick={()=>setConfirmIdentityRevoke('')} disabled={busy}>Cancel</button></InlineConfirmation>}
+            <InlineConfirmation id={`identity-unlink-confirmation-${linkId}`} open={confirmIdentityRevoke===linkId} label="Confirm unlink accounts"><p>All linked accounts will get separate new conversations. The shared session remains in local history.</p><button type="button" onClick={()=>void unlinkChannelIdentities(linkId)} disabled={busy}>Confirm unlink</button><button type="button" onClick={()=>setConfirmIdentityRevoke('')} disabled={busy}>Cancel</button></InlineConfirmation>
           </li>;
         })}</ul>}
       </>;
@@ -241,16 +241,16 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
             <button type="button" onClick={()=>setDiscordReconcileChoice({messageId:delivery.message_id,resolution:'delivered'})} disabled={busy} aria-expanded={discordReconcileChoice?.messageId===delivery.message_id} aria-controls={`discord-delivery-confirmation-${delivery.message_id}`}>I checked; mark Discord reply delivered</button>
             <button type="button" onClick={()=>setDiscordReconcileChoice({messageId:delivery.message_id,resolution:'retry'})} disabled={busy} aria-expanded={discordReconcileChoice?.messageId===delivery.message_id} aria-controls={`discord-delivery-confirmation-${delivery.message_id}`}>I checked; retry Discord reply</button>
           </div>
-          {discordReconcileChoice?.messageId===delivery.message_id&&<InlineConfirmation id={`discord-delivery-confirmation-${delivery.message_id}`} label="Confirm Discord delivery reconciliation">
-            <p>{discordReconcileChoice.resolution==='retry'?'Retrying can send a duplicate if Discord accepted the first reply.':'This records that you found the reply in the private chat.'} Confirm that you checked the destination.</p>
-            <button type="button" onClick={()=>void reconcileDiscordDelivery()} disabled={busy}>Confirm Discord {discordReconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+          <InlineConfirmation id={`discord-delivery-confirmation-${delivery.message_id}`} open={discordReconcileChoice?.messageId===delivery.message_id} label="Confirm Discord delivery reconciliation">
+            <p>{discordReconcileChoice?.resolution==='retry'?'Retrying can send a duplicate if Discord accepted the first reply.':'This records that you found the reply in the private chat.'} Confirm that you checked the destination.</p>
+            <button type="button" onClick={()=>void reconcileDiscordDelivery()} disabled={busy}>Confirm Discord {discordReconcileChoice?.resolution==='retry'?'retry':'delivered'}</button>
             <button type="button" onClick={()=>setDiscordReconcileChoice(undefined)} disabled={busy}>Cancel</button>
-          </InlineConfirmation>}
+          </InlineConfirmation>
         </li>)}</ul>
       </section>}
       {discord.linked_users>0&&<div className="controls">
         <button type="button" onClick={()=>setConfirmDiscordRevoke(true)} disabled={busy||confirmDiscordRevoke} aria-expanded={confirmDiscordRevoke} aria-controls="discord-revoke-confirmation">Revoke all Discord users</button>
-        {confirmDiscordRevoke&&<InlineConfirmation id="discord-revoke-confirmation" label="Confirm revoke Discord links"><p>This prevents linked Discord users from submitting new objectives. Saved runs remain available.</p><button type="button" onClick={()=>void revokeDiscordLinks()} disabled={busy}>Confirm revoke Discord links</button><button type="button" onClick={()=>setConfirmDiscordRevoke(false)} disabled={busy}>Keep links</button></InlineConfirmation>}
+        <InlineConfirmation id="discord-revoke-confirmation" open={confirmDiscordRevoke} label="Confirm revoke Discord links"><p>This prevents linked Discord users from submitting new objectives. Saved runs remain available.</p><button type="button" onClick={()=>void revokeDiscordLinks()} disabled={busy}>Confirm revoke Discord links</button><button type="button" onClick={()=>setConfirmDiscordRevoke(false)} disabled={busy}>Keep links</button></InlineConfirmation>
       </div>}
       {discordPairing&&<div aria-label="Discord pairing instructions"><p>Within five minutes, send this exact command in a private DM to the bot:</p><code>/pair {discordPairing.code}</code><p>Expires {new Date(discordPairing.expires_at).toLocaleString()}.</p></div>}
     </>}
@@ -269,7 +269,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       <button type="button" onClick={()=>void makePairing()} disabled={busy}>Generate one-time pairing code</button>
       {status.linked_users>0&&<div className="controls">
         <button type="button" onClick={()=>setConfirmRevoke(true)} disabled={busy||confirmRevoke} aria-expanded={confirmRevoke} aria-controls="telegram-revoke-confirmation">Revoke all linked users</button>
-        {confirmRevoke&&<InlineConfirmation id="telegram-revoke-confirmation" label="Confirm revoke Telegram links"><p>This prevents {status.linked_users} linked user(s) from submitting new objectives and cancels queued scheduled messages. A send already in progress cannot be recalled; saved runs remain available.</p><button type="button" onClick={()=>void revokeLinks()} disabled={busy}>Confirm revoke links</button><button type="button" onClick={()=>setConfirmRevoke(false)} disabled={busy}>Keep links</button></InlineConfirmation>}
+        <InlineConfirmation id="telegram-revoke-confirmation" open={confirmRevoke} label="Confirm revoke Telegram links"><p>This prevents {status.linked_users} linked user(s) from submitting new objectives and cancels queued scheduled messages. A send already in progress cannot be recalled; saved runs remain available.</p><button type="button" onClick={()=>void revokeLinks()} disabled={busy}>Confirm revoke links</button><button type="button" onClick={()=>setConfirmRevoke(false)} disabled={busy}>Keep links</button></InlineConfirmation>
       </div>}
       {pairing&&<div aria-label="Telegram pairing instructions"><p>Within five minutes, send this exact command in a private chat with @{status.bot_username??'your bot'}:</p><code>/pair {pairing.code}</code><p>Expires {new Date(pairing.expires_at).toLocaleString()}.</p></div>}
       {status.deliveries&&Object.keys(status.deliveries).length>0&&<p>Delivery records: {Object.entries(status.deliveries).map(([state,count])=>`${state}: ${count}`).join(' · ')}</p>}
@@ -282,11 +282,11 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
             <button type="button" onClick={()=>setReconcileChoice({updateId:delivery.update_id,resolution:'delivered'})} disabled={busy} aria-expanded={reconcileChoice?.updateId===delivery.update_id} aria-controls={`telegram-delivery-confirmation-${delivery.update_id}`}>I checked; mark delivered</button>
             <button type="button" onClick={()=>setReconcileChoice({updateId:delivery.update_id,resolution:'retry'})} disabled={busy} aria-expanded={reconcileChoice?.updateId===delivery.update_id} aria-controls={`telegram-delivery-confirmation-${delivery.update_id}`}>I checked; retry reply</button>
           </div>
-          {reconcileChoice?.updateId===delivery.update_id&&<InlineConfirmation id={`telegram-delivery-confirmation-${delivery.update_id}`} label="Confirm Telegram delivery reconciliation">
-            <p>{reconcileChoice.resolution==='retry'?'Retrying can send a duplicate if the first reply actually arrived.':'This records that you found the reply in Telegram.'} Confirm that you checked the destination chat.</p>
-            <button type="button" onClick={()=>void reconcileTelegramDelivery()} disabled={busy}>Confirm {reconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+          <InlineConfirmation id={`telegram-delivery-confirmation-${delivery.update_id}`} open={reconcileChoice?.updateId===delivery.update_id} label="Confirm Telegram delivery reconciliation">
+            <p>{reconcileChoice?.resolution==='retry'?'Retrying can send a duplicate if the first reply actually arrived.':'This records that you found the reply in Telegram.'} Confirm that you checked the destination chat.</p>
+            <button type="button" onClick={()=>void reconcileTelegramDelivery()} disabled={busy}>Confirm {reconcileChoice?.resolution==='retry'?'retry':'delivered'}</button>
             <button type="button" onClick={()=>setReconcileChoice(undefined)} disabled={busy}>Cancel</button>
-          </InlineConfirmation>}
+          </InlineConfirmation>
         </li>)}</ul>
       </section>}
     </>}
@@ -315,11 +315,11 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
             <button type="button" onClick={()=>setEmailReconcileChoice({uidValidity:delivery.uid_validity,uid:delivery.uid,resolution:'delivered'})} disabled={busy} aria-expanded={emailReconcileChoice?.uid===delivery.uid&&emailReconcileChoice.uidValidity===delivery.uid_validity} aria-controls={`email-delivery-confirmation-${delivery.uid_validity}-${delivery.uid}`}>I checked; mark email delivered</button>
             <button type="button" onClick={()=>setEmailReconcileChoice({uidValidity:delivery.uid_validity,uid:delivery.uid,resolution:'retry'})} disabled={busy} aria-expanded={emailReconcileChoice?.uid===delivery.uid&&emailReconcileChoice.uidValidity===delivery.uid_validity} aria-controls={`email-delivery-confirmation-${delivery.uid_validity}-${delivery.uid}`}>I checked; retry email</button>
           </div>
-          {emailReconcileChoice?.uid===delivery.uid&&emailReconcileChoice.uidValidity===delivery.uid_validity&&<InlineConfirmation id={`email-delivery-confirmation-${delivery.uid_validity}-${delivery.uid}`} label="Confirm email delivery reconciliation">
-            <p>{emailReconcileChoice.resolution==='retry'?'Retrying may send a duplicate if the SMTP server accepted the first reply.':'This records that you found the reply in the Sent folder.'} Confirm that you checked the mailbox and reply destination.</p>
-            <button type="button" onClick={()=>void reconcileEmailDelivery()} disabled={busy}>Confirm {emailReconcileChoice.resolution==='retry'?'retry':'delivered'}</button>
+          <InlineConfirmation id={`email-delivery-confirmation-${delivery.uid_validity}-${delivery.uid}`} open={emailReconcileChoice?.uid===delivery.uid&&emailReconcileChoice.uidValidity===delivery.uid_validity} label="Confirm email delivery reconciliation">
+            <p>{emailReconcileChoice?.resolution==='retry'?'Retrying may send a duplicate if the SMTP server accepted the first reply.':'This records that you found the reply in the Sent folder.'} Confirm that you checked the mailbox and reply destination.</p>
+            <button type="button" onClick={()=>void reconcileEmailDelivery()} disabled={busy}>Confirm {emailReconcileChoice?.resolution==='retry'?'retry':'delivered'}</button>
             <button type="button" onClick={()=>setEmailReconcileChoice(undefined)} disabled={busy}>Cancel</button>
-          </InlineConfirmation>}
+          </InlineConfirmation>
         </li>)}</ul>
       </section>}
     </>}

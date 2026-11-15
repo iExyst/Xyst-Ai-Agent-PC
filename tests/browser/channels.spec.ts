@@ -142,6 +142,11 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('webhook: sender-1');
   await panel.locator('#identity-merge-shared-identity-link').selectOption('source-identity-link');
   const mergeButton=panel.getByRole('button',{name:'Merge into this group\'s history'}).first();
+  const mergeTargetId=await mergeButton.getAttribute('aria-controls');
+  expect(mergeTargetId).toBeTruthy();
+  const mergeTarget=panel.locator(`#${mergeTargetId}`);
+  await expect(mergeTarget).toBeAttached();
+  await expect(mergeTarget).toBeHidden();
   await mergeButton.click();
   const mergeDialog=panel.getByRole('group',{name:'Confirm identity group merge'});
   await expect(mergeDialog).toBeFocused();
@@ -152,7 +157,13 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'}).getByRole('listitem')).toHaveCount(1);
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('discord: 3001');
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('shared history from telegram');
-  await panel.getByRole('button',{name:'Unlink these accounts'}).click();
+  const closedUnlinkButton=panel.getByRole('button',{name:'Unlink these accounts'});
+  const unlinkTargetId=await closedUnlinkButton.getAttribute('aria-controls');
+  expect(unlinkTargetId).toBeTruthy();
+  const unlinkTarget=panel.locator(`#${unlinkTargetId}`);
+  await expect(unlinkTarget).toBeAttached();
+  await expect(unlinkTarget).toBeHidden();
+  await closedUnlinkButton.click();
   const unlinkDialog=panel.getByRole('group',{name:'Confirm unlink accounts'});
   await expect(unlinkDialog).toBeFocused();
   const initialUnlinkButton=panel.getByRole('button',{name:'Unlink these accounts'});

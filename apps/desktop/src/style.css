@@ -1154,6 +1154,7 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 .app-content>section.recovery-card{border-color:#59472e;background:linear-gradient(125deg,#282117,#171d21 70%)}
 .app-content .recovery-card .eyebrow{color:#e6c58b}
 .app-content .inline-confirmation{display:grid;gap:9px;margin:10px 0;padding:12px 14px;border:1px solid #365144;border-left:3px solid #91dfb1;border-radius:10px;background:linear-gradient(145deg,#14211b,#11191e)}
+.app-content .inline-confirmation[hidden]{display:none}
 .app-content .inline-confirmation p{margin:0;color:#c7d3ce}
 .app-content .inline-confirmation:focus-visible{outline:3px solid #9cbaff;outline-offset:3px}
 @media(max-width:900px){.app-content{padding-top:23px}}

@@ -68,7 +68,13 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByText('Execution history',{exact:true}).click();
   await expect(panel.getByText(/send attempts 2\/3 · retry after 2026-11-05T12:00:10\+00:00/)).toBeVisible();
   await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
-  await panel.getByRole('button',{name:'I checked; retry scheduled message',exact:true}).click();
+  const closedScheduleRetry=panel.getByRole('button',{name:'I checked; retry scheduled message',exact:true});
+  const scheduleTargetId=await closedScheduleRetry.getAttribute('aria-controls');
+  expect(scheduleTargetId).toBeTruthy();
+  const scheduleTarget=panel.locator(`#${scheduleTargetId}`);
+  await expect(scheduleTarget).toBeAttached();
+  await expect(scheduleTarget).toBeHidden();
+  await closedScheduleRetry.click();
   const scheduleConfirmation=panel.getByRole('group',{name:'Confirm scheduled Telegram delivery reconciliation'});
   await expect(scheduleConfirmation).toBeFocused();
   const scheduleRetry=panel.getByRole('button',{name:'I checked; retry scheduled message',exact:true});
