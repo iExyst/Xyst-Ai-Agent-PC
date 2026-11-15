@@ -716,3 +716,19 @@ a:focus-visible,summary:focus-visible{outline:3px solid #a9c7ff;outline-offset:3
   .app-content{gap:12px}
   .page-home>#new-objective{padding:17px!important}
 }
+
+/* Final workspace polish: keep depth and focus cues consistent in the live UI. */
+body{background:radial-gradient(ellipse 760px 520px at 82% -8%,#15302755,transparent 72%),#0b100d}
+.app-frame{background:radial-gradient(ellipse 680px 480px at 76% -12%,#132a2250,transparent 72%),transparent}
+.app-sidebar{background:linear-gradient(180deg,#121a1f 0%,#10171b 62%,#0f1519 100%);border-right-color:#29383d}
+.app-topbar{background:linear-gradient(100deg,#10191eeF,#10171beF);border-bottom-color:#29383d}
+.app-content{gap:18px}
+.app-content>section,.app-content>div>section{transition:border-color .18s ease,box-shadow .18s ease}
+.page-home>#new-objective{transition:border-color .18s ease,box-shadow .18s ease}
+.page-home>#new-objective:focus-within{border-color:#548266!important;box-shadow:0 20px 48px #0004,0 0 0 1px #7ce3aa1c,inset 0 1px #ffffff0c!important}
+.page-home>#new-objective #run-objective{height:156px;min-height:156px;line-height:1.65}
+.topbar-new,.app-content button:not(.secondary-button){transition:transform .16s ease,box-shadow .16s ease,background .16s ease}
+.topbar-new:hover,.app-content button:not(.secondary-button):hover:not(:disabled){transform:translateY(-1px)}
+.app-content .secondary-button,.secondary-button{transition:border-color .16s ease,background .16s ease,color .16s ease}
+@media(max-width:640px){.app-content{gap:12px}.page-home>#new-objective #run-objective{height:144px;min-height:144px}}
+@media(prefers-reduced-motion:reduce){.app-content>section,.app-content>div>section,.page-home>#new-objective,.topbar-new,.app-content button,.secondary-button{transition:none!important}}
