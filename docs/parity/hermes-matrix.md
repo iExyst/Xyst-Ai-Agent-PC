@@ -615,3 +615,7 @@ Hosted run [43235406358](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs
 ## Managed browser form structure
 
 The opt-in read-only form inspection reports visible control disabled/read-only/multiple state and visible submitter metadata (type, accessible label, name, disabled state, and validation bypass flag). It does not read current field values or submit. The browser unit suite validates bounded metadata-only output and rejects value fields; all 34 tests pass locally with a workspace-rooted pytest temp directory. A real Microsoft Edge read of the explicitly approved HTTPBin form confirms 12 controls, one submitter, durable metadata-only journal output and no field values ([evidence](../releases/evidence/browser-forms-live.json)). Hosted verification is pending. This does not add interactive form support or establish full browser parity.
+
+## Dark workspace conversation view
+
+Saved desktop/terminal sessions now render their messages in the main workspace when selected, with distinct user and assistant bubbles and a direct reply composer. The existing shared conversation API and durable coordinator path remain the only execution path. The deterministic browser test verifies selection, rename propagation, a saved next turn, transcript refresh, and deletion; the production build passes. Local visual evidence: [`dark-chat-session-20261115`](../../.acceptance/dark-chat-session-20261115/). This establishes one UI/session fixture, not real-provider chat or the complete Phase 6 fresh-user gate.

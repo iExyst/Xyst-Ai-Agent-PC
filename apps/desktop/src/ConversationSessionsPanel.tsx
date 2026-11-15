@@ -52,7 +52,7 @@ export function ConversationSessionsPanel({
     setBusy(true);setError('');
     try {
       const updated=await client.renameChatSession(sessionId,titleDraft);
-      setSession(updated);setTitleDraft(updated.title);setItems(await client.chatSessions());
+      setSession(updated);setTitleDraft(updated.title);setItems(await client.chatSessions());selection.current(sessionId,updated);
     } catch(failure){setError(String(failure));}
     finally{setBusy(false);}
   }
@@ -84,7 +84,7 @@ export function ConversationSessionsPanel({
 
   return <section aria-label="Shared conversation sessions">
     <h2>Shared conversation</h2>
-    <p>Continue a text conversation saved by the desktop or <code>xaa chat</code>. Each turn still runs through the durable coordinator; session context is bounded and treated as untrusted history. Deleting a session removes it for both interfaces after confirmation.</p>
+    <p>Continue a text conversation saved by the desktop or <code>xaa chat</code>. Select a session to show its messages in the workspace. Each new turn still runs through the durable coordinator; saved history is bounded and treated as untrusted context.</p>
     {!loaded&&<button type="button" disabled={busy} onClick={()=>setLoaded(true)}>Load shared conversations</button>}
     {loaded&&<>
     <label htmlFor="shared-chat-session">Saved terminal and desktop sessions</label>
@@ -97,10 +97,9 @@ export function ConversationSessionsPanel({
     {session&&<>
       <label htmlFor="shared-chat-title">Conversation title<input id="shared-chat-title" value={titleDraft} maxLength={80} onChange={event=>setTitleDraft(event.target.value)} disabled={busy}/></label>
       <button type="button" disabled={busy||!titleDraft.trim()||titleDraft.trim()===session.title} onClick={()=>void renameCurrent()}>Save title</button>
-      <p><strong>{session.title}</strong> · Session ID <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
+      <p>Session ID <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
       <p>Continue this same history in a terminal with <code>xaa chat --model "{session.model}"{session.workspace?` --workspace "${session.workspace}"`:''} --mode "{session.mode}" --session "{session.session_id}"</code>.</p>
       <button type="button" disabled={busy} onClick={()=>void deleteCurrent()}>Delete shared conversation</button>
-      <ol aria-label="Saved conversation turns">{session.messages.map((message,index)=><li key={`${message.run_id}:${index}`}><strong>{message.role==='user'?'You':'X.A.A.'}</strong><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{message.content}</pre></li>)}</ol>
     </>}
     </>}
     {error&&<p role="alert">{error}</p>}

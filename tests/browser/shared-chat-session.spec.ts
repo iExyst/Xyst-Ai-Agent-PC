@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {selectLocalModel} from './navigation';
 
-test('desktop resumes a terminal chat session through coordinator runs and saves the next turn',async({page})=>{
+test('desktop resumes a terminal chat session through coordinator runs and saves the next turn',async({page},testInfo)=>{
   const stamp='2026-11-08T12:00:00Z';
   const originalMessages=[
     {role:'user',content:'Earlier question',run_id:'terminal-run-1'},
@@ -61,7 +61,9 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.locator('details.saved-conversations > summary').click();
   await page.getByRole('button',{name:'Load shared conversations'}).click();
   await page.getByLabel('Saved terminal and desktop sessions').selectOption('terminal-chat');
-  await expect(page.getByText('Earlier reply',{exact:true})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:testInfo.outputPath('dark-conversation.png')});
   await page.getByLabel('Conversation title').fill('Research notes');
   await page.getByRole('button',{name:'Save title'}).click();
   await expect(page.getByLabel('Saved terminal and desktop sessions')).toContainText('Research notes');
@@ -76,10 +78,10 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await expect.poll(()=>savedAssistantMessage).toBe('Desktop continued the saved conversation.');
   await expect(page.getByRole('region',{name:'Active run'}).getByText('Desktop continued the saved conversation.',{exact:true})).toBeVisible();
   await page.getByRole('link',{name:/New objective/}).click();
-  await expect(page.getByText('Earlier reply',{exact:true})).toBeVisible();
-  await expect(page.getByRole('list',{name:'Saved conversation turns'}).getByText(longTurn,{exact:true})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Conversation messages'}).getByText(longTurn,{exact:true})).toBeVisible();
   page.once('dialog',dialog=>void dialog.accept());
   await page.getByRole('button',{name:'Delete shared conversation'}).click();
   await expect.poll(()=>deleted).toBe(true);
-  await expect(page.getByRole('list',{name:'Saved conversation turns'})).toHaveCount(0);
+  await expect(page.getByRole('list',{name:'Conversation messages'})).toHaveCount(0);
 });
