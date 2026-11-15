@@ -1,8 +1,8 @@
 # Progress
 
-## Announce run-state changes without replaying the activity history (2026-11-14)
+## Make active-run screen-reader announcements concise (2026-11-14)
 
-The active-run timeline previously used one polite live region around its entire growing history, which could make screen readers replay old entries. The timeline is now a labeled, non-live history list; a separate concise status region announces only the run state (`Running`, `Paused`, `Waiting for your approval`, and other coordinator states). The streaming browser scenarios verify the state announcement and that the history stays out of the live region (4 passed); `npm run build:desktop` and the incremental Tauri build pass. The updated native program is staged separately at [`build/native-dark-a11y-20261114`](../build/native-dark-a11y-20261114/) with hashes in its manifest. Broader screen-reader testing remains open. No model inference was used.
+The active-run timeline previously used one polite live region around its growing history, which could replay old entries. Specialist draft text was also marked polite while changing token by token. Both histories are now available as labeled, non-live content; separate concise status messages announce run-state transitions and the arrival of an unverified specialist draft once. The streaming browser scenarios verify those announcements and both quiet content regions (4 passed); `npm run build:desktop` and the incremental Tauri build pass. The updated native program is staged separately at [`build/native-dark-a11y-20261114`](../build/native-dark-a11y-20261114/) with hashes in its manifest. Broader screen-reader testing remains open, and hosted verification for the specialist-draft addition is pending. No model inference was used.
 
 ## Host-verify and package the dark desktop (2026-11-14)
 

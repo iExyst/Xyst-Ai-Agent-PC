@@ -88,6 +88,8 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
   await page.getByRole('button',{name:'Start objective'}).click();
   const inspect=page.getByRole('article',{name:'Task inspect'});
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
+  await expect(inspect.locator('article[aria-live="off"]')).toContainText('Unverified streamed specialist draft');
+  await expect(inspect.locator('[role="status"]')).toHaveText('An unverified researcher specialist draft is available and may still change.');
   await expect(inspect).toContainText('Unverified streamed specialist draft');
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toHaveCount(0,{timeout:2500});
