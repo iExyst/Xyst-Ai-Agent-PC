@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Hopper model-list provider (2026-11-15)
+
+Reviewed `hopper` at catalog-pinned commit `68427cf7770b393b6b4b694722d24431058fbd3f`. It wraps Hermes' OpenRouter profile and supplies a user-managed local model list; model IDs, pricing, availability, and the README's data-handling claims are not validated by the plugin. Fifty-one of 90 model-category rows are reviewed across 50 source trees; 39 remain pending. No plugin, key, account, model catalog endpoint, or inference was used.
+
 ## Review pinned Hermes Structured Aux Models (2026-11-15)
 
 Reviewed `hermes-structured-aux-models` at catalog-pinned commit `e5c49b081ad04adca2ee3edc601b09ede6cee4c5`. It is a specialized OpenRouter decision provider for approval, MCP sampling, and compression. The review found unbounded request/response bodies, configurable destinations that can receive the OpenRouter key, a process-global settings cache across profiles, incomplete fallback redaction, and a Windows-unverified `python3` discovery seam. Fifty of 90 model-category rows are reviewed across 49 source trees; 40 remain pending. No plugin, credential, endpoint, or model was used.

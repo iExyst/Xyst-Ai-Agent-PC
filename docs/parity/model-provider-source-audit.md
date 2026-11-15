@@ -814,6 +814,19 @@ Reviewed 2026-11-15 at catalog-pinned repository commit [`e5c49b081ad04adca2ee3e
 
 This candidate remains planned for Phase 9 and is not implemented. No plugin was installed, imported, or executed; no OpenRouter key, account, endpoint, or model call was used. Its privacy claims are not a substitute for explicit external-data approval, and its approval contract is not a substitute for application-enforced policy.
 
+## Hopper OpenRouter model-list provider
+
+Reviewed 2026-11-15 at catalog-pinned repository commit [`68427cf7770b393b6b4b694722d24431058fbd3f`](https://github.com/mykeura/hopper/tree/68427cf7770b393b6b4b694722d24431058fbd3f). Catalog manifest `plugin-catalog/hopper.yaml`, SHA-256 `f94849b4aa865f9945dd9f4e1e1a56be0c9a887f2201f7a5e98a9dda11f2375c`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/mykeura/hopper/blob/68427cf7770b393b6b4b694722d24431058fbd3f/plugin.yaml) and [`__init__.py`](https://github.com/mykeura/hopper/blob/68427cf7770b393b6b4b694722d24431058fbd3f/__init__.py) | `94875ddd46b814030809e11d0ce04714029c166f5d401659c321a0dc0ffe0330`; `5571f396ec06a2ac02e1e5b220c974b037042df04894d05bb2e7be02668e536a` | Declares a version 1.4.0 OpenRouter model-provider profile. It subclasses Hermes' bundled OpenRouter profile and overrides model discovery with a user-curated file under the active `HERMES_HOME`, using `OPENROUTER_API_KEY` for ordinary inference. |
+| [`manage.py`](https://github.com/mykeura/hopper/blob/68427cf7770b393b6b4b694722d24431058fbd3f/manage.py) | `5b4058e1fa3e199bef2f71f1ce573a7224ec2ee68b64dbaa02065cd6f0c2db4c` | Provides list/add/remove/reset and base64 replacement commands. It validates that IDs are non-empty, whitespace-free, and contain `/`, deduplicates, and atomically replaces the list through a temporary file. It does not verify model existence or pricing. `HOPPER_MODELS_FILE` can redirect the user-controlled list to another path. |
+| [`README.md`](https://github.com/mykeura/hopper/blob/68427cf7770b393b6b4b694722d24431058fbd3f/README.md) | `7d2985544355d80b1b5c1211550dbfc2b2f4a924603787636531728bde18bd62` | Documents an initial free multimodal model and claims about data collection, provider routing, and temporary availability. Those service/model claims were not independently verified; OpenRouter pricing and model availability can change, and the user list may also contain paid models. The README gives explicit `py`/`python` Windows commands. |
+| [`LICENSE`](https://github.com/mykeura/hopper/blob/68427cf7770b393b6b4b694722d24431058fbd3f/LICENSE) | `7742389eb019bb4b2a6a6f766721ebae7b7329ab86bb69975e6889070b7a6f3c` | MIT license. |
+
+The provider's `_read_models()` accepts arbitrary non-empty lines from direct file edits and does not apply the manager's slash/whitespace validation, so invalid IDs can appear in the picker and fail later at the gateway. The missing-file default is written directly rather than atomically; interruption could leave a partial catalog. No test suite is present in the pinned tree. This candidate remains planned for Phase 9 and is not implemented. No plugin, account, key, catalog endpoint, or model was used; the README's data-handling and free-tier claims remain unverified.
+
 ## AtmoRouter pinned source unavailable
 
 The catalog still includes `atmorouter` at repository `bayuh85/hermes-atmorouter`, pinned commit `fd1002c51cc7069696a5db5b391faed77279f910`, catalog manifest SHA-256 `f02a3ca47389f88ae57dd12ad1e2e188adf07b7e6c9563132c411b3b5bc17459`. Both raw GitHub source fetches and the GitHub commit-tree API returned 404 during this review. No source classification was made, so it remains pending and is not included in the reviewed-entry count. Retry if the pinned repository becomes accessible.
