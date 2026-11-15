@@ -115,8 +115,9 @@ try {
   }
   if (!apiReady) throw new Error('Authenticated native memory API did not become ready.');
 
-  await page.getByRole('link', { name: /Tools & integrations/ }).click();
-  await page.getByText('Memory preferences', { exact: true }).click();
+  await page.getByRole('link', { name: 'Memory', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Memory', exact: true })).toBeVisible();
+  await expect(page.getByText('Memory preferences', { exact: true })).toBeVisible();
   await page.locator('#memory-preference').fill(initialPreference);
   await page.getByRole('button', { name: 'Save preference', exact: true }).click();
   let preferenceRow = page.locator('li').filter({ hasText: unique });
