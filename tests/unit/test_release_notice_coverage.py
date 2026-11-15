@@ -6,6 +6,48 @@ read_notice_references = run_path(str(_SCRIPT))["read_notice_references"]
 count_unknown_additional_notice_placeholders = run_path(str(_SCRIPT))[
     "count_unknown_additional_notice_placeholders"
 ]
+project_license_inventory_errors = run_path(str(_SCRIPT))["project_license_inventory_errors"]
+
+
+def project_fixture(root: Path, *, cargo_license: str = "MIT") -> Path:
+    (root / "apps/desktop/src-tauri").mkdir(parents=True)
+    (root / "docs/releases").mkdir(parents=True)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname="xaa-engine"\nversion="0.1.1"\nlicense="MIT"\n',
+        encoding="utf-8",
+    )
+    (root / "apps/desktop/src-tauri/Cargo.toml").write_text(
+        f'[package]\nname="xaa-desktop"\nversion="0.1.1"\nlicense="{cargo_license}"\n',
+        encoding="utf-8",
+    )
+    (root / "package.json").write_text(
+        '{"name":"xaa-workspace","version":"0.1.1","license":"MIT"}',
+        encoding="utf-8",
+    )
+    (root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    (root / "docs/releases/dependency-inventory.md").write_text(
+        "| Python | xaa-engine | 0.1.1 | MIT (project metadata) | — |\n"
+        "| npm | xaa-workspace | 0.1.1 | MIT | — |\n"
+        "| Rust/Cargo | xaa-desktop | 0.1.1 | MIT | — |\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_project_license_inventory_matches_first_party_metadata(workspace_tmp_path: Path):
+    root = project_fixture(workspace_tmp_path / "project-license")
+
+    assert project_license_inventory_errors(root) == []
+
+
+def test_project_license_inventory_reports_manifest_inventory_mismatch(workspace_tmp_path: Path):
+    root = project_fixture(
+        workspace_tmp_path / "project-license-mismatch", cargo_license="Apache-2.0"
+    )
+
+    assert project_license_inventory_errors(root) == [
+        "Rust/Cargo: xaa-desktop@0.1.1 declares Apache-2.0, but inventory records MIT."
+    ]
 
 
 def test_notice_coverage_reads_only_explicit_package_attributions(workspace_tmp_path: Path):

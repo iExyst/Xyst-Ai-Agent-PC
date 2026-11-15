@@ -2,7 +2,7 @@
 
 ## Correct the Rust license inventory for X.A.A.'s desktop crate (2026-11-15)
 
-`cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked --no-deps` confirms `xaa-desktop 0.1.1` declares MIT. The release inventory had incorrectly listed the application's own crate as `NO LICENSE METADATA`; corrected it to MIT and advanced the snapshot date. The root license, `pyproject.toml`, Cargo crate, and npm workspace now agree on the project's MIT license. This does not close third-party text/copyright review or release approval.
+`cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked --no-deps` confirms `xaa-desktop 0.1.1` declares MIT. The release inventory had incorrectly listed the application's own crate as `NO LICENSE METADATA`; corrected it to MIT and advanced the snapshot date. The root license, `pyproject.toml`, Cargo crate, and npm workspace now agree on the project's MIT license. The release coverage checker now verifies those first-party manifest/table/root-license values, with regression tests for matching and mismatching metadata. All five focused release-coverage tests, Ruff, and the coverage command pass locally. This does not close third-party text/copyright review or release approval.
 
 ## Reverify daily schedule recovery across the spring-forward gap (2026-11-15)
 

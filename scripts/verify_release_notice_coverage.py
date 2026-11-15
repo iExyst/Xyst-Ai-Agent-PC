@@ -72,6 +72,73 @@ def read_inventory(path: Path) -> dict[str, set[tuple[str, str]]]:
     return result
 
 
+def project_license_inventory_errors(root: Path) -> list[str]:
+    """Ensure the release table agrees with each first-party package manifest."""
+    python_project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    rust_project = tomllib.loads(
+        (root / "apps/desktop/src-tauri/Cargo.toml").read_text(encoding="utf-8")
+    )["package"]
+    npm_project = json.loads((root / "package.json").read_text(encoding="utf-8"))
+
+    declared = [
+        (
+            "Python",
+            str(python_project["name"]),
+            str(python_project["version"]),
+            _license_expression(python_project["license"], "pyproject.toml"),
+        ),
+        (
+            "Rust/Cargo",
+            str(rust_project["name"]),
+            str(rust_project["version"]),
+            _license_expression(rust_project["license"], "Cargo.toml"),
+        ),
+        (
+            "npm",
+            str(npm_project["name"]),
+            str(npm_project["version"]),
+            _license_expression(npm_project["license"], "package.json"),
+        ),
+    ]
+    rows: dict[tuple[str, str, str], str] = {}
+    pattern = re.compile(r"^\| (Python|npm|Rust/Cargo) \| (.+?) \| ([^|]+) \| ([^|]+) \|")
+    inventory = (root / "docs/releases/dependency-inventory.md").read_text(encoding="utf-8")
+    for line in inventory.splitlines():
+        match = pattern.match(line)
+        if match:
+            ecosystem, name, version, license_expression = match.groups()
+            rows[(ecosystem, name.strip(), version.strip())] = license_expression.strip()
+
+    errors: list[str] = []
+    license_lines = (root / "LICENSE").read_text(encoding="utf-8").lstrip().splitlines()
+    license_heading = license_lines[0].strip() if license_lines else ""
+    if license_heading != "MIT License":
+        errors.append("Root LICENSE does not identify the configured MIT project license.")
+    for ecosystem, name, version, expected_license in declared:
+        key = (ecosystem, name, version)
+        recorded = rows.get(key)
+        if recorded is None:
+            errors.append(
+                f"{ecosystem}: first-party package {name}@{version} is missing from inventory."
+            )
+        elif recorded.split(maxsplit=1)[0] != expected_license:
+            errors.append(
+                f"{ecosystem}: {name}@{version} declares {expected_license}, "
+                f"but inventory records {recorded}."
+            )
+    return errors
+
+
+def _license_expression(value: object, source: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        text_value = cast(dict[str, object], value).get("text")
+        if isinstance(text_value, str) and text_value.strip():
+            return text_value.strip()
+    raise RuntimeError(f"First-party license metadata is missing or unsupported in {source}.")
+
+
 def read_notice_references(path: Path) -> dict[str, set[tuple[str, str]]]:
     """Read package/version pairs from explicit package or verified-source lists."""
     result: dict[str, set[tuple[str, str]]] = {ecosystem: set() for ecosystem in KEYS}
@@ -211,6 +278,7 @@ def main() -> int:
     }
 
     errors: list[str] = []
+    errors.extend(project_license_inventory_errors(root))
     unknown_notice_placeholders = count_unknown_additional_notice_placeholders(notice_path)
     if unknown_notice_placeholders:
         errors.append(
