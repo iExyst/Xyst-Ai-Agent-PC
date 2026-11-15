@@ -1,5 +1,9 @@
 # Progress
 
+## Review the pinned Modular Cloud provider (2026-11-15)
+
+Reviewed the `modular` provider at catalog-pinned commit `bfd4510df3cb2218300f3a059414ecbf8e479366`. It targets the fixed `api.modular.com` API, reads `MODULAR_API_KEY`, and filters the authenticated live catalog to four curated model IDs with per-model reasoning mappings. Tool, vision, and context-window support are catalog/source claims that were not independently reproduced. This sends inference to Modular Cloud and is not an LM Studio path. Seventy-seven selected non-platform catalog entries now have individual source reviews; 75 of 90 model-category entries are reviewed across 73 source trees, with 15 pending. Source, manifest, and license hashes are recorded in the audit. No account, key, request, test, or inference was used.
+
 ## Refine the dark desktop onboarding guide (2026-11-15)
 
 Inspected the current native desktop window and refined the three-step setup guide so its inline “Model setup” action no longer crowds the instruction text. Improved step-card spacing, readability, and narrow-window stacking while preserving the existing dark graphite and mint theme. `npm run build:desktop` passed TypeScript checking and the Vite production build. This is a visual polish slice; it does not change onboarding behavior or close a release gate. No tests or model inference were run.
