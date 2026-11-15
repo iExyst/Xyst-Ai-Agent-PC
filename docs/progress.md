@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Hermes Opper provider (2026-11-15)
+
+Reviewed `hermes-opper` at catalog-pinned commit `2e15f465b4c2a107fd0230611ebc1e5a7586a196`. It registers an OpenAI-compatible Opper gateway with live discovery and an auxiliary model that can create extra remote calls. Its configurable base URL needs origin controls, and the upstream EU routing and billing claims were not independently checked. Forty-eight of 90 model-category rows are reviewed across 47 source trees; 42 remain pending. No plugin, key, account, catalog request, or inference was used.
+
 ## Review pinned Hermes Muse Code provider (2026-11-15)
 
 Reviewed `hermes-muse-code` at catalog-pinned commit `e33501185e328b5597fd98c6de916495922ec727`. The provider uses Meta's Responses API and a manual device-code flow that caches both the OAuth token and subscription key in plaintext JSON; its permission handling does not establish private Windows ACLs. Each request times out, but response bodies and redirect destinations are not bounded. `META_BASE_URL` can change where the API key is sent. Forty-seven of 90 model-category rows are reviewed across 46 source trees; 43 remain pending, including the still-unavailable AtmoRouter source. No plugin was installed/imported/executed and no Meta account, key, endpoint, or inference was used.

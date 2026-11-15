@@ -770,6 +770,20 @@ Reviewed 2026-11-15 at catalog-pinned repository commit [`e33501185e328b5597fd98
 
 Both the OAuth access token and API key are written as plaintext to `muse-code-sub.json`; `chmod(0600)` runs only after writing and does not establish a private Windows ACL. X.A.A. must not reuse this cache design: use the operating-system credential store, disclose that login and inference go to Meta, bound response sizes, and restrict redirects and any configured API origin. This catalog candidate remains planned for Phase 9 and is not implemented. No plugin was installed, imported, or executed; no Meta account, key, live endpoint, or inference request was used. This is pinned-source review only, not provider compatibility or subscription-billing acceptance.
 
+## Hermes Opper provider
+
+Reviewed 2026-11-15 at catalog-pinned repository commit [`2e15f465b4c2a107fd0230611ebc1e5a7586a196`](https://github.com/opper-ai/hermes-opper/tree/2e15f465b4c2a107fd0230611ebc1e5a7586a196). Catalog manifest `plugin-catalog/hermes-opper.yaml`, SHA-256 `313e7eadf66195522f5d968c67b8c4265b60786076f70b6730e15479490da4c3`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| [`plugin.yaml`](https://github.com/opper-ai/hermes-opper/blob/2e15f465b4c2a107fd0230611ebc1e5a7586a196/plugin.yaml) | `0dad86ac2c8b4cbf38a66a9eb432f3077ccbd3ad3e33ad7f99985bba8aa3ca0d` | Declares a model-provider plugin version 1.0.0 and requires `OPPER_API_KEY`; it does not pin the Hermes compatibility range. |
+| [`__init__.py`](https://github.com/opper-ai/hermes-opper/blob/2e15f465b4c2a107fd0230611ebc1e5a7586a196/__init__.py) | `29c133167e0fc3bc0406809a00307fc3520e63ba0a70fad31a6beb133bfb27b2` | Registers a standard OpenAI-compatible chat-completions profile at `https://api.opper.ai/v3/compat`, with live catalog discovery, static fallback pool names, and `gpt-5.4-mini` as the default auxiliary model. `OPPER_BASE_URL` is accepted without a plugin-side origin allowlist, so X.A.A. must prevent credential forwarding to an unintended host. |
+| [`README.md`](https://github.com/opper-ai/hermes-opper/blob/2e15f465b4c2a107fd0230611ebc1e5a7586a196/README.md) | `ef79476b4edf379aa8843e11fb14856b7aeff5e3d6ef713e3162114cb7da960e` | Describes Opper's gateway as EU-hosted and lists model routing, residency, pricing and retention claims. These claims were not independently verified; prompts and tool context would be sent to Opper and may be routed to underlying model providers. Enabling the auxiliary default can create extra remote model calls for compression, titles, or vision work. |
+| [`tests/test_opper_profile.py`](https://github.com/opper-ai/hermes-opper/blob/2e15f465b4c2a107fd0230611ebc1e5a7586a196/tests/test_opper_profile.py) | `3531c1dea297276e63ed13ba7409a831b178245a47769ee7b1be9a64977cfb4a` | Tests registration through Hermes provider discovery, profile metadata, aliases, fallback models, and the auxiliary model. They do not exercise live requests, tool round trips, response-size bounds, host allowlisting, or residency. The upstream suite was inspected but not run. |
+| [`LICENSE`](https://github.com/opper-ai/hermes-opper/blob/2e15f465b4c2a107fd0230611ebc1e5a7586a196/LICENSE) | `733f6b88a6548353a5048e50d7d167c4b73e54f25e9309e1ddc24072d9649b77` | MIT license. |
+
+This candidate remains planned for Phase 9 and is not implemented. No plugin was installed, imported, or executed; no Opper key, account, catalog endpoint, or inference request was used. This pinned-source review does not establish provider compatibility, current model availability, data residency, or billing behavior.
+
 ## AtmoRouter pinned source unavailable
 
 The catalog still includes `atmorouter` at repository `bayuh85/hermes-atmorouter`, pinned commit `fd1002c51cc7069696a5db5b391faed77279f910`, catalog manifest SHA-256 `f02a3ca47389f88ae57dd12ad1e2e188adf07b7e6c9563132c411b3b5bc17459`. Both raw GitHub source fetches and the GitHub commit-tree API returned 404 during this review. No source classification was made, so it remains pending and is not included in the reviewed-entry count. Retry if the pinned repository becomes accessible.
