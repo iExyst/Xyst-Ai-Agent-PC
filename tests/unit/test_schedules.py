@@ -94,6 +94,43 @@ def test_daily_ambiguous_wall_time_runs_once_at_earlier_fall_back_instant(
     assert submitted == first_occurrence
 
 
+def test_half_hour_dst_gap_and_fold_are_resolved_once(workspace_tmp_path: Path) -> None:
+    timezone = "Australia/Lord_Howe"
+    assert local_instant(datetime(2025, 10, 5, 2, 15), timezone) is None
+    assert local_instant(datetime(2025, 4, 6, 1, 45), timezone) == datetime(
+        2025, 4, 5, 14, 45, tzinfo=UTC
+    )
+
+    store = RunStore(workspace_tmp_path / "lord-howe-fold.sqlite3")
+    schedule = ScheduleStore(store).create(
+        objective="Inspect the workspace",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2025-04-06T01:45"),
+        frequency="daily",
+        timezone=timezone,
+        missed_run_policy="run_once",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    submitted: list[str] = []
+    service = ScheduleService(store, submitted.append)
+    first_fold_instant = datetime(2025, 4, 5, 14, 50, tzinfo=UTC)
+    repeated_wall_time = datetime(2025, 4, 5, 15, 0, tzinfo=UTC)
+
+    first = service.tick(first_fold_instant)
+    assert len(first) == 1
+    assert service.tick(repeated_wall_time) == []
+
+    saved = ScheduleStore(store).get(schedule["id"])
+    assert saved is not None
+    assert len(saved["executions"]) == 1
+    assert saved["executions"][0]["state"] == "queued"
+    assert saved["executions"][0]["occurrence_id"].endswith("2025-04-06T01:45")
+    assert submitted == first
+
+
 def test_recipient_edits_apply_to_future_occurrences_only(workspace_tmp_path: Path) -> None:
     store = RunStore(workspace_tmp_path / "schedule-recipient-edit.sqlite3")
     schedules = ScheduleStore(store)
