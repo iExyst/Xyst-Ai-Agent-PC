@@ -53,6 +53,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "e5b7b985b5aa56bc585ef1924858978696eb0c3a; "
         "see model-provider-source-audit.md#anyapi-provider"
     ),
+    "anyrouter": (
+        "model-provider; pinned source review at commit "
+        "86bc17dd61ade9baa6f2fb7d440979b55359a907; "
+        "see model-provider-source-audit.md#anyrouter"
+    ),
     "adaptive-inference-routing": (
         "model-category middleware; pinned source review at commit "
         "d6f4e201ba28602189872746922e527c58ed0cbd; "

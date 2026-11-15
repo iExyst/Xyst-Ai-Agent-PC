@@ -71,6 +71,19 @@ Reviewed 2026-11-15 at the catalog-pinned repository commit [`e5b7b985b5aa56bc58
 
 The candidate remains planned for Phase 9 and is not implemented. Its dynamic cloud model catalog and declared vision support would need explicit per-run remote-data disclosure, route-specific capability checks, protected credentials, endpoint/origin validation, bounded discovery and inference, deterministic fixtures, and final live-provider acceptance after the requested LLM-testing deferral. No plugin was installed or executed and no credential, account, or inference request was used.
 
+## AnyRouter provider
+
+Reviewed 2026-11-15 at catalog-pinned commit [`86bc17dd61ade9baa6f2fb7d440979b55359a907`](https://github.com/duyet/hermes-provider-anyrouter/tree/86bc17dd61ade9baa6f2fb7d440979b55359a907), subdirectory `anyrouter`. Catalog manifest SHA-256 `d5acce82b5be5d056f466bf4f24fe1b5cb90d3038f7c88df41ecf654f66c6434`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `anyrouter/plugin.yaml` | `edb187c5b6722a6a83a59674389e4301778f517bd994b58561421bed7fe3b75b` | Declares an OpenAI-compatible model-provider. |
+| `anyrouter/__init__.py` | `2afe1be0ff6d2930dd9defb93fb13773a13fda01452529966a37234c18159277` | Uses `ANYROUTER_API_KEY`, default `https://anyrouter.dev/api/v1`, optional custom base URL, and opt-in app-attribution headers. It filters public catalog entries to those advertising tool calls, keeps a process-global model cache, and forwards session IDs, provider preferences and reasoning in `extra_body`. A custom base URL bypasses AnyRouter-specific catalog interpretation. |
+| `README.md` | `d2ae4a6a543e23f243eb671298efbaa1e312d067d9b8070e5a53f74bda065db0` | Describes meta-model routing, upstream model selection, sticky sessions, credits and optional attribution. These are service and maintainer claims, not independently tested here. |
+| `LICENSE` | `ad1e4905f4c34fbfe2439aa3c2171ae258ef4846abc0aa131fccf5c0d7e52451` | MIT license for this candidate source. |
+
+This candidate remains planned for Phase 9. Prompts, tool calls, the API key and routing preferences go to the configured gateway, which may route across upstream providers. X.A.A. would need explicit destination/cost disclosure, credential-origin binding, safe catalog fetching and cache behavior tied to endpoint/account settings. No API key, catalog request or inference was used.
+
 ## Adaptive Inference routing middleware
 
 Reviewed 2026-11-15 at the catalog-pinned repository commit [`d6f4e201ba28602189872746922e527c58ed0cbd`](https://github.com/midhatn/adaptive-inference/tree/d6f4e201ba28602189872746922e527c58ed0cbd), subdirectory `plugins/hermes`. The Hermes catalog manifest is `plugin-catalog/adaptive-inference-routing.yaml`, SHA-256 `b665ab2f5c27d361541d35c055cb9c0008cc3e35e5ac61fe38709b79b75d079b`.
@@ -272,7 +285,7 @@ Reviewed 2026-11-14 against the catalog-selected `NousResearch/hermes-official-p
 
 ### X.A.A. disposition and limits
 
-The catalog candidate remains `planned`, Phase 9. This audit classifies one entry in the 90-item `models` catalog category; it does not establish that every catalog item is a provider, does not evaluate all model candidates, and does not add a provider to X.A.A. LM Studio remains the default. Any later external-process provider needs an explicit remote-data and account-usage notice, owner-selected account/profile, credential ownership boundary, model capability/health checks, complete cancellation, retry/idempotency semantics, model-free fixture coverage, and a real provider acceptance deferred to the final LLM-testing phase. The upstream provider's permissive proxy fallback must not be copied.
+The catalog candidate remains planned for Phase 9 and is not implemented. This document records selected pinned-source behavior only; it does not establish that all catalog entries are model providers or prove runtime compatibility. LM Studio remains X.A.A.'s default provider. External adapters need explicit remote-data and account-usage notices, owner-selected account/profile, a credential boundary, model capability and health checks, cancellation, retry/idempotency behavior, model-free fixtures, and live acceptance in the final LLM-testing phase. The candidate's permissive proxy fallback must not be copied.
 
 No external executable, credential, model or inference service was used. The audit is limited to the pinned candidate source and its declared behavior; dependency installation, signature trust, current-vendor compatibility, account entitlement, charge accounting, and clean-environment behavior remain unverified.
 
@@ -378,11 +391,11 @@ Reviewed 2026-11-15 at catalog-pinned commit [`82700f5377a46f0e7bd482c907ed04090
 
 The candidate remains planned for Phase 9. No plugin code, account, payment flow, catalog request, key or inference was used.
 
-## X.A.A. disposition and limits
+## Source-review scope
 
-The catalog candidate remains `planned`, Phase 9. This review classifies three of the 90 model-category candidates (Abstract, Groq, and Claude); it does not establish that the rest are providers or evaluate their source. It does not add dynamic provider loading or a Groq adapter to X.A.A. The earlier provider-core audit records why arbitrary plugin imports remain deferred until a provider-code trust model and capability contract exist. Live provider and model testing remains deferred to the final LLM-testing phase as requested.
+This document records selected source at each catalog-pinned commit. These reviews do not implement or validate providers in X.A.A.; live provider and model testing remains deferred to the final LLM-testing phase as requested. Every reviewed candidate remains planned until X.A.A. implements and verifies the applicable acceptance requirements.
 
-No plugin, test, dependency, executable, account credential, live endpoint, or model was used. This is a pinned-source review only; installed behavior, current vendor model metadata, authentication routing, account entitlement, pricing, and live compatibility remain unverified.
+No plugin, test, dependency, executable, account credential, live endpoint, or model was used in these source reviews. Installed behavior, current vendor model metadata, authentication routing, account entitlement, pricing, and live compatibility remain unverified.
 
 ## GitHub Copilot providers
 
@@ -421,6 +434,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. These reviews classify twenty-six of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, Antigravity agy, Antigravity OAuth, Antigravity Subscription DirectSDK, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 64 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. These reviews classify twenty-seven of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, AnyRouter, Antigravity agy, Antigravity OAuth, Antigravity Subscription DirectSDK, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 63 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.

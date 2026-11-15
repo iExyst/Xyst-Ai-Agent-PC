@@ -1,5 +1,9 @@
 # Progress
 
+## Review AnyRouter provider (2026-11-15)
+
+Reviewed the pinned gateway adapter's tool-capability catalog filtering, process-wide cache, custom endpoint fallback, session/provider routing preferences, reasoning passthrough and opt-in attribution headers. Twenty-seven of 90 model-category candidates now have source reviews; 63 remain pending. No key, catalog request or inference was used.
+
 ## Review Antigravity Subscription DirectSDK provider (2026-11-15)
 
 Reviewed the pinned provider's streaming CLI bridge, persistent conversation handling, dynamic model/effort catalog and quota reporting. Its tool calls are parsed from text markup and its process code has documented Windows token-link and cleanup edge cases. Twenty-six of 90 model-category candidates now have source reviews; 64 remain pending. No CLI, plugin, account, token, usage endpoint or inference was used.
