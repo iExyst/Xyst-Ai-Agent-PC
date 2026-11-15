@@ -1,5 +1,13 @@
 # Progress
 
+## Review CLIProxyAPI provider bridge (2026-11-15)
+
+Reviewed the pinned multi-instance CLIProxyAPI adapter. It maps gateways into per-upstream Hermes wires, supports optional billing-gateway routing, filters routed model lists, and caches bounded metadata. The code uses HTTPS for public hosts, restricts plain HTTP to private address ranges, disables redirects and proxy handlers, caps public responses at 8 MiB and the management credential list at 32 MiB, and budgets optional GET-only management discovery to 32 calls/20 seconds/15 minutes. The README discloses a secret-boundary gap: on routed instances, the CPA discovery key and any management key can remain visible to agent shells; the management key can administer the gateway despite this plugin using only GET requests. Its cache requests Unix mode 0600, but Windows ACL behavior is unverified. Thirty-eight of 90 model-category entries are now reviewed across 37 distinct source trees; 52 remain pending. No gateway, management account, credential, or inference request was used.
+
+## Review Hermes Impossibl provider (2026-11-15)
+
+Reviewed the pinned OpenAI-compatible multi-model gateway profile and fixture tests. It uses `IMPOSSIBL_API_KEY`, allows a configurable base URL, and fetches `/models`; it keeps entries whose endpoint list is absent or includes Chat Completions, except those explicitly marked as not supporting tools. The upstream profile advertises streaming, tool calls, and vision. The catalog read has an eight-second timeout but no response-size bound, and a valid non-object JSON response can escape the error handler during shape access. Its tests mock Hermes' credentialed URL opener, so they do not verify endpoint/origin policy or real API compatibility. MIT license is present. Thirty-seven of 90 model-category entries are now reviewed across 36 distinct source trees; 53 remain pending. No key, catalog endpoint, inference request, or model was used.
+
 ## Review Experiential Labs provider (2026-11-15)
 
 Reviewed the pinned multi-model gateway provider and its account-usage helper. Chat/model discovery use the OpenAI-compatible gateway and an optional base URL; the usage view makes separate authenticated balance/key-cap requests, and the error hook marks only two exact gateway guardrail signatures retryable. The usage endpoint override and redirect handling need strict origin controls before X.A.A. forwards a credential. Thirty-six of 90 model-category entries are now reviewed across 35 distinct source trees; 54 remain pending. No key, account, model catalog, usage endpoint, or inference request was used.

@@ -138,6 +138,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "3853e895482d3171ff3a8144344b74cfa3a7dd67; "
         "see model-provider-source-audit.md#clinepass-provider"
     ),
+    "cliproxyapi-provider": (
+        "multi-instance provider bridge for a local or remote CLIProxyAPI gateway; pinned source review "
+        "at commit 42240b168488c820883b0d989456acf0a8a06ba8; "
+        "see model-provider-source-audit.md#cliproxyapi-provider"
+    ),
     "cloudgpu-provider": (
         "model-provider; pinned source review at commit "
         "8094603d776e185cfe362618d353841e6b453189; "
@@ -162,6 +167,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "standalone multi-model deliberation plugin and virtual provider; pinned source review "
         "at commit 18a66633acc045c251063721a1cf26f9a46d29de; "
         "see model-provider-source-audit.md#hermes-council"
+    ),
+    "hermes-impossibl": (
+        "OpenAI-compatible multi-model gateway provider; pinned source review "
+        "at commit 146805e4eabab33687fa2e34bbe959f0057f9497; "
+        "see model-provider-source-audit.md#hermes-impossibl"
     ),
     "hermes-experientiallabs": (
         "OpenAI-compatible multi-model provider with account-usage hook; pinned source review "
