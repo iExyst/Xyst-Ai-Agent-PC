@@ -1,8 +1,12 @@
 # Progress
 
+## Review EmpirioLabs model provider (2026-11-15)
+
+Reviewed the pinned provider package and catalog manifest. It fetches and caches a capped model catalog, filters out models that do not declare chat-completions tool support, records context/vision/reasoning metadata, and only sends a reasoning level when the model advertises compatible values. The keyed discovery path accepts the configured endpoint override, so X.A.A. must validate that origin before forwarding credentials. The companion media plugin is separate and remains outside this provider review. Thirty-one of 90 model-category entries are now reviewed across 30 distinct source trees; 59 remain pending. No plugin, key, account, catalog request, or inference endpoint was used.
+
 ## Review CloudGPU provider (2026-11-15)
 
-Reviewed the pinned CloudGPU adapter and its catalog manifest, README, and MIT license. The adapter registers a single standard OpenAI-compatible profile with a live model-list path, static fallback models, `CLOUDGPU_API_KEY`, and optional `CLOUDGPU_BASE_URL`; the README states that prompts, tool schemas, and the key go to the remote CloudGPU gateway. Thirty of 90 model-category entries are now reviewed across 29 distinct source trees; 60 remain pending. No source, account, key, live catalog, or inference endpoint was used.
+Reviewed the pinned CloudGPU adapter and its catalog manifest, README, and MIT license. The adapter registers a single standard OpenAI-compatible profile with a live model-list path, static fallback models, `CLOUDGPU_API_KEY`, and optional `CLOUDGPU_BASE_URL`; the README states that prompts, tool schemas, and the key go to the remote CloudGPU gateway. At that checkpoint, 30 of 90 model-category entries were reviewed across 29 distinct source trees, with 60 pending. No source, account, key, live catalog, or inference endpoint was used.
 
 ## Review ClinePass provider (2026-11-15)
 

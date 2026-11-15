@@ -143,6 +143,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "8094603d776e185cfe362618d353841e6b453189; "
         "see model-provider-source-audit.md#cloudgpu-provider"
     ),
+    "empiriolabs": (
+        "model-provider; pinned source review at commit "
+        "20f049d5913ec850e98bef3d289f6cb43645869e; "
+        "see model-provider-source-audit.md#empiriolabs-provider"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "
