@@ -9385,7 +9385,7 @@
       "required_environment_names": [
         "MISTRAL_VIBE_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "unofficial Mistral Vibe API provider with PKCE sign-in and a dedicated credential pool; pinned source review at commit c0d7bc8d11306e18499c84dd94cc3581de550e55; see model-provider-source-audit.md#mistral-vibe-provider",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; fifty-six selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; fifty-seven selected non-platform candidates have individual source reviews, while the rest remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."

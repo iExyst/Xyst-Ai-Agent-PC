@@ -1,5 +1,9 @@
 # Progress
 
+## Review the pinned Mistral Vibe provider (2026-11-15)
+
+Reviewed the unofficial `mistral-vibe` provider at pinned commit `c0d7bc8d11306e18499c84dd94cc3581de550e55`. Its PKCE flow binds to fixed Mistral console origins and stores the returned key in Hermes' dedicated credential pool; the source explicitly does not claim that local storage is encrypted or that Vibe requests are covered by subscription quota. The inference client binds the API origin and rejects route/credential overrides, while the catalog response has no explicit byte cap and local logout cannot revoke the remote key. Seventy-four of 90 model-category rows are now source-reviewed across 72 distinct source trees; 16 remain pending. Tests were inspected only; no login, credential, request, test, or inference was used.
+
 ## Review the pinned Kiro ACP provider (2026-11-15)
 
 Reviewed `kiro-acp` at catalog-pinned commit `02c4dd06585436751145961658a22b773f23a0ef`. It wraps the Kiro CLI using Hermes' ACP shim; auth remains in Kiro's own login, while the core shim supplies cwd-scoped file callbacks and cancels ACP permission requests. The separate model-discovery probe is weaker: it inherits the engine's full environment, uses `/tmp` as its requested cwd, and a blocking stdout read can exceed the nominal timeout. Seventy-three of 90 model-category entries are now source-reviewed across 71 source trees; 17 remain pending. No Kiro command, credentials, test or model was used.

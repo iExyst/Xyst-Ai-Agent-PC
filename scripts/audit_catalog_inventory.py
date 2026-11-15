@@ -243,6 +243,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit 02c4dd06585436751145961658a22b773f23a0ef; "
         "see model-provider-source-audit.md#kiro-acp-cli-provider"
     ),
+    "mistral-vibe": (
+        "unofficial Mistral Vibe API provider with PKCE sign-in and a dedicated credential pool; "
+        "pinned source review at commit c0d7bc8d11306e18499c84dd94cc3581de550e55; "
+        "see model-provider-source-audit.md#mistral-vibe-provider"
+    ),
     "kimchi-acp-provider": (
         "autonomous Kimchi coding harness exposed as an ACP external-process provider; pinned source review "
         "at commit d6ffe62876a44605585eaf5c2e3d5214b9e10cb8; "
@@ -458,7 +463,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; fifty-six selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; fifty-seven selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",
