@@ -1,5 +1,9 @@
 # Progress
 
+## Review Command Code OAuth-named provider (2026-11-15)
+
+Reviewed the pinned Command Code provider, which is named “OAuth” but imports a static API key from the CLI or a browser hand-off; it does not implement an OAuth exchange or refresh grant. It stores the key in Hermes' credential pool and sends it to `/alpha/generate`, account identity/billing probes, and the account-scoped model catalog. The loopback browser flow uses a random state, binds before displaying the URL, caps callbacks at 64 KiB, and does not put the key in the redirect URL. Optional `COMMANDCODE_CLI_TOKEN` and custom relay URLs need explicit secret and origin controls; the code blocks OpenRouter specifically but allows other configured origins. Catalog/identity reads have timeouts but no response-size cap. Forty-one of 90 model-category entries are reviewed across 40 source trees; 49 remain pending. No Command Code CLI, account, key, catalog, or inference service was used.
+
 ## Review Cursor ACP provider (2026-11-15)
 
 Reviewed the pinned external-process provider and installer. It starts the signed-in Cursor CLI `agent acp`, sends conversation content and Hermes tool schemas to Cursor, translates returned tool-call blocks back through Hermes, and reports no token usage. Its manifest supports only Linux/macOS, not X.A.A.'s Windows-first target; the catalog says 0.1.2 while its plugin manifest says 0.1.0. The deny policy is the claimed fence for Cursor-native tools, but it omits Edit/Grep/Glob/todo despite the prompt saying those tools are unavailable; the live fence test probes Read only. The environment can override the CLI and workspace path, which is also modified with `.cursor/cli.json`. Forty of 90 model-category entries are now reviewed across 39 source trees; 50 remain pending. No CLI, account, package install, or model was run.

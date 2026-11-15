@@ -148,6 +148,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit 1913d2a0a4b2dd3e4283af5c78241de4d3a2995e; "
         "see model-provider-source-audit.md#codex-truly"
     ),
+    "commandcode-oauth": (
+        "CLI-grant/browser-handoff model provider with account usage and custom Alpha transport; pinned source review "
+        "at commit e51eb61613604aefbcf3203c8fcce531706232ee; "
+        "see model-provider-source-audit.md#commandcode-oauth"
+    ),
     "cursor-acp": (
         "external-process Cursor subscription model provider via agent ACP; pinned source review "
         "at commit d5b6146c4e6dcfca110fbcf736d8b51823bc8e64; "
