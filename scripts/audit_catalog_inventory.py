@@ -288,6 +288,16 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit fdbd49f8a4577199f0870d0bf9e15b795467977c; "
         "see model-provider-source-audit.md#surp-paid-marketplace-routing-tools"
     ),
+    "wallaby-provider": (
+        "thin remote Kimi K3 provider profile with static model fallback; pinned source review "
+        "at commit 327e0400e041a89d6975377e5d802acb07498def; "
+        "see model-provider-source-audit.md#wallaby-static-kimi-provider-profile"
+    ),
+    "reka-provider": (
+        "OpenAI-compatible remote provider with a curated six-model catalog; pinned source review "
+        "at commit df031f732c9eddf8b39a0fa240b898da4ca2d6ff; "
+        "see model-provider-source-audit.md#reka-curated-remote-provider"
+    ),
     "netmind-provider": (
         "OpenAI-compatible remote model provider with a static 31-model catalog; "
         "pinned source review at commit 00ab432e251fc04b983382a7b339f54d96e4b29d; "
@@ -428,7 +438,7 @@ def inventory() -> dict[str, Any]:
         "catalog_controls": catalog_controls,
         "limitations": [
             "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-            "The platform category has a pinned source classification sweep; fifty selected non-platform candidates have individual source reviews, while the rest remain pending.",
+            "The platform category has a pinned source classification sweep; fifty-two selected non-platform candidates have individual source reviews, while the rest remain pending.",
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
             "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review.",

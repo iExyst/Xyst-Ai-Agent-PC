@@ -1,5 +1,13 @@
 # Progress
 
+## Review the pinned Reka model provider source (2026-11-15)
+
+Reviewed `reka-provider` at catalog-pinned commit `df031f732c9eddf8b39a0fa240b898da4ca2d6ff`. It is a remote OpenAI-compatible API-key profile with a curated six-model allowlist, optional configurable base URL, and Hermes-managed prompt/tool/image transport. The source maps reasoning settings and declares vision/tool capabilities, but those claims were not independently exercised; its configurable origin needs binding and validation before any X.A.A. integration. Sixty-nine of 90 model-category rows are reviewed across 68 source trees; 21 remain pending. No credentials, network endpoint, tests, or inference were used. The prior hosted CI run remains in progress; this catalog update awaits hosted verification.
+
+## Review pinned Wallaby static Kimi provider profile (2026-11-15)
+
+Reviewed `wallaby-provider` at catalog-pinned commit `327e0400e041a89d6975377e5d802acb07498def`. The plugin only registers a generic Hermes provider profile for the fixed Wallaby API endpoint, API-key environment name, and one static `kimi-k3` model; the plugin source itself makes no requests and declares no model capability metadata. Sixty-eight of 90 model-category rows are reviewed across 67 source trees; 22 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, key, account, endpoint, test, or inference was used; live LLM testing remains deferred.
+
 ## Review pinned Surp paid marketplace routing tools (2026-11-15)
 
 Reviewed `surp-hermes-x402-llm` at catalog-pinned commit `fdbd49f8a4577199f0870d0bf9e15b795467977c`. It is a 12-tool marketplace/routing plugin, not a provider adapter; paid `surp_chat` prompts go to the individual developer's gateway and may be forwarded to sellers that are untrusted by default. The approval hook depends on Hermes' global approval mode, saved trusted-only/secret-masking preferences can be overridden by model-supplied per-call fields, and the spend ceiling is a local quote check rather than a gateway-enforced or aggregate cap. Sixty-seven of 90 model-category rows are reviewed across 66 source trees; 23 remain pending. Findings and hashes are in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). No plugin, payment, key, endpoint, test, or inference was used; live LLM testing remains deferred. Hosted run [#998](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43699613383) passed on prior source SHA `96a401a3`; this local batch awaits its own hosted verification.
