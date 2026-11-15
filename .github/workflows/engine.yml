@@ -163,6 +163,9 @@ jobs:
       - name: Verify streamed model and command output rendering
         run: npm run test:browser -- tests/browser/streaming.spec.ts
         timeout-minutes: 4
+      - name: Verify bounded shared desktop conversation turns
+        run: npm run test:browser -- tests/browser/shared-chat-session.spec.ts
+        timeout-minutes: 3
       - run: uv run pytest -q
       - name: Verify specialist recovery after API process death
         run: uv run python scripts/specialist_restart_diagnostic.py

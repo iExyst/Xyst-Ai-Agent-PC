@@ -53,6 +53,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   });
 
   await page.goto('/');
+  await expect(page.locator(':root')).toHaveCSS('color-scheme','dark');
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await selectLocalModel(page,'fixture/model');
