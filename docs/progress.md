@@ -1,5 +1,9 @@
 # Progress
 
+## Reverify daily schedule recovery across the spring-forward gap (2026-11-15)
+
+Rechecked the reported `run_once` DST regression against the current scheduler. It already searches back to the latest resolvable local occurrence when the newest due wall time is nonexistent, claims that occurrence once, then records the gap as `dst_skipped` on the next poll. The full `tests/unit/test_schedules.py` suite passes (17 tests), including catch-up after the gap, downtime ending before the gap, and skip/advance behavior. Corrected the Hermes matrix: DST catch-up is deterministic and locally verified; real external clock-transition and live delivery acceptance remain open.
+
 ## Verify Phase 5 procedure write isolation (2026-11-15)
 
 Reconciled the skills parity note with the current implementation: SQLite `BEGIN IMMEDIATE` serializes procedure mutations, expected-version checks prevent stale overwrites, pin/delete enforcement is transactional, and model revisions require a run grant for the exact selected version while producing only an inactive immutable candidate. Four focused tests passed locally for concurrent edits, pin/delete, stale grants/versions, and rollback after an interrupted insert. No asynchronous background procedure-review writer exists, so a separate background read-before-write lock policy is deferred until such a writer is introduced; the audit no longer lists an unused per-procedure lock as an immediate gap. This does not close broader Phase 5 parity.
