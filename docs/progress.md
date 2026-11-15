@@ -1,8 +1,12 @@
 # Progress
 
+## Review Grok ACP provider (2026-11-15)
+
+Reviewed the pinned external-process adapter and its supporting CLI client. It uses the logged-in `grok` CLI account, not an API key; its inherited ACP file bridge is gated, but the CLI's own shell tool runs inside the child and source-reported Grok 1.0.41 ignored permission/deny controls. That prevents treating the adapter as permission-contained for X.A.A. without a sandbox that controls the subprocess itself. Thirty-four of 90 model-category entries are now reviewed across 33 distinct source trees; 56 remain pending. No CLI, account, credential, installer, or inference endpoint was used.
+
 ## Review Hermes Adaptive Effort middleware (2026-11-15)
 
-Classified this catalog candidate as a standalone `llm_request` middleware, not a provider adapter. Its default mode is off; when an operator opts in, it may send up to 4,000 task characters to a selected scorer, with earlier dialogue and target-model details separately opt-in. It can use remote scorer APIs or a custom endpoint and has a local-only option; the pinned README still says v0.3.0 while the manifest says 0.4.0, and it explicitly says live effort acceptance is partial. Thirty-three of 90 model-category candidates are now reviewed across 32 distinct source trees; 57 remain pending. No scorer, key, account, or model endpoint was used.
+Classified this catalog candidate as a standalone `llm_request` middleware, not a provider adapter. Its default mode is off; when an operator opts in, it may send up to 4,000 task characters to a selected scorer, with earlier dialogue and target-model details separately opt-in. It can use remote scorer APIs or a custom endpoint and has a local-only option; the pinned README still says v0.3.0 while the manifest says 0.4.0, and it explicitly says live effort acceptance is partial. At that checkpoint, 33 of 90 model-category candidates were reviewed across 32 distinct source trees, with 57 pending. No scorer, key, account, or model endpoint was used.
 
 ## Review Gondola model provider (2026-11-15)
 

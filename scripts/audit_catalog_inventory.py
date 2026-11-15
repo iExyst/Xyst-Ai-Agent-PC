@@ -158,6 +158,11 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "at commit c84f1389670cdd5ec4607b13bd32c4809878c415; "
         "see model-provider-source-audit.md#hermes-adaptive-effort"
     ),
+    "grok-acp": (
+        "external-process model provider; pinned source review at commit "
+        "2851d6667be7f1a9044fee5006a382699d942c6f; "
+        "see model-provider-source-audit.md#grok-acp"
+    ),
     "hashference-provider": (
         "model-provider; pinned source review at commit "
         "82700f5377a46f0e7bd482c907ed04090b6305be; "
