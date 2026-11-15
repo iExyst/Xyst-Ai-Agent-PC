@@ -147,6 +147,13 @@ try{
   const startupMilliseconds=Date.now()-started;
   const denied=await fetch(`${connection.base_url}/runs`);if(denied.status!==401)throw new Error('Bundled API did not require authentication');
   await page.screenshot({path:path.join(root,'release-boot.png'),fullPage:true});
+  await page.getByRole('link',{name:'System monitor'}).click();
+  await expect(page.getByRole('region',{name:'Processor'})).toBeVisible({timeout:10000});
+  await expect(page.getByRole('region',{name:'Memory'})).toBeVisible();
+  await expect(page.getByRole('img',{name:/Processor trend across [2-9][0-9]* recent local samples/})).toBeVisible({timeout:10000});
+  const systemMonitorTrendCount=await page.locator('.system-resource-trend svg').count();
+  if(systemMonitorTrendCount<2)throw new Error('Native system monitor did not render live resource trend traces.');
+  await page.screenshot({path:path.join(root,'system-monitor.png'),fullPage:true});
   await page.getByRole('link',{name:'Settings'}).click();
   let desktopRestoreAcceptance;
   if(backupFixture&&backupAcceptance){
@@ -290,7 +297,7 @@ try{
   if(!stopped)throw new Error('The engine survived the selected quit-on-close behavior');
   const log=(await readFile(logPath,'utf8')).slice(previous.length);
   if(!log.includes('Application shutdown complete.'))throw new Error('No graceful engine shutdown evidence');
-  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,no_runs_created:!backupFixture&&!ownerRecoveryAcceptance,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,installed_desktop_restore_ui_verified:Boolean(desktopRestoreAcceptance?.passed),desktop_restore_acceptance:desktopRestoreAcceptance,owner_reviewed_startup_recovery:ownerRecoveryAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
+  const report={passed:true,executable,startup_milliseconds:startupMilliseconds,close_wait_milliseconds:closeWaitMilliseconds,background_argument_supplied:true,background_launch_kept_window_hidden:!initiallyVisible,initial_close_behavior:initialCloseBehavior,start_at_sign_in_toggle_verified:startOnLoginVerified,initial_start_at_sign_in:initialStartOnLogin,startup_setting_restored:true,window_close_hides_by_default:true,engine_remains_available_while_hidden:true,window_restores:true,close_behavior_selectable:true,exit_on_close_stops_engine:true,restricted_runtime_path:true,bundled_engine_ready:true,authentication_required:true,system_monitor_verified:true,system_monitor_trend_count:systemMonitorTrendCount,no_runs_created:!backupFixture&&!ownerRecoveryAcceptance,installed_backup_restore_verified:Boolean(backupAcceptance),backup_acceptance:backupAcceptance,installed_desktop_restore_ui_verified:Boolean(desktopRestoreAcceptance?.passed),desktop_restore_acceptance:desktopRestoreAcceptance,owner_reviewed_startup_recovery:ownerRecoveryAcceptance,model_inference_requested:false,desktop_exit:true,engine_stopped:true,graceful_shutdown:true};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(report,root);
 }catch(error){
   let processDiagnostics;
