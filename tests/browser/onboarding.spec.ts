@@ -38,6 +38,24 @@ async function visibleTextContrastFailures(page:Page){
   return pairs.filter(pair=>contrastRatio(pair.foreground,pair.background)<pair.minimum);
 }
 
+async function interactiveNameFailures(page:Page){
+  return page.evaluate(()=>Array.from(document.querySelectorAll<HTMLElement>('a[href],button,input:not([type="hidden"]),select,textarea,summary,[role="button"],[role="link"]'))
+    .filter(element=>{
+      if(!element.getClientRects().length||element.closest('[aria-hidden="true"]'))return false;
+      const style=getComputedStyle(element);
+      return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0;
+    })
+    .map(element=>{
+      const labelledBy=element.getAttribute('aria-labelledby')?.split(/\s+/).map(id=>document.getElementById(id)?.textContent?.trim()??'').filter(Boolean).join(' ');
+      const ariaLabel=element.getAttribute('aria-label')?.trim();
+      const labels='labels' in element?Array.from((element as HTMLInputElement).labels??[]).map(label=>label.textContent?.trim()??'').filter(Boolean).join(' '):'';
+      const text=element.textContent?.trim()??'';
+      const title=element.getAttribute('title')?.trim()??'';
+      return {tag:element.tagName,role:element.getAttribute('role'),text:(labelledBy||ariaLabel||labels||text||title).slice(0,100)};
+    })
+    .filter(control=>!control.text));
+}
+
 test('onboarding requires a real tool diagnostic and runs its demonstration in Observe mode',async({page})=>{
   let created:Record<string,unknown>|undefined;
   const run={id:'onboarding-run',objective:'Read project documentation',state:'verifying',acceptance_criteria:[],revision:1,model:'fixture/model',limits:{max_iterations:8,max_seconds:900}};
@@ -93,6 +111,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   const setupGuide=page.locator('.onboarding-guide');
   await expect(setupGuide).toHaveAttribute('open','');
   expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   const placeholderPairs=await Promise.all([page.getByLabel('Workspace path').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor})),page.locator('#run-objective').evaluate(element=>({foreground:getComputedStyle(element,'::placeholder').color,background:getComputedStyle(element).backgroundColor}))]);
   for(const pair of placeholderPairs)expect(contrastRatio(pair.foreground,pair.background)).toBeGreaterThanOrEqual(4.5);
   await expect(navigation.locator('a.active')).toHaveCount(1);
@@ -107,6 +126,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.locator('#integrations')).toBeInViewport();
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   const memorySummary=page.locator('#integrations summary').first();
   await memorySummary.focus();
   await page.keyboard.press('Tab');
@@ -124,12 +144,15 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   await expect(page.getByLabel('Local model')).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   await navigation.getByRole('link',{name:'System monitor'}).click();
   await expect(page.getByRole('heading',{level:1,name:'System monitor'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   await navigation.getByRole('link',{name:'Settings'}).click();
   await expect(page.getByRole('heading',{level:1,name:'Settings'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
+  expect(await interactiveNameFailures(page)).toEqual([]);
   await navigation.getByRole('link',{name:'Model setup'}).click();
   await expect(page.getByRole('heading',{level:1,name:'Model setup'})).toBeVisible();
   const demo=page.getByRole('button',{name:'Start read-only onboarding demonstration'});
