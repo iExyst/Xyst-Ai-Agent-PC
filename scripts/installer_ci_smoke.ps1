@@ -102,9 +102,9 @@ try {
     }
     [IO.File]::WriteAllText($xaaMarker, 'XAA upgrade preservation fixture')
     $xaaMarkerHash = (Get-FileHash -LiteralPath $xaaMarker -Algorithm SHA256).Hash
-    # A silent in-place update cannot replace an executable still mapped by a
-    # process. Stop only X.A.A. processes whose image path is inside this
-    # disposable install directory, then verify the install tree is unlocked.
+    # Stop and verify only X.A.A. processes whose image path is inside this
+    # disposable install directory before the in-place update. The installer
+    # disables silent file skipping and retains its update log for diagnosis.
     $xaaInstallRoot = [IO.Path]::GetFullPath($xaaInstallDir).TrimEnd('\') + '\'
     $xaaUpgradeProcesses = @(
         Get-CimInstance -ClassName Win32_Process -Filter "Name = 'xaa-desktop.exe' OR Name = 'xaa-engine.exe'" |
@@ -129,7 +129,9 @@ try {
     )
     if ($xaaRemainingUpgradeProcesses.Count -gt 0) { throw 'An X.A.A. process from the disposable install directory remained active before upgrade.' }
     $xaaReport.upgrade_processes_stopped_before_update = $true
-    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', '/UPDATE') -WindowStyle Hidden -Wait -PassThru
+    $xaaUpgradeInstallerLog = Join-Path $xaaAcceptanceRoot 'upgrade-installer.log'
+    $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', '/UPDATE', "/LOG=$xaaUpgradeInstallerLog") -WindowStyle Hidden -Wait -PassThru
+    $xaaReport.upgrade_installer_log = $xaaUpgradeInstallerLog
     if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }

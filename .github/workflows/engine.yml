@@ -586,6 +586,7 @@ jobs:
             .acceptance/**/engine.log
             .acceptance/**/engine-startup.log
             .acceptance/**/oauth-fixture.log
+            .acceptance/**/upgrade-installer.log
             .acceptance/**/before-final-review.png
             .acceptance/**/after-final-review.png
             .acceptance/**/failure.png

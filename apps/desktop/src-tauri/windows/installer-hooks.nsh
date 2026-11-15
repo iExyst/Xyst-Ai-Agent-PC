@@ -1,3 +1,8 @@
+!macro NSIS_HOOK_PREINSTALL
+  ; Never report a successful install when Windows cannot replace a locked file.
+  AllowSkipFiles off
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
   ; Remove the app's opt-in current-user sign-in entry on a full uninstall.
   ; Preserve it during upgrades so the existing startup preference survives.
