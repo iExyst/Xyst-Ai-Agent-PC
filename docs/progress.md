@@ -1,5 +1,9 @@
 # Progress
 
+## Verify desktop text contrast after the theme refresh (2026-11-14)
+
+Extended the model-free onboarding browser flow's contrast checks across its covered workspace, integrations, model setup, system monitor, and settings surfaces. It caught two theme regressions: small muted labels and the workspace placeholder were below 4.5:1. Darkened the shared muted labels and set placeholder opacity explicitly; the complete keyboard/navigation/contrast browser flow now passes (1), as do TypeScript and the production Vite build. Recompiled the Tauri Windows app and refreshed [`build/native-design-20261114`](../build/native-design-20261114/) with the corrected styles; the manifest records the updated desktop hash. No model inference was used. Broader accessibility coverage, including full screen-reader and dynamic-state review, remains open.
+
 ## Refresh the Windows desktop visual design (2026-11-14)
 
 Unified the desktop app's light theme across navigation, task composition, settings, run history, recovery, and system monitoring. Added clearer active-navigation states, a restrained green accent, consistent panel and control styling, stronger focus treatment, reduced-motion support, and larger everyday text. `npm run build:desktop` passed TypeScript and Vite production compilation. A native Windows build compiled successfully and is staged separately at [`build/native-design-20261114`](../build/native-design-20261114/) so it does not replace the currently running app; executable hashes are in its manifest. The first refreshed native window was visually inspected; the user stopped the follow-up computer-use check with Escape. No model inference was run. This is a presentation improvement only; the Hermes parity matrix and overall release gates are unchanged.

@@ -208,7 +208,7 @@ body,.app-frame{background:#f3f6f4;color:var(--ink)}
 .brand-mark{width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,#dff4e6,#a6dabc);color:#174a31;font-size:20px;box-shadow:0 5px 14px #26734f16}
 .brand-lockup strong{font-size:15px;color:#1b2a21;letter-spacing:.015em}
 .brand-lockup span,.sidebar-footer small{color:var(--ink-muted)}
-.sidebar-label,.eyebrow{color:#758279}
+.sidebar-label,.eyebrow{color:#65736a}
 .side-nav{gap:4px}
 .side-nav a{height:43px;padding-inline:11px;color:#526058;border-radius:10px;font-size:12px;font-weight:620;transition:background .15s,color .15s,border-color .15s}
 .side-nav a:before{width:21px;height:21px;border-radius:7px;color:#77847c;font-size:14px}
@@ -235,6 +235,7 @@ body,.app-frame{background:#f3f6f4;color:var(--ink)}
 .app-content input:not([type=checkbox]):hover,.app-content select:hover,.app-content textarea:hover{border-color:#aebeb3}
 .app-content input:not([type=checkbox]):focus,.app-content select:focus,.app-content textarea:focus{border-color:#4a9c6b;box-shadow:0 0 0 3px #31845120;outline:0}
 .app-content input::placeholder,.app-content textarea::placeholder{color:#89958e}
+.app-content input::placeholder,.app-content textarea::placeholder{color:#65736a;opacity:1}
 .app-content input[type=checkbox]{accent-color:var(--accent)}
 .app-content details.advanced-options{background:var(--surface-subtle);border-color:var(--border);border-radius:10px}
 .app-content details.advanced-options summary,.app-content details>summary{color:#34463b}
