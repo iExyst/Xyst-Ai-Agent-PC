@@ -3529,7 +3529,7 @@ The Windows source/frozen worker matrix now checks traversal, absolute and backs
 
 ## Stabilize specialist integration browser acceptance (2026-11-15)
 
-Hosted run [43710067334](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43710067334) exposed a timing race in the browser test: it read its mocked review-request flag immediately after clicking, before the asynchronous request handler necessarily ran. The integration UI itself returned the task as completed. The assertion now waits for the request to arrive before checking the completion state. The same six browser cases used by the Windows workflow pass locally, as do all three specialist-review cases and the desktop production build/typecheck. Hosted confirmation is pending; this test-only repair does not change the Hermes feature status or phase estimates.
+Hosted run [43710067334](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43710067334) exposed a timing race in the browser test: it read its mocked review-request flag immediately after clicking, before the asynchronous request handler necessarily ran. The integration UI itself returned the task as completed. The assertion now waits for the request to arrive before checking the completion state. The same six browser cases used by the Windows workflow pass locally, as do all three specialist-review cases and the desktop production build/typecheck. Hosted run [43710813029](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43710813029) now passes the specialist browser check, full Python suite, and remaining Windows source/recovery steps. This test-only repair does not change the Hermes feature status or phase estimates.
 
 ## Confirm AtmoRouter rehost without substituting its lost catalog pin (2026-11-15)
 
