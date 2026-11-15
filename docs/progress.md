@@ -1,5 +1,9 @@
 # Progress
 
+## Review pinned Hermes Structured Aux Models (2026-11-15)
+
+Reviewed `hermes-structured-aux-models` at catalog-pinned commit `e5c49b081ad04adca2ee3edc601b09ede6cee4c5`. It is a specialized OpenRouter decision provider for approval, MCP sampling, and compression. The review found unbounded request/response bodies, configurable destinations that can receive the OpenRouter key, a process-global settings cache across profiles, incomplete fallback redaction, and a Windows-unverified `python3` discovery seam. Fifty of 90 model-category rows are reviewed across 49 source trees; 40 remain pending. No plugin, credential, endpoint, or model was used.
+
 ## Review pinned Hermes Session Warmer middleware (2026-11-15)
 
 Reviewed `hermes-session-warmer` at catalog-pinned commit `eba7be111c44e4ac6b702cdcb341c8d71da1c57e`. It is opt-in LLM middleware, not a provider: it retains bounded conversation snapshots in memory and periodically resends them to an explicitly configured endpoint, creating potentially billable calls without a dollar cap or guaranteed cache benefit. Forty-nine of 90 model-category rows are reviewed across 48 source trees; 41 remain pending. No plugin was installed/imported/executed and no conversation, credential, provider endpoint, or model was used.
