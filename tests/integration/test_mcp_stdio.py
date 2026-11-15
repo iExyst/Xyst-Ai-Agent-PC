@@ -598,18 +598,34 @@ async def test_stdio_transport_rejects_oversized_frame_before_json_parse(
 
 
 @pytest.mark.asyncio
-async def test_stdio_process_receives_configured_windows_job_memory_limit():
+@pytest.mark.parametrize("network_isolation", [False, True])
+async def test_stdio_server_child_starts_inside_configured_windows_job_limits(
+    tmp_path: Path, network_isolation: bool
+):
     if sys.platform != "win32":
         pytest.skip("Windows Job Object acceptance")
     import win32job
     from mcp.os.win32.utilities import _process_jobs
 
     existing_pids = {process.pid for process in _process_jobs}
+    pid_file = tmp_path / "limited-child.pid"
+    script = (
+        "import os, pathlib, time; "
+        "pathlib.Path(os.environ['XAA_MCP_PID_FILE']).write_text(str(os.getpid())); "
+        "time.sleep(30)"
+    )
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-c", "import time; time.sleep(30)"],
+        args=["-c", script],
+        env={"XAA_MCP_PID_FILE": str(pid_file)},
     )
-    async with bounded_stdio_client(params, memory_limit_mb=384, cpu_limit_percent=40):
+    async with bounded_stdio_client(
+        params,
+        memory_limit_mb=384,
+        cpu_limit_percent=40,
+        network_isolation=network_isolation,
+        isolation_write_paths=(str(tmp_path),) if network_isolation else (),
+    ):
         process = next(process for process in _process_jobs if process.pid not in existing_pids)
         job = _process_jobs[process]
         info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
@@ -640,6 +656,29 @@ async def test_stdio_process_receives_configured_windows_job_memory_limit():
         )
         assert cpu_info.ControlFlags == 0x1 | 0x4
         assert cpu_info.CpuRate == 4000
+
+        for _ in range(200):
+            if pid_file.is_file():
+                break
+            await asyncio.sleep(0.01)
+        assert pid_file.is_file(), "the bounded MCP child did not start"
+        child_pid = int(pid_file.read_text(encoding="ascii"))
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        open_process.restype = ctypes.c_void_p
+        child = open_process(0x1000, False, child_pid)
+        if not child:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            in_job = ctypes.c_int()
+            is_in_job = kernel32.IsProcessInJob
+            is_in_job.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+            is_in_job.restype = ctypes.c_int
+            assert is_in_job(child, ctypes.c_void_p(int(job)), ctypes.byref(in_job))
+            assert in_job.value == 1, "the MCP child must inherit the configured limit job"
+        finally:
+            kernel32.CloseHandle(ctypes.c_void_p(child))
 
 
 @pytest.mark.asyncio

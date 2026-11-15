@@ -30,6 +30,10 @@ if __name__ == "__main__":
         from xaa.runtime.mcp_appcontainer import run_stdio_appcontainer_shim
 
         raise SystemExit(run_stdio_appcontainer_shim())
+    elif sys.argv[1:] == ["--mcp-bounded-stdio-shim"]:
+        from xaa.runtime.mcp_appcontainer import run_stdio_bounded_shim
+
+        raise SystemExit(run_stdio_bounded_shim())
     elif sys.argv[1:] == ["--browser-worker"]:
         from xaa.runtime.browser_worker import main
     else:

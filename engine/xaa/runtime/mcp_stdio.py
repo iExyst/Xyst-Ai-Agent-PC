@@ -38,6 +38,7 @@ from mcp.shared.message import SessionMessage
 
 from xaa.runtime.mcp_appcontainer import (
     BOOTSTRAP_PREFIX,
+    BOUNDED_BOOTSTRAP_PREFIX,
     ERROR_FRAME_PREFIX,
     MAX_STARTUP_ERROR_FRAME_BYTES,
     READY_FRAME,
@@ -73,11 +74,10 @@ async def _apply_windows_process_limits(
         raise ValueError("MCP stdio memory limits must be between 128 and 65,536 MiB.")
     if cpu_limit_percent is not None and not 1 <= cpu_limit_percent <= 100:
         raise ValueError("MCP stdio CPU limits must be between 1 and 100 percent.")
-    if sys.platform != "win32":
+    if (memory_limit_mb is not None or cpu_limit_percent is not None) and sys.platform != "win32":
         raise MCPStdioResourceLimitError(
-            "Configured MCP process memory limits are currently supported on Windows only."
+            "Configured MCP process memory and CPU limits are currently supported on Windows only."
         )
-
     # The pinned SDK owns process creation and Job Object lifetime. Configure its
     # already-assigned Job Object so its kill-on-close semantics remain intact.
     import win32job  # type: ignore[import-not-found]
@@ -158,11 +158,16 @@ async def bounded_stdio_client(
         raise ValueError("MCP stdio memory limits must be between 128 and 65,536 MiB.")
     if cpu_limit_percent is not None and not 1 <= cpu_limit_percent <= 100:
         raise ValueError("MCP stdio CPU limits must be between 1 and 100 percent.")
+    if (memory_limit_mb is not None or cpu_limit_percent is not None) and sys.platform != "win32":
+        raise MCPStdioResourceLimitError(
+            "Configured MCP process memory and CPU limits are currently supported on Windows only."
+        )
 
     command = await _get_executable_command(server.command)
     environment = get_default_environment() | (server.env or {})
     appcontainer_access: Any | None = None
     process: ServerProcess | None = None
+    bounded_shim = False
     try:
         launch_command = command
         launch_args = server.args
@@ -194,6 +199,18 @@ async def bounded_stdio_client(
                 if getattr(sys, "frozen", False)
                 else ["-m", "xaa.runtime.mcp_appcontainer", "--shim"]
             )
+        elif memory_limit_mb is not None or cpu_limit_percent is not None:
+            # The SDK creates the wrapper process and its Job Object before we
+            # can configure the limits. The wrapper waits for this bootstrap,
+            # then starts the actual MCP server suspended inside that already
+            # limited Job Object, so third-party code never runs unbounded.
+            bounded_shim = True
+            launch_command = sys.executable
+            launch_args = (
+                ["--mcp-bounded-stdio-shim"]
+                if getattr(sys, "frozen", False)
+                else ["-m", "xaa.runtime.mcp_appcontainer", "--bounded-shim"]
+            )
         process = await _create_platform_compatible_process(
             command=launch_command,
             args=launch_args,
@@ -202,6 +219,18 @@ async def bounded_stdio_client(
             cwd=server.cwd,
         )
         await _apply_windows_process_limits(process, memory_limit_mb, cpu_limit_percent)
+        if bounded_shim:
+            assert process.stdin is not None
+            bootstrap = {
+                "command": command,
+                "args": server.args,
+                "cwd": str(server.cwd) if server.cwd is not None else None,
+            }
+            await process.stdin.send(
+                BOUNDED_BOOTSTRAP_PREFIX
+                + json.dumps(bootstrap, separators=(",", ":")).encode()
+                + b"\n"
+            )
         if appcontainer_access is not None:
             assert process.stdin is not None and process.stdout is not None
             stdout = process.stdout
@@ -248,6 +277,34 @@ async def bounded_stdio_client(
                 raise MCPStdioResourceLimitError(
                     "Windows could not start the network-isolated MCP server."
                 )
+        elif bounded_shim:
+            assert process.stdout is not None
+            stdout = process.stdout
+
+            async def receive_bounded_startup_bytes(size: int) -> bytes:
+                received = bytearray()
+                while len(received) < size:
+                    received.extend(await stdout.receive(size - len(received)))
+                return bytes(received)
+
+            with anyio.fail_after(MCP_APPCONTAINER_STARTUP_TIMEOUT):
+                prefix = await receive_bounded_startup_bytes(len(ERROR_FRAME_PREFIX))
+                if prefix == ERROR_FRAME_PREFIX:
+                    size = int.from_bytes(await receive_bounded_startup_bytes(2), "big")
+                    if size > MAX_STARTUP_ERROR_FRAME_BYTES:
+                        raise MCPStdioResourceLimitError(
+                            "Windows could not start the resource-limited MCP server."
+                        )
+                    error_frame = prefix + size.to_bytes(2, "big")
+                    error_frame += await receive_bounded_startup_bytes(size)
+                    raise MCPStdioResourceLimitError(
+                        startup_error_message(error_frame, scope="resource-limited")
+                    )
+                ready = prefix + await receive_bounded_startup_bytes(len(READY_FRAME) - len(prefix))
+            if ready != READY_FRAME:
+                raise MCPStdioResourceLimitError(
+                    "Windows could not start the resource-limited MCP server."
+                )
     except BaseException as error:
         try:
             with anyio.CancelScope(shield=True):
@@ -266,6 +323,14 @@ async def bounded_stdio_client(
             if code is not None:
                 message += f" (Windows error {code})."
             raise MCPStdioResourceLimitError(message) from error
+        if (
+            bounded_shim
+            and isinstance(error, Exception)
+            and not isinstance(error, MCPStdioResourceLimitError)
+        ):
+            raise MCPStdioResourceLimitError(
+                "Windows could not start the MCP server with its configured resource limits."
+            ) from error
         raise
     assert process is not None
 

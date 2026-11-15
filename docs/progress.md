@@ -1,5 +1,9 @@
 # Progress
 
+## Apply MCP resource caps before server code starts on Windows (2026-11-14)
+
+Closed the stdio MCP startup race for configured Windows CPU/memory caps. When network isolation is opted out, the SDK now starts a trusted bounded-launch shim inside its Job Object; after the parent sets the requested limits, the shim creates the actual server suspended, verifies it inherited the limited Job Object, and resumes it. The AppContainer path also starts the server only after the limits are set. The Windows MCP stdio integration file passes (35 tests), including exact 384 MiB/40% Job Object settings and checks that the real server child belongs to that configured job for both launch paths. Ruff and strict Pyright pass for the changed engine modules. A narrowly targeted Pyright run on the integration test module reports 71 existing test-typing/private-access issues, so it is not used as the suite's type check. Hosted verification and frozen installer acceptance are pending for this change. No model inference was used.
+
 ## Audit pinned programmatic interfaces and training utilities (2026-11-14)
 
 Reviewed the pinned Hermes ACP entry point and direct/gateway session methods, classified `hermes_platform` as local host/application-resolution support, and traced the evaluation sampling and trajectory-compression path. Recorded exact source hashes and limited claims in [the source audit](parity/programmatic-interface-source-audit.md), linked from the parity matrix. This is source inspection only; provider-specific fine-tuning, comparative benchmarks and full SDK protocol acceptance remain open. No model inference was performed.

@@ -1,9 +1,10 @@
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-"""Launch a one-shot MCP stdio child in a Windows AppContainer.
+"""Launch a one-shot MCP stdio child in a Windows AppContainer or bounded job.
 
 The wrapper is started by the MCP SDK and assigned to its existing Job Object
 before it receives a bootstrap record. It then creates the actual server child
-with no network capabilities and inherits the wrapper's protocol pipe handles.
+suspended, applies the requested containment, and resumes it only after the
+child is assigned to the required job or AppContainer.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 BOOTSTRAP_PREFIX = b"XAA_APPCONTAINER_V1 "
+BOUNDED_BOOTSTRAP_PREFIX = b"XAA_MCP_BOUNDED_V1 "
 READY_FRAME = b"\x00XAA_APPCONTAINER_READY\n"
 ERROR_FRAME_PREFIX = b"\x00XAE"
 MAX_STARTUP_ERROR_FRAME_BYTES = 32
@@ -88,18 +90,18 @@ def startup_error_frame(error: BaseException) -> bytes:
     return ERROR_FRAME_PREFIX + len(payload).to_bytes(2, "big") + payload
 
 
-def startup_error_message(frame: bytes) -> str:
+def startup_error_message(frame: bytes, *, scope: str = "network-isolated") -> str:
     """Decode the internal frame into a path-free, user-safe diagnostic."""
     if not frame.startswith(ERROR_FRAME_PREFIX) or len(frame) < len(ERROR_FRAME_PREFIX) + 2:
-        return "Windows could not start the network-isolated MCP server."
+        return f"Windows could not start the {scope} MCP server."
     header_end = len(ERROR_FRAME_PREFIX) + 2
     size = int.from_bytes(frame[len(ERROR_FRAME_PREFIX) : header_end], "big")
     if size != 4 or size > MAX_STARTUP_ERROR_FRAME_BYTES or len(frame) != header_end + size:
-        return "Windows could not start the network-isolated MCP server."
+        return f"Windows could not start the {scope} MCP server."
     code = int.from_bytes(frame[header_end:], "big")
     if code == 0:
-        return "Windows could not start the network-isolated MCP server."
-    return f"Windows could not start the network-isolated MCP server (Windows error {code})."
+        return f"Windows could not start the {scope} MCP server."
+    return f"Windows could not start the {scope} MCP server (Windows error {code})."
 
 
 def _replace_journal_file(source: str, destination: Path) -> None:
@@ -1075,22 +1077,29 @@ class AppContainerAccess:
         )
 
 
-def _create_no_network_child(
+def _create_mcp_child(
     command: str,
     args: list[str],
     cwd: str | None,
-    profile_name: str,
+    profile_name: str | None,
     *,
+    network_isolation: bool = True,
     owner_pid: int | None = None,
     owner_creation_time: int | None = None,
     max_seconds: int | None = None,
     command_limits: bool = False,
     child_environment: dict[str, str] | None = None,
 ) -> int:
-    stage = "prepare AppContainer identity"
-    kernel32, sid_bytes, _sid = _appcontainer_sid(profile_name)
-    sid_buffer = ctypes.create_string_buffer(sid_bytes)
-    capabilities = SECURITY_CAPABILITIES(ctypes.cast(sid_buffer, ctypes.c_void_p), None, 0, 0)
+    stage = "prepare MCP child process"
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    capabilities: SECURITY_CAPABILITIES | None = None
+    sid_buffer: Any | None = None
+    if network_isolation:
+        if profile_name is None:
+            raise MCPAppContainerError("The MCP network isolation profile is unavailable.")
+        kernel32, sid_bytes, _sid = _appcontainer_sid(profile_name)
+        sid_buffer = ctypes.create_string_buffer(sid_bytes)
+        capabilities = SECURITY_CAPABILITIES(ctypes.cast(sid_buffer, ctypes.c_void_p), None, 0, 0)
     attribute_bytes = ctypes.c_size_t()
     initialize_attributes = kernel32.InitializeProcThreadAttributeList
     initialize_attributes.argtypes = [
@@ -1100,11 +1109,12 @@ def _create_no_network_child(
         ctypes.POINTER(ctypes.c_size_t),
     ]
     initialize_attributes.restype = wintypes.BOOL
-    if initialize_attributes(None, 2, 0, ctypes.byref(attribute_bytes)):
+    attribute_count = 2 if network_isolation else 1
+    if initialize_attributes(None, attribute_count, 0, ctypes.byref(attribute_bytes)):
         raise MCPAppContainerError("Windows returned an unexpected AppContainer attribute size.")
     attributes = ctypes.create_string_buffer(attribute_bytes.value)
     attribute_list = ctypes.cast(attributes, ctypes.c_void_p)
-    if not initialize_attributes(attribute_list, 2, 0, ctypes.byref(attribute_bytes)):
+    if not initialize_attributes(attribute_list, attribute_count, 0, ctypes.byref(attribute_bytes)):
         raise ctypes.WinError(ctypes.get_last_error())
 
     process_info = PROCESS_INFORMATION()
@@ -1130,7 +1140,7 @@ def _create_no_network_child(
             handle = get_std_handle(ctypes.c_uint32(handle_id).value)
             if not handle or handle == wintypes.HANDLE(-1).value:
                 raise MCPAppContainerError(
-                    "MCP stdio handles are unavailable for network isolation."
+                    "MCP stdio handles are unavailable to start the MCP server."
                 )
             old_flags = wintypes.DWORD()
             if not get_handle_information(handle, ctypes.byref(old_flags)):
@@ -1142,17 +1152,19 @@ def _create_no_network_child(
             setattr(startup.StartupInfo, field, handle)
 
         startup.lpAttributeList = attribute_list
-        stage = "apply AppContainer security capabilities"
-        if not kernel32.UpdateProcThreadAttribute(
-            attribute_list,
-            0,
-            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-            ctypes.byref(capabilities),
-            ctypes.sizeof(capabilities),
-            None,
-            None,
-        ):
-            raise ctypes.WinError(ctypes.get_last_error())
+        if network_isolation:
+            assert capabilities is not None
+            stage = "apply AppContainer security capabilities"
+            if not kernel32.UpdateProcThreadAttribute(
+                attribute_list,
+                0,
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                ctypes.byref(capabilities),
+                ctypes.sizeof(capabilities),
+                None,
+                None,
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
         stage = "restrict inherited process handles"
         unique_handles = list(dict.fromkeys(stdio_handles))
         handle_list = (wintypes.HANDLE * len(unique_handles))(*unique_handles)
@@ -1216,6 +1228,16 @@ def _create_no_network_child(
             ctypes.byref(process_info),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
+        if not network_isolation:
+            stage = "verify inherited resource-control job"
+            in_job = wintypes.BOOL()
+            is_in_job = kernel32.IsProcessInJob
+            is_in_job.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+            is_in_job.restype = wintypes.BOOL
+            if not is_in_job(process_info.hProcess, None, ctypes.byref(in_job)) or not in_job:
+                raise MCPAppContainerError(
+                    "Windows could not apply the configured resource limits before MCP startup."
+                )
         stage = "create process-tree job"
         create_job = kernel32.CreateJobObjectW
         create_job.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
@@ -1269,7 +1291,7 @@ def _create_no_network_child(
         if not assign_job(job_handle, process_info.hProcess):
             raise ctypes.WinError(ctypes.get_last_error())
         job_assigned = True
-        stage = "resume isolated child"
+        stage = "resume MCP child"
         # Announce readiness before the child can write any MCP bytes. The parent
         # consumes this private frame before handing the transport to the SDK.
         sys.stdout.buffer.write(READY_FRAME)
@@ -1443,7 +1465,7 @@ def run_stdio_appcontainer_shim() -> int:
             )
         ):
             raise MCPAppContainerError("The MCP network isolation bootstrap was invalid.")
-        return _create_no_network_child(
+        return _create_mcp_child(
             command,
             args,
             cwd,
@@ -1464,6 +1486,46 @@ def run_stdio_appcontainer_shim() -> int:
         return 126
 
 
+def run_stdio_bounded_shim() -> int:
+    """Start a stdio server only after the SDK-owned Windows Job Object has limits."""
+    try:
+        first_line = sys.stdin.buffer.readline(MAX_BOOTSTRAP_BYTES + 1)
+        if len(first_line) > MAX_BOOTSTRAP_BYTES or not first_line.startswith(
+            BOUNDED_BOOTSTRAP_PREFIX
+        ):
+            raise MCPAppContainerError("The bounded MCP bootstrap was invalid.")
+        payload: object = json.loads(first_line[len(BOUNDED_BOOTSTRAP_PREFIX) :])
+        if not isinstance(payload, dict):
+            raise MCPAppContainerError("The bounded MCP bootstrap was invalid.")
+        command = payload.get("command")
+        args = payload.get("args")
+        cwd = payload.get("cwd")
+        if (
+            not isinstance(command, str)
+            or not command
+            or "\0" in command
+            or not isinstance(args, list)
+            or any(not isinstance(item, str) or "\0" in item for item in args)
+            or (cwd is not None and (not isinstance(cwd, str) or "\0" in cwd))
+        ):
+            raise MCPAppContainerError("The bounded MCP bootstrap was invalid.")
+        return _create_mcp_child(
+            command,
+            args,
+            cwd,
+            None,
+            network_isolation=False,
+        )
+    except Exception as error:  # noqa: BLE001 - fail closed before launching configured code
+        sys.stdout.buffer.write(startup_error_frame(error))
+        sys.stdout.buffer.flush()
+        notes = " ".join(getattr(error, "__notes__", []))
+        message = (str(error) + " " + notes).replace("\r", " ").replace("\n", " ")[:512]
+        sys.stderr.write(f"Bounded MCP launch failed ({type(error).__name__}): {message}\n")
+        sys.stderr.flush()
+        return 126
+
+
 def appcontainer_shim_fingerprint() -> str:
     """Return a stable digest for the sandbox launcher in source and frozen builds."""
     source = Path(__file__)
@@ -1471,9 +1533,10 @@ def appcontainer_shim_fingerprint() -> str:
         return hashlib.sha256(source.read_bytes()).hexdigest()
     code_objects = (
         _process_identity.__code__,
-        _create_no_network_child.__code__,
+        _create_mcp_child.__code__,
         _verify_command_job_limits.__code__,
         run_stdio_appcontainer_shim.__code__,
+        run_stdio_bounded_shim.__code__,
         *AppContainerAccess.fingerprint_code(),
     )
     return hashlib.sha256(b"".join(marshal.dumps(code) for code in code_objects)).hexdigest()
@@ -1481,3 +1544,5 @@ def appcontainer_shim_fingerprint() -> str:
 
 if __name__ == "__main__" and sys.argv[1:] == ["--shim"]:
     raise SystemExit(run_stdio_appcontainer_shim())
+if __name__ == "__main__" and sys.argv[1:] == ["--bounded-shim"]:
+    raise SystemExit(run_stdio_bounded_shim())
