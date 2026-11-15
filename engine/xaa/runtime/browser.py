@@ -69,7 +69,20 @@ class BrowserFormControl(BaseModel):
     name: str = Field(max_length=200)
     label: str = Field(max_length=200)
     required: bool
+    disabled: bool = False
+    read_only: bool = False
+    multiple: bool = False
     options: list[Annotated[str, Field(max_length=200)]] = Field(max_length=20)
+
+
+class BrowserFormSubmitter(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    tag: Literal["button", "input"]
+    type: Literal["submit", "image"]
+    name: str = Field(max_length=200)
+    label: str = Field(max_length=200)
+    disabled: bool
+    form_no_validate: bool
 
 
 class BrowserForm(BaseModel):
@@ -77,6 +90,7 @@ class BrowserForm(BaseModel):
     index: int = Field(ge=0, lt=20)
     method: str = Field(max_length=10)
     controls: list[BrowserFormControl] = Field(max_length=100)
+    submitters: list[BrowserFormSubmitter] = Field(max_length=20)
 
 
 class BrowserScreenshotArtifact(BaseModel):
@@ -282,6 +296,7 @@ BROWSER_METADATA = {
         "link_name_characters": 200,
         "forms": 20,
         "controls": 100,
+        "submitters_per_form": 20,
         "options_per_control": 20,
         "option_characters": 200,
         "screenshot_artifact_bytes": 8 * 1024 * 1024,

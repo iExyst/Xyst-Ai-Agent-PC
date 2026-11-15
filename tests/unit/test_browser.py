@@ -52,7 +52,20 @@ def test_browser_form_inspection_is_opt_in_and_output_contains_metadata_only() -
                         "name": "email",
                         "label": "Email address",
                         "required": True,
+                        "disabled": False,
+                        "read_only": False,
+                        "multiple": False,
                         "options": [],
+                    }
+                ],
+                "submitters": [
+                    {
+                        "tag": "button",
+                        "type": "submit",
+                        "name": "continue",
+                        "label": "Continue",
+                        "disabled": False,
+                        "form_no_validate": False,
                     }
                 ],
             }
@@ -61,6 +74,8 @@ def test_browser_form_inspection_is_opt_in_and_output_contains_metadata_only() -
     output = BrowserOutput.model_validate(payload)
     assert output.forms is not None
     assert output.forms[0].controls[0].label == "Email address"
+    assert output.forms[0].controls[0].disabled is False
+    assert output.forms[0].submitters[0].label == "Continue"
     unsafe = {
         **payload,
         "forms": [
@@ -78,6 +93,7 @@ def test_browser_contract_bounds_the_model_facing_result() -> None:
     assert BROWSER_METADATA["output_size_bytes"] == MAX_WORKER_BYTES
     assert BROWSER_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
     assert BROWSER_METADATA["limits"]["option_characters"] == 200
+    assert BROWSER_METADATA["limits"]["submitters_per_form"] == 20
     output_properties = BROWSER_METADATA["output_schema"]["properties"]
     assert output_properties["url"]["anyOf"][0]["maxLength"] == 2048
     assert output_properties["title"]["anyOf"][0]["maxLength"] == 500

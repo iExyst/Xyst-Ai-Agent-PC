@@ -51,6 +51,14 @@ async def main() -> None:
         controls = [control for form in forms for control in form["controls"]]
         names = {control["name"] for control in controls}
         assert "custname" in names and "custemail" in names, result
+        assert all(
+            isinstance(control.get("disabled"), bool)
+            and isinstance(control.get("read_only"), bool)
+            and isinstance(control.get("multiple"), bool)
+            for control in controls
+        ), result
+        submitters = [submitter for form in forms for submitter in form["submitters"]]
+        assert any(submitter["type"] == "submit" for submitter in submitters), result
         assert all("value" not in control for control in controls), result
         with closing(sqlite3.connect(database)) as connection:
             row = connection.execute(
@@ -74,6 +82,7 @@ async def main() -> None:
                 "trust": result["trust"],
                 "forms": len(forms),
                 "controls": len(controls),
+                "submitters": len(submitters),
                 "control_names": sorted(name for name in names if name),
                 "control_values_in_output": False,
                 "journal_state": row[0],

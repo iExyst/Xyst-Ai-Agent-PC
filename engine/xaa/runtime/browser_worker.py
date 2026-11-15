@@ -315,9 +315,32 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                                 const controls = Array.from(form.querySelectorAll('input, select, textarea'))
                                   .filter(visible).slice(0, remaining);
                                 remaining -= controls.length;
+                                const submitters = Array.from(form.querySelectorAll('button, input[type="submit"], input[type="image"]'))
+                                  .filter(visible)
+                                  .filter(control => {
+                                    const type = (control.getAttribute('type') || (control.tagName.toLowerCase() === 'button' ? 'submit' : '')).toLowerCase();
+                                    return type === 'submit' || type === 'image';
+                                  })
+                                  .slice(0, 20)
+                                  .map(control => {
+                                    const tag = control.tagName.toLowerCase();
+                                    const type = (control.getAttribute('type') || 'submit').toLowerCase();
+                                    const labels = Array.from(control.labels || [])
+                                      .map(label => (label.innerText || '').trim()).filter(Boolean).join(' ');
+                                    const text = tag === 'button' ? (control.innerText || '').trim() : '';
+                                    return {
+                                      tag,
+                                      type,
+                                      name: (control.getAttribute('name') || '').slice(0, 200),
+                                      label: (labels || control.getAttribute('aria-label') || text || '').slice(0, 200),
+                                      disabled: control.disabled,
+                                      form_no_validate: control.formNoValidate
+                                    };
+                                  });
                                 return {
                                   index,
                                   method: (form.getAttribute('method') || 'get').slice(0, 10).toLowerCase(),
+                                  submitters,
                                   controls: controls.map(control => {
                                     const labels = Array.from(control.labels || [])
                                       .map(label => (label.innerText || '').trim()).filter(Boolean).join(' ');
@@ -332,6 +355,9 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                                       name: (control.getAttribute('name') || '').slice(0, 200),
                                       label: (labels || control.getAttribute('aria-label') || '').slice(0, 200),
                                       required: control.hasAttribute('required'),
+                                      disabled: control.disabled,
+                                      read_only: control.readOnly === true,
+                                      multiple: control.multiple === true,
                                       options
                                     };
                                   })
