@@ -444,8 +444,17 @@ try {
     || !String(submissionRunResult.content ?? '').includes(browserSubmissionMarker)) {
     throw new Error(`The native desktop did not durably complete the browser form submission: ${JSON.stringify(submissionRunResult)}`);
   }
+  const submissionFollowupDeadline = Date.now() + 15000;
+  while (Date.now() < submissionFollowupDeadline
+    && fakeState.browserSubmissionProposals === 1
+    && fakeState.browserSubmissionResultFollowups === 0) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
   if (fakeState.browserSubmissionProposals !== 1 || fakeState.browserSubmissionResultFollowups !== 1) {
-    throw new Error('The deterministic provider did not observe one authorized submit proposal and one result follow-up.');
+    throw new Error(`The deterministic provider observed an unexpected submission sequence: ${JSON.stringify({
+      proposals: fakeState.browserSubmissionProposals,
+      resultFollowups: fakeState.browserSubmissionResultFollowups,
+    })}`);
   }
   const submissionReview = page.getByRole('region', { name: 'Final run review' });
   await expect(submissionReview).toBeVisible({ timeout: 20000 });
