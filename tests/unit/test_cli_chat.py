@@ -162,6 +162,44 @@ def test_cli_chat_session_persists_bounded_turns_and_rejects_config_change(works
     assert reopened.get("terminal") is None
 
 
+def test_shared_chat_accepts_8192_utf8_bytes_and_rejects_larger_messages(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "shared-chat-message-limit.sqlite3")
+    chat = CLIChatStore(store)
+    run_id = store.create_run(
+        objective="Save a large shared turn",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="local/model",
+    )["id"]
+    message = "\0" * 8192
+    saved = chat.append_turn(
+        "large-turn",
+        run_id=run_id,
+        model="local/model",
+        workspace=None,
+        mode="observe",
+        user_message=message,
+        assistant_message="Saved.",
+    )
+    assert saved["messages"][0]["content"] == message
+    assert len(message.encode("utf-8")) == 8192
+    try:
+        chat.append_turn(
+            "too-large",
+            run_id=run_id,
+            model="local/model",
+            workspace=None,
+            mode="observe",
+            user_message="x" * 8193,
+            assistant_message="Rejected.",
+        )
+    except ValueError as exc:
+        assert "8,192 UTF-8 bytes" in str(exc)
+    else:
+        raise AssertionError("Shared chat accepted a message larger than 8,192 bytes")
+
+
 def test_chat_sessions_can_be_opened_for_desktop_and_listed_across_clients(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "shared-chat-session.sqlite3")
     chat = CLIChatStore(store)
@@ -381,6 +419,7 @@ def test_desktop_api_continues_terminal_session_in_the_same_sqlite_history(works
 
 def test_cli_chat_api_authenticates_and_keeps_messages_in_session_scope(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "cli-chat-api.sqlite3")
+    user_message = "\0" * 8192
     run_id = store.create_run(
         objective="A saved run",
         acceptance_criteria=[],
@@ -412,12 +451,25 @@ def test_cli_chat_api_authenticates_and_keeps_messages_in_session_scope(workspac
                 "model": "local/model",
                 "workspace": None,
                 "mode": "observe",
-                "user_message": "Hello",
+                "user_message": user_message,
                 "assistant_message": "Hi",
             },
         )
         assert saved.status_code == 200
-        assert [item["content"] for item in saved.json()["messages"]] == ["Hello", "Hi"]
+        assert [item["content"] for item in saved.json()["messages"]] == [user_message, "Hi"]
+        too_large = client.post(
+            "/chat/sessions/too-large/turn",
+            headers=HEADERS,
+            json={
+                "run_id": run_id,
+                "model": "local/model",
+                "workspace": None,
+                "mode": "observe",
+                "user_message": user_message + "x",
+                "assistant_message": "Rejected.",
+            },
+        )
+        assert too_large.status_code == 422
         assert (
             client.get("/chat/sessions/default", headers=HEADERS).json()["messages"]
             == saved.json()["messages"]

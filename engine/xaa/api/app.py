@@ -148,7 +148,7 @@ from xaa.storage.backup_bundle import (
     restore_backup_bundle,
 )
 from xaa.storage.channel_identity import ChannelIdentityLinks
-from xaa.storage.cli_chat import CLIChatStore
+from xaa.storage.cli_chat import MAX_SHARED_CHAT_MESSAGE_BYTES, CLIChatStore
 from xaa.storage.commands import CommandJournal
 from xaa.storage.history import latest_unfinished_run, list_runs
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
@@ -293,7 +293,7 @@ class CLIChatTurnRequest(BaseModel):
     model: str = Field(min_length=1, max_length=256)
     workspace: str | None = Field(default=None, max_length=4096)
     mode: Literal["observe", "workspace"]
-    user_message: str = Field(min_length=1, max_length=2000)
+    user_message: str = Field(min_length=1, max_length=MAX_SHARED_CHAT_MESSAGE_BYTES)
     assistant_message: str = Field(min_length=1, max_length=16000)
 
 

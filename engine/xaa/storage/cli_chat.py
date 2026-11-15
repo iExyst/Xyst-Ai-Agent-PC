@@ -12,7 +12,8 @@ from xaa.storage.runs import RunStore, utc_now
 ChatMode = Literal["observe", "workspace"]
 _SESSION_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _MAX_MESSAGES = 12
-_MAX_CONTEXT_BYTES = 8192
+MAX_SHARED_CHAT_MESSAGE_BYTES = 8192
+_MAX_CONTEXT_BYTES = 96 * 1024
 
 
 def _clip_utf8(value: str, max_bytes: int) -> str:
@@ -174,8 +175,11 @@ class CLIChatStore:
     ) -> dict[str, Any]:
         self.validate_id(session_id)
         self._validate_settings(model, workspace, mode)
-        if not user_message.strip() or len(user_message.encode("utf-8")) > 2000:
-            raise ValueError("User chat message must contain 1–2,000 UTF-8 bytes.")
+        if (
+            not user_message.strip()
+            or len(user_message.encode("utf-8")) > MAX_SHARED_CHAT_MESSAGE_BYTES
+        ):
+            raise ValueError("User chat message must contain 1–8,192 UTF-8 bytes.")
         if not assistant_message.strip() or len(assistant_message) > 16000:
             raise ValueError("Assistant chat message must contain 1–16,000 characters.")
         stored_assistant = _clip_utf8(assistant_message, 6000)

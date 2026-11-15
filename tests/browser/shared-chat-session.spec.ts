@@ -65,16 +65,18 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByRole('button',{name:'Save title'}).click();
   await expect(page.getByLabel('Saved terminal and desktop sessions')).toContainText('Research notes');
   await expect(page.getByText('Research notes',{exact:true})).toBeVisible();
-  await page.getByLabel('Objective',{exact:true}).fill('Continue it');
+  const longTurn='A'.repeat(3000);
+  await page.getByLabel('Objective',{exact:true}).fill(longTurn);
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
 
   await expect.poll(()=>submittedObjective).toContain('Prior turns:\n[["user","Earlier question"],["assistant","Earlier reply"]]');
-  await expect.poll(()=>savedUserMessage).toBe('Continue it');
+  await expect.poll(()=>savedUserMessage).toBe(longTurn);
+  await expect.poll(()=>submittedObjective.length).toBeLessThanOrEqual(10000);
   await expect.poll(()=>savedAssistantMessage).toBe('Desktop continued the saved conversation.');
   await expect(page.getByRole('region',{name:'Active run'}).getByText('Desktop continued the saved conversation.',{exact:true})).toBeVisible();
   await page.getByRole('link',{name:/New objective/}).click();
   await expect(page.getByText('Earlier reply',{exact:true})).toBeVisible();
-  await expect(page.getByRole('list',{name:'Saved conversation turns'}).getByText('Continue it',{exact:true})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Saved conversation turns'}).getByText(longTurn,{exact:true})).toBeVisible();
   page.once('dialog',dialog=>void dialog.accept());
   await page.getByRole('button',{name:'Delete shared conversation'}).click();
   await expect.poll(()=>deleted).toBe(true);
