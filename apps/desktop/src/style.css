@@ -181,3 +181,117 @@ a:focus-visible,summary:focus-visible{outline:3px solid var(--blue);outline-offs
 .page-home>#new-objective>button:not(.secondary-button){padding:10px 17px}
 @media(max-width:900px){.app-topbar{padding-inline:20px}.app-content{padding:16px 20px 30px}}
 @media(max-width:640px){.app-topbar{height:62px;padding-inline:14px}.app-content{padding:13px 13px 26px}.page-home>.workspace-card label{display:block;white-space:normal}.page-home>.workspace-card label input{margin-top:5px!important}.app-content>section.recovery-card{padding:13px 15px}}
+
+/* Unified desktop visual system: the earlier iterations left several feature
+   panels with their original dark palette inside the light application shell. */
+:root{
+  --surface:#fff;
+  --surface-raised:#fff;
+  --surface-subtle:#f7f9fb;
+  --surface-hover:#f1f6f3;
+  --border:#e2e8ef;
+  --border-strong:#cbd5df;
+  --ink:#17221d;
+  --ink-soft:#425148;
+  --ink-muted:#68766e;
+  --accent:#26734f;
+  --accent-strong:#1d5c3e;
+  --accent-soft:#eaf5ee;
+  --focus:#2767c5;
+  color-scheme:light;
+  color:var(--ink);
+  background:#f3f6f4;
+}
+body,.app-frame{background:#f3f6f4;color:var(--ink)}
+.app-sidebar{width:244px;padding:24px 15px 16px;background:#fbfcfb;border-color:var(--border);box-shadow:5px 0 24px #19362608}
+.brand-lockup{gap:11px;padding:2px 10px 30px}
+.brand-mark{width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,#dff4e6,#a6dabc);color:#174a31;font-size:20px;box-shadow:0 5px 14px #26734f16}
+.brand-lockup strong{font-size:15px;color:#1b2a21;letter-spacing:.015em}
+.brand-lockup span,.sidebar-footer small{color:var(--ink-muted)}
+.sidebar-label,.eyebrow{color:#758279}
+.side-nav{gap:4px}
+.side-nav a{height:43px;padding-inline:11px;color:#526058;border-radius:10px;font-size:12px;font-weight:620;transition:background .15s,color .15s,border-color .15s}
+.side-nav a:before{width:21px;height:21px;border-radius:7px;color:#77847c;font-size:14px}
+.side-nav a:hover{background:#f1f5f2;color:#1c2b22}
+.side-nav a.active{background:var(--accent-soft);border-color:#d7e9dc;color:#1d5c3e}
+.side-nav a.active:before{color:var(--accent)}
+.sidebar-footer{border-color:var(--border)}
+.sidebar-footer strong{color:#304038}
+.connection-dot{background:#c18b37;box-shadow:0 0 0 3px #c18b371b}
+.connection-dot.online{background:#268451;box-shadow:0 0 0 3px #2684511b}
+.app-frame{margin-left:244px}
+.app-topbar{position:sticky;top:0;z-index:4;height:72px;padding-inline:32px;background:#fbfcfbeb;border-color:var(--border);backdrop-filter:blur(18px)}
+.app-topbar .eyebrow{margin-bottom:4px;font-size:9px;letter-spacing:.13em}
+.app-topbar h1{color:#1c2921;font-size:19px;font-weight:680;letter-spacing:-.035em}
+.topbar-actions{gap:12px}
+.status-pill{padding:7px 11px;background:#edf6ef;border-color:#d8e9dc;color:#24583b}
+.status-pill.muted{background:#fbf5e8;border-color:#eee1bf;color:#795d23}
+.app-content{max-width:1120px;padding-top:24px;gap:14px}
+.app-content>section,.app-content>div>section{background:var(--surface);border-color:var(--border);border-radius:14px;box-shadow:0 5px 18px #1d38270a}
+.app-content section h2,.app-content section h3{color:#1d2b23}
+.app-content p,.app-content li{color:#58675e}
+.app-content label{color:#34453b}
+.app-content input:not([type=checkbox]),.app-content select,.app-content textarea{background:#fff;color:#17221d;border-color:#cdd8d0;border-radius:9px;box-shadow:0 1px 2px #1a332309}
+.app-content input:not([type=checkbox]):hover,.app-content select:hover,.app-content textarea:hover{border-color:#aebeb3}
+.app-content input:not([type=checkbox]):focus,.app-content select:focus,.app-content textarea:focus{border-color:#4a9c6b;box-shadow:0 0 0 3px #31845120;outline:0}
+.app-content input::placeholder,.app-content textarea::placeholder{color:#89958e}
+.app-content input[type=checkbox]{accent-color:var(--accent)}
+.app-content details.advanced-options{background:var(--surface-subtle);border-color:var(--border);border-radius:10px}
+.app-content details.advanced-options summary,.app-content details>summary{color:#34463b}
+.app-content pre{background:#f6f8f7;border-color:var(--border);color:#27362d}
+.app-content button:not(.topbar-new):not(.side-nav a){border-radius:9px;background:var(--accent);color:#fff;box-shadow:0 1px 2px #18382712}
+.app-content button:not(.topbar-new):not(.side-nav a):hover:not(:disabled),.topbar-new:hover{background:var(--accent-strong);filter:none}
+.app-content .secondary-button,.secondary-button{background:#f4f7f5!important;color:#314339!important;border-color:#d9e2dc!important;box-shadow:none!important}
+.app-content .secondary-button:hover:not(:disabled){background:#eaf1ec!important}
+.topbar-new,button:not(.side-nav a){background:var(--accent);color:#fff}
+.app-alert{background:#fff8e9;border-color:#edddb9;color:#795922!important}
+.app-content [role=alert]{color:#9a3412}
+.app-content>section.recovery-card{background:linear-gradient(115deg,#fff9ec,#fff 78%);border-color:#efdfbd}
+.app-content .recovery-card .eyebrow{color:#91671f}
+.app-content .system-resource-card{background:var(--surface);border-color:var(--border)}
+.app-content .system-resource-card .system-resource-heading h2{color:#26372d}
+.app-content .system-resource-card .system-resource-heading strong{color:var(--accent-strong)}
+.app-content .system-resource-card p{color:var(--ink-soft)}
+.saved-runs-list li{background:var(--surface-subtle);border-color:var(--border);border-radius:11px}
+.saved-run-open{color:var(--ink)!important}
+.saved-run-open:hover{background:#eef5f0!important}
+.saved-run-action{color:var(--accent)}
+.saved-run-objective{color:#1c2b22}
+.saved-run-meta{color:var(--ink-muted)!important}
+.saved-run-state{background:#eff3f0;border-color:#dce5de;color:#425449}
+.active-run-objective-full{background:var(--surface-subtle);border-color:var(--border)}
+.active-run-objective-full summary{color:var(--accent-strong)}
+.page-home>.workspace-card{background:#fff;border-color:var(--border);border-radius:12px;box-shadow:0 3px 12px #1d382706}
+.page-home>.workspace-card label{color:#43544a}
+.page-home>#new-objective{position:relative;overflow:hidden;border:1px solid #d7e7dc!important;background:linear-gradient(145deg,#fff 68%,#f6fbf7)!important;box-shadow:0 12px 30px #1d38270c!important}
+.page-home>#new-objective:before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:linear-gradient(#78c79a,#26734f)}
+.page-home>#new-objective .composer-heading h2{color:#17271d}
+.composer-private{background:#f1f8f3;border-color:#dcebe0;color:#3e6049}
+.page-home>#new-objective #run-objective{min-height:128px;height:128px;background:#fff}
+.page-home>.onboarding-guide,.saved-conversations,.file-check-card{border-color:var(--border);border-radius:12px;background:#fff;box-shadow:0 3px 12px #1d382706}
+.page-home>.onboarding-guide>summary,.saved-conversations>summary,.file-check-card>summary{color:#34463b}
+.page-home>.onboarding-guide>summary:hover,.saved-conversations>summary:hover,.file-check-card>summary:hover{color:var(--accent-strong)}
+.page-home>.onboarding-guide>#get-started li{background:#f7f9f8;border-color:#e5ebe7}
+.page-home>.onboarding-guide>#get-started li::before{background:var(--accent-soft);color:var(--accent-strong)}
+.skip-link{background:#e4f5e9;color:#173a27;box-shadow:0 4px 18px #18382718}
+a:focus-visible,summary:focus-visible,.side-nav a:focus-visible{outline-color:var(--focus)}
+@media(max-width:900px){.app-sidebar{width:204px}.app-frame{margin-left:204px}.app-topbar{padding-inline:20px}}
+@media(max-width:640px){.app-sidebar{background:#fbfcfb}.app-frame{margin:0}.app-topbar{background:#fbfcfbeb}.app-content{padding:13px 13px 26px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* Readable at the standard Windows window size without zooming. */
+.side-nav a{font-size:13px}
+.app-topbar .eyebrow{font-size:10px}
+.status-pill{font-size:12px}
+.app-content p,.app-content li{font-size:13px;line-height:1.6}
+.app-content label{font-size:13px}
+.app-content input:not([type=checkbox]),.app-content select,.app-content textarea{font-size:13px}
+.app-content section h2{font-size:17px}
+.app-content .recovery-card h2{font-size:16px}
+.app-content .recovery-card p:not(.eyebrow){font-size:12px}
+.page-home>.workspace-card label,.page-home>.onboarding-guide>summary{font-size:12px}
+.page-home>#new-objective .objective-intro{font-size:13px}
+.page-home>#new-objective #run-objective{font-size:14px!important}
+.saved-run-objective{font-size:14px}
+.saved-run-meta{font-size:12px!important}
+.composer-private{font-size:12px}

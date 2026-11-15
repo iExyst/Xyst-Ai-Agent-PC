@@ -1,5 +1,9 @@
 # Progress
 
+## Refresh the Windows desktop visual design (2026-11-14)
+
+Unified the desktop app's light theme across navigation, task composition, settings, run history, recovery, and system monitoring. Added clearer active-navigation states, a restrained green accent, consistent panel and control styling, stronger focus treatment, reduced-motion support, and larger everyday text. `npm run build:desktop` passed TypeScript and Vite production compilation. A native Windows build compiled successfully and is staged separately at [`build/native-design-20261114`](../build/native-design-20261114/) so it does not replace the currently running app; executable hashes are in its manifest. The first refreshed native window was visually inspected; the user stopped the follow-up computer-use check with Escape. No model inference was run. This is a presentation improvement only; the Hermes parity matrix and overall release gates are unchanged.
+
 ## Review the pinned GitHub Copilot provider candidate (2026-11-14)
 
 Completed a static review of `NousResearch/hermes-labs-plugins/github-copilot` at its exact catalog pin `346cfe972f72b6a966e84c1004cf8742554b193d`. The source review records both account API and CLI/ACP paths, the explicit activation gate, GitHub token exchange and persisted short-lived token cache, endpoint/credential boundaries, and the remaining account-policy/runtime unknowns in [`parity/model-provider-source-audit.md`](parity/model-provider-source-audit.md). The inventory now has three classified candidates out of 90 in the `models` category; this provider remains planned for Phase 9. No login, CLI launch, source execution, credential, live endpoint, or model request was used. LLM testing remains deferred to the final phase.
