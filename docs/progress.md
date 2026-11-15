@@ -1,5 +1,9 @@
 # Progress
 
+## Review Antigravity OAuth provider (2026-11-15)
+
+Reviewed the pinned Windows-capable CLI adapter, including explicit auth actions, child-process setup, model/tool routing, and temporary HOME cleanup. The source has a `copy2` fallback for token isolation that conflicts with the README's claim that tokens are never copied; Windows cleanup needs specific acceptance before any implementation. Twenty-five of 90 model-category candidates now have source reviews; 65 remain pending. No CLI, plugin, account, token, installer or inference was used.
+
 ## Review Antigravity agy CLI provider (2026-11-15)
 
 Reviewed the pinned external-process adapter, including its Hermes-owned tool relay, CLI-owned account, private request workspace, process prewarming, trace data and platform limits. It declares Linux/macOS only, so it is not currently a Windows candidate. Twenty-four of 90 model-category candidates now have source reviews; 66 remain pending. No CLI, plugin, account, quota probe or inference was used.

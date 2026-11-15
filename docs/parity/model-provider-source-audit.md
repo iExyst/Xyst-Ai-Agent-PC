@@ -300,6 +300,24 @@ Reviewed 2026-11-14 against the catalog-pinned `AhmetArif0/hermes-groq-provider`
 - The plugin declares no tools or local execution surface. Using it sends prompts and conversation content to a remote inference service, and use is subject to the owner's Groq account, limits, and charges. The README's rate-limit and plan recommendations are maintainer observations from 2026-09-29, not current X.A.A. guarantees.
 - The workflow source defines cross-platform unit and Hermes fake-provider integration jobs, but no workflow result was inspected. Its fixtures do not prove current live API/model compatibility.
 
+## Antigravity OAuth CLI provider
+
+Reviewed 2026-11-15 at catalog-pinned commit [`466fafb9b6e8099735d79ed32f97005a477ba144`](https://github.com/neerazz/hermes-antigravity-oauth/tree/466fafb9b6e8099735d79ed32f97005a477ba144). Catalog manifest SHA-256 `605ceba1b05d55ad6b1431aad1e33a6e912cad86cfbbb38577d813488ce16fe9`.
+
+| Pinned source | SHA-256 | Findings |
+| --- | --- | --- |
+| `plugin.yaml` | `921a0c777d6cd52597aec6da75d57059b35455f8a3fbe109a125f900134317c7` | Declares a model-provider for Linux, macOS and Windows; requires Hermes >=0.21 and the separate `agy` CLI. |
+| `__init__.py` | `60aede54446a5d88a422cc2c6c320893114d8a10da00df6c8b147e3faea7672e` | Registers OpenAI-shaped chat completions over an external process, account model discovery, reasoning choices, vision metadata, and CLI-owned auth actions. |
+| `auth.py` | `2fe771e6a4e6fedcbc85be06f5294d2551d922b86ecd10c87b7e21949d9f17cd` | Starts the official CLI's interactive sign-in in a temporary working directory, verifies with `agy models`, and delegates logout to agy. No OAuth token is stored in Hermes. |
+| `process.py` | `b5aad3217580327dda698691102c12c1bfc2a1fc8d9296b7ad1cfcbf83a0007a` | Detects agy credentials through metadata/presence checks and isolates its child HOME. It symlinks or hardlinks the token into that temporary HOME, with `copy2` as a final fallback; the README's blanket claim that the plugin never copies the token conflicts with this fallback. Cleanup is best-effort, so Windows temporary-token residue needs careful acceptance. Windows process-tree cleanup uses `taskkill`. |
+| `client.py` | `74013ca6000d71b5d5ed394fbf4d9a1a65b69cfcf92bd7974f947dc92a7c0348` | Runs agy as a child process for streaming, converts tool steps into Hermes calls, and has Windows-specific temporary-directory cleanup logic. The source documents a synchronous non-streaming call that blocks the event loop. |
+| `README.md` | `0e6b66b783ad31f66ac3ed08fcf001ad24855a680c8151755fa1febf81fbb3b6` | Discloses CLI-owned account data, a private temporary HOME and explicit optional `npx` installer behavior; it describes credentials as never copied, which disagrees with the fallback in `process.py`. |
+| `package.json` | `9df0ffd0ce61fffb405d414e739483d05675018d8b0d57e84213410283fe013e` | Declares a Node >=18 `npx` installer package. |
+| `bin/cli.js` | `0bb373a45279a1e496bf7dd601691e376fde8f9fe28a8940f21230e18ad4d7db` | Optional `--yes` downloads the official installer to a temp file and invokes it through PowerShell with `-ExecutionPolicy Bypass`; plugin install and sign-in are separate child CLI calls. |
+| `LICENSE` | `ccd98bdeec4e461b83d1c91f6d9e290861f84038ab639fd56e786c5352b14637` | MIT license for this candidate source. |
+
+This candidate remains planned for Phase 9. Although its manifest lists Windows, source review is not live compatibility evidence; X.A.A. would need explicit external-account consent, secret-handling review of the copy fallback, reliable token cleanup, process allowlisting, and Windows acceptance before implementation. No CLI, plugin, account, token, installer or inference was used.
+
 ## Antigravity agy CLI provider
 
 Reviewed 2026-11-15 at catalog-pinned repository commit [`f85003d3ce0de3844e2d5c23174d630ff3586e5d`](https://github.com/Realtyxxx/hermes-plugin-antigravity-agy/tree/f85003d3ce0de3844e2d5c23174d630ff3586e5d). Catalog manifest SHA-256 `e300851666b7180e13b1fcd3bcd172d1f68024c3191c610073705a807f4ca15c`.
@@ -386,6 +404,6 @@ Reviewed 2026-11-14 against the catalog-pinned `NousResearch/hermes-labs-plugins
 
 ## X.A.A. disposition and limits
 
-The candidate remains `planned`, Phase 9. These reviews classify twenty-four of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, Antigravity agy, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 66 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
+The candidate remains `planned`, Phase 9. These reviews classify twenty-five of the 90 `models` category candidates (Abstract, Ace Data Cloud, Adaptive Inference, AIHubMix, AI Stupid Level, Aixy, AnyAPI, Antigravity agy, Antigravity OAuth, BharatCode, Chutes, Claude, Cloudflare Workers AI, CoreWeave, Fortytwo, Groq, Hashference, GitHub Copilot, ngrok AI Gateway, Requesty, RuAPI, Runcrate, Safe AI Labs, Telnyx, and Together); 65 remain pending classification/source review. It does not add OAuth/device login, GitHub token exchange, an account pool, remote Copilot routing, or external-process ACP to X.A.A. Those would require owner-selected remote-account consent, OS-protected secret storage, strict URL/origin and credential routing, account/cost notices, process allowlisting, complete cancellation and cleanup, capability-aware model discovery, model-free fixture acceptance, and the final live-provider acceptance after the requested LLM-test deferral.
 
 No plugin, test, CLI, credential, account, live endpoint, or model was used. This is pinned-source evidence only; provider terms, current GitHub account/policy eligibility, authentication outcomes, token-cache access controls, installed CLI behavior, billing, and runtime compatibility remain unverified.
