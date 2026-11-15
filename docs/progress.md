@@ -1,5 +1,25 @@
 # Progress
 
+## Classify the pinned Protean Model Sync plugin (2026-11-15)
+
+Reviewed `protean-model-sync` at catalog-pinned commit `50d3d096a2beb02a578c28d116a989537f5d19d1`. It is administrative configuration tooling, not inference: human-triggered CLI, local backend, and desktop routes manage provider/model settings across profiles and sessions. Preset writes are explicitly targeted, confirmed, backed up, atomic, and read back, while group-member changes affect that member's profile default. Source review found a plan-to-write concurrency window and caller-supplied rollback files can replace the selected config beyond preset keys. Tests were inspected only. Eighty-five selected non-platform candidates are reviewed; 83 of 90 model-category rows across 81 repositories are reviewed, with 7 pending. No profile was read/written, and no tests or inference were run.
+
+## Classify the pinned refusal middleware (2026-11-15)
+
+Reviewed `refusal` at catalog-pinned commit `b1bd080caeba423309d437f7df6ee564bd5d27dd`. Despite its `models` catalog category, it is not a provider: response-text heuristics mutate matching outputs into Hermes fallback signals; optional user-supplied text is added to later provider requests after a refusal. Its README discloses false-positive behavior, matched-text logs, and possible extra provider disclosure; persistence is opt-in and stores session identifiers/levels only. Source tests were inspected only. Eighty-four selected non-platform candidates are reviewed; 82 of 90 model-category rows across 80 repositories are reviewed, with 8 pending. No plugin, tests, model, or inference were run.
+
+## Review the pinned OpenPaths model provider (2026-11-15)
+
+Reviewed `openpaths` at catalog-pinned commit `d1e55ac08dabaae1e399d4a3a9da9f68346efd00`. This is an OpenAI-compatible cloud router with API-key auth, optional base-URL override, live listing inherited from Hermes, a 17-ID static fallback set, and explicit reasoning-effort translation. Its README discloses prompt/tool/context forwarding to OpenPaths and upstream model vendors. Its tests cover registration/config and reasoning mapping but were inspected only. Eighty-three selected non-platform candidates now have source reviews; 81 of 90 model-category rows across 79 repositories are reviewed, with 9 pending. No account, key, request, test, or inference was used.
+
+## Review the pinned Prism provider (2026-11-15)
+
+Reviewed `prism` at catalog-pinned commit `f68a9bff76a1dba30389f56a671292e48b22887a`. This is a thin OpenAI-compatible provider profile with a fixed default Prism origin, API-key auth, two static fallback IDs, and model-prefix normalization delegated around Hermes' base listing implementation. A provider-wide vision flag conflicts with the README's claim that only one fallback accepts images; its 1M context and 384K output claims were not independently verified. The checkout has no tests or license file. No key, endpoint, test, or inference was used. Eighty-two selected non-platform candidates are individually reviewed; 80 of 90 model-category rows across 78 repositories are reviewed, with 10 pending.
+
+## Review the pinned PayPerQ provider (2026-11-15)
+
+Reviewed `ppq` at catalog-pinned commit `94a6686fe4759d6fbd627a3ad58c9e1fcdb0b081`. It is an OpenAI-compatible cloud relay using `PPQ_API_KEY`, with chat-only discovery, user/local/live/static model-pin layers, optional local rate snapshots reported as estimated cost, and request-level ZDR/data-collection routing for models the relay labels `zdr`. Its prompts, schemas, and results are disclosed to PayPerQ and third-party inference partners; static or stale ZDR IDs are not current privacy proof. Model and stats response bodies have no explicit byte caps, and the ZDR cache is not keyed by base URL. The checkout has no provider-local tests; source was inspected without running tests, using credentials, or contacting endpoints. Eighty-one selected non-platform catalog entries are individually source-reviewed; 79 of 90 model-category rows across 77 repositories are reviewed, with 11 pending.
+
 ## Apply a consistent dark palette across the desktop workspace (2026-11-15)
 
 Corrected the active desktop palette so later light-mode overrides no longer make the app render light. Navigation, task composer, onboarding, saved runs, forms, recovery, and system monitor now share a graphite surface palette, mint primary action, higher-contrast text, and dark native controls. `npm run build:desktop` passes TypeScript and production bundling; `git diff --check` is clean. The native app was not launched for a visual screenshot in this pass.

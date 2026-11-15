@@ -318,6 +318,32 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
         "pinned source review at commit edc25305e325754b450e41daf41c6ba5c028324f; "
         "see model-provider-source-audit.md#opencode-free-acp-provider"
     ),
+    "openpaths": (
+        "OpenPaths cloud-router provider with task-tier models and reasoning-effort translation; "
+        "pinned source review at commit d1e55ac08dabaae1e399d4a3a9da9f68346efd00; "
+        "see model-provider-source-audit.md#openpaths-model-provider"
+    ),
+    "ppq": (
+        "PayPerQ relay provider with layered model pins, estimated local rate-card pricing, "
+        "and opt-in ZDR routing; pinned source review at commit "
+        "94a6686fe4759d6fbd627a3ad58c9e1fcdb0b081; "
+        "see model-provider-source-audit.md#payperq-ppq-provider"
+    ),
+    "prism": (
+        "thin Prism OpenAI-compatible provider profile with prefix-normalized model discovery; "
+        "pinned source review at commit f68a9bff76a1dba30389f56a671292e48b22887a; "
+        "see model-provider-source-audit.md#prism-provider"
+    ),
+    "protean-model-sync": (
+        "non-provider fleet configuration workflow that writes selected model/provider settings; "
+        "pinned source review at commit 50d3d096a2beb02a578c28d116a989537f5d19d1; "
+        "see model-provider-source-audit.md#protean-model-sync-fleet-configuration-plugin"
+    ),
+    "refusal": (
+        "non-provider refusal-detection and fallback middleware with optional user preprompt; "
+        "pinned source review at commit b1bd080caeba423309d437f7df6ee564bd5d27dd; "
+        "see model-provider-source-audit.md#refusal-detection-and-fallback-middleware"
+    ),
     "model-presets": (
         "messaging-gateway /model alias rewriter using native Hermes command dispatch; "
         "pinned source review at commit 27eec57bc17d92d931a025ed333b330dd17636e5; "
