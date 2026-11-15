@@ -1,5 +1,9 @@
 # Progress
 
+## Stabilize hosted Windows microphone capture acceptance (2026-11-14)
+
+Hosted source run [43671737964](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43671737964) passed the pinned inventory checks, Ruff, formatting, Pyright, OpenAPI and desktop client checks, then exposed a pre-existing timing issue in the fake-microphone browser scenario: it stopped after 700 ms, before Edge consistently emitted a `MediaRecorder` timeslice. The acceptance now records for 1.5 seconds, giving multiple timeslices; the focused local Windows Edge test passes. No product capture logic changed. Full hosted source and installer acceptance are pending on the updated test.
+
 ## Separate the Hermes catalog blocklist from plugin candidates (2026-11-14)
 
 The pinned catalog audit had counted `plugin-catalog/removed.yaml` as a plugin with a missing category, even though it is a blocklist. The generator now records catalog controls separately, preserving the retired `or-picker` entry and its source hash while reporting 975 plugin manifests across 976 YAML files. Category totals now show two genuinely unspecified candidates instead of three. Channel, execution, selected-skill and catalog inventory drift checks all pass against pinned Hermes commit `1e208b280deb18f01d015b0acdf3ef3552d08039`. Ruff, formatting, strict Pyright and diff checks pass for the audit script. The two unclassified candidates, remaining catalog source review, broader API-contract audit and Phase 0 review remain open. No model inference or external integration was used.
