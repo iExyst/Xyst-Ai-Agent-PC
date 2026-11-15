@@ -53,6 +53,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().approved_browser).toBe(true);
+      expect(request.postDataJSON().approved_browser_submission).toBe(true);
       expect(request.postDataJSON().allow_procedure_drafting).toBe(true);
       expect(request.postDataJSON().allow_procedure_revision).toBe(false);
       expect(request.postDataJSON().allow_procedure_resource_revision).toBe(false);
@@ -105,7 +106,17 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.locator('details.file-check-card > summary').click();
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('Allow Brave web search for this next run').check();
-  await page.getByLabel('Allow managed browser reads for this next run').check();
+  const browserReadGrant = page.getByLabel('Allow managed browser reads for this next run');
+  const browserSubmissionGrant = page.getByLabel('Allow one browser form submission per tool action for this next run');
+  await expect(browserSubmissionGrant).toBeDisabled();
+  await browserReadGrant.check();
+  await expect(browserSubmissionGrant).toBeEnabled();
+  await browserSubmissionGrant.check();
+  await browserReadGrant.uncheck();
+  await expect(browserSubmissionGrant).toBeDisabled();
+  await expect(browserSubmissionGrant).not.toBeChecked();
+  await browserReadGrant.check();
+  await browserSubmissionGrant.check();
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');

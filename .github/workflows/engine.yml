@@ -163,6 +163,9 @@ jobs:
       - run: npm run contracts:check
       - run: npm run typecheck
       - run: npm run test:client
+      - name: Verify browser submission approval stays separate in the desktop UI
+        run: npm run test:browser -- tests/browser/objective.spec.ts
+        timeout-minutes: 3
       - name: Verify explicit specialist conflict choices in the desktop UI
         run: npm run test:browser -- tests/browser/task-review.spec.ts tests/browser/voice-input.spec.ts tests/browser/onboarding.spec.ts
         timeout-minutes: 3
