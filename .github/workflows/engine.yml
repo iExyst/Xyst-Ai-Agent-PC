@@ -70,15 +70,17 @@ jobs:
           $payload = Get-Content $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json
           $changedPaths = @()
           $knownChangeSet = $false
-          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $null -ne $payload.commits) {
-            $knownChangeSet = $true
-            $changedPaths = @($payload.commits | ForEach-Object { @($_.added) + @($_.modified) + @($_.removed) } | Where-Object { $_ })
-          } elseif ($env:GITHUB_EVENT_NAME -eq 'pull_request' -and $payload.pull_request.base.sha) {
+          $baseSha = ''
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $baseSha = [string]$payload.before
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
             $baseSha = [string]$payload.pull_request.base.sha
+          }
+          if ($baseSha -and $baseSha -notmatch '^0+$') {
             git fetch --no-tags origin $baseSha
-            if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the pull request base for test-scope detection.' }
+            if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the change base for test-scope detection.' }
             $changedPaths = @(git diff --name-only $baseSha $env:GITHUB_SHA)
-            if ($LASTEXITCODE -ne 0) { throw 'Could not compare the pull request files for test-scope detection.' }
+            if ($LASTEXITCODE -ne 0) { throw 'Could not compare changed files for test-scope detection.' }
             $knownChangeSet = $true
           }
           $pythonInputs = @($changedPaths | Where-Object {
