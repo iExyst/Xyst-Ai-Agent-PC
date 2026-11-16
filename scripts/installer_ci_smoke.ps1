@@ -219,6 +219,15 @@ try {
         & node scripts/native_boot_smoke.mjs $xaaDesktop
         $xaaBootExitCode = $LASTEXITCODE
         if ($xaaBootExitCode -ne 0) { throw 'Installed application boot/shutdown test failed.' }
+        $env:XAA_NATIVE_EMERGENCY_STOP_DEBUG_PORT = '19222'
+        $xaaEmergencyStopOutput = & node scripts/native_emergency_stop_smoke.mjs $xaaDesktop
+        $xaaEmergencyStopExitCode = $LASTEXITCODE
+        if ($xaaEmergencyStopExitCode -ne 0) { throw 'Installed application emergency-stop acceptance failed.' }
+        $xaaEmergencyStopAcceptance = ($xaaEmergencyStopOutput | Out-String | ConvertFrom-Json)
+        if (-not $xaaEmergencyStopAcceptance.passed -or $xaaEmergencyStopAcceptance.emergency_stop_response.body.status -ne 'stopping' -or $xaaEmergencyStopAcceptance.persisted_run.state -ne 'paused' -or $xaaEmergencyStopAcceptance.persisted_run.last_state_event.reason -ne 'emergency_stop' -or -not $xaaEmergencyStopAcceptance.engine_stopped -or -not $xaaEmergencyStopAcceptance.graceful_shutdown -or $xaaEmergencyStopAcceptance.model_inference_requested) {
+            throw 'Installed emergency-stop evidence did not confirm durable run recovery and clean engine shutdown.'
+        }
+        $xaaReport.native_emergency_stop = $xaaEmergencyStopAcceptance
         $env:XAA_NATIVE_SCHEDULE_RESTART_ROOT = Join-Path $xaaAcceptanceRoot 'native-schedule-restart'
         $xaaScheduleRestartOutput = & node scripts/native_schedule_restart_smoke.mjs $xaaDesktop
         $xaaScheduleRestartExitCode = $LASTEXITCODE
