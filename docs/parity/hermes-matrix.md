@@ -12,7 +12,7 @@ The dynamically loaded blocked/paused recovery card is a polite, atomic live reg
 
 The Active run panel places its most recent saved event above the activity history. The streaming browser flow verifies a paused-state event appears in the summary while partial-answer and replay behavior remain intact. This makes the latest event easier to find; full plan-progress visualization remains partial. See [`progress.md`](../progress.md#surface-the-latest-run-activity-2026-11-16).
 
-The plan now also shows a saved-status count and accessible completed-task progress bar above specialist cards. The acceptance check covers the initial plan state; broader plan and dependency visualization remains partial. See [`progress.md`](../progress.md#summarize-specialist-plan-progress-2026-11-16).
+The plan now shows an accessible saved-status summary and groups specialist cards into ordered dependency stages; independent tasks at the same stage appear together. The browser flow verifies a dependent review follows its inspection prerequisite. Full interactive graph navigation and broader dependency visualization remain partial. See [`progress.md`](../progress.md#summarize-specialist-plan-progress-2026-11-16).
 
 ## Desktop elapsed-time feedback (2026-11-16)
 

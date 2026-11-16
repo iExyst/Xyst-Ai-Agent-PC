@@ -175,6 +175,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('0 awaiting review');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','2');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('value','0');
+  await expect(plan.getByRole('region',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inspect'})).toBeVisible();
+  await expect(plan.getByRole('region',{name:'Dependency stage 2'}).getByRole('article',{name:'Task review'})).toBeVisible();
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
   await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Reported token allowance: 2000 · Output tokens per request: 128');
   const review = plan.getByRole('article', {name:'Task review'});

@@ -2,7 +2,7 @@
 
 ## Summarize specialist plan progress (2026-11-16)
 
-The task plan now shows an accessible progress bar and saved-state counts for completed, working, awaiting review, queued, and blocked/failed specialist tasks before the detailed cards. Cancelled work is counted when present. A polite, atomic status announcement reports the same counts when a saved plan update changes them. The objective browser flow checks the initial 0-of-2 state, announcement semantics, queued count, review count, and progress values. This improves plan visibility without implying that unreviewed output is complete; dependency and acceptance details remain on each task card.
+The task plan now shows an accessible progress bar and saved-state counts for completed, working, awaiting review, queued, and blocked/failed specialist tasks before the detailed cards. Cancelled work is counted when present. A polite, atomic status announcement reports the same counts when a saved plan update changes them. Dependency-linked tasks are grouped into ordered visual stages; independent tasks at the same stage are grouped together. The objective browser flow checks the initial 0-of-2 state, announcement semantics, queued count, review count, progress values, and that inspection precedes its dependent review task. Invalid or cyclic dependency data falls back to the ungrouped saved task list. This improves plan visibility without implying that unreviewed output is complete; detailed dependency IDs and acceptance evidence remain on each task card.
 
 ## Add a global emergency stop with explicit run recovery (2026-11-16)
 
