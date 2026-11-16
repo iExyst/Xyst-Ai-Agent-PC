@@ -180,9 +180,14 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inventory'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('2 independent tasks');
   await expect(plan.getByRole('group',{name:'Dependency stage 2'}).getByRole('article',{name:'Task review'})).toBeVisible();
+  const inspect = plan.getByRole('article',{name:'Task inspect'});
+  const review = plan.getByRole('article',{name:'Task review'});
+  await expect(review.locator('dd').nth(1).getByRole('link',{name:'inspect'})).toHaveAttribute('href','#plan-task-inspect');
+  await expect(inspect.locator('dd').nth(2).getByRole('link',{name:'review'})).toHaveAttribute('href','#plan-task-review');
+  await review.locator('dd').nth(1).getByRole('link',{name:'inspect'}).click();
+  await expect(page).toHaveURL(/#plan-task-inspect$/);
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
   await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Reported token allowance: 2000 · Output tokens per request: 128');
-  const review = plan.getByRole('article', {name:'Task review'});
   await expect(review).toContainText('Waiting for dependencies');
   await expect(review).toContainText('2 iterations · 60 seconds');
   await expect(review).toContainText('Check the evidence independently');

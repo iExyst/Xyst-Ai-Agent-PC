@@ -45,12 +45,16 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
       <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=><div className="plan-stage" key={depth} role="group" aria-label={`Dependency stage ${depth+1}`}>
         <div className="plan-stage-heading"><h3>Stage {depth+1}</h3><span>{stageLayout.valid?`${tasks.length} independent ${tasks.length===1?'task':'tasks'}`:'Dependency order unavailable; showing saved task order'}</span></div>
         <div className="plan-tasks">{tasks.map(task => {
+        const taskAnchor = `plan-task-${encodeURIComponent(task.local_id)}`;
+        const dependencies = task.dependencies.map(id => ({id, task:plan.tasks.find(candidate=>candidate.local_id===id)}));
+        const dependents = plan.tasks.filter(candidate=>candidate.dependencies.includes(task.local_id));
         const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a dependency' : plan.ready.includes(task.local_id) ? 'Ready to start' : 'Waiting for dependencies' : task.status;
-        return <article key={task.id} aria-label={`Task ${task.local_id}`}>
+        return <article id={taskAnchor} tabIndex={-1} key={task.id} aria-label={`Task ${task.local_id}`}>
           <h3>{task.local_id} <small>{task.assigned_role}</small></h3>
           <p>{task.objective}</p>
           <dl><dt>Status</dt><dd>{task.status==='queued'?`queued · ${readiness}`:task.status==='verifying'?'Awaiting review':task.status}</dd>
-            <dt>Depends on</dt><dd>{task.dependencies.length ? task.dependencies.join(', ') : 'None'}</dd>
+            <dt>Depends on</dt><dd>{dependencies.length ? dependencies.map(({id,task:dependency},index)=><span key={id}>{index>0?', ':''}{dependency?<a href={`#plan-task-${encodeURIComponent(dependency.local_id)}`}>{dependency.local_id}</a>:id}</span>) : 'None'}</dd>
+            <dt>Unlocks</dt><dd>{dependents.length ? dependents.map((dependent,index)=><span key={dependent.id}>{index>0?', ':''}<a href={`#plan-task-${encodeURIComponent(dependent.local_id)}`}>{dependent.local_id}</a></span>) : 'None'}</dd>
             <dt>Model</dt><dd>{task.model_route ?? 'Unassigned'}</dd>
             <dt>Workspace</dt><dd>{task.workspace ?? 'None'}</dd>
             <dt>Permissions</dt><dd>{task.permission_scope.join(', ') || 'None'}</dd>
