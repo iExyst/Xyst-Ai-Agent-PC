@@ -2,6 +2,10 @@
 
 Updated 2026-11-08. This is an initial Phase 7 browser slice, not general browser automation or Hermes parity.
 
+## Packaged acceptance
+
+The exact unsigned 0.1.1 installer on commit `34ff70c2` passed hosted Windows acceptance [run 43777581681](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43777581681). The installed Microsoft Edge worker passed browser read and cancellation; the installed native desktop separately passed approved HTTPBin form submission with synthetic data and owner review. The installer report confirms the installed desktop and engine match the release manifest. Retained evidence: [installer report](../../.acceptance/hosted-installer-43777581681/installer/build/installer/install-smoke.json), [native UI flow](../../.acceptance/hosted-installer-43777581681/installer/.acceptance/native-browser-ui-cancel-14028577-7592-4cb6-94e1-9e7ac3616567/report.json). This verifies the packaged browser slice only; it does not establish full browser automation or Hermes parity.
+
 ## Run flow
 
 The desktop has a per-run **Allow managed browser reads** grant. At least one exact DNS hostname must also be approved. The API saves both with the run, and the coordinator advertises `browser_run` only when both are present. Browser output is labeled `untrusted_web_content`.
