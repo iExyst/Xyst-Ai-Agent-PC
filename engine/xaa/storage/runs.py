@@ -2174,11 +2174,12 @@ class RunStore:
         changes: list[dict[str, Any]] = []
         for row in rows:
             try:
-                result = json.loads(row["result"])
+                result: Any = json.loads(row["result"])
             except (TypeError, json.JSONDecodeError):
                 continue
             if not isinstance(result, dict):
                 continue
+            result = cast(dict[str, Any], result)
             path = result.get("path")
             if not isinstance(path, str) or not path or len(path) > 2048:
                 continue
