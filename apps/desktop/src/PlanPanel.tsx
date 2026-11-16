@@ -42,7 +42,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan.</p>
       </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
-      <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=><section className="plan-stage" key={depth} aria-label={`Dependency stage ${depth+1}`}>
+      <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=><div className="plan-stage" key={depth} role="group" aria-label={`Dependency stage ${depth+1}`}>
         <div className="plan-stage-heading"><h3>Stage {depth+1}</h3><span>{stageLayout.valid?`${tasks.length} independent ${tasks.length===1?'task':'tasks'}`:'Dependency order unavailable; showing saved task order'}</span></div>
         <div className="plan-tasks">{tasks.map(task => {
         const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a dependency' : plan.ready.includes(task.local_id) ? 'Ready to start' : 'Waiting for dependencies' : task.status;
@@ -76,7 +76,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
           {task.status==='blocked'&&task.blocked_reason==='worker_lost_reconciliation_required'&&<TaskRecoveryPanel client={client} runId={runId} taskId={task.local_id} onUpdated={onReviewed}/>}
         </article>;
         })}</div>
-      </section>)}</div>
+      </div>)}</div>
     </>}
   </section>;
 }
