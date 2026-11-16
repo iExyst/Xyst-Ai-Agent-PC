@@ -42,10 +42,10 @@ test('connect, submit an objective and render its saved events', async ({ page }
       {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
     ],ready:['inspect','inventory'],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
-      { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain' },
-      { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png' },
-      { id: 'xlsx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
-      { id: 'browser-download-1', provenance: 'browser.download:report.txt', size_bytes: 24, media_type: 'application/octet-stream' }
+      { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain', sha256:'a'.repeat(64) },
+      { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png', sha256:'b'.repeat(64) },
+      { id: 'xlsx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', sha256:'c'.repeat(64) },
+      { id: 'browser-download-1', provenance: 'browser.download:report.txt', size_bytes: 24, media_type: 'application/octet-stream', sha256:'d'.repeat(64) }
     ], headers });
     if (path === '/artifacts/artifact-1') return route.fulfill({ body: '<script>window.artifactExecuted=true</script>', contentType: 'text/plain', headers });
     if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
@@ -220,7 +220,15 @@ test('connect, submit an objective and render its saved events', async ({ page }
   expect(await page.evaluate(() => 'planExecuted' in window)).toBe(false);
   expect(planReads).toBe(2);
   expect(errors).toEqual([]);
+  const artifactPanel=page.getByRole('region',{name:'Files and artifacts'});
+  await expect(artifactPanel.getByRole('heading',{name:'Project changes'})).toBeVisible();
+  await expect(artifactPanel).toContainText('40 B');
+  await expect(artifactPanel).toContainText('SHA-256 · aaaaaaaaaaaa…');
+  await page.setViewportSize({width:390,height:844});
+  expect(await artifactPanel.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);
+  await page.setViewportSize({width:1280,height:800});
   await page.getByRole('button', { name: 'View git.diff' }).click();
+  await expect(artifactPanel).toContainText('UNTRUSTED FILE CONTENT');
   await expect(page.locator('pre')).toContainText('<script>');
   expect(await page.evaluate(() => 'artifactExecuted' in window)).toBe(false);
   const xlsxDownload = page.waitForEvent('download');

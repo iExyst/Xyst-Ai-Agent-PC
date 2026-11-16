@@ -24,6 +24,7 @@ import { AgentPluginsPanel } from './AgentPluginsPanel.tsx';
 import { ConversationSessionsPanel } from './ConversationSessionsPanel.tsx';
 import { VoiceCapture } from './VoiceCapture.tsx';
 import { SystemMonitorPanel } from './SystemMonitorPanel.tsx';
+import { ArtifactPanel } from './ArtifactPanel.tsx';
 import type {components} from './generated/api.js';
 
 const SPECIALIST_DRAFT_CLEAR_DELAY_MS=1000;
@@ -152,7 +153,6 @@ function App() {
   const [chatStarting,setChatStarting]=useState(false);
   const [skillsRefresh,setSkillsRefresh]=useState(0);
   const [mcpRefresh,setMcpRefresh]=useState(0);
-  const [preview, setPreview] = useState('');
   const [error, setError] = useState('');
   const [closeBehavior,setCloseBehavior]=useState<DesktopCloseBehavior>('keep_running');
   const [closeBehaviorStatus,setCloseBehaviorStatus]=useState('');
@@ -282,7 +282,7 @@ function App() {
     const controller = new AbortController(); stream.current = controller;
     Object.values(specialistDraftTimers.current).forEach(timer=>window.clearTimeout(timer));
     specialistDraftTimers.current={};
-    setActivity([]);setCommandOutput({stdout:'',stderr:''});commandDecoders.current={};setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPreview('');setPlan(undefined);
+    setActivity([]);setCommandOutput({stdout:'',stderr:''});commandDecoders.current={};setAnswer('');setPartial('');setSpecialistPartials({});setArtifacts([]);setPlan(undefined);
     let sharedAnswer='';
     let sharedTurnSaved=false;
     const saveSharedTurn=async()=>{
@@ -434,7 +434,7 @@ function App() {
     setAllowProcedureRevision(false);
     setAllowProcedureResourceRevision(false);
     setAllowProcedureResourceRemoval(false);
-    setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
+    setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPlan(undefined);
     try { const next = await client.createRun({ objective:runObjective, image:imageData, document:documentData, audio:audioData, transcription_url:audioData?transcriptionUrl:undefined, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, approved_browser_submission:approvedBrowserSubmission, approved_browser_download:approvedBrowserDownload, allow_procedure_drafting:procedureDraftingGrant, allow_procedure_revision:procedureRevisionGrant, allow_procedure_resource_revision:procedureResourceRevisionGrant, allow_procedure_resource_removal:procedureResourceRemovalGrant, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, approved_mcp_sampling_servers:approvedMCPSamplingServers, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, procedure_python_environment_digest:commandAllowed?selectedProcedurePythonEnvironmentDigest:undefined, procedure_npm_environment_digest:commandAllowed?selectedProcedureNpmEnvironmentDigest:undefined, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); rememberWorkspace(workspace);setRun(next);setPage('runs');setActiveSection('active-run');setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedBrowserSubmission(false);setApprovedBrowserDownload(false);setApprovedMCPTools([]);setApprovedMCPSamplingServers([]);setProcedureTrial(undefined);setProcedurePythonEnvironmentDigest(undefined);setProcedureNpmEnvironmentDigest(undefined);setHistoryRefresh(value=>value+1); void watch(next,sharedTurn); }
     catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
@@ -449,7 +449,7 @@ function App() {
     runSelectionRevision.current++;
     const demoObjective = 'Read the project overview and setup documentation in the selected workspace. Do not modify files or run commands. Summarize what the project does, how a developer starts it, and one useful next step. Cite the file paths you read.';
     setMode('observe');
-    setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
+    setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPlan(undefined);
     try {
       const next = await client.createRun({ objective: demoObjective, model, workspace, mode: 'observe', approved_web_search:false, approved_browser:false, approved_browser_submission:false, approved_browser_download:false, allow_procedure_drafting:false, allow_procedure_revision:false, allow_procedure_resource_revision:false, allow_procedure_resource_removal:false, command_grant: null, ...parsedLimits, file_checks: [] });
       rememberWorkspace(workspace);
@@ -619,7 +619,7 @@ function App() {
       <div className="page-runs" style={{display:page==='runs'?'contents':'none'}}>
       {run && client && <div id="active-run" className="anchor-target"><ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} client={client} onControl={action=>void control(action)}/></div>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
-      {artifacts.length > 0 && <section><h2>Files and artifacts</h2><ul>{artifacts.map(item => <li key={item.id}>{item.provenance.startsWith('browser.download:')||['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','audio/wav'].includes(item.media_type)?<button onClick={async()=>{try{const blob=await client.artifactDownload(item.id);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=item.provenance.startsWith('browser.download:')?item.provenance.slice('browser.download:'.length):item.media_type==='application/pdf'?'xaa-input-document.pdf':item.media_type==='audio/wav'?'xaa-input-audio.wav':item.media_type==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'?'xaa-input-document.docx':'xaa-input-document.xlsx';link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(failure){setError(String(failure));}}}>Download {item.provenance}</button>:<button onClick={async () => { try { setPreview(await client.artifactPreview(item.id)); } catch (failure) { setError(String(failure)); } }}>View {item.provenance}</button>} {item.size_bytes} bytes</li>)}</ul>{preview.startsWith('data:image/') ? <img src={preview} alt="Untrusted image content" style={{maxWidth:'100%',maxHeight:600}}/> : preview && <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{preview}</pre>}</section>}
+      {artifacts.length > 0 && <ArtifactPanel artifacts={artifacts} client={client} onError={setError}/>}
       {run && plan && <PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'} />}
       {run?.state==='verifying'&&<RunReviewPanel key={`${run.id}:${run.revision}`} client={client} run={run} canAccept={plan!==undefined&&plan.tasks.every(task=>task.status==='completed')} onReviewed={next=>{setRun(next);setHistoryRefresh(value=>value+1);}}/>}
       </div>
