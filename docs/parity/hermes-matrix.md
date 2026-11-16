@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Visualize specialist progress by dependency stage (2026-11-16)
+
+The plan view now includes an accessible completion meter and status summary for every dependency stage, so owners can see which groups are complete, running, awaiting review, waiting, blocked, failed, or cancelled. The objective browser flow verifies stage-specific totals and progress-bar values. Exact-source Windows workflow [43927671084](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43927671084) passed with 1,426 Python tests and 20 skipped. This improves stage-level visibility; rich graph rendering and live-model plan generation remain open. See [`progress.md`](../progress.md#show-specialist-progress-by-dependency-stage-2026-11-16).
+
 Desktop keyboard acceptance now exercises the Chats, Skills, and Automations destinations alongside the previously covered workspace, integrations, Memory, Model setup, System monitor, Settings, Active run, and Saved runs views. Exact-source Windows run [43892212106](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43892212106) passed on `024e12be`, including the expanded browser/UI flow and 1,421 Python tests passed with 20 skipped. The deterministic browser flow checks visible-text contrast, accessible names, current navigation state, heading focus on route changes, and keyboard reachability with visible focus across visible controls and expanded disclosures. This improves model-free coverage but remains an automated browser check; a complete screen-reader-user audit and live-model onboarding remain open. See [`progress.md`](../progress.md#extend-keyboard-and-accessible-name-acceptance-across-desktop-screens-2026-11-16).
 
 ## Global emergency stop and run recovery (2026-11-16)
