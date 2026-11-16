@@ -8,6 +8,10 @@ The desktop now offers a distinct global Emergency stop action. After an explici
 
 The dynamically loaded blocked/paused recovery card now uses a polite, atomic live region so assistive technology announces saved work that needs review after engine startup. The focused Playwright recovery flow verifies the region semantics, manual Review/Resume controls, and no automatic resume or model call; `npm run build:desktop` and that browser check pass. This covers the startup recovery announcement only; broader screen-reader review remains open.
 
+## Surface the latest run activity (2026-11-16)
+
+The Active run panel now promotes the most recent saved event above the full activity history, so the current step is visible without scrolling through earlier events. The streaming regression verifies the latest paused-state event appears there while partial and completed response handling continues unchanged; all four streaming browser tests and `npm run build:desktop` pass. This is a compact latest-event summary, not a complete plan-progress visualization or screen-reader audit.
+
 ## Show elapsed time on active runs (2026-11-16)
 
 The Active run view now displays elapsed wall time from the persisted run start timestamp. It refreshes once per second while a run is nonterminal and freezes at the saved update timestamp after completion, failure, or cancellation. Invalid timestamps degrade to “Unavailable”; the live clock is excluded from assistive-technology announcements. The focused objective browser flow verifies the accessible timer and elapsed format, and `npm run build:desktop` plus that Playwright flow pass. This closes the elapsed-time display slice of the desktop requirements; selected-model visibility, current activity, and resource-limit presentation are separate existing surfaces, while broad screen-reader review remains open.

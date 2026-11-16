@@ -8,6 +8,10 @@ The desktop’s global Emergency stop is distinct from per-run Cancel. It requir
 
 The dynamically loaded blocked/paused recovery card is a polite, atomic live region. Its browser regression verifies that this prompt is announced and that manual recovery remains explicit with no automatic resume or inference. This is one dynamic status path; the desktop’s broader screen-reader capability remains partial. See [`progress.md`](../progress.md#announce-startup-run-recovery-to-screen-readers-2026-11-16).
 
+## Current run activity summary
+
+The Active run panel places its most recent saved event above the activity history. The streaming browser flow verifies a paused-state event appears in the summary while partial-answer and replay behavior remain intact. This makes the latest event easier to find; full plan-progress visualization remains partial. See [`progress.md`](../progress.md#surface-the-latest-run-activity-2026-11-16).
+
 ## Desktop elapsed-time feedback (2026-11-16)
 
 The Active run view now displays elapsed wall time based on persisted run timestamps, updates once per second while nonterminal, and freezes using `updated_at` in terminal states. The objective browser flow verifies the accessible timer and its formatted value; the production desktop build and focused browser flow pass. This verifies the elapsed-time subrequirement only. See [`progress.md`](../progress.md#show-elapsed-time-on-active-runs-2026-11-16); broad screen-reader review and complete desktop parity remain open.

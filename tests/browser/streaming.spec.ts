@@ -41,6 +41,7 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   await page.getByRole('button',{name:'Start objective'}).click();
   const runStatus=page.getByRole('status',{name:'Run status'});
   const activity=page.getByRole('list',{name:'Run activity history'});
+  const currentActivity=page.getByRole('region',{name:'Current activity'});
   await expect(activity).toHaveAttribute('aria-live','off');
   if(reconnect){
     await expect(runStatus).toHaveText('Run status: Running');
@@ -52,6 +53,7 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   }
   await expect(runStatus).toHaveText('Run status: Paused');
   await expect(activity).toContainText('Run is paused');
+  await expect(currentActivity).toContainText('Run is paused');
   await expect(page.getByRole('heading',{name:'Partial response',exact:true})).toBeVisible();
   await expect(page.getByText('Unfinished streamed text',{exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Candidate answer',exact:true})).toHaveCount(0);

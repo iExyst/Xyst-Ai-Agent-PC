@@ -1190,3 +1190,6 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 #emergency-stop-confirmation button:first-of-type:hover:not(:disabled){background:#60302c}
 @media(max-width:760px){.run-setup-strip{grid-template-columns:1fr;gap:7px}.run-setup-step{min-height:58px}}
 @media(prefers-reduced-motion:reduce){.run-setup-step{transition:none}}
+.active-run-current-activity{margin:10px 0 15px;padding:12px 14px;border:1px solid #2d4638;border-left:3px solid #8cdaad;border-radius:9px;background:linear-gradient(115deg,#142019,#151c1c 72%)}
+.active-run-current-activity .eyebrow{margin:0 0 5px;color:#9cdeb5}
+.active-run-current-activity p:last-child{margin:0;color:#dbe9df;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
