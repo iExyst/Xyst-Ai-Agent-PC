@@ -4,9 +4,16 @@ import { TaskRecoveryPanel } from './TaskRecoveryPanel.tsx';
 import './plan.css';
 
 export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; partials:Record<string,string>; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
+  const completedTasks=plan.tasks.filter(task=>task.status==='completed').length;
+  const activeTasks=plan.tasks.filter(task=>task.status==='running'||task.status==='verifying').length;
+  const blockedTasks=plan.tasks.filter(task=>task.status==='blocked'||task.status==='failed').length;
   return <section aria-label="Task plan"><h2>Plan and specialists</h2>
     {plan.tasks.length === 0 ? <p>No task plan has been saved for this run.</p> : <>
-      <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'}. Queued tasks have not started.</p>
+      <section className="plan-progress" aria-label="Specialist progress">
+        <div className="plan-progress-heading"><strong>{completedTasks} of {plan.tasks.length} tasks complete</strong><span>{activeTasks} active · {blockedTasks} need attention</span></div>
+        <progress aria-label="Completed specialist tasks" max={plan.tasks.length} value={completedTasks}/>
+        <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan. Queued tasks have not started.</p>
+      </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
       <div className="plan-tasks">{plan.tasks.map(task => {
         const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a dependency' : plan.ready.includes(task.local_id) ? 'Ready to start' : 'Waiting for dependencies' : task.status;
