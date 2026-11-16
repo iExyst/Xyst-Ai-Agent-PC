@@ -59,7 +59,13 @@ from xaa.runtime.procedure_tools import (
     selected_procedure_write_schema,
 )
 from xaa.runtime.snapshot_worker import selected_skill_script_paths
-from xaa.runtime.specialists import RUN_READY_TOOL, RunReadyArguments, SpecialistRunner
+from xaa.runtime.specialists import (
+    RUN_READY_CONTRACT,
+    RUN_READY_TOOL,
+    RunReadyArguments,
+    RunReadyResult,
+    SpecialistRunner,
+)
 from xaa.runtime.states import RunState
 from xaa.runtime.tool_contracts import (
     COMMAND_TOOL_CONTRACT,
@@ -1113,7 +1119,15 @@ class Coordinator:
                 stream_responses=self.stream_responses,
                 credential_store=self.credential_store,
             ).run_ready(run_id, token, deadline=deadline)
-            result = {"tasks": statuses, "verification": "Candidates require independent review."}
+            result = RunReadyResult.model_validate(
+                {
+                    "tasks": statuses,
+                    "verification": "Candidates require independent review.",
+                }
+            ).model_dump(mode="json")
+            result_bytes = len(json.dumps(result, ensure_ascii=True).encode("ascii"))
+            if result_bytes > RUN_READY_CONTRACT["limits"]["max_output_bytes"]:
+                raise ValueError("Specialist dispatch output exceeded its declared result limit.")
             self.store.record_tool_result(run_id, token, call["id"], result)
             return result
         if name == "workspace_git_inspect":

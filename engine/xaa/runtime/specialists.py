@@ -5,7 +5,7 @@ import hashlib
 import json
 import time
 from functools import partial
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,6 +36,7 @@ from xaa.runtime.task_commands import (
     read_dependency_command_output,
     read_task_input_artifact,
 )
+from xaa.runtime.task_graph import MAX_TASKS, TaskStatus
 from xaa.runtime.task_review import candidate_evidence
 from xaa.runtime.tool_worker import FilesystemOperation, execute_filesystem
 from xaa.runtime.web_fetch import WEB_FETCH_METADATA, WEB_FETCH_TOOL, fetch_approved_web_page
@@ -49,6 +50,18 @@ from xaa.storage.tasks import TaskStore
 
 class RunReadyArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class RunReadyTaskResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    task_id: str = Field(min_length=1, max_length=128)
+    status: TaskStatus
+
+
+class RunReadyResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    tasks: list[RunReadyTaskResult] = Field(max_length=MAX_TASKS)
+    verification: Literal["Candidates require independent review."]
 
 
 class SpecialistIterationLimit(ValueError):
@@ -164,12 +177,50 @@ def _failure_details(error: BaseException) -> list[dict[str, str | int]]:
     return [detail] if detail else []
 
 
+RUN_READY_CONTRACT: dict[str, Any] = {
+    "name": "plan.run_ready",
+    "version": "1",
+    "operation": "execute_ready_specialists",
+    "permissions": ["task.delegate"],
+    "effect": "bounded_specialist_execution",
+    "data_access": {
+        "workspace": (
+            "Read the selected workspace; write only granted per-task private snapshots, never "
+            "the parent workspace."
+        ),
+        "persistent": "Task states, events, evidence, artifacts, and review candidates.",
+    },
+    "input_schema": RunReadyArguments.model_json_schema(),
+    "output_schema": RunReadyResult.model_json_schema(),
+    "timeout": {
+        "outer_deadline": "run_deadline",
+        "per_task_seconds": "saved task max_seconds budget",
+    },
+    "cancellation": (
+        "Parent cancellation propagates to active specialists; their leases remain fenced for "
+        "recovery, and owned workers apply their own cleanup contracts."
+    ),
+    "retry": (
+        "No automatic task replay; inspect saved task states and recovery events before resuming."
+    ),
+    "limits": {
+        "tasks_per_call": 2,
+        "tasks_per_plan": MAX_TASKS,
+        "private_snapshot_bytes_per_task": 4 * 1024 * 1024,
+        "private_snapshot_bytes_per_run": 32 * 1024 * 1024,
+        "edits_per_task": 16,
+        "edited_bytes_per_task": 1024 * 1024,
+        "max_output_bytes": 128 * 1024,
+    },
+    "audit": ["run_id", "call_id", "tool", "version", "task_ids", "statuses"],
+}
+
 RUN_READY_TOOL = {
     "type": "function",
     "function": {
         "name": "plan_run_ready",
-        "description": "Execute at most two ready specialist assignments. Read-only tasks inspect the selected project; tasks explicitly granted workspace.write edit separate private snapshot working trees, never the original project. Results and proposed changes await independent review/integration; dependent tasks wait for completed prerequisites. Private snapshots are limited to 4 MiB per task and 32 MiB per run; edits to 16 files/1 MiB per task.",
-        "parameters": RunReadyArguments.model_json_schema(),
+        "description": "Execute at most two ready specialist assignments. Read-only tasks inspect the selected project; tasks explicitly granted workspace.write edit separate private snapshot working trees, never the original project. Results and proposed changes await independent review/integration; dependent tasks wait for completed prerequisites. Private snapshots are limited to 4 MiB per task and 32 MiB per run; edits to 16 files/1 MiB per task. Parent cancellation leaves task leases fenced for recovery; never automatically replay a dispatched task.",
+        "parameters": RUN_READY_CONTRACT["input_schema"],
     },
 }
 
