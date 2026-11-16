@@ -2,7 +2,7 @@
 
 ## Inspect saved public tool results in the run timeline (2026-11-16)
 
-Completed/failed public tool events in the desktop run timeline now reveal their bounded saved result on demand. The API client validates the response shape, internal tool calls get no reveal control, and displayed text is labeled untrusted. The dark result panel wraps long output, scrolls at a bounded height, and remains usable on narrow windows. `npm run build:desktop` and the focused Playwright timeline acceptance pass. Exact-source Windows CI is running for commit `3305df7b`; this entry records the feature before hosted verification completes. Live LLM acceptance remains deferred.
+Completed/failed tool events in the desktop run timeline now reveal their bounded saved result on demand only when the event explicitly identifies it as public. The API client validates the response shape; internal calls and calls with unspecified visibility get no reveal control. Displayed text is labeled untrusted, and the dark result panel wraps long output, scrolls at a bounded height, and remains usable on narrow windows. `npm run build:desktop` and all five streaming Playwright scenarios pass. Exact-source Windows run [43948676613](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43948676613) passed: 1,426 Python tests passed and 20 skipped, with the desktop/browser checks and recovery diagnostics also green. The installer job was skipped because packaging inputs did not change. Live LLM acceptance remains deferred.
 
 ## Save recent project folders by X.A.A. profile (2026-11-16)
 
