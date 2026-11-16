@@ -244,6 +244,17 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   expect(summaryFocus.outlineStyle).toBe('solid');
   expect(parseFloat(summaryFocus.outlineWidth)).toBeGreaterThanOrEqual(3);
   expect(contrastRatio(summaryFocus.outlineColor,summaryFocus.background)).toBeGreaterThanOrEqual(3);
+  for(const [name,sectionId] of [['Chats','chats'],['Skills','skills'],['Automations','automations']] as const){
+    const link=navigation.getByRole('link',{name,exact:true});
+    await link.click();
+    await expect(navigation.locator('a.active')).toHaveCount(1);
+    await expect(link).toHaveAttribute('aria-current','page');
+    await expect(page.locator(`#${sectionId}`)).toBeInViewport();
+    await expect(page.getByRole('heading',{level:1})).toBeFocused();
+    expect(await visibleTextContrastFailures(page)).toEqual([]);
+    expect(await interactiveNameFailures(page)).toEqual([]);
+    await expectKeyboardCoverageWithExpandedDisclosures(page);
+  }
   await expect(page.getByLabel('Local model')).toHaveCount(0);
   await navigation.getByRole('link',{name:'Model setup'}).click();
   await expect(navigation.locator('a.active')).toHaveCount(1);
