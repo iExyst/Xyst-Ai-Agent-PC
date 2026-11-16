@@ -1669,6 +1669,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
                 "approved_web_search": True,
                 "approved_browser": True,
                 "approved_browser_submission": True,
+                "approved_browser_download": True,
             },
         )
         assert created.status_code == 201
@@ -1677,6 +1678,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
         assert created.json()["approved_web_search"] is True
         assert created.json()["approved_browser"] is True
         assert created.json()["approved_browser_submission"] is True
+        assert created.json()["approved_browser_download"] is True
         events = client.get(f"/runs/{run_id}/events", headers=headers).json()
         assert events[-1]["event_type"] == "web.access_granted"
         assert events[-1]["payload"] == {
@@ -1684,6 +1686,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
             "search": True,
             "browser": True,
             "browser_submission": True,
+            "browser_download": True,
             "actor": "local_user",
         }
         no_browser_grant = client.post(
@@ -1697,6 +1700,17 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
         )
         assert no_browser_grant.status_code == 409
         assert "requires browser access" in no_browser_grant.json()["detail"]
+        no_download_grant = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Download requires browser permission",
+                "approved_web_hosts": ["docs.example.com"],
+                "approved_browser_download": True,
+            },
+        )
+        assert no_download_grant.status_code == 409
+        assert "downloads require browser access" in no_download_grant.json()["detail"]
         invalid = client.post(
             "/runs",
             headers=headers,
@@ -1711,6 +1725,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
     assert recovered["approved_web_search"] is True
     assert recovered["approved_browser"] is True
     assert recovered["approved_browser_submission"] is True
+    assert recovered["approved_browser_download"] is True
 
 
 def test_run_can_require_pre_inference_token_reservations(workspace_tmp_path):

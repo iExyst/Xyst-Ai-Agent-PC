@@ -43,11 +43,13 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain' },
       { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png' },
-      { id: 'xlsx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+      { id: 'xlsx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      { id: 'browser-download-1', provenance: 'browser.download:report.txt', size_bytes: 24, media_type: 'application/octet-stream' }
     ], headers });
     if (path === '/artifacts/artifact-1') return route.fulfill({ body: '<script>window.artifactExecuted=true</script>', contentType: 'text/plain', headers });
     if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
     if (path === '/artifacts/xlsx-1') return route.fulfill({ body: 'XLSX fixture bytes', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers });
+    if (path === '/artifacts/browser-download-1') return route.fulfill({ body: 'untrusted downloaded report\n', contentType: 'application/octet-stream', headers });
     if (path === '/runs' && request.method() === 'POST') {
       runSubmissions += 1;
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true});
@@ -57,6 +59,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
       expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().approved_browser).toBe(true);
       expect(request.postDataJSON().approved_browser_submission).toBe(true);
+      expect(request.postDataJSON().approved_browser_download).toBe(true);
       expect(request.postDataJSON().allow_procedure_drafting).toBe(true);
       expect(request.postDataJSON().allow_procedure_revision).toBe(false);
       expect(request.postDataJSON().allow_procedure_resource_revision).toBe(false);
@@ -119,15 +122,22 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Allow Brave web search for this next run').check();
   const browserReadGrant = page.getByLabel('Allow managed browser reads for this next run');
   const browserSubmissionGrant = page.getByLabel('Allow one browser form submission per tool action for this next run');
+  const browserDownloadGrant = page.getByLabel('Allow managed browser downloads for this next run');
   await expect(browserSubmissionGrant).toBeDisabled();
+  await expect(browserDownloadGrant).toBeDisabled();
   await browserReadGrant.check();
   await expect(browserSubmissionGrant).toBeEnabled();
+  await expect(browserDownloadGrant).toBeEnabled();
   await browserSubmissionGrant.check();
+  await browserDownloadGrant.check();
   await browserReadGrant.uncheck();
   await expect(browserSubmissionGrant).toBeDisabled();
   await expect(browserSubmissionGrant).not.toBeChecked();
+  await expect(browserDownloadGrant).toBeDisabled();
+  await expect(browserDownloadGrant).not.toBeChecked();
   await browserReadGrant.check();
   await browserSubmissionGrant.check();
+  await browserDownloadGrant.check();
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
@@ -152,6 +162,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
   await expect(browserReadGrant).not.toBeChecked();
   await expect(browserSubmissionGrant).not.toBeChecked();
+  await expect(browserDownloadGrant).not.toBeChecked();
   await navigateMainSection(page,'Active run');
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('3 iterations · 60 seconds');
@@ -201,6 +212,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const xlsxDownload = page.waitForEvent('download');
   await page.getByRole('button', {name:'Download user.input_document', exact:true}).click();
   expect((await xlsxDownload).suggestedFilename()).toBe('xaa-input-document.xlsx');
+  const browserDownload = page.waitForEvent('download');
+  await page.getByRole('button', {name:'Download browser.download:report.txt', exact:true}).click();
+  expect((await browserDownload).suggestedFilename()).toBe('report.txt');
   await page.getByRole('button', { name: 'View browser.screenshot:untrusted_web_content' }).click();
   await expect(page.getByRole('img', { name: 'Untrusted image content' })).toBeVisible();
   await navigateMainSection(page,'New objective');

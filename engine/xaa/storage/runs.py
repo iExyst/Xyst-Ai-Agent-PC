@@ -204,7 +204,7 @@ class RunStore:
         provenance: str,
         media_type: str = "text/plain",
     ) -> dict[str, Any]:
-        if media_type not in {"text/plain", "image/png", "image/jpeg"}:
+        if media_type not in {"text/plain", "image/png", "image/jpeg", "application/octet-stream"}:
             raise ValueError("Managed artifacts support plain text, PNG and JPEG images.")
         root = (self.path.parent / "artifacts").resolve(strict=True)
         if Path(filename).name != filename:
@@ -1030,6 +1030,7 @@ class RunStore:
         approved_web_search: bool = False,
         approved_browser: bool = False,
         approved_browser_submission: bool = False,
+        approved_browser_download: bool = False,
         approved_mcp_tools: list[str] | None = None,
         approved_mcp_sampling_servers: list[str] | None = None,
         allow_procedure_drafting: bool = False,
@@ -1054,6 +1055,8 @@ class RunStore:
             raise ValueError(
                 "Browser form submission requires browser access and an approved host list."
             )
+        if approved_browser_download and (not approved_browser or not approved_web_hosts):
+            raise ValueError("Browser downloads require browser access and an approved host list.")
         if (
             procedure_python_environment_digest is not None
             and re.fullmatch(r"[a-f0-9]{64}", procedure_python_environment_digest) is None
@@ -1484,6 +1487,7 @@ class RunStore:
                 or approved_web_search
                 or approved_browser
                 or approved_browser_submission
+                or approved_browser_download
             ):
                 self.record_event(
                     connection,
@@ -1494,6 +1498,7 @@ class RunStore:
                         "search": approved_web_search,
                         "browser": approved_browser,
                         "browser_submission": approved_browser_submission,
+                        "browser_download": approved_browser_download,
                         "actor": "local_user",
                     },
                 )
@@ -1741,6 +1746,11 @@ class RunStore:
         )
         record["approved_browser_submission"] = (
             bool(json.loads(web_grants[0][0]).get("browser_submission", False))
+            if len(web_grants) == 1
+            else False
+        )
+        record["approved_browser_download"] = (
+            bool(json.loads(web_grants[0][0]).get("browser_download", False))
             if len(web_grants) == 1
             else False
         )

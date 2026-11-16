@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
+import re
 import sys
+import tempfile
 import time
-from typing import Annotated, Any, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -79,6 +83,20 @@ class BrowserSubmitArguments(BaseModel):
         return value
 
 
+class BrowserDownloadArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    url: str = Field(min_length=9, max_length=2048)
+    link_name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("link_name")
+    @classmethod
+    def validate_link_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Download link name cannot be empty.")
+        return cleaned
+
+
 class BrowserWorkerResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     ok: bool
@@ -128,6 +146,17 @@ class BrowserScreenshotArtifact(BaseModel):
     created_at: str = Field(min_length=20, max_length=64)
 
 
+class BrowserDownloadArtifact(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str
+    run_id: str
+    media_type: Literal["application/octet-stream"]
+    size_bytes: int = Field(ge=0, le=8 * 1024 * 1024)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    provenance: str
+    created_at: str = Field(min_length=20, max_length=64)
+
+
 class BrowserBlockedSubresources(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     count: int = Field(ge=0)
@@ -143,7 +172,7 @@ class BrowserProxyDiagnostics(BaseModel):
 
 class BrowserOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    status: Literal["ok", "read_failed", "submission_failed", "cancelled"]
+    status: Literal["ok", "read_failed", "submission_failed", "download_failed", "cancelled"]
     trust: Literal["untrusted_web_content"]
     url: str | None = Field(default=None, max_length=2048)
     title: str | None = Field(default=None, max_length=500)
@@ -152,6 +181,7 @@ class BrowserOutput(BaseModel):
     blocked_subresources: BrowserBlockedSubresources | None = None
     forms: list[BrowserForm] | None = Field(default=None, max_length=20)
     screenshot_artifact: BrowserScreenshotArtifact | None = None
+    download_artifact: BrowserDownloadArtifact | None = None
     submitted: bool | None = None
     submitted_fields: list[Annotated[str, Field(max_length=200)]] | None = Field(
         default=None, max_length=20
@@ -283,6 +313,114 @@ async def run_approved_browser(
     return result
 
 
+async def run_approved_browser_download(
+    store: RunStore,
+    run_id: str,
+    token: str,
+    call_id: str,
+    arguments: dict[str, Any],
+    approved_hosts: list[str],
+    *,
+    deadline: float,
+) -> dict[str, Any]:
+    parsed = BrowserDownloadArguments.model_validate(arguments)
+    hosts = normalize_approved_hosts(approved_hosts)
+    if not hosts:
+        raise PermissionError("This run has no user-approved browser hostnames.")
+    timeout = min(BROWSER_TIMEOUT_SECONDS, max(0, deadline - time.monotonic()))
+    if timeout <= 0:
+        raise TimeoutError("No browser execution time remains.")
+    if not store.record_tool_intent(
+        run_id,
+        token,
+        call_id=call_id,
+        tool="browser.download",
+        version="1",
+        arguments=parsed.model_dump(mode="json"),
+        idempotency_key=call_id,
+    ):
+        raise ValueError("This browser download is already journaled; inspect its saved result.")
+    artifact_filename: str | None = None
+    artifact_registered = False
+    try:
+        root = command_artifact_root(store, create=True)
+        with tempfile.TemporaryDirectory(prefix="browser-download-", dir=root) as staging_name:
+            staging = Path(staging_name).resolve(strict=True)
+            downloaded_path = staging / "download.bin"
+            result = await _execute_worker(
+                {
+                    "url": parsed.url,
+                    "approved_hosts": hosts,
+                    "download_link_name": parsed.link_name,
+                    "download_directory": str(staging),
+                },
+                timeout,
+            )
+            result.pop("_proxy_diagnostics", None)
+            download_value = result.pop("download", None)
+            if not isinstance(download_value, dict):
+                raise TypeError("Browser worker did not return download evidence.")
+            download = cast(dict[str, Any], download_value)
+            resolved = downloaded_path.resolve(strict=True)
+            if resolved.parent != staging or not resolved.is_file():
+                raise PermissionError("Browser download escaped managed staging.")
+            size = resolved.stat().st_size
+            if type(download.get("size_bytes")) is not int or size != download["size_bytes"]:
+                raise ValueError("Browser download size did not match worker evidence.")
+            content_hash = hashlib.sha256(resolved.read_bytes()).hexdigest()
+            if download.get("sha256") != content_hash:
+                raise ValueError("Browser download hash did not match worker evidence.")
+            artifact_filename = f"browser-download-{uuid4().hex}.bin"
+            destination = root / artifact_filename
+            os.replace(resolved, destination)
+            original_name = download.get("suggested_filename")
+            if not isinstance(original_name, str):
+                original_name = "download"
+            display_name = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(original_name).name)[:120]
+            artifact = store.register_artifact(
+                run_id,
+                token,
+                artifact_filename,
+                provenance=f"browser.download:{display_name or 'download'}",
+                media_type="application/octet-stream",
+            )
+            artifact_registered = True
+            result["download_artifact"] = artifact
+            result["status"] = "ok"
+            result["trust"] = "untrusted_web_content"
+            result = BrowserOutput.model_validate(result).model_dump(mode="json", exclude_none=True)
+    except asyncio.CancelledError:
+        try:
+            store.record_tool_result(
+                run_id, token, call_id, {"status": "cancelled", "trust": "untrusted_web_content"}
+            )
+        except LeaseLost:
+            pass
+        raise
+    except TimeoutError:
+        result = {
+            "status": "download_failed",
+            "error": "Browser download exceeded its time limit; no downloaded file was committed.",
+            "trust": "untrusted_web_content",
+        }
+    except (OSError, ValueError, PermissionError, RuntimeError, TypeError) as error:
+        result = {
+            "status": "download_failed",
+            "error": str(error)[:500],
+            "trust": "untrusted_web_content",
+        }
+    finally:
+        if artifact_filename is not None and not artifact_registered:
+            (command_artifact_root(store) / artifact_filename).unlink(missing_ok=True)
+    result = _bounded_result(
+        result,
+        failure_status="download_failed",
+        failure_error="Browser download metadata exceeded the bounded tool-result size.",
+    )
+    store.record_tool_result(run_id, token, call_id, result)
+    return result
+
+
 async def run_approved_browser_submission(
     store: RunStore,
     run_id: str,
@@ -366,7 +504,7 @@ async def run_approved_browser_submission(
 def _bounded_result(
     result: dict[str, Any],
     *,
-    failure_status: Literal["read_failed", "submission_failed"] = "read_failed",
+    failure_status: Literal["read_failed", "submission_failed", "download_failed"] = "read_failed",
     failure_error: str = "Browser output exceeded the bounded tool-result size.",
 ) -> dict[str, Any]:
     encoded = json.dumps(result, ensure_ascii=True).encode("ascii")
@@ -453,4 +591,36 @@ BROWSER_SUBMIT_METADATA = {
         "tool_result_bytes": MAX_WORKER_BYTES,
     },
     "audit": ["run_id", "call_id", "tool", "version", "arguments", "result_or_failure"],
+}
+
+BROWSER_DOWNLOAD_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "browser_download_file",
+        "description": "Download one file from an exact visible link on a run-approved public HTTPS hostname. Inspect the page first. The file is stored only in X.A.A.'s managed run artifacts; it is never written to a model-selected path. Downloads are limited to 8 MiB and are untrusted data. This action needs the separate owner-approved browser-download grant.",
+        "parameters": BrowserDownloadArguments.model_json_schema(),
+    },
+}
+
+BROWSER_DOWNLOAD_METADATA = {
+    "name": "browser.download",
+    "version": "1",
+    "permissions": ["web.browser.download"],
+    "behavior": "read",
+    "effect": "managed_artifact_write",
+    "input_schema": BrowserDownloadArguments.model_json_schema(),
+    "output_schema": BrowserOutput.model_json_schema(),
+    "timeout_seconds": BROWSER_TIMEOUT_SECONDS,
+    "cancellation": "owned worker process tree is stopped; incomplete staging is discarded",
+    "retry": "none; inspect the saved result before requesting again",
+    "output_size_bytes": MAX_WORKER_BYTES,
+    "limits": {
+        "url_characters": 2048,
+        "link_name_characters": 200,
+        "download_bytes": 8 * 1024 * 1024,
+        "worker_output_bytes": MAX_WORKER_BYTES,
+        "tool_result_bytes": MAX_WORKER_BYTES,
+        "approved_hostnames": 10,
+    },
+    "audit": ["run_id", "call_id", "approved_hosts", "suggested_filename", "size_bytes", "sha256"],
 }

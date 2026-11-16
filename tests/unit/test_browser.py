@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -8,17 +9,20 @@ import sqlite3
 import sys
 import time
 from contextlib import closing
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from xaa.runtime import browser as browser_runtime
 from xaa.runtime import browser_worker
 from xaa.runtime.browser import (
+    BROWSER_DOWNLOAD_METADATA,
     BROWSER_METADATA,
     BROWSER_SUBMIT_METADATA,
     MAX_WORKER_BYTES,
     BrowserArguments,
+    BrowserDownloadArguments,
     BrowserOutput,
     BrowserSubmitArguments,
     _bounded_result,
@@ -130,6 +134,23 @@ def test_browser_submission_contract_is_bounded_and_has_separate_write_permissio
         )
 
 
+def test_browser_download_contract_uses_a_separate_bounded_managed_artifact_grant() -> None:
+    arguments = BrowserDownloadArguments(
+        url="https://docs.example.com/files",
+        link_name="Download report",
+    )
+    assert arguments.link_name == "Download report"
+    assert BROWSER_DOWNLOAD_METADATA["name"] == "browser.download"
+    assert BROWSER_DOWNLOAD_METADATA["permissions"] == ["web.browser.download"]
+    assert BROWSER_DOWNLOAD_METADATA["effect"] == "managed_artifact_write"
+    assert BROWSER_DOWNLOAD_METADATA["limits"]["download_bytes"] == 8 * 1024 * 1024
+    assert BrowserOutput(status="download_failed", trust="untrusted_web_content").status == (
+        "download_failed"
+    )
+    with pytest.raises(ValueError):
+        BrowserDownloadArguments(url="https://docs.example.com", link_name=" ")
+
+
 def test_browser_contract_bounds_the_model_facing_result() -> None:
     assert BROWSER_METADATA["output_size_bytes"] == MAX_WORKER_BYTES
     assert BROWSER_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
@@ -215,6 +236,69 @@ async def test_browser_timeout_returns_actionable_error_and_journals_result(
 
 
 @pytest.mark.asyncio
+async def test_browser_download_commits_only_bounded_bytes_to_managed_run_artifacts(
+    monkeypatch: pytest.MonkeyPatch, workspace_tmp_path
+) -> None:
+    store = RunStore(workspace_tmp_path / "browser-download.sqlite3")
+    run = store.create_run(
+        objective="Download the report",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path / "project"),
+        mode="observe",
+        model=None,
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+        approved_browser_download=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-download-test", seconds=30)
+    assert token is not None
+    payload_bytes = b"untrusted downloaded report\n"
+
+    async def worker(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        del timeout
+        assert payload["download_link_name"] == "Download report"
+        staging = Path(payload["download_directory"])
+        (staging / "download.bin").write_bytes(payload_bytes)
+        return {
+            "url": "https://docs.example.com/files/report.txt",
+            "title": "Reports",
+            "content": "Download started.",
+            "download": {
+                "suggested_filename": "../../report.txt",
+                "size_bytes": len(payload_bytes),
+                "sha256": hashlib.sha256(payload_bytes).hexdigest(),
+            },
+        }
+
+    monkeypatch.setattr(browser_runtime, "_execute_worker", worker)
+    result = await browser_runtime.run_approved_browser_download(
+        store,
+        run["id"],
+        token,
+        "browser-download-call",
+        {"url": "https://docs.example.com/files", "link_name": "Download report"},
+        ["docs.example.com"],
+        deadline=time.monotonic() + 5,
+    )
+
+    artifact_result = result["download_artifact"]
+    artifact = store.get_artifact(artifact_result["id"])
+    assert result["status"] == "ok"
+    assert artifact is not None
+    assert artifact["media_type"] == "application/octet-stream"
+    assert artifact["provenance"] == "browser.download:report.txt"
+    saved_file = workspace_tmp_path / "artifacts" / artifact["storage_key"]
+    assert saved_file.read_bytes() == payload_bytes
+    assert not (workspace_tmp_path / "project" / "report.txt").exists()
+    with closing(sqlite3.connect(workspace_tmp_path / "browser-download.sqlite3")) as connection:
+        row = connection.execute(
+            "SELECT result FROM tool_calls WHERE provider_call_id=?",
+            ("browser-download-call",),
+        ).fetchone()
+    assert row is not None and json.loads(row[0])["download_artifact"]["id"] == artifact["id"]
+
+
+@pytest.mark.asyncio
 async def test_private_proxy_diagnostics_are_removed_from_browser_tool_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -284,6 +368,138 @@ def test_browser_url_uses_exact_approved_hosts_and_web_url_policy() -> None:
             browser_worker.validate_url(url, hosts)
     with pytest.raises(PermissionError):
         validate_web_target("https://other.example.com/", hosts)
+
+
+def test_browser_worker_requires_download_link_and_staging_directory_together(tmp_path) -> None:
+    with pytest.raises(ValueError, match="supplied together"):
+        browser_worker.BrowserRequest(
+            url="https://docs.example.com/files",
+            approved_hosts=["docs.example.com"],
+            download_link_name="Download report",
+        )
+    request = browser_worker.BrowserRequest(
+        url="https://docs.example.com/files",
+        approved_hosts=["docs.example.com"],
+        download_link_name="Download report",
+        download_directory=str(tmp_path),
+    )
+    assert request.download_link_name == "Download report"
+
+
+@pytest.mark.asyncio
+async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    download_directory = tmp_path / "managed-downloads"
+    download_directory.mkdir()
+    payload_bytes = b"bounded browser download\n"
+    context_options: dict[str, Any] = {}
+
+    class FakeDownload:
+        suggested_filename = "report.txt"
+
+        async def save_as(self, path: Path) -> None:
+            path.write_bytes(payload_bytes)
+
+    class FakeExpectation:
+        def __init__(self) -> None:
+            self.value = asyncio.get_running_loop().create_future()
+            self.value.set_result(FakeDownload())
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+    class FakeLink:
+        async def count(self) -> int:
+            return 1
+
+        async def is_visible(self) -> bool:
+            return True
+
+        async def click(self, *, timeout: int) -> None:
+            assert timeout == 8000
+
+    class FakeLocator:
+        async def inner_text(self, *, timeout: int) -> str:
+            assert timeout == 5000
+            return "Report page"
+
+    class FakePage:
+        main_frame = object()
+        url = "https://docs.example.com/files"
+
+        def on(self, *_: object) -> None:
+            return None
+
+        async def goto(self, *_: object, **__: object) -> None:
+            return None
+
+        def get_by_role(self, *_: object, **__: object) -> FakeLink:
+            return FakeLink()
+
+        def expect_download(self, *, timeout: int) -> FakeExpectation:
+            assert timeout == 10000
+            return FakeExpectation()
+
+        def locator(self, selector: str) -> FakeLocator:
+            assert selector == "body"
+            return FakeLocator()
+
+        async def title(self) -> str:
+            return "Reports"
+
+    class FakeContext:
+        async def new_page(self) -> FakePage:
+            return FakePage()
+
+        async def route(self, *_: object) -> None:
+            return None
+
+        def on(self, *_: object) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    class FakeBrowser:
+        async def new_context(self, **options: Any) -> FakeContext:
+            context_options.update(options)
+            return FakeContext()
+
+        async def close(self) -> None:
+            return None
+
+    class FakeChromium:
+        async def launch(self, **_: Any) -> FakeBrowser:
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr("playwright.async_api.async_playwright", FakePlaywright)
+    result = await browser_worker.run(
+        browser_worker.BrowserRequest(
+            url="https://docs.example.com/files",
+            approved_hosts=["docs.example.com"],
+            download_link_name="Download report",
+            download_directory=str(download_directory),
+        )
+    )
+
+    saved_path = download_directory / "download.bin"
+    assert context_options["accept_downloads"] is True
+    assert saved_path.read_bytes() == payload_bytes
+    assert result["download"]["size_bytes"] == len(payload_bytes)
+    assert result["download"]["sha256"] == hashlib.sha256(payload_bytes).hexdigest()
 
 
 @pytest.mark.asyncio
@@ -585,6 +801,7 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     names = {tool["function"]["name"] for tool in coordinator._tools(run["id"], run)}
     assert "browser_run" not in names
     assert "browser_submit_form" not in names
+    assert "browser_download_file" not in names
     browser_run = dict(run, approved_browser=True)
     exposed = {
         tool["function"]["name"]: tool["function"]["parameters"]
@@ -592,9 +809,17 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     }
     assert exposed["browser_run"] == BROWSER_METADATA["input_schema"]
     assert "browser_submit_form" not in exposed
+    assert "browser_download_file" not in exposed
     submission_run = dict(browser_run, approved_browser_submission=True)
     submission_tools = {
         tool["function"]["name"]: tool["function"]["parameters"]
         for tool in coordinator._tools(run["id"], submission_run)
     }
     assert submission_tools["browser_submit_form"] == BROWSER_SUBMIT_METADATA["input_schema"]
+    download_run = dict(browser_run, approved_browser_download=True)
+    download_tools = {
+        tool["function"]["name"]: tool["function"]["parameters"]
+        for tool in coordinator._tools(run["id"], download_run)
+    }
+    assert "browser_submit_form" not in download_tools
+    assert download_tools["browser_download_file"] == BROWSER_DOWNLOAD_METADATA["input_schema"]

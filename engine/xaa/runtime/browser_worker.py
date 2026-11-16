@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import ipaddress
 import json
 import socket
 import sys
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from playwright.async_api import Error as PlaywrightError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from xaa.runtime.web_fetch import normalize_approved_hosts, validate_web_target
 
@@ -21,6 +23,7 @@ MAX_OUTPUT = 1_048_576
 MAX_PAGE_TEXT = 20_000
 MAX_SCREENSHOT = 512 * 1024
 MAX_PROXY_BYTES = 2 * 1024 * 1024
+MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
 MAX_PROXY_CONNECTIONS = 32
 
 
@@ -45,11 +48,21 @@ class BrowserRequest(BaseModel):
     screenshot: bool = False
     inspect_forms: bool = False
     submission: BrowserFormSubmission | None = None
+    download_link_name: str | None = Field(default=None, min_length=1, max_length=200)
+    download_directory: str | None = Field(default=None, min_length=1, max_length=2048)
 
     @field_validator("approved_hosts")
     @classmethod
     def clean_hosts(cls, value: list[str]) -> list[str]:
         return normalize_approved_hosts(value)
+
+    @model_validator(mode="after")
+    def validate_download_request(self) -> BrowserRequest:
+        if (self.download_link_name is None) != (self.download_directory is None):
+            raise ValueError(
+                "Browser download link and managed destination must be supplied together."
+            )
+        return self
 
     @field_validator("links")
     @classmethod
@@ -291,7 +304,7 @@ async def _pump(
 ) -> None:
     while chunk := await reader.read(16384):
         budget["bytes"] += len(chunk)
-        if budget["bytes"] > MAX_PROXY_BYTES:
+        if budget["bytes"] > budget["max_bytes"]:
             break
         writer.write(chunk)
         await writer.drain()
@@ -373,7 +386,14 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
 
     hosts = set(request.approved_hosts)
     validate_url(request.url, hosts)
-    budget = {"bytes": 0, "connections": 0, "forwarded_connections": 0}
+    budget = {
+        "bytes": 0,
+        "connections": 0,
+        "forwarded_connections": 0,
+        "max_bytes": MAX_PROXY_BYTES + MAX_DOWNLOAD_BYTES
+        if request.download_directory is not None
+        else MAX_PROXY_BYTES,
+    }
     forwarded_hosts: set[str] = set()
     blocked_subresources: dict[str, int] = {}
     blocked_main_navigations = {"count": 0}
@@ -402,7 +422,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
             )
             try:
                 context = await browser.new_context(
-                    accept_downloads=False,
+                    accept_downloads=request.download_directory is not None,
                     service_workers="block",
                     permissions=[],
                     ignore_https_errors=False,
@@ -462,6 +482,36 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         submitted_fields = await _submit_visible_form(
                             page, request.submission, hosts, submission_state
                         )
+                    download_info: dict[str, Any] | None = None
+                    if request.download_link_name is not None:
+                        if request.download_directory is None:
+                            raise ValueError("A managed download directory is required.")
+                        directory = Path(request.download_directory).resolve(strict=True)
+                        if not directory.is_dir():
+                            raise ValueError("Managed download destination is not a directory.")
+                        link = page.get_by_role("link", name=request.download_link_name, exact=True)
+                        if await link.count() != 1 or not await link.is_visible():
+                            raise ValueError(
+                                "Download link name must match exactly one visible link."
+                            )
+                        async with page.expect_download(timeout=10000) as pending_download:
+                            await link.click(timeout=8000)
+                        download = await pending_download.value
+                        downloaded = directory / "download.bin"
+                        await download.save_as(downloaded)
+                        resolved = downloaded.resolve(strict=True)
+                        if resolved.parent != directory or not resolved.is_file():
+                            raise PermissionError("Browser download escaped managed staging.")
+                        size = resolved.stat().st_size
+                        if size > MAX_DOWNLOAD_BYTES:
+                            resolved.unlink(missing_ok=True)
+                            raise ValueError("Browser download exceeded the 8 MiB limit.")
+                        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+                        download_info = {
+                            "suggested_filename": download.suggested_filename[:200],
+                            "size_bytes": size,
+                            "sha256": digest,
+                        }
                     text = (await page.locator("body").inner_text(timeout=5000))[:MAX_PAGE_TEXT]
                     result: dict[str, Any] = {
                         "url": urlsplit(page.url)._replace(query="", fragment="").geturl(),
@@ -539,6 +589,8 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                               });
                             }"""
                         )
+                    if download_info is not None:
+                        result["download"] = download_info
                     if request.screenshot:
                         image = await page.screenshot(
                             type="png", full_page=False, animations="disabled"

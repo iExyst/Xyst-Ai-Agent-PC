@@ -729,6 +729,11 @@
             "title": "Approved Browser",
             "type": "boolean"
           },
+          "approved_browser_download": {
+            "default": false,
+            "title": "Approved Browser Download",
+            "type": "boolean"
+          },
           "approved_browser_submission": {
             "default": false,
             "title": "Approved Browser Submission",
@@ -4702,6 +4707,11 @@
           "approved_browser": {
             "default": false,
             "title": "Approved Browser",
+            "type": "boolean"
+          },
+          "approved_browser_download": {
+            "default": false,
+            "title": "Approved Browser Download",
             "type": "boolean"
           },
           "approved_browser_submission": {
