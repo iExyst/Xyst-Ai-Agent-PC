@@ -26,6 +26,8 @@ Use `uv run xaa models`, then submit `uv run xaa run "Read evidence.txt and repo
 
 For an interactive terminal conversation, run `uv run xaa chat --model MODEL_ID`. Each turn is a separate durable coordinator run, and its bounded transcript is saved in the engine's SQLite conversation history so `xaa chat --model MODEL_ID` resumes it after restart. Use `--session NAME` for separate conversations; a session is tied to its model, workspace and mode. `/reset` clears that session's context while preserving its durable runs, and `/quit` exits. Ctrl+C requests cancellation of the active turn. `--reset` clears a saved session before starting.
 
+Manage saved sessions shared with the desktop using `uv run xaa sessions list`, `uv run xaa sessions rename SESSION_ID "New title"`, and `uv run xaa sessions delete SESSION_ID --yes`. Deletion requires the explicit `--yes` flag.
+
 Optional coordinator response streaming: set `$env:XAA_STREAM_RESPONSES='1'` before starting the engine or launching a freshly rebuilt native bundle. Partial text is shown separately from final candidates. Streamed tool arguments must assemble and validate completely before execution. This remains opt-in: real-model checks have included both a successful search/read/answer and an empty final-answer failure. Specialist responses currently use non-streaming inference. The protocol follows [LM Studio's streamed tool-call format](https://lmstudio.ai/docs/developer/openai-compat/tools#streaming).
 
 If LM Studio requires authentication, use `uv run xaa credentials set` to enter its token privately into Windows Credential Manager, then restart the engine. Remove it with `uv run xaa credentials delete`. The engine reads this credential directly from the OS vault.

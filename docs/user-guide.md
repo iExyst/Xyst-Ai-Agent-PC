@@ -70,6 +70,9 @@ uv run xaa run "Read the project overview and summarize it" --model MODEL_ID --w
 uv run xaa status RUN_ID
 uv run xaa events RUN_ID
 uv run xaa history --scope conversation --query "deployment details"
+uv run xaa sessions list
+uv run xaa sessions rename project-notes "Project notes"
+uv run xaa sessions delete project-notes --yes
 uv run xaa export RUN_ID --output C:\path\to\run.json
 uv run xaa batch C:\path\to\cases.json --output C:\path\to\batch-results --model MODEL_ID --workspace C:\path\to\project
 ```
@@ -85,6 +88,8 @@ uv run xaa chat --model MODEL_ID --session project-notes
 ```
 
 Each turn creates a durable run. A live one-turn acceptance on qwen/qwen3.5-9b read a generated workspace marker and persisted the chat session; broader live model reliability is not established. The named session stores up to six recent user/assistant pairs in the local database, bounded to 8 KiB of context. The session is tied to its model, workspace and mode. Use `/reset` or restart with `--reset` to clear session context; saved runs remain. Ctrl+C requests cancellation of the current run. Full candidate text remains in the run history when saved chat context is clipped.
+
+List and rename saved terminal or desktop conversations with `xaa sessions list` and `xaa sessions rename SESSION_ID "New title"`. Both clients use the same saved session. Permanent deletion requires the explicit `xaa sessions delete SESSION_ID --yes` command.
 
 ## Pause, cancel and recover
 
