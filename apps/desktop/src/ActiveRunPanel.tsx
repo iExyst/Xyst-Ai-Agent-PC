@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import type {Run} from './api/client.ts';
+import type {Run,RunEvent} from './api/client.ts';
 import type {EngineClient} from './api/client.ts';
 import {MCPReconciliationPanel} from './MCPReconciliationPanel.tsx';
 import {WorkspaceWriteReconciliationPanel} from './WorkspaceWriteReconciliationPanel.tsx';
@@ -12,7 +12,9 @@ const runStateLabels:Record<Run['state'],string>={
   completed:'Completed',failed:'Failed',cancelled:'Cancelled',
 };
 
-export function ActiveRunPanel({run,answer,partial,activity,busy,client,onControl}:{run:Run;answer:string;partial:string;activity:string[];busy:boolean;client:EngineClient;onControl:(action:Action)=>void}) {
+type RunActivity=RunEvent&{description:string};
+
+export function ActiveRunPanel({run,answer,partial,activity,busy,client,onControl}:{run:Run;answer:string;partial:string;activity:RunActivity[];busy:boolean;client:EngineClient;onControl:(action:Action)=>void}) {
   const [workspaceRecoveryRunId,setWorkspaceRecoveryRunId]=useState(run.state==='blocked'?run.id:'');
   const [clockNow,setClockNow]=useState(()=>Date.now());
   const isTerminal=['completed','failed','cancelled'].includes(run.state);
@@ -26,7 +28,7 @@ export function ActiveRunPanel({run,answer,partial,activity,busy,client,onContro
   const elapsedEnd=isTerminal?Date.parse(run.updated_at):clockNow;
   const elapsedSeconds=Number.isFinite(elapsedStart)&&Number.isFinite(elapsedEnd)?Math.max(0,Math.floor((elapsedEnd-elapsedStart)/1000)):null;
   const elapsedLabel=elapsedSeconds===null?'Unavailable':elapsedSeconds>=3600?`${Math.floor(elapsedSeconds/3600)}h ${Math.floor(elapsedSeconds%3600/60)}m ${elapsedSeconds%60}s`:elapsedSeconds>=60?`${Math.floor(elapsedSeconds/60)}m ${elapsedSeconds%60}s`:`${elapsedSeconds}s`;
-  const currentActivity=activity[activity.length-1]??'Waiting for the next saved update.';
+  const currentActivity=activity[activity.length-1]?.description??'Waiting for the next saved update.';
   const showWorkspaceRecovery=run.state==='blocked'||workspaceRecoveryRunId===run.id;
   function enabled(action:Action) {
     if(action==='resume')return ['paused','blocked'].includes(run.state);
@@ -39,6 +41,6 @@ export function ActiveRunPanel({run,answer,partial,activity,busy,client,onContro
     {partial&&<article><h3>Partial response</h3><p style={{whiteSpace:'pre-wrap'}}>{partial}</p></article>}
     <MCPReconciliationPanel client={client} runId={run.id}/>
     {showWorkspaceRecovery&&<WorkspaceWriteReconciliationPanel key={run.id} client={client} runId={run.id} enabled={run.state==='blocked'}/>}
-    <h3>Activity</h3><ol aria-label="Run activity history" aria-live="off">{activity.map((item,index)=><li key={index}>{item}</li>)}</ol>
+    <h3>Activity timeline</h3><ol className="run-activity-timeline" aria-label="Run activity history" aria-live="off">{activity.map(item=><li key={item.sequence} className="run-activity-entry"><time dateTime={item.created_at}>{Number.isFinite(Date.parse(item.created_at))?new Date(item.created_at).toLocaleTimeString(): 'Time unavailable'}</time><span className="run-activity-type">{item.event_type}</span><span className="run-activity-description">{item.description}</span></li>)}</ol>
   </section>;
 }

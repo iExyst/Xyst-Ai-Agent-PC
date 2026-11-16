@@ -2,7 +2,7 @@ import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.ts
 import {RunResources} from './RunResources.tsx';
 import { useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { EngineClient, EngineRequestError, type Run, type Artifact, type Plan, type ChatSession } from './api/client.ts';
+import { EngineClient, EngineRequestError, type Run, type RunEvent, type Artifact, type Plan, type ChatSession } from './api/client.ts';
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -136,7 +136,7 @@ function App() {
   const [audioName, setAudioName] = useState('');
   const [transcriptionUrl, setTranscriptionUrl] = useState('http://127.0.0.1:8000/v1/audio/transcriptions');
   const [run, setRun] = useState<Run>();
-  const [activity, setActivity] = useState<string[]>([]);
+  const [activity, setActivity] = useState<Array<RunEvent&{description:string}>>([]);
   const [commandOutput, setCommandOutput] = useState({stdout:'',stderr:''});
   const commandDecoders = useRef<Record<string, TextDecoder>>({});
   const [answer, setAnswer] = useState('');
@@ -348,7 +348,7 @@ function App() {
         const reason = typeof event.payload.reason === 'string' ? reasons[event.payload.reason] : undefined;
         const counterCode = event.event_type === 'context.admission_failed' && typeof event.payload.counter_error_code === 'string' ? ` (${event.payload.counter_error_code})` : '';
         const description = event.event_type === 'run.state_changed' ? `Run is ${String(event.payload.to).replaceAll('_', ' ')}${reason ? `. ${reason}` : ''}` : event.event_type === 'context.admission_failed' ? `${labels[event.event_type]}${counterCode}` : (labels[event.event_type] ?? 'Progress saved');
-        setActivity(items => [...items.slice(-199), description]);
+        setActivity(items => [...items.slice(-199), {...event,description}]);
         if(event.event_type==='procedure.draft_created')setSkillsRefresh(value=>value+1);
         if (event.event_type === 'model.message') {
           setPartial('');

@@ -53,6 +53,9 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   }
   await expect(runStatus).toHaveText('Run status: Paused');
   await expect(activity).toContainText('Run is paused');
+  const pauseEvent=activity.getByRole('listitem').filter({hasText:'Run is paused'});
+  await expect(pauseEvent.locator('time')).toHaveAttribute('datetime','2026-11-03T00:00:00Z');
+  await expect(pauseEvent.locator('.run-activity-type')).toHaveText('run.state_changed');
   await expect(currentActivity).toContainText('Run is paused');
   await expect(page.getByRole('heading',{name:'Partial response',exact:true})).toBeVisible();
   await expect(page.getByText('Unfinished streamed text',{exact:true})).toBeVisible();

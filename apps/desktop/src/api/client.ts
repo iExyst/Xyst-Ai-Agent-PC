@@ -11,6 +11,7 @@ function reconnectDelay(milliseconds: number, signal?: AbortSignal): Promise<voi
 }
 
 export type Run = components['schemas']['RunRecord'];
+export type RunEvent = components['schemas']['RunEvent'];
 export type CreateRun = components['schemas']['CreateRunRequest'];
 export type Artifact = components['schemas']['ArtifactRecord'];
 export type Memory = components['schemas']['MemoryRecord'];
