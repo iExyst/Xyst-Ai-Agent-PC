@@ -12,8 +12,19 @@ timeout for the owned process.
 
 Directory listing shares one strict output model between its runtime descriptor
 and coordinator registry. It validates every returned entry and enforces its
-32 KiB ceiling against the complete serialized result, including path and
-wrapper fields, before journaling.
+32 KiB ceiling against the complete JSON-escaped result, including path and
+wrapper fields, before journaling or model delivery. The byte measurement uses
+the same default JSON encoding as the journal and coordinator conversation.
+
+Workspace file reads likewise validate the returned path, bounded text,
+truncation flag, untrusted-content label, and optional content hash against the
+same strict model that generates the coordinator output schema. Oversized file
+contents omit the hash because the returned excerpt is not a complete-file
+digest.
+
+Workspace search validates a strict bounded result schema and trims matches
+until the complete JSON-escaped result, including its wrapper, fits the declared
+32 KiB limit.
 
 The filesystem registry covers directory listing, file reading, bounded search,
 file creation, patching, text replacement, and conditional file writing. File

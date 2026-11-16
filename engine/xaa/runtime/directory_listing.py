@@ -249,9 +249,7 @@ def list_directory(
         "trust": "untrusted_workspace_content",
     }
     while (
-        len(json.dumps(result, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-        > LIST_DIRECTORY_RESULT_BYTES
-        and result["entries"]
+        len(json.dumps(result).encode("utf-8")) > LIST_DIRECTORY_RESULT_BYTES and result["entries"]
     ):
         result["entries"].pop()
         result["truncated"] = True

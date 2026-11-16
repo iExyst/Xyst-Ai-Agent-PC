@@ -6,7 +6,12 @@ import subprocess
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
-from xaa.runtime.workspace_search import search_workspace
+from xaa.runtime.workspace_search import (
+    SEARCH_RESULT_BYTES,
+    SearchOutput,
+    _bounded_search_output,
+    search_workspace,
+)
 from xaa.storage.runs import RunStore
 
 
@@ -173,3 +178,27 @@ async def test_search_match_output_is_bounded_by_utf8_bytes(workspace_tmp_path):
         sum(len(json.dumps(match, ensure_ascii=False).encode()) for match in result["matches"])
         <= 32768
     )
+    assert len(json.dumps(result).encode("utf-8")) <= SEARCH_RESULT_BYTES
+
+
+def test_search_caps_escaped_result_including_wrapper_bytes():
+    result = SearchOutput(
+        query="needle",
+        target="filename",
+        matches=[{"path": "x" * 4096} for _ in range(50)],
+        truncated=False,
+        limits_reached=[],
+        scanned_files=50,
+        scanned_directories=1,
+        skipped_links=0,
+        excluded_directories=0,
+        excluded_names=[],
+        trust="untrusted_workspace_content",
+    ).model_dump()
+
+    bounded = _bounded_search_output(result)
+
+    assert len(json.dumps(bounded).encode("utf-8")) <= SEARCH_RESULT_BYTES
+    assert len(bounded["matches"]) < 50
+    assert bounded["truncated"] is True
+    assert "output_bytes_limit" in bounded["limits_reached"]

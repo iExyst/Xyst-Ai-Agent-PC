@@ -8,7 +8,7 @@ import time
 from contextlib import ExitStack
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,6 +29,15 @@ from xaa.storage.runs import RunStore, has_completed_workspace_read
 class ReadFileArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     path: str = Field(min_length=1, max_length=2048)
+
+
+class ReadFileOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=2048)
+    text: str = Field(max_length=65_536)
+    truncated: bool
+    trust: Literal["untrusted_workspace_content"]
+    sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class WriteFileArguments(ReadFileArguments):
@@ -177,6 +186,7 @@ class WorkspaceExecutor:
             "trust": "untrusted_workspace_content",
             "sha256": hashlib.sha256(content).hexdigest() if len(content) <= 65536 else None,
         }
+        result = ReadFileOutput.model_validate(result).model_dump(mode="json")
         self.store.record_tool_result(run_id, token, call_id, result, internal=internal)
         return result
 

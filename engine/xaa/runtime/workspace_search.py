@@ -28,23 +28,39 @@ class SearchArguments(BaseModel):
 
 
 class SearchMatch(BaseModel):
-    path: str
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=4096)
     line: int | None = Field(default=None, ge=1)
-    excerpt: str | None = None
+    excerpt: str | None = Field(default=None, max_length=300)
 
 
 class SearchOutput(BaseModel):
-    query: str
+    model_config = ConfigDict(extra="forbid", strict=True)
+    query: str = Field(min_length=1, max_length=256)
     target: Literal["text", "filename"]
-    matches: list[SearchMatch]
+    matches: list[SearchMatch] = Field(max_length=50)
     truncated: bool
-    limits_reached: list[str]
-    scanned_files: int
-    scanned_directories: int
-    skipped_links: int
-    excluded_directories: int
-    excluded_names: list[str]
+    limits_reached: list[
+        Literal[
+            "output_bytes_limit",
+            "match_limit",
+            "directory_limit",
+            "time_limit",
+            "directory_listing_limit",
+            "depth_limit",
+            "file_limit",
+            "file_bytes_limit",
+        ]
+    ] = Field(max_length=8)
+    scanned_files: int = Field(ge=0, le=128)
+    scanned_directories: int = Field(ge=0, le=32)
+    skipped_links: int = Field(ge=0, le=8192)
+    excluded_directories: int = Field(ge=0, le=8192)
+    excluded_names: list[str] = Field(max_length=8)
     trust: Literal["untrusted_workspace_content"]
+
+
+SEARCH_RESULT_BYTES = 32_768
 
 
 SEARCH_METADATA = {
@@ -57,9 +73,22 @@ SEARCH_METADATA = {
     "timeout_seconds": 3,
     "cancellation": "cooperative between directory entries/files",
     "retry": "none; inspect journal before retry",
-    "output_match_bytes": 32768,
+    "output_match_bytes": SEARCH_RESULT_BYTES,
+    "result_bytes": SEARCH_RESULT_BYTES,
     "audit": ["run_id", "call_id", "arguments", "matches", "limits_reached"],
 }
+
+
+def _bounded_search_output(result: dict[str, Any]) -> dict[str, Any]:
+    bounded = SearchOutput.model_validate(result).model_dump(exclude_none=True)
+    while len(json.dumps(bounded).encode("utf-8")) > SEARCH_RESULT_BYTES and bounded["matches"]:
+        bounded["matches"].pop()
+        bounded["truncated"] = True
+        bounded["limits_reached"] = sorted({*bounded["limits_reached"], "output_bytes_limit"})
+        bounded = SearchOutput.model_validate(bounded).model_dump(exclude_none=True)
+    if len(json.dumps(bounded).encode("utf-8")) > SEARCH_RESULT_BYTES:
+        raise RuntimeError("Bounded workspace search wrapper exceeded its serialized result limit.")
+    return bounded
 
 
 SEARCH_TOOL = {
@@ -134,7 +163,7 @@ async def search_workspace(
     def add_match(match: dict[str, Any]) -> bool:
         nonlocal output_bytes
         size = len(json.dumps(match, ensure_ascii=False).encode("utf-8"))
-        if output_bytes + size > 32768:
+        if output_bytes + size > SEARCH_RESULT_BYTES:
             reasons.add("output_bytes_limit")
             return False
         matches.append(match)
@@ -225,6 +254,6 @@ async def search_workspace(
         "excluded_names": sorted(excluded),
         "trust": "untrusted_workspace_content",
     }
-    result = SearchOutput.model_validate(result).model_dump(exclude_none=True)
+    result = _bounded_search_output(result)
     store.record_tool_result(run_id, token, call_id, result)
     return result

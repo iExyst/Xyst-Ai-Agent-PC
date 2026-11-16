@@ -1,10 +1,12 @@
 import hashlib
+import json
 import os
 import subprocess
 
 import pytest
 from xaa.runtime.executor import ReconciliationRequired, WorkspaceExecutor
 from xaa.runtime.file_handles import open_for_read
+from xaa.runtime.tool_contracts import WORKSPACE_TOOL_CONTRACTS
 from xaa.storage.runs import RunStore
 
 
@@ -30,6 +32,33 @@ def test_workspace_read_is_bounded_journaled_and_not_replayed(workspace_tmp_path
         executor.read_file(
             run_id, token, "escape", {"path": "../runs.sqlite3"}, idempotency_key="escape"
         )
+
+
+def test_read_output_size_limit_includes_json_escaped_invalid_bytes(workspace_tmp_path):
+    root = workspace_tmp_path / "project"
+    root.mkdir()
+    (root / "invalid-utf8.bin").write_bytes(b"\xff" * 65_536)
+    store = RunStore(workspace_tmp_path / "runs.sqlite3")
+    run_id = store.create_run(
+        objective="Read invalid UTF-8 safely",
+        acceptance_criteria=[],
+        workspace=str(root),
+        mode="observe",
+        model=None,
+    )["id"]
+    token = store.acquire_lease(run_id, "worker")
+
+    result = WorkspaceExecutor(store).read_file(
+        run_id,
+        token,
+        "invalid-utf8",
+        {"path": "invalid-utf8.bin"},
+        idempotency_key="invalid-utf8",
+    )
+
+    contract = WORKSPACE_TOOL_CONTRACTS["workspace_read_file"]
+    assert result["truncated"] is False
+    assert len(json.dumps(result).encode("utf-8")) <= contract["limits"]["result_bytes"]
 
 
 def test_authorized_automation_can_write_only_to_its_selected_workspace(workspace_tmp_path):

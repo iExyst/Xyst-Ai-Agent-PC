@@ -78,9 +78,7 @@ def test_listing_serialized_result_including_wrapper_stays_within_byte_limit(
 
     result = list_directory(store, run_id, token, "byte-bounded", {"path": "."})
 
-    result_bytes = len(
-        json.dumps(result, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    )
+    result_bytes = len(json.dumps(result).encode("utf-8"))
     assert result_bytes <= LIST_DIRECTORY_RESULT_BYTES
     assert result["truncated"] is True
 

@@ -5,6 +5,7 @@ from typing import Any
 
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.executor import ReadFileOutput
 from xaa.runtime.git_tools import GIT_TOOL
 from xaa.runtime.specialists import RUN_READY_CONTRACT, RUN_READY_TOOL, RunReadyResult
 from xaa.runtime.task_graph import TaskDefinition
@@ -51,6 +52,19 @@ def test_workspace_contracts_declare_execution_boundaries() -> None:
             assert contract["internal_only"] is True
         else:
             assert contract["internal_only"] is False
+
+
+def test_workspace_read_output_schema_matches_strict_runtime_model() -> None:
+    contract = WORKSPACE_TOOL_CONTRACTS["workspace_read_file"]
+    assert contract["output_schema"] == ReadFileOutput.model_json_schema()
+    result = {
+        "path": "README.md",
+        "text": "untrusted bytes",
+        "truncated": False,
+        "trust": "untrusted_workspace_content",
+        "sha256": "a" * 64,
+    }
+    assert ReadFileOutput.model_validate(result).model_dump(mode="json") == result
 
 
 def test_coordinator_exposes_workspace_schemas_from_contracts(workspace_tmp_path) -> None:

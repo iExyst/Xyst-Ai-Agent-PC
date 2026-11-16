@@ -16,11 +16,12 @@ from xaa.runtime.executor import (
     CreateFileArguments,
     DeleteFileArguments,
     ReadFileArguments,
+    ReadFileOutput,
     ReplaceTextArguments,
     WriteFileArguments,
 )
 from xaa.runtime.planning import PLAN_TOOL_NAME, PLAN_TOOL_VERSION, SavePlanArguments
-from xaa.runtime.workspace_search import SearchArguments, SearchOutput
+from xaa.runtime.workspace_search import SEARCH_RESULT_BYTES, SearchArguments, SearchOutput
 from xaa.storage.commands import TOOL as COMMAND_TOOL
 from xaa.storage.commands import CommandOutcome
 
@@ -34,6 +35,8 @@ _WRITE_OUTPUT: dict[str, Any] = {
     "required": ["path", "sha256", "bytes_written"],
     "additionalProperties": False,
 }
+
+WORKSPACE_RESULT_BYTES = 1_048_576
 
 
 def _contract(
@@ -62,7 +65,7 @@ def _contract(
             "inspect the durable journal before retrying an interrupted effect."
         ),
         "retry": retry,
-        "limits": {"max_output_bytes": 1_048_576, **limits},
+        "limits": {"max_output_bytes": WORKSPACE_RESULT_BYTES, **limits},
         "audit": ["run_id", "call_id", "tool", "version", "arguments", "result_or_failure"],
         "internal_only": internal_only,
     }
@@ -88,19 +91,12 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.read",),
         effect="read",
         input_model=ReadFileArguments,
-        output_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "text": {"type": "string", "maxLength": 65_536},
-                "truncated": {"type": "boolean"},
-                "trust": {"const": "untrusted_workspace_content"},
-                "sha256": {"type": ["string", "null"]},
-            },
-            "required": ["path", "text", "truncated", "trust", "sha256"],
-            "additionalProperties": False,
+        output_schema=ReadFileOutput.model_json_schema(),
+        limits={
+            "input_bytes": 2_048,
+            "file_bytes": 65_536,
+            "result_bytes": WORKSPACE_RESULT_BYTES,
         },
-        limits={"input_bytes": 2_048, "file_bytes": 65_536, "result_bytes": 65_536},
         retry="Up to two retries for recognized transient read errors; no side effects.",
     ),
     "workspace_search": _contract(
@@ -114,7 +110,7 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
             "directories": 32,
             "files": 128,
             "file_bytes": 65_536,
-            "result_bytes": 32_768,
+            "result_bytes": SEARCH_RESULT_BYTES,
         },
         retry="No automatic retry; inspect the durable search result before requesting again.",
     ),
