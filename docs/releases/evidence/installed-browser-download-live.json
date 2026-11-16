@@ -1,0 +1,24 @@
+{
+  "checked_at_utc": "2026-11-16T16:48:53.995597+00:00",
+  "engine_path": "D:\\a\\_temp\\xaa-isolated-localappdata\\Xyst AI Agent\\xaa-engine.exe",
+  "engine_sha256": "a391bf146cdcc49efe374d32ce4c31decabbc4f7a38074f48867ceaeacf1a446",
+  "browser": "Microsoft Edge via installed Playwright worker",
+  "result": {
+    "status": "ok",
+    "title": "Example Domain",
+    "trust": "untrusted_web_content",
+    "content_characters": 917,
+    "screenshot_bytes": 35482,
+    "screenshot_sha256": "b48350d6cac28eee829da32fabe674e13843f362c791316a2a92ebf63df83462",
+    "download": {
+      "status": "ok",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.txt",
+      "suggested_filename": "rfc9110.txt",
+      "size_bytes": 502938,
+      "sha256": "ad3b38b7806783d5066714f7ac9aadcba8cec1605a400c7380173737a8adf902",
+      "artifact_integrity_verified": true,
+      "rfc_9110_marker_verified": true
+    }
+  },
+  "model_inference_requested": false
+}
