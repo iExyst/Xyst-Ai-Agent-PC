@@ -2,7 +2,7 @@
 
 ## Present run files as readable artifact cards (2026-11-16)
 
-Replaced the raw artifact list with responsive dark-mode cards that show a human-readable file type and name, provenance, bounded preview/download actions, file size, and a short SHA-256 fingerprint. Previews remain labeled as untrusted and stale preview requests cannot replace a newer selection. The objective Playwright flow verifies cards, size/hash metadata, mobile-width fit, untrusted preview, and existing download names; `npm run build:desktop` passes. Exact-source Windows verification is queued for this UI-only change; no live LLM testing was used.
+Replaced the raw artifact list with responsive dark-mode cards that show a human-readable file type and name, provenance, bounded preview/download actions, file size, and a SHA-256 fingerprint with an accessible disclosure for its full value. Previews remain labeled as untrusted and stale preview requests cannot replace a newer selection. The objective Playwright flow verifies cards, size/full-hash metadata, mobile-width fit, untrusted preview, and existing download names; `npm run build:desktop` passes. Exact-source Windows run [43951928331](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43951928331) passed on `537f9de5` with 1,426 Python tests passed and 20 skipped, including desktop checks; the installer job was skipped because packaging inputs did not change. The follow-up full-hash disclosure is committed as `57d07ee5`; its exact-source Windows workflow is pending. No live LLM testing was used.
 
 ## Inspect saved public tool results in the run timeline (2026-11-16)
 

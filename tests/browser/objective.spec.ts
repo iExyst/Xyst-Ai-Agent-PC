@@ -224,6 +224,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(artifactPanel.getByRole('heading',{name:'Project changes'})).toBeVisible();
   await expect(artifactPanel).toContainText('40 B');
   await expect(artifactPanel).toContainText('SHA-256 · aaaaaaaaaaaa…');
+  const diffCard=artifactPanel.locator('.artifact-card').filter({has:page.getByRole('heading',{name:'Project changes'})});
+  await diffCard.getByText('Inspect full SHA-256').click();
+  await expect(diffCard.getByText('a'.repeat(64),{exact:true})).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   expect(await artifactPanel.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);
   await page.setViewportSize({width:1280,height:800});

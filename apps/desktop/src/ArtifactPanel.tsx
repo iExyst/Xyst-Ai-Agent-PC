@@ -61,6 +61,7 @@ export function ArtifactPanel({artifacts,client,onError}:{artifacts:Artifact[];c
         <h3>{artifactName(item.provenance)}</h3>
         <p className="artifact-provenance">{item.provenance}</p>
         <div className="artifact-metadata"><span>{formatSize(item.size_bytes)}</span><span title={item.sha256?`SHA-256 ${item.sha256}`:'SHA-256 unavailable'}>{item.sha256?`SHA-256 · ${item.sha256.slice(0,12)}…`:'SHA-256 unavailable'}</span></div>
+        {item.sha256&&<details className="artifact-checksum"><summary>Inspect full SHA-256</summary><code>{item.sha256}</code></details>}
         {downloadable?<button type="button" className="artifact-action" onClick={()=>void download(item)}>Download {item.provenance}</button>:<button type="button" className="artifact-action" disabled={loadingId===item.id} onClick={()=>void view(item)}>{loadingId===item.id?'Loading preview…':`View ${item.provenance}`}</button>}
       </li>;
     })}</ul>
