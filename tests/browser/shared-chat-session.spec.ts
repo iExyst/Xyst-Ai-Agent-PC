@@ -14,8 +14,12 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   let savedAssistantMessage='';
   let sessionTitle='Project conversation';
   let sessionReads=0;
+  let markSecondSessionReadStarted:()=>void=()=>{};
+  const secondSessionReadStarted=new Promise<void>(resolve=>{markSecondSessionReadStarted=resolve;});
   let releaseSecondSessionRead:()=>void=()=>{};
-  const secondSessionRead=new Promise<void>(resolve=>{releaseSecondSessionRead=resolve;});
+  const secondSessionReadGate=new Promise<void>(resolve=>{releaseSecondSessionRead=resolve;});
+  let markSecondSessionReadFinished:()=>void=()=>{};
+  const secondSessionReadFinished=new Promise<void>(resolve=>{markSecondSessionReadFinished=resolve;});
   let deleted=false;
   const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS'};
   page.on('pageerror',error=>{throw error;});
@@ -36,9 +40,10 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
     if(newSessionMatch&&request.method()==='PATCH'){const id=newSessionMatch[1]!;return route.fulfill({json:{session_id:id,title:request.postDataJSON().title,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages:[]},headers});}
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='GET'){
       const readNumber=++sessionReads;
-      if(readNumber===2)await new Promise(resolve=>setTimeout(resolve,500));
-      const response=await route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});
-      if(readNumber===2)releaseSecondSessionRead();
+      const readTitle=sessionTitle;
+      if(readNumber===2){markSecondSessionReadStarted();await secondSessionReadGate;}
+      const response=await route.fulfill({json:{session_id:'terminal-chat',title:readTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});
+      if(readNumber===2)markSecondSessionReadFinished();
       return response;
     }
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='PATCH'){sessionTitle=request.postDataJSON().title;return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});}
@@ -99,10 +104,12 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path:testInfo.outputPath('dark-conversation.png')});
   await page.getByLabel('Conversation title').fill('Research notes');
-  await secondSessionRead;
-  await expect(page.getByLabel('Conversation title')).toHaveValue('Research notes');
+  await secondSessionReadStarted;
   await page.getByRole('button',{name:'Save title'}).click();
   await expect(page.getByLabel('Saved terminal and desktop sessions')).toContainText('Research notes');
+  releaseSecondSessionRead();
+  await secondSessionReadFinished;
+  await expect(page.getByLabel('Conversation title')).toHaveValue('Research notes');
   await expect(page.getByText('Research notes',{exact:true})).toBeVisible();
   const longTurn='A'.repeat(3000);
   await page.getByLabel('Objective',{exact:true}).fill(longTurn);

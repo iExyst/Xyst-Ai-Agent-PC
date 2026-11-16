@@ -24,27 +24,30 @@ export function ConversationSessionsPanel({
   const [error,setError]=useState('');
   const selection=useRef(onSelect);
   const titleDirty=useRef(false);
+  const titleRevision=useRef(0);
   useEffect(()=>{selection.current=onSelect;},[onSelect]);
 
   useEffect(()=>{
     if(!loaded)return;
     let cancelled=false;
+    const revision=titleRevision.current;
     void Promise.all([
       client.chatSessions(),
       sessionId?client.chatSession(sessionId):Promise.resolve(undefined),
     ]).then(([rows,record])=>{
-      if(!cancelled){setItems(rows);if(record){setSession(record);if(!titleDirty.current)setTitleDraft(record.title);selection.current(sessionId,record);}}
+      if(!cancelled&&revision===titleRevision.current){setItems(rows);if(record){setSession(record);if(!titleDirty.current)setTitleDraft(record.title);selection.current(sessionId,record);}}
     }).catch(failure=>{if(!cancelled)setError(String(failure));});
     return()=>{cancelled=true;};
   },[client,refreshKey,sessionId,loaded]);
 
   async function select(id:string) {
-    setSessionId(id);setError('');titleDirty.current=false;
+    titleRevision.current+=1;setSessionId(id);setError('');titleDirty.current=false;
     if(!id){setSession(undefined);setTitleDraft('');selection.current('',undefined);return;}
     setBusy(true);
+    const revision=titleRevision.current;
     try {
       const record=await client.chatSession(id);
-      setSession(record);if(!titleDirty.current)setTitleDraft(record.title);selection.current(id,record);
+      if(revision===titleRevision.current){setSession(record);if(!titleDirty.current)setTitleDraft(record.title);selection.current(id,record);}
     } catch(failure){setSession(undefined);setError(String(failure));}
     finally{setBusy(false);}
   }
@@ -54,7 +57,7 @@ export function ConversationSessionsPanel({
     setBusy(true);setError('');
     try {
       const updated=await client.renameChatSession(sessionId,titleDraft);
-      setSession(updated);setTitleDraft(updated.title);titleDirty.current=false;setItems(await client.chatSessions());selection.current(sessionId,updated);
+      titleRevision.current+=1;setSession(updated);setTitleDraft(updated.title);titleDirty.current=false;setItems(await client.chatSessions());selection.current(sessionId,updated);
     } catch(failure){setError(String(failure));}
     finally{setBusy(false);}
   }
@@ -66,7 +69,7 @@ export function ConversationSessionsPanel({
     setBusy(true);setError('');
     try {
       const record=await client.openChatSession(id,{model,workspace,mode});
-      setSessionId(id);setSession(record);setTitleDraft(record.title);titleDirty.current=false;setNewName('');
+      titleRevision.current+=1;setSessionId(id);setSession(record);setTitleDraft(record.title);titleDirty.current=false;setNewName('');
       setLoaded(true);setItems(await client.chatSessions());selection.current(id,record);
     } catch(failure){setError(String(failure));}
     finally{setBusy(false);}
@@ -78,6 +81,7 @@ export function ConversationSessionsPanel({
     setBusy(true);setError('');
     try {
       await client.deleteChatSession(sessionId);
+      titleRevision.current+=1;
       setItems(current=>current.filter(item=>item.session_id!==sessionId));
       setSessionId('');setSession(undefined);setTitleDraft('');titleDirty.current=false;selection.current('',undefined);
     } catch(failure){setError(String(failure));}
@@ -97,7 +101,7 @@ export function ConversationSessionsPanel({
     <label htmlFor="new-shared-chat-name">New session name (optional)<input id="new-shared-chat-name" value={newName} maxLength={64} onChange={event=>setNewName(event.target.value)} placeholder="desktop-project-chat" disabled={busy}/></label>
     <button type="button" disabled={busy||!model||!workspace.trim()} onClick={()=>void create()}>Start or open shared conversation</button>
     {session&&<>
-      <label htmlFor="shared-chat-title">Conversation title<input id="shared-chat-title" value={titleDraft} maxLength={80} onChange={event=>{titleDirty.current=true;setTitleDraft(event.target.value);}} disabled={busy}/></label>
+      <label htmlFor="shared-chat-title">Conversation title<input id="shared-chat-title" value={titleDraft} maxLength={80} onChange={event=>{titleRevision.current+=1;titleDirty.current=true;setTitleDraft(event.target.value);}} disabled={busy}/></label>
       <button type="button" disabled={busy||!titleDraft.trim()||titleDraft.trim()===session.title} onClick={()=>void renameCurrent()}>Save title</button>
       <p>Session ID <code>{session.session_id}</code> · {session.mode} · {session.model} · {session.workspace??'no workspace'}</p>
       <p>Continue this same history in a terminal with <code>xaa chat --model "{session.model}"{session.workspace?` --workspace "${session.workspace}"`:''} --mode "{session.mode}" --session "{session.session_id}"</code>.</p>
