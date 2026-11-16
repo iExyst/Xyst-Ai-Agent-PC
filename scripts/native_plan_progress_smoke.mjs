@@ -58,7 +58,7 @@ try{
   await page.evaluate(async()=>{
     await window.__TAURI_INTERNALS__.invoke('set_close_behavior',{behavior:'exit_on_close'});
     await window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'});
-  });
+  }).catch(()=>{});
   for(let attempt=0;attempt<60&&proc.exitCode===null;attempt++)await new Promise(resolve=>setTimeout(resolve,250));
   if(proc.exitCode!==0)throw new Error(`Native desktop did not close cleanly (exit ${proc.exitCode})`);
   let engineStopped=false;
