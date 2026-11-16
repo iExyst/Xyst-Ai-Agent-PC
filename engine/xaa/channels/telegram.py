@@ -25,6 +25,55 @@ PAIR_COMMAND = re.compile(r"^/pair(?:@[A-Za-z0-9_]+)?\s+([A-Za-z0-9_-]{24,128})$
 MAX_TEXT_CHARS = 4096
 OFFSET_RESET_AFTER = timedelta(days=6)
 MAX_TELEGRAM_RETRY_AFTER_SECONDS = 300
+TELEGRAM_API_TIMEOUT_SECONDS = 35
+TELEGRAM_API_CONNECT_TIMEOUT_SECONDS = 10
+TELEGRAM_SEND_CONTRACT: dict[str, Any] = {
+    "name": "telegram.send_message",
+    "version": "1",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "chat_id": {"type": "string", "minLength": 1, "maxLength": 128},
+            "text": {"type": "string", "minLength": 1, "maxLength": MAX_TEXT_CHARS},
+        },
+        "required": ["chat_id", "text"],
+        "additionalProperties": False,
+    },
+    "output_schema": {
+        "type": "object",
+        "properties": {"message_id": {"type": "integer", "minimum": 1}},
+        "required": ["message_id"],
+        "additionalProperties": False,
+    },
+    "permission": "configured Telegram bot and destination bound to an authorized account",
+    "effect": "external_message",
+    "timeout_seconds": TELEGRAM_API_TIMEOUT_SECONDS,
+    "cancellation": (
+        "An interrupted send remains unknown after recovery; reconcile delivery state before "
+        "sending again."
+    ),
+    "retry": (
+        "Never retry an unknown outcome. Scheduled delivery may retry a definitive rejection "
+        "only under the bounded attempt and Retry-After policy."
+    ),
+    "limits": {
+        "text_chars": MAX_TEXT_CHARS,
+        "connect_timeout_seconds": TELEGRAM_API_CONNECT_TIMEOUT_SECONDS,
+        "retry_after_seconds": MAX_TELEGRAM_RETRY_AFTER_SECONDS,
+    },
+    "input_normalization": "Truncate outgoing text to text_chars before calling Telegram.",
+    "idempotency": (
+        "Local outbox identity prevents duplicate claims; Telegram sendMessage has no remote "
+        "idempotency key."
+    ),
+    "audit_fields": [
+        "account_id",
+        "update_id_or_execution_id",
+        "chat_id",
+        "delivery_state",
+        "message_id",
+    ],
+}
 
 
 def as_mapping(value: object) -> Mapping[str, Any] | None:
@@ -53,7 +102,12 @@ class TelegramBotApi:
         if not token or len(token) > 512 or "\n" in token or "\r" in token:
             raise ValueError("Telegram bot token is malformed.")
         self.token = token
-        self.client = client or httpx.AsyncClient(timeout=httpx.Timeout(35, connect=10))
+        self.client = client or httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                TELEGRAM_API_TIMEOUT_SECONDS,
+                connect=TELEGRAM_API_CONNECT_TIMEOUT_SECONDS,
+            )
+        )
         self.owns_client = client is None
 
     async def close(self) -> None:
@@ -126,7 +180,13 @@ class TelegramBotApi:
 
     async def send_message(self, chat_id: str, text: str) -> int:
         result = as_mapping(
-            await self.call("sendMessage", {"chat_id": chat_id, "text": text[:4096]})
+            await self.call(
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": text[: TELEGRAM_SEND_CONTRACT["limits"]["text_chars"]],
+                },
+            )
         )
         if result is None or not isinstance(result.get("message_id"), int):
             raise TelegramApiError("Telegram returned an invalid send result.", definitive=False)

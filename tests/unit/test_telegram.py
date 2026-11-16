@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.channels.telegram import (
+    MAX_TEXT_CHARS,
+    TELEGRAM_SEND_CONTRACT,
     TelegramApiError,
     TelegramBotApi,
     TelegramIdentity,
@@ -19,6 +21,20 @@ TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 IDENTITY = TelegramIdentity("42", "xaa_test_bot")
 PAIR_CODE = "A_very_long_secure_pairing_code_987654321"
+
+
+def test_telegram_send_contract_declares_bounded_external_delivery() -> None:
+    contract = TELEGRAM_SEND_CONTRACT
+    assert contract["name"] == "telegram.send_message"
+    assert contract["version"] == "1"
+    assert contract["effect"] == "external_message"
+    assert contract["limits"]["text_chars"] == MAX_TEXT_CHARS
+    assert contract["input_schema"]["properties"]["text"]["maxLength"] == MAX_TEXT_CHARS
+    assert contract["output_schema"]["properties"]["message_id"]["type"] == "integer"
+    assert "unknown" in contract["cancellation"]
+    assert "Never retry an unknown outcome" in contract["retry"]
+    assert "no remote" in contract["idempotency"]
+    assert "delivery_state" in contract["audit_fields"]
 
 
 class MemoryCredentials:

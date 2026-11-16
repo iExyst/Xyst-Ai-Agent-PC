@@ -71,8 +71,11 @@ Model-authored `procedure.draft`, `procedure.revise`, `procedure.resource_revise
 
 The registry is a scoped first slice, not the contract inventory for every
 coordinator tool. MCP execution and specialist dispatch contracts are
-documented above; broader messaging contracts still need an inventory and
-serialized-output consistency review. The command entry is a typed execution
-contract used for its model-facing input schema; the coordinator still enforces
-its saved grant and run deadline, while the command controller owns snapshot,
-execution, output, cancellation, and recovery behavior.
+documented above. Telegram outbound delivery declares its bounded send request,
+external-message effect, authorized account-bound destination, timeout,
+unknown-outcome and retry behavior, local idempotency boundary, and delivery
+audit fields in `TELEGRAM_SEND_CONTRACT`; other channel adapters still need an
+equivalent inventory and serialized-output consistency review. The command
+entry is a typed execution contract used for its model-facing input schema; the
+coordinator still enforces its saved grant and run deadline, while the command
+controller owns snapshot, execution, output, cancellation, and recovery behavior.
