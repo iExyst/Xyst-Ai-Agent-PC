@@ -29,9 +29,22 @@ import type {components} from './generated/api.js';
 const SPECIALIST_DRAFT_CLEAR_DELAY_MS=1000;
 const ENGINE_STARTUP_RETRY_ATTEMPTS=240;
 const ENGINE_STARTUP_RETRY_DELAY_MS=250;
+const RECENT_WORKSPACE_LIMIT=8;
 type DesktopCloseBehavior='keep_running'|'exit_on_close';
 type DesktopPage='home'|'runs'|'chats'|'integrations'|'memory'|'skills'|'automations'|'models'|'monitor'|'settings';
 type DesktopNavTarget='new-objective'|'active-run'|'saved-runs'|'chats'|'integrations'|'memory'|'skills'|'automations'|'model-setup'|'system-monitor'|'app-settings';
+
+function recentWorkspaceStorageKey(dataRoot:string|null):string {
+  return `xaa.recent-workspaces.v1:${dataRoot??'default'}`;
+}
+
+function readRecentWorkspaces(dataRoot:string|null):string[] {
+  try {
+    const value:unknown=JSON.parse(window.localStorage.getItem(recentWorkspaceStorageKey(dataRoot))??'[]');
+    if(!Array.isArray(value))return [];
+    return [...new Set(value.filter((item):item is string=>typeof item==='string'&&!!item.trim()&&item.length<=2048))].slice(0,RECENT_WORKSPACE_LIMIT);
+  } catch { return []; }
+}
 
 function SidebarIcon({name}:{name:'spark'|'activity'|'archive'|'chat'|'plug'|'memory'|'skills'|'automation'|'model'|'monitor'|'settings'}) {
   const paths={
@@ -73,6 +86,10 @@ function App() {
   const [diagnosticPassed, setDiagnosticPassed] = useState(false);
   const [onboardingDemonstrationStarted,setOnboardingDemonstrationStarted]=useState(false);
   const [workspace, setWorkspace] = useState('');
+  const [recentWorkspaces,setRecentWorkspaces]=useState<string[]>([]);
+  const [recentWorkspaceStatus,setRecentWorkspaceStatus]=useState('');
+  const [activeDataRootLoaded,setActiveDataRootLoaded]=useState(!('__TAURI_INTERNALS__' in window));
+  const pendingRecentWorkspaces=useRef<string[]>([]);
   const [sandbox,setSandbox]=useState<components['schemas']['ReadinessResult']>();
   const [commandAllowed,setCommandAllowed]=useState(false);
   const [commandGrantExpired,setCommandGrantExpired]=useState(false);
@@ -159,8 +176,42 @@ function App() {
     if(!('__TAURI_INTERNALS__' in window))return;
     void invoke<DesktopCloseBehavior>('get_close_behavior').then(setCloseBehavior).catch(failure=>setCloseBehaviorStatus(String(failure)));
     void invoke<boolean>('get_start_on_login').then(setStartOnLogin).catch(failure=>setStartOnLoginStatus(String(failure)));
-    void invoke<string|null>('get_active_data_root').then(setActiveDataRoot).catch(()=>setActiveDataRoot(null));
+    void invoke<string|null>('get_active_data_root').then(root=>{setActiveDataRoot(root);setActiveDataRootLoaded(true);}).catch(()=>{setActiveDataRoot(null);setActiveDataRootLoaded(true);});
   },[]);
+  useEffect(()=>{
+    if(!activeDataRootLoaded)return;
+    const saved=readRecentWorkspaces(activeDataRoot);
+    const pending=pendingRecentWorkspaces.current;
+    pendingRecentWorkspaces.current=[];
+    const next=[...pending,...saved.filter(path=>!pending.some(item=>item.toLocaleLowerCase()===path.toLocaleLowerCase()))].slice(0,RECENT_WORKSPACE_LIMIT);
+    setRecentWorkspaces(next);
+    if(pending.length){
+      try { window.localStorage.setItem(recentWorkspaceStorageKey(activeDataRoot),JSON.stringify(next)); }
+      catch { setRecentWorkspaceStatus('This project folder could not be saved to the recent list.'); }
+    }
+  },[activeDataRoot,activeDataRootLoaded]);
+  function rememberWorkspace(path:string){
+    const normalized=path.trim();
+    if(!normalized)return;
+    if(!activeDataRootLoaded){
+      pendingRecentWorkspaces.current=[normalized,...pendingRecentWorkspaces.current.filter(item=>item.toLocaleLowerCase()!==normalized.toLocaleLowerCase())].slice(0,RECENT_WORKSPACE_LIMIT);
+      return;
+    }
+    const next=[normalized,...recentWorkspaces.filter(item=>item.toLocaleLowerCase()!==normalized.toLocaleLowerCase())].slice(0,RECENT_WORKSPACE_LIMIT);
+    setRecentWorkspaces(next);
+    try {
+      window.localStorage.setItem(recentWorkspaceStorageKey(activeDataRoot),JSON.stringify(next));
+      setRecentWorkspaceStatus('Project folder saved in this X.A.A. profile.');
+    } catch { setRecentWorkspaceStatus('This project folder could not be saved to the recent list.'); }
+  }
+  function forgetWorkspace(path:string){
+    const next=recentWorkspaces.filter(item=>item!==path);
+    setRecentWorkspaces(next);
+    try {
+      window.localStorage.setItem(recentWorkspaceStorageKey(activeDataRoot),JSON.stringify(next));
+      setRecentWorkspaceStatus('Project folder removed from the recent list.');
+    } catch { setRecentWorkspaceStatus('This project folder could not be removed from the recent list.'); }
+  }
   async function updateCloseBehavior(behavior:DesktopCloseBehavior){
     setCloseBehaviorStatus('Saving close behavior…');
     try{const saved=await invoke<DesktopCloseBehavior>('set_close_behavior',{behavior});setCloseBehavior(saved);setCloseBehaviorStatus('Close behavior saved.');}
@@ -345,6 +396,7 @@ function App() {
     const id=`desktop-${crypto.randomUUID()}`;
     try {
       let record=await client.openChatSession(id,{model,workspace,mode});
+      rememberWorkspace(workspace);
       try { record=await client.renameChatSession(id,'New conversation'); }
       catch(failure) { setError(`Conversation started, but its title could not be saved: ${String(failure)}`); }
       setChatSessionId(id);setChatSession(record);setChatRefresh(value=>value+1);setObjective('');
@@ -383,13 +435,13 @@ function App() {
     setAllowProcedureResourceRevision(false);
     setAllowProcedureResourceRemoval(false);
     setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
-    try { const next = await client.createRun({ objective:runObjective, image:imageData, document:documentData, audio:audioData, transcription_url:audioData?transcriptionUrl:undefined, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, approved_browser_submission:approvedBrowserSubmission, approved_browser_download:approvedBrowserDownload, allow_procedure_drafting:procedureDraftingGrant, allow_procedure_revision:procedureRevisionGrant, allow_procedure_resource_revision:procedureResourceRevisionGrant, allow_procedure_resource_removal:procedureResourceRemovalGrant, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, approved_mcp_sampling_servers:approvedMCPSamplingServers, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, procedure_python_environment_digest:commandAllowed?selectedProcedurePythonEnvironmentDigest:undefined, procedure_npm_environment_digest:commandAllowed?selectedProcedureNpmEnvironmentDigest:undefined, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); setRun(next);setPage('runs');setActiveSection('active-run');setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedBrowserSubmission(false);setApprovedBrowserDownload(false);setApprovedMCPTools([]);setApprovedMCPSamplingServers([]);setProcedureTrial(undefined);setProcedurePythonEnvironmentDigest(undefined);setProcedureNpmEnvironmentDigest(undefined);setHistoryRefresh(value=>value+1); void watch(next,sharedTurn); }
+    try { const next = await client.createRun({ objective:runObjective, image:imageData, document:documentData, audio:audioData, transcription_url:audioData?transcriptionUrl:undefined, model, workspace, mode, approved_web_search:approvedWebSearch, approved_browser:approvedBrowser, approved_browser_submission:approvedBrowserSubmission, approved_browser_download:approvedBrowserDownload, allow_procedure_drafting:procedureDraftingGrant, allow_procedure_revision:procedureRevisionGrant, allow_procedure_resource_revision:procedureResourceRevisionGrant, allow_procedure_resource_removal:procedureResourceRemovalGrant, approved_web_hosts: approvedWebHosts.split(/[\s,]+/).map(host=>host.trim()).filter(Boolean), approved_mcp_tools:approvedMCPTools, approved_mcp_sampling_servers:approvedMCPSamplingServers, command_grant:commandAllowed&&mode==='workspace'&&sandbox?.state==='ready'&&sandbox.profile_sha256&&Date.now()<Date.parse(sandbox.expires_at)?{backend:sandbox.backend,distribution:sandbox.distribution,profile_sha256:sandbox.profile_sha256,max_seconds:30}:null, procedure_trial:procedureTrial?{skill_id:procedureTrial.skill_id,version:procedureTrial.version,purpose:procedureTrial.purpose??'evaluation_trial'}:null, procedure_python_environment_digest:commandAllowed?selectedProcedurePythonEnvironmentDigest:undefined, procedure_npm_environment_digest:commandAllowed?selectedProcedureNpmEnvironmentDigest:undefined, ...parsedLimits, file_checks: checkPath.trim() ? [{path: checkPath, expected_content: expectedContent}] : [] }); rememberWorkspace(workspace);setRun(next);setPage('runs');setActiveSection('active-run');setCommandAllowed(false);setApprovedWebSearch(false);setApprovedBrowser(false);setApprovedBrowserSubmission(false);setApprovedBrowserDownload(false);setApprovedMCPTools([]);setApprovedMCPSamplingServers([]);setProcedureTrial(undefined);setProcedurePythonEnvironmentDigest(undefined);setProcedureNpmEnvironmentDigest(undefined);setHistoryRefresh(value=>value+1); void watch(next,sharedTurn); }
     catch (failure) { setError(failure instanceof EngineRequestError&&failure.status===403&&commandAllowed?'Command authorization was refused. Check the sandbox again and confirm Workspace mode and the selected project.':String(failure)); } finally { setBusy(false); }
   }
   async function selectWorkspace() {
     try {
       const selected = await open({ directory: true, multiple: false, title: 'Choose a project workspace' });
-      if (typeof selected === 'string') setWorkspace(selected);
+      if (typeof selected === 'string') { setWorkspace(selected);rememberWorkspace(selected); }
     } catch (failure) { setError(`Could not open the workspace picker: ${String(failure)}`); }
   }
   async function startDemonstration() {
@@ -400,6 +452,7 @@ function App() {
     setBusy(true); setError(''); setActivity([]); setCommandOutput({stdout:'',stderr:''}); setAnswer(''); setArtifacts([]); setPreview(''); setPlan(undefined);
     try {
       const next = await client.createRun({ objective: demoObjective, model, workspace, mode: 'observe', approved_web_search:false, approved_browser:false, approved_browser_submission:false, approved_browser_download:false, allow_procedure_drafting:false, allow_procedure_revision:false, allow_procedure_resource_revision:false, allow_procedure_resource_removal:false, command_grant: null, ...parsedLimits, file_checks: [] });
+      rememberWorkspace(workspace);
       setObjective(demoObjective);setOnboardingDemonstrationStarted(true); setRun(next); setPage('runs'); setActiveSection('active-run'); setCommandAllowed(false); setAllowProcedureDrafting(false); setAllowProcedureRevision(false); setAllowProcedureResourceRevision(false); setApprovedBrowser(false); setHistoryRefresh(value => value + 1); void watch(next);
     } catch (failure) { setError(String(failure)); }
     finally { setBusy(false); }
@@ -542,7 +595,7 @@ function App() {
       </div>
       <div className="page-home" style={{display:page==='home'?'flex':'none'}}>
 
-      <section className="workspace-card"><label htmlFor="workspace-path">Workspace path<input id="workspace-path" value={workspace} onChange={event=>setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label><button type="button" className="secondary-button" onClick={()=>void selectWorkspace()} disabled={busy}>Browse for project folder</button></section>
+      <section className="workspace-card"><label htmlFor="workspace-path">Workspace path<input id="workspace-path" value={workspace} onChange={event=>setWorkspace(event.target.value)} placeholder="C:\Projects\example" /></label>{recentWorkspaces.length>0&&<div className="workspace-history-row"><label htmlFor="recent-workspaces">Recent project folders<select id="recent-workspaces" value={recentWorkspaces.includes(workspace)?workspace:''} onChange={event=>{if(event.target.value)setWorkspace(event.target.value);}}><option value="">Choose a recent folder</option>{recentWorkspaces.map(path=><option key={path} value={path}>{path}</option>)}</select></label>{recentWorkspaces.includes(workspace)&&<button type="button" className="secondary-button" onClick={()=>forgetWorkspace(workspace)}>Forget this folder</button>}</div>}<button type="button" className="secondary-button" onClick={()=>void selectWorkspace()} disabled={busy}>Browse for project folder</button>{recentWorkspaces.length>0&&<p className="workspace-recent-note">Recent folder paths are saved on this device in this X.A.A. profile. Use “Forget this folder” to remove one.</p>}{recentWorkspaceStatus&&<p className="workspace-recent-status" role="status">{recentWorkspaceStatus}</p>}</section>
 
       {procedureTrial&&<section aria-label="Selected procedure"><p>{procedureTrial.purpose==='active_use'?'Active procedure':'Unverified procedure trial'}: {procedureTrial.name} &middot; version {procedureTrial.version}. Its requirements must fit the selected workspace and mode.</p>{commandAllowed&&matchingProcedurePythonEnvironments.length>1&&<label htmlFor="procedure-python-environment">Python environment for this procedure<select id="procedure-python-environment" value={selectedProcedurePythonEnvironmentDigest??''} onChange={event=>setProcedurePythonEnvironmentDigest(event.target.value||undefined)}><option value="">Choose an approved environment</option>{matchingProcedurePythonEnvironments.map(environment=><option key={environment.environment_digest} value={environment.environment_digest}>{environment.distribution} · Python {environment.python_version} · {environment.environment_digest.slice(0,12)}</option>)}</select><span>Choice is bound to this run and mounted read-only. The model cannot change it.</span></label>}{commandAllowed&&matchingProcedurePythonEnvironments.length===1&&<p role="status">Approved Python environment selected: {matchingProcedurePythonEnvironments[0]!.environment_digest.slice(0,12)}… It will be mounted read-only for this run.</p>}{commandAllowed&&matchingProcedureNpmEnvironments.length>1&&<label htmlFor="procedure-npm-environment">npm environment for this procedure<select id="procedure-npm-environment" value={selectedProcedureNpmEnvironmentDigest??''} onChange={event=>setProcedureNpmEnvironmentDigest(event.target.value||undefined)}><option value="">Choose an approved environment</option>{matchingProcedureNpmEnvironments.map(environment=><option key={environment.environment_digest} value={environment.environment_digest}>{environment.distribution} · Node {environment.node_version} / npm {environment.npm_version} · {environment.environment_digest.slice(0,12)}</option>)}</select><span>Choice is bound to this run. Its module tree is mounted read-only and removal is blocked until command cleanup.</span></label>}{commandAllowed&&matchingProcedureNpmEnvironments.length===1&&<p role="status">Approved npm environment selected: {matchingProcedureNpmEnvironments[0]!.environment_digest.slice(0,12)}… Its modules will be mounted read-only for this run.</p>}<label className="procedure-permission"><input type="checkbox" checked={allowProcedureRevision} disabled={busy||procedureTrial.version!==procedureTrial.latest_version||allowProcedureResourceRevision||allowProcedureResourceRemoval} onChange={event=>setAllowProcedureRevision(event.target.checked)}/>Allow this run to draft a new version of this procedure's instructions</label><label className="procedure-permission"><input type="checkbox" checked={allowProcedureResourceRevision} disabled={busy||procedureTrial.version!==procedureTrial.latest_version||allowProcedureRevision} onChange={event=>setAllowProcedureResourceRevision(event.target.checked)}/>Allow this run to create or replace linked UTF-8 resources (up to 8 operations)</label><label className="procedure-permission"><input type="checkbox" checked={allowProcedureResourceRemoval} disabled={busy||procedureTrial.version!==procedureTrial.latest_version||allowProcedureRevision} onChange={event=>setAllowProcedureResourceRemoval(event.target.checked)}/>Allow this run to remove one linked resource</label><p>Main-text revision stays exclusive. Linked-resource writes and removal use separate grants and may be enabled together for one atomic batch of up to 8 total operations; when both grants are not selected, only the selected operation is authorized. The selected procedure's Python and Bash resources, plus Node.js .js/.mjs/.cjs resources, can run only in the restricted WSL command sandbox after you grant command access for this run. Node.js must already be installed in the selected WSL distribution. An approved offline npm environment can be bound to this exact procedure run and is mounted read-only. Specialist tasks also need the separate <code>workspace.command</code> permission. Other script types remain inactive. The candidate is unevaluated and inactive. The title, tools, permissions, metadata, other resources and any active version remain unchanged until you review and separately approve a lifecycle change.{procedureTrial.version!==procedureTrial.latest_version?' Select the latest version to enable revision.':''}</p><button onClick={()=>{setProcedureTrial(undefined);setProcedurePythonEnvironmentDigest(undefined);setProcedureNpmEnvironmentDigest(undefined);setAllowProcedureRevision(false);setAllowProcedureResourceRevision(false);setAllowProcedureResourceRemoval(false);}}>Remove selected procedure</button></section>}
       <section id="new-objective" className="anchor-target"><div className="composer-heading"><div><p className="eyebrow">{chatSession?'SAVED CONVERSATION':'YOUR NEXT TASK'}</p><h2>{chatSession?'Continue the conversation':'What should X.A.A. work on?'}</h2></div><div className="composer-actions"><button type="button" className="secondary-button" onClick={()=>void startConversation()} disabled={busy||chatStarting||!client||!model||!workspace.trim()}>{chatStarting?'Starting…':'New conversation'}</button><span className="composer-private"><span aria-hidden="true">local</span> Runs on this computer</span></div></div>{chatSession&&<section className="conversation-thread" aria-label={`Conversation: ${chatSession.title}`}><div className="conversation-thread-heading"><div><p className="eyebrow">CHAT HISTORY</p><h3>{chatSession.title}</h3></div><span>{chatSession.mode} · {chatSession.model}</span></div>{chatSession.messages.length===0?<p className="conversation-empty">Your conversation starts with the message below.</p>:<ol className="conversation-messages" aria-label="Conversation messages">{chatSession.messages.map((message,index)=><li className={`conversation-message ${message.role}`} key={`${message.run_id}:${index}`}><span>{message.role==='user'?'You':'X.A.A.'}</span><pre>{message.content}</pre></li>)}</ol>}</section>}<p className="objective-intro">{chatSession?'Your next message runs through the same task coordinator, with this saved history as bounded context.':'Describe the result you want. X.A.A. will make a plan and show you what it does.'}</p><div className="run-setup-strip" role="group" aria-label="Run setup">

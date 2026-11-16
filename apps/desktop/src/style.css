@@ -1193,3 +1193,5 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 .active-run-current-activity{margin:10px 0 15px;padding:12px 14px;border:1px solid #2d4638;border-left:3px solid #8cdaad;border-radius:9px;background:linear-gradient(115deg,#142019,#151c1c 72%)}
 .active-run-current-activity .eyebrow{margin:0 0 5px;color:#9cdeb5}
 .active-run-current-activity p:last-child{margin:0;color:#dbe9df;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.workspace-history-row{display:flex;align-items:end;gap:10px;margin-top:10px}.workspace-history-row label{flex:1;min-width:0}.workspace-history-row select{width:100%;margin-top:6px}.workspace-recent-note,.workspace-recent-status{margin:7px 0 0;font-size:12px;line-height:1.5;color:#98a7a7}.workspace-recent-status{color:#a9dbc5}
+@media(max-width:520px){.workspace-history-row{align-items:stretch;flex-direction:column}.workspace-history-row button{align-self:flex-start}}

@@ -162,6 +162,13 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByRole('button', { name: 'Start objective' }).click();
   await navigateMainSection(page,'New objective');
+  const recentWorkspaces=page.getByLabel('Recent project folders');
+  await expect(recentWorkspaces).toHaveValue('C:\\fixture');
+  const savedWorkspaces=await page.evaluate(()=>Object.entries(localStorage).find(([key])=>key.startsWith('xaa.recent-workspaces.v1:'))?.[1]);
+  expect(JSON.parse(savedWorkspaces??'null')).toEqual(['C:\\fixture']);
+  await page.getByRole('button',{name:'Forget this folder'}).click();
+  await expect(page.getByText('Project folder removed from the recent list.',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('Recent project folders')).toHaveCount(0);
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
   await expect(browserReadGrant).not.toBeChecked();
   await expect(browserSubmissionGrant).not.toBeChecked();
