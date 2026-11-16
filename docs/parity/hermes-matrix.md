@@ -265,7 +265,7 @@ Settings exports verified `.xaa-backup` bundles through a native Save dialog and
 
 ## Blocked-run recovery entry point (2026-11-13)
 
-The desktop continues to restore the latest recoverable run into memory without resuming it. A blocked run now leaves the owner on the workspace home screen with a concise notice and an explicit “Review saved run” action. Startup browser acceptance verifies the run stays unopened until selection and that its recovery controls are then available; no model inference is used. The updated unsigned 0.1.1 installer builds successfully (local SHA-256 recorded in [`../progress.md`](../progress.md)), but installed-package UI acceptance and migration behavior remain open.
+The desktop continues to restore the latest recoverable run into memory without resuming it. A blocked run leaves the owner on the workspace home screen with a concise notice and an explicit “Review saved run” action. Startup browser acceptance verifies the run stays unopened until selection and its recovery controls become available; no model inference is used. The exact unsigned 0.1.1 package passed hosted install acceptance on [run 43777581681](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43777581681), including native installed recovery, upgrade from the 0.1.0 schema-18 profile, preservation of its data and startup setting, and both uninstall choices. This closes installed-package UI and that baseline migration slice; migration from older or externally relocated profiles remains open.
 
 ## Native desktop skill-dependency readiness (2026-11-13)
 
