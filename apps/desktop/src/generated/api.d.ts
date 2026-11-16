@@ -4186,6 +4186,19 @@ export interface components {
             /** Task Id */
             task_id?: string | null;
         };
+        /** RunWorkspaceChangesPage */
+        RunWorkspaceChangesPage: {
+            /** Items */
+            items: components["schemas"]["RunWorkspaceChange"][];
+            /** Limit */
+            limit: number;
+            /** Next Offset */
+            next_offset?: number | null;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** ScheduleDeliveryDestinationsRequest */
         ScheduleDeliveryDestinationsRequest: {
             /** Telegram Failure User Id */
@@ -8777,7 +8790,10 @@ export interface operations {
     };
     get_run_workspace_changes_runs__run_id__workspace_changes_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path: {
                 run_id: string;
@@ -8792,7 +8808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunWorkspaceChange"][];
+                    "application/json": components["schemas"]["RunWorkspaceChangesPage"];
                 };
             };
             /** @description Validation Error */

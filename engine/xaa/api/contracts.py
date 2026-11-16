@@ -67,6 +67,14 @@ class RunWorkspaceChange(BaseModel):
     sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
+class RunWorkspaceChangesPage(BaseModel):
+    items: list[RunWorkspaceChange]
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=200)
+    next_offset: int | None = Field(default=None, ge=0)
+
+
 class MCPReconciliationItem(BaseModel):
     call_id: str
     tool: str

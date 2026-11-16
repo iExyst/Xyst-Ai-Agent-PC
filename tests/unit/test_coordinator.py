@@ -364,24 +364,38 @@ async def test_fixture_edit_runs_project_validation_before_final_review(
         assert changes.status_code == 200, changes.text
         assert "fixture evidence" not in changes.text
         assert '"content"' not in changes.text
-        assert changes.json() == [
-            {
-                "call_id": "edit-1",
-                "source": "direct",
-                "task_id": None,
-                "operation": "edited",
-                "path": "input.txt",
-                "sha256": hashlib.sha256(b"changed").hexdigest(),
-            },
-            {
-                "call_id": None,
-                "source": "specialist",
-                "task_id": "repair",
-                "operation": "edited",
-                "path": "src/fix.py",
-                "sha256": "b" * 64,
-            },
-        ]
+        assert changes.json() == {
+            "items": [
+                {
+                    "call_id": "edit-1",
+                    "source": "direct",
+                    "task_id": None,
+                    "operation": "edited",
+                    "path": "input.txt",
+                    "sha256": hashlib.sha256(b"changed").hexdigest(),
+                },
+                {
+                    "call_id": None,
+                    "source": "specialist",
+                    "task_id": "repair",
+                    "operation": "edited",
+                    "path": "src/fix.py",
+                    "sha256": "b" * 64,
+                },
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 100,
+            "next_offset": None,
+        }
+        first_page = client.get(f"/runs/{run_id}/workspace-changes?limit=1", headers=headers)
+        second_page = client.get(
+            f"/runs/{run_id}/workspace-changes?limit=1&offset=1", headers=headers
+        )
+        assert first_page.json()["items"][0]["path"] == "input.txt"
+        assert first_page.json()["next_offset"] == 1
+        assert second_page.json()["items"][0]["path"] == "src/fix.py"
+        assert second_page.json()["next_offset"] is None
         checked = client.post(
             f"/runs/{run_id}/validation",
             headers=headers,

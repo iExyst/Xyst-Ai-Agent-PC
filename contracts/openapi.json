@@ -5048,6 +5048,53 @@
         "title": "RunWorkspaceChange",
         "type": "object"
       },
+      "RunWorkspaceChangesPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunWorkspaceChange"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "RunWorkspaceChangesPage",
+        "type": "object"
+      },
       "ScheduleDeliveryDestinationsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -13024,6 +13071,29 @@
               "title": "Run Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -13031,11 +13101,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RunWorkspaceChange"
-                  },
-                  "title": "Response Get Run Workspace Changes Runs  Run Id  Workspace Changes Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/RunWorkspaceChangesPage"
                 }
               }
             },

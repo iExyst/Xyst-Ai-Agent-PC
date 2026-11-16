@@ -2153,10 +2153,14 @@ class RunStore:
     def public_events(self, run_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
         return [public_run_event(event) for event in self.list_events(run_id, after_sequence)]
 
-    def workspace_changes(self, run_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    def workspace_changes(
+        self, run_id: str, *, limit: int = 100, offset: int = 0
+    ) -> dict[str, Any]:
         """Summarize completed direct and accepted specialist writes without file contents."""
         if not 1 <= limit <= 200:
             raise ValueError("Workspace change limit must be between 1 and 200.")
+        if offset < 0:
+            raise ValueError("Workspace change offset must not be negative.")
         with self._connection() as connection:
             rows = connection.execute(
                 "SELECT calls.provider_call_id,calls.tool_name,calls.result,completed.sequence "
@@ -2168,8 +2172,8 @@ class RunStore:
                 "AND calls.tool_name IN ('workspace.create_file','workspace.write_file',"
                 "'workspace.replace_text','workspace.apply_patch','workspace.delete_file') "
                 "AND json_extract(completed.payload,'$.internal')=0 "
-                "ORDER BY completed.sequence LIMIT ?",
-                (run_id, limit),
+                "ORDER BY completed.sequence",
+                (run_id,),
             ).fetchall()
             reviews = connection.execute(
                 "SELECT sequence,payload FROM run_events WHERE run_id=? "
@@ -2267,7 +2271,15 @@ class RunStore:
                     }
                 )
         changes.sort(key=lambda item: item.pop("_sequence", 0))
-        return changes[:limit]
+        total = len(changes)
+        items = changes[offset : offset + limit]
+        return {
+            "items": items,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "next_offset": offset + len(items) if offset + len(items) < total else None,
+        }
 
     def public_tool_result(
         self, run_id: str, call_id: str, *, max_bytes: int = 16_000
