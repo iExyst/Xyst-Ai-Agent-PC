@@ -488,6 +488,15 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(runId)}/artifacts`, signal ? { signal } : {});
   }
 
+  async publicToolResult(runId: string, callId: string, signal?: AbortSignal): Promise<string | null> {
+    const response = await this.#request<unknown>(`/runs/${encodeURIComponent(runId)}/tools/${encodeURIComponent(callId)}/result`, signal ? { signal } : {});
+    if (!response || typeof response !== 'object' || !('result' in response) ||
+        (typeof response.result !== 'string' && response.result !== null)) {
+      throw new Error('The saved tool result response was invalid.');
+    }
+    return response.result;
+  }
+
   async artifactPreview(id: string, signal?: AbortSignal): Promise<string> {
     const response = await this.#fetch(new URL(`/artifacts/${encodeURIComponent(id)}`, this.#base), { headers: { Authorization: `Bearer ${this.#token}` }, redirect: 'error', ...(signal ? { signal } : {}) });
     if (!response.ok || !response.body) throw new EngineRequestError(response.status, 'Cannot read artifact.');

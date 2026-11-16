@@ -134,3 +134,43 @@ test('replays durable command output deltas with UTF-8 boundaries and separate s
   await expect(output.getByRole('heading',{name:'stderr'})).toBeVisible();
   await expect(output.getByText('WARN',{exact:true})).toBeVisible();
 });
+
+test('reveals only bounded public results for completed tools in the activity timeline',async({page})=>{
+  const run={id:'tool-result-run',objective:'Inspect a saved tool result',state:'running',revision:1,acceptance_criteria:[]};
+  const events=[
+    {sequence:1,event_type:'tool.completed',payload:{call_id:'public-call',internal:false},created_at:'2026-11-16T00:00:00Z'},
+    {sequence:2,event_type:'tool.completed',payload:{call_id:'private-call',internal:true},created_at:'2026-11-16T00:00:01Z'},
+  ];
+  const resultRequests:string[]=[];
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const path=new URL(request.url()).pathname;
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path==='/runs/tool-result-run')return route.fulfill({json:run,headers});
+    if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:events.map(event=>`id: ${event.sequence}\nevent: run_event\ndata: ${JSON.stringify(event)}\n\n`).join('')+'event: done\ndata: {}\n\n'});
+    if(path==='/runs/tool-result-run/tools/public-call/result'){
+      resultRequests.push(path);
+      return route.fulfill({json:{result:'Saved fixture result'},headers});
+    }
+    return route.fulfill({json:run,headers});
+  });
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await selectFixtureModel(page);
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective',{exact:true}).fill(run.objective);
+  await page.getByRole('button',{name:'Start objective'}).click();
+  const activity=page.getByRole('list',{name:'Run activity history'});
+  await expect(activity.getByRole('button',{name:'View saved result'})).toHaveCount(1);
+  await expect(activity).not.toContainText('Saved fixture result');
+  await activity.getByRole('button',{name:'View saved result'}).click();
+  await expect(page.getByText('Untrusted saved tool result')).toBeVisible();
+  await expect(page.getByText('Saved fixture result',{exact:true})).toBeVisible();
+  expect(resultRequests).toEqual(['/runs/tool-result-run/tools/public-call/result']);
+});
