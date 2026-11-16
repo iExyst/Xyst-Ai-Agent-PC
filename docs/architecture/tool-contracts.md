@@ -38,6 +38,13 @@ content, form controls and options. The coordinator derives the model-facing
 input schema from browser metadata for coordinator and specialist calls.
 Screenshots remain managed artifacts rather than inline result bytes.
 
+`browser.submit` declares its external POST effect separately from browser
+reading. Its contract records the same-host authorization, one-form/one-submitter
+behavior, URL/form/value bounds, 35-second maximum, worker and serialized-result
+ceilings, cancellation uncertainty, no automatic retry, and durable call audit
+fields. A cancelled or timed-out submission may have reached the site and must
+be reconciled before another attempt.
+
 MCP discovery validates and pins both tool schemas with the discovered tool
 identity. `MCPManager.contract_for_tool` returns a separate app-side execution
 contract for a registered tool whose permission is granted for the run. The

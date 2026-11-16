@@ -101,6 +101,19 @@ def test_browser_submission_contract_is_bounded_and_has_separate_write_permissio
     assert valid.values[0].value == "hello"
     assert BROWSER_SUBMIT_METADATA["name"] == "browser.submit"
     assert BROWSER_SUBMIT_METADATA["permissions"] == ["web.browser.submit"]
+    assert BROWSER_SUBMIT_METADATA["effect"] == "external_http_post"
+    assert BROWSER_SUBMIT_METADATA["timeout_seconds"] == browser_runtime.BROWSER_TIMEOUT_SECONDS
+    assert BROWSER_SUBMIT_METADATA["limits"]["total_value_bytes"] == 32 * 1024
+    assert BROWSER_SUBMIT_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
+    assert {
+        "run_id",
+        "call_id",
+        "tool",
+        "version",
+        "arguments",
+        "result_or_failure",
+    } <= set(BROWSER_SUBMIT_METADATA["audit"])
+    assert "No automatic retry" in BROWSER_SUBMIT_METADATA["retry"]
     with pytest.raises(ValueError, match="unique"):
         BrowserSubmitArguments(
             url="https://docs.example.com/contact",
