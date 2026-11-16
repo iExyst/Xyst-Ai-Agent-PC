@@ -63,6 +63,35 @@ jobs:
           sparse-checkout-cone-mode: true
           persist-credentials: false
       - run: uv sync --locked
+      - name: Determine whether Python verification inputs changed
+        id: python-scope
+        shell: pwsh
+        run: |
+          $payload = Get-Content $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json
+          $changedPaths = @()
+          $knownChangeSet = $false
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $null -ne $payload.commits) {
+            $knownChangeSet = $true
+            $changedPaths = @($payload.commits | ForEach-Object { @($_.added) + @($_.modified) + @($_.removed) } | Where-Object { $_ })
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'pull_request' -and $payload.pull_request.base.sha) {
+            $baseSha = [string]$payload.pull_request.base.sha
+            git fetch --no-tags origin $baseSha
+            if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the pull request base for test-scope detection.' }
+            $changedPaths = @(git diff --name-only $baseSha $env:GITHUB_SHA)
+            if ($LASTEXITCODE -ne 0) { throw 'Could not compare the pull request files for test-scope detection.' }
+            $knownChangeSet = $true
+          }
+          $pythonInputs = @($changedPaths | Where-Object {
+            $_ -match '^(engine/|contracts/|tests/.*\.py$|tests/fixtures/|scripts/.*\.py$)' -or
+            $_ -match '^(pyproject\.toml|uv\.lock|setup\.py|\.python-version)$' -or
+            $_ -match '^\.github/requirements-uv\.txt$' -or
+            $_ -match '^docs/releases/'
+          })
+          $runPythonSuite = -not $knownChangeSet -or $changedPaths.Count -eq 0 -or $pythonInputs.Count -gt 0
+          $value = $runPythonSuite.ToString().ToLowerInvariant()
+          "run=$value" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Python verification: $value"
+          Write-Host "Relevant changed paths: $($pythonInputs -join ', ')"
       - name: Verify managed-browser popup cleanup in Microsoft Edge
         run: uv run python scripts/browser_popup_smoke.py
         timeout-minutes: 2
@@ -150,18 +179,27 @@ jobs:
           path: .uv-cache
           key: ${{ runner.os }}-windows-source-xaa-uv-${{ hashFiles('uv.lock') }}
       - name: Verify pinned Hermes skill imports
+        if: steps.python-scope.outputs.run == 'true'
         run: uv run python scripts/audit_skill_import_compatibility.py --check
       - name: Verify pinned Hermes channel inventory
+        if: steps.python-scope.outputs.run == 'true'
         run: uv run python scripts/audit_channel_inventory.py --check
       - name: Verify pinned Hermes execution inventory
+        if: steps.python-scope.outputs.run == 'true'
         run: uv run python scripts/audit_execution_inventory.py --check
       - name: Verify complete pinned Hermes plugin catalog inventory
+        if: steps.python-scope.outputs.run == 'true'
         run: uv run python scripts/audit_catalog_inventory.py --check
       - run: uv run ruff check engine scripts tests
+        if: steps.python-scope.outputs.run == 'true'
       - run: uv run ruff format --check engine scripts tests
+        if: steps.python-scope.outputs.run == 'true'
       - run: uv run pyright engine scripts
+        if: steps.python-scope.outputs.run == 'true'
       - run: uv run python scripts/export_api_contract.py --check
+        if: steps.python-scope.outputs.run == 'true'
       - name: Verify every API operation has typed payload schemas
+        if: steps.python-scope.outputs.run == 'true'
         run: uv run python scripts/audit_openapi_contract.py
       - uses: actions/setup-node@v7
         with:
@@ -172,6 +210,9 @@ jobs:
       - run: npm run contracts:check
       - run: npm run typecheck
       - run: npm run test:client
+      - name: Verify timezone-aware automation schedules in the desktop UI
+        run: npm run test:browser -- tests/browser/automations.spec.ts
+        timeout-minutes: 3
       - name: Verify browser submission approval stays separate in the desktop UI
         run: npm run test:browser -- tests/browser/objective.spec.ts
         timeout-minutes: 3
@@ -191,6 +232,7 @@ jobs:
         run: npm run test:browser -- tests/browser/shared-chat-session.spec.ts
         timeout-minutes: 3
       - run: uv run pytest -q
+        if: steps.python-scope.outputs.run == 'true'
       - name: Verify specialist recovery after API process death
         run: uv run python scripts/specialist_restart_diagnostic.py
         timeout-minutes: 2
