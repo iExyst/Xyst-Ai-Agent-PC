@@ -10,7 +10,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   let braveSearchSecret = '';
   let memories: {id: string; content: string; provenance: string}[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  const run = { id: 'browser-run', objective: 'Read input.txt', state: 'verifying', acceptance_criteria:[], revision:3, model:'fixture/model', limits:{max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true} };
+  const run = { id: 'browser-run', objective: 'Read input.txt', state: 'verifying', acceptance_criteria:[], revision:3, model:'fixture/model', created_at:new Date(Date.now()-5_000).toISOString(), updated_at:new Date().toISOString(), limits:{max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true} };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
     const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' };
@@ -161,6 +161,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(resources).toContainText('Reserved tokens awaiting measured results: 300 across 1 request.');
   await expect(resources).toContainText('Interrupted requests keep their hold until a measured result is saved.');
   await expect(page.getByRole('heading', { name: 'Active run verifying' })).toBeVisible();
+  await expect(page.getByLabel('Elapsed wall time')).toContainText(/^\d+(?:h \d+m \d+s|m \d+s|s)$/);
   await expect(page.getByText('Run is verifying')).toBeVisible();
   const plan = page.getByRole('region', {name:'Task plan'});
   await expect(page.getByRole('region',{name:'Active run'}).getByRole('list')).toContainText('Exact prompt counter failed; safe SDK error details saved (generic.tokenizeFailed)');
