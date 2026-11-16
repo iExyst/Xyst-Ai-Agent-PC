@@ -1,5 +1,9 @@
 # Progress
 
+## Preserve shared-conversation title edits across refreshes (2026-11-15)
+
+The installed MCP acceptance on commit `3d912558` exposed a real shared-conversation UI race: two concurrent session reads could resolve out of order and replace a title draft while it was being edited, so clicking Save sent no rename request. The panel now keeps dirty edits until a save succeeds and resets draft state when changing or creating sessions. The browser regression delays the duplicate read to force the race window and passes three consecutive runs; desktop typecheck and production build pass. Exact hosted source and installed-package checks for this fix are pending. The earlier timeout is retained with its report and screenshot under [`.acceptance/hosted-installer-43789973628/`](../.acceptance/hosted-installer-43789973628/).
+
 ## Unify and enforce the workspace directory-listing result contract (2026-11-15)
 
 The directory-listing runtime descriptor and coordinator registry now share the same strict output schema, timeout, effect, and limits. Runtime results validate every entry and enforce the 32 KiB cap against the complete serialized object, including path and wrapper fields. A Unicode-heavy regression case verifies the byte ceiling and truncation behavior. The focused listing and workspace-search suites pass (19 tests); Ruff, formatting, strict Pyright, and `git diff --check` pass. Exact-source Windows workflow [43788901553](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43788901553) passed on `dd915975`: 1,395 tests passed, 20 skipped, plus browser, desktop, static-analysis, and process-recovery checks. Installer packaging was skipped for this engine-only change; installed-package acceptance remains open. This closes a workspace-tool contract gap and does not change the broader Phase 7 or final live-model gates.
