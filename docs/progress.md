@@ -2,7 +2,7 @@
 
 ## Mark the missing AtmoRouter source pin explicitly (2026-11-16)
 
-Rechecked the Hermes catalog's AtmoRouter repository and exact commit links; both return 404, and the [Hermes Marketplace entry](https://hermes-agent.nousresearch.com/marketplace/atmorouter) still links to that unavailable source. The current 0.1.1 re-host is not the catalog-pinned 0.1.0 commit, so it is not used as substitute evidence. `audit_catalog_inventory.py` now records this one unavailable source pin separately from individually reviewed and still-pending candidates, and guards the exception against catalog commit drift. The inventory generation/check, Ruff, format and diff checks pass. This clarifies a Phase 9 source blocker; it does not implement AtmoRouter or perform provider/model testing.
+Rechecked the Hermes catalog's AtmoRouter repository and exact commit links; both return 404, and the [Hermes Marketplace entry](https://hermes-agent.nousresearch.com/marketplace/atmorouter) still links to that unavailable source. The current 0.1.1 re-host is not the catalog-pinned 0.1.0 commit, so it is not used as substitute evidence. `audit_catalog_inventory.py` now records this one unavailable source pin separately from individually reviewed and still-pending candidates, and guards the exception against catalog commit drift. The inventory generation/check, Ruff, format and diff checks pass. Exact-source Windows run [43888911264](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43888911264) passed on `309fd095`, including 1,421 Python tests passed and 20 skipped. This clarifies a Phase 9 source blocker; it does not implement AtmoRouter or perform provider/model testing.
 
 ## Summarize specialist plan progress (2026-11-16)
 
