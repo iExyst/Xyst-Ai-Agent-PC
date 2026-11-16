@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 
 from fastapi.testclient import TestClient
@@ -8,6 +10,44 @@ from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.states import RunState
 from xaa.storage.runs import RunStore
 from xaa.storage.skills import SkillDraft, SkillStore, host_platform_name
+
+
+class FixtureValidationTransport:
+    profile_sha256 = "a" * 64
+
+    def require_intent(self, intent):
+        assert intent.profile_sha256 == self.profile_sha256
+
+    async def run(self, intent, snapshot, *, deadline, on_output=None):
+        stdout = b"fixture checks passed"
+        stderr = b""
+        return {
+            "execution_id": intent.execution_id,
+            "snapshot_sha256": snapshot.sha256,
+            "filter_sha256": "f" * 64,
+            "termination_reason": "finished",
+            "exit_code": 0,
+            "supervisor_exit_code": 0,
+            "succeeded": True,
+            "output_complete": True,
+            "cleanup_confirmed": True,
+            "elapsed_seconds": 0.01,
+            "stdout_b64": base64.b64encode(stdout).decode(),
+            "stderr_b64": base64.b64encode(stderr).decode(),
+            "stdout_bytes": len(stdout),
+            "stderr_bytes": len(stderr),
+            "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+            "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+        }
+
+    async def control(self, action, intent, *, deadline):
+        return {
+            "execution_id": intent.execution_id,
+            "cleanup_confirmed": True,
+            "closed": True,
+            "manager_alive": False,
+            "outcome": None,
+        }
 
 
 class ScriptedProvider(LMStudioProvider):
@@ -248,6 +288,85 @@ async def test_workspace_coordinator_reads_then_edits_with_returned_hash(workspa
     )
     assert review["actor"] == "local-user"
     assert review["file_checks_passed"] == 1
+
+
+async def test_fixture_edit_runs_project_validation_before_final_review(
+    workspace_tmp_path, monkeypatch
+):
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    target = project / "input.txt"
+    target.write_text("fixture evidence", encoding="utf-8")
+    store = RunStore(workspace_tmp_path / "state" / "validated-edit.sqlite3")
+    run_id = store.create_run(
+        objective="Diagnose and fix the fixture input",
+        acceptance_criteria=["input.txt contains changed", "The project check succeeds"],
+        workspace=str(project),
+        mode="workspace",
+        model="fixture",
+        file_checks=[{"path": "input.txt", "expected_content": "changed"}],
+        command_grant={
+            "backend": "windows-appcontainer-v1",
+            "distribution": "Windows",
+            "profile_sha256": "a" * 64,
+            "max_seconds": 20,
+        },
+    )["id"]
+    provider = EditingProvider()
+    try:
+        await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+    assert target.read_text(encoding="utf-8") == "changed"
+    assert store.get_run(run_id)["state"] == "verifying"
+
+    transport = FixtureValidationTransport()
+
+    async def discover(_authority, *, deadline):
+        return transport
+
+    monkeypatch.setattr("xaa.runtime.project_validation.discover_command_transport", discover)
+    token = "fixture-review-token-that-is-long-enough"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        checked = client.post(
+            f"/runs/{run_id}/validation",
+            headers=headers,
+            json={
+                "request_id": "d12a331d-3a3f-40e1-b96d-013be46d405a",
+                "expected_revision": store.get_run(run_id)["revision"],
+                "argv": ["fixture-check"],
+                "max_seconds": 10,
+            },
+        )
+        assert checked.status_code == 200, checked.text
+        evidence = checked.json()["evidence"]
+        assert len(evidence) == 1
+        assert evidence[0]["succeeded"] is True
+        assert evidence[0]["matches_current_project"] is True
+        assert evidence[0]["stdout_excerpt"] == "fixture checks passed"
+
+        reviewed = client.post(
+            f"/runs/{run_id}/review",
+            headers=headers,
+            json={
+                "decision": "accept",
+                "expected_revision": store.get_run(run_id)["revision"],
+                "rationale": "The edited file passes independent content and project checks.",
+                "objective_confirmed": True,
+                "confirmed_criteria": [0, 1],
+                "validation_call_ids": [evidence[0]["call_id"]],
+            },
+        )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["state"] == "completed"
+    saved_review = next(
+        event["payload"]
+        for event in store.list_events(run_id)
+        if event["event_type"] == "run.reviewed"
+    )
+    assert saved_review["validation_call_ids"] == [evidence[0]["call_id"]]
+    assert saved_review["validation_snapshot_sha256"] == evidence[0]["snapshot_sha256"]
 
 
 async def test_coordinator_executes_journaled_read_and_stops_for_verification(workspace_tmp_path):
