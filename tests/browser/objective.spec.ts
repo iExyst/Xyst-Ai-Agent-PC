@@ -102,6 +102,14 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByText('Use detailed examples',{exact:true})).toHaveCount(0);
   await navigateMainSection(page,'New objective');
   await page.getByLabel('Workspace path').fill('C:\\fixture');
+  const selectedModelStep=page.getByRole('button',{name:'Model: fixture/model. Open model setup.'});
+  const selectedProjectStep=page.getByRole('button',{name:'Project: C:\\fixture. Focus project path.'});
+  await expect(page.getByRole('group',{name:'Run setup'})).toBeVisible();
+  await expect(selectedModelStep).toBeVisible();
+  await expect(selectedProjectStep).toBeVisible();
+  await expect(page.getByRole('group',{name:'Access: read only'})).toBeVisible();
+  await selectedProjectStep.click();
+  await expect(page.getByLabel('Workspace path')).toBeFocused();
   await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await page.locator('details.file-check-card > summary').click();
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
