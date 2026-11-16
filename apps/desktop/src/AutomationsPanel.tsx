@@ -2,6 +2,14 @@ import {useEffect,useState} from 'react';
 import type {EngineClient,Schedule} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
 
+function availableTimeZones():string[] {
+  try {
+    const values=(Intl as typeof Intl&{supportedValuesOf?:(key:'timeZone')=>string[]}).supportedValuesOf?.('timeZone')??[];
+    return [...new Set(['UTC',...values])].sort((left,right)=>left.localeCompare(right));
+  } catch {return ['UTC'];}
+}
+const TIME_ZONES=availableTimeZones();
+
 function localDateTime(value:Date) {
   const pad=(part:number)=>String(part).padStart(2,'0');
   return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
@@ -62,6 +70,8 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   async function create() {
     setBusy(true);setError('');
     try {
+      try{new Intl.DateTimeFormat(undefined,{timeZone:timezone});}
+      catch{throw new Error('Choose a valid IANA timezone, such as America/New_York.');}
       if(Boolean(quietStart)!==Boolean(quietEnd))throw new Error('Set both quiet-hours times or leave both empty.');
       if(quietStart&&quietStart===quietEnd)throw new Error('Quiet hours must have different start and end times.');
       const quietHours=quietStart&&quietEnd?`${quietStart}-${quietEnd}`:undefined;
@@ -110,7 +120,9 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     <label htmlFor="schedule-start">First occurrence (local time)</label>
     <input id="schedule-start" type="datetime-local" value={startAt} onChange={event=>setStartAt(event.target.value)} disabled={busy}/>
     <label htmlFor="schedule-timezone">Timezone (IANA)</label>
-    <input id="schedule-timezone" value={timezone} onChange={event=>setTimezone(event.target.value)} disabled={busy}/>
+    <input id="schedule-timezone" list="schedule-timezone-options" value={timezone} onChange={event=>setTimezone(event.target.value)} disabled={busy}/>
+    <datalist id="schedule-timezone-options">{[...new Set([timezone,...TIME_ZONES])].map(zone=><option key={zone} value={zone}/>)}</datalist>
+    <p>Choose a named timezone for the run and its daylight-saving rules. Start times are interpreted as wall time in this zone.</p>
     <label htmlFor="schedule-frequency">Repeat</label>
     <select id="schedule-frequency" value={frequency} onChange={event=>setFrequency(event.target.value as 'once'|'daily'|'weekly')} disabled={busy}>
       <option value="once">Once</option><option value="daily">Daily</option><option value="weekly">Weekly</option>

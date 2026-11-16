@@ -2,7 +2,7 @@
 
 ## Make saved automations easier to scan (2026-11-16)
 
-Saved schedules now render as dark cards with a clear enabled state, readable permission mode, and the next run formatted as a local wall time in the schedule’s IANA timezone. Telegram quiet hours and destinations remain separately identified. The Automations browser acceptance verifies the displayed wall time matches the stored local schedule time; `npm run build:desktop` passes. Exact-source Windows verification is pending for this UI-only change; no LLM inference was used.
+Saved schedules now render as dark cards with a clear enabled state, readable permission mode, and the next run formatted as a local wall time in the schedule’s IANA timezone. The form suggests supported IANA timezone names and rejects invalid zones before sending a schedule request. Telegram quiet hours and destinations remain separately identified. The Automations browser acceptance verifies the displayed wall time, invalid-zone rejection, and no schedule submission for invalid input; `npm run build:desktop` passes. Exact-source Windows verification is running for the cards and pending for the timezone follow-up; no LLM inference was used.
 
 ## Present run files as readable artifact cards (2026-11-16)
 

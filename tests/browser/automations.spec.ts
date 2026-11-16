@@ -52,7 +52,13 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await page.getByLabel('Workspace path').fill('C:\\fixture-project');
   await navigateMainSection(page,'Automations');
   const panel=page.getByRole('region',{name:'Automations',exact:true});
+  const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
   await panel.getByLabel('Scheduled objective',{exact:true}).fill('Review repository health');
+  await panel.getByLabel('Timezone (IANA)',{exact:true}).fill('Invalid/Timezone');
+  await panel.getByRole('button',{name:'Create schedule',exact:true}).click();
+  await expect(panel.getByRole('alert')).toContainText('Choose a valid IANA timezone');
+  expect(requests).toHaveLength(0);
+  await panel.getByLabel('Timezone (IANA)',{exact:true}).fill(browserTimezone);
   await panel.getByLabel('Authorize recurring file changes in this workspace',{exact:true}).check();
   await panel.getByLabel('Repeat',{exact:true}).selectOption('weekly');
   await panel.getByLabel('If the engine was closed at the scheduled time',{exact:true}).selectOption('run_once');
@@ -97,7 +103,6 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await expect(scheduleCard).toContainText('Telegram failure user 123456');
   await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
   expect(requests).toHaveLength(2);
-  const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
   expect(requests[0]).toMatchObject({objective:'Review repository health',workspace:'C:\\fixture-project',mode:'authorized_automation',frequency:'weekly',missed_run_policy:'run_once',model:'fixture/model',timezone:browserTimezone,telegram_user_id:'123456',telegram_failure_user_id:'654321',quiet_hours:'22:00-07:00'});
   expect(requests[1]).toEqual({telegram_user_id:'654321',telegram_failure_user_id:'123456'});
   linkedUsers.splice(0,1);
