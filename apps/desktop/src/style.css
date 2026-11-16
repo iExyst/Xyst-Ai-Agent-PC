@@ -1242,3 +1242,18 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 .artifact-preview pre{max-height:400px;overflow:auto;margin:0;padding:12px;border:1px solid #293534;border-radius:8px;background:#0b1011;color:#d3dfdc;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:520px){.artifact-panel{padding:13px}.artifact-grid{grid-template-columns:1fr}.artifact-metadata{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.artifact-card{transition:none}}
+.automation-schedule-list{display:grid;gap:12px;padding:0;margin:18px 0;list-style:none}
+.automation-schedule-card{padding:16px;border:1px solid #293635;border-radius:12px;background:linear-gradient(145deg,#171f20,#121819);box-shadow:0 8px 24px #0002}
+.automation-schedule-card>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.automation-schedule-card>header .eyebrow{margin:0;color:#91cfa6;font-size:10px;font-weight:700;letter-spacing:.1em}
+.automation-schedule-card>header h3{margin:4px 0 0;color:#e3ece7;font-size:15px;overflow-wrap:anywhere}
+.automation-schedule-state{flex:none;padding:5px 9px;border:1px solid #355441;border-radius:999px;background:#19271e;color:#b9e5c5;font-size:10px}
+.automation-schedule-state.is-paused{border-color:#46504e;background:#202625;color:#acb8b5}
+.automation-schedule-mode{margin:13px 0 8px;color:#b2c2bb;font-size:12px}
+.automation-schedule-next{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 13px}
+.automation-schedule-next>span{padding:5px 8px;border:1px solid #293735;border-radius:7px;background:#111718;color:#99aaa4;font-size:10px;line-height:1.4;overflow-wrap:anywhere}
+.automation-schedule-next>span:nth-child(2){border-color:#354d3c;background:#18221b;color:#d0e2d5}
+.automation-schedule-next time{font-variant-numeric:tabular-nums}
+.automation-schedule-card>button{margin:4px 6px 4px 0}
+@media(max-width:520px){.automation-schedule-card{padding:13px}.automation-schedule-card>header{align-items:center}}
+@media(prefers-reduced-motion:reduce){.automation-schedule-card{transition:none}}

@@ -7,6 +7,16 @@ function localDateTime(value:Date) {
   return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
 }
 
+function formatLocalSchedule(value:unknown,timezone:string):string {
+  if(typeof value!=='string'||!value)return 'Not scheduled';
+  const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+  if(!match)return value;
+  const [,year,month,day,hour,minute]=match;
+  const localWallTime=new Date(Date.UTC(Number(year),Number(month)-1,Number(day),Number(hour),Number(minute)));
+  try{return new Intl.DateTimeFormat(undefined,{timeZone:'UTC',weekday:'short',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(localWallTime);}
+  catch{return `${value} (${timezone})`;}
+}
+
 function recipientKey(destination:string|null|undefined) {
   if(!destination)return '';
   const [,accountId,userId]=destination.split(':');
@@ -125,10 +135,10 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
     </select>
     <p>Quiet hours defer authorized Telegram result messages; they do not delay the scheduled run. Set a start and end to cover a local daily window, including overnight windows. Daylight-saving gaps are skipped; repeated wall-clock times run once at the earlier offset. Overlapping runs are skipped. Choose a local model above before scheduling.</p>
     <button type="button" onClick={()=>void create()} disabled={busy||!objective.trim()||!model||!startAt||!timezone.trim()}>Create schedule</button>
-    {items.length>0&&<ul>{items.map(item=><li key={item.id}>
-      <p>{item.objective}</p>
-      <p>Execution mode: {item.mode==='authorized_automation'?'Authorized automation (workspace file changes permitted)':'Observe (read-only)'}</p>
-      <p>{String(item.recurrence.frequency??'schedule')} · Next local time: {String(item.recurrence.next_at??'not scheduled')} ({item.timezone}){item.quiet_hours?` · Telegram quiet hours ${item.quiet_hours}`:''}{item.delivery_destination?` · Telegram result user ${item.delivery_destination.split(':')[2]}`:''}{item.failure_notification_destination?` · Telegram failure user ${item.failure_notification_destination.split(':')[2]}`:''} · {item.enabled?'Enabled':'Disabled'}</p>
+    {items.length>0&&<ul className="automation-schedule-list">{items.map(item=><li key={item.id} className="automation-schedule-card">
+      <header><div><p className="eyebrow">SCHEDULED OBJECTIVE</p><h3>{item.objective}</h3></div><span className={`automation-schedule-state ${item.enabled?'is-enabled':'is-paused'}`}>{item.enabled?'Enabled':'Disabled'}</span></header>
+      <p className="automation-schedule-mode">{item.mode==='authorized_automation'?'Authorized automation · Workspace changes permitted':'Observe · Read only'}</p>
+      <p className="automation-schedule-next"><span>{String(item.recurrence.frequency??'schedule')}</span><span>Next run in {item.timezone}: <time dateTime={String(item.recurrence.next_at??'')}>{formatLocalSchedule(item.recurrence.next_at,item.timezone)}</time></span>{item.quiet_hours&&<span>Telegram quiet hours {item.quiet_hours}</span>}{item.delivery_destination&&<span>Telegram result user {item.delivery_destination.split(':')[2]}</span>}{item.failure_notification_destination&&<span>Telegram failure user {item.failure_notification_destination.split(':')[2]}</span>}</p>
       <button type="button" disabled={busy} onClick={()=>void toggle(item)}>{item.enabled?'Pause schedule':'Resume schedule'}</button>
       {editingRecipients?.scheduleId===item.id?<div className="controls">
         <p>Recipient changes apply to future occurrences. Existing executions keep their saved destination.</p>

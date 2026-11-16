@@ -62,8 +62,15 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByLabel('Telegram failure notification destination (optional)',{exact:true}).selectOption('654321');
   await panel.getByRole('button',{name:'Create schedule',exact:true}).click();
   await expect(panel.getByText('Review repository health',{exact:true})).toBeVisible();
-  await expect(panel.getByText('Execution mode: Authorized automation (workspace file changes permitted)',{exact:true})).toBeVisible();
-  await expect(panel.getByText(/Telegram result user 123456 · Telegram failure user 654321/)).toBeVisible();
+  await expect(panel.getByText('Authorized automation · Workspace changes permitted',{exact:true})).toBeVisible();
+  const scheduleCard=panel.locator('.automation-schedule-card').filter({hasText:'Review repository health'});
+  const scheduledTime=scheduleCard.locator('time');
+  const expectedWallTime=await page.evaluate(value=>new Intl.DateTimeFormat(undefined,{timeZone:'UTC',weekday:'short',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(`${value}:00Z`)),requests[0].start_at);
+  await expect(scheduledTime).toHaveText(expectedWallTime);
+  await expect(scheduledTime).toHaveAttribute('datetime',requests[0].start_at);
+  await expect(scheduleCard.getByText('Next run in',{exact:false})).toBeVisible();
+  await expect(scheduleCard).toContainText('Telegram result user 123456');
+  await expect(scheduleCard).toContainText('Telegram failure user 654321');
   await panel.getByText('Execution history',{exact:true}).click();
   await expect(panel.getByText(/send attempts 2\/3 · retry after 2026-11-05T12:00:10\+00:00/)).toBeVisible();
   await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
@@ -86,7 +93,8 @@ test('create, inspect, pause and resume a durable local schedule',async({page})=
   await panel.getByLabel('Telegram result destination',{exact:true}).selectOption('bot-42:654321');
   await panel.getByLabel('Telegram failure notification destination',{exact:true}).selectOption('bot-42:123456');
   await panel.getByRole('button',{name:'Save recipients',exact:true}).click();
-  await expect(panel.getByText(/Telegram result user 654321 · Telegram failure user 123456/)).toBeVisible();
+  await expect(scheduleCard).toContainText('Telegram result user 654321');
+  await expect(scheduleCard).toContainText('Telegram failure user 123456');
   await expect(panel.getByText(/Telegram destination user 654321/)).toBeVisible();
   expect(requests).toHaveLength(2);
   const browserTimezone=await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
