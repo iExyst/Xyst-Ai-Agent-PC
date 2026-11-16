@@ -1998,6 +1998,40 @@ class RunStore:
             connection.commit()
             return stopped
 
+    def pause_active_runs(self, *, reason: str = "emergency_stop") -> int:
+        """Pause every unfinished run after its in-process workers have stopped."""
+        active_states = (
+            RunState.QUEUED.value,
+            RunState.PLANNING.value,
+            RunState.RUNNING.value,
+            RunState.VERIFYING.value,
+            RunState.WAITING_FOR_APPROVAL.value,
+        )
+        placeholders = ",".join("?" for _ in active_states)
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                f"SELECT id,state FROM runs WHERE state IN ({placeholders})",
+                active_states,
+            ).fetchall()
+            now = utc_now()
+            for row in rows:
+                run_id = str(row["id"])
+                source = str(row["state"])
+                self._stop_specialists(connection, run_id, "parent_paused")
+                connection.execute(
+                    "UPDATE runs SET state=?,updated_at=?,revision=revision+1,lease_owner=NULL,lease_expires_at=NULL WHERE id=? AND state=?",
+                    (RunState.PAUSED.value, now, run_id, source),
+                )
+                self.record_event(
+                    connection,
+                    run_id,
+                    "run.state_changed",
+                    {"from": source, "to": RunState.PAUSED.value, "reason": reason},
+                )
+            connection.commit()
+            return len(rows)
+
     def transition(
         self,
         run_id: str,

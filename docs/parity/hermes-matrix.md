@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Global emergency stop and run recovery (2026-11-16)
+
+The desktop’s global Emergency stop is now distinct from per-run Cancel. It requires explicit confirmation, stops supervised workers and waits for cleanup, persists queued and active runs as paused, then closes the bundled engine and desktop. The API regression covers active and queued work; the browser flow covers confirmation, retaining the app after dismissing the prompt, the authenticated request and desktop exit command. Source API and desktop checks pass. A real installed-package emergency-stop acceptance and broader crash/recovery matrix remain open.
+
 ## Desktop elapsed-time feedback (2026-11-16)
 
 The Active run view now displays elapsed wall time based on persisted run timestamps, updates once per second while nonterminal, and freezes using `updated_at` in terminal states. The objective browser flow verifies the accessible timer and its formatted value; the production desktop build and focused browser flow pass. This verifies the elapsed-time subrequirement only. See [`progress.md`](../progress.md#show-elapsed-time-on-active-runs-2026-11-16); broad screen-reader review and complete desktop parity remain open.

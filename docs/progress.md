@@ -1,5 +1,9 @@
 # Progress
 
+## Add a global emergency stop with explicit run recovery (2026-11-16)
+
+The desktop now offers a distinct global Emergency stop action. After an explicit confirmation that warns about external actions already sent, the authenticated engine endpoint stops every supervised worker, waits for cancellation cleanup, durably pauses queued and active runs, and shuts down the local engine; the desktop then exits. Paused runs require explicit recovery after relaunch. This remains separate from per-run Cancel. The API regression verifies an active worker and a queued run are both paused and their work is stopped before shutdown; the browser flow verifies confirmation, cancellation of the prompt, engine request and desktop exit command. The focused browser flow, API test, OpenAPI export, TypeScript check and production desktop build pass. Signed packaging and installed-app emergency-stop acceptance remain open.
+
 ## Show elapsed time on active runs (2026-11-16)
 
 The Active run view now displays elapsed wall time from the persisted run start timestamp. It refreshes once per second while a run is nonterminal and freezes at the saved update timestamp after completion, failure, or cancellation. Invalid timestamps degrade to “Unavailable”; the live clock is excluded from assistive-technology announcements. The focused objective browser flow verifies the accessible timer and elapsed format, and `npm run build:desktop` plus that Playwright flow pass. This closes the elapsed-time display slice of the desktop requirements; selected-model visibility, current activity, and resource-limit presentation are separate existing surfaces, while broad screen-reader review remains open.

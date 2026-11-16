@@ -1517,6 +1517,20 @@
         "title": "EmailUnknownDelivery",
         "type": "object"
       },
+      "EmergencyStopResult": {
+        "properties": {
+          "status": {
+            "const": "stopping",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "EmergencyStopResult",
+        "type": "object"
+      },
       "EvaluationRecord": {
         "properties": {
           "actor": {
@@ -8929,6 +8943,29 @@
           }
         ],
         "summary": "Append Cli Chat Turn"
+      }
+    },
+    "/emergency-stop": {
+      "post": {
+        "operationId": "emergency_stop_emergency_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyStopResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Emergency Stop"
       }
     },
     "/execution/distributions": {

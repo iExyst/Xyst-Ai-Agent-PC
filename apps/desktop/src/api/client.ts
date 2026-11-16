@@ -564,6 +564,10 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
   }
 
+  emergencyStop():Promise<components['schemas']['EmergencyStopResult']>{
+    return this.#request('/emergency-stop',{method:'POST'});
+  }
+
   async *events(id: string, after = 0, signal?: AbortSignal) {
     if (!Number.isSafeInteger(after) || after < 0) throw new Error('Event cursor must be a nonnegative integer.');
     const url = new URL(`/runs/${encodeURIComponent(id)}/events/stream`, this.#base);

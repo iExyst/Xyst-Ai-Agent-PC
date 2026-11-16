@@ -14,6 +14,7 @@ import { SavedRunsPanel } from './SavedRunsPanel.tsx';
 import { AutomationsPanel } from './AutomationsPanel.tsx';
 import { ChannelsPanel } from './ChannelsPanel.tsx';
 import { ActiveRunPanel } from './ActiveRunPanel.tsx';
+import { InlineConfirmation } from './InlineConfirmation.tsx';
 import { ExecutionSetup } from './ExecutionSetup.tsx';
 import { ProviderSetup } from './ProviderSetup.tsx';
 import { SearchProviderPanel } from './SearchProviderPanel.tsx';
@@ -147,6 +148,9 @@ function App() {
   const [startOnLogin,setStartOnLogin]=useState(false);
   const [startOnLoginStatus,setStartOnLoginStatus]=useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmEmergencyStop,setConfirmEmergencyStop]=useState(false);
+  const [emergencyStopBusy,setEmergencyStopBusy]=useState(false);
+  const [emergencyStopError,setEmergencyStopError]=useState('');
   const stream = useRef<AbortController | null>(null);
   const runSelectionRevision=useRef(0);
   useEffect(() => () => stream.current?.abort(), []);
@@ -410,6 +414,14 @@ function App() {
     if (!client || !run) return;
     try { setRun(await client.control(run.id, action)); } catch (failure) { setError(String(failure)); }
   }
+  async function emergencyStop(){
+    if(!client||emergencyStopBusy)return;
+    setEmergencyStopBusy(true);setEmergencyStopError('');
+    try{await client.emergencyStop();}catch(failure){setEmergencyStopError(`The engine did not confirm the emergency stop. Closing X.A.A. will still stop its managed engine: ${String(failure)}`);}
+    stream.current?.abort();
+    try{await invoke('quit_application');}
+    catch(failure){setEmergencyStopError(`The emergency stop was sent, but X.A.A. could not close itself. Close the app to stop its engine: ${String(failure)}`);setEmergencyStopBusy(false);}
+  }
   function navigateTo(target:DesktopPage,anchor:DesktopNavTarget){
     setPage(target);
     setActiveSection(anchor);
@@ -482,8 +494,9 @@ function App() {
       <div className="sidebar-footer"><span className={`connection-dot ${client&&models.length?'online':''}`}/><div><strong>{client?'Engine ready':'Starting engine'}</strong><small>{models.length?`${models.length} model${models.length===1?'':'s'} found`:'Local runtime'}</small></div></div>
     </aside>
     <div className="app-frame">
-      <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1 tabIndex={-1}>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='chats'?'Chats':page==='integrations'?'Tools & integrations':page==='memory'?'Memory':page==='skills'?'Skills':page==='automations'?'Automations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`}><span className={`connection-dot ${client&&model?'online':''}`}/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span>{page!=='home'&&<button type="button" className="topbar-new" onClick={()=>{setPage('home');setActiveSection('new-objective');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button>}</div></header>
+      <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1 tabIndex={-1}>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='chats'?'Chats':page==='integrations'?'Tools & integrations':page==='memory'?'Memory':page==='skills'?'Skills':page==='automations'?'Automations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`}><span className={`connection-dot ${client&&model?'online':''}`}/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span>{client&&<button type="button" className="emergency-stop-trigger" aria-expanded={confirmEmergencyStop} aria-controls="emergency-stop-confirmation" onClick={()=>setConfirmEmergencyStop(true)} disabled={emergencyStopBusy}>Emergency stop</button>}{page!=='home'&&<button type="button" className="topbar-new" onClick={()=>{setPage('home');setActiveSection('new-objective');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button>}</div></header>
       <main id="main-content" className="app-content" tabIndex={-1}>
+        <InlineConfirmation id="emergency-stop-confirmation" open={confirmEmergencyStop} label="Confirm emergency stop"><p>This stops all queued and active runs, saves them as paused for explicit recovery, and closes X.A.A. and its local engine. An action already sent to another service may have taken effect and cannot be recalled.</p>{emergencyStopError&&<p role="alert">{emergencyStopError}</p>}<button type="button" onClick={()=>void emergencyStop()} disabled={emergencyStopBusy}>{emergencyStopBusy?'Stopping all work…':'Stop all work and close X.A.A.'}</button><button type="button" onClick={()=>{setConfirmEmergencyStop(false);setEmergencyStopError('');}} disabled={emergencyStopBusy}>Keep working</button></InlineConfirmation>
         {error&&<div className="app-alert" role="alert"><p>{error}</p></div>}
         {client&&page==='home'&&run?.state==='blocked'&&<section className="recovery-card" aria-labelledby="recovery-title"><div><p className="eyebrow">RECOVERY AVAILABLE</p><h2 id="recovery-title">A saved run needs your review</h2><p>This run is blocked and has not been resumed. Review its latest activity and any pending recovery steps before deciding what to do.</p></div><button type="button" onClick={()=>navigateTo('runs','active-run')}>Review saved run</button></section>}
     {!client ? <section className="engine-connect-card" aria-labelledby="engine-connect-title">

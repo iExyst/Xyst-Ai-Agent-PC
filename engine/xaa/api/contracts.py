@@ -113,6 +113,10 @@ class RunHistory(BaseModel):
     next_cursor: str | None
 
 
+class EmergencyStopResult(BaseModel):
+    status: Literal["stopping"]
+
+
 class CLIChatMessageRecord(BaseModel):
     role: Literal["user", "assistant"]
     content: str

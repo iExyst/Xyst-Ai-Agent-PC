@@ -34,6 +34,7 @@ from xaa.api.contracts import (
     CLIChatSessionSettings,
     CLIChatSessionSummary,
     CLIChatSessionTitle,
+    EmergencyStopResult,
     MCPReconciliationDecision,
     MCPReconciliationItem,
     MemoryRecord,
@@ -1518,6 +1519,14 @@ def create_app(
         if shutdown_callback is None:
             raise HTTPException(status_code=503, detail="Shutdown is not configured.")
         await supervisor.close()
+        shutdown_callback()
+        return {"status": "stopping"}
+
+    @app.post("/emergency-stop", response_model=EmergencyStopResult)
+    async def emergency_stop(_: None = Depends(authenticate)) -> dict[str, Any]:
+        if shutdown_callback is None:
+            raise HTTPException(status_code=503, detail="Shutdown is not configured.")
+        await supervisor.emergency_stop()
         shutdown_callback()
         return {"status": "stopping"}
 

@@ -1182,5 +1182,11 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 .run-setup-step.is-ready .run-setup-index{border-color:#39704f;background:#1c3828;color:#9ce6b8}
 .run-setup-step.is-ready .run-setup-state{border-color:#345a42;color:#9ce6b8}
 .run-setup-access{cursor:default}
+.emergency-stop-trigger{border:1px solid #663b3b!important;border-radius:9px!important;background:linear-gradient(145deg,#321c1d,#251719)!important;color:#ffc0b8!important;box-shadow:inset 0 1px #ffffff08!important}
+.emergency-stop-trigger:hover:not(:disabled){border-color:#a2524c!important;background:linear-gradient(145deg,#492524,#321b1c)!important}
+.emergency-stop-trigger:focus-visible{outline:3px solid #f09c8e!important;outline-offset:3px}
+#emergency-stop-confirmation{border-color:#70413d;border-left-color:#f09c8e;background:linear-gradient(145deg,#2b1c1c,#19191b)}
+#emergency-stop-confirmation button:first-of-type{border-color:#75423d;background:#492624;color:#ffd4ce}
+#emergency-stop-confirmation button:first-of-type:hover:not(:disabled){background:#60302c}
 @media(max-width:760px){.run-setup-strip{grid-template-columns:1fr;gap:7px}.run-setup-step{min-height:58px}}
 @media(prefers-reduced-motion:reduce){.run-setup-step{transition:none}}

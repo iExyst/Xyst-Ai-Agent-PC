@@ -17,6 +17,7 @@ class RunSupervisor:
         self.coordinator = coordinator
         self.tasks: dict[str, asyncio.Task[None]] = {}
         self.recovery_task: asyncio.Task[None] | None = None
+        self.closed = False
 
     def start(self) -> None:
         if self.recovery_task is None:
@@ -42,6 +43,8 @@ class RunSupervisor:
             await asyncio.sleep(RECOVERY_INTERVAL_SECONDS)
 
     def submit(self, run_id: str) -> None:
+        if self.closed:
+            raise RuntimeError("The local engine is stopping.")
         active = self.tasks.get(run_id)
         if active is not None and not active.done():
             return
@@ -50,6 +53,8 @@ class RunSupervisor:
         task.add_done_callback(lambda finished: self._finished(run_id, finished))
 
     def submit_plan(self, run_id: str, token: str) -> bool:
+        if self.closed:
+            return False
         active = self.tasks.get(run_id)
         if active is not None and not active.done():
             return False
@@ -102,7 +107,15 @@ class RunSupervisor:
             task.cancel()
             await finish_cleanup(asyncio.gather(task, return_exceptions=True))
 
+    async def emergency_stop(self) -> None:
+        """Stop every owned worker, then durably pause all queued or active runs."""
+        for run_id in tuple(self.tasks):
+            self.coordinator.store.stop_specialists(run_id, cancel=False)
+        await self.close()
+        self.coordinator.store.pause_active_runs()
+
     async def close(self) -> None:
+        self.closed = True
         tasks = list(self.tasks.values())
         if self.recovery_task is not None:
             tasks.append(self.recovery_task)

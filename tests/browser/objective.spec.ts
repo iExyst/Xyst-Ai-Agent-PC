@@ -5,6 +5,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const errors: string[] = [];
   let planReads = 0;
   let runSubmissions = 0;
+  let emergencyStopRequests = 0;
   let usageUnavailable = true;
   let braveSearchConfigured = false;
   let braveSearchSecret = '';
@@ -17,6 +18,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     expect(request.headers()['authorization']).toBe(`Bearer ${'x'.repeat(32)}`);
     const path = new URL(request.url()).pathname;
+    if(path==='/emergency-stop'&&request.method()==='POST'){emergencyStopRequests++;return route.fulfill({json:{status:'stopping'},headers});}
     if(path==='/providers/brave-search/credential') {
       if(request.method()==='PUT') {braveSearchSecret=request.postDataJSON().token;braveSearchConfigured=true;return route.fulfill({json:{configured:true},headers});}
       if(request.method()==='DELETE') {braveSearchSecret='';braveSearchConfigured=false;return route.fulfill({json:{configured:false},headers});}
@@ -194,5 +196,20 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
   await selectLocalModel(page,'fixture/model');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeEnabled();
+  await page.evaluate(()=>{
+    const calls:string[]=[];
+    (window as unknown as {__emergencyStopCalls:string[]}).__emergencyStopCalls=calls;
+    (window as unknown as {__TAURI_INTERNALS__:{invoke:(command:string)=>Promise<unknown>}}).__TAURI_INTERNALS__={invoke:async(command:string)=>{calls.push(command);return null;}};
+  });
+  await page.getByRole('button',{name:'Emergency stop',exact:true}).click();
+  const emergencyConfirmation=page.getByRole('group',{name:'Confirm emergency stop'});
+  await expect(emergencyConfirmation).toContainText('stops all queued and active runs');
+  await expect(emergencyConfirmation).toContainText('cannot be recalled');
+  await emergencyConfirmation.getByRole('button',{name:'Keep working'}).click();
+  await expect(emergencyConfirmation).toBeHidden();
+  await page.getByRole('button',{name:'Emergency stop',exact:true}).click();
+  await emergencyConfirmation.getByRole('button',{name:'Stop all work and close X.A.A.'}).click();
+  await expect.poll(()=>emergencyStopRequests).toBe(1);
+  await expect.poll(()=>page.evaluate(()=>((window as unknown as {__emergencyStopCalls:string[]}).__emergencyStopCalls))).toEqual(['quit_application']);
   await page.screenshot({ path: 'test-results/objective.png', fullPage: true });
 });

@@ -1439,6 +1439,36 @@ def test_shutdown_pauses_worker_before_signalling_server(workspace_tmp_path):
         assert store.get_run(run_id)["lease_owner"] is None
 
 
+def test_emergency_stop_pauses_owned_and_queued_runs_before_signalling_server(workspace_tmp_path):
+    provider = WaitingProvider()
+    store = RunStore(workspace_tmp_path / "emergency-stop.sqlite3")
+    stopped = threading.Event()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    queued = store.create_run(
+        objective="Queued work",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )
+    with TestClient(
+        create_app(provider, SecretStr(TOKEN), store=store, shutdown_callback=stopped.set)
+    ) as client:
+        assert client.post("/emergency-stop").status_code == 401
+        active_id = client.post(
+            "/runs", headers=headers, json={"objective": "Active work", "model": "fixture"}
+        ).json()["id"]
+        assert provider.started.wait(2)
+        response = client.post("/emergency-stop", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "stopping"}
+        assert stopped.is_set()
+        assert provider.stopped.is_set()
+        assert store.get_run(active_id)["state"] == "paused"
+        assert store.get_run(active_id)["lease_owner"] is None
+        assert store.get_run(queued["id"])["state"] == "paused"
+
+
 def test_public_run_record_does_not_expose_worker_lease(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "private-lease.sqlite3")
     run = store.create_run(
