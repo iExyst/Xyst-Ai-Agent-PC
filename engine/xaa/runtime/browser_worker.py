@@ -570,7 +570,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             "size_bytes": size,
                             "sha256": digest,
                         }
-                    text = (await page.locator("body").inner_text(timeout=5000))[:MAX_PAGE_TEXT]
+                    text = (await page.locator("body").inner_text(timeout=10000))[:MAX_PAGE_TEXT]
                     result: dict[str, Any] = {
                         "url": urlsplit(page.url)._replace(query="", fragment="").geturl(),
                         "title": (await page.title())[:500],

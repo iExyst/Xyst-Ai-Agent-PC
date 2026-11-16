@@ -407,7 +407,7 @@ async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
 
     class FakeLocator:
         async def inner_text(self, *, timeout: int) -> str:
-            assert timeout == 5000
+            assert timeout == 10000
             return "Report page"
 
     class FakeRequest:
