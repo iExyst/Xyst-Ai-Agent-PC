@@ -475,6 +475,17 @@ REVIEWED_SOURCE_CLASSIFICATIONS = {
     ),
 }
 
+UNAVAILABLE_SOURCE_CLASSIFICATIONS = {
+    "atmorouter": {
+        "reference_commit": "fd1002c51cc7069696a5db5b391faed77279f910",
+        "classification": (
+            "model-provider source unavailable at catalog-pinned repository and commit; "
+            "later 0.1.1 replacement is not pin-equivalent; see "
+            "model-provider-source-audit.md#atmorouter-pinned-source-unavailable"
+        ),
+    },
+}
+
 
 def inventory() -> dict[str, Any]:
     check_reference()
@@ -504,6 +515,9 @@ def inventory() -> dict[str, Any]:
         capabilities = manifest.get("capabilities")
         capabilities = cast(dict[str, Any], capabilities) if isinstance(capabilities, dict) else {}
         category = manifest.get("category")
+        unavailable_source = UNAVAILABLE_SOURCE_CLASSIFICATIONS.get(path.stem)
+        if unavailable_source and manifest.get("sha") != unavailable_source["reference_commit"]:
+            raise ValueError(f"Unavailable-source exception no longer matches {relative}.")
         candidates.append(
             {
                 "id": path.stem,
@@ -521,7 +535,9 @@ def inventory() -> dict[str, Any]:
                     if category == "platform"
                     else REVIEWED_SOURCE_CLASSIFICATIONS.get(
                         path.stem,
-                        "non-platform catalog candidate; source classification pending",
+                        unavailable_source["classification"]
+                        if unavailable_source
+                        else "non-platform catalog candidate; source classification pending",
                     )
                 ),
                 "status": "planned",
@@ -531,7 +547,7 @@ def inventory() -> dict[str, Any]:
     categories = Counter(item["category"] for item in candidates)
     return {
         "reference_commit": PIN,
-        "audit_date": "2026-11-15",
+        "audit_date": "2026-11-16",
         "catalog_yaml_count": len(manifests),
         "manifest_count": len(candidates),
         "category_counts": dict(sorted(categories.items())),
@@ -542,7 +558,10 @@ def inventory() -> dict[str, Any]:
             (
                 f"The platform category has a pinned source classification sweep; "
                 f"{sum(item['category'] != 'platform' and item['id'] in REVIEWED_SOURCE_CLASSIFICATIONS for item in candidates)} "
-                "selected non-platform candidates have individual source reviews, while the rest remain pending."
+                f"selected non-platform candidates have individual source reviews; "
+                f"Unavailable non-platform source pins: "
+                f"{sum(item['category'] != 'platform' and item['id'] in UNAVAILABLE_SOURCE_CLASSIFICATIONS for item in candidates)}; "
+                "other unreviewed candidates remain pending."
             ),
             "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
             "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",

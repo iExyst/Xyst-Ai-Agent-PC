@@ -1,6 +1,6 @@
 {
   "reference_commit": "1e208b280deb18f01d015b0acdf3ef3552d08039",
-  "audit_date": "2026-11-15",
+  "audit_date": "2026-11-16",
   "catalog_yaml_count": 976,
   "manifest_count": 975,
   "category_counts": {
@@ -1087,7 +1087,7 @@
       "required_environment_names": [
         "ATMOROUTER_API_KEY"
       ],
-      "discovery_classification": "non-platform catalog candidate; source classification pending",
+      "discovery_classification": "model-provider source unavailable at catalog-pinned repository and commit; later 0.1.1 replacement is not pin-equivalent; see model-provider-source-audit.md#atmorouter-pinned-source-unavailable",
       "status": "planned",
       "phase": 9
     },
@@ -15161,7 +15161,7 @@
   ],
   "limitations": [
     "Catalog category and manifest metadata are discovery declarations, not verified runtime behavior.",
-    "The platform category has a pinned source classification sweep; 91 selected non-platform candidates have individual source reviews, while the rest remain pending.",
+    "The platform category has a pinned source classification sweep; 91 selected non-platform candidates have individual source reviews; Unavailable non-platform source pins: 1; other unreviewed candidates remain pending.",
     "Repository commits, subdirectories, versions and environment names are copied from catalog metadata; each remains subject to source and runtime review.",
     "Catalogs outside plugin-catalog and capabilities not represented by catalog manifests are outside this inventory.",
     "No external plugin was imported, installed or executed; source contact was limited to pinned read-only review."
