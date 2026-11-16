@@ -37,8 +37,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path.endsWith('/plan') && ++planReads === 1) return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if (path.endsWith('/plan')) return route.fulfill({json: {tasks: [
       {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},status:'queued'},
+      {id:'browser-run:inventory',local_id:'inventory',objective:'Inspect another independent input',acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:["Inventory result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'},
       {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
-    ],ready:['inspect'],blocked:[]},headers});
+    ],ready:['inspect','inventory'],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain' },
       { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png' },
@@ -168,14 +169,16 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const plan = page.getByRole('region', {name:'Task plan'});
   await expect(page.getByRole('region',{name:'Active run'}).getByRole('list')).toContainText('Exact prompt counter failed; safe SDK error details saved (generic.tokenizeFailed)');
   await expect(plan.getByRole('heading', {name:'Plan and specialists'})).toBeVisible();
-  await expect(plan.getByRole('region',{name:'Specialist progress'})).toContainText('0 of 2 tasks complete');
-  await expect(plan.getByRole('status')).toContainText('0 awaiting review; 2 waiting; 0 need attention');
+  await expect(plan.getByRole('region',{name:'Specialist progress'})).toContainText('0 of 3 tasks complete');
+  await expect(plan.getByRole('status')).toContainText('0 awaiting review; 3 waiting; 0 need attention');
   await expect(plan.getByRole('status')).toHaveAttribute('aria-atomic','true');
-  await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('2 waiting');
+  await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('3 waiting');
   await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('0 awaiting review');
-  await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','2');
+  await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','3');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('value','0');
   await expect(plan.getByRole('region',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inspect'})).toBeVisible();
+  await expect(plan.getByRole('region',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inventory'})).toBeVisible();
+  await expect(plan.getByRole('region',{name:'Dependency stage 1'})).toContainText('2 independent tasks');
   await expect(plan.getByRole('region',{name:'Dependency stage 2'}).getByRole('article',{name:'Task review'})).toBeVisible();
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
   await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Reported token allowance: 2000 · Output tokens per request: 128');
