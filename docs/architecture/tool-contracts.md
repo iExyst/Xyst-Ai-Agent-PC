@@ -26,6 +26,11 @@ Workspace search validates a strict bounded result schema and trims matches
 until the complete JSON-escaped result, including its wrapper, fits the declared
 32 KiB limit.
 
+Successful workspace create, write, patch, replace, and delete operations also
+validate strict output models before recording results. Their coordinator
+schemas are generated from those same models, including bounded paths, hashes,
+byte counts, and exact create/delete flags.
+
 The filesystem registry covers directory listing, file reading, bounded search,
 file creation, patching, text replacement, and conditional file writing. File
 deletion has a contract for internal recovery, but is not exposed as a model

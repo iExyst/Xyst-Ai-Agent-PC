@@ -40,6 +40,25 @@ class ReadFileOutput(BaseModel):
     sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class WorkspaceWriteOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=2048)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bytes_written: int = Field(ge=0, le=65_536)
+
+
+class WorkspaceCreateOutput(WorkspaceWriteOutput):
+    created: Literal[True]
+
+
+class WorkspaceDeleteOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=2048)
+    deleted: Literal[True]
+    previous_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bytes_deleted: int = Field(ge=0, le=65_536)
+
+
 class WriteFileArguments(ReadFileArguments):
     content: str = Field(max_length=65536)
     expected_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -463,6 +482,7 @@ class WorkspaceExecutor:
             "previous_sha256": parsed.expected_sha256,
             "bytes_deleted": count,
         }
+        result = WorkspaceDeleteOutput.model_validate(result).model_dump(mode="json")
         self.store.record_tool_result(run_id, token, call_id, result, internal=True)
         return result
 
@@ -524,6 +544,7 @@ class WorkspaceExecutor:
             "bytes_written": len(encoded),
             "created": True,
         }
+        result = WorkspaceCreateOutput.model_validate(result).model_dump(mode="json")
         self.store.record_tool_result(run_id, token, call_id, result)
         return result
 
@@ -746,5 +767,6 @@ class WorkspaceExecutor:
             "sha256": hashlib.sha256(encoded).hexdigest(),
             "bytes_written": len(encoded),
         }
+        result = WorkspaceWriteOutput.model_validate(result).model_dump(mode="json")
         self.store.record_tool_result(run_id, token, call_id, result)
         return result

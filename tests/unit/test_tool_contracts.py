@@ -5,7 +5,12 @@ from typing import Any
 
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
-from xaa.runtime.executor import ReadFileOutput
+from xaa.runtime.executor import (
+    ReadFileOutput,
+    WorkspaceCreateOutput,
+    WorkspaceDeleteOutput,
+    WorkspaceWriteOutput,
+)
 from xaa.runtime.git_tools import GIT_TOOL
 from xaa.runtime.specialists import RUN_READY_CONTRACT, RUN_READY_TOOL, RunReadyResult
 from xaa.runtime.task_graph import TaskDefinition
@@ -65,6 +70,18 @@ def test_workspace_read_output_schema_matches_strict_runtime_model() -> None:
         "sha256": "a" * 64,
     }
     assert ReadFileOutput.model_validate(result).model_dump(mode="json") == result
+
+
+def test_workspace_mutation_output_schemas_match_strict_runtime_models() -> None:
+    expected = {
+        "workspace_create_file": WorkspaceCreateOutput,
+        "workspace_apply_patch": WorkspaceWriteOutput,
+        "workspace_replace_text": WorkspaceWriteOutput,
+        "workspace_write_file": WorkspaceWriteOutput,
+        "workspace_delete_file": WorkspaceDeleteOutput,
+    }
+    for name, model in expected.items():
+        assert WORKSPACE_TOOL_CONTRACTS[name]["output_schema"] == model.model_json_schema()
 
 
 def test_coordinator_exposes_workspace_schemas_from_contracts(workspace_tmp_path) -> None:

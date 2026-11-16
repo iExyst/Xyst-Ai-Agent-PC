@@ -18,23 +18,15 @@ from xaa.runtime.executor import (
     ReadFileArguments,
     ReadFileOutput,
     ReplaceTextArguments,
+    WorkspaceCreateOutput,
+    WorkspaceDeleteOutput,
+    WorkspaceWriteOutput,
     WriteFileArguments,
 )
 from xaa.runtime.planning import PLAN_TOOL_NAME, PLAN_TOOL_VERSION, SavePlanArguments
 from xaa.runtime.workspace_search import SEARCH_RESULT_BYTES, SearchArguments, SearchOutput
 from xaa.storage.commands import TOOL as COMMAND_TOOL
 from xaa.storage.commands import CommandOutcome
-
-_WRITE_OUTPUT: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "path": {"type": "string"},
-        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "bytes_written": {"type": "integer", "minimum": 0},
-    },
-    "required": ["path", "sha256", "bytes_written"],
-    "additionalProperties": False,
-}
 
 WORKSPACE_RESULT_BYTES = 1_048_576
 
@@ -120,12 +112,7 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.write",),
         effect="create",
         input_model=CreateFileArguments,
-        output_schema={
-            "type": "object",
-            "properties": {**_WRITE_OUTPUT["properties"], "created": {"const": True}},
-            "required": ["path", "sha256", "bytes_written", "created"],
-            "additionalProperties": False,
-        },
+        output_schema=WorkspaceCreateOutput.model_json_schema(),
         limits={"input_bytes": 65_536, "path_components": 32},
         retry="Never replay; reconcile the exact destination and saved intent first.",
     ),
@@ -135,7 +122,7 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.read", "workspace.write"),
         effect="conditional_write",
         input_model=ApplyPatchArguments,
-        output_schema=_WRITE_OUTPUT,
+        output_schema=WorkspaceWriteOutput.model_json_schema(),
         limits={"input_bytes": 65_536, "hunks": 128, "file_bytes": 65_536},
         retry="Never replay; reconcile the normalized compare-and-write intent first.",
     ),
@@ -145,7 +132,7 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.read", "workspace.write"),
         effect="conditional_write",
         input_model=ReplaceTextArguments,
-        output_schema=_WRITE_OUTPUT,
+        output_schema=WorkspaceWriteOutput.model_json_schema(),
         limits={"input_bytes": 131_072, "file_bytes": 65_536},
         retry="Never replay; reconcile the normalized compare-and-write intent first.",
     ),
@@ -155,7 +142,7 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.read", "workspace.write"),
         effect="conditional_write",
         input_model=WriteFileArguments,
-        output_schema=_WRITE_OUTPUT,
+        output_schema=WorkspaceWriteOutput.model_json_schema(),
         limits={"input_bytes": 131_072, "file_bytes": 65_536},
         retry="Never replay; reconcile the exact destination hash and saved intent first.",
     ),
@@ -165,17 +152,7 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.write",),
         effect="delete",
         input_model=DeleteFileArguments,
-        output_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "deleted": {"const": True},
-                "previous_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-                "bytes_deleted": {"type": "integer", "minimum": 0},
-            },
-            "required": ["path", "deleted", "previous_sha256", "bytes_deleted"],
-            "additionalProperties": False,
-        },
+        output_schema=WorkspaceDeleteOutput.model_json_schema(),
         limits={"input_bytes": 2_048, "file_bytes": 65_536},
         retry="Never replay; reconcile the exact destination state and saved intent first.",
         internal_only=True,
