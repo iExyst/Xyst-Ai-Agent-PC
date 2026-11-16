@@ -76,7 +76,9 @@ try{
   const engineLog=(await readFile(logPath,'utf8')).slice(previousLog.length);
   if(!engineLog.includes('Application shutdown complete.'))throw new Error('The bundled engine did not log graceful shutdown completion.');
   await browser.close();browser=undefined;page=undefined;
-  const recoveryPort=port+1;
+  // The installed-package harness pins WebView2's debug argument to one port;
+  // the first desktop has exited, so the cold recovery launch reuses that port.
+  const recoveryPort=port;
   recoveryProc=spawn(executable,['--background'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...env,PATH:path.join(process.env.SystemRoot,'System32'),LOCALAPPDATA:localAppData,APPDATA:path.join(root,'roaming-app-data'),XAA_TEST_HIDDEN:'0',XAA_TEST_ACCEPTANCE:'1',XAA_TEST_CONFIG_DIR:path.join(root,'config'),XAA_TEST_LOG_DIR:logs,WEBVIEW2_USER_DATA_FOLDER:recoveryWebviewProfile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${recoveryPort}`}});
   recoveryProc.stdout.on('data',chunk=>{stdout=(stdout+chunk.toString()).slice(-32768);});
   recoveryProc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-32768);});
