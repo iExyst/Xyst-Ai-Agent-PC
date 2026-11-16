@@ -283,40 +283,79 @@ class LMStudioProvider:
     async def health(self) -> bool:
         try:
             response = await self._client.get("/v1/models", timeout=3.0)
-            response.raise_for_status()
-            return True
+        except httpx.TimeoutException as exc:
+            raise ProviderError(
+                f"LM Studio at {self.base_url} did not respond within 3 seconds. "
+                "Check that Local Server is running and retry."
+            ) from exc
+        except httpx.ConnectError as exc:
+            raise ProviderError(
+                f"Could not connect to LM Studio at {self.base_url}. Start Local Server "
+                "in LM Studio, confirm its port, then retry."
+            ) from exc
         except httpx.HTTPError as exc:
             raise ProviderError(
-                f"Cannot reach LM Studio at {self.base_url}. Start Local Server in LM Studio, "
-                "confirm its port, then retry."
+                f"The request to LM Studio at {self.base_url} failed. Check the local server "
+                "and retry."
             ) from exc
+        if response.status_code in {404, 405, 501}:
+            raise ProviderError(
+                f"The server at {self.base_url} is reachable, but does not support "
+                "GET /v1/models. Start or update LM Studio Local Server and confirm its "
+                "OpenAI-compatible API is enabled."
+            )
+        if response.status_code in {401, 403}:
+            raise ProviderError(
+                f"LM Studio at {self.base_url} rejected authentication. Update or clear the "
+                "saved LM Studio API token, then retry."
+            )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProviderError(
+                f"LM Studio at {self.base_url} returned HTTP {response.status_code} for "
+                "GET /v1/models. Check the local server status and logs."
+            ) from exc
+        try:
+            self._model_ids(response.json())
+        except ValueError as exc:
+            raise ProviderError(
+                "LM Studio returned invalid JSON for GET /v1/models. Check the server "
+                "version and endpoint compatibility."
+            ) from exc
+        return True
+
+    @staticmethod
+    def _model_ids(payload: object) -> list[str]:
+        if not isinstance(payload, dict):
+            raise ProviderError(
+                "LM Studio returned an invalid model inventory. Check the server version "
+                "and /v1/models response."
+            )
+        entries: object = cast(dict[str, object], payload).get("data")
+        if not isinstance(entries, list):
+            raise ProviderError(
+                "LM Studio model inventory omitted its model list. Check the server "
+                "version and /v1/models response."
+            )
+        model_ids: list[str] = []
+        for entry in cast(list[object], entries):
+            if not isinstance(entry, dict):
+                raise ProviderError("LM Studio returned a malformed model entry in /v1/models.")
+            model_id: object = cast(dict[str, object], entry).get("id")
+            if not isinstance(model_id, str) or not model_id.strip():
+                raise ProviderError(
+                    "LM Studio returned a model without a valid identifier in /v1/models."
+                )
+            model_ids.append(model_id)
+        return model_ids
 
     async def models(self) -> list[ModelInfo]:
         try:
             response = await self._client.get("/v1/models")
             response.raise_for_status()
-            payload: object = response.json()
-            if not isinstance(payload, dict):
-                raise ProviderError(
-                    "LM Studio returned an invalid model inventory. Check the server version "
-                    "and /v1/models response."
-                )
-            entries: object = cast(dict[str, object], payload).get("data")
-            if not isinstance(entries, list):
-                raise ProviderError(
-                    "LM Studio model inventory omitted its model list. Check the server "
-                    "version and /v1/models response."
-                )
-            result: list[ModelInfo] = []
-            for entry in cast(list[object], entries):
-                if not isinstance(entry, dict):
-                    raise ProviderError("LM Studio returned a malformed model entry in /v1/models.")
-                model_id: object = cast(dict[str, object], entry).get("id")
-                if not isinstance(model_id, str) or not model_id.strip():
-                    raise ProviderError(
-                        "LM Studio returned a model without a valid identifier in /v1/models."
-                    )
-                result.append(ModelInfo(id=model_id))
+            ids = self._model_ids(response.json())
+            result = [ModelInfo(id=model_id) for model_id in ids]
             try:
                 native = await self._client.get("/api/v1/models")
                 native.raise_for_status()

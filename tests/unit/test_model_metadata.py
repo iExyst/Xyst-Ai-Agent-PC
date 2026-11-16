@@ -101,3 +101,102 @@ async def test_model_discovery_returns_actionable_error_for_malformed_inventory(
             await provider.models()
     finally:
         await provider.close()
+
+
+@pytest.mark.parametrize("status_code", [404, 405, 501])
+@pytest.mark.asyncio
+async def test_health_reports_reachable_server_without_lm_studio_models_endpoint(
+    status_code: int,
+) -> None:
+    provider = LMStudioProvider()
+    await provider.close()
+
+    async def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json={"detail": "unsupported"})
+
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(ProviderError, match="server .* is reachable, but does not support"):
+            await provider.health()
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+@pytest.mark.asyncio
+async def test_health_reports_rejected_lm_studio_authentication(status_code: int) -> None:
+    provider = LMStudioProvider()
+    await provider.close()
+
+    async def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code)
+
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(ProviderError, match="rejected authentication"):
+            await provider.health()
+    finally:
+        await provider.close()
+
+
+@pytest.mark.parametrize("payload", [[], {}, {"data": {}}, {"data": [None]}, {"data": [{}]}])
+@pytest.mark.asyncio
+async def test_health_rejects_invalid_model_inventory(payload: object) -> None:
+    provider = LMStudioProvider()
+    await provider.close()
+
+    async def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(ProviderError, match="LM Studio"):
+            await provider.health()
+    finally:
+        await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_health_distinguishes_unreachable_lm_studio_server() -> None:
+    provider = LMStudioProvider()
+    await provider.close()
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(ProviderError, match="Could not connect to LM Studio"):
+            await provider.health()
+    finally:
+        await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_health_accepts_compatible_inventory_even_when_no_models_are_visible() -> None:
+    provider = LMStudioProvider()
+    await provider.close()
+
+    async def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": []})
+
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        assert await provider.health() is True
+    finally:
+        await provider.close()
