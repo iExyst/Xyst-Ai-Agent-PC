@@ -7443,6 +7443,27 @@
         "title": "WebSearchCredentialRequest",
         "type": "object"
       },
+      "WebSearchDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "result_count": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Result Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reachable",
+          "result_count"
+        ],
+        "title": "WebSearchDiagnostic",
+        "type": "object"
+      },
       "WebhookChannelStatus": {
         "properties": {
           "configured": {
@@ -10859,6 +10880,29 @@
           }
         ],
         "summary": "Set Brave Search Credential"
+      }
+    },
+    "/providers/brave-search/diagnostics": {
+      "post": {
+        "operationId": "diagnose_brave_search_providers_brave_search_diagnostics_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSearchDiagnostic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Diagnose Brave Search"
       }
     },
     "/providers/diagnostics": {
