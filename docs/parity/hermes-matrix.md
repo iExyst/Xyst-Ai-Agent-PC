@@ -2,7 +2,7 @@
 
 ## Global emergency stop and run recovery (2026-11-16)
 
-The desktop’s global Emergency stop is now distinct from per-run Cancel. It requires explicit confirmation, stops supervised workers and waits for cleanup, persists queued and active runs as paused, then closes the bundled engine and desktop. API and browser regressions cover active/queued work and the UI request. A Windows native development build passed the WebView acceptance: HTTP 200, durable queued-to-paused transition with no worker lease and `emergency_stop` reason, clean engine/desktop exit, and no model inference. The acceptance is wired into installer CI; exact hosted installer verification and the broader crash/recovery matrix remain open.
+The desktop’s global Emergency stop is distinct from per-run Cancel. It requires explicit confirmation, stops supervised workers and waits for cleanup, persists queued and active runs as paused, then closes the bundled engine and desktop. On restart, a paused run has a visible recovery card and explicit Review/Resume controls; it is not replayed automatically. API and browser regressions cover active/queued work, recovery visibility and no automatic resume. A rebuilt Windows native development package passed two full desktop lifecycles: HTTP 200, durable queued-to-paused transition with no worker lease and `emergency_stop` reason, clean engine/desktop shutdowns, manual recovery available after restart, and no model inference or resume request. Installer CI is being run on this exact revision; the broader crash/recovery matrix remains open.
 
 ## Desktop elapsed-time feedback (2026-11-16)
 

@@ -48,6 +48,47 @@ test('reopens the latest unfinished run on connection for owner recovery without
   expect(calls.some(call=>call.path==='/v1/chat/completions')).toBe(false);
 });
 
+test('surfaces an emergency-stopped paused run for review without automatically resuming it',async({page})=>{
+  const stamp='2026-11-16T12:00:00Z';
+  const paused={id:'paused-after-emergency-stop',objective:'Recover the queued objective after Emergency stop',state:'paused',revision:2,acceptance_criteria:[],created_at:stamp,updated_at:stamp,model:null,workspace:null,mode:'observe',limits:{max_iterations:4,max_seconds:300,max_total_tokens:null,max_output_tokens:null,pre_inference_token_reservations:false},file_checks:[]};
+  const calls:{method:string;path:string}[]=[];
+  page.on('request',request=>{const url=new URL(request.url());if(url.hostname==='127.0.0.1')calls.push({method:request.method(),path:url.pathname});});
+  await page.addInitScript(()=>{
+    (window as unknown as {__TAURI_INTERNALS__:{invoke:(command:string)=>Promise<unknown>}}).__TAURI_INTERNALS__={invoke:async(command:string)=>{
+      if(command==='engine_connection')return{base_url:'http://127.0.0.1:8765',token:'x'.repeat(32)};
+      if(command==='get_close_behavior')return'keep_running';
+      if(command==='get_start_on_login')return false;
+      throw new Error(`Unexpected Tauri command: ${command}`);
+    }};
+  });
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const url=new URL(request.url());
+    const path=url.pathname;
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:paused,headers});
+    if(path==='/runs')return route.fulfill({json:{items:[paused],next_cursor:null},headers});
+    if(path==='/runs/paused-after-emergency-stop')return route.fulfill({json:paused,headers});
+    if(path==='/models')return route.fulfill({json:[],headers});
+    if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
+    if(path==='/runs/paused-after-emergency-stop/plan')return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path==='/runs/paused-after-emergency-stop/events/stream')return route.fulfill({headers,contentType:'text/event-stream',body:'event: done\ndata: {}\n\n'});
+    if(path==='/runs/paused-after-emergency-stop/usage')return route.fulfill({json:{total_tokens:0,prompt_tokens:0,completion_tokens:0,unmeasured_calls:0,outstanding_reserved_tokens:0,outstanding_reservations:0},headers});
+    if(request.method()==='GET')return route.fulfill({json:[],headers});
+    throw new Error(`Unexpected API request: ${request.method()} ${path}`);
+  });
+  await page.goto('/');
+  await expect.poll(()=>calls.some(call=>call.method==='GET'&&call.path==='/runs/latest-unfinished')).toBe(true);
+  await expect(page.getByRole('heading',{name:'A saved run is paused'})).toBeVisible();
+  await expect(page.getByText('This run was saved without resuming.',{exact:false})).toBeVisible();
+  await page.getByRole('button',{name:'Review saved run'}).click();
+  await expect(page.getByRole('heading',{name:/Active run Paused/i})).toBeVisible();
+  await expect(page.getByRole('button',{name:'resume',exact:true})).toBeEnabled();
+  expect(calls.some(call=>call.method==='POST'&&call.path.endsWith('/resume'))).toBe(false);
+  expect(calls.some(call=>call.path==='/v1/chat/completions')).toBe(false);
+});
+
 test('keeps retrying while the packaged engine finishes starting',async({page})=>{
   let historyAttempts=0;
   const calls:string[]=[];

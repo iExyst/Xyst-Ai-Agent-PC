@@ -224,8 +224,8 @@ try {
         $xaaEmergencyStopExitCode = $LASTEXITCODE
         if ($xaaEmergencyStopExitCode -ne 0) { throw 'Installed application emergency-stop acceptance failed.' }
         $xaaEmergencyStopAcceptance = ($xaaEmergencyStopOutput | Out-String | ConvertFrom-Json)
-        if (-not $xaaEmergencyStopAcceptance.passed -or $xaaEmergencyStopAcceptance.emergency_stop_response.body.status -ne 'stopping' -or $xaaEmergencyStopAcceptance.persisted_run.state -ne 'paused' -or $xaaEmergencyStopAcceptance.persisted_run.last_state_event.reason -ne 'emergency_stop' -or -not $xaaEmergencyStopAcceptance.engine_stopped -or -not $xaaEmergencyStopAcceptance.graceful_shutdown -or $xaaEmergencyStopAcceptance.model_inference_requested) {
-            throw 'Installed emergency-stop evidence did not confirm durable run recovery and clean engine shutdown.'
+        if (-not $xaaEmergencyStopAcceptance.passed -or $xaaEmergencyStopAcceptance.emergency_stop_response.body.status -ne 'stopping' -or $xaaEmergencyStopAcceptance.persisted_run.state -ne 'paused' -or $xaaEmergencyStopAcceptance.persisted_run.last_state_event.reason -ne 'emergency_stop' -or -not $xaaEmergencyStopAcceptance.engine_stopped -or -not $xaaEmergencyStopAcceptance.graceful_shutdown -or -not $xaaEmergencyStopAcceptance.restarted_paused_run_visible -or -not $xaaEmergencyStopAcceptance.manual_resume_available -or $xaaEmergencyStopAcceptance.automatic_resume_requested -or $xaaEmergencyStopAcceptance.model_inference_requested) {
+            throw 'Installed emergency-stop evidence did not confirm durable run recovery, explicit manual resume and clean engine shutdown.'
         }
         $xaaReport.native_emergency_stop = $xaaEmergencyStopAcceptance
         $env:XAA_NATIVE_SCHEDULE_RESTART_ROOT = Join-Path $xaaAcceptanceRoot 'native-schedule-restart'
