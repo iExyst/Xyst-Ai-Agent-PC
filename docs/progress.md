@@ -1,5 +1,9 @@
 # Progress
 
+## Inspect saved public tool results in the run timeline (2026-11-16)
+
+Completed/failed public tool events in the desktop run timeline now reveal their bounded saved result on demand. The API client validates the response shape, internal tool calls get no reveal control, and displayed text is labeled untrusted. The dark result panel wraps long output, scrolls at a bounded height, and remains usable on narrow windows. `npm run build:desktop` and the focused Playwright timeline acceptance pass. Exact-source Windows CI is running for commit `3305df7b`; this entry records the feature before hosted verification completes. Live LLM acceptance remains deferred.
+
 ## Save recent project folders by X.A.A. profile (2026-11-16)
 
 The desktop workspace picker remembers up to eight folders in local WebView storage scoped to the active X.A.A. profile. A folder enters the list only after the owner chooses it or successfully starts a task/chat; it is never selected automatically on startup. Owners can choose a saved path or forget it from the list. The focused Playwright objective flow verifies a successful run adds the selected path, the rendered picker shows it, and Forget removes it. The `npm run build:desktop` TypeScript/Vite build, Pyright, API contract check, and diff check pass. Exact source run [43919661378](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43919661378) and installer run [43919685740](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43919685740) are in progress. Native installed-profile behavior remains subject to those Windows gates.
