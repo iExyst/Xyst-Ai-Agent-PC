@@ -9,7 +9,7 @@ import struct
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,23 +17,47 @@ from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.file_handles import resolve_read_path, stat_read_path
 from xaa.storage.runs import RunStore
 
+LIST_DIRECTORY_ENTRY_LIMIT = 256
+LIST_DIRECTORY_RESULT_BYTES = 32_768
+LIST_DIRECTORY_TIMEOUT_SECONDS = 10
+
 
 class ListDirectoryArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     path: str = Field(default=".", min_length=1, max_length=2048)
 
 
+class DirectoryEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=LIST_DIRECTORY_RESULT_BYTES)
+    kind: Literal["file", "directory", "link"]
+
+
+class ListDirectoryOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1, max_length=2048)
+    entries: list[DirectoryEntry] = Field(max_length=LIST_DIRECTORY_ENTRY_LIMIT)
+    truncated: bool
+    trust: Literal["untrusted_workspace_content"]
+
+
 LIST_DIRECTORY_TOOL = {
-    "name": "workspace_list_directory",
+    "name": "workspace.list_directory",
     "version": "1",
     "permissions": ["workspace.read"],
     "behavior": "read",
+    "effect": "read",
     "input_schema": ListDirectoryArguments.model_json_schema(),
-    "entry_limit": 256,
-    "entry_bytes_limit": 32768,
-    "cancellation": "between coordinator tool calls; bounded local enumeration",
+    "output_schema": ListDirectoryOutput.model_json_schema(),
+    "timeout_seconds": LIST_DIRECTORY_TIMEOUT_SECONDS,
+    "limits": {
+        "path_characters": 2048,
+        "entries": LIST_DIRECTORY_ENTRY_LIMIT,
+        "result_bytes": LIST_DIRECTORY_RESULT_BYTES,
+    },
+    "cancellation": "Bounded local enumeration; cancellation is checked between tool calls.",
     "retry": "up to three transient read attempts, 50/100 ms backoff; fresh verified handle",
-    "audit": ["run_id", "call_id", "path", "entries", "truncated"],
+    "audit": ["run_id", "call_id", "tool", "version", "arguments", "result_or_failure"],
 }
 
 
@@ -75,7 +99,7 @@ def _windows_entries(target: Path, root: Path) -> list[dict[str, str]]:
         query.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
         query.restype = ctypes.c_int
         entries: list[dict[str, str]] = []
-        while len(entries) < 257:
+        while len(entries) < LIST_DIRECTORY_ENTRY_LIMIT + 1:
             buffer = ctypes.create_string_buffer(65536)
             # FileFullDirectoryInfo enumerates the already opened directory.
             if not query(handle, 14, buffer, len(buffer)):
@@ -122,7 +146,7 @@ def _entries(target: Path, root: Path) -> list[dict[str, str]]:
                         else "file"
                     )
                     entries.append({"name": entry.name, "kind": kind})
-                    if len(entries) >= 257:
+                    if len(entries) >= LIST_DIRECTORY_ENTRY_LIMIT + 1:
                         break
         finally:
             os.close(descriptor)
@@ -212,9 +236,9 @@ def list_directory(
         raise RuntimeError("Directory retry loop exhausted without a result.")
     bounded: list[dict[str, str]] = []
     used = 0
-    for entry in entries[:256]:
+    for entry in entries[:LIST_DIRECTORY_ENTRY_LIMIT]:
         size = len(json.dumps(entry, ensure_ascii=False).encode("utf-8"))
-        if used + size > 32768:
+        if used + size > LIST_DIRECTORY_RESULT_BYTES:
             break
         bounded.append(entry)
         used += size
@@ -224,5 +248,13 @@ def list_directory(
         "truncated": len(bounded) < len(entries),
         "trust": "untrusted_workspace_content",
     }
+    while (
+        len(json.dumps(result, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+        > LIST_DIRECTORY_RESULT_BYTES
+        and result["entries"]
+    ):
+        result["entries"].pop()
+        result["truncated"] = True
+    result = ListDirectoryOutput.model_validate(result).model_dump(mode="json")
     store.record_tool_result(run_id, token, call_id, result, internal=internal)
     return result

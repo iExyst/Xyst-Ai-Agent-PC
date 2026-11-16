@@ -10,6 +10,11 @@ coordinator builds model-facing schemas and chooses the filesystem worker
 operation and timeout from these contracts; Git inspection uses its declared
 timeout for the owned process.
 
+Directory listing shares one strict output model between its runtime descriptor
+and coordinator registry. It validates every returned entry and enforces its
+32 KiB ceiling against the complete serialized result, including path and
+wrapper fields, before journaling.
+
 The filesystem registry covers directory listing, file reading, bounded search,
 file creation, patching, text replacement, and conditional file writing. File
 deletion has a contract for internal recovery, but is not exposed as a model

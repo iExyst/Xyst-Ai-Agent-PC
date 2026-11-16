@@ -5,7 +5,12 @@ import subprocess
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
-from xaa.runtime.directory_listing import list_directory
+from xaa.runtime.directory_listing import (
+    LIST_DIRECTORY_RESULT_BYTES,
+    LIST_DIRECTORY_TOOL,
+    list_directory,
+)
+from xaa.runtime.tool_contracts import WORKSPACE_TOOL_CONTRACTS
 from xaa.storage.runs import RunStore
 
 
@@ -19,6 +24,18 @@ def make_run(root):
         model="fixture",
     )["id"]
     return store, run_id
+
+
+def test_directory_listing_runtime_and_coordinator_contracts_share_output_schema():
+    contract = WORKSPACE_TOOL_CONTRACTS["workspace_list_directory"]
+    assert LIST_DIRECTORY_TOOL["name"] == contract["name"]
+    assert LIST_DIRECTORY_TOOL["version"] == contract["version"]
+    assert LIST_DIRECTORY_TOOL["input_schema"] == contract["input_schema"]
+    assert LIST_DIRECTORY_TOOL["output_schema"] == contract["output_schema"]
+    assert LIST_DIRECTORY_TOOL["timeout_seconds"] == contract["timeout_seconds"]
+    assert LIST_DIRECTORY_TOOL["effect"] == contract["effect"]
+    assert LIST_DIRECTORY_TOOL["limits"]["entries"] == contract["limits"]["entries"]
+    assert LIST_DIRECTORY_TOOL["limits"]["result_bytes"] == contract["limits"]["result_bytes"]
 
 
 def test_real_directory_listing_is_bounded_and_rejects_escape(workspace_tmp_path):
@@ -42,6 +59,30 @@ def test_real_directory_listing_is_bounded_and_rejects_escape(workspace_tmp_path
     result = list_directory(store, run_id, token, "bounded", {"path": "large"})
     assert result["truncated"] is True
     assert len(result["entries"]) == 256
+
+
+def test_listing_serialized_result_including_wrapper_stays_within_byte_limit(
+    workspace_tmp_path, monkeypatch
+):
+    from xaa.runtime import directory_listing as listing
+
+    store, run_id = make_run(workspace_tmp_path)
+    token = store.acquire_lease(run_id, "worker")
+    monkeypatch.setattr(
+        listing,
+        "_entries",
+        lambda target, root: [
+            {"name": f"{index}-" + "é" * 200, "kind": "file"} for index in range(256)
+        ],
+    )
+
+    result = list_directory(store, run_id, token, "byte-bounded", {"path": "."})
+
+    result_bytes = len(
+        json.dumps(result, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    )
+    assert result_bytes <= LIST_DIRECTORY_RESULT_BYTES
+    assert result["truncated"] is True
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows junction boundary check")

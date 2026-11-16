@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from xaa.runtime.command_contracts import CommandArguments
-from xaa.runtime.directory_listing import ListDirectoryArguments
+from xaa.runtime.directory_listing import (
+    LIST_DIRECTORY_ENTRY_LIMIT,
+    LIST_DIRECTORY_RESULT_BYTES,
+    ListDirectoryArguments,
+    ListDirectoryOutput,
+)
 from xaa.runtime.executor import (
     ApplyPatchArguments,
     CreateFileArguments,
@@ -70,18 +75,11 @@ WORKSPACE_TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         permission=("workspace.read",),
         effect="read",
         input_model=ListDirectoryArguments,
-        output_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "entries": {"type": "array", "maxItems": 256},
-                "truncated": {"type": "boolean"},
-                "trust": {"const": "untrusted_workspace_content"},
-            },
-            "required": ["path", "entries", "truncated", "trust"],
-            "additionalProperties": False,
+        output_schema=ListDirectoryOutput.model_json_schema(),
+        limits={
+            "entries": LIST_DIRECTORY_ENTRY_LIMIT,
+            "result_bytes": LIST_DIRECTORY_RESULT_BYTES,
         },
-        limits={"entries": 256, "result_bytes": 32_768},
         retry="Up to two retries for recognized transient read errors; no side effects.",
     ),
     "workspace_read_file": _contract(
