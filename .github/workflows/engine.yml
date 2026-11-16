@@ -212,6 +212,9 @@ jobs:
       - run: npm run contracts:check
       - run: npm run typecheck
       - run: npm run test:client
+      - name: Verify changed workspace files in final review UI
+        run: npm run test:browser -- tests/browser/run-review.spec.ts
+        timeout-minutes: 3
       - name: Verify timezone-aware automation schedules in the desktop UI
         run: npm run test:browser -- tests/browser/automations.spec.ts
         timeout-minutes: 3
