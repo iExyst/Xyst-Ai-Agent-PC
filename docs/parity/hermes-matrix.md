@@ -14,6 +14,8 @@ The Active run panel places its most recent saved event above the activity histo
 
 The plan now shows an accessible saved-status summary and groups specialist cards into ordered dependency stages; independent tasks at the same stage appear together. The browser flow verifies a dependent review follows its inspection prerequisite. Full interactive graph navigation and broader dependency visualization remain partial. See [`progress.md`](../progress.md#summarize-specialist-plan-progress-2026-11-16).
 
+The exact Windows source run [43871141546](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43871141546) and installed-package run [43871237071](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43871237071) passed for `20c59ce1`; the installer run validates packaging and native lifecycle, while the source browser flow validates dependency-stage display. Evidence and artifact hashes are recorded in [`progress.md`](../progress.md#summarize-specialist-plan-progress-2026-11-16). This does not prove live model plan generation or full Hermes parity.
+
 ## Desktop elapsed-time feedback (2026-11-16)
 
 The Active run view now displays elapsed wall time based on persisted run timestamps, updates once per second while nonterminal, and freezes using `updated_at` in terminal states. The objective browser flow verifies the accessible timer and its formatted value; the production desktop build and focused browser flow pass. This verifies the elapsed-time subrequirement only. See [`progress.md`](../progress.md#show-elapsed-time-on-active-runs-2026-11-16); broad screen-reader review and complete desktop parity remain open.
