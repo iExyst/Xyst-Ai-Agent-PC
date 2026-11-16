@@ -3,19 +3,19 @@ import { TaskReviewPanel } from './TaskReviewPanel.tsx';
 import { TaskRecoveryPanel } from './TaskRecoveryPanel.tsx';
 import './plan.css';
 
-function dependencyStages(tasks:Plan['tasks']):Array<[number,Plan['tasks']]>{
+function dependencyStages(tasks:Plan['tasks']):{stages:Array<[number,Plan['tasks']]>;valid:boolean}{
   const all=new Map(tasks.map(task=>[task.local_id,task]));
   const remaining=new Map(all);
   const stages:Array<[number,Plan['tasks']]> = [];
   let depth=0;
   while(remaining.size){
     const ready=[...remaining.values()].filter(task=>task.dependencies.every(dependency=>all.has(dependency)&&!remaining.has(dependency)));
-    if(!ready.length)return [[0,tasks]];
+    if(!ready.length)return {stages:[[0,tasks]],valid:false};
     stages.push([depth,ready]);
     for(const task of ready)remaining.delete(task.local_id);
     depth+=1;
   }
-  return stages;
+  return {stages,valid:true};
 }
 
 export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; partials:Record<string,string>; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
@@ -25,7 +25,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
   const waitingTasks=plan.tasks.filter(task=>task.status==='queued').length;
   const blockedTasks=plan.tasks.filter(task=>task.status==='blocked'||task.status==='failed').length;
   const cancelledTasks=plan.tasks.filter(task=>task.status==='cancelled').length;
-  const stages=dependencyStages(plan.tasks);
+  const stageLayout=dependencyStages(plan.tasks);
   return <section aria-label="Task plan"><h2>Plan and specialists</h2>
     {plan.tasks.length === 0 ? <p>No task plan has been saved for this run.</p> : <>
       <section className="plan-progress" aria-label="Specialist progress">
@@ -42,8 +42,8 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan.</p>
       </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
-      <div className="plan-stages">{stages.map(([depth,tasks])=><section className="plan-stage" key={depth} aria-label={`Dependency stage ${depth+1}`}>
-        <div className="plan-stage-heading"><h3>Stage {depth+1}</h3><span>{tasks.length} independent {tasks.length===1?'task':'tasks'}</span></div>
+      <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=><section className="plan-stage" key={depth} aria-label={`Dependency stage ${depth+1}`}>
+        <div className="plan-stage-heading"><h3>Stage {depth+1}</h3><span>{stageLayout.valid?`${tasks.length} independent ${tasks.length===1?'task':'tasks'}`:'Dependency order unavailable; showing saved task order'}</span></div>
         <div className="plan-tasks">{tasks.map(task => {
         const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a dependency' : plan.ready.includes(task.local_id) ? 'Ready to start' : 'Waiting for dependencies' : task.status;
         return <article key={task.id} aria-label={`Task ${task.local_id}`}>
