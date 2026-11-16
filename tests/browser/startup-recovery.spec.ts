@@ -81,6 +81,8 @@ test('surfaces an emergency-stopped paused run for review without automatically 
   await page.goto('/');
   await expect.poll(()=>calls.some(call=>call.method==='GET'&&call.path==='/runs/latest-unfinished')).toBe(true);
   await expect(page.getByRole('heading',{name:'A saved run is paused'})).toBeVisible();
+  await expect(page.getByRole('region',{name:'A saved run is paused'})).toHaveAttribute('aria-live','polite');
+  await expect(page.getByRole('region',{name:'A saved run is paused'})).toHaveAttribute('aria-atomic','true');
   await expect(page.getByText('This run was saved without resuming.',{exact:false})).toBeVisible();
   await page.getByRole('button',{name:'Review saved run'}).click();
   await expect(page.getByRole('heading',{name:/Active run Paused/i})).toBeVisible();
