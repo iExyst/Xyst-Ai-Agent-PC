@@ -52,10 +52,13 @@ try{
   await expect(stageTwo.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   await expect(stageTwo).toContainText('1 waiting');
   await page.screenshot({path:path.join(root,'plan-progress.png'),fullPage:true});
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
-  await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'})).catch(()=>{});
+  await page.evaluate(async()=>{
+    await window.__TAURI_INTERNALS__.invoke('set_close_behavior',{behavior:'exit_on_close'});
+    await window.__TAURI_INTERNALS__.invoke('plugin:window|close',{label:'main'});
+  });
   for(let attempt=0;attempt<60&&proc.exitCode===null;attempt++)await new Promise(resolve=>setTimeout(resolve,250));
   if(proc.exitCode!==0)throw new Error(`Native desktop did not close cleanly (exit ${proc.exitCode})`);
   let engineStopped=false;
