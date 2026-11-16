@@ -1168,7 +1168,13 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 
 .composer-actions{display:flex;align-items:center;gap:10px}
 @media(max-width:640px){.composer-actions{align-items:flex-start;flex-wrap:wrap}.composer-private{white-space:normal}}
-@media(max-width:640px){.side-nav{min-width:0;max-width:calc(100vw - 72px);overflow-x:auto;scrollbar-width:none}.side-nav::-webkit-scrollbar{display:none}.side-nav a{flex:0 0 36px;justify-content:center;padding:0}.side-nav .side-icon{width:17px;height:17px}}
+@media(max-width:640px){
+  .side-nav{min-width:0;max-width:calc(100vw - 72px);overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}
+  .side-nav::-webkit-scrollbar{display:none}
+  .side-nav a{flex:0 0 64px;min-width:64px;height:52px;flex-direction:column;justify-content:center;gap:3px;padding:3px 2px;font-size:9px;line-height:1.1;text-align:center;white-space:normal;text-wrap:balance;scroll-snap-align:start}
+  .side-nav .side-icon{width:17px;height:17px}
+  .side-nav .run-dot{position:absolute;top:5px;right:10px}
+}
 
 .run-setup-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 17px}
 .app-content button.run-setup-step,.run-setup-step{width:100%;min-width:0;min-height:66px;display:grid;grid-template-columns:27px minmax(0,1fr) auto;align-items:center;gap:10px;margin:0!important;padding:10px 12px!important;border:1px solid #2d3c38!important;border-radius:12px!important;background:linear-gradient(145deg,#151f1b,#121a18)!important;color:#e2ece6!important;text-align:left;box-shadow:inset 0 1px #ffffff08!important;transition:border-color .16s ease,background .16s ease,transform .16s ease}
