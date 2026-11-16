@@ -186,6 +186,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(inspect.locator('dd').nth(2).getByRole('link',{name:'review'})).toHaveAttribute('href','#plan-task-review');
   await review.locator('dd').nth(1).getByRole('link',{name:'inspect'}).click();
   await expect(page).toHaveURL(/#plan-task-inspect$/);
+  await expect(inspect).toBeFocused();
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
   await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Reported token allowance: 2000 · Output tokens per request: 128');
   await expect(review).toContainText('Waiting for dependencies');
