@@ -132,7 +132,13 @@ try {
     $xaaUpgradeInstallerLog = Join-Path $xaaAcceptanceRoot 'upgrade-installer.log'
     $xaaSetup = Start-Process -FilePath $xaaInstaller -ArgumentList @('/S', '/UPDATE', "/LOG=$xaaUpgradeInstallerLog") -WindowStyle Hidden -Wait -PassThru
     $xaaReport.upgrade_installer_log = $xaaUpgradeInstallerLog
-    if ($xaaSetup.ExitCode -ne 0) { throw "Installer exit code $($xaaSetup.ExitCode)" }
+    if ($xaaSetup.ExitCode -ne 0) {
+        $xaaReport.upgrade_installer_exit_code = $xaaSetup.ExitCode
+        if (Test-Path -LiteralPath $xaaUpgradeInstallerLog) {
+            $xaaReport.upgrade_installer_log_tail = @(Get-Content -LiteralPath $xaaUpgradeInstallerLog -Tail 100)
+        }
+        throw "Installer exit code $($xaaSetup.ExitCode)"
+    }
     $xaaEngine = Join-Path $xaaInstallDir 'xaa-engine.exe'
     if (-not (Test-Path -LiteralPath $xaaDesktop) -or -not (Test-Path -LiteralPath $xaaEngine)) { throw 'Installed desktop or bundled engine missing.' }
     $xaaDesktopHash = (Get-FileHash -LiteralPath $xaaDesktop -Algorithm SHA256).Hash
