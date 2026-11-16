@@ -395,23 +395,6 @@ async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
     payload_bytes = b"bounded browser download\n"
     context_options: dict[str, Any] = {}
 
-    class FakeDownload:
-        suggested_filename = "report.txt"
-
-        async def save_as(self, path: Path) -> None:
-            path.write_bytes(payload_bytes)
-
-    class FakeExpectation:
-        def __init__(self) -> None:
-            self.value = asyncio.get_running_loop().create_future()
-            self.value.set_result(FakeDownload())
-
-        async def __aenter__(self) -> Self:
-            return self
-
-        async def __aexit__(self, *_: object) -> None:
-            return None
-
     class FakeLink:
         async def count(self) -> int:
             return 1
@@ -427,8 +410,25 @@ async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
             assert timeout == 5000
             return "Report page"
 
+    class FakeRequest:
+        def is_navigation_request(self) -> bool:
+            return True
+
+        frame = None
+
+    class FakeResponse:
+        status = 200
+        url = "https://docs.example.com/files/report.txt"
+        request = FakeRequest()
+
+        async def all_headers(self) -> dict[str, str]:
+            return {"content-type": "text/plain", "content-length": str(len(payload_bytes))}
+
+        async def body(self) -> bytes:
+            return payload_bytes
+
     class FakePage:
-        main_frame = object()
+        main_frame = FakeRequest.frame
         url = "https://docs.example.com/files"
 
         def on(self, *_: object) -> None:
@@ -440,9 +440,14 @@ async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
         def get_by_role(self, *_: object, **__: object) -> FakeLink:
             return FakeLink()
 
-        def expect_download(self, *, timeout: int) -> FakeExpectation:
+        async def wait_for_event(self, event: str, *, predicate: Any = None, timeout: int) -> Any:
             assert timeout == 10000
-            return FakeExpectation()
+            if event == "response":
+                response = FakeResponse()
+                assert predicate(response)
+                return response
+            assert event == "download"
+            await asyncio.Future()
 
         def locator(self, selector: str) -> FakeLocator:
             assert selector == "body"
@@ -498,6 +503,7 @@ async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
     saved_path = download_directory / "download.bin"
     assert context_options["accept_downloads"] is True
     assert saved_path.read_bytes() == payload_bytes
+    assert result["download"]["suggested_filename"] == "report.txt"
     assert result["download"]["size_bytes"] == len(payload_bytes)
     assert result["download"]["sha256"] == hashlib.sha256(payload_bytes).hexdigest()
 

@@ -9,9 +9,10 @@ import ipaddress
 import json
 import socket
 import sys
+from email.message import Message
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from playwright.async_api import Error as PlaywrightError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -494,11 +495,68 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             raise ValueError(
                                 "Download link name must match exactly one visible link."
                             )
-                        async with page.expect_download(timeout=10000) as pending_download:
+                        download_task = asyncio.create_task(
+                            page.wait_for_event("download", timeout=10000)
+                        )
+                        response_task = asyncio.create_task(
+                            page.wait_for_event(
+                                "response",
+                                predicate=lambda response: (
+                                    response.request.is_navigation_request()
+                                    and response.request.frame == page.main_frame
+                                    and not 300 <= response.status < 400
+                                ),
+                                timeout=10000,
+                            )
+                        )
+                        try:
                             await link.click(timeout=8000)
-                        download = await pending_download.value
-                        downloaded = directory / "download.bin"
-                        await download.save_as(downloaded)
+                            done, _ = await asyncio.wait(
+                                (download_task, response_task),
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            downloaded = directory / "download.bin"
+                            if download_task in done:
+                                download = download_task.result()
+                                await download.save_as(downloaded)
+                                suggested_filename = download.suggested_filename[:200]
+                            else:
+                                response = response_task.result()
+                                if not 200 <= response.status < 300:
+                                    raise ValueError(
+                                        "The selected file link returned an unsuccessful HTTP status."
+                                    )
+                                headers = await response.all_headers()
+                                content_length = headers.get("content-length")
+                                if (
+                                    content_length is not None
+                                    and content_length.isdigit()
+                                    and int(content_length) > MAX_DOWNLOAD_BYTES
+                                ):
+                                    raise ValueError("Browser download exceeded the 8 MiB limit.")
+                                payload = await response.body()
+                                if len(payload) > MAX_DOWNLOAD_BYTES:
+                                    raise ValueError("Browser download exceeded the 8 MiB limit.")
+                                downloaded.write_bytes(payload)
+                                disposition = Message()
+                                disposition["content-disposition"] = headers.get(
+                                    "content-disposition", ""
+                                )
+                                suggested_filename = disposition.get_filename()
+                                if not suggested_filename:
+                                    suggested_filename = unquote(
+                                        Path(urlsplit(response.url).path).name
+                                    )
+                                if not suggested_filename:
+                                    suggested_filename = "download"
+                                suggested_filename = suggested_filename[:200]
+                        finally:
+                            for task in (download_task, response_task):
+                                if not task.done():
+                                    task.cancel()
+                            await asyncio.gather(
+                                download_task, response_task, return_exceptions=True
+                            )
                         resolved = downloaded.resolve(strict=True)
                         if resolved.parent != directory or not resolved.is_file():
                             raise PermissionError("Browser download escaped managed staging.")
@@ -508,7 +566,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             raise ValueError("Browser download exceeded the 8 MiB limit.")
                         digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
                         download_info = {
-                            "suggested_filename": download.suggested_filename[:200],
+                            "suggested_filename": suggested_filename,
                             "size_bytes": size,
                             "sha256": digest,
                         }

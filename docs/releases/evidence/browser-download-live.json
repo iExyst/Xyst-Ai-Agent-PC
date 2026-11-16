@@ -1,0 +1,27 @@
+{
+  "checked_at_utc": "2026-11-16T15:59:36.773939+00:00",
+  "browser": "managed Microsoft Edge worker subprocess",
+  "approved_hosts": [
+    "www.rfc-editor.org"
+  ],
+  "page_url": "https://www.rfc-editor.org/rfc/rfc9110",
+  "visible_link_name": "Plain Text",
+  "result": {
+    "status": "ok",
+    "trust": "untrusted_web_content",
+    "suggested_filename": "browser.download:rfc9110.txt",
+    "size_bytes": 502938,
+    "sha256": "ad3b38b7806783d5066714f7ac9aadcba8cec1605a400c7380173737a8adf902",
+    "artifact_integrity_verified": true,
+    "rfc_9110_marker_verified": true,
+    "journal_tool": "browser.download",
+    "journal_state": "completed"
+  },
+  "elapsed_ms": 2946,
+  "model_inference_requested": false,
+  "source_sha256": {
+    "browser.py": "1e18058b30ab3df824c382a4ffa5199c08ec24368249b3a2954d93cbe03b5fbb",
+    "browser_worker.py": "b2f53e5f30d551450e4ef0f93a6e7171a87a36e0185b782a0bdd58ed431137bb",
+    "browser_download_smoke.py": "e365d10bb42a5011e2e57928103ef7f350923f0fbca170698e27c8ba13ef3235"
+  }
+}

@@ -135,6 +135,15 @@ jobs:
           path: docs/releases/evidence/browser-submit-live.json
           if-no-files-found: error
           include-hidden-files: true
+      - name: Verify managed Edge downloads an approved file link
+        run: uv run python scripts/browser_download_smoke.py
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-download-edge-${{ github.run_id }}
+          path: docs/releases/evidence/browser-download-live.json
+          if-no-files-found: error
+          include-hidden-files: true
       - uses: actions/cache/save@v6
         if: success() && steps.uv-cache.outputs.cache-hit != 'true'
         with:
