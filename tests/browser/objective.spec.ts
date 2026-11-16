@@ -200,7 +200,11 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inspect'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inventory'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('2 independent tasks');
+  await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('max','2');
+  await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('value','0');
+  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('2 waiting');
   await expect(plan.getByRole('group',{name:'Dependency stage 2'}).getByRole('article',{name:'Task review'})).toBeVisible();
+  await expect(plan.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   const inspect = plan.getByRole('article',{name:'Task inspect'});
   const review = plan.getByRole('article',{name:'Task review'});
   await expect(review.locator('dd').nth(1).getByRole('link',{name:'inspect'})).toHaveAttribute('href','#plan-task-inspect');

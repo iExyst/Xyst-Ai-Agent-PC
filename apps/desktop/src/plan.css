@@ -8,9 +8,15 @@
 .plan-progress-counts li strong { color: #eef5fb; font-variant-numeric: tabular-nums; }
 .plan-stages { display: grid; gap: 20px; }
 .plan-stage { display: grid; gap: 10px; min-width: 0; padding-left: 14px; border-left: 2px solid #416151; }
-.plan-stage-heading { display: flex; align-items: baseline; gap: 10px; }
+.plan-stage-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .plan-stage-heading h3 { margin: 0; color: #d5e7dd; font-size: .95rem; }
 .plan-stage-heading span { color: #96a7b8; font-size: .82rem; }
+.plan-stage-progress { display: grid; grid-template-columns:minmax(72px,120px) auto; align-items:center; gap:8px; color:#aebbd0; font-size:.76rem; font-variant-numeric:tabular-nums; }
+.plan-stage-progress progress { display:block; width:100%; height:7px; overflow:hidden; border:0; border-radius:99px; background:#263347; accent-color:#79e0c1; }
+.plan-stage-progress progress::-webkit-progress-bar { background:#263347; border-radius:99px; }
+.plan-stage-progress progress::-webkit-progress-value { background:linear-gradient(90deg,#48c6a3,#9af0d5); border-radius:99px; }
+.plan-stage-progress progress::-moz-progress-bar { background:linear-gradient(90deg,#48c6a3,#9af0d5); border-radius:99px; }
+.plan-stage-status { margin:0; color:#aebbd0; font-size:.8rem; font-variant-numeric:tabular-nums; }
 .plan-progress progress { display: block; width: 100%; height: 9px; overflow: hidden; border: 0; border-radius: 99px; background: #263347; accent-color: #79e0c1; }
 .plan-progress progress::-webkit-progress-bar { background: #263347; border-radius: 99px; }
 .plan-progress progress::-webkit-progress-value { background: linear-gradient(90deg, #48c6a3, #9af0d5); border-radius: 99px; }

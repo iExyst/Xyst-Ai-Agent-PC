@@ -42,8 +42,24 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan.</p>
       </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
-      <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=><div className="plan-stage" key={depth} role="group" aria-label={`Dependency stage ${depth+1}`}>
-        <div className="plan-stage-heading"><h3>Stage {depth+1}</h3><span>{stageLayout.valid?`${tasks.length} independent ${tasks.length===1?'task':'tasks'}`:'Dependency order unavailable; showing saved task order'}</span></div>
+      <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=>{
+        const stageCompleted=tasks.filter(task=>task.status==='completed').length;
+        const stageWorking=tasks.filter(task=>task.status==='running').length;
+        const stageReview=tasks.filter(task=>task.status==='verifying').length;
+        const stageWaiting=tasks.filter(task=>task.status==='queued').length;
+        const stageAttention=tasks.filter(task=>task.status==='blocked'||task.status==='failed').length;
+        const stageCancelled=tasks.filter(task=>task.status==='cancelled').length;
+        const stageSummary=[
+          stageCompleted&&`${stageCompleted} complete`,
+          stageWorking&&`${stageWorking} working`,
+          stageReview&&`${stageReview} awaiting review`,
+          stageWaiting&&`${stageWaiting} waiting`,
+          stageAttention&&`${stageAttention} need attention`,
+          stageCancelled&&`${stageCancelled} cancelled`,
+        ].filter(Boolean).join(' · ');
+        return <div className="plan-stage" key={depth} role="group" aria-label={`Dependency stage ${depth+1}`}>
+        <div className="plan-stage-heading"><div><h3>Stage {depth+1}</h3><span>{stageLayout.valid?`${tasks.length} independent ${tasks.length===1?'task':'tasks'}`:'Dependency order unavailable; showing saved task order'}</span></div><div className="plan-stage-progress"><progress aria-label={`Stage ${depth+1} completion`} max={tasks.length} value={stageCompleted}/><span>{stageCompleted} of {tasks.length} complete</span></div></div>
+        <p className="plan-stage-status">{stageSummary}</p>
         <div className="plan-tasks">{tasks.map(task => {
         const taskAnchor = `plan-task-${encodeURIComponent(task.local_id)}`;
         const dependencies = task.dependencies.map(id => ({id, task:plan.tasks.find(candidate=>candidate.local_id===id)}));
@@ -80,7 +96,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
           {task.status==='blocked'&&task.blocked_reason==='worker_lost_reconciliation_required'&&<TaskRecoveryPanel client={client} runId={runId} taskId={task.local_id} onUpdated={onReviewed}/>}
         </article>;
         })}</div>
-      </div>)}</div>
+      </div>})}</div>
     </>}
   </section>;
 }
