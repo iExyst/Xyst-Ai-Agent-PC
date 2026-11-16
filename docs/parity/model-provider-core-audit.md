@@ -18,6 +18,7 @@ The profile is a shared description and hook collection, not proof that every re
 - `ProviderRouter` dispatches the unchanged LM Studio model IDs and the `openai-compatible::` namespace. It currently knows those two adapters directly; it is not a provider plugin registry.
 - The authenticated API and persisted settings likewise expose two fixed provider profiles. The desktop has an explicit setup flow for those profiles. It does not import arbitrary Python providers from a profile or plugin directory.
 - `ModelInfo` currently reports context, size, loaded state, vision, and trained-for-tool-use metadata. Tool use still requires the harmless diagnostic and runtime validation; advertised metadata alone does not grant execution.
+- LM Studio's `/v1/models` inventory is shape-checked before model IDs enter the application. A malformed payload, missing `data` list, malformed entry, or empty/non-string identifier returns an actionable `ProviderError`; deterministic coverage is in `tests/unit/test_model_metadata.py`. Optional native `/api/v1/models` metadata remains best-effort for older servers.
 
 ## Scope decision and gaps
 

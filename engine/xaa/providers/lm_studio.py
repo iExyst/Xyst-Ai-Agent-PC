@@ -295,8 +295,28 @@ class LMStudioProvider:
         try:
             response = await self._client.get("/v1/models")
             response.raise_for_status()
-            entries = response.json().get("data", [])
-            result = [ModelInfo(id=item["id"]) for item in entries if "id" in item]
+            payload: object = response.json()
+            if not isinstance(payload, dict):
+                raise ProviderError(
+                    "LM Studio returned an invalid model inventory. Check the server version "
+                    "and /v1/models response."
+                )
+            entries: object = cast(dict[str, object], payload).get("data")
+            if not isinstance(entries, list):
+                raise ProviderError(
+                    "LM Studio model inventory omitted its model list. Check the server "
+                    "version and /v1/models response."
+                )
+            result: list[ModelInfo] = []
+            for entry in cast(list[object], entries):
+                if not isinstance(entry, dict):
+                    raise ProviderError("LM Studio returned a malformed model entry in /v1/models.")
+                model_id: object = cast(dict[str, object], entry).get("id")
+                if not isinstance(model_id, str) or not model_id.strip():
+                    raise ProviderError(
+                        "LM Studio returned a model without a valid identifier in /v1/models."
+                    )
+                result.append(ModelInfo(id=model_id))
             try:
                 native = await self._client.get("/api/v1/models")
                 native.raise_for_status()

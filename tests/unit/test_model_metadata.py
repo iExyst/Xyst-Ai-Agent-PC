@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import cast
+
 import httpx
 import pytest
-from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.lm_studio import LMStudioProvider, ProviderError
 
 
 @pytest.mark.asyncio
@@ -62,3 +64,40 @@ async def test_model_discovery_marks_native_metadata_unavailable() -> None:
 
     assert models[0].size_bytes is None
     assert models[0].loaded is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    cast(
+        list[object],
+        [
+            [],
+            {},
+            {"data": {}},
+            {"data": [None]},
+            {"data": [{}]},
+            {"data": [{"id": 7}]},
+            {"data": [{"id": "  "}]},
+        ],
+    ),
+)
+@pytest.mark.asyncio
+async def test_model_discovery_returns_actionable_error_for_malformed_inventory(
+    payload: object,
+) -> None:
+    provider = LMStudioProvider()
+    await provider.close()
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/models"
+        return httpx.Response(200, json=payload)
+
+    provider._client = httpx.AsyncClient(
+        base_url=provider.base_url,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(ProviderError, match="LM Studio"):
+            await provider.models()
+    finally:
+        await provider.close()
