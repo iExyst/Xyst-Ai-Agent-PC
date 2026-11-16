@@ -113,7 +113,14 @@ try{
   await expect(recoveryPage.getByRole('heading',{name:/Active run Paused/i})).toBeVisible();
   await expect(recoveryPage.getByRole('button',{name:'resume',exact:true})).toBeEnabled();
   if(recoveryRequests.some(request=>request.endsWith('/resume')))throw new Error('The restarted desktop automatically resumed the emergency-stopped run.');
-  await recoveryPage.evaluate(()=>window.__TAURI_INTERNALS__.invoke('quit_application'));
+  try{
+    await recoveryPage.evaluate(()=>window.__TAURI_INTERNALS__.invoke('quit_application'));
+  }catch(error){
+    // quit_application exits the native process immediately, which can close
+    // the WebView before Playwright receives the invoke result. The process
+    // exit check below remains authoritative for a clean shutdown.
+    if(!String(error).includes('Target page, context or browser has been closed'))throw error;
+  }
   await waitFor(()=>recoveryProc.exitCode!==null,30000,'The recovery desktop did not close cleanly.');
   if(recoveryProc.exitCode!==0)throw new Error(`Recovery desktop closed with exit code ${recoveryProc.exitCode}.`);
   const report={passed:true,desktop_exit_code:proc.exitCode,recovery_desktop_exit_code:recoveryProc.exitCode,emergency_stop_response:stopResponse,queued_run_id:queuedRun.id,persisted_run:verification,engine_stopped:engineStopped,graceful_shutdown:true,restarted_paused_run_visible:true,manual_resume_available:true,automatic_resume_requested:false,model_inference_requested:false};
