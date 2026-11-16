@@ -5,14 +5,24 @@ import './plan.css';
 
 export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; partials:Record<string,string>; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
   const completedTasks=plan.tasks.filter(task=>task.status==='completed').length;
-  const activeTasks=plan.tasks.filter(task=>task.status==='running'||task.status==='verifying').length;
+  const workingTasks=plan.tasks.filter(task=>task.status==='running').length;
+  const reviewTasks=plan.tasks.filter(task=>task.status==='verifying').length;
+  const waitingTasks=plan.tasks.filter(task=>task.status==='queued').length;
   const blockedTasks=plan.tasks.filter(task=>task.status==='blocked'||task.status==='failed').length;
+  const cancelledTasks=plan.tasks.filter(task=>task.status==='cancelled').length;
   return <section aria-label="Task plan"><h2>Plan and specialists</h2>
     {plan.tasks.length === 0 ? <p>No task plan has been saved for this run.</p> : <>
       <section className="plan-progress" aria-label="Specialist progress">
-        <div className="plan-progress-heading"><strong>{completedTasks} of {plan.tasks.length} tasks complete</strong><span>{activeTasks} active · {blockedTasks} need attention</span></div>
+        <div className="plan-progress-heading"><strong>{completedTasks} of {plan.tasks.length} tasks complete</strong></div>
         <progress aria-label="Completed specialist tasks" max={plan.tasks.length} value={completedTasks}/>
-        <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan. Queued tasks have not started.</p>
+        <ul className="plan-progress-counts" aria-label="Task status counts">
+          <li><strong>{workingTasks}</strong> working</li>
+          <li><strong>{reviewTasks}</strong> awaiting review</li>
+          <li><strong>{waitingTasks}</strong> waiting</li>
+          <li><strong>{blockedTasks}</strong> need attention</li>
+          {cancelledTasks>0&&<li><strong>{cancelledTasks}</strong> cancelled</li>}
+        </ul>
+        <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan.</p>
       </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
       <div className="plan-tasks">{plan.tasks.map(task => {

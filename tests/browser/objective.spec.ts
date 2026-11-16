@@ -169,6 +169,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByRole('region',{name:'Active run'}).getByRole('list')).toContainText('Exact prompt counter failed; safe SDK error details saved (generic.tokenizeFailed)');
   await expect(plan.getByRole('heading', {name:'Plan and specialists'})).toBeVisible();
   await expect(plan.getByRole('region',{name:'Specialist progress'})).toContainText('0 of 2 tasks complete');
+  await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('2 waiting');
+  await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('0 awaiting review');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','2');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('value','0');
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');

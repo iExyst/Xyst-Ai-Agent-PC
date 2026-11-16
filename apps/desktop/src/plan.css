@@ -2,7 +2,10 @@
 .plan-progress { display: grid; gap: 9px; margin: 16px 0 20px; padding: 16px 18px; background: linear-gradient(120deg, #111d2b, #101824); border: 1px solid #34465d; border-radius: 12px; }
 .plan-progress-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .plan-progress-heading strong { color: #eef5fb; font-size: 1rem; }
-.plan-progress-heading span, .plan-progress p { color: #aebbd0; margin: 0; font-size: .9rem; }
+.plan-progress p { color: #aebbd0; margin: 0; font-size: .9rem; }
+.plan-progress-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.plan-progress-counts li { display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 9px; color: #c1cddd; background: #192536; border: 1px solid #2c3d53; border-radius: 999px; font-size: .82rem; }
+.plan-progress-counts li strong { color: #eef5fb; font-variant-numeric: tabular-nums; }
 .plan-progress progress { display: block; width: 100%; height: 9px; overflow: hidden; border: 0; border-radius: 99px; background: #263347; accent-color: #79e0c1; }
 .plan-progress progress::-webkit-progress-bar { background: #263347; border-radius: 99px; }
 .plan-progress progress::-webkit-progress-value { background: linear-gradient(90deg, #48c6a3, #9af0d5); border-radius: 99px; }
