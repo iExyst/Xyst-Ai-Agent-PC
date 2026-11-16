@@ -140,6 +140,7 @@ test('reveals only bounded public results for completed tools in the activity ti
   const events=[
     {sequence:1,event_type:'tool.completed',payload:{call_id:'public-call',internal:false},created_at:'2026-11-16T00:00:00Z'},
     {sequence:2,event_type:'tool.completed',payload:{call_id:'private-call',internal:true},created_at:'2026-11-16T00:00:01Z'},
+    {sequence:3,event_type:'tool.completed',payload:{call_id:'unspecified-visibility'},created_at:'2026-11-16T00:00:02Z'},
   ];
   const resultRequests:string[]=[];
   await page.route('http://127.0.0.1:8765/**',async route=>{
