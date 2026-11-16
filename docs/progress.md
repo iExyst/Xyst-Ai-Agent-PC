@@ -1,5 +1,9 @@
 # Progress
 
+## Tolerate slower browser page text extraction (2026-11-16)
+
+Raised the browser worker's visible page text extraction allowance from 5 to 10 seconds, within its existing 35-second overall worker bound. The focused packaged-download worker regression passes (1 test); Ruff, formatting, and Pyright pass. Exact-source Windows run [43975481935](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43975481935) passed, including the changed-file final-review browser flow and Python suite. Exact-revision installer run [43975495906](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43975495906) passed the frozen browser read/process-tree cancellation check and the full installed package lifecycle, including AppContainer, OAuth, recovery, onboarding, workspace write/edit/delete recovery, upgrade, boot, standard-user install, and uninstall/data-choice checks. The same package run verified that native emergency-stop recovery accepts the WebView closing as the app exits while still requiring clean process exit. No live LLM inference was used. The live LM Studio milestone and broader release/parity gates remain open.
+
 ## Make saved automations easier to scan (2026-11-16)
 
 Saved schedules now render as dark cards with a clear enabled state, readable permission mode, and the next run formatted as a local wall time in the schedule’s IANA timezone. The form suggests supported IANA timezone names and rejects invalid zones before sending a schedule request. Telegram quiet hours and destinations remain separately identified. The Automations browser acceptance verifies the displayed wall time, invalid-zone rejection, and no schedule submission for invalid input; `npm run build:desktop` passes. Exact-source Windows verification is running for the cards and pending for the timezone follow-up; no LLM inference was used.
