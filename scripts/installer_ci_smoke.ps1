@@ -223,7 +223,8 @@ try {
         $xaaEmergencyStopOutput = & node scripts/native_emergency_stop_smoke.mjs $xaaDesktop
         $xaaEmergencyStopExitCode = $LASTEXITCODE
         if ($xaaEmergencyStopExitCode -ne 0) { throw 'Installed application emergency-stop acceptance failed.' }
-        $xaaEmergencyStopAcceptance = ($xaaEmergencyStopOutput | Out-String | ConvertFrom-Json)
+        $xaaEmergencyStopEnvelope = ($xaaEmergencyStopOutput | Out-String | ConvertFrom-Json)
+        $xaaEmergencyStopAcceptance = $xaaEmergencyStopEnvelope.report
         if (-not $xaaEmergencyStopAcceptance.passed -or $xaaEmergencyStopAcceptance.emergency_stop_response.body.status -ne 'stopping' -or $xaaEmergencyStopAcceptance.persisted_run.state -ne 'paused' -or $xaaEmergencyStopAcceptance.persisted_run.last_state_event.reason -ne 'emergency_stop' -or -not $xaaEmergencyStopAcceptance.engine_stopped -or -not $xaaEmergencyStopAcceptance.graceful_shutdown -or -not $xaaEmergencyStopAcceptance.restarted_paused_run_visible -or -not $xaaEmergencyStopAcceptance.manual_resume_available -or $xaaEmergencyStopAcceptance.automatic_resume_requested -or $xaaEmergencyStopAcceptance.model_inference_requested) {
             throw 'Installed emergency-stop evidence did not confirm durable run recovery, explicit manual resume and clean engine shutdown.'
         }
