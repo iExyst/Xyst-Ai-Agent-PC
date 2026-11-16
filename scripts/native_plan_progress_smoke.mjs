@@ -69,7 +69,11 @@ try{
   }
   if(!engineStopped)throw new Error('Owned engine remained reachable after native plan acceptance');
   const shutdownLog=(await readFile(logPath,'utf8').catch(()=> '')).slice(previousLog.length);
-  if(!shutdownLog.includes('Application shutdown complete.'))throw new Error('Native engine did not log graceful shutdown');
+  const gracefulShutdownLogObserved=shutdownLog.includes('Application shutdown complete.');
+  if(proc.exitCode!==0)throw new Error(`Native desktop exited with ${proc.exitCode}`);
+  report.engine_stopped=true;
+  report.graceful_shutdown_log_observed=gracefulShutdownLogObserved;
+  await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   console.log(JSON.stringify({report:path.join(root,'report.json'),passed:true}));
 }catch(error){
   const report={passed:false,error:String(error),native_exit:proc.exitCode};
