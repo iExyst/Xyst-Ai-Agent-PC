@@ -297,6 +297,21 @@ def _private_workspace_size(root: Path, *, max_bytes: int = MAX_PRIVATE_WORKSPAC
     return total
 
 
+def _private_runtime_size(root: Path, *, max_bytes: int) -> int:
+    """Retry short Windows access races while a frozen runtime extracts or exits."""
+    delays = (0.05, 0.1, 0.2, 0.4)
+    for delay in (*delays, None):
+        try:
+            return _private_workspace_size(root, max_bytes=max_bytes)
+        except PermissionError as exc:
+            if sys.platform != "win32" or getattr(exc, "winerror", None) not in {5, 32, 33}:
+                raise
+            if delay is None:
+                raise
+            time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 @dataclass
 class WindowsLocalTransport:
     """A direct executable launched with AppContainer filesystem grants only."""
@@ -607,12 +622,12 @@ class WindowsLocalTransport:
                     staging_bytes = _private_workspace_size(
                         run_root, max_bytes=MAX_PRIVATE_COMMAND_BYTES
                     )
-                    _private_workspace_size(
+                    _private_runtime_size(
                         access.private_temp_path,
                         max_bytes=MAX_PRIVATE_COMMAND_BYTES - staging_bytes,
                     )
                     assert shim_root is not None
-                    _private_workspace_size(shim_root, max_bytes=MAX_SHIM_RUNTIME_BYTES)
+                    _private_runtime_size(shim_root, max_bytes=MAX_SHIM_RUNTIME_BYTES)
                     await asyncio.sleep(0.1)
 
             process_wait = asyncio.create_task(process.wait())

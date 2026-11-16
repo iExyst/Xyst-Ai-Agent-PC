@@ -106,3 +106,49 @@ def test_private_storage_scan_tolerates_transient_frozen_runtime_cleanup(
     monkeypatch.setattr(transport.os, "scandir", scan)
 
     assert transport._private_workspace_size(workspace_tmp_path) == 0  # pyright: ignore[reportPrivateUsage]
+
+
+def test_private_runtime_scan_retries_transient_windows_access_denial(
+    workspace_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_scandir = transport.os.scandir
+    attempts = 0
+
+    def scan(path: str | Path) -> Any:
+        nonlocal attempts
+        if Path(path) == workspace_tmp_path and attempts == 0:
+            attempts += 1
+            error = PermissionError("sharing access race")
+            error.winerror = 5  # type: ignore[attr-defined]
+            raise error
+        return original_scandir(path)
+
+    monkeypatch.setattr(transport.sys, "platform", "win32")
+    monkeypatch.setattr(transport.os, "scandir", scan)
+    monkeypatch.setattr(transport.time, "sleep", lambda _delay: None)
+
+    assert transport._private_runtime_size(workspace_tmp_path, max_bytes=1024) == 0  # pyright: ignore[reportPrivateUsage]
+    assert attempts == 1
+
+
+def test_private_runtime_scan_fails_closed_after_persistent_access_denial(
+    workspace_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def scan(_path: str | Path) -> Any:
+        nonlocal attempts
+        attempts += 1
+        error = PermissionError("persistent access denial")
+        error.winerror = 5  # type: ignore[attr-defined]
+        raise error
+
+    monkeypatch.setattr(transport.sys, "platform", "win32")
+    monkeypatch.setattr(transport.os, "scandir", scan)
+    monkeypatch.setattr(transport.time, "sleep", lambda _delay: None)
+
+    with pytest.raises(PermissionError, match="persistent access denial"):
+        transport._private_runtime_size(workspace_tmp_path, max_bytes=1024)  # pyright: ignore[reportPrivateUsage]
+    assert attempts == 5
