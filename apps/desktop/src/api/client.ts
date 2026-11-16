@@ -140,6 +140,7 @@ export class EngineClient {
   braveSearchStatus(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential'); }
   setBraveSearchKey(token:string): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'PUT',body:JSON.stringify({token})}); }
   clearBraveSearchKey(): Promise<CredentialStatus> { return this.#request('/providers/brave-search/credential',{method:'DELETE'}); }
+  diagnoseBraveSearch(): Promise<{reachable:boolean;result_count:number}> { return this.#request('/providers/brave-search/diagnostics',{method:'POST'}); }
 
   mcpServers(): Promise<MCPServer[]> { return this.#request('/mcp/servers'); }
   async mcpReconciliations(runId:string):Promise<MCPReconciliationItem[]>{const items=await this.#request<unknown>(`/runs/${encodeURIComponent(runId)}/mcp-reconciliations`);if(!Array.isArray(items))throw new Error('MCP reconciliation response was invalid.');return items as MCPReconciliationItem[];}

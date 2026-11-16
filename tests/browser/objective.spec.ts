@@ -24,6 +24,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
       if(request.method()==='DELETE') {braveSearchSecret='';braveSearchConfigured=false;return route.fulfill({json:{configured:false},headers});}
       return route.fulfill({json:{configured:braveSearchConfigured},headers});
     }
+    if(path==='/providers/brave-search/diagnostics'&&request.method()==='POST')return route.fulfill({json:{reachable:true,result_count:1},headers});
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if (path.startsWith('/memory')) {
       if (request.method() === 'DELETE') { memories=[]; return route.fulfill({status:204,headers}); }
@@ -88,6 +89,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByRole('button',{name:'Save search key'}).click();
   await expect(page.getByText('Brave Search is configured',{exact:true})).toBeVisible();
   expect(braveSearchSecret).toBe('brave-key-test-secret');
+  await page.getByRole('button',{name:'Test connection'}).click();
+  await expect(page.getByText('Connection verified. Brave Search returned 1 result for the check.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Clear saved key'}).click();
   await expect(page.getByText('Brave Search is not configured',{exact:true})).toBeVisible();
   expect(braveSearchSecret).toBe('');

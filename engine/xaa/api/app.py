@@ -21,6 +21,7 @@ from typing import Any, Literal, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi import Path as PathParameter
 from fastapi.responses import Response, StreamingResponse
@@ -141,6 +142,7 @@ from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, revi
 from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.runtime.verification import FileContentCheck
 from xaa.runtime.web_fetch import normalize_approved_hosts
+from xaa.runtime.web_search import diagnose_search_provider
 from xaa.runtime.wsl_transport import WSLTransport
 from xaa.scheduler.service import ScheduleService
 from xaa.storage.backup_bundle import (
@@ -345,6 +347,12 @@ class CompatibleProviderSelectionRequest(BaseModel):
 class WebSearchCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: SecretStr = Field(min_length=1, max_length=512)
+
+
+class WebSearchDiagnostic(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reachable: bool
+    result_count: int = Field(ge=0, le=1)
 
 
 class MCPSecretRequest(BaseModel):
@@ -2783,6 +2791,38 @@ def create_app(
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
         return LMStudioCredentialStatus(configured=credential_store.get("brave-search") is not None)
+
+    @app.post("/providers/brave-search/diagnostics", response_model=WebSearchDiagnostic)
+    async def diagnose_brave_search(
+        _: None = Depends(authenticate),
+    ) -> WebSearchDiagnostic:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        api_key = credential_store.get("brave-search")
+        if api_key is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Save a Brave Search API key before testing the connection.",
+            )
+        try:
+            async with asyncio.timeout(12):
+                result_count = await diagnose_search_provider(api_key)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Brave Search rejected the saved key. Update it in Search settings.",
+            ) from exc
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail="Brave Search did not respond within 12 seconds. Check the connection and retry.",
+            ) from exc
+        except (httpx.HTTPError, OSError, ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Brave Search could not complete the connection check. Check the key and network, then retry.",
+            ) from exc
+        return WebSearchDiagnostic(reachable=True, result_count=result_count)
 
     @app.put("/providers/brave-search/credential", response_model=LMStudioCredentialStatus)
     def set_brave_search_credential(

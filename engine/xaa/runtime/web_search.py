@@ -219,6 +219,12 @@ async def _search(query: str, count: int, api_key: str) -> dict[str, Any]:
     }
 
 
+async def diagnose_search_provider(api_key: str) -> int:
+    """Check the configured provider without persisting or returning page content."""
+    result = await _search("X.A.A. Brave Search connection check", 1, api_key)
+    return len(cast(list[dict[str, str]], result["results"]))
+
+
 async def search_web(
     store: RunStore,
     run_id: str,

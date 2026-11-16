@@ -354,3 +354,51 @@ def test_brave_search_credential_uses_named_os_vault_profile(workspace_tmp_path)
         assert client.delete("/providers/brave-search/credential", headers=headers).json() == {
             "configured": False
         }
+
+
+def test_brave_search_diagnostic_checks_provider_without_exposing_credential(
+    workspace_tmp_path, monkeypatch
+):
+    import xaa.api.app as api_app
+
+    class ProfileCredentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    credentials = ProfileCredentials()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    observed_keys: list[str] = []
+
+    async def diagnose(api_key: str) -> int:
+        observed_keys.append(api_key)
+        return 1
+
+    monkeypatch.setattr(api_app, "diagnose_search_provider", diagnose)
+    with TestClient(
+        create_app(
+            AvailableProvider(),
+            SecretStr(TOKEN),
+            store=RunStore(workspace_tmp_path / "brave-search-diagnostic.sqlite3"),
+            credential_store=credentials,
+        )
+    ) as client:
+        response = client.post("/providers/brave-search/diagnostics", headers=headers)
+        assert response.status_code == 409
+        assert "Save a Brave Search API key" in response.json()["detail"]
+
+        secret = "diagnostic-secret-must-not-leak"
+        client.put("/providers/brave-search/credential", headers=headers, json={"token": secret})
+        response = client.post("/providers/brave-search/diagnostics", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"reachable": True, "result_count": 1}
+        assert secret not in response.text
+        assert observed_keys == [secret]
