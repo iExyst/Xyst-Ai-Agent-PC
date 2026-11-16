@@ -1,5 +1,8 @@
 import json
 
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.states import RunState
@@ -198,11 +201,12 @@ async def test_workspace_coordinator_reads_then_edits_with_returned_hash(workspa
     target.write_text("fixture evidence", encoding="utf-8")
     store = RunStore(workspace_tmp_path / "edit.sqlite3")
     run_id = store.create_run(
-        objective="Edit",
-        acceptance_criteria=[],
+        objective="Change input.txt to the requested content",
+        acceptance_criteria=["input.txt contains changed"],
         workspace=str(workspace_tmp_path),
         mode="workspace",
         model="fixture",
+        file_checks=[{"path": "input.txt", "expected_content": "changed"}],
     )["id"]
     provider = EditingProvider()
     try:
@@ -212,6 +216,38 @@ async def test_workspace_coordinator_reads_then_edits_with_returned_hash(workspa
     assert target.read_text() == "changed"
     assert store.get_run(run_id)["state"] == "verifying"
     assert not store.unresolved_tool_calls(run_id)
+
+    with store.connection() as connection:
+        edit = connection.execute(
+            "SELECT arguments,result FROM tool_calls WHERE run_id=? AND tool_name='workspace.write_file' AND state='completed'",
+            (run_id,),
+        ).fetchone()
+    assert edit is not None
+    assert json.loads(edit["arguments"])["path"] == "input.txt"
+    assert len(json.loads(edit["result"])["sha256"]) == 64
+
+    token = "fixture-review-token-that-is-long-enough"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
+        response = client.post(
+            f"/runs/{run_id}/review",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "decision": "accept",
+                "expected_revision": store.get_run(run_id)["revision"],
+                "rationale": "The edited file and its independently checked content satisfy the objective.",
+                "objective_confirmed": True,
+                "confirmed_criteria": [0],
+            },
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["state"] == "completed"
+    review = next(
+        event["payload"]
+        for event in store.list_events(run_id)
+        if event["event_type"] == "run.reviewed"
+    )
+    assert review["actor"] == "local-user"
+    assert review["file_checks_passed"] == 1
 
 
 async def test_coordinator_executes_journaled_read_and_stops_for_verification(workspace_tmp_path):
