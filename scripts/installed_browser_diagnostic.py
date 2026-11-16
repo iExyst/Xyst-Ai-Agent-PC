@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from packaged_browser_download import verify_packaged_browser_download
 from xaa.runtime.browser import BrowserWorkerResponse as WorkerResult
 
 
@@ -54,6 +55,7 @@ def main() -> None:
         or not screenshot.startswith(b"\x89PNG\r\n\x1a\n")
     ):
         raise RuntimeError("Installed browser worker returned invalid page or screenshot evidence.")
+    download = verify_packaged_browser_download(engine)
 
     report: dict[str, Any] = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
@@ -67,6 +69,7 @@ def main() -> None:
             "content_characters": len(result.get("content", "")),
             "screenshot_bytes": len(screenshot),
             "screenshot_sha256": hashlib.sha256(screenshot).hexdigest(),
+            "download": download,
         },
         "model_inference_requested": False,
     }

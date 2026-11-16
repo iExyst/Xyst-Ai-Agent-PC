@@ -167,8 +167,8 @@ try {
     $xaaBrowserOutput = & uv run python scripts/installed_browser_diagnostic.py --engine $xaaEngine
     if ($LASTEXITCODE -ne 0) { throw 'Installed browser worker acceptance failed.' }
     $xaaBrowserAcceptance = ($xaaBrowserOutput | Out-String | ConvertFrom-Json)
-    if (-not $xaaBrowserAcceptance.result -or $xaaBrowserAcceptance.result.status -ne 'ok' -or -not $xaaBrowserAcceptance.result.screenshot_sha256) {
-        throw 'Installed browser worker evidence was incomplete.'
+    if (-not $xaaBrowserAcceptance.result -or $xaaBrowserAcceptance.result.status -ne 'ok' -or -not $xaaBrowserAcceptance.result.screenshot_sha256 -or -not $xaaBrowserAcceptance.result.download.artifact_integrity_verified -or -not $xaaBrowserAcceptance.result.download.rfc_9110_marker_verified -or $xaaBrowserAcceptance.result.download.size_bytes -le 0 -or -not $xaaBrowserAcceptance.result.download.sha256) {
+        throw 'Installed browser read, screenshot, or managed download evidence was incomplete.'
     }
     $xaaReport.installed_browser_acceptance = $xaaBrowserAcceptance
     foreach ($xaaNoticeName in @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'dependency-inventory.md', 'release-notes-0.1.1.md')) {

@@ -1,6 +1,6 @@
 {
-  "checked_at_utc": "2026-11-15T16:39:25.539599+00:00",
-  "frozen_engine_sha256": "249240f299e22ab9a334aa90d505c9b5fff12a3b58a9d081eee7b2d2daaa6470",
+  "checked_at_utc": "2026-11-16T16:35:47.752909+00:00",
+  "frozen_engine_sha256": "707a5a5095dfcb6bb1324050a3b9857f37a0eeb1efb0ee599af1a9ef0522259a",
   "browser": "Microsoft Edge via packaged Playwright worker",
   "result": {
     "status": "ok",
@@ -8,12 +8,21 @@
     "trust": "untrusted_web_content",
     "content_characters": 917,
     "screenshot_bytes": 45560,
-    "screenshot_sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240"
+    "screenshot_sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240",
+    "download": {
+      "status": "ok",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.txt",
+      "suggested_filename": "rfc9110.txt",
+      "size_bytes": 502938,
+      "sha256": "ad3b38b7806783d5066714f7ac9aadcba8cec1605a400c7380173737a8adf902",
+      "artifact_integrity_verified": true,
+      "rfc_9110_marker_verified": true
+    }
   },
   "cancellation": {
     "url": "https://httpbin.org/delay/10",
     "process_tree_terminated": true,
     "exit_code": 1,
-    "cleanup_elapsed_ms": 141
+    "cleanup_elapsed_ms": 127
   }
 }

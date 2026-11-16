@@ -8,7 +8,9 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from packaged_browser_download import verify_packaged_browser_download
 from xaa.runtime.browser import BrowserWorkerResponse as WorkerResult
 
 
@@ -40,6 +42,7 @@ def main() -> None:
     screenshot = base64.b64decode(result.pop("screenshot_png"), validate=True)
     if result.get("title") != "Example Domain" or not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
         raise RuntimeError("Frozen browser worker returned invalid page or screenshot evidence.")
+    download = verify_packaged_browser_download(executable.resolve(strict=True))
     cancel_request = {
         "url": "https://httpbin.org/delay/10",
         "approved_hosts": ["httpbin.org"],
@@ -81,7 +84,7 @@ def main() -> None:
     if worker.stdout is not None:
         worker.stdout.close()
 
-    report = {
+    report: dict[str, Any] = {
         "checked_at_utc": datetime.now(UTC).isoformat(),
         "frozen_engine_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
         "browser": "Microsoft Edge via packaged Playwright worker",
@@ -92,6 +95,7 @@ def main() -> None:
             "content_characters": len(result["content"]),
             "screenshot_bytes": len(screenshot),
             "screenshot_sha256": hashlib.sha256(screenshot).hexdigest(),
+            "download": download,
         },
         "cancellation": {
             "url": cancel_request["url"],
