@@ -14,6 +14,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
     {plan.tasks.length === 0 ? <p>No task plan has been saved for this run.</p> : <>
       <section className="plan-progress" aria-label="Specialist progress">
         <div className="plan-progress-heading"><strong>{completedTasks} of {plan.tasks.length} tasks complete</strong></div>
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">Specialist progress: {completedTasks} of {plan.tasks.length} tasks complete; {workingTasks} working; {reviewTasks} awaiting review; {waitingTasks} waiting; {blockedTasks} need attention{cancelledTasks>0?`; ${cancelledTasks} cancelled`:''}.</p>
         <progress aria-label="Completed specialist tasks" max={plan.tasks.length} value={completedTasks}/>
         <ul className="plan-progress-counts" aria-label="Task status counts">
           <li><strong>{workingTasks}</strong> working</li>
