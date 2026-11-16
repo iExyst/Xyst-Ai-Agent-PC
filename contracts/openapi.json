@@ -4979,10 +4979,17 @@
       "RunWorkspaceChange": {
         "properties": {
           "call_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Call Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
           },
           "operation": {
             "enum": [
@@ -5010,10 +5017,31 @@
               }
             ],
             "title": "Sha256"
+          },
+          "source": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "specialist"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
           }
         },
         "required": [
-          "call_id",
           "operation",
           "path"
         ],

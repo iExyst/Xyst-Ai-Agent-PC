@@ -2154,12 +2154,12 @@ class RunStore:
         return [public_run_event(event) for event in self.list_events(run_id, after_sequence)]
 
     def workspace_changes(self, run_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
-        """Summarize completed public workspace writes without returning file contents."""
+        """Summarize completed direct and accepted specialist writes without file contents."""
         if not 1 <= limit <= 200:
             raise ValueError("Workspace change limit must be between 1 and 200.")
         with self._connection() as connection:
             rows = connection.execute(
-                "SELECT calls.provider_call_id,calls.tool_name,calls.result "
+                "SELECT calls.provider_call_id,calls.tool_name,calls.result,completed.sequence "
                 "FROM tool_calls AS calls JOIN run_events AS completed "
                 "ON completed.run_id=calls.run_id AND completed.event_type='tool.completed' "
                 "AND json_extract(completed.payload,'$.call_id')=calls.provider_call_id "
@@ -2170,6 +2170,11 @@ class RunStore:
                 "AND json_extract(completed.payload,'$.internal')=0 "
                 "ORDER BY completed.sequence LIMIT ?",
                 (run_id, limit),
+            ).fetchall()
+            reviews = connection.execute(
+                "SELECT sequence,payload FROM run_events WHERE run_id=? "
+                "AND event_type='task.reviewed' ORDER BY sequence",
+                (run_id,),
             ).fetchall()
         changes: list[dict[str, Any]] = []
         for row in rows:
@@ -2200,12 +2205,58 @@ class RunStore:
             changes.append(
                 {
                     "call_id": row["provider_call_id"],
+                    "source": "direct",
+                    "task_id": None,
                     "operation": operation,
                     "path": path,
                     "sha256": digest,
+                    "_sequence": row["sequence"],
                 }
             )
-        return changes
+        for review in reviews:
+            try:
+                payload = json.loads(review["payload"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict) or payload.get("state") != "completed":
+                continue
+            task_id = payload.get("task_id")
+            integrated = payload.get("integrated_changes")
+            if not isinstance(task_id, str) or not task_id or len(task_id) > 128:
+                continue
+            if not isinstance(integrated, list):
+                continue
+            for item in integrated:
+                if not isinstance(item, dict) or item.get("choice") != "proposed":
+                    continue
+                path = item.get("path")
+                current_digest = item.get("current_sha256")
+                proposed_digest = item.get("proposed_sha256")
+                if not isinstance(path, str) or not path or len(path) > 2048:
+                    continue
+                if proposed_digest == current_digest:
+                    continue
+                if proposed_digest is None:
+                    operation, digest = "deleted", current_digest
+                elif current_digest is None:
+                    operation, digest = "created", proposed_digest
+                else:
+                    operation, digest = "edited", proposed_digest
+                if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+                    digest = None
+                changes.append(
+                    {
+                        "call_id": None,
+                        "source": "specialist",
+                        "task_id": task_id,
+                        "operation": operation,
+                        "path": path,
+                        "sha256": digest,
+                        "_sequence": review["sequence"],
+                    }
+                )
+        changes.sort(key=lambda item: item.pop("_sequence", 0))
+        return changes[:limit]
 
     def public_tool_result(
         self, run_id: str, call_id: str, *, max_bytes: int = 16_000

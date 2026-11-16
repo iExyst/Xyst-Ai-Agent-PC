@@ -4167,7 +4167,7 @@ export interface components {
         /** RunWorkspaceChange */
         RunWorkspaceChange: {
             /** Call Id */
-            call_id: string;
+            call_id?: string | null;
             /**
              * Operation
              * @enum {string}
@@ -4177,6 +4177,14 @@ export interface components {
             path: string;
             /** Sha256 */
             sha256?: string | null;
+            /**
+             * Source
+             * @default direct
+             * @enum {string}
+             */
+            source: "direct" | "specialist";
+            /** Task Id */
+            task_id?: string | null;
         };
         /** ScheduleDeliveryDestinationsRequest */
         ScheduleDeliveryDestinationsRequest: {

@@ -326,6 +326,36 @@ async def test_fixture_edit_runs_project_validation_before_final_review(
         return transport
 
     monkeypatch.setattr("xaa.runtime.project_validation.discover_command_transport", discover)
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.reviewed",
+            {
+                "task_id": "repair",
+                "state": "completed",
+                "integrated_changes": [
+                    {
+                        "path": "src/fix.py",
+                        "current_sha256": "a" * 64,
+                        "proposed_sha256": "b" * 64,
+                        "choice": "proposed",
+                    },
+                    {
+                        "path": "src/unchanged.py",
+                        "current_sha256": "c" * 64,
+                        "proposed_sha256": "c" * 64,
+                        "choice": "proposed",
+                    },
+                    {
+                        "path": "src/kept.py",
+                        "current_sha256": "d" * 64,
+                        "proposed_sha256": "e" * 64,
+                        "choice": "current",
+                    },
+                ],
+            },
+        )
     token = "fixture-review-token-that-is-long-enough"
     with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
         headers = {"Authorization": f"Bearer {token}"}
@@ -337,10 +367,20 @@ async def test_fixture_edit_runs_project_validation_before_final_review(
         assert changes.json() == [
             {
                 "call_id": "edit-1",
+                "source": "direct",
+                "task_id": None,
                 "operation": "edited",
                 "path": "input.txt",
                 "sha256": hashlib.sha256(b"changed").hexdigest(),
-            }
+            },
+            {
+                "call_id": None,
+                "source": "specialist",
+                "task_id": "repair",
+                "operation": "edited",
+                "path": "src/fix.py",
+                "sha256": "b" * 64,
+            },
         ]
         checked = client.post(
             f"/runs/{run_id}/validation",
