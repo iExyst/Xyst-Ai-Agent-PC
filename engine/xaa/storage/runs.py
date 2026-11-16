@@ -2218,7 +2218,10 @@ class RunStore:
                 payload = json.loads(review["payload"])
             except (TypeError, json.JSONDecodeError):
                 continue
-            if not isinstance(payload, dict) or payload.get("state") != "completed":
+            if not isinstance(payload, dict):
+                continue
+            payload = cast(dict[str, Any], payload)
+            if payload.get("state") != "completed":
                 continue
             task_id = payload.get("task_id")
             integrated = payload.get("integrated_changes")
@@ -2226,13 +2229,21 @@ class RunStore:
                 continue
             if not isinstance(integrated, list):
                 continue
+            integrated = cast(list[Any], integrated)
             for item in integrated:
-                if not isinstance(item, dict) or item.get("choice") != "proposed":
+                if not isinstance(item, dict):
+                    continue
+                item = cast(dict[str, Any], item)
+                if item.get("choice") != "proposed":
                     continue
                 path = item.get("path")
                 current_digest = item.get("current_sha256")
                 proposed_digest = item.get("proposed_sha256")
                 if not isinstance(path, str) or not path or len(path) > 2048:
+                    continue
+                if current_digest is not None and not isinstance(current_digest, str):
+                    continue
+                if proposed_digest is not None and not isinstance(proposed_digest, str):
                     continue
                 if proposed_digest == current_digest:
                     continue

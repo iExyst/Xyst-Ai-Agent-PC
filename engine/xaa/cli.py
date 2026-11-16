@@ -73,6 +73,17 @@ def main() -> None:
     history.add_argument("--scope", choices=["objective", "conversation"], default="objective")
     history.add_argument("--limit", type=int, choices=range(1, 51), default=20)
     history.add_argument("--before", help="Opaque cursor returned by the previous page")
+    sessions = commands.add_parser("sessions", help="Manage shared saved chat sessions")
+    session_actions = sessions.add_subparsers(dest="session_action", required=True)
+    session_actions.add_parser("list", help="List saved CLI and desktop chat sessions")
+    rename_session = session_actions.add_parser("rename", help="Rename a saved chat session")
+    rename_session.add_argument("session_id")
+    rename_session.add_argument("title")
+    delete_session = session_actions.add_parser("delete", help="Delete a saved chat session")
+    delete_session.add_argument("session_id")
+    delete_session.add_argument(
+        "--yes", action="store_true", help="Confirm permanent deletion of saved chat history"
+    )
     tokens = commands.add_parser(
         "tokens", help="Count a prompt against an already-loaded local model"
     )
@@ -188,6 +199,8 @@ def main() -> None:
             command.add_argument("--after", type=int, default=0)
     args = parser.parse_args()
     args.api_url = _resolve_api_url(args.command, args.api_url, os.environ.get("XAA_API_URL"))
+    if args.command == "sessions" and args.session_action == "delete" and not args.yes:
+        parser.error("deleting a session requires --yes")
     if args.command == "export-training":
         try:
             report = export_training_jsonl(args.batch_dir, args.output)
@@ -279,6 +292,18 @@ def main() -> None:
                         **({"before": args.before} if args.before else {}),
                     },
                 )
+            elif args.command == "sessions":
+                if args.session_action == "list":
+                    response = client.get("/chat/sessions")
+                else:
+                    session_path = f"/chat/sessions/{quote(args.session_id, safe='')}"
+                    if args.session_action == "rename":
+                        response = client.patch(session_path, json={"title": args.title})
+                    else:
+                        response = client.delete(session_path)
+                        response.raise_for_status()
+                        print(f"Deleted saved session {args.session_id}.")
+                        return
             elif args.command == "tokens":
                 response = client.post(
                     "/providers/lm-studio/token-count",

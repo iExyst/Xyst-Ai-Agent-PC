@@ -109,6 +109,71 @@ def test_cli_history_uses_authenticated_conversation_search(monkeypatch, capsys)
     assert '"next_cursor": "opaque"' in capsys.readouterr().out
 
 
+def test_cli_manages_shared_chat_sessions(monkeypatch, capsys) -> None:
+    calls: list[tuple[str, str, object | None]] = []
+
+    class Response:
+        def __init__(self, body: object = None) -> None:
+            self.body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return self.body
+
+    class Client:
+        def __init__(self, *, base_url: str, headers: dict[str, str], timeout: int) -> None:
+            assert headers["Authorization"] == f"Bearer {'s' * 32}"
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, path: str) -> Response:
+            calls.append(("GET", path, None))
+            return Response([{"session_id": "project", "title": "Project"}])
+
+        def patch(self, path: str, json: dict[str, object]) -> Response:
+            calls.append(("PATCH", path, json))
+            return Response({"session_id": "project", "title": json["title"]})
+
+        def delete(self, path: str) -> Response:
+            calls.append(("DELETE", path, None))
+            return Response()
+
+    monkeypatch.setattr(cli.httpx, "Client", Client)
+    monkeypatch.setenv("XAA_API_TOKEN", "s" * 32)
+    for argv in (
+        ["xaa", "sessions", "list"],
+        ["xaa", "sessions", "rename", "project", "Release notes"],
+        ["xaa", "sessions", "delete", "project", "--yes"],
+    ):
+        monkeypatch.setattr(sys, "argv", argv)
+        cli.main()
+
+    assert calls == [
+        ("GET", "/chat/sessions", None),
+        ("PATCH", "/chat/sessions/project", {"title": "Release notes"}),
+        ("DELETE", "/chat/sessions/project", None),
+    ]
+    output = capsys.readouterr().out
+    assert '"session_id": "project"' in output
+    assert "Deleted saved session project." in output
+
+
+def test_cli_requires_explicit_confirmation_before_deleting_a_session(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["xaa", "sessions", "delete", "project"])
+    try:
+        cli.main()
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("Session deletion did not require explicit confirmation")
+
+
 def test_cli_chat_carries_context_and_reset_starts_fresh_session(monkeypatch, capsys) -> None:
     objectives: list[str] = []
     answers = ["First answer", "Second answer", "Fresh answer", "Fourth answer"]
