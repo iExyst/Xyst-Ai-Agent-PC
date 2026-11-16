@@ -45,6 +45,7 @@ from xaa.api.contracts import (
     RunHistory,
     RunRecord,
     RunSummary,
+    RunWorkspaceChange,
     TaskCandidate,
     TaskRecoveryDecision,
     TaskRecoverySummary,
@@ -4099,6 +4100,17 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail="Run not found.")
         return record
+
+    @app.get(
+        "/runs/{run_id}/workspace-changes",
+        response_model=list[RunWorkspaceChange],
+    )
+    async def get_run_workspace_changes(
+        run_id: str, _: None = Depends(authenticate)
+    ) -> list[dict[str, Any]]:
+        if run_store.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        return run_store.workspace_changes(run_id)
 
     @app.get("/runs/{run_id}/events", response_model=list[RunEvent])
     async def get_run_events(

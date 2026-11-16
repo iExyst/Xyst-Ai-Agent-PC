@@ -2153,6 +2153,59 @@ class RunStore:
     def public_events(self, run_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
         return [public_run_event(event) for event in self.list_events(run_id, after_sequence)]
 
+    def workspace_changes(self, run_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        """Summarize completed public workspace writes without returning file contents."""
+        if not 1 <= limit <= 200:
+            raise ValueError("Workspace change limit must be between 1 and 200.")
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT calls.provider_call_id,calls.tool_name,calls.result "
+                "FROM tool_calls AS calls JOIN run_events AS completed "
+                "ON completed.run_id=calls.run_id AND completed.event_type='tool.completed' "
+                "AND json_extract(completed.payload,'$.call_id')=calls.provider_call_id "
+                "WHERE calls.run_id=? AND calls.task_id IS NULL AND calls.tool_version='1' "
+                "AND calls.state='completed' "
+                "AND calls.tool_name IN ('workspace.create_file','workspace.write_file',"
+                "'workspace.replace_text','workspace.apply_patch','workspace.delete_file') "
+                "AND json_extract(completed.payload,'$.internal')=0 "
+                "ORDER BY completed.sequence LIMIT ?",
+                (run_id, limit),
+            ).fetchall()
+        changes: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                result = json.loads(row["result"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(result, dict):
+                continue
+            path = result.get("path")
+            if not isinstance(path, str) or not path or len(path) > 2048:
+                continue
+            tool_name = row["tool_name"]
+            if tool_name == "workspace.delete_file":
+                if result.get("deleted") is not True:
+                    continue
+                operation = "deleted"
+                digest = result.get("previous_sha256")
+            elif tool_name == "workspace.create_file":
+                operation = "created"
+                digest = result.get("sha256")
+            else:
+                operation = "edited"
+                digest = result.get("sha256")
+            if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+                digest = None
+            changes.append(
+                {
+                    "call_id": row["provider_call_id"],
+                    "operation": operation,
+                    "path": path,
+                    "sha256": digest,
+                }
+            )
+        return changes
+
     def public_tool_result(
         self, run_id: str, call_id: str, *, max_bytes: int = 16_000
     ) -> str | None:

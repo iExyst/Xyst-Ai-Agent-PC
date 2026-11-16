@@ -14,6 +14,7 @@ test('explicit final review completes a run after objective and criterion confir
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path.endsWith('/workspace-changes'))return route.fulfill({json:[{call_id:'edit-1',operation:'edited',path:'src/input.py',sha256:'d'.repeat(64)}],headers});
     if(path.endsWith('/review')){
       expect(request.postDataJSON()).toEqual({decision:'accept',expected_revision:3,rationale:'Compared the candidate with the objective and evidence.',objective_confirmed:true,confirmed_criteria:[0]});
       accepted=true;run.state='completed';run.revision=4;
@@ -30,6 +31,9 @@ test('explicit final review completes a run after objective and criterion confir
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
   const panel=page.getByRole('region',{name:'Final run review'});
+  await expect(panel.getByText('src/input.py',{exact:true})).toBeVisible();
+  await panel.getByText('SHA-256',{exact:true}).click();
+  await expect(panel.getByText('d'.repeat(64),{exact:true})).toBeVisible();
   const accept=panel.getByRole('button',{name:'Accept and complete run',exact:true});
   await expect(accept).toBeDisabled();
   await page.getByText('Candidate result with evidence.',{exact:true}).waitFor();
@@ -58,6 +62,7 @@ test('final review requires selected validation for the current integrated proje
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path.endsWith('/workspace-changes'))return route.fulfill({json:[],headers});
     if(path.endsWith('/validation'))return route.fulfill({json:{available:true,required:true,current_snapshot_sha256:'a'.repeat(64),suggestions:[{label:'Python tests (pytest)',rationale:'pyproject.toml was found.',argv:['/usr/bin/python3','-I','-m','pytest','-q']}],evidence:[evidence]},headers});
     if(path.endsWith('/review')){expect(request.postDataJSON()).toEqual({decision:'accept',expected_revision:7,rationale:'The integrated check passed on the current project.',objective_confirmed:true,confirmed_criteria:[0],validation_call_ids:['check-1']});accepted=true;run.state='completed';run.revision=8;return route.fulfill({json:run,headers});}
     if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'The integrated project passed.'}},created_at:'2026-11-03T00:00:00Z'})}\n\nevent: done\ndata: {}\n\n`});
@@ -82,6 +87,7 @@ test('automatically runs one unambiguous Swift package check under the existing 
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path.endsWith('/workspace-changes'))return route.fulfill({json:[],headers});
     if(path.endsWith('/validation')&&request.method()==='GET')return route.fulfill({json:{available:true,required:true,current_snapshot_sha256:'b'.repeat(64),suggestions:[suggestion],evidence:[]},headers});
     if(path.endsWith('/validation')&&request.method()==='POST'){
       const body=request.postDataJSON();expect(body).toMatchObject({expected_revision:5,argv:suggestion.argv,max_seconds:15});expect(body.request_id).toMatch(/^[0-9a-f-]{36}$/);dispatches++;
@@ -110,6 +116,7 @@ test('leaves check selection to the user when multiple suggestions are available
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
+    if(path.endsWith('/workspace-changes'))return route.fulfill({json:[],headers});
     if(path.endsWith('/validation')&&request.method()==='GET')return route.fulfill({json:{available:true,required:true,current_snapshot_sha256:'c'.repeat(64),suggestions,evidence:[]},headers});
     if(path.endsWith('/validation')&&request.method()==='POST'){dispatches++;return route.fulfill({status:500,headers});}
     if(path.endsWith('/events/stream'))return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify({sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'Choose a relevant project check.'}},created_at:'2026-11-08T00:00:00Z'})}\n\nevent: done\ndata: {}\n\n`});

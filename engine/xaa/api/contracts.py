@@ -58,6 +58,13 @@ class RunEvent(BaseModel):
     created_at: datetime
 
 
+class RunWorkspaceChange(BaseModel):
+    call_id: str = Field(min_length=1, max_length=128)
+    operation: Literal["created", "edited", "deleted"]
+    path: str = Field(min_length=1, max_length=2048)
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
 class MCPReconciliationItem(BaseModel):
     call_id: str
     tool: str

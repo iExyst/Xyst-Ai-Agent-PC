@@ -12,6 +12,7 @@ function reconnectDelay(milliseconds: number, signal?: AbortSignal): Promise<voi
 
 export type Run = components['schemas']['RunRecord'];
 export type RunEvent = components['schemas']['RunEvent'];
+export type RunWorkspaceChange = components['schemas']['RunWorkspaceChange'];
 export type CreateRun = components['schemas']['CreateRunRequest'];
 export type Artifact = components['schemas']['ArtifactRecord'];
 export type Memory = components['schemas']['MemoryRecord'];
@@ -437,6 +438,8 @@ export class EngineClient {
   reviewRun(runId: string, decision: RunReviewDecision): Promise<Run> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/review`, {method:'POST',body:JSON.stringify(decision)});
   }
+
+  workspaceChanges(runId:string):Promise<RunWorkspaceChange[]> { return this.#request(`/runs/${encodeURIComponent(runId)}/workspace-changes`); }
 
   projectValidation(runId:string):Promise<ProjectValidation>{return this.#request(`/runs/${encodeURIComponent(runId)}/validation`);}
   runProjectValidation(runId:string,input:{request_id:string;expected_revision:number;argv:string[];max_seconds:number}):Promise<ProjectValidation>{return this.#request(`/runs/${encodeURIComponent(runId)}/validation`,{method:'POST',body:JSON.stringify(input)});}

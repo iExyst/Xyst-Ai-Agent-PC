@@ -329,6 +329,19 @@ async def test_fixture_edit_runs_project_validation_before_final_review(
     token = "fixture-review-token-that-is-long-enough"
     with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
         headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(f"/runs/{run_id}/workspace-changes").status_code == 401
+        changes = client.get(f"/runs/{run_id}/workspace-changes", headers=headers)
+        assert changes.status_code == 200, changes.text
+        assert "fixture evidence" not in changes.text
+        assert '"content"' not in changes.text
+        assert changes.json() == [
+            {
+                "call_id": "edit-1",
+                "operation": "edited",
+                "path": "input.txt",
+                "sha256": hashlib.sha256(b"changed").hexdigest(),
+            }
+        ]
         checked = client.post(
             f"/runs/{run_id}/validation",
             headers=headers,
