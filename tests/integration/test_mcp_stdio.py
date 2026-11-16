@@ -1304,16 +1304,45 @@ async def test_stdio_discovery_permission_call_and_disconnect(workspace_tmp_path
         assert manager.tools_for_run(set()) == []
         advertised = manager.tools_for_run({qualified})
         assert [item["function"]["name"] for item in advertised] == [qualified]
+        assert set(advertised[0]) == {"type", "function"}
         description = advertised[0]["function"]["description"]
         assert tool.schema_sha256 in description
         assert "45 seconds" in description
         assert "no automatic retries" in description
         assert "256 KiB" in description
         assert "output schema" in description
+        contract = manager.contract_for_tool(qualified, {qualified})
+        assert contract is not None
+        assert contract["permission"] == "write"
+        assert contract["effect"] == "external_write"
+        assert contract["schema_sha256"] == tool.schema_sha256
+        assert contract["input_schema"] == tool.input_schema
+        assert contract["output_schema"] == tool.output_schema
+        assert contract["timeout_seconds"] == 45
+        assert contract["limits"]["max_output_bytes"] == MCP_RESULT_BYTES
+        assert "unknown" in contract["cancellation"]
+        assert "reconcile" in contract["retry"]
+        assert manager.contract_for_tool(qualified, set()) is None
+        registry.set_permission(server.id, "add", "read", tool.schema_sha256)
+        with pytest.raises(MCPInvocationError) as permission_changed:
+            await manager.call_tool(
+                qualified,
+                {"left": 20, "right": 22},
+                expected_permission="write",
+                expected_schema_sha256=tool.schema_sha256,
+            )
+        assert permission_changed.value.status == "not_connected"
+        registry.set_permission(server.id, "add", "write", tool.schema_sha256)
         result = await manager.call_tool(qualified, {"left": 20, "right": 22})
         assert result["status"] == "ok"
         assert result["trust"] == "untrusted_mcp_output"
         assert result["structured_content"] == {"result": 42}
+        registry.set_permission(server.id, "add", "read", tool.schema_sha256)
+        read_contract = manager.contract_for_tool(qualified, set())
+        assert read_contract is not None
+        assert read_contract["permission"] == "read"
+        assert read_contract["effect"] == "read"
+        assert "unknown" not in read_contract["cancellation"]
         changed_schema = tool.model_copy(update={"schema_sha256": "a" * 64})
         changed = registry.synchronize_tools(server.id, [changed_schema])[0]
         assert changed.permission == "none"

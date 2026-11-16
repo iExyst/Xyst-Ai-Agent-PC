@@ -124,11 +124,30 @@ class UnknownMCPWriteManager:
     def tool_permission_for_run(self, name, approved):
         return "write" if name in approved else None
 
+    def contract_for_tool(self, name, approved):
+        if name not in approved:
+            return None
+        return {
+            "permission": "write",
+            "server_id": None,
+            "schema_sha256": "a" * 64,
+        }
+
     def server_id_for_tool(self, _name):
         return None
 
-    async def call_tool(self, name, arguments, *, require_read=False):
+    async def call_tool(
+        self,
+        name,
+        arguments,
+        *,
+        require_read=False,
+        expected_permission=None,
+        expected_schema_sha256=None,
+    ):
         assert require_read is False
+        assert expected_permission == "write"
+        assert expected_schema_sha256 == "a" * 64
         self.calls.append(name)
         return {"status": "unknown_outcome", "trust": "untrusted_mcp_output"}
 

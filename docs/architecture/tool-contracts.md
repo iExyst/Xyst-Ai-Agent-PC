@@ -39,7 +39,15 @@ input schema from browser metadata for coordinator and specialist calls.
 Screenshots remain managed artifacts rather than inline result bytes.
 
 MCP discovery validates and pins both tool schemas with the discovered tool
-identity. Output schemas are capped at 128 KiB and validated against structured
+identity. `MCPManager.contract_for_tool` returns a separate app-side execution
+contract for a registered tool whose permission is granted for the run. The
+descriptor includes connection state, pinned schemas and hash, effective
+read/write permission, effect class, timeout, cancellation and retry behavior,
+output validation, limits, and audit fields; it is not added to the
+provider-facing function schema. The coordinator uses this descriptor to
+authorize calls and records the server ID and schema hash with the durable call
+intent, including when a previously advertised server disconnects before
+execution. Output schemas are capped at 128 KiB and validated against structured
 call results when supplied by the server. A mismatch on a read is reported as
 invalid output; a mismatch on a write remains an unknown external outcome that
 requires reconciliation. MCP content, structured values, catalogs, prompts and
@@ -47,6 +55,9 @@ resource reads retain their existing 256 KiB serialized bounds. Model-facing MCP
 tool descriptions include the discovered schema hash, 45-second timeout,
 no-automatic-retry rule, result cap, structured-output validation, and write
 reconciliation guidance; server-provided descriptions remain labeled untrusted.
+The coordinator supplies the contract's expected permission and schema hash to
+the executor, which rechecks both before dispatch so revocation or rediscovery
+between intent journaling and execution fails closed.
 
 `plan.save` declares the typed dependency-graph proposal, saved/rejected result shapes, `task.delegate` permission, 64-task limit, run-deadline boundary, durable-call recovery rule, and plan audit fields. The coordinator exposes its input schema directly from this contract. A saved plan is not dispatched by the same call.
 
@@ -59,9 +70,9 @@ Model-authored `procedure.draft`, `procedure.revise`, `procedure.resource_revise
 `procedure.catalog` is a versioned read contract with a strict page schema, 50-item limit, output field bounds, ten-second timeout, audit fields and a 512 KiB final serialized-result ceiling. Oversized output is replaced with a bounded, untrusted `output_limit` result.
 
 The registry is a scoped first slice, not the contract inventory for every
-coordinator tool. The command entry is a typed execution contract used for its
-model-facing input schema; the coordinator still enforces its saved grant and
-run deadline, while the command controller owns snapshot, execution, output,
-cancellation, and recovery behavior. Further MCP, specialist, and messaging
-contracts still need inventory and serialized-output consistency review. Their
-existing behavior and limits remain documented with their respective implementations.
+coordinator tool. MCP execution and specialist dispatch contracts are
+documented above; broader messaging contracts still need an inventory and
+serialized-output consistency review. The command entry is a typed execution
+contract used for its model-facing input schema; the coordinator still enforces
+its saved grant and run deadline, while the command controller owns snapshot,
+execution, output, cancellation, and recovery behavior.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import copy
 import hashlib
 import json
 import os
@@ -1394,12 +1395,76 @@ class MCPManager:
             return "write"
         return None
 
+    def contract_for_tool(
+        self, qualified_name: str, approved_write_tools: set[str]
+    ) -> dict[str, Any] | None:
+        """Return an app-side contract for a registered, permissioned MCP tool.
+
+        This metadata is deliberately separate from the provider-facing function schema.
+        """
+        record = next(
+            (tool for tool in self.registry.list_tools() if tool.qualified_name == qualified_name),
+            None,
+        )
+        if record is None or record.permission == "none":
+            return None
+        if record.permission == "write" and qualified_name not in approved_write_tools:
+            return None
+        permission: Literal["read", "write"] = record.permission
+        connection = self._connected.get(record.server_id)
+        server_tool = connection.tools.get(record.name) if connection else None
+        if connection is not None and (
+            server_tool is None or server_tool.schema_sha256 != record.schema_sha256
+        ):
+            return None
+        input_schema = server_tool.input_schema if server_tool else record.input_schema
+        output_schema = server_tool.output_schema if server_tool else record.output_schema
+        write = permission == "write"
+        return {
+            "name": qualified_name,
+            "version": record.schema_sha256,
+            "server_id": record.server_id,
+            "schema_sha256": record.schema_sha256,
+            "permission": permission,
+            "connected": connection is not None,
+            "effect": "external_write" if write else "read",
+            "input_schema": copy.deepcopy(input_schema),
+            "output_schema": copy.deepcopy(output_schema),
+            "timeout_seconds": MCP_CALL_TIMEOUT,
+            "cancellation": (
+                "Cancel the request and close the server connection; the write outcome is "
+                "unknown and must be reconciled before retrying."
+                if write
+                else "Cancel the request and close the server connection; no result is returned."
+            ),
+            "retry": (
+                "No automatic retries; reconcile the external effect before retrying."
+                if write
+                else "No automatic retries; retry only after checking the run journal."
+            ),
+            "limits": {
+                "max_output_bytes": MCP_RESULT_BYTES,
+                "max_schema_bytes": MCP_TOOL_SCHEMA_BYTES,
+            },
+            "output_validation": "Validate structured content against the pinned output schema when supplied.",
+            "audit_fields": [
+                "run_id",
+                "call_id",
+                "tool",
+                "version",
+                "arguments",
+                "result_or_failure",
+            ],
+        }
+
     async def call_tool(
         self,
         qualified_name: str,
         arguments: dict[str, Any],
         *,
         require_read: bool = False,
+        expected_permission: Literal["read", "write"] | None = None,
+        expected_schema_sha256: str | None = None,
         sampling_handler: Callable[
             [ClientRequestContext, CreateMessageRequestParams],
             Awaitable[CreateMessageResult | ErrorData],
@@ -1430,7 +1495,12 @@ class MCPManager:
         if (
             record.permission == "none"
             or (require_read and record.permission != "read")
+            or (expected_permission is not None and record.permission != expected_permission)
             or record.schema_sha256 != server_tool.schema_sha256
+            or (
+                expected_schema_sha256 is not None
+                and record.schema_sha256 != expected_schema_sha256
+            )
         ):
             raise MCPInvocationError(
                 "The MCP tool permission or schema is no longer valid.", status="not_connected"
@@ -1444,24 +1514,32 @@ class MCPManager:
             ) from error
         try:
             async with connection.lock:
-                if require_read:
-                    current = next(
-                        (
-                            item
-                            for item in self.registry.list_tools(record.server_id)
-                            if item.qualified_name == qualified_name
-                        ),
-                        None,
+                current = next(
+                    (
+                        item
+                        for item in self.registry.list_tools(record.server_id)
+                        if item.qualified_name == qualified_name
+                    ),
+                    None,
+                )
+                if (
+                    current is None
+                    or current.permission == "none"
+                    or (require_read and current.permission != "read")
+                    or (
+                        expected_permission is not None
+                        and current.permission != expected_permission
                     )
-                    if (
-                        current is None
-                        or current.permission != "read"
-                        or current.schema_sha256 != server_tool.schema_sha256
-                    ):
-                        raise MCPInvocationError(
-                            "The MCP tool no longer has the saved read permission.",
-                            status="not_connected",
-                        )
+                    or current.schema_sha256 != server_tool.schema_sha256
+                    or (
+                        expected_schema_sha256 is not None
+                        and current.schema_sha256 != expected_schema_sha256
+                    )
+                ):
+                    raise MCPInvocationError(
+                        "The MCP tool permission or schema changed before execution.",
+                        status="not_connected",
+                    )
                 async with asyncio.timeout(MCP_CALL_TIMEOUT):
                     connection.sampling_handler = sampling_handler
                     try:

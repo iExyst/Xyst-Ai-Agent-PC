@@ -963,22 +963,29 @@ class Coordinator:
         if name.startswith("mcp_"):
             if self.mcp_manager is None:
                 raise PermissionError("This MCP tool is not connected and approved for this run.")
-            permission = self.mcp_manager.tool_permission_for_run(
+            contract = self.mcp_manager.contract_for_tool(
                 name, set(run.get("approved_mcp_tools", []))
             )
-            if permission is None:
+            if contract is None:
                 raise PermissionError("This MCP tool is not connected and approved for this run.")
+            permission = contract["permission"]
             if not self.store.record_tool_intent(
                 run_id,
                 token,
                 call_id=call["id"],
                 tool="mcp.call",
                 version="2",
-                arguments={"tool": name, "arguments": arguments, "permission": permission},
+                arguments={
+                    "tool": name,
+                    "arguments": arguments,
+                    "permission": permission,
+                    "server_id": contract["server_id"],
+                    "schema_sha256": contract["schema_sha256"],
+                },
                 idempotency_key=call["id"],
             ):
                 raise ValueError("MCP tool call requires reconciliation.")
-            server_id = self.mcp_manager.server_id_for_tool(name)
+            server_id = contract["server_id"]
             sampling_handler = None
             sampling_failed = False
             if server_id is not None and server_id in set(
@@ -999,13 +1006,19 @@ class Coordinator:
             try:
                 if sampling_handler is None:
                     result = await self.mcp_manager.call_tool(
-                        name, arguments, require_read=permission == "read"
+                        name,
+                        arguments,
+                        require_read=permission == "read",
+                        expected_permission=permission,
+                        expected_schema_sha256=contract["schema_sha256"],
                     )
                 else:
                     result = await self.mcp_manager.call_tool(
                         name,
                         arguments,
                         require_read=permission == "read",
+                        expected_permission=permission,
+                        expected_schema_sha256=contract["schema_sha256"],
                         sampling_handler=sampling_handler,
                     )
             except asyncio.CancelledError:
