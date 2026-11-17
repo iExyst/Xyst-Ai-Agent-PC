@@ -66,6 +66,7 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
   const chunksRef = useRef<Blob[]>([]);
   const timeoutRef = useRef<number | undefined>(undefined);
   const discardRef = useRef(false);
+  const mountedRef = useRef(false);
 
   function releaseMicrophone() {
     if (timeoutRef.current !== undefined) window.clearTimeout(timeoutRef.current);
@@ -73,15 +74,28 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = undefined;
     recorderRef.current = undefined;
-    setRecording(false);
+    if (mountedRef.current) setRecording(false);
   }
 
-  useEffect(() => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      discardRef.current = true;
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      if (timeoutRef.current !== undefined) window.clearTimeout(timeoutRef.current);
+      onCaptureBusy(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!disabled) return;
     discardRef.current = true;
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    if (timeoutRef.current !== undefined) window.clearTimeout(timeoutRef.current);
-  }, []);
+    else releaseMicrophone();
+    onCaptureBusy(false);
+  }, [disabled]);
 
   async function start() {
     setError('');
@@ -93,6 +107,11 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
         throw new Error('Microphone recording is not available in this desktop environment.');
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mountedRef.current || discardRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        onCaptureBusy(false);
+        return;
+      }
       streamRef.current = stream;
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
@@ -105,7 +124,7 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
       };
       recorder.onstop = () => {
         releaseMicrophone();
-        if (discardRef.current || chunksRef.current.length === 0) {
+        if (!mountedRef.current || discardRef.current || chunksRef.current.length === 0) {
           onCaptureBusy(false);
           return;
         }
@@ -117,14 +136,14 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
             context = new AudioContext();
             const decoded = await context.decodeAudioData(await recordingBlob.arrayBuffer());
             const wav = encodePcmWav(decoded);
-            onRecorded(toDataUrl(wav));
+            if (mountedRef.current && !discardRef.current) onRecorded(toDataUrl(wav));
           } catch (failure) {
             setError(failure instanceof Error && failure.message.includes('4 MiB')
               ? failure.message
               : 'Could not convert the recording to PCM WAV. Try a shorter recording or attach a WAV file.');
           } finally {
             await context?.close();
-            setProcessing(false);
+            if (mountedRef.current) setProcessing(false);
             onCaptureBusy(false);
           }
         })();
@@ -137,6 +156,7 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
     } catch (failure) {
       releaseMicrophone();
       onCaptureBusy(false);
+      if (!mountedRef.current) return;
       setError(failure instanceof Error && failure.name === 'NotAllowedError'
         ? 'Microphone permission was denied. Allow microphone access in Windows settings or attach a WAV file.'
         : failure instanceof Error ? failure.message : 'Could not start microphone recording.');

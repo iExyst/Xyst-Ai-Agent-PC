@@ -138,3 +138,50 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   expect(wav.length).toBeLessThanOrEqual(4 * 1024 * 1024);
   expect(submitted).toMatchObject({ transcription_url: 'http://127.0.0.1:8765/v1/audio/transcriptions' });
 });
+
+test('a microphone permission response arriving after leaving the composer is immediately stopped', async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    let resolveRequest: ((stream: MediaStream) => void) | undefined;
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: () => new Promise<MediaStream>(resolve => { resolveRequest = resolve; }),
+    });
+    Object.defineProperty(window, '__xaaGrantLateMicrophone', {
+      configurable: true,
+      value: async () => {
+        const stream = await nativeGetUserMedia({ audio: true });
+        (window as Window & { __xaaLateMicrophone?: MediaStream }).__xaaLateMicrophone = stream;
+        resolveRequest?.(stream);
+      },
+    });
+  });
+  await page.route('http://127.0.0.1:8765/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
+    if (path.startsWith('/memory')) return route.fulfill({ json: [], headers });
+    if (path === '/runs' && request.method() === 'GET') return route.fulfill({ json: { items: [], next_cursor: null }, headers });
+    if (path.endsWith('/plan')) return route.fulfill({ json: { tasks: [], ready: [], blocked: [] }, headers });
+    return route.fulfill({ json: [], headers });
+  });
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main sections' }).getByRole('link', { name: 'Model setup' }).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByRole('navigation', { name: 'Main sections' }).getByRole('link', { name: 'New objective' }).click();
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+  await page.getByRole('button', { name: 'Record voice' }).click();
+  await page.getByRole('navigation', { name: 'Main sections' }).getByRole('link', { name: 'Model setup' }).click();
+  await page.evaluate(async () => {
+    await (window as Window & { __xaaGrantLateMicrophone: () => Promise<void> }).__xaaGrantLateMicrophone();
+  });
+  await expect.poll(() => page.evaluate(() => {
+    const tracks = (window as Window & { __xaaLateMicrophone?: MediaStream }).__xaaLateMicrophone?.getTracks() ?? [];
+    return tracks.length > 0 && tracks.every(track => track.readyState === 'ended');
+  })).toBe(true);
+});
