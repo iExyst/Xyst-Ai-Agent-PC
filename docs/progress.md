@@ -1,5 +1,9 @@
 # Progress
 
+## Inspect linked procedure resources in the desktop app (2026-11-17)
+
+The Skills screen now lists versioned resources, shows UTF-8 resources as literal text, previews PNG/JPEG/GIF/WebP images, and offers downloads for all files; PDFs are download-only. The resource content remains untrusted and is never executed by the viewer. Desktop typecheck and production build pass, as do both `tests/browser/skills.spec.ts` Playwright cases, including image preview and PDF download behavior. No live LLM inference was used.
+
 ## Cancel queued specialist tasks safely (2026-11-17)
 
 Owners can cancel an authenticated specialist assignment while it is still queued; the transaction refuses any task that has started. The plan refresh shows the cancelled task and marks dependent work blocked, while independent tasks remain ready. The dark plan screen names each cancel action, requires confirmation, and disables it outside the dispatchable plan state. The progress summary counts dependency-blocked queued tasks as needing attention, not as waiting. Local plan API/graph tests pass (9), including auth, dependency blocking, and refusal after claim; the task-review browser flow passes all 4 cases; desktop production build, TypeScript, Ruff, Pyright, generated types, and contract checks pass. Exact-source Windows run [44004002016](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44004002016) passed static/API contract checks, seven focused browser tests, and recovery diagnostics. The final progress-summary correction passed exact-source Windows run [44004867065](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44004867065), including the same seven browser tests. CI skipped the full Python suite under its verification path filter; the focused local tests cover the changed API behavior. This applies only before task execution and does not cancel a running specialist. No model inference or release publication occurred.
