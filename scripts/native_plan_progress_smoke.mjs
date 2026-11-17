@@ -34,6 +34,11 @@ try{
   await page.getByLabel('Workspace path').waitFor({timeout:30000});
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   if(typeof connection?.base_url!=='string'||typeof connection?.token!=='string')throw new Error('Native engine connection is unavailable');
+  await page.locator('details.saved-conversations > summary').click();
+  await expect(page.getByRole('region',{name:'Shared conversation sessions'}).getByRole('heading',{name:'Shared conversation'})).toBeVisible();
+  await page.getByRole('link',{name:'Chats',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Chats',exact:true})).toBeVisible();
+  await expect(page.getByRole('region',{name:'Shared conversation sessions'})).toBeVisible();
   const objective='Native dependency stage progress fixture';
   const created=await fetch(`${connection.base_url}/runs`,{method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({objective,workspace,mode:'observe',model:null,max_iterations:8,max_seconds:120})});
   if(!created.ok)throw new Error(`Could not create model-free native fixture run (${created.status})`);
@@ -41,6 +46,7 @@ try{
   execFileSync('uv',['run','python','scripts/seed_native_plan_progress.py',run.id],{cwd:process.cwd(),windowsHide:true,stdio:'pipe',env:{...process.env,XAA_DATA_DIR:root}});
   await page.reload();
   await page.getByRole('link',{name:/Saved runs/}).click();
+  await expect(page.getByRole('region',{name:'Saved runs'}).getByRole('heading',{name:'Saved runs'})).toBeVisible();
   await page.getByRole('button',{name:`Open ${objective}`,exact:true}).click();
   await page.getByRole('heading',{name:'Active run verifying'}).waitFor({timeout:15000});
   const savedRunResponse=await fetch(`${connection.base_url}/runs/${run.id}`,{headers:{Authorization:`Bearer ${connection.token}`}});
@@ -81,7 +87,7 @@ try{
   await expect(page.getByRole('heading',{name:'Automations',exact:true})).toBeVisible();
   await page.getByRole('link',{name:'System monitor',exact:true}).click();
   await expect(page.getByRole('heading',{name:'System monitor',exact:true})).toBeVisible();
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,specialist_resource_usage_display_verified:true,on_demand_screens_verified:['Memory','Skills','Automations','System monitor'],dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,specialist_resource_usage_display_verified:true,on_demand_screens_verified:['Memory','Skills','Automations','System monitor','Saved runs','Conversations'],dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
   await page.evaluate(async()=>{
