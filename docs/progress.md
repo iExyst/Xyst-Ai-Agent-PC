@@ -1,5 +1,9 @@
 # Progress
 
+## Show remaining run resource allowance (2026-11-17)
+
+The active run’s resource panel now shows remaining wall-clock time and token allowance after measured usage and outstanding reservations. It reports token allowance as unknown when any call lacks measured usage, rather than implying that an untracked request is free. The objective browser flow verifies selected model, countdown, unavailable usage, and the reserved-token calculation; TypeScript and the production desktop build pass. No model inference was used.
+
 ## Keep imported plugin skills distinct (2026-11-17)
 
 Imported Agent Plugin and Hermes skills now use a deterministic package, discovery-root fingerprint, and skill name in the shared procedure library; overlong names receive a stable hash suffix, while source provenance and package export retain upstream identities. Same-named skills from different packages and the same package discovered from different roots import independently; their names and provenance survive reopening SQLite. Plugin tests pass (43 passed, 1 skipped), and the MCP browser flow passes. Native Tauri WebView acceptance verifies package install, inactive skill import, the qualified Skills-screen identity and exact source provenance in the bundled engine ([report](../.acceptance/b7b88871-5574-4ecd-b855-2adc956c0d10/report.json)); MCP lifecycle checks and clean shutdown pass. No model inference was requested.

@@ -32,7 +32,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
       return route.fulfill({json:request.method()==='POST' ? memories[0] : memories,headers});
     }
     if(path.endsWith('/usage')&&usageUnavailable)return route.fulfill({status:503,headers});
-    if(path.endsWith('/usage'))return route.fulfill({json:{prompt_tokens:40,completion_tokens:10,total_tokens:50,unmeasured_calls:1,outstanding_reserved_tokens:300,outstanding_reservations:1},headers});
+    if(path.endsWith('/usage'))return route.fulfill({json:{prompt_tokens:40,completion_tokens:10,total_tokens:50,unmeasured_calls:0,outstanding_reserved_tokens:300,outstanding_reservations:1},headers});
     if(path.endsWith('/workspace-changes'))return route.fulfill({json:{items:[],total:0,offset:0,limit:100,next_offset:null},headers});
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
@@ -176,13 +176,17 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(browserDownloadGrant).not.toBeChecked();
   await navigateMainSection(page,'Active run');
   const resources=page.getByRole('region',{name:'Run resources'});
+  await expect(resources).toContainText('Model: fixture/model');
   await expect(resources).toContainText('3 iterations · 60 seconds');
+  await expect(resources).toContainText(/Wall-clock allowance remaining: \d+s/);
   await expect(resources).toContainText('Reported token threshold: 5000 · Output tokens per request: 256');
   await expect(resources).toContainText('Pre-inference token reservation: Required; exact LM Studio count');
   await expect(resources).toContainText('Token usage unavailable.');
+  await expect(resources).toContainText('Token allowance remaining: Unavailable until token usage loads.');
   usageUnavailable=false;
   await resources.getByRole('button',{name:'Retry token usage',exact:true}).click();
-  await expect(resources).toContainText('Measured tokens: 50 (40 input, 10 output). Calls without measured usage: 1.');
+  await expect(resources).toContainText('Measured tokens: 50 (40 input, 10 output). Calls without measured usage: 0.');
+  await expect(resources).toContainText('Token allowance remaining: 4,650 tokens (50 measured; 300 reserved).');
   await expect(resources).toContainText('Reserved tokens awaiting measured results: 300 across 1 request.');
   await expect(resources).toContainText('Interrupted requests keep their hold until a measured result is saved.');
   await expect(page.getByRole('heading', { name: 'Active run verifying' })).toBeVisible();
