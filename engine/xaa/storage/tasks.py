@@ -630,6 +630,29 @@ class TaskStore:
                 record["blocked_reason"] = "execution_blocked"
         return records
 
+    def cancel_queued(self, run_id: str, task_id: str) -> None:
+        """Cancel an assignment only while it is still queued and has no worker."""
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM tasks WHERE run_id=? AND id=?",
+                (run_id, f"{run_id}:{task_id}"),
+            ).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            if row["status"] != "queued":
+                raise ValueError("Only a queued specialist task can be cancelled before it starts.")
+            connection.execute(
+                "UPDATE tasks SET status='cancelled',updated_at=? WHERE run_id=? AND id=? AND status='queued'",
+                (utc_now(), run_id, f"{run_id}:{task_id}"),
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "task.cancelled",
+                {"task_id": task_id, "reason": "owner_cancelled_before_start"},
+            )
+
     def recovery_summary(self, run_id: str, task_id: str) -> dict[str, Any]:
         """Summarize durable worker evidence without treating a missing result as success."""
         task = next((row for row in self.records(run_id) if row["local_id"] == task_id), None)

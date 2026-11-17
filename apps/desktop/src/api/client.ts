@@ -418,6 +418,10 @@ export class EngineClient {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/recovery`);
   }
 
+  cancelQueuedTask(runId:string,taskId:string):Promise<Plan> {
+    return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/cancel-queued`,{method:'POST'});
+  }
+
   decideTaskRecovery(runId:string,taskId:string,decision:'resume'|'review_candidate'|'fail'):Promise<Plan> {
     return this.#request(`/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/recovery`,{method:'POST',body:JSON.stringify({decision})});
   }

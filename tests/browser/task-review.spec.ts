@@ -61,6 +61,41 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
   expect(dispatched).toBe(true);
 });
 
+test('cancel a queued specialist before dispatch and block its dependents',async({page})=>{
+  const run={id:'cancel-queued-run',objective:'Cancel a queued specialist',state:'verifying',acceptance_criteria:[],revision:1};
+  const base={id:'cancel-queued-run:cancel-me',local_id:'cancel-me',objective:'Research a prerequisite',acceptance_criteria:[],input_artifacts:[],expected_outputs:[],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:1,max_seconds:30},status:'queued'};
+  let cancelled=false;
+  const graph=()=>({tasks:[{...base,status:cancelled?'cancelled':'queued'},{...base,id:'cancel-queued-run:dependent',local_id:'dependent',objective:'Review the prerequisite',dependencies:['cancel-me']}],ready:cancelled?[]:['cancel-me'],blocked:cancelled?['dependent']:[]});
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    const path=new URL(request.url()).pathname;
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
+    if(path.endsWith('/cancel-queued')){expect(request.method()).toBe('POST');cancelled=true;return route.fulfill({json:graph(),headers});}
+    if(path.endsWith('/plan'))return route.fulfill({json:graph(),headers});
+    if(path.endsWith('/events/stream'))return route.fulfill({body:'event: done\ndata: {}\n\n',contentType:'text/event-stream',headers});
+    return route.fulfill({json:run,headers});
+  });
+  page.on('dialog',dialog=>void dialog.accept());
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Model setup'}).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective',{exact:true}).fill(run.objective);
+  await page.getByRole('button',{name:'Start objective'}).click();
+  await page.getByRole('button',{name:'Cancel cancel-me before start'}).click();
+  await expect(page.getByRole('article',{name:'Task cancel-me'})).toContainText('cancelled');
+  await expect(page.getByRole('article',{name:'Task dependent'})).toContainText('Blocked by a dependency');
+  expect(cancelled).toBe(true);
+});
+
 for(const choice of ['current','proposed'] as const){
   test(`conflicted specialist edits require an explicit ${choice} integration choice`,async({page})=>{
     const run={id:`conflict-${choice}-run`,objective:'Review a conflicting private edit',state:'verifying',acceptance_criteria:[],revision:1};

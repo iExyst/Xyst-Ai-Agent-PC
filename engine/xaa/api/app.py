@@ -4342,6 +4342,24 @@ def create_app(
         ready, blocked = tasks.readiness(run_id) if records else ([], [])
         return {"tasks": records, "ready": ready, "blocked": blocked}
 
+    @app.post(
+        "/runs/{run_id}/tasks/{task_id}/cancel-queued",
+        response_model=PlanRecord,
+    )
+    def cancel_queued_task(
+        run_id: str, task_id: str, _: None = Depends(authenticate)
+    ) -> dict[str, Any]:
+        tasks = TaskStore(run_store)
+        try:
+            tasks.cancel_queued(run_id, task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        records = tasks.records(run_id)
+        ready, blocked = tasks.readiness(run_id) if records else ([], [])
+        return {"tasks": records, "ready": ready, "blocked": blocked}
+
     @app.get(
         "/runs/{run_id}/tasks/{task_id}/recovery",
         response_model=TaskRecoverySummary,

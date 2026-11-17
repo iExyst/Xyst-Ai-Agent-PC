@@ -111,6 +111,60 @@ def test_plan_api_returns_typed_tasks_without_worker_authority(workspace_tmp_pat
     assert "result" not in task
 
 
+def test_owner_can_cancel_only_a_queued_task_and_dependents_become_blocked(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "cancel-queued-api.sqlite3")
+    run_id = store.create_run(
+        objective="Plan", acceptance_criteria=[], workspace=None, mode="observe", model="fixture"
+    )["id"]
+    parent = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="cancel-me", objective="Research", max_iterations=1, max_seconds=30),
+            TaskDefinition(
+                id="dependent",
+                objective="Review",
+                dependencies=["cancel-me"],
+                max_iterations=1,
+                max_seconds=30,
+            ),
+            TaskDefinition(
+                id="independent", objective="Validate", max_iterations=1, max_seconds=30
+            ),
+        ],
+    )
+    api_token = "a" * 32
+    client = TestClient(create_app(LMStudioProvider(), SecretStr(api_token), store=store))
+    headers = {"Authorization": f"Bearer {api_token}"}
+    path = f"/runs/{run_id}/tasks/cancel-me/cancel-queued"
+    assert client.post(path).status_code == 401
+    cancelled = client.post(path, headers=headers)
+    assert cancelled.status_code == 200
+    body = cancelled.json()
+    records = {item["local_id"]: item for item in body["tasks"]}
+    assert records["cancel-me"]["status"] == "cancelled"
+    assert records["dependent"]["status"] == "queued"
+    assert body["ready"] == ["independent"]
+    assert body["blocked"] == ["dependent"]
+    assert any(
+        event["event_type"] == "task.cancelled"
+        and event["payload"]
+        == {
+            "task_id": "cancel-me",
+            "reason": "owner_cancelled_before_start",
+        }
+        for event in store.list_events(run_id)
+    )
+
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None and claim["task"]["local_id"] == "independent"
+    running = client.post(f"/runs/{run_id}/tasks/independent/cancel-queued", headers=headers)
+    assert running.status_code == 409
+    assert "Only a queued" in running.json()["detail"]
+
+
 def test_plan_exposes_safe_block_reasons_without_private_outcome(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "blocked-api.sqlite3")
     identity = store.create_run(

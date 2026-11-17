@@ -1,3 +1,4 @@
+import {useState} from 'react';
 import { EngineClient, type Plan } from './api/client.ts';
 import { TaskReviewPanel } from './TaskReviewPanel.tsx';
 import { TaskRecoveryPanel } from './TaskRecoveryPanel.tsx';
@@ -20,6 +21,12 @@ function dependencyStages(tasks:Plan['tasks']):{stages:Array<[number,Plan['tasks
 }
 
 export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatch, canDispatch }: { plan: Plan; client: EngineClient; runId: string; partials:Record<string,string>; onReviewed: (plan:Plan)=>void; onDispatch:()=>void; canDispatch:boolean }) {
+  const [cancelError,setCancelError]=useState('');
+  async function cancelQueued(taskId:string) {
+    setCancelError('');
+    try {onReviewed(await client.cancelQueuedTask(runId,taskId));}
+    catch {setCancelError(`Could not cancel ${taskId}. Refresh the plan and check whether it has already started.`);}
+  }
   const completedTasks=plan.tasks.filter(task=>task.status==='completed').length;
   const workingTasks=plan.tasks.filter(task=>task.status==='running').length;
   const reviewTasks=plan.tasks.filter(task=>task.status==='verifying').length;
@@ -43,6 +50,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan.</p>
       </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
+      {cancelError&&<p role="alert">{cancelError}</p>}
       {stageLayout.valid&&<PlanDependencyGraph plan={plan} stages={stageLayout.stages}/>}
       <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=>{
         const stageCompleted=tasks.filter(task=>task.status==='completed').length;
@@ -78,6 +86,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
             <dt>Permissions</dt><dd>{task.permission_scope.join(', ') || 'None'}</dd>
             <dt>Budget</dt><dd>{task.budgets.max_iterations} iterations · {task.budgets.max_seconds} seconds<br/>Reported token allowance: {task.budgets.max_total_tokens ?? 'Shared run threshold'} · Output tokens per request: {task.budgets.max_output_tokens ?? 'Run setting'}</dd>
           </dl>
+          {task.status==='queued'&&<button type="button" disabled={!canDispatch} onClick={()=>{if(window.confirm(`Cancel ${task.local_id} before it starts? Tasks depending on it will be blocked.`))void cancelQueued(task.local_id);}}>Cancel {task.local_id} before start</button>}
           {task.status==='blocked' && <p>{task.blocked_reason==='token_budget_exhausted_or_unmeasured'
             ? 'The reported token allowance was reached, or usage could not be measured. Start a new objective to change its allowance.'
             : task.blocked_reason==='task_time_budget_exhausted' ? 'This specialist reached its assigned time allowance. Review the task scope or time limits before retrying.'
