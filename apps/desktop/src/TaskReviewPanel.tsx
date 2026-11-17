@@ -45,7 +45,7 @@ export function TaskReviewPanel({client,runId,taskId,onReviewed}:{client:EngineC
     finally {setBusy(false);}
   }
   return <div className="task-review">
-    {!candidate ? <button onClick={load} disabled={busy}>Review candidate</button> : <>
+    {!candidate ? <><button onClick={load} disabled={busy} aria-busy={busy}>{busy?'Loading candidate…':'Review candidate'}</button>{busy&&<p role="status">Loading saved candidate and file evidence…</p>}</> : <>
       <h4>Candidate result</h4><pre>{candidate.candidate ?? 'No candidate text recorded.'}</pre>
       {expectedOutputs.length>0&&<fieldset><legend>Expected outputs</legend><ul>{expectedOutputs.map((item,index)=><li key={index}>{item}</li>)}</ul></fieldset>}
       {hasChanges&&<section aria-label="Private specialist changes"><h4>Proposed changes in the private copy</h4><p>The project has not received these changes. Review the complete differences, then check the current project before integration.</p>

@@ -15,7 +15,7 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-    if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});
+    if(path.endsWith('/candidate')){await new Promise(resolve=>setTimeout(resolve,200));return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});}
     if(path.endsWith('/review')){
       expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'Compared the actual file with the criterion.',confirmed_criteria:[0],evidence_call_ids:['evidence-1'],changes_confirmed:false});
       reviewed=true;
@@ -40,6 +40,8 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
   await page.getByRole('button',{name:'Review candidate',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Loading candidate…',exact:true})).toBeDisabled();
+  await expect(page.getByRole('status').filter({hasText:'Loading saved candidate and file evidence…'})).toBeVisible();
   await expect(page.getByRole('group',{name:'Expected outputs'})).toContainText('Concise findings');
   await expect(page.getByText('Candidate result',{exact:true})).toBeVisible();
   const accept=page.getByRole('button',{name:'Accept task result',exact:true});
