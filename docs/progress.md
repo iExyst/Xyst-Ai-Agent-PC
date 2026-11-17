@@ -2,7 +2,7 @@
 
 ## Keep imported plugin skills distinct (2026-11-17)
 
-Imported Agent Plugin and Hermes skills now use a deterministic package, discovery-root fingerprint, and skill name in the shared procedure library; overlong names receive a stable hash suffix, while source provenance and package export retain upstream identities. Same-named skills from different packages and the same package discovered from different roots import independently. Focused plugin tests and the MCP browser flow cover both behaviors; live LLM inference was not used.
+Imported Agent Plugin and Hermes skills now use a deterministic package, discovery-root fingerprint, and skill name in the shared procedure library; overlong names receive a stable hash suffix, while source provenance and package export retain upstream identities. Same-named skills from different packages and the same package discovered from different roots import independently. Plugin tests pass (43 passed, 1 skipped), and the MCP browser flow passes. Native Tauri WebView acceptance verifies package install, inactive skill import, the qualified Skills-screen identity and exact source provenance in the bundled engine ([report](../.acceptance/b7b88871-5574-4ecd-b855-2adc956c0d10/report.json)); MCP lifecycle checks and clean shutdown pass. No model inference was requested.
 
 ## Add and remove linked procedure resources in the desktop app (2026-11-17)
 

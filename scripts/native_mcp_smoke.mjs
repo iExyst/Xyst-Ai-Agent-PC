@@ -650,6 +650,7 @@ try {
     'archive, fixture, python = map(pathlib.Path, sys.argv[1:])',
     'with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as z:',
     ' z.writestr("plugin.json", json.dumps({"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"native-fixture-package","version":"1.0.0","description":"Native installed-package acceptance"}))',
+    ' z.writestr("skills/summarize/SKILL.md", "---\\nname: summarize\\ndescription: Native fixture skill.\\n---\\nSummarize a bounded text input.\\n")',
     ' z.writestr("mcp.json", json.dumps({"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"local-helper":{"type":"stdio","command":"cmd.exe","args":["/d","/c","${PLUGIN_ROOT}/run.cmd"],"cwd":"${PLUGIN_ROOT}"}}}))',
     ' z.writestr("run.cmd", "@echo off\\r\\n" + chr(34) + str(python) + chr(34) + " " + chr(34) + "%~dp0server.py" + chr(34) + "\\r\\n")',
     ' z.write(fixture, "server.py")',
@@ -666,6 +667,45 @@ try {
   await plugins.getByRole('button', { name: 'Show installed packages' }).click();
   const packageCard = plugins.locator('article').filter({ hasText: packageName });
   await expect(packageCard.getByRole('heading', { name: `${packageName} · 1.0.0` })).toBeVisible({ timeout: 10_000 });
+  await expect(packageCard.getByText('local-helper', { exact: false })).toBeVisible();
+  const skillImportResponse = await clickForResponse(
+    page,
+    packageCard.getByRole('button', { name: 'Import as candidate', exact: true }),
+    (response) => new URL(response.url()).pathname === '/extensions/packages/import-skill'
+      && response.request().method() === 'POST',
+  );
+  if (skillImportResponse.status() !== 201) {
+    throw new Error(`Native plugin skill import failed (${skillImportResponse.status()}).`);
+  }
+  const importedSkill = await skillImportResponse.json();
+  const rootScope = createHash('sha256')
+    .update(path.resolve(packageInstalled.root).toLowerCase())
+    .digest('hex');
+  const expectedSkillName = `${packageName}@${rootScope.slice(0, 12)}::summarize`;
+  if (importedSkill.name !== expectedSkillName || importedSkill.lifecycle_state !== 'candidate') {
+    throw new Error('Native plugin import did not preserve the package and root-qualified candidate identity.');
+  }
+  const importedSkillVersion = await (await fetch(
+    `${connection.base_url}/skills/${importedSkill.id}/versions/1`, { headers },
+  )).json();
+  const importedSource = importedSkillVersion.evaluation_evidence?.source;
+  if (importedSource?.package_name !== packageName
+      || importedSource?.skill_name !== 'summarize'
+      || importedSource?.root_scope_sha256 !== rootScope) {
+    throw new Error('Native plugin skill provenance did not retain its package, root, and source skill identity.');
+  }
+  await page.getByRole('navigation', { name: 'Main sections' })
+    .getByRole('link', { name: 'Skills', exact: true }).click();
+  await expect(page.getByRole('button', { name: `Inspect ${expectedSkillName}`, exact: true })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Main sections' })
+    .getByRole('link', { name: /Tools & integrations/ }).click();
+  const pluginDisclosure = page.locator('summary').filter({ hasText: 'Agent plugin discovery' });
+  await expect(pluginDisclosure).toBeVisible();
+  if (!(await pluginDisclosure.evaluate((element) => (element.parentElement).open))) {
+    await pluginDisclosure.click();
+  }
+  await expect(plugins.getByRole('button', { name: 'Show installed packages' })).toBeVisible();
+  await plugins.getByRole('button', { name: 'Show installed packages' }).click();
   await expect(packageCard.getByText('local-helper', { exact: false })).toBeVisible();
   await packageCard.getByRole('button', { name: 'Add disconnected server' }).click();
   await expect(plugins.getByRole('status')).toContainText(`${packageName}:local-helper`);
@@ -803,6 +843,8 @@ try {
     native_oauth_reconnect: true,
     native_oauth_clear_sign_in: true,
     native_package_install_and_listing: true,
+    native_plugin_skill_import_and_qualified_identity: importedSkill.name === expectedSkillName
+      && importedSource?.root_scope_sha256 === rootScope,
     native_package_mcp_import_stays_disconnected: packageServerState?.state === 'disconnected',
     native_package_removal_blocked_while_referenced: true,
     native_package_removed_after_integration_removal: true,
