@@ -3,6 +3,7 @@ import {navigateMainSection,selectLocalModel} from './navigation';
 
 test('connect, submit an objective and render its saved events', async ({ page }) => {
   const errors: string[] = [];
+  const runResourcesRequests: string[] = [];
   let planReads = 0;
   let runSubmissions = 0;
   let emergencyStopRequests = 0;
@@ -11,6 +12,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   let braveSearchSecret = '';
   let memories: {id: string; content: string; provenance: string}[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => { if (request.url().includes('RunResources')) runResourcesRequests.push(request.url()); });
   const run = { id: 'browser-run', objective: 'Read input.txt', state: 'verifying', acceptance_criteria:[], revision:3, model:'fixture/model', created_at:new Date(Date.now()-5_000).toISOString(), updated_at:new Date().toISOString(), limits:{max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true} };
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
@@ -80,6 +82,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     return route.fulfill({ json: run, headers });
   });
   await page.goto('/');
+  await expect.poll(() => runResourcesRequests).toHaveLength(0);
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await navigateMainSection(page,'Model setup');
@@ -162,6 +165,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByRole('button', { name: 'Start objective' }).click();
+  await expect.poll(() => runResourcesRequests.length).toBeGreaterThan(0);
   await navigateMainSection(page,'New objective');
   const recentWorkspaces=page.getByLabel('Recent project folders');
   await expect(recentWorkspaces).toHaveValue('C:\\fixture');

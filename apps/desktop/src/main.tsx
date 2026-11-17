@@ -1,5 +1,4 @@
 import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.tsx';
-import {RunResources} from './RunResources.tsx';
 import { lazy, Suspense, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type RunEvent, type Artifact, type Plan, type ChatSession } from './api/client.ts';
@@ -28,6 +27,7 @@ const AgentPluginsPanel=lazy(()=>import('./AgentPluginsPanel.tsx').then(module=>
 const ExecutionSetup=lazy(()=>import('./ExecutionSetup.tsx').then(module=>({default:module.ExecutionSetup})));
 const SearchProviderPanel=lazy(()=>import('./SearchProviderPanel.tsx').then(module=>({default:module.SearchProviderPanel})));
 const VoiceCapture=lazy(()=>import('./VoiceCapture.tsx').then(module=>({default:module.VoiceCapture})));
+const RunResources=lazy(()=>import('./RunResources.tsx').then(module=>({default:module.RunResources})));
 
 const SPECIALIST_DRAFT_CLEAR_DELAY_MS=1000;
 const ENGINE_STARTUP_RETRY_ATTEMPTS=240;
@@ -627,7 +627,7 @@ function App() {
       </div>
       <div className="page-runs" style={{display:page==='runs'?'contents':'none'}}>
       {run && client && <div id="active-run" className="anchor-target"><Suspense fallback={<p role="status">Loading run activity…</p>}><ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} client={client} onControl={action=>void control(action)}/></Suspense></div>}
-      {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
+      {run && <Suspense fallback={<p role="status">Loading run resources…</p>}><RunResources client={client} run={run} refresh={usageRefresh}/></Suspense>}
       {artifacts.length > 0 && <Suspense fallback={<p role="status">Loading run artifacts…</p>}><ArtifactPanel artifacts={artifacts} client={client} onError={setError}/></Suspense>}
       {run && plan && <Suspense fallback={<p role="status">Loading task plan…</p>}><PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'&&Boolean(run.model)} canCancelQueued={!busy&&run.state==='verifying'} hasSelectedModel={Boolean(run.model)} /></Suspense>}
       {run?.state==='verifying'&&<Suspense fallback={<p role="status">Loading final review…</p>}><RunReviewPanel key={`${run.id}:${run.revision}`} client={client} run={run} canAccept={plan!==undefined&&plan.tasks.every(task=>task.status==='completed')} onReviewed={next=>{setRun(next);setHistoryRefresh(value=>value+1);}}/></Suspense>}
