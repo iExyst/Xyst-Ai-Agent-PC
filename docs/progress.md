@@ -1,5 +1,9 @@
 # Progress
 
+## Defer search settings and microphone code until use (2026-11-17)
+
+Web-search settings now load with the Integrations page, and microphone controls load the first time advanced run options open. The initial desktop JavaScript bundle fell from 325.46 KB (96.81 KB gzip) to 320.09 KB (95.05 KB gzip). Production and native development builds pass; objective and voice browser checks pass (3), including a request check that microphone code is absent at startup and loads on demand. Exact-source Windows CI is queued in run [44038684154](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44038684154). No live model inference was used.
+
 ## Show remaining run resource allowance (2026-11-17)
 
 The active run’s resource panel now shows remaining wall-clock time, token allowance after measured usage and outstanding reservations, and inference iterations remaining from durable inference-start events. It reports token allowance as unknown when any call lacks measured usage, rather than implying that an untracked request is free. Run elapsed time and remaining time now start at the first persisted `planning` event, matching the engine’s execution budget instead of charging queue delay. The objective browser flow verifies selected model, countdown, unavailable usage, and reserved-token calculation; the Windows Tauri acceptance simulates a five-minute queue and confirms both elapsed and remaining clocks start at planning, displays `7 of 8` iterations, and displays singular specialist budgets correctly ([report](../.acceptance/native-plan-progress-2247de1f-87e0-45cf-830d-02636c115385/report.json)). The acceptance exits the app and stops its engine without model inference. The relevant Python tests, focused browser flows, API contract audit, and desktop builds pass.
