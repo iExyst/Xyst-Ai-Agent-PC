@@ -359,21 +359,29 @@ def search_snapshot(
                         if folded_length >= offset:
                             break
                         folded_length += len(character.casefold())
-                if not add_match({"path": name, "line": number, "excerpt": line[max(0, source_offset - 80):source_offset + 220]}):
+                if not add_match(
+                    {
+                        "path": name,
+                        "line": number,
+                        "excerpt": line[max(0, source_offset - 80) : source_offset + 220],
+                    }
+                ):
                     stopped = True
                     break
             if stopped:
                 break
-    return _bounded_search_output({
-        "query": parsed.query,
-        "target": parsed.target,
-        "matches": matches,
-        "truncated": bool(reasons),
-        "limits_reached": sorted(reasons),
-        "scanned_files": scanned_files,
-        "scanned_directories": scanned_directories,
-        "skipped_links": 0,
-        "excluded_directories": excluded_directories,
-        "excluded_names": sorted(excluded),
-        "trust": "untrusted_workspace_content",
-    })
+    return _bounded_search_output(
+        {
+            "query": parsed.query,
+            "target": parsed.target,
+            "matches": matches,
+            "truncated": bool(reasons),
+            "limits_reached": sorted(reasons),
+            "scanned_files": scanned_files,
+            "scanned_directories": scanned_directories,
+            "skipped_links": 0,
+            "excluded_directories": excluded_directories,
+            "excluded_names": sorted(excluded),
+            "trust": "untrusted_workspace_content",
+        }
+    )
