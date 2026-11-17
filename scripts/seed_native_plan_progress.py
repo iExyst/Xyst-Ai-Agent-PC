@@ -1,4 +1,4 @@
-"""Seed a deterministic three-task plan for native desktop progress acceptance."""
+"""Seed a deterministic nested plan for native desktop progress acceptance."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ def main() -> None:
                     objective="Inspect the primary fixture without making changes.",
                     acceptance_criteria=("Record the observed fixture state.",),
                     expected_outputs=("Fixture state summary",),
+                    parent_id="review",
                     role="researcher",
                     permissions=("workspace.read",),
                     max_iterations=1,
@@ -46,6 +47,7 @@ def main() -> None:
                     objective="Inventory the independent fixture inputs.",
                     acceptance_criteria=("Record the available inputs.",),
                     expected_outputs=("Input inventory",),
+                    parent_id="review",
                     role="researcher",
                     permissions=("workspace.read",),
                     max_iterations=1,
@@ -57,6 +59,7 @@ def main() -> None:
                         objective=f"Inspect independent fixture input {index + 1}.",
                         acceptance_criteria=("Record the available input.",),
                         expected_outputs=("Concise input findings",),
+                        parent_id="review",
                         role="researcher",
                         permissions=("workspace.read",),
                         max_iterations=1,
@@ -69,7 +72,6 @@ def main() -> None:
                     objective="Review the inspection evidence.",
                     acceptance_criteria=("Check the saved evidence.",),
                     expected_outputs=("Review summary",),
-                    dependencies=("inspect",),
                     role="reviewer",
                     permissions=("workspace.read",),
                     max_iterations=1,

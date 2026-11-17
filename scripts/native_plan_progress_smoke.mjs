@@ -54,7 +54,7 @@ try{
   await expect(page.getByRole('heading',{name:'Agent plugin packages'})).toBeVisible();
   await page.locator('summary').filter({hasText:'Command sandbox setup'}).click();
   await expect(page.getByRole('button',{name:'Find installed distributions'})).toBeVisible();
-  const objective='Native dependency stage progress fixture';
+  const objective='Native nested specialist plan fixture';
   const created=await fetch(`${connection.base_url}/runs`,{method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({objective,workspace,mode:'observe',model:null,max_iterations:8,max_seconds:120})});
   if(!created.ok)throw new Error(`Could not create model-free native fixture run (${created.status})`);
   const run=await created.json();
@@ -85,6 +85,8 @@ try{
   const graphInspect=dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'});
   await expect(graphInspect).toContainText('Inspect the primary fixture without making changes.');
   await expect(graphInspect).toContainText('1 expected output');
+  await expect(dependencyMap.getByRole('link',{name:'Open task review, stage 2, Waiting'})).toBeVisible();
+  await expect(dependencyMap.locator('path[marker-end]')).toHaveCount(7);
   const graphViewport=dependencyMap.getByLabel('Scrollable task dependency map');
   if(!await graphViewport.evaluate(element=>element.scrollHeight>element.clientHeight))throw new Error('Native dependency map did not scroll within its bounded viewport.');
   const inspectTask=plan.getByRole('article',{name:'Task inspect'});
@@ -103,8 +105,16 @@ try{
   await expect(stageOne).toContainText('7 waiting');
   await expect(stageTwo.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   await expect(stageTwo).toContainText('1 waiting');
+  const reviewTask=plan.getByRole('article',{name:'Task review'});
+  await expect(reviewTask).toContainText('queued · Waiting for reviewed subtasks');
+  const reviewDetails=reviewTask.locator('details.plan-task-details');
   await page.screenshot({path:path.join(root,'plan-progress.png'),fullPage:true});
+  await reviewDetails.locator('summary').click();
+  await expect(reviewDetails).toContainText('Parent waits for owner review of each subtask');
+  await expect(reviewDetails.locator('dd').nth(0).locator('a[href^="#plan-task-"]')).toHaveCount(7);
   await taskDetails.locator('summary').click();
+  await expect(taskDetails).toContainText('Subtask of');
+  await expect(taskDetails).toContainText('review');
   await expect(taskDetails).toContainText('Acceptance criteria');
   await expect(taskDetails).toContainText('Expected outputs');
   await page.getByRole('link',{name:'Memory',exact:true}).click();
@@ -115,7 +125,7 @@ try{
   await expect(page.getByRole('heading',{name:'Automations',level:1,exact:true})).toBeVisible();
   await page.getByRole('link',{name:'System monitor',exact:true}).click();
   await expect(page.getByRole('heading',{name:'System monitor',exact:true})).toBeVisible();
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory',...Array.from({length:5},(_,index)=>`extra-${index+1}`),'review'],dependency_stages:2,stage_one_tasks:7,stage_two_tasks:1,stage_progress_bars_verified:true,task_purpose_and_expected_outputs_visible_in_graph:true,task_details_collapsed_by_default:true,expected_output_visible_in_task_summary:true,task_details_expand_verified:true,large_graph_viewport_scroll_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,specialist_resource_usage_display_verified:true,on_demand_screens_verified:['Memory','Skills','Automations','System monitor','Saved runs','Conversations'],on_demand_integration_panels_verified:['Search','Specialist profiles','Channels','MCP','Agent Plugins','Command sandbox'],dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory',...Array.from({length:5},(_,index)=>`extra-${index+1}`),'review'],dependency_stages:2,stage_one_tasks:7,stage_two_tasks:1,nested_parent_id:'review',nested_child_count:7,parent_waits_for_owner_review:true,subtask_parent_links_verified:true,child_to_parent_graph_edges:7,stage_progress_bars_verified:true,task_purpose_and_expected_outputs_visible_in_graph:true,task_details_collapsed_by_default:true,expected_output_visible_in_task_summary:true,task_details_expand_verified:true,large_graph_viewport_scroll_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,specialist_resource_usage_display_verified:true,on_demand_screens_verified:['Memory','Skills','Automations','System monitor','Saved runs','Conversations'],on_demand_integration_panels_verified:['Search','Specialist profiles','Channels','MCP','Agent Plugins','Command sandbox'],dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
   await page.evaluate(async()=>{

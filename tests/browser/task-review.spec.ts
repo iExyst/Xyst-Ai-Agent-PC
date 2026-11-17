@@ -94,7 +94,7 @@ test('cancel a queued specialist before dispatch and block its dependents',async
   await page.getByRole('button',{name:'Start objective'}).click();
   await page.getByRole('button',{name:'Cancel cancel-me'}).click();
   await expect(page.getByRole('article',{name:'Task cancel-me'})).toContainText('cancelled');
-  await expect(page.getByRole('article',{name:'Task dependent'})).toContainText('Blocked by a dependency');
+  await expect(page.getByRole('article',{name:'Task dependent'})).toContainText('Blocked by a prerequisite');
   await expect(page.getByRole('list',{name:'Task status counts'})).toContainText('0 waiting');
   await expect(page.getByRole('list',{name:'Task status counts'})).toContainText('1 need attention');
   expect(cancelled).toBe(true);
