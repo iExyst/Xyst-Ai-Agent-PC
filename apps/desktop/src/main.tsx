@@ -1,31 +1,33 @@
 import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.tsx';
 import {RunResources} from './RunResources.tsx';
-import { useState, useRef, useEffect } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type RunEvent, type Artifact, type Plan, type ChatSession } from './api/client.ts';
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { SkillsPanel, type ProcedureTrialSelection } from './SkillsPanel.tsx';
-import { MemoryPanel } from './MemoryPanel.tsx';
-import { PlanPanel } from './PlanPanel.tsx';
-import { RunReviewPanel } from './RunReviewPanel.tsx';
+import type { ProcedureTrialSelection } from './SkillsPanel.tsx';
 import { SavedRunsPanel } from './SavedRunsPanel.tsx';
-import { AutomationsPanel } from './AutomationsPanel.tsx';
-import { ChannelsPanel } from './ChannelsPanel.tsx';
-import { ActiveRunPanel } from './ActiveRunPanel.tsx';
 import { InlineConfirmation } from './InlineConfirmation.tsx';
-import { ExecutionSetup } from './ExecutionSetup.tsx';
-import { ProviderSetup } from './ProviderSetup.tsx';
 import { SearchProviderPanel } from './SearchProviderPanel.tsx';
-import { SpecialistProfilesPanel } from './SpecialistProfilesPanel.tsx';
-import { MCPPanel } from './MCPPanel.tsx';
-import { AgentPluginsPanel } from './AgentPluginsPanel.tsx';
 import { ConversationSessionsPanel } from './ConversationSessionsPanel.tsx';
 import { VoiceCapture } from './VoiceCapture.tsx';
-import { SystemMonitorPanel } from './SystemMonitorPanel.tsx';
-import { ArtifactPanel } from './ArtifactPanel.tsx';
 import type {components} from './generated/api.js';
+
+const ActiveRunPanel=lazy(()=>import('./ActiveRunPanel.tsx').then(module=>({default:module.ActiveRunPanel})));
+const ArtifactPanel=lazy(()=>import('./ArtifactPanel.tsx').then(module=>({default:module.ArtifactPanel})));
+const AutomationsPanel=lazy(()=>import('./AutomationsPanel.tsx').then(module=>({default:module.AutomationsPanel})));
+const ChannelsPanel=lazy(()=>import('./ChannelsPanel.tsx').then(module=>({default:module.ChannelsPanel})));
+const MemoryPanel=lazy(()=>import('./MemoryPanel.tsx').then(module=>({default:module.MemoryPanel})));
+const PlanPanel=lazy(()=>import('./PlanPanel.tsx').then(module=>({default:module.PlanPanel})));
+const SkillsPanel=lazy(()=>import('./SkillsPanel.tsx').then(module=>({default:module.SkillsPanel})));
+const SystemMonitorPanel=lazy(()=>import('./SystemMonitorPanel.tsx').then(module=>({default:module.SystemMonitorPanel})));
+const ProviderSetup=lazy(()=>import('./ProviderSetup.tsx').then(module=>({default:module.ProviderSetup})));
+const RunReviewPanel=lazy(()=>import('./RunReviewPanel.tsx').then(module=>({default:module.RunReviewPanel})));
+const SpecialistProfilesPanel=lazy(()=>import('./SpecialistProfilesPanel.tsx').then(module=>({default:module.SpecialistProfilesPanel})));
+const MCPPanel=lazy(()=>import('./MCPPanel.tsx').then(module=>({default:module.MCPPanel})));
+const AgentPluginsPanel=lazy(()=>import('./AgentPluginsPanel.tsx').then(module=>({default:module.AgentPluginsPanel})));
+const ExecutionSetup=lazy(()=>import('./ExecutionSetup.tsx').then(module=>({default:module.ExecutionSetup})));
 
 const SPECIALIST_DRAFT_CLEAR_DELAY_MS=1000;
 const ENGINE_STARTUP_RETRY_ATTEMPTS=240;
@@ -79,6 +81,7 @@ function conversationObjective(previous:ChatSession['messages'],current:string):
 
 function App() {
   const [page,setPage]=useState<DesktopPage>('home');
+  const [visitedPages,setVisitedPages]=useState<Set<DesktopPage>>(()=>new Set(['home']));
   const [activeSection,setActiveSection]=useState<DesktopNavTarget>('new-objective');
   const [token, setToken] = useState('');
   const [client, setClient] = useState<EngineClient>();
@@ -109,6 +112,7 @@ function App() {
   const selectedProcedureNpmEnvironmentDigest=matchingProcedureNpmEnvironments.length===1?matchingProcedureNpmEnvironments[0]!.environment_digest:matchingProcedureNpmEnvironments.some(environment=>environment.environment_digest===procedureNpmEnvironmentDigest)?procedureNpmEnvironmentDigest:undefined;
   const [usageRefresh, setUsageRefresh] = useState(0);
   const [mode, setMode] = useState<'observe' | 'workspace'>('observe');
+  useEffect(()=>setVisitedPages(current=>current.has(page)?current:new Set(current).add(page)),[page]);
   useEffect(()=>setCommandAllowed(false),[sandbox,workspace,mode,client]);
   useEffect(()=>{
     if(!sandbox||sandbox.state!=='ready')return;
@@ -569,18 +573,19 @@ function App() {
       <div className="engine-connect-footer"><span className="engine-connect-footer-icon" aria-hidden="true">↗</span><p><strong>Next up: choose a model</strong><span>Once connected, open Model setup to select an LM Studio model and complete onboarding.</span></p><span className="engine-connect-footer-index">02</span>
       </div>
     </section> : <>
-      {page==='models'&&<div id="model-setup" className="anchor-target"><ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/></div>}
-      {page==='monitor'&&<div id="system-monitor" className="anchor-target"><SystemMonitorPanel client={client}/></div>}
-      <div className="page-integrations" style={{display:['integrations','memory','skills','automations'].includes(page)?'contents':'none'}}><div id="integrations" className="anchor-target"><section id="memory" className="anchor-target" style={{display:page==='memory'?'block':'none'}}><details open={page==='memory'}><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>
-      <section id="skills" className="anchor-target" style={{display:page==='skills'?'block':'none'}}><details open={page==='skills'}><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={selection=>{setProcedureTrial(selection);const matching=selection.python_environments.filter(environment=>environment.distribution===sandbox?.distribution);const matchingNpm=selection.npm_environments.filter(environment=>environment.distribution===sandbox?.distribution);setProcedurePythonEnvironmentDigest(matching.length===1?matching[0]!.environment_digest:undefined);setProcedureNpmEnvironmentDigest(matchingNpm.length===1?matchingNpm[0]!.environment_digest:undefined);setAllowProcedureRevision(false);setAllowProcedureResourceRevision(false);setAllowProcedureResourceRemoval(false);}} refreshKey={skillsRefresh} objective={objective} executionDistribution={sandbox?.state==='ready'?sandbox.distribution:undefined}/></details></section>
-      <section style={{display:page==='integrations'?'block':'none'}}><details><summary>Specialist identities and model routes</summary><SpecialistProfilesPanel client={client}/></details></section>
-      <section id="automations" className="anchor-target" style={{display:page==='automations'?'block':'none'}}><details open={page==='automations'}><summary>Automations</summary><AutomationsPanel client={client} model={model} workspace={workspace}/></details></section>
+      {page==='models'&&<div id="model-setup" className="anchor-target"><Suspense fallback={<p role="status">Loading model setup…</p>}><ProviderSetup client={client} models={models} model={model} onModelsChanged={setModels} onModelChanged={setModel} onDiagnosticPassed={setDiagnosticPassed}/></Suspense></div>}
+      {page==='monitor'&&<div id="system-monitor" className="anchor-target"><Suspense fallback={<p role="status">Loading system monitor…</p>}><SystemMonitorPanel client={client}/></Suspense></div>}
+      <div className="page-integrations" style={{display:['integrations','memory','skills','automations'].includes(page)?'contents':'none'}}>{['integrations','memory','skills','automations'].some(target=>visitedPages.has(target as DesktopPage))&&<Suspense fallback={<p role="status">Loading workspace tools…</p>}><div id="integrations" className="anchor-target">{visitedPages.has('memory')&&<section id="memory" className="anchor-target" style={{display:page==='memory'?'block':'none'}}><details open={page==='memory'}><summary>Memory preferences</summary><MemoryPanel client={client} /></details></section>}
+      {visitedPages.has('skills')&&<section id="skills" className="anchor-target" style={{display:page==='skills'?'block':'none'}}><details open={page==='skills'}><summary>Reusable procedures</summary><SkillsPanel client={client} onTrial={selection=>{setProcedureTrial(selection);const matching=selection.python_environments.filter(environment=>environment.distribution===sandbox?.distribution);const matchingNpm=selection.npm_environments.filter(environment=>environment.distribution===sandbox?.distribution);setProcedurePythonEnvironmentDigest(matching.length===1?matching[0]!.environment_digest:undefined);setProcedureNpmEnvironmentDigest(matchingNpm.length===1?matchingNpm[0]!.environment_digest:undefined);setAllowProcedureRevision(false);setAllowProcedureResourceRevision(false);setAllowProcedureResourceRemoval(false);}} refreshKey={skillsRefresh} objective={objective} executionDistribution={sandbox?.state==='ready'?sandbox.distribution:undefined}/></details></section>}
+      {visitedPages.has('integrations')&&<><section style={{display:page==='integrations'?'block':'none'}}><details><summary>Specialist identities and model routes</summary><SpecialistProfilesPanel client={client}/></details></section>
       <section style={{display:page==='integrations'?'block':'none'}}><details><summary>Messaging channels</summary><ChannelsPanel client={client}/></details></section>
       <section style={{display:page==='integrations'?'block':'none'}}><details><summary>Web search integration</summary><SearchProviderPanel client={client}/></details></section>
       <section style={{display:page==='integrations'?'block':'none'}}><details><summary>MCP integrations</summary><MCPPanel client={client} selectedRunWriteTools={approvedMCPTools} onRunWriteToolsChange={setApprovedMCPTools} selectedSamplingServers={approvedMCPSamplingServers} onSamplingServersChange={setApprovedMCPSamplingServers} onUsePromptText={useMCPPromptText} refreshKey={mcpRefresh}/></details></section>
       <section style={{display:page==='integrations'?'block':'none'}}><details><summary>Agent plugin discovery</summary><AgentPluginsPanel client={client} onImported={()=>{setSkillsRefresh(value=>value+1);setMcpRefresh(value=>value+1);}}/></details></section>
-      </div>
-      <div style={{display:page==='integrations'?'block':'none'}}><ExecutionSetup client={client} onReady={setSandbox}/></div></div>
+      </>}
+      {visitedPages.has('automations')&&<section id="automations" className="anchor-target" style={{display:page==='automations'?'block':'none'}}><details open={page==='automations'}><summary>Automations</summary><AutomationsPanel client={client} model={model} workspace={workspace}/></details></section>}
+      </div></Suspense>}
+      {visitedPages.has('integrations')&&<div style={{display:page==='integrations'?'block':'none'}}><Suspense fallback={<p role="status">Loading execution settings…</p>}><ExecutionSetup client={client} onReady={setSandbox}/></Suspense></div>}</div>
       <div className="page-runs" style={{display:page==='runs'?'contents':'none'}}>
       <div id="saved-runs" className="anchor-target"><SavedRunsPanel client={client} refreshKey={String(historyRefresh)} onOpen={id=>void openSaved(id)}/></div>
       {(commandOutput.stdout||commandOutput.stderr)&&<section aria-label="Streaming command output"><h2>Command output (untrusted, streaming)</h2>{(['stdout','stderr'] as const).map(stream=>commandOutput[stream]&&<div key={stream}><h3>{stream}</h3><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:360,overflow:'auto'}}>{commandOutput[stream]}</pre></div>)}</section>}
@@ -617,11 +622,11 @@ function App() {
       <details className="file-check-card"><summary>File check (optional)</summary><p>Compare a file with the exact contents you supply, including whitespace. A mismatch asks the agent to correct its work within the run budget.</p><label>File to verify<input value={checkPath} onChange={event => setCheckPath(event.target.value)} placeholder="config.txt" /></label><label htmlFor="expected-file-content">Expected file contents</label><textarea id="expected-file-content" value={expectedContent} onChange={event => setExpectedContent(event.target.value)} /></details>
       </div>
       <div className="page-runs" style={{display:page==='runs'?'contents':'none'}}>
-      {run && client && <div id="active-run" className="anchor-target"><ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} client={client} onControl={action=>void control(action)}/></div>}
+      {run && client && <div id="active-run" className="anchor-target"><Suspense fallback={<p role="status">Loading run activity…</p>}><ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} client={client} onControl={action=>void control(action)}/></Suspense></div>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
-      {artifacts.length > 0 && <ArtifactPanel artifacts={artifacts} client={client} onError={setError}/>}
-      {run && plan && <PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'&&Boolean(run.model)} canCancelQueued={!busy&&run.state==='verifying'} hasSelectedModel={Boolean(run.model)} />}
-      {run?.state==='verifying'&&<RunReviewPanel key={`${run.id}:${run.revision}`} client={client} run={run} canAccept={plan!==undefined&&plan.tasks.every(task=>task.status==='completed')} onReviewed={next=>{setRun(next);setHistoryRefresh(value=>value+1);}}/>}
+      {artifacts.length > 0 && <Suspense fallback={<p role="status">Loading run artifacts…</p>}><ArtifactPanel artifacts={artifacts} client={client} onError={setError}/></Suspense>}
+      {run && plan && <Suspense fallback={<p role="status">Loading task plan…</p>}><PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'&&Boolean(run.model)} canCancelQueued={!busy&&run.state==='verifying'} hasSelectedModel={Boolean(run.model)} /></Suspense>}
+      {run?.state==='verifying'&&<Suspense fallback={<p role="status">Loading final review…</p>}><RunReviewPanel key={`${run.id}:${run.revision}`} client={client} run={run} canAccept={plan!==undefined&&plan.tasks.every(task=>task.status==='completed')} onReviewed={next=>{setRun(next);setHistoryRefresh(value=>value+1);}}/></Suspense>}
       </div>
     </>}</main></div></div>;
 }
