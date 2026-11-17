@@ -1,5 +1,9 @@
 # Progress
 
+## Verify final-review page bounds (2026-11-16)
+
+Added a regression that rejects a requested page size of 201 while preserving the existing three-page check across 205 changed files. The focused test passes locally, and exact-source Windows run [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) passed the full Python suite, final-review and desktop browser acceptances, static checks, and process-recovery diagnostics. The installer job was skipped because no packaging inputs changed. This verifies the changed-file paging bounds; the broader live-model and release gates remain open.
+
 ## Tolerate slower browser page text extraction (2026-11-16)
 
 Raised the browser worker's visible page text extraction allowance from 5 to 10 seconds, within its existing 35-second overall worker bound. The focused packaged-download worker regression passes (1 test); Ruff, formatting, and Pyright pass. Exact-source Windows run [43975481935](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43975481935) passed, including the changed-file final-review browser flow and Python suite. Exact-revision installer run [43975495906](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43975495906) passed the frozen browser read/process-tree cancellation check and the full installed package lifecycle, including AppContainer, OAuth, recovery, onboarding, workspace write/edit/delete recovery, upgrade, boot, standard-user install, and uninstall/data-choice checks. The same package run verified that native emergency-stop recovery accepts the WebView closing as the app exits while still requiring clean process exit. No live LLM inference was used. The live LM Studio milestone and broader release/parity gates remain open.

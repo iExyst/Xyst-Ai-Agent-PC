@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Final-review changed-file paging bounds (2026-11-16)
+
+The final-review UI loads changed files in bounded pages and validates page responses before rendering. A regression covers all 205 changed files across three pages and rejects `limit=201`; the exact-source Windows workflow [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) passes. This verifies the review evidence display path; it does not close the broader coding, review, or live-model parity requirements.
+
 ## Packaged browser read and final-review file disclosure (2026-11-16)
 
 Browser text extraction now allows 10 seconds, still bounded by the worker's 35-second overall timeout. Focused deterministic regression, static checks, exact-source Windows run [43975481935](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43975481935), and exact-revision package acceptance [43975495906](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43975495906) passed. The package acceptance verifies frozen Edge read and process-tree cancellation plus native install, upgrade, startup/recovery, and uninstall flows. The final-review changed-file UI is included in the exact-source run. This is acceptance for the implemented browser and review slices; live LM Studio verification and the broader capability matrix remain open. See [`progress.md`](../progress.md#tolerate-slower-browser-page-text-extraction-2026-11-16).
