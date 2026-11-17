@@ -690,3 +690,51 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 90
+
+  wsl-node-acceptance:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      UV_CACHE_DIR: .uv-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: .github/requirements-uv.txt
+      - name: Install pinned uv from its verified PyPI wheel
+        run: python -m pip install --disable-pip-version-check --no-deps --require-hashes -r .github/requirements-uv.txt
+      - name: Run uv sync --locked
+        run: uv sync --locked
+      - name: Provision Ubuntu 24.04 under WSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          wsl.exe --set-default-version 2
+          if ($LASTEXITCODE -ne 0) { throw 'Could not select WSL 2 for the acceptance distribution.' }
+          wsl.exe --install --distribution Ubuntu-24.04 --no-launch
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the Ubuntu-24.04 WSL distribution.' }
+          $launcher = Get-Command ubuntu2404.exe -ErrorAction Stop
+          & $launcher.Source install --root
+          if ($LASTEXITCODE -ne 0) { throw 'Could not initialize Ubuntu 24.04 without an interactive user prompt.' }
+          $linuxSetup = "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm sudo"
+          wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc $linuxSetup
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enable systemd and install the Ubuntu Node/npm prerequisites.' }
+          wsl.exe --terminate Ubuntu-24.04
+          if ($LASTEXITCODE -ne 0) { throw 'Could not restart Ubuntu 24.04 to apply its WSL systemd configuration.' }
+          wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc 'test "$(cat /proc/1/comm)" = systemd'
+          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 systemd is not running as PID 1 under WSL.' }
+        timeout-minutes: 12
+      - name: Verify offline Node procedure environments through WSL
+        run: uv run python scripts/wsl_node_environment_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-node-environment-${{ github.run_id }}/report.json
+        timeout-minutes: 18
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wsl-node-environment-${{ github.run_id }}
+          path: .acceptance/wsl-node-environment-${{ github.run_id }}/report.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90
