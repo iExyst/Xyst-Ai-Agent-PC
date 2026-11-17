@@ -10,10 +10,11 @@ from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
-from xaa.runtime.task_review import candidate_evidence
+from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
 from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import RunStore
 from xaa.storage.specialist_profiles import SpecialistProfileStore
+from xaa.storage.task_workspaces import TaskWorkspaces
 from xaa.storage.tasks import TaskStore
 
 
@@ -156,6 +157,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
                 "workspace_read_file",
                 "workspace_list_directory",
                 "workspace_search",
+                "task_delegate_subtasks",
             }
             await asyncio.sleep(0.01)
             if messages[-1]["role"] == "user":
@@ -1229,3 +1231,220 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
     assert "".join(event["payload"]["text"] for event in specialist_deltas) == (
         "Specialist candidate awaiting review"
     )
+
+
+async def test_running_specialist_can_delegate_then_resume_after_child_review(
+    workspace_tmp_path,
+):
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    (project / "source.txt").write_text("Reviewed source evidence", encoding="utf-8")
+    (project / "draft.txt").write_text("before", encoding="utf-8")
+    data = workspace_tmp_path / "data"
+    data.mkdir()
+    store = RunStore(data / "dynamic-specialist.sqlite3")
+    run_id = store.create_run(
+        objective="Execute a task that discovers independent work",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model="fixture",
+        max_iterations=8,
+    )["id"]
+    parent = store.acquire_lease(run_id, "coordinator")
+    store.transition(run_id, RunState.PLANNING, owner=parent)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="lead",
+                objective="Aggregate independently reviewed source findings",
+                acceptance_criteria=["Use the reviewed child result"],
+                expected_outputs=["An integrated summary"],
+                role="developer",
+                permissions=("workspace.read", "workspace.write"),
+                max_iterations=5,
+                max_seconds=300,
+            )
+        ],
+    )
+    store.transition(run_id, RunState.RUNNING, owner=parent)
+
+    class DynamicProvider(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+
+        async def chat(self, *, model, messages, tools=None):
+            return await self.respond(model=model, messages=messages, tools=tools)
+
+        async def respond(self, *, model, messages, tools=None):
+            assignment = json.loads(messages[1]["content"])
+            if assignment["objective"] == "Aggregate independently reviewed source findings":
+                if assignment["subtask_results_untrusted"]:
+                    assert assignment["subtask_result_task_ids"] == ["source-check"]
+                    child = assignment["subtask_results_untrusted"][0]
+                    assert child["completion"] == "completed_after_owner_review"
+                    assert "Reviewed source evidence" in child["candidate_untrusted"]
+                    changes = TaskWorkspaces(store).changes(run_id, "lead")
+                    assert [item["path"] for item in changes] == ["draft.txt"]
+                    message = {"role": "assistant", "content": "Integrated summary"}
+                else:
+                    previous_call = None
+                    if messages[-1]["role"] == "tool":
+                        previous_result = json.loads(messages[-1]["content"])
+                        if previous_result.get("text") == "before":
+                            previous_call = "workspace_read_file"
+                        elif previous_result.get("bytes_written") is not None:
+                            previous_call = "workspace_write_file"
+                        else:
+                            raise AssertionError(previous_result)
+                    if previous_call == "workspace_read_file":
+                        read_result = json.loads(messages[-1]["content"])
+                        assert read_result["text"] == "before"
+                        message = {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "parent-write-draft",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "workspace_write_file",
+                                        "arguments": json.dumps(
+                                            {
+                                                "path": "draft.txt",
+                                                "expected_sha256": read_result["sha256"],
+                                                "content": "retained private edit",
+                                            }
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    elif previous_call == "workspace_write_file":
+                        message = {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "delegate-source-check",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "task_delegate_subtasks",
+                                        "arguments": json.dumps(
+                                            {
+                                                "reason": "Independent inspection is needed before integration.",
+                                                "tasks": [
+                                                    {
+                                                        "id": "source-check",
+                                                        "objective": "Inspect the source evidence",
+                                                        "acceptance_criteria": [
+                                                            "Report the exact source content"
+                                                        ],
+                                                        "expected_outputs": [
+                                                            "A source evidence summary"
+                                                        ],
+                                                        "dependencies": [],
+                                                        "role": "researcher",
+                                                        "permissions": ["workspace.read"],
+                                                        "max_iterations": 2,
+                                                        "max_seconds": 100,
+                                                    }
+                                                ],
+                                            }
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    else:
+                        assert previous_call is None
+                        assert any(
+                            item["function"]["name"] == "task_delegate_subtasks" for item in tools
+                        )
+                        message = {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "parent-read-draft",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "workspace_read_file",
+                                        "arguments": json.dumps({"path": "draft.txt"}),
+                                    },
+                                }
+                            ],
+                        }
+            elif messages[-1]["role"] == "tool":
+                result = json.loads(messages[-1]["content"])
+                assert result.get("text") == "Reviewed source evidence", result
+                message = {
+                    "role": "assistant",
+                    "content": "The source contains Reviewed source evidence.",
+                }
+            else:
+                assert any(item["function"]["name"] == "workspace_read_file" for item in tools)
+                message = {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "child-read-source",
+                            "type": "function",
+                            "function": {
+                                "name": "workspace_read_file",
+                                "arguments": json.dumps({"path": "source.txt"}),
+                            },
+                        }
+                    ],
+                }
+            return {"choices": [{"message": message}]}
+
+    provider = DynamicProvider()
+    try:
+        first = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 120
+        )
+        assert first == [
+            {"task_id": "lead", "status": "queued"},
+            {"task_id": "source-check", "status": "queued"},
+        ]
+        second = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 120
+        )
+        assert second == [
+            {"task_id": "lead", "status": "queued"},
+            {"task_id": "source-check", "status": "verifying"},
+        ]
+        child_evidence = candidate_evidence(store, run_id, "source-check")["evidence"]
+        assert child_evidence
+        store.transition(run_id, RunState.VERIFYING, owner=parent)
+        store.release_lease(run_id, parent)
+        await review_candidate(
+            store,
+            run_id,
+            "source-check",
+            TaskReviewDecision(
+                decision="accept",
+                rationale="The child result matches the inspected source file.",
+                confirmed_criteria=[0],
+                evidence_call_ids=[child_evidence[0]["call_id"]],
+            ),
+        )
+        parent = store.acquire_lease(run_id, "coordinator")
+        third = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 120
+        )
+    finally:
+        if store.get_run(run_id)["lease_owner"] == parent:
+            store.release_lease(run_id, parent)
+        await provider.close()
+
+    assert third == [
+        {"task_id": "lead", "status": "verifying"},
+        {"task_id": "source-check", "status": "completed"},
+    ]
+    rows = {item["local_id"]: item for item in tasks.records(run_id)}
+    assert json.loads(rows["lead"]["result"]) == {"candidate": "Integrated summary"}
+    assert rows["lead"]["status"] == "verifying"
+    assert rows["source-check"]["status"] == "completed"
+    assert not store.unresolved_tool_calls(run_id)

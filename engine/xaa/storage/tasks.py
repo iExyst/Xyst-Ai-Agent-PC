@@ -3,6 +3,7 @@
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -52,6 +53,7 @@ class TaskStore:
                 "task.blocked",
                 "task.result",
                 "task.recovery_decided",
+                "task.delegated",
             }:
                 elapsed += max(
                     0.0,
@@ -302,15 +304,18 @@ class TaskStore:
                 )
             if not ready:
                 return None
-            recovered_ids = {
+            resumable_ids = {
                 event["payload"].get("task_id")
                 for event in self.runs.list_events(run_id)
-                if event["event_type"] == "task.recovery_decided"
-                and event["payload"].get("decision") == "resume"
+                if event["event_type"] == "task.delegated"
+                or (
+                    event["event_type"] == "task.recovery_decided"
+                    and event["payload"].get("decision") == "resume"
+                )
             }
-            local_id = next((identity for identity in ready if identity in recovered_ids), ready[0])
+            local_id = next((identity for identity in ready if identity in resumable_ids), ready[0])
             record = next(row for row in records if row["local_id"] == local_id)
-            if local_id in recovered_ids:
+            if local_id in resumable_ids:
                 task_events = [
                     event
                     for event in self.runs.list_events(run_id)
@@ -635,6 +640,287 @@ class TaskStore:
                     "parent_ids": {task.id: task.parent_id for task in graph.tasks.values()},
                 },
             )
+
+    def delegate_subtasks(
+        self,
+        run_id: str,
+        parent_token: str,
+        task_id: str,
+        task_token: str,
+        call_id: str,
+        reason: str,
+        proposed: Sequence[TaskDefinition],
+    ) -> dict[str, Any]:
+        """Atomically extend a running specialist's plan and yield it to its children."""
+        if not call_id or len(call_id) > 128:
+            raise ValueError("Delegation requires a valid provider tool-call ID.")
+        if not reason.strip() or len(reason) > 1000:
+            raise ValueError("Delegation requires a concise reason.")
+        if not proposed or len(proposed) > 16:
+            raise ValueError("A specialist may add between one and sixteen subtasks at a time.")
+        parent = next((item for item in self.records(run_id) if item["local_id"] == task_id), None)
+        if parent is None:
+            raise ValueError("Delegating task does not exist in this run.")
+
+        proposed_ids = {item.id for item in proposed}
+        normalized: list[TaskDefinition] = []
+        for item in proposed:
+            parent_id = task_id if item.parent_id is None else item.parent_id
+            if parent_id != task_id and parent_id not in proposed_ids:
+                raise ValueError("New subtasks must belong to the active task's new subtree.")
+            normalized.append(item.model_copy(update={"parent_id": parent_id}))
+        argument_value = {
+            "reason": reason.strip(),
+            "tasks": [item.model_dump(mode="json") for item in normalized],
+        }
+        encoded_arguments = json.dumps(argument_value, sort_keys=True, ensure_ascii=False)
+        if len(encoded_arguments.encode("utf-8")) > 64 * 1024:
+            raise ValueError("Delegated task proposal exceeds the 64 KiB plan limit.")
+
+        now = utc_now()
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.runs.require_lease(connection, run_id, parent_token)
+            self.runs.require_task_read_scope(connection, run_id, task_id, task_token)
+            if (
+                connection.execute(
+                    "SELECT 1 FROM tasks WHERE run_id=? AND id=? AND status='running'",
+                    (run_id, f"{run_id}:{task_id}"),
+                ).fetchone()
+                is None
+            ):
+                raise PermissionError("Only a running specialist can add subtasks.")
+            if (
+                connection.execute(
+                    "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                    (run_id, call_id),
+                ).fetchone()
+                is not None
+            ):
+                raise ValueError("Delegation tool call ID already belongs to an action.")
+
+            records = self.records(run_id)
+            definitions = [
+                TaskDefinition(
+                    id=item["local_id"],
+                    objective=item["objective"],
+                    acceptance_criteria=item["acceptance_criteria"],
+                    dependencies=item["dependencies"],
+                    parent_id=item["parent_id"],
+                    input_artifacts=item["input_artifacts"],
+                    expected_outputs=item["expected_outputs"],
+                    role=item["assigned_role"],
+                    permissions=item["permission_scope"],
+                    max_iterations=item["budgets"]["max_iterations"],
+                    max_seconds=int(item["budgets"]["max_seconds"]),
+                    max_total_tokens=item["budgets"].get("max_total_tokens"),
+                    max_output_tokens=item["budgets"].get("max_output_tokens"),
+                )
+                for item in records
+            ]
+            definitions.extend(normalized)
+            # Validate the combined dependency and hierarchy graph against saved run authority.
+            self.validate_plan(run_id, definitions, remaining_tokens=False, remaining_seconds=False)
+
+            run = self.runs.get_run(run_id)
+            assert run is not None
+            all_events = self.runs.list_events(run_id)
+            events_by_task: dict[str, list[dict[str, Any]]] = {}
+            for event in all_events:
+                event_task_id = event["payload"].get("task_id")
+                if isinstance(event_task_id, str):
+                    events_by_task.setdefault(event_task_id, []).append(event)
+            active_iterations = 0
+            active_seconds = 0.0
+            active_tokens = 0
+            for item in records:
+                if item["status"] not in {"queued", "running"}:
+                    continue
+                usage = self._task_resource_usage(
+                    events_by_task.get(item["local_id"], []), item["budgets"]
+                )
+                active_iterations += usage["iterations_remaining"]
+                active_seconds += usage["seconds_remaining"]
+                token_cap = item["budgets"].get("max_total_tokens")
+                if token_cap is not None and usage["usage_measured"]:
+                    active_tokens += usage["tokens_remaining"] or 0
+
+            remaining_iterations = max(
+                0,
+                run["limits"]["max_iterations"]
+                - self.runs.count_inference_attempts(connection, run_id),
+            )
+            added_iterations = sum(item.max_iterations for item in normalized)
+            if active_iterations + added_iterations > remaining_iterations:
+                raise ValueError("Delegated subtasks exceed the remaining shared iteration budget.")
+            remaining_seconds = self.remaining_run_seconds(run_id)
+            added_seconds = sum(item.max_seconds for item in normalized)
+            if active_seconds + added_seconds > remaining_seconds:
+                raise ValueError("Delegated subtasks exceed the remaining shared time budget.")
+
+            effective: dict[str, dict[str, int | None]] = {
+                item["local_id"]: {
+                    "max_total_tokens": item["budgets"].get("max_total_tokens"),
+                    "max_output_tokens": item["budgets"].get("max_output_tokens"),
+                }
+                for item in records
+            }
+            pending = list(normalized)
+            while pending:
+                saveable = [item for item in pending if item.parent_id in effective]
+                if not saveable:
+                    raise ValueError("Delegated task hierarchy has an unresolved parent.")
+                for item in saveable:
+                    inherited = effective[item.parent_id or ""]
+                    effective[item.id] = {
+                        "max_total_tokens": item.max_total_tokens
+                        if item.max_total_tokens is not None
+                        else inherited["max_total_tokens"],
+                        "max_output_tokens": item.max_output_tokens
+                        if item.max_output_tokens is not None
+                        else inherited["max_output_tokens"],
+                    }
+                    pending.remove(item)
+
+            run_token_limit = run["limits"]["max_total_tokens"]
+            if run_token_limit is not None:
+                run_tokens_used = self.runs.token_usage(run_id)["total_tokens"]
+                added_tokens = sum(
+                    value["max_total_tokens"] or 0
+                    for task_id_value, value in effective.items()
+                    if task_id_value in proposed_ids
+                )
+                if active_tokens + added_tokens > max(0, run_token_limit - run_tokens_used):
+                    raise ValueError("Delegated subtasks exceed the remaining shared token budget.")
+
+            profiles = {
+                str(row["role"]): dict(row)
+                for row in connection.execute(
+                    "SELECT role,display_name,model_route,system_instructions FROM specialist_profiles"
+                ).fetchall()
+            }
+            inserted: set[str] = set()
+            pending = list(normalized)
+            while pending:
+                saveable = [
+                    item
+                    for item in pending
+                    if item.parent_id == task_id or item.parent_id in inserted
+                ]
+                if not saveable:
+                    raise ValueError("Delegated task hierarchy has an unresolved parent.")
+                for item in saveable:
+                    inherited = effective[item.parent_id or ""]
+                    identity_name = profiles.get(item.role, {}).get("display_name") or item.role
+                    model_route = profiles.get(item.role, {}).get("model_route") or run["model"]
+                    instructions = profiles.get(item.role, {}).get("system_instructions", "")
+                    connection.execute(
+                        "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                        (
+                            f"{run_id}:{item.id}",
+                            run_id,
+                            f"{run_id}:{item.parent_id}",
+                            item.objective,
+                            json.dumps(item.acceptance_criteria),
+                            json.dumps(item.input_artifacts),
+                            json.dumps(item.expected_outputs),
+                            item.role,
+                            identity_name,
+                            model_route,
+                            instructions,
+                            run["workspace"],
+                            json.dumps(item.permissions),
+                            json.dumps(
+                                {
+                                    "max_iterations": item.max_iterations,
+                                    "max_seconds": item.max_seconds,
+                                    **(
+                                        {"max_total_tokens": inherited["max_total_tokens"]}
+                                        if inherited["max_total_tokens"] is not None
+                                        else {}
+                                    ),
+                                    **(
+                                        {"max_output_tokens": inherited["max_output_tokens"]}
+                                        if inherited["max_output_tokens"] is not None
+                                        else {}
+                                    ),
+                                }
+                            ),
+                            now,
+                            now,
+                        ),
+                    )
+                    inserted.add(item.id)
+                    pending.remove(item)
+            for item in normalized:
+                for dependency in item.dependencies:
+                    connection.execute(
+                        "INSERT INTO task_dependencies VALUES (?,?)",
+                        (f"{run_id}:{item.id}", f"{run_id}:{dependency}"),
+                    )
+
+            result = {
+                "status": "delegated",
+                "parent_task_id": task_id,
+                "subtask_ids": [item.id for item in normalized],
+                "owner_review_required": True,
+                "parent_state": "queued_until_subtasks_are_owner_reviewed",
+            }
+            connection.execute(
+                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'intended', NULL, NULL, ?, ?, ?)",
+                (
+                    str(uuid4()),
+                    f"{run_id}:{task_id}",
+                    run_id,
+                    "task.delegate_subtasks",
+                    "1",
+                    encoded_arguments,
+                    f"task-delegation:{task_id}:{call_id}",
+                    now,
+                    now,
+                    call_id,
+                ),
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "tool.intended",
+                {"call_id": call_id, "tool": "task.delegate_subtasks", "internal": True},
+            )
+            changed = connection.execute(
+                "UPDATE tasks SET status='queued',result=NULL,updated_at=? WHERE id=? AND run_id=? AND status='running'",
+                (now, f"{run_id}:{task_id}", run_id),
+            ).rowcount
+            if changed != 1:
+                raise PermissionError("Delegating specialist state changed before commit.")
+            connection.execute(
+                "DELETE FROM task_leases WHERE task_id=? AND token=?",
+                (f"{run_id}:{task_id}", task_token),
+            )
+            connection.execute(
+                "UPDATE tool_calls SET state='completed',result=?,updated_at=? WHERE run_id=? AND provider_call_id=? AND state='intended'",
+                (json.dumps(result), now, run_id, call_id),
+            )
+            self.runs.record_event(
+                connection, run_id, "tool.completed", {"call_id": call_id, "internal": True}
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "task.tool.result",
+                {"task_id": task_id, "call_id": call_id, "result": result},
+            )
+            self.runs.record_event(
+                connection,
+                run_id,
+                "task.delegated",
+                {
+                    "task_id": task_id,
+                    "subtask_ids": [item.id for item in normalized],
+                    "reason": reason.strip(),
+                },
+            )
+            return result
 
     def records(self, run_id: str) -> list[dict[str, Any]]:
         prefix = run_id + ":"

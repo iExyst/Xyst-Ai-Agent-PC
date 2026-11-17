@@ -10,6 +10,24 @@ from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
 
+def test_delegation_wait_does_not_consume_specialist_execution_time():
+    events = [
+        {
+            "event_type": event_type,
+            "created_at": f"2026-01-01T00:00:{seconds:02d}+00:00",
+            "payload": {"task_id": "lead"},
+        }
+        for event_type, seconds in (
+            ("task.claimed", 0),
+            ("task.delegated", 10),
+            ("task.claimed", 20),
+            ("task.result", 25),
+        )
+    ]
+
+    assert TaskStore._task_elapsed_seconds(events) == 15
+
+
 def test_concurrent_workers_claim_distinct_ready_specialists(workspace_tmp_path):
     runs = RunStore(workspace_tmp_path / "concurrent-claims.sqlite3")
     run_id = runs.create_run(
@@ -886,3 +904,124 @@ def test_lost_worker_final_candidate_enters_existing_review_state(workspace_tmp_
     recovered = next(row for row in tasks.records(run_id) if row["local_id"] == "read")
     assert recovered["status"] == "verifying"
     assert json.loads(recovered["result"]) == {"candidate": "The file says hello."}
+
+
+def test_running_specialist_can_atomically_add_review_gated_subtasks(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "dynamic-delegation.sqlite3")
+    run_id = runs.create_run(
+        objective="Delegate new work discovered during execution",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model="fixture",
+        max_iterations=8,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "coordinator")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="lead",
+                objective="Inspect the assignment and delegate independent work",
+                max_iterations=4,
+                max_seconds=300,
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None
+
+    result = tasks.delegate_subtasks(
+        run_id,
+        parent,
+        "lead",
+        claim["token"],
+        "delegate-call",
+        "The work needs independent source inspection before aggregation.",
+        [
+            TaskDefinition(
+                id="source-check",
+                objective="Inspect the source evidence",
+                acceptance_criteria=["Record the source evidence"],
+                expected_outputs=["A source evidence summary"],
+                max_iterations=2,
+                max_seconds=100,
+            )
+        ],
+    )
+
+    assert result == {
+        "status": "delegated",
+        "parent_task_id": "lead",
+        "subtask_ids": ["source-check"],
+        "owner_review_required": True,
+        "parent_state": "queued_until_subtasks_are_owner_reviewed",
+    }
+    rows = {row["local_id"]: row for row in tasks.records(run_id)}
+    assert rows["lead"]["status"] == "queued"
+    assert rows["source-check"]["status"] == "queued"
+    assert rows["source-check"]["parent_id"] == "lead"
+    assert tasks.readiness(run_id)[0] == ["source-check"]
+    child_claim = tasks.claim_ready(run_id, parent)
+    assert child_claim is not None and child_claim["task"]["local_id"] == "source-check"
+    with runs.connection() as connection:
+        tool = connection.execute(
+            "SELECT tool_name,state,result FROM tool_calls WHERE provider_call_id=?",
+            ("delegate-call",),
+        ).fetchone()
+    assert tool["tool_name"] == "task.delegate_subtasks"
+    assert tool["state"] == "completed"
+    assert json.loads(tool["result"]) == result
+    assert not runs.unresolved_tool_calls(run_id)
+
+
+def test_dynamic_delegation_cannot_expand_permissions_or_leave_partial_tasks(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "dynamic-delegation-scope.sqlite3")
+    run_id = runs.create_run(
+        objective="Keep delegated work within saved authority",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = runs.acquire_lease(run_id, "coordinator")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [TaskDefinition(id="lead", objective="Delegate read-only work", max_seconds=300)],
+    )
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None
+
+    with pytest.raises(PermissionError, match="broaden"):
+        tasks.delegate_subtasks(
+            run_id,
+            parent,
+            "lead",
+            claim["token"],
+            "invalid-delegate-call",
+            "Attempt to broaden the saved grant",
+            [
+                TaskDefinition(
+                    id="unauthorized",
+                    objective="Write outside the read-only task scope",
+                    permissions=("workspace.read", "workspace.write"),
+                    max_iterations=1,
+                    max_seconds=60,
+                )
+            ],
+        )
+
+    assert [row["local_id"] for row in tasks.records(run_id)] == ["lead"]
+    assert tasks.records(run_id)[0]["status"] == "running"
+    with runs.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run_id, "invalid-delegate-call"),
+            ).fetchone()[0]
+            == 0
+        )

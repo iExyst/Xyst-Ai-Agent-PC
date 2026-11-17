@@ -1,4 +1,7 @@
 # Progress
+## Let running specialists delegate newly discovered work (2026-11-17)
+
+Specialists now have a bounded `task_delegate_subtasks` action for work discovered after a plan starts. The engine validates proposed descendants against the saved graph, permissions and remaining shared resource budgets, then atomically persists the new tasks and yields the parent until its children pass owner review. The parent resumes with bounded child summaries marked untrusted; isolated private workspace edits survive the yield. The relevant task suites pass (75 tests); Ruff and Pyright pass. Regression coverage includes atomic scope rejection, owner-review gating, resume context, workspace continuity, and excluding owner-review wait from execution time. Exact-source Windows and packaged installer verification are pending for this slice. Live model inference remains deferred. This is a local Phase 4 vertical slice, not completion of the Phase 4 gate.
 
 ## Pass reviewed subtask results to parent specialists (2026-11-17)
 
@@ -3276,7 +3279,10 @@ Added `scripts/native_voice_smoke.mjs` and `npm run test:native:voice`. A real n
 
 The first native harness attempt raced engine startup; bounded readiness polling fixed it. Two subsequent small-model runs reached `blocked` (one on context size, one on the 128-token output cap), without invalid audio handling or data loss. The successful 9B run used a 512-token cap. All `.acceptance/` reports are preserved.
 
-## Progress estimate correction (2026-11-08)
+## Progress
+## Let running specialists delegate newly discovered work (2026-11-17)
+
+Specialists now have a bounded `task_delegate_subtasks` action for work discovered after a plan starts. The engine validates proposed descendants against the saved graph, permissions and remaining shared resource budgets, then atomically persists the new tasks and yields the parent until its children pass owner review. The parent resumes with bounded child summaries marked untrusted; isolated private workspace edits survive the yield. Regression coverage includes atomic scope rejection, owner-review gating, resume context, workspace continuity, and excluding owner-review wait from execution time. Exact-source Windows and packaged installer verification are pending for this slice. Live model inference remains deferred. This is a local Phase 4 vertical slice, not completion of the Phase 4 gate. estimate correction (2026-11-08)
 
 Earlier `not quantified (historical figure retired)` entries were carried forward from an older rough estimate and not recalculated as implementation continued. They are stale, not a current measured completion value. A percentage is withheld until the objective's phase gates are audited and weighted explicitly; this prevents the old number from implying no recent progress or a precise current measurement.
 

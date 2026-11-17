@@ -31,6 +31,12 @@ class SavePlanArguments(BaseModel):
     tasks: list[ProposedTask] = Field(min_length=1, max_length=64)
 
 
+class DelegateSubtasksArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    reason: str = Field(min_length=1, max_length=1000)
+    tasks: list[ProposedTask] = Field(min_length=1, max_length=16)
+
+
 def validate_model_plan(
     store: RunStore, run_id: str, arguments: dict[str, Any]
 ) -> SavePlanArguments:
