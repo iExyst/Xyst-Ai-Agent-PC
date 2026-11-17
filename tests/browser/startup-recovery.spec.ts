@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 
 test('reopens the latest unfinished run on connection for owner recovery without resuming it',async({page})=>{
   const stamp='2026-11-08T12:00:00Z';
-  const blocked={id:'blocked-after-restart',objective:'Recover the interrupted workspace operation',state:'blocked',revision:7,acceptance_criteria:[],created_at:stamp};
+  const blocked={id:'blocked-after-restart',objective:'Recover the interrupted workspace operation',state:'blocked',revision:7,acceptance_criteria:[],created_at:stamp,updated_at:stamp,model:'fixture/model',workspace:'C:\\fixture',mode:'workspace',limits:{max_iterations:4,max_seconds:300,max_total_tokens:null,max_output_tokens:null,pre_inference_token_reservations:false},file_checks:[]};
   const calls:{method:string;path:string}[]=[];
   page.on('request',request=>{
     const url=new URL(request.url());
@@ -74,7 +74,7 @@ test('surfaces an emergency-stopped paused run for review without automatically 
     if(path==='/providers/lm-studio/config')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
     if(path==='/runs/paused-after-emergency-stop/plan')return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if(path==='/runs/paused-after-emergency-stop/events/stream')return route.fulfill({headers,contentType:'text/event-stream',body:'event: done\ndata: {}\n\n'});
-    if(path==='/runs/paused-after-emergency-stop/usage')return route.fulfill({json:{total_tokens:0,prompt_tokens:0,completion_tokens:0,unmeasured_calls:0,outstanding_reserved_tokens:0,outstanding_reservations:0},headers});
+    if(path==='/runs/paused-after-emergency-stop/usage')return route.fulfill({json:{inference_attempts:0,total_tokens:0,prompt_tokens:0,completion_tokens:0,unmeasured_calls:0,outstanding_reserved_tokens:0,outstanding_reservations:0},headers});
     if(request.method()==='GET')return route.fulfill({json:[],headers});
     throw new Error(`Unexpected API request: ${request.method()} ${path}`);
   });

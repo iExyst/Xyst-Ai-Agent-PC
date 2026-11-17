@@ -65,7 +65,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
       return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify(answer)}\n\nid: 2\nevent: run_event\ndata: ${JSON.stringify(verifying)}\n\nevent: done\ndata: {}\n\n`});
     }
     if(path==='/runs/desktop-chat-run')return route.fulfill({json:{...run,objective:submittedObjective},headers});
-    if(path.endsWith('/usage'))return route.fulfill({json:{prompt_tokens:0,completion_tokens:0,total_tokens:0,unmeasured_calls:0,outstanding_reserved_tokens:0,outstanding_reservations:0},headers});
+    if(path.endsWith('/usage'))return route.fulfill({json:{inference_attempts:0,prompt_tokens:0,completion_tokens:0,total_tokens:0,unmeasured_calls:0,outstanding_reserved_tokens:0,outstanding_reservations:0},headers});
     return route.fulfill({json:[],headers});
   });
 

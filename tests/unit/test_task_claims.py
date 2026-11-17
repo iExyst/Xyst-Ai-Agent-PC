@@ -168,6 +168,7 @@ def test_token_reservation_is_bound_to_its_started_specialist(workspace_tmp_path
         task_token=a["token"],
     )
     report = runs.usage_report(run_id)
+    assert report["inference_attempts"] == 1
     assert report["outstanding_reservations"] == 1
     assert report["outstanding_reserved_tokens"] == 40
     hold = next(

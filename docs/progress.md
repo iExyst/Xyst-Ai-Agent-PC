@@ -2,7 +2,7 @@
 
 ## Show remaining run resource allowance (2026-11-17)
 
-The active run’s resource panel now shows remaining wall-clock time and token allowance after measured usage and outstanding reservations. It reports token allowance as unknown when any call lacks measured usage, rather than implying that an untracked request is free. The objective browser flow verifies selected model, countdown, unavailable usage, and the reserved-token calculation; TypeScript and the production desktop build pass. No model inference was used.
+The active run’s resource panel now shows remaining wall-clock time, token allowance after measured usage and outstanding reservations, and inference iterations remaining from durable inference-start events. It reports token allowance as unknown when any call lacks measured usage, rather than implying that an untracked request is free. The objective browser flow verifies selected model, countdown, unavailable usage, and the reserved-token calculation; 35 related engine tests, all 7 focused desktop browser tests, the API contract audit, and the production desktop build pass. No model inference was used.
 
 ## Keep imported plugin skills distinct (2026-11-17)
 

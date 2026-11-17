@@ -7512,6 +7512,11 @@
             "title": "Completion Tokens",
             "type": "integer"
           },
+          "inference_attempts": {
+            "minimum": 0.0,
+            "title": "Inference Attempts",
+            "type": "integer"
+          },
           "outstanding_reservations": {
             "minimum": 0.0,
             "title": "Outstanding Reservations",
@@ -7539,6 +7544,7 @@
           }
         },
         "required": [
+          "inference_attempts",
           "prompt_tokens",
           "completion_tokens",
           "total_tokens",

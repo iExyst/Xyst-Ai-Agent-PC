@@ -174,6 +174,7 @@ class CLIChatSessionTitle(BaseModel):
 
 
 class UsageReport(BaseModel):
+    inference_attempts: int = Field(ge=0)
     prompt_tokens: int = Field(ge=0)
     completion_tokens: int = Field(ge=0)
     total_tokens: int = Field(ge=0)

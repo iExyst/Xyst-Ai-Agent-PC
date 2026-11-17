@@ -23,7 +23,7 @@ test('voice attachment submits WAV and the selected local transcription endpoint
       submitted = request.postDataJSON();
       return route.fulfill({ json: run, headers });
     }
-    if (path.endsWith('/usage')) return route.fulfill({ json: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmeasured_calls: 0, outstanding_reserved_tokens: 0, outstanding_reservations: 0 }, headers });
+    if (path.endsWith('/usage')) return route.fulfill({ json: { inference_attempts: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmeasured_calls: 0, outstanding_reserved_tokens: 0, outstanding_reservations: 0 }, headers });
     return route.fulfill({ json: run, headers });
   });
 
@@ -86,7 +86,7 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
       submitted = request.postDataJSON();
       return route.fulfill({ json: run, headers });
     }
-    if (path.endsWith('/usage')) return route.fulfill({ json: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmeasured_calls: 0, outstanding_reserved_tokens: 0, outstanding_reservations: 0 }, headers });
+    if (path.endsWith('/usage')) return route.fulfill({ json: { inference_attempts: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, unmeasured_calls: 0, outstanding_reserved_tokens: 0, outstanding_reservations: 0 }, headers });
     return route.fulfill({ json: run, headers });
   });
 

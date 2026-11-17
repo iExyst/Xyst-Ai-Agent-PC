@@ -5030,6 +5030,8 @@ export interface components {
         UsageReport: {
             /** Completion Tokens */
             completion_tokens: number;
+            /** Inference Attempts */
+            inference_attempts: number;
             /** Outstanding Reservations */
             outstanding_reservations: number;
             /** Outstanding Reserved Tokens */

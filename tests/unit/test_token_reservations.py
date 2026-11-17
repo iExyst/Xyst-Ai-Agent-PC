@@ -225,6 +225,7 @@ async def test_authenticated_usage_api_reports_saved_holds_without_prompt_conten
         response = client.get(f"/runs/{run}/usage", headers={"Authorization": "Bearer " + "x" * 32})
         assert response.status_code == 200
         assert response.json() == {
+            "inference_attempts": 1,
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,

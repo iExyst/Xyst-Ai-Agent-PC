@@ -2950,6 +2950,12 @@ class RunStore:
         ]
         return {
             **measured,
+            "inference_attempts": sum(
+                event["event_type"] in {"model.inference.started", "task.inference.started"}
+                or event["event_type"] in {"model.message", "model.incomplete"}
+                and event["payload"].get("inference_id") is None
+                for event in events
+            ),
             "outstanding_reserved_tokens": sum(hold["reserved_tokens"] for hold in pending),
             "outstanding_reservations": len(pending),
         }
