@@ -30,8 +30,8 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
   const completedTasks=plan.tasks.filter(task=>task.status==='completed').length;
   const workingTasks=plan.tasks.filter(task=>task.status==='running').length;
   const reviewTasks=plan.tasks.filter(task=>task.status==='verifying').length;
-  const waitingTasks=plan.tasks.filter(task=>task.status==='queued').length;
-  const blockedTasks=plan.tasks.filter(task=>task.status==='blocked'||task.status==='failed').length;
+  const waitingTasks=plan.tasks.filter(task=>task.status==='queued'&&!plan.blocked.includes(task.local_id)).length;
+  const blockedTasks=plan.tasks.filter(task=>task.status==='blocked'||task.status==='failed'||plan.blocked.includes(task.local_id)).length;
   const cancelledTasks=plan.tasks.filter(task=>task.status==='cancelled').length;
   const stageLayout=dependencyStages(plan.tasks);
   return <section aria-label="Task plan"><h2>Plan and specialists</h2>
@@ -56,8 +56,8 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         const stageCompleted=tasks.filter(task=>task.status==='completed').length;
         const stageWorking=tasks.filter(task=>task.status==='running').length;
         const stageReview=tasks.filter(task=>task.status==='verifying').length;
-        const stageWaiting=tasks.filter(task=>task.status==='queued').length;
-        const stageAttention=tasks.filter(task=>task.status==='blocked'||task.status==='failed').length;
+        const stageWaiting=tasks.filter(task=>task.status==='queued'&&!plan.blocked.includes(task.local_id)).length;
+        const stageAttention=tasks.filter(task=>task.status==='blocked'||task.status==='failed'||plan.blocked.includes(task.local_id)).length;
         const stageCancelled=tasks.filter(task=>task.status==='cancelled').length;
         const stageSummary=[
           stageCompleted&&`${stageCompleted} complete`,
