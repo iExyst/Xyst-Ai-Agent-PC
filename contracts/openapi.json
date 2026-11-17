@@ -1880,6 +1880,14 @@
               }
             ],
             "title": "Proposed Sha256"
+          },
+          "resolution_diff": {
+            "title": "Resolution Diff",
+            "type": "string"
+          },
+          "resolution_diff_truncated": {
+            "title": "Resolution Diff Truncated",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1891,7 +1899,9 @@
           "current_excerpt_truncated",
           "conflict",
           "diff",
-          "diff_truncated"
+          "diff_truncated",
+          "resolution_diff",
+          "resolution_diff_truncated"
         ],
         "title": "IntegrationFile",
         "type": "object"

@@ -1,5 +1,9 @@
 # Progress
 
+## Show the actual alternatives when reviewing specialist conflicts (2026-11-17)
+
+The integration preview now includes a bounded current-project-to-specialist unified diff for each conflicting file. The desktop displays that diff beside the read-only current file and both SHA-256 values before the owner chooses which version to retain. Output is capped at 64 KiB and reports truncation; integration still requires explicit owner authorization and rechecks the selected current hash before writing. The conflict integration unit flow, deletion and truncation regressions pass (3 focused tests), and the task-review/workspace browser flows pass (9). `npm run build:desktop`, Ruff, Pyright and the OpenAPI type audit pass. Live model inference was not used; exact-source Windows CI is pending.
+
 ## Align native MCP acceptance with AppContainer startup (2026-11-17)
 
 Two installer attempts timed out while connecting the native MCP fixture. The MCP stdio transport allows 60 seconds for Windows AppContainer startup, but the acceptance helper waited only 30 seconds for the HTTP response. The connection step now allows 70 seconds, leaving room for startup and response handling while retaining the existing 30-second default for other clicks. npm run test:native:mcp passes locally against the Tauri development app and bundled engine; it verifies OAuth, MCP stdio/HTTP, resource limits, catalog notifications, and graceful shutdown without model inference. Exact-source workflow [44178534789](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44178534789) passed its browser, desktop, typecheck, and static checks (Python tests were skipped because no Python source changed). Exact-commit installer workflow [44178553309](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44178553309) passed the revised MCP smoke and 52 other executed checks; three cache steps were skipped.

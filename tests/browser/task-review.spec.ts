@@ -160,7 +160,7 @@ for(const choice of ['current','proposed'] as const){
       if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'edit',status:'verifying',candidate:'The private candidate proposes a changed file.',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'read-1',path:'shared.py',sha256:baseHash,excerpt:'Observed original source',excerpt_truncated:false}],workspace_changes:[{path:'shared.py',original_sha256:baseHash,proposed_sha256:proposedHash,diff:'-return "original"\n+return "proposed"',diff_truncated:false}]},headers});
       if(path.endsWith('/integration-preview')){
         previewRequested=true;
-        return route.fulfill({json:{task_id:'edit',changes:[{path:'shared.py',base_sha256:baseHash,current_sha256:currentHash,proposed_sha256:proposedHash,conflict:true,diff:'-return "original"\n+return "proposed"',diff_truncated:false,current_excerpt:'return "current project"',current_excerpt_truncated:false}]},headers});
+        return route.fulfill({json:{task_id:'edit',changes:[{path:'shared.py',base_sha256:baseHash,current_sha256:currentHash,proposed_sha256:proposedHash,conflict:true,diff:'-return "original"\n+return "proposed"',diff_truncated:false,current_excerpt:'return "current project"',current_excerpt_truncated:false,resolution_diff:'-return "current project"\n+return "proposed"',resolution_diff_truncated:false}]},headers});
       }
       if(path.endsWith('/review')){
         expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'I inspected the current and proposed versions.',confirmed_criteria:[0],evidence_call_ids:['read-1'],changes_confirmed:true,resolutions:[{path:'shared.py',expected_current_sha256:currentHash,choice}]});
@@ -186,6 +186,7 @@ for(const choice of ['current','proposed'] as const){
     await expect(integrate).toBeDisabled();
     await page.getByRole('button',{name:'Check current project for integration'}).click();
     await expect(page.getByText(/Current project checked\./)).toBeVisible();
+    await expect(page.getByLabel('Current-to-proposed conflict diff: shared.py')).toContainText('-return "current project"');
     expect(previewRequested).toBe(true);
     await expect(page.getByText('Conflict: shared.py',{exact:true})).toBeVisible();
     await expect(integrate).toBeDisabled();

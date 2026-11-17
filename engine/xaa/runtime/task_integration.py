@@ -1,5 +1,6 @@
 """Explicit user-reviewed integration of private specialist changes, with conflict choices and CAS."""
 
+import difflib
 import hashlib
 import json
 import time
@@ -14,6 +15,25 @@ from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.runtime.workspace_snapshot import checked_path
 from xaa.storage.runs import RunStore
 from xaa.storage.task_workspaces import TaskWorkspaces
+
+_MAX_RESOLUTION_DIFF_BYTES = 64 * 1024
+
+
+def _resolution_diff(path: str, current_text: str, proposed: bytes | None) -> tuple[str, bool]:
+    """Show the exact current-to-proposed choice without returning unbounded diffs."""
+    proposed_text = proposed.decode("utf-8", errors="replace") if proposed is not None else ""
+    diff = "".join(
+        difflib.unified_diff(
+            current_text.splitlines(keepends=True),
+            proposed_text.splitlines(keepends=True),
+            fromfile=f"current/{path}",
+            tofile=f"proposed/{path}",
+        )
+    )
+    encoded = diff.encode("utf-8")
+    if len(encoded) <= _MAX_RESOLUTION_DIFF_BYTES:
+        return diff, False
+    return encoded[:_MAX_RESOLUTION_DIFF_BYTES].decode("utf-8", errors="ignore"), True
 
 
 class IntegrationResolution(BaseModel):
@@ -33,6 +53,8 @@ class IntegrationFile(BaseModel):
     conflict: bool
     diff: str
     diff_truncated: bool
+    resolution_diff: str
+    resolution_diff_truncated: bool
 
 
 class IntegrationPreview(BaseModel):
@@ -102,16 +124,21 @@ async def preview(store: RunStore, run_id: str, task_id: str, owner: str) -> Int
     for change in changes:
         path = change["path"]
         current = await current_file(store, run_id, owner, path, deadline)
+        conflict = current["sha256"] not in (change["base_sha256"], change["proposed_sha256"]) or (
+            change["proposed_sha256"] is None and current["sha256"] is None
+        )
+        resolution_diff, resolution_diff_truncated = (
+            _resolution_diff(path, current["text"], files.get(path)) if conflict else ("", False)
+        )
         rows.append(
             IntegrationFile(
                 **change,
                 current_sha256=current["sha256"],
                 current_excerpt=current["text"],
                 current_excerpt_truncated=False,
-                conflict=(
-                    current["sha256"] not in (change["base_sha256"], change["proposed_sha256"])
-                    or (change["proposed_sha256"] is None and current["sha256"] is None)
-                ),
+                conflict=conflict,
+                resolution_diff=resolution_diff,
+                resolution_diff_truncated=resolution_diff_truncated,
             )
         )
     # The copy is immutable once the task reaches verifying; read all bytes to validate its journal.

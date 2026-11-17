@@ -3116,6 +3116,10 @@ export interface components {
             path: string;
             /** Proposed Sha256 */
             proposed_sha256: string | null;
+            /** Resolution Diff */
+            resolution_diff: string;
+            /** Resolution Diff Truncated */
+            resolution_diff_truncated: boolean;
         };
         /** IntegrationPreview */
         IntegrationPreview: {

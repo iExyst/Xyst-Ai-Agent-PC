@@ -1122,6 +1122,20 @@ async def test_reviewed_deletion_conflict_requires_choice_and_rejects_stale_hash
     assert (project / "shared.txt").read_bytes() == b"another external change\n"
 
 
+def test_conflict_resolution_diff_is_bounded_and_handles_deletions():
+    from xaa.runtime.task_integration import _resolution_diff
+
+    deletion, deletion_truncated = _resolution_diff("shared.txt", "current\n", None)
+    assert "-current" in deletion
+    assert not deletion_truncated
+
+    current = "é\n" * 40_000
+    proposed = ("ø\n" * 40_000).encode()
+    bounded, was_truncated = _resolution_diff("large.txt", current, proposed)
+    assert len(bounded.encode("utf-8")) <= 64 * 1024
+    assert was_truncated
+
+
 def test_interrupted_delete_reconciliation_observes_without_retry(workspace_tmp_path):
     from xaa.runtime.executor import WorkspaceExecutor
 
@@ -1456,6 +1470,9 @@ async def test_review_integrates_only_approved_changes_and_requires_explicit_con
     snapshot = await preview(store, run_id, "b", token)
     store.release_lease(run_id, token)
     assert snapshot.changes[0].conflict
+    assert "-a version" in snapshot.changes[0].resolution_diff
+    assert "+b version" in snapshot.changes[0].resolution_diff
+    assert not snapshot.changes[0].resolution_diff_truncated
     (project / "shared.txt").write_bytes(b"external change\n")
     with pytest.raises(ValueError, match="changed after conflict preview"):
         await review_candidate(
